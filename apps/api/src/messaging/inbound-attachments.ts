@@ -5,11 +5,18 @@ import { getLogger } from "@rakazo/logging";
 
 type InboundArtifact = { id: string; name: string; mimeType: string; size: number };
 
-/** Why a file never reached the bot, in words its sender understands. */
-export type UnavailableReason = "too large" | "unsupported type" | "download failed";
+/**
+ * Why a file never reached the bot, in plain words: refused for its size or type, tried and
+ * failed, or never tried because its time ran out first.
+ */
+export type UnavailableReason =
+  | "too large"
+  | "unsupported type"
+  | "download failed"
+  | "not received";
 
-/** A file the store will not take, whatever happens with its download. */
-export class InboundAttachmentRefusedError extends AttachmentValidationError {
+/** A file the store did not take for a reason other than a failed download. */
+export class InboundAttachmentUnavailableError extends AttachmentValidationError {
   constructor(
     readonly reason: Exclude<UnavailableReason, "download failed">,
     message: string,
@@ -85,7 +92,9 @@ export async function storeInboundAttachments(
         reason: error instanceof Error ? error.message : String(error),
       });
       unavailable.push(
-        label(error instanceof InboundAttachmentRefusedError ? error.reason : "download failed"),
+        label(
+          error instanceof InboundAttachmentUnavailableError ? error.reason : "download failed",
+        ),
       );
     }
   }

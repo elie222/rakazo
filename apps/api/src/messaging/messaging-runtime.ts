@@ -15,6 +15,8 @@ import type { Hono } from "hono";
 import { transcribeInboundVoice } from "../calls/voice.js";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import type { AppEnv } from "../env.js";
+import { createDownloadBudget } from "./intake/download-budget.js";
+import { DOWNLOAD_BUDGET_FILES } from "./intake/limits.js";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
 import { createMessagingReceipts } from "./messaging-receipts.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
@@ -57,13 +59,14 @@ export async function startMessagingRuntime({
   let messagingStopped = false;
   let clearMessagingRetryDelay: (() => void) | undefined;
   const receipts = createMessagingReceipts(messaging);
+  const downloadBudget = createDownloadBudget(DOWNLOAD_BUDGET_FILES * env.maxUploadSizeBytes);
   const storeAttachment: Parameters<typeof createMessagingInboundHandler>[0]["storeAttachment"] = ({
     spaceId,
     userId,
     ...input
   }) =>
     storeInboundAttachment(
-      { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
+      { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes, downloadBudget },
       { spaceId, userId },
       input,
     );

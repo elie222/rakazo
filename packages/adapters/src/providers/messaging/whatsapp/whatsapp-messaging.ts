@@ -1,5 +1,6 @@
-import { createWhatsAppAdapter, WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import type { Attachment } from "chat";
 import { ConsoleLogger, convertEmojiPlaceholders } from "chat";
 import {
   arrayField,
@@ -16,15 +17,21 @@ export const whatsappMessaging = defineMessagingPlatform({
     whatsappVerifyToken: { name: "WHATSAPP_VERIFY_TOKEN", required: true },
   },
   mount(env) {
+    // The same defaults createWhatsAppAdapter applies, which the subclass does not get for free.
+    const adapter = new WhatsAppGraph({
+      accessToken: env.whatsappAccessToken,
+      apiUrl: process.env.WHATSAPP_API_URL,
+      appSecret: env.whatsappAppSecret,
+      logger: new ConsoleLogger("info").child("whatsapp"),
+      phoneNumberId: env.whatsappPhoneNumberId,
+      userName: process.env.WHATSAPP_BOT_USERNAME ?? "whatsapp-bot",
+      verifyToken: env.whatsappVerifyToken,
+    });
     return {
       provider: "whatsapp",
       capabilities: { direct: true, groups: false, receipt: null, files: true },
-      adapter: createWhatsAppAdapter({
-        accessToken: env.whatsappAccessToken,
-        phoneNumberId: env.whatsappPhoneNumberId,
-        appSecret: env.whatsappAppSecret,
-        verifyToken: env.whatsappVerifyToken,
-      }),
+      adapter,
+      attachmentSize: (attachment, signal) => adapter.mediaSize(attachment, signal),
       peekStatuses: parseWhatsAppStatuses,
       isPermanentSendError: (error) =>
         (error instanceof WhatsAppApiError && error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED) ||
@@ -32,6 +39,33 @@ export const whatsappMessaging = defineMessagingPlatform({
     };
   },
 });
+
+/** The adapter, plus the media lookup that needs its protected Graph API base and token. */
+class WhatsAppGraph extends WhatsAppAdapter {
+  /**
+   * The size WhatsApp reports for an inbound file, from the media lookup that also comes before
+   * its download: the webhook does not carry it, and the adapter does not keep it.
+   */
+  async mediaSize(attachment: Attachment, signal: AbortSignal): Promise<number | undefined> {
+    const mediaId = attachment.fetchMetadata?.mediaId;
+    if (!mediaId) return undefined;
+    const response = await fetch(`${this.graphApiUrl}/${encodeURIComponent(mediaId)}`, {
+      headers: { authorization: `Bearer ${this.accessToken}` },
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`WhatsApp media lookup failed with status ${response.status}`);
+    }
+    const reported = asRecord(await response.json())?.file_size;
+    const size =
+      typeof reported === "number"
+        ? reported
+        : typeof reported === "string"
+          ? Number(reported)
+          : NaN;
+    return Number.isSafeInteger(size) && size >= 0 ? size : undefined;
+  }
+}
 
 /** Meta 131047: outside the 24-hour window only a template can reach the user. */
 const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;

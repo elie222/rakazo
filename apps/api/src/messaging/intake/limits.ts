@@ -9,3 +9,10 @@ export const DIRECT_ATTACHMENT_ATTEMPTS = 3;
  * message reaches the bot once they are in, or with the rest marked as not received after it.
  */
 export const DIRECT_MESSAGE_SETTLE_BUDGET_MS = 30 * 60_000;
+
+/**
+ * Files of the largest allowed size this process holds in memory at once while downloading
+ * chat-app files: its download budget is this many times the upload limit. A file reserves its
+ * reported size, or the whole limit when none was reported, before it starts.
+ */
+export const DOWNLOAD_BUDGET_FILES = 4;
