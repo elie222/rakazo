@@ -383,10 +383,17 @@ export default function VoiceSettings() {
     },
     [],
   );
+  // Coming back here ends the sign-in this screen opened, so the button can open a new one.
+  useFocusEffect(
+    useCallback(() => {
+      if (signInRequest.current) closeModelConnection(signInRequest.current);
+      signInRequest.current = null;
+    }, []),
+  );
 
   function signIn() {
-    if (!selected) return;
-    if (signInRequest.current) closeModelConnection(signInRequest.current);
+    // A second tap while the sign-in screen opens must not replace the request it reads.
+    if (!selected || signInRequest.current) return;
     const requestId = openModelConnection({
       provider: selected.id,
       credentialId: null,

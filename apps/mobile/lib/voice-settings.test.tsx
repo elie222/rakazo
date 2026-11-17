@@ -855,6 +855,18 @@ it("signs in through the Models connection screen, then connects voice through t
   expectOnlyDisconnect();
 });
 
+it("opens one sign-in screen for a double tap and keeps its request", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
+  await render();
+  await click("Linked");
+  await click("Sign in with a plan");
+  await click("Sign in with a plan");
+  expect(state.push).toHaveBeenCalledOnce();
+  const [{ params }] = state.push.mock.calls[0] as [{ params: { requestId: string } }];
+  expect(modelConnectionRequest(params.requestId)).toMatchObject({ provider: "linked" });
+});
+
 it("offers the new connection, not another sign-in, when voice cannot connect through it", async () => {
   state.load.mockResolvedValue(false);
   withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
