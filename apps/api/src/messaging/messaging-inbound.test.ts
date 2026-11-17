@@ -1309,6 +1309,45 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.cancelIn).not.toHaveBeenCalled();
   });
 
+  it("hands the messages still settling to their backup jobs at once on shutdown", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const handler = createMessagingInboundHandler(deps);
+    await handler(photoEvent);
+    await handler({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+    const before = Date.now();
+    const dueNow = () =>
+      deps.enqueue.mock.calls
+        .map(([job]) => job as BackgroundJob)
+        .filter((job) => job.name === "messaging.inbound_settle")
+        .map((job) => {
+          expect(job.availableAt!.getTime()).toBeGreaterThanOrEqual(before);
+          expect(job.availableAt!.getTime()).toBeLessThanOrEqual(Date.now());
+          return job.replaceKey;
+        });
+
+    await handler.handOffPending();
+    expect(dueNow()).toEqual([
+      messagingInboundSettleJobKey("sendblue", "handle-1"),
+      messagingInboundSettleJobKey("sendblue", "handle-2"),
+    ]);
+
+    // A message that comes in during the shutdown is its backup job's from the start.
+    await handler({ ...photoEvent, handle: "handle-3" });
+    expect(dueNow()).toContain(messagingInboundSettleJobKey("sendblue", "handle-3"));
+
+    // The downloads finishing here change nothing: the jobs own the messages now.
+    download.resolve();
+    await flush();
+    await flush();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+  });
+
   it("keeps a later text behind an earlier file that went to its backup job", async () => {
     const storeAttachment = vi.fn(async () => ({
       id: "artifact-1",

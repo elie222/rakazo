@@ -26,7 +26,8 @@ import { prefersTeamChatSurface } from "./team-chat-startup.js";
 
 /**
  * Messaging and team chat for one API process; `stopReceiving` ends polling while replies still
- * send, and `stop` also ends receipts.
+ * send, and `stop` also hands direct messages still settling to their backup jobs and ends
+ * receipts.
  */
 export async function startMessagingRuntime({
   app,
@@ -190,6 +191,8 @@ export async function startMessagingRuntime({
     stopReceiving,
     stop: async () => {
       await stopReceiving();
+      // Downloads still running here end with this process; their backup jobs take over now.
+      await inbound.handOffPending();
       receipts.stop();
       await messaging.shutdown?.();
     },

@@ -116,25 +116,43 @@ type IdentityRow = {
 export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   const intake: DirectIntake = {
     senders: createSenderQueue(),
-    settling: new Set(),
+    settling: new Map(),
     handedOff: new Set(),
     pending: new Map(),
+    closing: false,
   };
-  return async (event: MessagingInboundMessage): Promise<void> => {
+  const handle = async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
       await handleChannelEvent(deps, event);
       return;
     }
     await handleDirectEvent(deps, intake, event).catch(droppedWhileDeleting);
   };
+  return Object.assign(handle, {
+    /**
+     * For a shutdown: every message still settling here goes to its backup job now, as does any
+     * that comes in after, instead of waiting out its budget once this process is gone.
+     */
+    handOffPending: async (): Promise<void> => {
+      intake.closing = true;
+      await Promise.all(
+        [...intake.settling.values()].flatMap((payload) =>
+          payload ? [handOffToJob(deps, payload)] : [],
+        ),
+      );
+    },
+  });
 }
 
 /** The direct messages this process is still settling. */
 type DirectIntake = {
   /** One sender's messages reach the bot in the order they arrived here. */
   senders: SenderQueue;
-  /** Messages whose files are downloading here, so a redelivery meanwhile adds nothing. */
-  settling: Set<string>;
+  /**
+   * Messages settling here, with their backup job once it is recorded, so a redelivery meanwhile
+   * adds nothing and a shutdown can hand them on.
+   */
+  settling: Map<string, SettlePayload | null>;
   /**
    * Senders one of whose messages failed here and went to its backup job. Their messages
    * queued behind it follow it to their own jobs, which the sender's job queue keeps in order,
@@ -143,6 +161,8 @@ type DirectIntake = {
   handedOff: Set<string>;
   /** Each sender's messages here, from arrival until their turn in the queue is over. */
   pending: Map<string, Arrival[]>;
+  /** Shutting down: the backup jobs settle what is left. */
+  closing: boolean;
 };
 
 /**
@@ -308,7 +328,7 @@ async function prepareDirectEvent(
   const message = JSON.stringify([event.provider, event.handle]);
   // The provider delivered it again while its files are still downloading here.
   if (intake.settling.has(message)) return null;
-  intake.settling.add(message);
+  intake.settling.set(message, null);
   try {
     const identityId =
       existing?.id ??
@@ -324,15 +344,24 @@ async function prepareDirectEvent(
         .map(({ name, mimeType }) => ({ name, mimeType })),
     };
     await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, receivedAt));
+    intake.settling.set(message, payload);
+    // Arriving during a shutdown, it is its backup job's at once.
+    if (intake.closing) {
+      intake.settling.delete(message);
+      await handOffToJob(deps, payload);
+      return null;
+    }
     // The files download from now on, whatever is ahead of the message in its sender's queue;
     // only handing the message to the bot waits its turn there.
     const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
     return {
       inline: false,
       run: () =>
-        (intake.handedOff.has(sender)
-          ? media.then(() => handOffToJob(deps, payload))
-          : settleDirectMessage(deps, intake, ids, event, sender, payload, text, media, arrival)
+        (intake.closing
+          ? Promise.resolve()
+          : intake.handedOff.has(sender)
+            ? media.then(() => handOffToJob(deps, payload))
+            : settleDirectMessage(deps, intake, ids, event, sender, payload, text, media, arrival)
         ).finally(() => intake.settling.delete(message)),
     };
   } catch (error) {
@@ -360,6 +389,8 @@ async function settleDirectMessage(
 ): Promise<void> {
   try {
     const outcome = await media;
+    // A shutdown handed the message to its backup job meanwhile.
+    if (intake.closing) return;
     if ("error" in outcome) throw outcome.error;
     const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, arrival);
     const lane = { identityId: payload.identityId };
