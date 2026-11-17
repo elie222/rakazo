@@ -131,11 +131,11 @@ WHERE membership."id" IS NULL;
 `.github/workflows/publish-server-image.yml` 将镜像发布到 `ghcr.io/<owner>/<repo>/…`，由 `${{ github.repository }}` 推导，
 因此 fork 的 CI 会写入 fork 自己的命名空间。本仓库为：
 
-| 镜像 | 内容 |
-| --- | --- |
-| `ghcr.io/elie222/rakazo/app` | api、worker、web 与沙箱监督进程，同一镜像、不同命令 |
-| `ghcr.io/elie222/rakazo/computer` | 用作各机器人计算机的 Linux 桌面 |
-| `ghcr.io/elie222/rakazo/updater` | 更新器 sidecar，并包含 Docker CLI |
+| 镜像                              | 内容                                                |
+| --------------------------------- | --------------------------------------------------- |
+| `ghcr.io/elie222/rakazo/app`      | api、worker、web 与沙箱监督进程，同一镜像、不同命令 |
+| `ghcr.io/elie222/rakazo/computer` | 用作各机器人计算机的 Linux 桌面                     |
+| `ghcr.io/elie222/rakazo/updater`  | 更新器 sidecar，并包含 Docker CLI                   |
 
 `infra/compose/docker-compose.images.yml` 是无需检出仓库即可使用上述应用与计算机标签以及 Postgres 的路径。
 监督进程从应用镜像在内部网络运行（无单独发布的监督镜像，也不映射主机端口）。生产 Compose（`docker-compose.prod.yml`）
@@ -144,14 +144,14 @@ WHERE membership."id" IS NULL;
 从自己的 fork 部署时，将 `RAKAZO_IMAGE` 与 `RAKAZO_UPDATER_IMAGE` 指向自己的命名空间；
 fork 的 CI 无法发布到他人的命名空间。
 
-| 标签 | 何时发布 | 是否会移动 |
-| --- | --- | --- |
-| `local` | 无，由 `up --build` 在本地构建 | 原地重建 |
-| `local-<完整提交号>` | 无，由 fork 更新在服务器构建 | 否 |
-| `vX.Y.Z`、`vX.Y` | 发布标签 | 惯例上 minor/patch 策略不变 |
-| `latest` | 仅稳定 `vX.Y.Z`（不含预发布） | 是，指向最新稳定发布 |
-| `sha-<完整提交号>` | 每次 main 提交、发布标签与手动运行 | 按源码寻址；更新器 sidecar 使用 |
-| `edge` | 推送到 main | 是，指向最新 main 构建 |
+| 标签                 | 何时发布                           | 是否会移动                      |
+| -------------------- | ---------------------------------- | ------------------------------- |
+| `local`              | 无，由 `up --build` 在本地构建     | 原地重建                        |
+| `local-<完整提交号>` | 无，由 fork 更新在服务器构建       | 否                              |
+| `vX.Y.Z`、`vX.Y`     | 发布标签                           | 惯例上 minor/patch 策略不变     |
+| `latest`             | 仅稳定 `vX.Y.Z`（不含预发布）      | 是，指向最新稳定发布            |
+| `sha-<完整提交号>`   | 每次 main 提交、发布标签与手动运行 | 按源码寻址；更新器 sidecar 使用 |
+| `edge`               | 推送到 main                        | 是，指向最新 main 构建          |
 
 每次发布（含 main 合并产生的 `edge`）均为多架构（`amd64` + `arm64`）。在配置 `DEPOT_PROJECT_ID`
 时使用 Depot 原生构建，否则使用 GitHub 运行器；每个镜像组装一份 manifest。发布 CI 在稳定 `vX.Y.Z`
