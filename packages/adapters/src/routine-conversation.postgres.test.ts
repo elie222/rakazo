@@ -28,6 +28,7 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
   let identity: { userId: string; spaceId: string; botId: string; threadId: string };
   let jobs: BackgroundJob[];
   let deps: ExecutorDeps;
+  let groupMessages = 0;
   const address = `routine-conversation-${randomUUID()}@rakazo.test`;
 
   beforeAll(async () => {
@@ -129,6 +130,26 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     expect(jobs[0]?.availableAt).toBeUndefined();
     await system.run.update({ where: { id: scheduled.id }, data: { wakeAt: null } });
     expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
+  });
+
+  it("leaves a schedule backing off after a failed attempt to its own delay", async () => {
+    const working = await createRun({
+      trigger: "user",
+      status: "completed",
+      startedAt: new Date(),
+    });
+    const backingOff = await createRun({ trigger: "routine", status: "queued" });
+    await system.attempt.create({
+      data: { runId: backingOff.id, fence: 1, status: "setup_failed" },
+    });
+    await system.run.update({
+      where: { id: backingOff.id },
+      data: { wakeAt: new Date(Date.now() + 60_000) },
+    });
+
+    await startRoutineRunsWaitingOn(deps, working);
+
+    expect(jobs).toEqual([]);
   });
 
   it("starts at once when the working run ended while its wait was being set", async () => {
@@ -293,7 +314,7 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
         ? await system.message.create({
             data: {
               threadId: identity.threadId,
-              seq: 1_000_000 + Math.floor(Math.random() * 1_000_000),
+              seq: 1_000_000 + ++groupMessages,
               role: "user",
               blocks: [
                 {

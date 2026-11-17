@@ -118,8 +118,9 @@ export async function startRoutineRunsWaitingOn(
       trigger: "routine",
       status: "queued",
       startedAt: null,
-      // A retry keeps its own delay.
+      // A retry, or a run backing off after a failed attempt, keeps its own delay.
       retryOfRunId: null,
+      attempts: { none: {} },
       wakeAt: { gt: new Date() },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
