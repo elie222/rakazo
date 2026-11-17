@@ -348,8 +348,10 @@ export function attachMobileTrackpad(
   };
   const onTouchEnd = (event) => finishTouch(event, true);
   const onTouchCancel = (event) => finishTouch(event, false);
+  // A real mouse moving means the person has one, so hand them direct control. Browsers also
+  // send still moves of their own (Chromium does after a page lays out), which mean nothing.
   const onMouseMove = (event) => {
-    if (event.isTrusted && enabled) setEnabled(false);
+    if (event.isTrusted && enabled && (event.movementX || event.movementY)) setEnabled(false);
   };
   const onResize = () => {
     const x =

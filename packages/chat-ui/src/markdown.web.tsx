@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode, RefObject } from "react";
+import type { CSSProperties, MouseEvent, ReactElement, ReactNode, RefObject } from "react";
 import {
   Component,
   createContext,
@@ -751,6 +751,43 @@ function urlTransform(url: string, key: string) {
     : (sanitizeMarkdownUrl(url, true) ?? "");
 }
 
+function renderMarkdown(source: string) {
+  return ReactMarkdown({
+    children: source,
+    components,
+    remarkPlugins,
+    rehypePlugins,
+    skipHtml: true,
+    urlTransform,
+  });
+}
+
+// Parsing is most of the cost of drawing a message, and opening a chat again draws every message
+// again. The output depends only on the source, so finished text is parsed once. The cache is
+// bounded by total text, and long documents are not kept.
+const renderedSources = new Map<string, ReactElement>();
+const RENDERED_TEXT_LIMIT = 2_000_000;
+const CACHED_SOURCE_LIMIT = 50_000;
+let renderedTextLength = 0;
+
+function renderFinishedMarkdown(source: string) {
+  if (source.length > CACHED_SOURCE_LIMIT) return renderMarkdown(source);
+  let rendered = renderedSources.get(source);
+  if (rendered) {
+    renderedSources.delete(source);
+  } else {
+    rendered = renderMarkdown(source);
+    renderedTextLength += source.length;
+  }
+  renderedSources.set(source, rendered);
+  for (const oldest of renderedSources.keys()) {
+    if (renderedTextLength <= RENDERED_TEXT_LIMIT) break;
+    renderedSources.delete(oldest);
+    renderedTextLength -= oldest.length;
+  }
+  return rendered;
+}
+
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
@@ -762,15 +799,7 @@ const MarkdownBlock = memo(function MarkdownBlock({
   return (
     <StreamingSourceContext.Provider value={streaming ? source : undefined}>
       <MarkdownTableSourceContext.Provider value={parsed}>
-        <ReactMarkdown
-          components={components}
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          skipHtml
-          urlTransform={urlTransform}
-        >
-          {parsed}
-        </ReactMarkdown>
+        {streaming ? renderMarkdown(parsed) : renderFinishedMarkdown(parsed)}
       </MarkdownTableSourceContext.Provider>
     </StreamingSourceContext.Provider>
   );

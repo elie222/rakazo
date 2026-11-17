@@ -14,6 +14,7 @@ import type {
   AgentImportErrorReason,
   AgentImportFile,
   AgentImportMemoryDestination,
+  AgentImportNeed,
   AgentImportPlan,
   AgentImportSetupItem,
   AgentImportSetupState,
@@ -30,9 +31,10 @@ import {
   isValidTimeZone,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
-import type { SkillFiles } from "@rakazo/core";
+import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
+  messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
   readGrokBotExportJson,
@@ -108,6 +110,8 @@ export type AgentImportServices<PreparedKey = unknown> = {
     stored: Stored,
   ) => Promise<McpServerRow>;
   findBot: (actor: Actor, botId: string) => Promise<Bot | null>;
+  /** The event triggers the routine editor offers on this server. */
+  routineTriggers: RoutineTriggersAvailable;
   assertRoutineSchedule: (input: CreateRoutineInputType) => void;
   routineNextRunAt: (input: CreateRoutineInputType) => Date | null;
   routineRowData: (
@@ -142,8 +146,12 @@ type ImportRecord = z.infer<typeof ImportRecordSchema>;
 
 const BLOCKING: ReadonlySet<AgentImportWarning> = new Set(["unsupported_command"]);
 
-function parsePlan(files: AgentImportFile[], skillFiles: SkillFiles): AgentImportPlan {
-  const plan = parseAgentImport(files, skillFiles);
+function parsePlan(
+  files: AgentImportFile[],
+  skillFiles: SkillFiles,
+  routineTriggers: RoutineTriggersAvailable,
+): AgentImportPlan {
+  const plan = parseAgentImport(files, skillFiles, routineTriggers);
   if ("error" in plan) throw new ORPCError("BAD_REQUEST", { message: plan.error });
   return plan;
 }
@@ -185,7 +193,7 @@ async function buildPlan(
   input: { files: AgentImportFile[]; includeSecrets: boolean; skillFiles: SkillFiles },
 ): Promise<Built> {
   const { files, includeSecrets } = input;
-  const base = parsePlan(files, input.skillFiles);
+  const base = parsePlan(files, input.skillFiles, services.routineTriggers);
   const taken = await takenNames(services.prisma, actor);
   const plan = resolveAgentImportNames(base, taken);
   const routineInputs = new Map<string, CreateRoutineInputType>();
@@ -195,7 +203,7 @@ async function buildPlan(
   if (base.source === "grok_bot") {
     // parsePlan has checked that this file holds exactly one Bot.
     const [bot] = readGrokBotExportJson(files[0]?.content ?? "");
-    settings = bot ? readGrokBotImportSettings(bot) : null;
+    settings = bot ? readGrokBotImportSettings(bot, services.routineTriggers) : null;
   } else {
     const folder =
       base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
@@ -257,7 +265,7 @@ async function buildPlan(
       botId: "pending",
       name: routine.name,
       prompt: routine.prompt,
-      crons: [routine.cron],
+      ...routine.trigger,
       timezone,
       active: false,
     });
@@ -267,13 +275,23 @@ async function buildPlan(
       return [];
     }
     routineInputs.set(routine.id, parsed.data);
+    const { crons, webhookEnabled, githubEnabled, emailSenders, messageProvider } = parsed.data;
+    const schedule = crons.length ? `${crons.join(", ")} (${timezone})\n\n` : "";
+    const needs: AgentImportNeed[] = [
+      { kind: "turn_on" },
+      ...(webhookEnabled || githubEnabled ? [{ kind: "webhook" as const }] : []),
+      ...(emailSenders ? [{ kind: "email_address" as const }] : []),
+      ...(messageProvider
+        ? [{ kind: "chat_app" as const, provider: messagingProviderName(messageProvider) }]
+        : []),
+    ];
     return [
       {
         id: routine.id,
         title: routine.title,
-        content: `${routine.cron} (${timezone})\n\n${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
+        content: `${schedule}${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
         warnings: routine.warnings,
-        status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
+        status: { kind: "needs_setup" as const, needs },
       },
     ];
   });

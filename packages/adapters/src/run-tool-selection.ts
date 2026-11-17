@@ -120,6 +120,8 @@ export function selectBuiltinToolsForRun(options: {
   /** Built-in names this bot turned off. Unknown names are ignored. */
   disabledBuiltinTools?: readonly string[];
   fleetManagement?: boolean;
+  /** False when the Space has no other bot to message. */
+  hasTeammates?: boolean;
   /** A follow-up run whose source message the user wrote. */
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
@@ -173,6 +175,9 @@ export function selectBuiltinToolsForRun(options: {
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
       (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
+      // Alone in its Space a bot has nobody to message. A bot it creates gets its first task
+      // from spawn_bot, and its reply starts a run that offers message_bot.
+      (options.hasTeammates !== false || tool.name !== "message_bot") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||

@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  ATTACHMENT_ARCHIVE_MIME_TYPES,
   ATTACHMENT_AUDIO_MIME_TYPES,
   appContract,
   artifactPreviewKind,
   attachmentMaxCount,
   isAllowedAttachmentMimeType,
+  isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
   MessageBlock,
-  validateThreadsSendInput,
 } from "./index.js";
 
 describe("attachment contracts", () => {
@@ -47,13 +48,25 @@ describe("attachment contracts", () => {
     expect(isAttachmentAudioMimeType("audio/flac")).toBe(false);
     expect(isAttachmentAudioMimeType("video/mp4")).toBe(false);
   });
-  it("requires text or attachments for threads.send", () => {
-    expect(validateThreadsSendInput({ text: "hello" })).toBe(true);
-    expect(validateThreadsSendInput({ artifactIds: ["art_1"] })).toBe(true);
-    expect(validateThreadsSendInput({})).toBe(false);
-    expect(validateThreadsSendInput({ artifactIds: ["a", "b", "c", "d", "e"] })).toBe(true);
+  it.each(ATTACHMENT_ARCHIVE_MIME_TYPES)("allows %s as an archive file block", (mimeType) => {
+    expect(isAllowedAttachmentMimeType(mimeType)).toBe(true);
+    expect(isAttachmentArchiveMimeType(mimeType)).toBe(true);
+    expect(artifactPreviewKind(mimeType)).toBe("none");
+    expect(
+      MessageBlock.parse({
+        kind: "file",
+        artifactId: "archive-1",
+        mimeType,
+        name: "bundle",
+        size: 42,
+      }),
+    ).toMatchObject({ kind: "file", mimeType });
   });
-
+  it("rejects unknown archive types", () => {
+    expect(isAllowedAttachmentMimeType("application/x-tar")).toBe(false);
+    expect(isAttachmentArchiveMimeType("application/x-tar")).toBe(false);
+    expect(isAttachmentArchiveMimeType("application/pdf")).toBe(false);
+  });
   it("previews text files as text on every client", () => {
     expect(artifactPreviewKind("text/plain")).toBe("text");
     expect(artifactPreviewKind("text/csv; charset=utf-8")).toBe("text");
@@ -63,6 +76,5 @@ describe("attachment contracts", () => {
     expect(artifactPreviewKind("video/mp4")).toBe("video");
     expect(artifactPreviewKind("application/pdf")).toBe("pdf");
     expect(artifactPreviewKind("image/png")).toBe("image");
-    expect(artifactPreviewKind("application/zip")).toBe("none");
   });
 });

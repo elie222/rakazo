@@ -7,6 +7,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   attachmentMaxCount,
   attachmentSizeLabel,
+  isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
   isStepScreenshotMimeType,
   STEP_SCREENSHOT_MIME_TYPES,
@@ -50,7 +51,8 @@ export async function createOwnedArtifact(
   if (replayed) return createdArtifact(replayed);
   const inferredType = inferAttachmentMimeType(input.name, input.mimeType);
   const mimeType =
-    inferredType && (inferredType === "application/zip" || isAttachmentAudioMimeType(inferredType))
+    inferredType &&
+    (isAttachmentArchiveMimeType(inferredType) || isAttachmentAudioMimeType(inferredType))
       ? inferredType
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
