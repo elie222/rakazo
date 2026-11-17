@@ -1,6 +1,6 @@
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
 import { createEmulatedSendbluePlatform, SendBlueEmulator } from "./sendblue-emulator.js";
 
 const context: AdapterContext = {

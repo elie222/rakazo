@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
 import type { MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 
 // Fake credentials and a stubbed fetch: the real Photon adapter verifies and
 // routes webhooks offline; nothing here reaches Spectrum Cloud.
