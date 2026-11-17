@@ -31,6 +31,8 @@ infra/sandboxes/supervisor/dist
 *.log
 .vercel
 .cache
+.codebase-memory/
+.gradle/
 artifacts
 backups
 test-report
