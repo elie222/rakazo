@@ -154,7 +154,7 @@ describe("startStatusLines", () => {
     expect(t.shown).toEqual(["Reading your question"]);
   });
 
-  it("cancels the request for a step that a newer one replaced", async () => {
+  it("keeps the request before the newest step and cancels older ones", async () => {
     const signals: AbortSignal[] = [];
     const t = target({
       opening: async () => undefined,
@@ -165,13 +165,85 @@ describe("startStatusLines", () => {
     });
     const live = startStatusLines(t.target);
     live.step("Running: ls");
-    await flush();
     live.step("Reading ledger.json");
+    live.step("Searching: prices");
     await flush();
-    expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, false, false]);
     live.supersede();
-    expect(signals[1]?.aborted).toBe(true);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
     live.close();
+  });
+
+  it("shows a step's status that arrives after a quicker step started", async () => {
+    const first = deferred<string | undefined>();
+    const second = deferred<string | undefined>();
+    const answers = [first, second];
+    const t = target({ opening: async () => undefined, step: () => answers.shift()!.promise });
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    live.step("Reading ledger.json");
+    first.resolve("Listing files");
+    await flush();
+    // The newer step has no status yet, so the line moves on with the earlier one.
+    expect(t.shown).toEqual(["Listing files"]);
+    second.resolve("Reading the ledger");
+    await flush();
+    expect(t.shown).toEqual(["Listing files", "Reading the ledger"]);
+    live.close();
+  });
+
+  it("never shows an earlier step's status over a newer one", async () => {
+    const first = deferred<string | undefined>();
+    const second = deferred<string | undefined>();
+    const answers = [first, second];
+    const t = target({ opening: async () => undefined, step: () => answers.shift()!.promise });
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    live.step("Reading ledger.json");
+    second.resolve("Reading the ledger");
+    await flush();
+    first.resolve("Listing files");
+    await flush();
+    expect(t.shown).toEqual(["Reading the ledger"]);
+    live.close();
+  });
+
+  it("lets later statuses through when one write never finishes", async () => {
+    // Each write's time limit, ended by the test instead of the clock.
+    const limits: AbortController[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const limit = new AbortController();
+      limits.push(limit);
+      return limit.signal;
+    });
+    try {
+      const stuck = deferred();
+      const steps = ["Listing files", "Reading the ledger"];
+      const shown: string[] = [];
+      const live = startStatusLines({
+        writer: Promise.resolve({
+          opening: async () => undefined,
+          step: async () => steps.shift(),
+        }),
+        request: "",
+        held: () => false,
+        show: async (text) => {
+          if (text === "Listing files") await stuck.promise;
+          shown.push(text);
+        },
+      });
+      live.step("Running: ls");
+      await flush();
+      live.step("Reading ledger.json");
+      await flush();
+      expect(shown).toEqual([]);
+      limits[0]!.abort(new DOMException("The operation timed out.", "TimeoutError"));
+      await flush();
+      expect(shown).toEqual(["Reading the ledger"]);
+      live.close();
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("stops every pending request when the run aborts", async () => {

@@ -146,4 +146,33 @@ describe("createStatusLineWriter", () => {
     expect(models.filter((model) => model === "small-a").length).toBe(1);
     warn.mockRestore();
   });
+
+  it("starts a new key lookup after one outlasted the time limit", async () => {
+    // Each request's time limit, ended by the test instead of the clock.
+    const limits: AbortController[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const limit = new AbortController();
+      limits.push(limit);
+      return limit.signal;
+    });
+    try {
+      vi.mocked(resolveModelKey).mockImplementationOnce(() => new Promise(() => {}));
+      const { deps: d, models } = deps(() => "Checking availability");
+      const writer = await createStatusLineWriter(d, scope, []);
+      const signal = new AbortController().signal;
+      const first = writer?.step("Is it in stock?", "Running: curl …", signal);
+      await vi.waitFor(() => expect(limits).toHaveLength(1));
+      limits[0]!.abort(new DOMException("The operation timed out.", "TimeoutError"));
+      // The stuck primary is passed over for the fallback.
+      expect(await first).toBe("Checking availability");
+      expect(models).toEqual(["small-b"]);
+      // The next status asks the primary again instead of waiting on the stuck lookup.
+      expect(await writer?.step("Is it in stock?", "Running: curl …", signal)).toBe(
+        "Checking availability",
+      );
+      expect(models).toEqual(["small-b", "small-a"]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
 });

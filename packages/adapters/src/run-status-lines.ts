@@ -1,4 +1,9 @@
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
+
+/** How long showing one status may take before later ones go ahead without it. */
+const SHOW_TIMEOUT_MS = 5_000;
+
 import type { StatusLineWriter } from "./status-lines.js";
 
 export type LiveStatusLines = {
@@ -54,19 +59,33 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   let writerKnown = false;
   // The last status shown, and the step it belongs to.
   let lastShown: { text: string; generation: number } | undefined;
-  // The request for whatever the line shows now; a newer step or status cancels it.
-  let current = new AbortController();
-  const replaceCurrent = () => {
-    current.abort();
-    current = new AbortController();
-    return AbortSignal.any([abort.signal, current.signal]);
+  const scoped = (controller: AbortController) =>
+    AbortSignal.any([abort.signal, controller.signal]);
+  const opening = new AbortController();
+  // Step requests still running. Steps often finish faster than the status model answers, so
+  // the one before the newest keeps going: its status still says what the bot is doing, close
+  // enough, rather than leaving the line as it was. Older ones are cancelled.
+  const steps: AbortController[] = [];
+  const cancelSteps = (keep: number) => {
+    while (steps.length > keep) steps.shift()?.abort();
   };
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
-  const show = (text: string, mine: number) => {
+  /**
+   * Shows a status for step `mine`. `latestOnly` text shows only while its step is the newest;
+   * a status model's answer shows while nothing newer was shown or took the line, and `again`
+   * shows the status already on the line once more.
+   */
+  const show = (text: string, mine: number, { latestOnly = false, again = false } = {}) => {
     showing = showing.then(async () => {
-      if (closed || mine !== generation || target.held()) return;
-      await bestEffort("show status line", target.show(text));
+      if (closed || target.held() || mine <= supersededAt) return;
+      const shownAt = lastShown?.generation ?? 0;
+      if (latestOnly ? mine !== generation : again ? mine < shownAt : mine <= shownAt) return;
+      // A stuck write must not hold back every later status.
+      await bestEffort(
+        "show status line",
+        withAbort(target.show(text), deadlineSignal(SHOW_TIMEOUT_MS)),
+      );
       lastShown = { text, generation: mine };
     });
     return showing;
@@ -86,17 +105,14 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   if (target.signal?.aborted) close();
   else target.signal?.addEventListener("abort", onRunAbort, { once: true });
 
-  const opening = ++generation;
+  const openingGeneration = ++generation;
   void bestEffort(
     "write opening status",
     writer.then(async (writer) => {
       // A step or reply that came first owns the line: the opening is never requested.
-      if (!writer || closed || opening !== generation || target.opening === false) return;
-      const line = await writer.opening(
-        target.request,
-        AbortSignal.any([abort.signal, current.signal]),
-      );
-      if (line) await show(line, opening);
+      if (!writer || closed || openingGeneration !== generation || target.opening === false) return;
+      const line = await writer.opening(target.request, scoped(opening));
+      if (line) await show(line, openingGeneration, { latestOnly: true });
     }),
   );
 
@@ -104,23 +120,30 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     active: () => !closed && (hasWriter || !writerKnown),
     step(text) {
       const mine = ++generation;
-      const signal = replaceCurrent();
+      // The opening says nothing has happened yet; once a step starts, it is out of date.
+      opening.abort();
+      const controller = new AbortController();
+      steps.push(controller);
+      cancelSteps(2);
       void bestEffort(
         "write step status",
-        writer.then((writer) => writer?.step(target.request, text, signal)),
-      ).then((line) => {
-        return show(line || text, mine);
-      });
+        writer.then((writer) => writer?.step(target.request, text, scoped(controller))),
+      ).then((line) =>
+        // Without an answer, the step's own line shows, but only while it is the newest step.
+        line ? show(line, mine) : show(text, mine, { latestOnly: true }),
+      );
     },
     supersede() {
       // Every streamed text delta supersedes; only the first after a status has work to do.
       if (supersededAt === generation) return;
       generation += 1;
       supersededAt = generation;
-      replaceCurrent();
+      opening.abort();
+      cancelSteps(0);
     },
     restore() {
-      if (lastShown && lastShown.generation === generation) void show(lastShown.text, generation);
+      if (lastShown && lastShown.generation > supersededAt)
+        void show(lastShown.text, lastShown.generation, { again: true });
     },
     close,
   };

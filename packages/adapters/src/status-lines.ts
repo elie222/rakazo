@@ -112,7 +112,13 @@ export async function createStatusLineWriter(
     ): Promise<string> => {
       // The time limit covers resolving the model's key as well as the call.
       const deadline = deadlineSignal(STATUS_LINE_TIMEOUT_MS, signal);
-      const key = await withAbort(keyFor(choice), deadline);
+      const lookup = keyFor(choice);
+      const key = await withAbort(lookup, deadline).catch((error: unknown) => {
+        // A lookup that outlasted the time limit is not kept either: the next status starts a
+        // new one rather than waiting on it again.
+        if (!signal.aborted && keys.get(choice) === lookup) keys.delete(choice);
+        throw error;
+      });
       // Built only now, so it is redacted against the credentials just resolved too.
       const prompt = buildPrompt();
       const startedAt = Date.now();
