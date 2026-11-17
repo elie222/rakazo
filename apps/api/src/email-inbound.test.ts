@@ -609,11 +609,15 @@ describe("inbound email route", () => {
     expect(storeAttachment.mock.calls[0]?.[0].clientNonce).toMatch(/^email-attachment:bot-1:.+:0$/);
     const sent = sendUserMessage.mock.calls[0]?.[0] as unknown as {
       prompt: string;
-      blocks: Array<{ kind: string }>;
+      blocks: Array<{ kind: string; name?: string; mimeType?: string }>;
     };
-    expect(
-      sent.blocks.filter((block) => block.kind === "file" || block.kind === "image"),
-    ).toHaveLength(4);
+    expect(sent.blocks.filter((block) => block.kind === "file")).toEqual([
+      expect.objectContaining({ name: "report.pdf", mimeType: "application/pdf" }),
+      expect.objectContaining({ name: "b.png", mimeType: "image/png" }),
+      expect.objectContaining({ name: "c.png", mimeType: "image/png" }),
+      expect.objectContaining({ name: "d.png", mimeType: "image/png" }),
+    ]);
+    expect(sent.blocks.some((block) => block.kind === "image")).toBe(false);
     expect(sent.prompt).toContain("[file: setup.exe (unavailable)]");
     expect(sent.prompt).not.toContain("[file: d.png (unavailable)]");
   });

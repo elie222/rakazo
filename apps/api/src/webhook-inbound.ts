@@ -292,7 +292,7 @@ export async function deliverWebhookEvent(
     blocks: [
       { kind: "delivery" },
       { kind: "text", text: promptText },
-      ...(input.artifacts ?? []).map(messageBlockForArtifact),
+      ...(input.artifacts ?? []).map((artifact) => inboundArtifactBlock(artifact, input.source)),
     ],
     prompt: promptText,
     trigger: "webhook",
@@ -315,4 +315,24 @@ export async function deliverWebhookEvent(
   }
 
   return { ok: true as const, messageId: sent.messageId, runId: sent.runId, seq: sent.seq };
+}
+
+/**
+ * Mail images stay files the bot opens on request. A signature image sent as a model image
+ * is replayed on later turns, and one rejection then fails every run in the thread.
+ */
+function inboundArtifactBlock(
+  artifact: { id: string; name: string; mimeType: string; size: number },
+  source: InboundSource,
+): MessageBlock {
+  if (source === "email") {
+    return {
+      kind: "file",
+      artifactId: artifact.id,
+      mimeType: artifact.mimeType,
+      name: artifact.name,
+      size: artifact.size,
+    };
+  }
+  return messageBlockForArtifact(artifact);
 }

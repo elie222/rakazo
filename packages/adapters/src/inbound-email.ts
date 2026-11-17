@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { isAttachmentImageMimeType } from "@rakazo/contracts";
+import { inferAttachmentMimeType } from "@rakazo/core";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "./providers/web/keyless-http/keyless-http-web.js";
 import { sliceWellFormed } from "./utf8.js";
@@ -169,8 +171,9 @@ export async function readInboundEmail(
       : "";
 
   const attachments = email.attachments
-    // Inline parts are images an HTML body shows, such as signature logos.
-    .filter((attachment) => !attachment.related)
+    .filter((attachment) =>
+      keptInboundAttachment(attachment, contentIdsReferencedByHtml(email.html)),
+    )
     .map((attachment) => ({
       name: attachment.filename?.trim() || "attachment",
       mimeType: attachment.mimeType,
@@ -247,4 +250,54 @@ function addresses(list: Address[] | undefined): string[] {
     .flatMap((entry) => (entry.group ? entry.group : [entry]))
     .map((mailbox) => mailbox.address.trim().toLowerCase())
     .filter(Boolean);
+}
+
+type InboundAttachmentPart = {
+  filename: string | null;
+  mimeType: string;
+  disposition: string | null;
+  related?: boolean;
+  contentId?: string;
+};
+
+/**
+ * Inline and HTML-referenced images are signature art. A PDF a mail client marks inline stays.
+ */
+function keptInboundAttachment(
+  attachment: InboundAttachmentPart,
+  referencedIds: Set<string>,
+): boolean {
+  if (attachment.related) return false;
+  if (!isInboundImagePart(attachment)) return true;
+  if (attachment.disposition?.trim().toLowerCase() === "inline") return false;
+  const contentId = normalizeContentId(attachment.contentId);
+  return !contentId || !referencedIds.has(contentId);
+}
+
+function isInboundImagePart(
+  attachment: Pick<InboundAttachmentPart, "filename" | "mimeType">,
+): boolean {
+  const reported = attachment.mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (reported.startsWith("image/")) return true;
+  const inferred = inferAttachmentMimeType(attachment.filename ?? "", reported || undefined);
+  return inferred !== null && isAttachmentImageMimeType(inferred);
+}
+
+function contentIdsReferencedByHtml(html: string | undefined): Set<string> {
+  const ids = new Set<string>();
+  if (!html) return ids;
+  for (const match of html.matchAll(/cid:([^"'\s>]+)/gi)) {
+    const token = match[1] ?? "";
+    ids.add(normalizeContentId(token));
+    try {
+      ids.add(normalizeContentId(decodeURIComponent(token)));
+    } catch {
+      // A cid that is not percent-encoded still matches the raw token above.
+    }
+  }
+  return ids;
+}
+
+function normalizeContentId(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^<|>$/g, "").toLowerCase();
 }

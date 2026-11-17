@@ -313,6 +313,16 @@ export async function withRecentTurnImages(
     const blocks = blocksByMessageId.get(entry.id);
     if (!blocks?.some((block) => block.kind === "image")) continue;
     turns += 1;
+    if (isStoredEmailDelivery(blocks)) {
+      const outcomes = blocks
+        .filter(
+          (block): block is Extract<MessageBlock, { kind: "image" }> => block.kind === "image",
+        )
+        .map((block) => ({ name: block.name, unavailable: true }));
+      const content = markUnavailableHistoryImages(entry.content, blocks, outcomes);
+      if (content !== entry.content) hydrated.set(entry.id, { content });
+      continue;
+    }
     if (remainingImages <= 0 || remainingBytes <= 0) break;
     const loaded = await loadTurnImagesWithinBudget(deps, blocks, context, {
       remainingBytes,
@@ -451,4 +461,20 @@ export async function withLatestStepScreenshot(
     return history.map((item, at) => (at === index ? { ...item, images: [image] } : item));
   }
   return history;
+}
+
+/**
+ * Email deliveries already saved as image blocks. New mail stores those parts as files; leaving
+ * the old blocks here would keep sending a rejected signature image on every later run.
+ */
+function isStoredEmailDelivery(blocks: MessageBlock[]): boolean {
+  if (!blocks.some((block) => block.kind === "delivery")) return false;
+  return blocks.some(
+    (block) =>
+      block.kind === "text" &&
+      (block.text.includes("\nInbound email:\n") ||
+        block.text.includes("[Email from your owner]") ||
+        block.text.includes("\n[Email]\n\nUntrusted delivery data") ||
+        block.text.startsWith("[Email]\n\nUntrusted delivery data")),
+  );
 }

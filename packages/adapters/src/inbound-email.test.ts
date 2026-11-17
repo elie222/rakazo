@@ -432,4 +432,60 @@ describe("readInboundEmail", () => {
     expect(email.attachments[0]).toMatchObject({ name: "report.csv", mimeType: "text/csv" });
     expect(new TextDecoder().decode(email.attachments[0]?.bytes)).toBe("a,b\n1,2\n");
   });
+
+  it("drops signature images and keeps an inline document and a real photo", async () => {
+    const boundary = "b-inline";
+    const png = Buffer.from("not-a-real-png").toString("base64");
+    const pdf = Buffer.from("%PDF-1.4").toString("base64");
+    const raw = message(
+      [
+        ...plain.filter((line) => !line.startsWith("Content-Type")),
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ],
+      [
+        `--${boundary}`,
+        "Content-Type: text/html; charset=utf-8",
+        "",
+        '<p>Hello</p><img src="cid:logo%40example.test"><img src="cid:image001.png@example.test">',
+        `--${boundary}`,
+        "Content-Type: image/png",
+        'Content-Disposition: inline; filename="logo.png"',
+        "Content-ID: <logo@example.test>",
+        "Content-Transfer-Encoding: base64",
+        "",
+        png,
+        `--${boundary}`,
+        "Content-Type: application/octet-stream",
+        'Content-Disposition: attachment; filename="image001.png"',
+        "Content-ID: <image001.png@example.test>",
+        "Content-Transfer-Encoding: base64",
+        "",
+        png,
+        `--${boundary}`,
+        "Content-Type: image/gif",
+        'Content-Disposition: inline; filename="banner.gif"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        png,
+        `--${boundary}`,
+        "Content-Type: application/pdf",
+        'Content-Disposition: inline; filename="invoice.pdf"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        pdf,
+        `--${boundary}`,
+        "Content-Type: image/jpeg",
+        'Content-Disposition: attachment; filename="photo.jpg"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        png,
+        `--${boundary}--`,
+        "",
+      ].join("\r\n"),
+    );
+
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.attachments.map((file) => file.name)).toEqual(["invoice.pdf", "photo.jpg"]);
+  });
 });
