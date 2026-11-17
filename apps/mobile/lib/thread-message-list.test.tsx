@@ -124,6 +124,7 @@ it("pads message content and leaves the live list frame on the screen edge", asy
   const content = flatten(native.flat?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
   expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingBottom: 80 });
+  expect(native.flat?.keyboardShouldPersistTaps).toBe("handled");
   await act(async () => root.unmount());
 });
 
@@ -136,6 +137,7 @@ it("pads a pinned page the same way and keeps the jump button on the column edge
   const content = flatten(native.scroll?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
   expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingTop: 80 });
+  expect(native.scroll?.keyboardShouldPersistTaps).toBe("handled");
   expect(container.querySelector("[data-inset-end]")?.getAttribute("data-inset-end")).toBe("28");
   await act(async () => root.unmount());
 });

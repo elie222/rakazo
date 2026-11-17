@@ -74,3 +74,24 @@ export function resolveAskChoice(
   const lower = trimmed.toLowerCase();
   return actions.find((action) => action.label.trim().toLowerCase() === lower);
 }
+
+export function canTypeCustomAskAnswer(input: {
+  approval: boolean;
+  hasInstructionUpdate: boolean;
+  hasActions: boolean;
+  answered: boolean;
+  canAnswer: boolean;
+}): boolean {
+  return (
+    !input.approval &&
+    !input.hasInstructionUpdate &&
+    input.hasActions &&
+    !input.answered &&
+    input.canAnswer
+  );
+}
+
+export function normalizeCustomAskAnswer(answer: string): string | null {
+  const trimmed = answer.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}

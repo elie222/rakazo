@@ -4,9 +4,11 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  canTypeCustomAskAnswer,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
+  normalizeCustomAskAnswer,
   receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
@@ -167,6 +169,14 @@ function PromptAskCard({
     : askActions;
   const optionQuestion =
     !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
+  const canTypeAnswer = canTypeCustomAskAnswer({
+    approval: Boolean(approvalActions),
+    hasInstructionUpdate: Boolean(block.instructionUpdate),
+    hasActions: Boolean(askActions?.length),
+    answered,
+    canAnswer,
+  });
+  const normalizedCustomAnswer = normalizeCustomAskAnswer(customAnswer);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // Typed replies already have their own message; the question must not repeat them.
@@ -179,8 +189,8 @@ function PromptAskCard({
       ? displayedAnswer
       : undefined;
   async function submitAnswer(value: string) {
-    if (submitting || !value.trim()) return;
-    const submitValue = value.trim();
+    const submitValue = normalizeCustomAskAnswer(value);
+    if (submitting || !submitValue) return;
     setPendingAction(submitValue);
     setError(null);
     try {
@@ -318,7 +328,7 @@ function PromptAskCard({
               </OptionRow>
             ))}
           </div>
-          {canAnswer && !answered ? (
+          {canTypeAnswer ? (
             typingAnswer ? (
               <form
                 className="mt-3 space-y-2"
@@ -335,7 +345,7 @@ function PromptAskCard({
                   onChange={(event) => setCustomAnswer(event.target.value)}
                 />
                 <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={submitting || !customAnswer.trim()}>
+                  <Button type="submit" disabled={submitting || !normalizedCustomAnswer}>
                     {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
                   </Button>
                   <Button

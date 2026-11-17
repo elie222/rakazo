@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   answerableAskMessageIds,
+  canTypeCustomAskAnswer,
   dismissableAskMessageIds,
+  normalizeCustomAskAnswer,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "./answerable-ask.js";
@@ -161,4 +163,68 @@ it("keeps another member's waiting approval disabled", () => {
   };
   expect(answerableAskMessageIds(snapshot, "owner")).toEqual(new Set(["approval"]));
   expect(answerableAskMessageIds(snapshot, "other")).toEqual(new Set());
+});
+
+describe("canTypeCustomAskAnswer and normalizeCustomAskAnswer", () => {
+  it("enables typing only on active non-approval option cards", () => {
+    expect(
+      canTypeCustomAskAnswer({
+        approval: false,
+        hasInstructionUpdate: false,
+        hasActions: true,
+        answered: false,
+        canAnswer: true,
+      }),
+    ).toBe(true);
+    expect(
+      canTypeCustomAskAnswer({
+        approval: true,
+        hasInstructionUpdate: false,
+        hasActions: true,
+        answered: false,
+        canAnswer: true,
+      }),
+    ).toBe(false);
+    expect(
+      canTypeCustomAskAnswer({
+        approval: false,
+        hasInstructionUpdate: true,
+        hasActions: true,
+        answered: false,
+        canAnswer: true,
+      }),
+    ).toBe(false);
+    expect(
+      canTypeCustomAskAnswer({
+        approval: false,
+        hasInstructionUpdate: false,
+        hasActions: false,
+        answered: false,
+        canAnswer: true,
+      }),
+    ).toBe(false);
+    expect(
+      canTypeCustomAskAnswer({
+        approval: false,
+        hasInstructionUpdate: false,
+        hasActions: true,
+        answered: true,
+        canAnswer: true,
+      }),
+    ).toBe(false);
+    expect(
+      canTypeCustomAskAnswer({
+        approval: false,
+        hasInstructionUpdate: false,
+        hasActions: true,
+        answered: false,
+        canAnswer: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("trims non-empty custom answers and rejects whitespace-only text", () => {
+    expect(normalizeCustomAskAnswer("  Toronto  ")).toBe("Toronto");
+    expect(normalizeCustomAskAnswer("   ")).toBeNull();
+  });
 });

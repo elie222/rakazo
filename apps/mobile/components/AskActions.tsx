@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
-import { resolveAskChoice } from "@rakazo/core";
+import { canTypeCustomAskAnswer, normalizeCustomAskAnswer, resolveAskChoice } from "@rakazo/core";
 import { useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, TextInput, View } from "react-native";
@@ -40,8 +40,14 @@ export function AskActions({
   const [typingAnswer, setTypingAnswer] = useState(false);
   const [customAnswer, setCustomAnswer] = useState("");
   const submitting = pendingAction !== null;
-  const canTypeAnswer = !approval && instructions === undefined && !disabled;
-  const trimmedCustomAnswer = customAnswer.trim();
+  const canTypeAnswer = canTypeCustomAskAnswer({
+    approval,
+    hasInstructionUpdate: instructions !== undefined,
+    hasActions: actions.length > 0,
+    answered: Boolean(disabled),
+    canAnswer: !disabled,
+  });
+  const trimmedCustomAnswer = normalizeCustomAskAnswer(customAnswer);
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -167,7 +173,9 @@ export function AskActions({
                 disabled={!trimmedCustomAnswer}
                 busy={submitting}
                 fill={false}
-                onPress={() => void submit(trimmedCustomAnswer)}
+                onPress={() => {
+                  if (trimmedCustomAnswer) void submit(trimmedCustomAnswer);
+                }}
               />
               <NativeActionButton
                 label={t`Cancel`}

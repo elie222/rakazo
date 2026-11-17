@@ -198,6 +198,7 @@ async function startReactionTurn(
         answeredByUserId: actor.userId,
         answer: input.reaction === "👍" ? "yes" : "no",
         messageId: parent.id,
+        answerMessageId: message.id,
       });
       if (answered) {
         await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });

@@ -12,6 +12,7 @@ import {
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
   normalizeOneTimeCode,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -249,6 +250,11 @@ async function commitAnswerRunInput(
   // A secret request can be turned down; every other card needs an answer.
   if (dismissed && (!secretAsk || input.answer)) return null;
   if (customChoiceAnswer !== undefined && !customChoiceAnswer) return null;
+  if (
+    customChoiceAnswer !== undefined &&
+    customChoiceAnswer.length > THREAD_MESSAGE_TEXT_MAX_LENGTH
+  )
+    throw new AnswerTooLongError();
   const secretRequest = {
     runId: input.runId,
     spaceId: input.spaceId,

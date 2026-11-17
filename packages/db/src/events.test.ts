@@ -3,6 +3,7 @@ import {
   BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
   STEP_SCREENSHOT_MIME_TYPES,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import {
   TAKEOVER_COMPUTER_DONE_STATE,
@@ -2141,6 +2142,51 @@ describe("answerRunInput", () => {
     expect(tx.run.updateMany).not.toHaveBeenCalled();
     expect(tx.message.create).not.toHaveBeenCalled();
     expect(tx.message.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects custom choice answers longer than the thread message text limit", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Which city?",
+              status: "pending",
+              actions: [
+                { id: "choice-1", label: "Berlin" },
+                { id: "choice-2", label: "Seoul" },
+              ],
+            },
+          ],
+        }),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-2", userId: "user-1" }),
+        updateMany: vi.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        messageId: "message-1",
+        answeredByUserId: "user-1",
+        answer: "x".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH + 1),
+      }),
+    ).rejects.toThrow(AnswerTooLongError);
+
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.message.create).not.toHaveBeenCalled();
   });
 
   it("treats a typed choice label as selecting that option", async () => {

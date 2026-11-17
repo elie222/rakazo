@@ -641,6 +641,50 @@ describe("reaction turns", () => {
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
 
+  it("links a reaction answer on an option card to the reaction message without creating a duplicate text message", async () => {
+    const { tx, react } = fixture({
+      reaction: "👍",
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [
+        {
+          id: "run-waiting",
+          taskId: "task-1",
+          status: "waiting_input",
+          userId: "user-1",
+        },
+      ],
+      askBlocks: [
+        {
+          kind: "ask",
+          text: "What should I do next?",
+          status: "pending",
+          actions: [
+            { id: "send", label: "Send" },
+            { id: "edit", label: "Edit" },
+          ],
+        },
+      ],
+    });
+
+    await expect(react()).resolves.toMatchObject({ runIds: ["run-waiting"] });
+    expect(tx.message.create).toHaveBeenCalledTimes(1);
+    expect(tx.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "parent" },
+        data: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({
+              kind: "ask",
+              status: "answered",
+              answer: "yes",
+              answerMessageId: "reaction-1",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it.each([
     ["a recent reaction turn", { recentReaction: true }],
     ["a departed group bot", { groupMembers: ["bot-2", "bot-3"] }],

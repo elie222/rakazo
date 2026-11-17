@@ -102,6 +102,7 @@ export function ThreadMessageList({
               paddingBottom: bottomInset + 12 + 44 + 16,
               ...columnPadding,
             }}
+            keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
@@ -131,6 +132,7 @@ export function ThreadMessageList({
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={styles.list}
+            keyboardShouldPersistTaps="handled"
             // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
