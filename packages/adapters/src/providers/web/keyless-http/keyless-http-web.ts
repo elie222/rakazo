@@ -8,9 +8,14 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
-import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "../../../web-limits.js";
-import type { ResolveHostname } from "../../../web-ssrf.js";
-import { fetchSafeWebText } from "../../../web-ssrf.js";
+import {
+  clampMaxChars,
+  clampMaxResults,
+  clampOffset,
+  pageWindow,
+} from "../../../web/web-limits.js";
+import type { ResolveHostname } from "../../../web/web-ssrf.js";
+import { fetchSafeWebText } from "../../../web/web-ssrf.js";
 
 export {
   clampMaxChars,
@@ -20,7 +25,7 @@ export {
   MAX_WEB_FETCH_MAX_CHARS,
   MAX_WEB_SEARCH_RESULTS,
   MIN_WEB_FETCH_MAX_CHARS,
-} from "../../../web-limits.js";
+} from "../../../web/web-limits.js";
 
 const DEFAULT_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/";
 

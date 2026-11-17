@@ -12,6 +12,7 @@ const routine: Routine = {
   timezone: "Europe/Berlin",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,

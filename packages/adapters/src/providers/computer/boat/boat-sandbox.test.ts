@@ -19,16 +19,16 @@ import {
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computerSnapshotName } from "../../../computer-base-snapshot.js";
-import { ComputerBrowserProvider } from "../../../computer-browser.js";
-import { PREPARE_LINUX_DESKTOP } from "../../../linux-desktop.js";
-import { installPageBrowserCommand } from "../../../page-browser-install.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
+import { computerSnapshotName } from "../../../computers/computer-base-snapshot.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
+import { PREPARE_LINUX_DESKTOP } from "../../../computers/screens/linux-desktop.js";
+import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
 import {
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandbox-test-support.js";
+} from "../../../sandboxes/sandbox-test-support.js";
 import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
 import {

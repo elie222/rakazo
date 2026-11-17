@@ -27,7 +27,7 @@ export const exclude = [
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
-  "{apps/desktop/src/main/system,apps/web/src/lib,apps/mobile/lib/platform}/monitoring.ts",
+  "{apps/desktop/src/main/system,apps/web/src/lib/platform,apps/mobile/lib/platform}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
 ];
 
@@ -40,7 +40,7 @@ const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "lo
 // the pull request that adds it.
 function computerProviderIds() {
   const source = readFileSync(
-    new URL("../../../packages/adapters/src/computer-providers.ts", import.meta.url),
+    new URL("../../../packages/adapters/src/computers/computer-providers.ts", import.meta.url),
     "utf8",
   );
   const ids = topLevelKeys(source, /computerProviders[^=]*=\s*\{/);

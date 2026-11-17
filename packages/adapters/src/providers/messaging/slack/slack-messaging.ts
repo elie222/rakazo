@@ -1,13 +1,13 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
-import { boundInboundMarkdown } from "../../../chat-sdk-surface.js";
-import { lazyChatAdapter } from "../../../lazy-chat-adapter.js";
+import { boundInboundMarkdown } from "../../../messaging/chat-sdk-surface.js";
+import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
 import {
   asRecord,
   defineMessagingPlatform,
   MESSAGING_SEND_TIMEOUT_MS,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 export const slackMessaging = defineMessagingPlatform({
   env: {

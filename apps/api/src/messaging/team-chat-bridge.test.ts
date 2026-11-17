@@ -18,7 +18,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient, SendUserMessageInput, SendUserMessageResult } from "@rakazo/db";
 import { SendClaimLostError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { materializeCurrentTurnFiles } from "../../../../packages/adapters/src/thread-artifacts.js";
+import { materializeCurrentTurnFiles } from "../../../../packages/adapters/src/storage/thread-artifacts.js";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";

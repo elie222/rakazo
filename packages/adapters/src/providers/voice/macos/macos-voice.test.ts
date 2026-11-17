@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_SPEAK_CHARS } from "../../../voice-http.js";
+import { MAX_SPEAK_CHARS } from "../../../voice/voice-http.js";
 import type { SayRunner } from "./macos-voice.js";
 import { MacOsVoiceProvider, parseSayVoices } from "./macos-voice.js";
 
