@@ -17,12 +17,6 @@ import {
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
 
-/** Fixtures save as the deployment owner, who may use local speech servers. */
-const _serializeAsOwner = (
-  input: Parameters<typeof adapters.serializeOpenAiCompatibleVoiceSecret>[0],
-  previous?: string,
-) => adapters.serializeOpenAiCompatibleVoiceSecret(input, previous, { allowPrivate: true });
-
 const xaiModelCredential = {
   id: "model-cred-1",
   userId: actor.userId,

@@ -137,55 +137,6 @@ const serializeAsOwner = (
   previous?: string,
 ) => adapters.serializeOpenAiCompatibleVoiceSecret(input, previous, { allowPrivate: true });
 
-const xaiModelCredential = {
-  id: "model-cred-1",
-  userId: actor.userId,
-  provider: "xai",
-  label: "xAI",
-  secretId: "model-secret",
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-};
-
-/** The account's model connections and stored secrets, keyed by secret id. */
-function _modelConnectionDeps(
-  plaintexts: Record<string, string>,
-  prisma: Record<string, unknown> = {},
-  modelCredentials = [xaiModelCredential],
-) {
-  type Where = { id?: string; provider?: string | { in: string[] } };
-  const matches = (row: typeof xaiModelCredential, where: Where = {}) =>
-    (!where.id || row.id === where.id) &&
-    (!where.provider ||
-      (typeof where.provider === "string"
-        ? row.provider === where.provider
-        : where.provider.in.includes(row.provider)));
-  return {
-    prisma: {
-      userModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
-      userModelCredential: {
-        findMany: vi.fn(async ({ where }: { where?: Where } = {}) =>
-          modelCredentials.filter((row) => matches(row, where)),
-        ),
-        findFirst: vi.fn(async ({ where }: { where?: Where } = {}) => {
-          const row = modelCredentials.find((credential) => matches(credential, where));
-          return row ? { ...row, userPreferences: [] } : null;
-        }),
-      },
-      secret: {
-        findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
-          where.id in plaintexts ? { id: where.id, ciphertext: `cipher:${where.id}` } : null,
-        ),
-      },
-      ...prisma,
-    },
-    secrets: {
-      load: vi.fn((ciphertext: string) => plaintexts[ciphertext.replace(/^cipher:/, "")]),
-      put: vi.fn().mockResolvedValue({ id: "voice-secret", ciphertext: "cipher:voice-secret" }),
-    },
-  };
-}
-
 function makeDisconnectDeps(
   overrides: {
     existing?: Array<{ id: string; secretId: string; userId: string; provider: string }>;
