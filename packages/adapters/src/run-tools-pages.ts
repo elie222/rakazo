@@ -5,7 +5,7 @@ import { isUniqueViolation } from "@rakazo/db";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "./approval-ask.js";
 import type { RunContext } from "./run-context.js";
-import { neverAsks } from "./run-context.js";
+import { markReadOutsideContent, neverAsks } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -221,7 +221,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   if (page && !hasSource && !hasEdits && !title) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
-    ctx.state.tainted = true;
+    await markReadOutsideContent(ctx);
     return {
       pageId: page.id,
       version: page.currentVersion,

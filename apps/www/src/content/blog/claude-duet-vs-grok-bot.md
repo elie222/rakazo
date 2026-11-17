@@ -1,11 +1,12 @@
 ---
 title: "Claude Duet vs Grok Bot, and an open source alternative"
+ogTitle: "Claude Duet vs Grok Bot"
 description: "Anthropic released Claude Duet on October 21, 2026. How it compares with xAI's Grok Bot, and with Rakazo, the open source option you run yourself."
 published: "2026-10-24"
 updated: "2026-10-24"
 author: "Elie Steinbock"
 category: "comparisons"
-tldr: "Claude Duet is one proactive agent in one thread: it briefs you each morning, watches your inbox and calendar, and asks before it sends, pays, signs, or deletes. Grok Bot is a set of named bots with routines on a shared cloud computer. Both are hosted and pick the model for you. Rakazo is the open source version you run, with the model you choose, including your Claude subscription."
+tldr: "Claude Duet is one proactive agent in one thread: it briefs you each morning, watches your inbox and calendar, and asks before it sends, pays, signs, or deletes. Grok Bot is a set of named bots with routines on a shared cloud computer. Both are hosted and pick the model for you. Rakazo is the open source version you run, with the model you choose, including Claude models through an Anthropic API key."
 sources:
   - label: "Anthropic, Introducing Claude Duet (October 21, 2026)"
     href: "https://claude.com/resources/articles/claude-duet"
@@ -69,7 +70,7 @@ comparison:
       cells:
         - "Claude Opus 5.5. No choice."
         - "Included. No own provider in the docs."
-        - "Your choice per bot, including Claude Pro/Max"
+        - "Your choice per bot, including Claude through an API key"
     - topic: "Price"
       cells:
         - "Pro at $20 a month, Max from $100"
@@ -117,7 +118,7 @@ Rakazo is the open source version of this shape. It is Apache-2.0, and it is in 
 
 Like Grok Bot, it is just chat once it is running. You create named bots and manage each one from its conversation. Each bot keeps memory, routines, and history. Routines are readable Markdown and can run on a schedule, so a morning brief is a routine you write, not a fixed feature. A bot can pause for approval at a boundary you set, and actions are recorded in an audit log.
 
-The model is yours. You can sign in with Claude Pro or Max, ChatGPT Plus or Pro, or SuperGrok, or bring a key for OpenAI, Anthropic, Google, OpenRouter, or a local server such as Ollama. Each bot can use a different model. So if you already pay for Claude, Rakazo can use that subscription on a computer you run.
+The model is yours. You can sign in with an eligible ChatGPT plan, bring an API key for OpenAI, Anthropic, Google, or OpenRouter, or connect a local server such as Ollama. Each bot can use a different model. To use a Claude Pro or Max plan, self-host Rakazo from a source checkout for yourself and run it through the official Claude Code CLI, signed in with your account. Otherwise use an Anthropic API key. See [Model subscriptions](/docs/model-subscriptions/) for details.
 
 The computer is yours too. Local Docker is the default. E2B, Daytona, CreateOS, and Boat are optional. Team computers are shared, and private computers are isolated. Connector credentials are encrypted on your server and are never returned by the API.
 

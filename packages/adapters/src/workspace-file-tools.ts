@@ -1,5 +1,5 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
-import { isSandboxProviderOutage } from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
@@ -192,7 +192,7 @@ export async function readFileFromTool(
       maxBytes: MAX_MODEL_FILE_BYTES,
     });
   } catch (error) {
-    if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
+    if (error instanceof SandboxFileTooLargeError) {
       return {
         error: "file is too large for model context",
         path: filePath,

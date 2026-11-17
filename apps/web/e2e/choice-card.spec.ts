@@ -128,6 +128,28 @@ test("renders tappable choice buttons and submits the offered action id", async 
     .toBe("choice-2");
 
   await captureScreenshot(page, testInfo, "choice-card-answered");
+
+  // A custom composer reply closes the options without repeating its answer in the card.
+  await composer.fill("pick from these cities with tappable choices");
+  await page.keyboard.press("Enter");
+  const customQuestion = page.getByTestId("question-card").last();
+  await expect(customQuestion.getByRole("button", { name: "Seoul", exact: true })).toBeEnabled({
+    timeout: 30_000,
+  });
+  await composer.fill("Somewhere else");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("message-user-bubble").filter({ hasText: /^Somewhere else$/ }),
+  ).toBeVisible();
+  await expect(customQuestion).toHaveClass(/opacity-50/);
+  await expect(customQuestion).not.toContainText("Somewhere else");
+  for (const name of ["Berlin", "Seoul", "Toronto", "Lisbon"]) {
+    await expect(customQuestion.getByRole("button", { name, exact: true })).toBeDisabled();
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await customQuestion.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "choice-card-composer-reply-dark");
 });
 
 test("shows the content being decided on above the choices", async ({ page }, testInfo) => {

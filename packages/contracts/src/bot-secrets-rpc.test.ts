@@ -54,11 +54,15 @@ describe("botSecrets rpc contract", () => {
 
   it("has no value field and strips any value or ciphertext from output", () => {
     expect(Object.keys(BotSecretMetadata.shape).sort()).toEqual([
+      "allBots",
+      "alsoOn",
       "auth",
+      "botIds",
       "createdAt",
       "name",
       "note",
       "origin",
+      "policy",
       "preview",
       "title",
       "updatedAt",

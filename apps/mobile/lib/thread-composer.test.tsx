@@ -21,9 +21,6 @@ const input = vi.hoisted(() => ({
   select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: mentionApi.rpc,
   captureApiRequestContext: mentionApi.capture,
@@ -336,6 +333,7 @@ describe("thread composer isolation", () => {
     disk.full = false;
     disk.moveFails = false;
     appState.listeners.clear();
+    dictation.status = "idle";
     mentionApi.generation = 1;
     mentionApi.rpc.mockReset().mockResolvedValue([]);
     mentionApi.capture.mockReset().mockImplementation(async () => ({
@@ -467,7 +465,12 @@ describe("thread composer isolation", () => {
   });
 
   it("puts everyone first in a group and filters by the words of a name", () => {
-    const everyone = { kind: "everyone", id: "everyone", name: "everyone" } as const;
+    const everyone = {
+      kind: "everyone",
+      id: "everyone",
+      name: "everyone",
+      aliases: ["everyone", "all", "所有人"],
+    } as const;
     const members = [
       { kind: "bot", id: "bot-a", name: "Research Bot" },
       { kind: "bot", id: "bot-b", name: "Chef" },
@@ -512,6 +515,27 @@ describe("thread composer isolation", () => {
     expect(onEmptied).not.toHaveBeenCalled();
     type("");
     expect(onEmptied).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps shared text when an earlier typing selection arrives late", () => {
+    type("draft");
+    act(() => composer.current!.insert("shared text"));
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    select(5);
+    expect(field().value).toBe("draftshared text");
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text");
+    type("draft\nshared text!");
+    select(18);
+    expect(composer.current!.snapshot().promptText).toBe("draft\nshared text!");
+  });
+
+  it("appends repeated shares to an empty or settled draft", () => {
+    act(() => composer.current!.insert("first"));
+    select(5);
+    act(() => composer.current!.insert("second"));
+    select(12);
+    expect(composer.current!.snapshot().promptText).toBe("first\nsecond");
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("keeps inserted text when backspacing into a mention afterwards", () => {
@@ -1191,6 +1215,58 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
+  it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {
+    const picker = () => container.querySelector('[data-testid="slash-picker"]');
+    type("Hello @He");
+    press("@{name}");
+    // Mid-message the menu offers skills only, and follows the caret.
+    type("Hello @Helper /sett");
+    expect(picker()).toBeNull();
+    type("Hello @Helper /W");
+    expect(picker()).not.toBeNull();
+    select(5);
+    expect(picker()).toBeNull();
+    type("Hello @Helper ");
+    type("Hello @Helper run /Wri now");
+    select(22);
+    press("Skill {name}");
+    expect(field().value).toBe("Hello @Helper run now");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 18, end: 18 });
+    // One skill per message: another / offers nothing once the draft has one.
+    type("Hello @Helper run now /W");
+    expect(picker()).toBeNull();
+    type("Hello @Helper run now");
+    expect(composer.current!.snapshot()).toMatchObject({
+      promptText: "/Writing\nHello @Helper run now",
+      mentions: [bot],
+      skill,
+    });
+  });
+
+  it("turns a skill picked at the start of a longer draft into the chip, keeping the rest", () => {
+    type("Hello @He");
+    press("@{name}");
+    type("/Wri Hello @Helper ");
+    select(4);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({
+      skill,
+      promptText: "/Writing\nHello @Helper ",
+      mentions: [bot],
+    });
+    expect(field().value).toBe("Hello @Helper ");
+    expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
+  });
+
+  it("takes the chip after a blank line and keeps the text after the caret", () => {
+    type("\n/Wri，总结");
+    select(5);
+    press("Skill {name}");
+    expect(composer.current!.snapshot()).toMatchObject({ skill, promptText: "/Writing\n，总结" });
+    expect(field().value).toBe("，总结");
+  });
+
   it("clears a slash query before routing and uses the call control for an empty draft", () => {
     type("/settings");
     press("Chat Settings");
@@ -1211,6 +1287,28 @@ describe("thread composer isolation", () => {
     type("Remind me to buy milk!");
     act(() => dictation.onWords("to buy milk and eggs"));
     expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
+  });
+
+  function sendButton() {
+    return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  }
+
+  it("keeps Send disabled while a dictation is still recording", () => {
+    dictation.status = "listening";
+    type("Please check");
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+    dictation.status = "listening";
+    render({ attachmentIds: ["file-1"] });
+    const send = sendButton();
+    expect(send.disabled).toBe(true);
+    act(() => send.click());
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {

@@ -17,8 +17,15 @@ type NativeWorkActivities = {
   ): Promise<void>;
   refreshWorkActivity(): Promise<void>;
   endWorkActivity(): Promise<void>;
+  /** Ends the card unless a request newer than this one asked whether it is followed. Missing on
+   * app builds from before it, which also send no request number. */
+  endUnfollowedWorkActivity?(request: number): Promise<void>;
   addListener(
-    name: "onWorkActivityToken" | "onWorkActivityStartToken",
+    name: "onWorkActivityToken",
+    callback: (event: { token: string; request?: number }) => void,
+  ): { remove(): void };
+  addListener(
+    name: "onWorkActivityStartToken",
     callback: (event: { token: string }) => void,
   ): { remove(): void };
 };
@@ -39,14 +46,19 @@ export function startWorkActivities(): () => void {
   const card = activities;
   // The token arrives after the card starts, again whenever iOS changes it, and on each refresh,
   // so the server can say the work the card shows has ended.
-  const tokens = card.addListener("onWorkActivityToken", ({ token }) => {
+  const tokens = card.addListener("onWorkActivityToken", ({ token, request }) => {
     const generation = currentSessionGeneration();
     rpc("notifications/followWorkActivity", { token })
       .then(({ following }) => {
         // A reply for an account signed out since speaks for no card shown now.
         if (generation !== currentSessionGeneration()) return;
-        // Nothing would update it: no bot is at work or this server cannot reach the phone.
-        if (!following) return card.endWorkActivity();
+        // Nothing would update it: no bot is at work or this server cannot reach the phone. The
+        // native side skips an answer a newer request has overtaken, from here or the background.
+        if (following) return;
+        if (request !== undefined && card.endUnfollowedWorkActivity) {
+          return card.endUnfollowedWorkActivity(request);
+        }
+        return card.endWorkActivity();
       })
       // An unanswered request proves nothing; the next open asks again.
       .catch(() => undefined);
@@ -82,7 +94,8 @@ export function startWorkActivities(): () => void {
 
 /**
  * Shows the user's bots at work on the Lock Screen and in the Dynamic Island, starting with the
- * one just sent a message. iOS hides it while the app is open.
+ * one just sent a message. iOS hides it while the app is open. Check server support first:
+ * a card cannot be followed until iOS supplies its token, after it has already appeared.
  */
 export function startWorkActivity(input: {
   title: string;
@@ -91,7 +104,12 @@ export function startWorkActivity(input: {
 }): void {
   if (!activities) return;
   const { botId = null, groupId = null } = input.target as { botId?: string; groupId?: string };
-  void activities
-    .startWorkActivity(input.title, input.spaceId, botId, groupId)
+  const generation = currentSessionGeneration();
+  void rpc("notifications/followWorkActivity", {})
+    .then(({ following }) => {
+      if (!following || generation !== currentSessionGeneration()) return;
+      return activities.startWorkActivity(input.title, input.spaceId, botId, groupId);
+    })
+    // An older server without the preflight, or an unreachable one, cannot confirm support.
     .catch(() => undefined);
 }

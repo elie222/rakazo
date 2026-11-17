@@ -1,6 +1,7 @@
 import dns from "node:dns";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createServer as createNetServer } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_MCP_RESPONSE_BYTES } from "./mcp-response-limit.js";
@@ -12,6 +13,7 @@ import {
   createSafeLookup,
   createSafeRemoteFetch,
   limitRemoteMcpPayload,
+  RemoteRequestSentError,
 } from "./remote-mcp.js";
 import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
 
@@ -931,6 +933,132 @@ describe("createPrivateNetworkFetch", () => {
     } finally {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+describe("a guarded fetch that fails", () => {
+  const coded = (code: string) => Object.assign(new Error(`failed ${code}`), { code });
+  const failingWith = (cause: unknown) => async () => {
+    throw new TypeError("fetch failed", { cause });
+  };
+  const fetchers = [
+    ["public", (cause: unknown) => createSafeRemoteFetch(failingWith(cause), publicResolver)],
+    [
+      "private network",
+      (cause: unknown) =>
+        createPrivateNetworkFetch(failingWith(cause), async () => [
+          { address: "192.168.2.10", family: 4 as const },
+        ]),
+    ],
+  ] as const;
+  const failure = async (
+    create: (cause: unknown) => ReturnType<typeof createSafeRemoteFetch>,
+    cause: unknown,
+  ) => {
+    const fetch = create(cause);
+    try {
+      return await fetch("https://connectors.example.test/mcp").then(
+        () => null,
+        (error: unknown) => error,
+      );
+    } finally {
+      await fetch.close();
+    }
+  };
+
+  // As Node reports them: the call that failed says whether the socket ever connected.
+  const during = (syscall: string, code: string) =>
+    Object.assign(new Error(`${syscall} ${code}`), { code, syscall });
+  // No connection was made, so nothing of the request, its credential included, left.
+  const neverConnected = [
+    during("connect", "ECONNREFUSED"),
+    during("connect", "EHOSTUNREACH"),
+    during("connect", "ENETUNREACH"),
+    during("connect", "ECONNRESET"),
+    during("connect", "ETIMEDOUT"),
+    during("getaddrinfo", "ENOTFOUND"),
+    coded("ENOTFOUND"),
+    coded("EAI_AGAIN"),
+    coded("UND_ERR_CONNECT_TIMEOUT"),
+    // Verified during the handshake, before the request is written.
+    coded("CERT_HAS_EXPIRED"),
+    coded("DEPTH_ZERO_SELF_SIGNED_CERT"),
+    coded("UNABLE_TO_VERIFY_LEAF_SIGNATURE"),
+    coded("ERR_TLS_CERT_ALTNAME_INVALID"),
+    // Every address of a dual-stack host refused.
+    new AggregateError([during("connect", "ECONNREFUSED"), during("connect", "ENETUNREACH")], ""),
+  ];
+  // Connected, or not known not to be: the request may have been written.
+  const maybeSent = [
+    coded("UND_ERR_HEADERS_TIMEOUT"),
+    coded("UND_ERR_BODY_TIMEOUT"),
+    coded("UND_ERR_SOCKET"),
+    during("read", "ECONNRESET"),
+    during("write", "EPIPE"),
+    // An established connection that times out reports the unreachable error it last saw.
+    during("read", "EHOSTUNREACH"),
+    during("read", "ETIMEDOUT"),
+    // Without the call that failed, these may have come after the connection.
+    coded("ECONNREFUSED"),
+    coded("EHOSTUNREACH"),
+    coded("ECONNRESET"),
+    coded("ETIMEDOUT"),
+    // A bad TLS record may arrive once the session is up and the request written.
+    coded("ERR_SSL_WRONG_VERSION_NUMBER"),
+    coded("ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC"),
+    new DOMException("This operation was aborted", "AbortError"),
+    new AggregateError([during("connect", "ECONNREFUSED"), during("read", "ECONNRESET")], ""),
+    // Text alone is never trusted: a code is.
+    new Error("connect ECONNREFUSED 203.0.113.10:443"),
+    undefined,
+  ];
+
+  for (const [name, create] of fetchers) {
+    it(`says no request left a ${name} fetch that never connected`, async () => {
+      for (const cause of neverConnected) {
+        const error = await failure(create, cause);
+        expect(error, String((cause as { code?: string }).code)).toBeInstanceOf(Error);
+        expect(error, String((cause as { code?: string }).code)).not.toBeInstanceOf(
+          RemoteRequestSentError,
+        );
+        expect((error as Error).message).toMatch(/^Could not reach connectors\.example\.test/);
+      }
+    });
+
+    it(`counts a ${name} fetch that may have sent its request as sent`, async () => {
+      for (const cause of maybeSent) {
+        const error = await failure(create, cause);
+        expect(error, String((cause as { code?: string } | undefined)?.code)).toBeInstanceOf(
+          RemoteRequestSentError,
+        );
+      }
+    });
+  }
+
+  it("tells a refused connection from a request cut off, over real sockets", async () => {
+    const owner = { allowPrivateEndpoint: true };
+    const loopback = async () => [{ address: "127.0.0.1", family: 4 as const }];
+    const listen = async (server: ReturnType<typeof createNetServer>) => {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      return (server.address() as AddressInfo).port;
+    };
+    const closed = createNetServer();
+    const closedPort = await listen(closed);
+    await new Promise((resolve) => closed.close(resolve));
+    // Reads the request, then resets the connection.
+    const cutOff = createNetServer((socket) => socket.once("data", () => socket.resetAndDestroy()));
+    const cutOffPort = await listen(cutOff);
+    const fetch = createSafeRemoteFetch(undefined, loopback, owner);
+    try {
+      const refused = await fetch(`http://127.0.0.1:${closedPort}/mcp`).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(Error);
+      expect(refused).not.toBeInstanceOf(RemoteRequestSentError);
+      const reset = await fetch(`http://127.0.0.1:${cutOffPort}/mcp`).catch((e: unknown) => e);
+      expect(reset).toBeInstanceOf(RemoteRequestSentError);
+    } finally {
+      await fetch.close();
+      await new Promise((resolve) => cutOff.close(resolve));
     }
   });
 });

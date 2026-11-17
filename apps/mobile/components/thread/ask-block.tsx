@@ -2,7 +2,8 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
-import { isSecretAskBlock } from "@rakazo/core";
+import { isQuestionAskBlock, isSecretAskBlock } from "@rakazo/core";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
@@ -23,6 +24,7 @@ import type { MessageActionProps } from "./message-bubble";
 export function AskBlock({
   ask,
   canAnswer,
+  answerIsSeparate,
   canDismiss,
   onAnswer,
   onDismiss,
@@ -30,6 +32,7 @@ export function AskBlock({
 }: {
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
+  answerIsSeparate?: boolean;
   canDismiss: boolean;
   onAnswer: (
     answer: string,
@@ -52,6 +55,7 @@ export function AskBlock({
   const [sentOnce, setSentOnce] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const answered = saved || dismissed || ask.status === "answered";
+  const answeredQuestion = answered && isQuestionAskBlock(ask);
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
   const itemType = secretInput ? ask.credential?.auth.type : undefined;
@@ -99,7 +103,11 @@ export function AskBlock({
       await onAnswer(submitValue);
       if (secretInput) setSaved(true);
     } catch (cause) {
-      setError(secretInput ? t`Could not send answer` : errorText(cause, t`Could not send answer`));
+      setError(
+        secretInput
+          ? secretAnswerErrorText(cause, t`Could not send answer`)
+          : errorText(cause, t`Could not send answer`),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -249,7 +257,10 @@ export function AskBlock({
       <Text
         {...actionProps}
         numberOfLines={secretInput ? 2 : undefined}
-        style={{ color: tokens.foreground, ...typeScale.cardTitle }}
+        style={{
+          color: answeredQuestion ? tokens.mutedForeground : tokens.foreground,
+          ...typeScale.cardTitle,
+        }}
       >
         {plainAskTitle(ask.text)}
       </Text>
@@ -269,11 +280,14 @@ export function AskBlock({
       {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
-      {answered ? (
+      {answerIsSeparate ? null : answered ? (
         <Text
           style={{
             // Dismissed reads like a declined approval, not a success.
-            color: dismissed || ask.dismissed ? tokens.mutedForeground : tokens.success,
+            color:
+              answeredQuestion || dismissed || ask.dismissed
+                ? tokens.mutedForeground
+                : tokens.success,
             ...typeScale.secondary,
             fontWeight: fontWeight.medium,
             ...(secretInput ? { marginTop: 12 } : null),
@@ -281,7 +295,7 @@ export function AskBlock({
         >
           {secretInput ? answeredLabel : t`Answered: ${ph({ answer: ask.answer ?? t`Done` })}`}
         </Text>
-      ) : canAnswer && ownerOnly ? null : canAnswer ? (
+      ) : !secretInput ? null : canAnswer && ownerOnly ? null : canAnswer ? (
         <>
           <TextInput
             accessibilityLabel={secretInput ? secretLabel : t`Type your answer`}

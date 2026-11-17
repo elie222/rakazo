@@ -12,8 +12,10 @@ import {
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode, UIEvent } from "react";
 import { useState } from "react";
+import { CreateOrganizationDialog } from "../../components/CreateOrganizationDialog";
 import { InviteDialog } from "../../components/InviteDialog";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
+import { useUsageHint } from "../../components/PlanUsage";
 import { SidebarFooter } from "../../components/SidebarFooter";
 import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
@@ -25,6 +27,7 @@ import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
 import { SpaceSearchResults } from "../SpaceSearch";
 import type { SettingsSection } from "../shell-overlay";
+import type { ChatMenuState } from "./chat-context-menu";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
 
@@ -72,11 +75,12 @@ export function ShellSidebar({
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
+  chatMenu,
   roster,
   archived,
   footerLogos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   openSettings,
   openIntegrations,
@@ -101,11 +105,12 @@ export function ShellSidebar({
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
+  chatMenu: ChatMenuState;
   roster: ReactNode;
   archived: ReactNode;
   footerLogos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
@@ -259,6 +264,7 @@ export function ShellSidebar({
               error={searchError}
               onRetry={retrySearch}
               onSelect={(hit) => jumpToSearchHit(hit)}
+              chatMenu={chatMenu}
             />
           ) : activityMode && !mini ? (
             <ActivityList
@@ -305,7 +311,7 @@ export function ShellSidebar({
           mini={mini}
           logos={footerLogos}
           user={user}
-          ticketBoardEnabled={ticketBoardEnabled}
+          boardEnabled={boardEnabled}
           navLinks={navLinks}
           closeMobileSidebar={() => setMobileOpen(false)}
           navigate={navigate}
@@ -323,7 +329,7 @@ function ShellSidebarFooter({
   mini,
   logos,
   user,
-  ticketBoardEnabled,
+  boardEnabled,
   navLinks,
   closeMobileSidebar,
   navigate,
@@ -335,7 +341,7 @@ function ShellSidebarFooter({
   mini: boolean;
   logos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
-  ticketBoardEnabled: boolean;
+  boardEnabled: boolean;
   navLinks: NavLink[];
   closeMobileSidebar: () => void;
   navigate: (path: string) => void;
@@ -354,8 +360,10 @@ function ShellSidebarFooter({
     new Date(billing.byokFreeUntil) > new Date()
       ? billing.byokFreeUntil
       : null;
+  const usage = useUsageHint();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [creatingOrganization, setCreatingOrganization] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
@@ -400,7 +408,7 @@ function ShellSidebarFooter({
           openSkills();
         }}
         onBoard={
-          ticketBoardEnabled
+          boardEnabled
             ? () => {
                 setMenuOpen(false);
                 closeMobileSidebar();
@@ -423,6 +431,11 @@ function ShellSidebarFooter({
           setMenuOpen(false);
           openSettings("general");
         }}
+        usage={usage}
+        onUsage={() => {
+          setMenuOpen(false);
+          openSettings("usage");
+        }}
         onInvite={
           referral
             ? () => {
@@ -444,6 +457,15 @@ function ShellSidebarFooter({
           if (organization.id !== activeOrganizationId)
             void switchOrganization(userId, organization, openSpaceChat);
         }}
+        onCreateOrganization={() => {
+          setMenuOpen(false);
+          setCreatingOrganization(true);
+        }}
+      />
+      <CreateOrganizationDialog
+        open={creatingOrganization}
+        onOpenChange={setCreatingOrganization}
+        openSpaceChat={openSpaceChat}
       />
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />

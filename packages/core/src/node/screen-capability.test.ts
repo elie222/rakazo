@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ScreenCapabilityScope } from "./screen-capability.js";
 import {
   issueScreenCapability,
   openScreenCapability,
   REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS,
-  resetRemoteScreenCapabilityReuse,
   SCREEN_PROXY_TTL_MS,
   sealScreenCapability,
 } from "./screen-capability.js";
@@ -51,8 +50,7 @@ describe("sealed screen capabilities", () => {
       ).toBeNull();
     }
   });
-  it("includes provider credentials in the remote capability cache identity", () => {
-    resetRemoteScreenCapabilityReuse();
+  it("includes provider credentials in the remote capability identity", () => {
     const issue = (cookie: string) =>
       issueScreenCapability(
         "https://screen.example/vnc.html",
@@ -283,10 +281,6 @@ describe("remote screen capability reuse", () => {
   const issued = (now: number, nextScope = scope, url = upstream, secret = "fake-secret") =>
     issueScreenCapability(url, secret, "https://app.example", nextScope, now);
 
-  beforeEach(() => {
-    resetRemoteScreenCapabilityReuse();
-  });
-
   it("reuses one remote seal across polls that a slow handshake can still be using", () => {
     const now = 1_000_000;
     const first = issued(now);
@@ -308,27 +302,28 @@ describe("remote screen capability reuse", () => {
     ).toBeNull();
   });
 
-  it("keeps the original expiry when a later client reads the cached seal", () => {
+  it("gives a later read on another server the same seal and expiry", () => {
     const now = 1_000_000;
     const first = issued(now);
     const later = issued(now + 20 * 60_000);
     expect(later).toBe(first);
     const expiresAt = Number(new URL(later).pathname.match(/\/(\d+)\./)?.[1]);
-    expect(expiresAt).toBe(now + SCREEN_PROXY_TTL_MS);
+    expect(expiresAt - now).toBeLessThanOrEqual(SCREEN_PROXY_TTL_MS);
+    expect(expiresAt - (now + 20 * 60_000)).toBeGreaterThan(
+      REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS,
+    );
   });
 
-  it("mints again once the held seal is inside the refresh window, without extending the old one", () => {
+  it("mints again before the held seal has less than the minimum left, without extending it", () => {
     const now = 1_000_000;
     const first = issued(now);
-    const stillHeld = now + SCREEN_PROXY_TTL_MS - REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS - 1;
-    expect(issued(stillHeld)).toBe(first);
-    const refreshAt = now + SCREEN_PROXY_TTL_MS - REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS;
+    const expiresAt = Number(new URL(first).pathname.match(/\/(\d+)\./)?.[1]);
+    const refreshAt = expiresAt - REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS;
+    expect(issued(refreshAt - 1)).toBe(first);
     const renewed = issued(refreshAt);
     expect(renewed).not.toBe(first);
     expect(openScreenCapability(new URL(first).pathname, "fake-secret", refreshAt)).not.toBeNull();
-    expect(
-      openScreenCapability(new URL(first).pathname, "fake-secret", now + SCREEN_PROXY_TTL_MS),
-    ).toBeNull();
+    expect(openScreenCapability(new URL(first).pathname, "fake-secret", expiresAt)).toBeNull();
     expect(
       openScreenCapability(new URL(renewed).pathname, "fake-secret", refreshAt),
     ).not.toBeNull();

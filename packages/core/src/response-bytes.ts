@@ -1,6 +1,14 @@
 import { withAbort } from "./async.js";
 import { cancelResponseBody } from "./http-response.js";
 
+/** A response refused for being over its byte budget. The message says whose response it was. */
+export class ResponseTooLargeError extends Error {
+  constructor(message = "Response is too large", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
 /** Read a response within a byte budget, releasing failed streams without waiting for cancellation.
  * Callers own header validation and wrap lazy read operations in their request deadline.
  */
@@ -15,7 +23,7 @@ export async function readBoundedResponseBytes(
   const { maxBytes, tooLargeMessage, read } = options;
   if (!response.body) {
     const buffer = await read(() => response.arrayBuffer());
-    if (buffer.byteLength > maxBytes) throw new Error(tooLargeMessage);
+    if (buffer.byteLength > maxBytes) throw new ResponseTooLargeError(tooLargeMessage);
     return new Uint8Array(buffer);
   }
 
@@ -28,7 +36,7 @@ export async function readBoundedResponseBytes(
       if (done) break;
       if (!value?.byteLength) continue;
       total += value.byteLength;
-      if (total > maxBytes) throw new Error(tooLargeMessage);
+      if (total > maxBytes) throw new ResponseTooLargeError(tooLargeMessage);
       chunks.push(value);
     }
   } catch (error) {
@@ -67,7 +75,7 @@ export async function readResponseWithin(
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     cancelResponseBody(response);
-    throw new Error(tooLargeMessage);
+    throw new ResponseTooLargeError(tooLargeMessage);
   }
   return readBoundedResponseBytes(response, {
     maxBytes,

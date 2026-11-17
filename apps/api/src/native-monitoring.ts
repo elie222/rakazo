@@ -132,6 +132,8 @@ export function sanitizeNativeEvent(
           "code_file",
           "debug_file",
           "debug_id",
+          // Android identifies its R8 mapping by `uuid`, not `debug_id`.
+          "uuid",
           "code_id",
           "image_addr",
           "image_size",

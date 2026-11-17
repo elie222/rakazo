@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -42,9 +43,6 @@ vi.mock("./call-sounds", () => ({
   saveWaitSoundEnabled: mocks.saveWaiting,
   playCallCue: mocks.cue,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
@@ -76,6 +74,34 @@ vi.mock("../components/native-action-button", () => ({
 }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    value,
+    onChange,
+    disabled,
+  }: {
+    disabled?: boolean;
+    choices: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map((choice) => (
+        <button
+          key={choice.key}
+          type="button"
+          disabled={disabled}
+          aria-pressed={choice.key === value}
+          onClick={() => onChange(choice.key)}
+        >
+          {choice.label}
+          {choice.key === value ? <span data-testid="checkmark" /> : null}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-switch", () => ({
   NativeSwitch: (props: {
@@ -236,6 +262,7 @@ it("offers a retry when the first load fails, then loads the providers again", a
 });
 
 it("clears a failed refresh's banner once a provider choice succeeds", async () => {
+  mocks.loadDevice.mockResolvedValue(true);
   await render();
   expect(container.textContent).toContain("ElevenLabs");
   mocks.focused = false;
@@ -329,10 +356,8 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
 
   mocks.focused = false;
   await render();
-  let switched!: (value: unknown) => void;
-  status = new Promise((resolve) => {
-    switched = resolve;
-  });
+  const switched = deferred<unknown>();
+  status = switched.promise;
   mocks.focused = true;
   await render();
   await act(async () => {
@@ -343,7 +368,9 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
   // The handler of the field as it showed Fish Audio, for typing that lands after the switch.
   const typeIntoFish = mocks.typed["Speech model"]!;
 
-  await act(async () => switched({ configured: true, ready: true, provider: "elevenlabs" }));
+  await act(async () =>
+    switched.resolve({ configured: true, ready: true, provider: "elevenlabs" }),
+  );
   expect(field().value).toBe("eleven_v3");
   await act(async () => typeIntoFish("s3"));
   expect(field().value).toBe("eleven_v3");

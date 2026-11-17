@@ -1,7 +1,7 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
 const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
 
@@ -21,6 +21,33 @@ function billingStatus(overrides: Partial<BillingStatus>): BillingStatus {
     ...overrides,
   };
 }
+
+const tiers: NonNullable<BillingStatus["byokTiers"]> = [
+  {
+    tier: "standard",
+    name: "Standard",
+    monthlyPriceCents: 1500,
+    annualPriceCents: 14400,
+    computerSize: "standard",
+    computerHours: 25,
+  },
+  {
+    tier: "pro",
+    name: "Pro",
+    monthlyPriceCents: 4900,
+    annualPriceCents: 46800,
+    computerSize: "large",
+    computerHours: 100,
+  },
+  {
+    tier: "max",
+    name: "Max",
+    monthlyPriceCents: 9900,
+    annualPriceCents: 94800,
+    computerSize: "xlarge",
+    computerHours: 200,
+  },
+];
 
 async function enableBilling(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
@@ -238,6 +265,47 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   expect(purchase).toEqual({ amountCents: 5000, monthly: false });
 });
 
+test("delete an unpaid organization from the plan choice", async ({ page }, testInfo) => {
+  await signup(page, `org-paywall-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  const work = await rpc<{ id: string; defaultSpaceId: string }>(page, "organizations/create", {
+    name: "Work",
+  });
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  // Only the new organization is unpaid.
+  await page.route("**/rpc/billing/status", async (route) => {
+    const unpaid = route.request().headers()["x-rakazo-space-id"] === work.defaultSpaceId;
+    await route.fulfill({
+      json: { json: billingStatus(unpaid ? {} : { access: true, state: "active" }) },
+    });
+  });
+  await page.evaluate(
+    (spaceId) => window.localStorage.setItem("rakazo:space-id", spaceId),
+    work.defaultSpaceId,
+  );
+  await page.reload();
+  await expect(page.getByTestId("billing-paywall")).toBeVisible();
+
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete organization" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Delete Work?" });
+  await confirm.getByLabel("Type Work to confirm").fill("Work");
+  await captureScreenshot(page, testInfo, "billing-delete-organization");
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Chief").first()).toBeVisible();
+  const { organizations } = await rpc<{ organizations: Array<{ name: string }> }>(
+    page,
+    "organizations/list",
+    {},
+  );
+  expect(organizations.map((organization) => organization.name)).toEqual(["Personal"]);
+});
+
 test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `byok-yearly-${stamp}@rakazo.test`, "password12", "Demo Customer");
@@ -276,6 +344,52 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   // The checkout is mocked, so the paywall returns; waiting lets the reload's requests settle.
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
   expect(selected).toEqual({ funding: "byok", interval: "year" });
+});
+
+test("start a bigger tier's trial from the tiers layout", async ({ page }, testInfo) => {
+  await signup(page, `plan-tiers-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokAnnualPriceCents: 14400,
+    byokTiers: tiers,
+    planLayout: "tiers",
+    funding: null,
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Max" })).toBeVisible();
+  await expect(page.getByText("A 2× more powerful computer for your bot")).toBeVisible();
+  await expect(page.getByText("$49", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Monthly credits" })).toContainText(
+    "$30 / month",
+  );
+  await captureScreenshot(page, testInfo, "billing-plan-tiers");
+  let selected: unknown;
+  await page.route("**/rpc/billing/selectFunding", async (route) => {
+    selected = route.request().postDataJSON().json;
+    await route.fulfill({ json: { json: { url: new URL("/app?paid", page.url()).href } } });
+  });
+  await page
+    .getByRole("group", { name: "Billing period" })
+    .getByRole("button", { name: /Yearly/ })
+    .click();
+  await expect(page.getByText("$39", { exact: true })).toBeVisible();
+  await Promise.all([
+    page.waitForURL(/[?&]paid/),
+    page.getByRole("button", { name: "Start Pro trial", exact: true }).click(),
+  ]);
+  await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
+  expect(selected).toEqual({ funding: "byok", interval: "year", tier: "pro" });
 });
 
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
@@ -420,32 +534,6 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   });
   await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
   await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const tiers: NonNullable<BillingStatus["byokTiers"]> = [
-    {
-      tier: "standard",
-      name: "Standard",
-      monthlyPriceCents: 1500,
-      annualPriceCents: 14400,
-      computerSize: "standard",
-      computerHours: 25,
-    },
-    {
-      tier: "pro",
-      name: "Pro",
-      monthlyPriceCents: 4900,
-      annualPriceCents: 46800,
-      computerSize: "large",
-      computerHours: 100,
-    },
-    {
-      tier: "max",
-      name: "Max",
-      monthlyPriceCents: 9900,
-      annualPriceCents: 94800,
-      computerSize: "xlarge",
-      computerHours: 200,
-    },
-  ];
   let status = billingStatus({
     access: true,
     trialAvailable: false,
@@ -486,4 +574,36 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await expect.poll(() => changedTo).toBe("pro");
   await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
   await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
+});
+
+test("yearly billing shows the monthly computer reset separately from renewal", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `annual-hours-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    access: true,
+    trialAvailable: false,
+    funding: "byok",
+    byokTier: "max",
+    byokPriceCents: 94800,
+    byokInterval: "year",
+    state: "active",
+    hasCustomer: true,
+    currentPeriodEndsAt: "2031-01-15T12:00:00.000Z",
+    computerHoursLeft: 180,
+    computerHoursResetAt: "2030-02-15T12:00:00.000Z",
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  const settings = await openUserSettings(page, "billing");
+  await expect(settings.getByText("Resets Feb 15, 2030", { exact: true })).toBeVisible();
+  await expect(settings.getByText("Renews Jan 15, 2031", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-annual-computer-reset");
 });

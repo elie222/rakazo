@@ -3,9 +3,19 @@ import { studioFacts, studioNotes } from "./fixtures/studio.js";
 import { NotesEmulator, noteId } from "./notes.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
+/** The fields these tests read from a successful call. */
+type NotesData = {
+  id: string;
+  results: Array<{ properties: { PO: string } }>;
+  has_more: boolean;
+  next_cursor: string | null;
+  properties: { Status: { options: string[] }; Order: unknown };
+  blocks: Array<{ type: string }>;
+  parent: unknown;
+};
 const ok = (result: ReturnType<ReturnType<typeof studioNotes>["call"]>) => {
   if (!result.ok) throw new Error(result.error.message);
-  return result.data as Record<string, any>;
+  return result.data as NotesData;
 };
 const deliveries = noteId("deliveries");
 
@@ -85,7 +95,7 @@ describe("notes emulator", () => {
         sorts: [{ property: "PO", direction: "ascending" }],
       }),
     );
-    expect(open.results.map((r: { properties: { PO: string } }) => r.properties.PO)).toEqual([
+    expect(open.results.map((r) => r.properties.PO)).toEqual([
       "PO-4465",
       "PO-4471",
       "PO-4476",
@@ -148,7 +158,7 @@ describe("notes emulator", () => {
           database_id: deliveries,
           filter: { property: "ETA", condition, value: eta },
         }),
-      ).results.map((r: { properties: { PO: string } }) => r.properties.PO);
+      ).results.map((r) => r.properties.PO);
       expect(rows).toContain("PO-4471");
     }
   });
@@ -156,7 +166,7 @@ describe("notes emulator", () => {
   it("reads page blocks, creates rows and pages, and refuses view-only pages", () => {
     const notes = studioNotes({ now });
     const sync = ok(notes.call("read_page", { page_id: noteId("ops-sync") }));
-    expect(sync.blocks.map((b: { type: string }) => b.type)).toContain("to_do");
+    expect(sync.blocks.map((b) => b.type)).toContain("to_do");
     const created = ok(
       notes.call("create_page", {
         database_id: deliveries,

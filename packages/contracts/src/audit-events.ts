@@ -3,7 +3,6 @@ import { SecurityEventMetadataSchema } from "./security-events.js";
 
 export const AUDIT_ACTOR_TYPES = ["user", "bot", "system"] as const;
 export const AuditActorTypeSchema = z.enum(AUDIT_ACTOR_TYPES);
-export type AuditActorType = z.infer<typeof AuditActorTypeSchema>;
 
 export const AUDIT_OUTCOMES = ["success", "failure", "denied"] as const;
 export const AuditOutcomeSchema = z.enum(AUDIT_OUTCOMES);

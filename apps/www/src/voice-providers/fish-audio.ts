@@ -1,26 +1,34 @@
-import type { VoiceProvider } from "./types";
 import {
-  CHARS_PER_HOUR,
-  PRICING_SOURCES,
-  RATES,
-  VOICE_DOC,
-  VOICE_MODELS_DOC,
-  WORKLOAD,
-  WORKLOAD_COST,
   aboutTotal,
+  CHARS_PER_HOUR,
   count,
   homepage,
+  PRICING_SOURCES,
   perHourOfSpeech,
   priceVersus,
+  RATES,
   shareOf,
   usd,
+  VOICE_DOC,
+  VOICE_MODELS_DOC,
   voicePriceTable,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_COST,
   withPricingSources,
 } from "./shared";
+import type { VoiceProvider } from "./types";
 
 const WORKLOAD_SHOWN = ["fish", "elevenlabs", "openai", "cartesia", "selfHosted"] as const;
-const COMPARED = ["fish", "elevenlabs", "openai", "cartesia", "deepgram", "google", "selfHosted"] as const;
+const COMPARED = [
+  "fish",
+  "elevenlabs",
+  "openai",
+  "cartesia",
+  "deepgram",
+  "google",
+  "selfHosted",
+] as const;
 
 const FISH_PLANS = RATES.fishPlans;
 const creditsPerMinute = Object.values(FISH_PLANS).map((plan) => plan.credits / plan.minutes);
@@ -77,7 +85,12 @@ export const fishAudio: VoiceProvider = {
         rows: [
           {
             topic: "Free",
-            cells: ["$0", count(FISH_PLANS.free.credits), count(FISH_PLANS.free.minutes), "Public voices only"],
+            cells: [
+              "$0",
+              count(FISH_PLANS.free.credits),
+              count(FISH_PLANS.free.minutes),
+              "Public voices only",
+            ],
           },
           {
             topic: "Plus",
@@ -111,16 +124,18 @@ export const fishAudio: VoiceProvider = {
         caption: "Fish Audio API prices, as of November 2026",
         columns: ["Model", "Price", "About per hour"],
         rows: [
-          { topic: "`s2.1-pro` (Rakazo's default)", cells: [`${usd(RATES.fish)} per 1M bytes`, S2_HOUR] },
+          {
+            topic: "`s2.1-pro` (Rakazo's default)",
+            cells: [`${usd(RATES.fish)} per 1M bytes`, S2_HOUR],
+          },
           { topic: "`s2-pro`", cells: [`${usd(RATES.fish)} per 1M bytes`, S2_HOUR] },
           {
             topic: "`drama-3`",
-            cells: [
-              `${usd(RATES.fishDrama3)} per 1M bytes`,
-              perHourOfSpeech(RATES.fishDrama3),
-            ],
+            cells: [`${usd(RATES.fishDrama3)} per 1M bytes`, perHourOfSpeech(RATES.fishDrama3)],
           },
-          { topic: "`transcribe-1-pro` (Rakazo's default)", cells: [
+          {
+            topic: "`transcribe-1-pro` (Rakazo's default)",
+            cells: [
               `${usd(RATES.fishTranscribeHour)} per audio hour`,
               usd(RATES.fishTranscribeHour),
             ],
@@ -135,7 +150,10 @@ export const fishAudio: VoiceProvider = {
         "Rakazo calls Fish Audio with your key, so Fish Audio bills you and Rakazo adds nothing.",
         `${WORKLOAD} On Fish Audio that is ${usd(WORKLOAD_COST.fish.speech)} of S2.1 Pro speech and ${usd(WORKLOAD_COST.fish.transcription)} of transcription: ${aboutTotal("fish").toLowerCase()} a month, ${shareOf(WORKLOAD_COST.fish.speech + WORKLOAD_COST.fish.transcription, WORKLOAD_COST.elevenlabs.speech + WORKLOAD_COST.elevenlabs.transcription)} what ElevenLabs costs for the same use.`,
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
+      table: voiceWorkloadTable(
+        "One bot, 30 minutes of speech and 30 of transcription a day",
+        WORKLOAD_SHOWN,
+      ),
     },
     {
       heading: "Fish Audio vs ElevenLabs and other voice APIs",
@@ -160,7 +178,7 @@ export const fishAudio: VoiceProvider = {
         "Talk instead of typing. Hold the mic in the composer and speak; Fish Audio transcribes it and the bot gets your message.",
         "Hear replies. Choose **Speak this reply** on any message, or turn on **Read replies aloud** in a bot's settings to hear every reply in its voice.",
         "Call a bot. Choose **Call** at the top of the chat to talk in real time. The transcript stays in the chat afterwards.",
-        "Let bots call you. Ask \"call me at 5 to go over the day\", and the bot rings you at five.",
+        'Let bots call you. Ask "call me at 5 to go over the day", and the bot rings you at five.',
         "Give each bot its own voice. The **Voice** picker lists your own Fish Audio voices first, including ones you cloned, then popular public voices. A bot's settings can override your default.",
         "Choose the speech model. Enter another Fish Audio model name under **Speech model**, such as `s2-pro`, instead of the default `s2.1-pro`.",
       ],
@@ -207,13 +225,11 @@ export const fishAudio: VoiceProvider = {
   faq: [
     {
       question: "How much does Fish Audio cost?",
-      answer:
-        `As of November 2026, the app has a Free plan, Plus at ${usd(FISH_PLANS.plus.price)} a month (${usd(FISH_PLANS.plus.yearly)} billed yearly) and Pro at ${usd(FISH_PLANS.pro.price)} (${usd(FISH_PLANS.pro.yearly)} yearly). The API is pay as you go: ${usd(RATES.fish)} per million bytes of text for S2.1 Pro, about ${S2_HOUR} per hour of English speech, and ${usd(RATES.fishTranscribeHour)} per hour of transcription.`,
+      answer: `As of November 2026, the app has a Free plan, Plus at ${usd(FISH_PLANS.plus.price)} a month (${usd(FISH_PLANS.plus.yearly)} billed yearly) and Pro at ${usd(FISH_PLANS.pro.price)} (${usd(FISH_PLANS.pro.yearly)} yearly). The API is pay as you go: ${usd(RATES.fish)} per million bytes of text for S2.1 Pro, about ${S2_HOUR} per hour of English speech, and ${usd(RATES.fishTranscribeHour)} per hour of transcription.`,
     },
     {
       question: "Is Fish Audio free?",
-      answer:
-        `The app has a free plan with about ${FISH_PLANS.free.minutes} minutes of speech a month for personal use. The API is pay as you go.`,
+      answer: `The app has a free plan with about ${FISH_PLANS.free.minutes} minutes of speech a month for personal use. The API is pay as you go.`,
     },
     {
       question: "Is Fish Audio safe to use?",
@@ -227,8 +243,7 @@ export const fishAudio: VoiceProvider = {
     },
     {
       question: "Does the Fish Audio API do speech to text?",
-      answer:
-        `Yes. Rakazo uses it to transcribe what you say when you hold the mic or talk on a call, with \`transcribe-1-pro\` by default, at ${usd(RATES.fishTranscribeHour)} per hour of audio.`,
+      answer: `Yes. Rakazo uses it to transcribe what you say when you hold the mic or talk on a call, with \`transcribe-1-pro\` by default, at ${usd(RATES.fishTranscribeHour)} per hour of audio.`,
     },
     {
       question: "Which Fish Audio model does Rakazo use?",
@@ -237,20 +252,19 @@ export const fishAudio: VoiceProvider = {
     },
     {
       question: "Fish Audio vs ElevenLabs?",
-      answer:
-        `Both offer expressive voices, cloning and transcription, and both work fully in Rakazo. Per character, Fish Audio costs ${shareOf(RATES.fish, RATES.elevenlabsFlash)} ElevenLabs Flash v2.5, and per hour its transcription is ${priceVersus(RATES.fishTranscribeHour, RATES.elevenlabsScribeHour)} ElevenLabs Scribe v2. [ElevenLabs](/voice-providers/elevenlabs/) has a more established platform and enterprise options such as EU data residency.`,
+      answer: `Both offer expressive voices, cloning and transcription, and both work fully in Rakazo. Per character, Fish Audio costs ${shareOf(RATES.fish, RATES.elevenlabsFlash)} ElevenLabs Flash v2.5, and per hour its transcription is ${priceVersus(RATES.fishTranscribeHour, RATES.elevenlabsScribeHour)} ElevenLabs Scribe v2. [ElevenLabs](/voice-providers/elevenlabs/) has a more established platform and enterprise options such as EU data residency.`,
     },
   ],
   sources: withPricingSources(
     [
-    { label: "Fish Audio", href: "https://fish.audio" },
-    { label: "Fish Audio documentation", href: "https://docs.fish.audio" },
-    PRICING_SOURCES.fish,
-    PRICING_SOURCES.fishPlans,
-    { label: "Fish Audio, enterprise", href: "https://fish.audio/enterprise/" },
-    { label: "fish-speech on GitHub", href: "https://github.com/fishaudio/fish-speech" },
-    VOICE_DOC,
-    VOICE_MODELS_DOC,
+      { label: "Fish Audio", href: "https://fish.audio" },
+      { label: "Fish Audio documentation", href: "https://docs.fish.audio" },
+      PRICING_SOURCES.fish,
+      PRICING_SOURCES.fishPlans,
+      { label: "Fish Audio, enterprise", href: "https://fish.audio/enterprise/" },
+      { label: "fish-speech on GitHub", href: "https://github.com/fishaudio/fish-speech" },
+      VOICE_DOC,
+      VOICE_MODELS_DOC,
     ],
     { prices: COMPARED, workload: WORKLOAD_SHOWN },
   ),

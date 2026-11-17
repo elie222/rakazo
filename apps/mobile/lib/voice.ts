@@ -15,7 +15,7 @@ import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
-import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import { aiConsentCoalesceKey, allowPromptedAiConsent, captureApiRequestContext, rpc } from "./api";
 import { subscribeConfirmedSpaceSwitch } from "./api-server";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
@@ -519,7 +519,7 @@ export async function speakUtterance(
   return renderUtterance(text, opts, requestContext);
 }
 
-/** Asks before audio or text goes to the voice provider; throws AiConsentBlocked on a refusal. */
+/** Asks before audio or text reaches a voice recipient the user has not allowed yet; throws AiConsentBlocked on a refusal. */
 export async function ensureVoiceConsent(
   requestContext: ApiRequestContext,
   scope?: SettingsScope,
@@ -534,9 +534,7 @@ export async function ensureVoiceConsent(
       ),
     prompt: promptAiConsent,
     allow: (input) =>
-      rpc("aiConsent/allow", scope ? { ...input, settingsScope: scope } : input, {
-        requestContext,
-      }),
+      allowPromptedAiConsent(scope ? { ...input, settingsScope: scope } : input, requestContext),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
 }
@@ -704,6 +702,12 @@ async function playWithHtmlAudio(
   }
 }
 
+/**
+ * How long a local clip may take to start. One that cannot (Android out of audio tracks) fails
+ * by then, so a call moves on to listening instead of holding a silent line.
+ */
+const CLIP_START_MS = 3_000;
+
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
   await changeAudioMode(async () => {
@@ -731,7 +735,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
         else resolve();
       };
       const armStartupWatchdog = () => {
-        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), 15_000);
+        timer = setTimeout(() => finish(new Error(t`Could not play that clip.`)), CLIP_START_MS);
       };
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
@@ -746,7 +750,9 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
           finish();
           return;
         }
-        if (status.playing && status.duration > 0 && !session?.isPaused) {
+        // Android reports playing while it is still buffering, so only a moving position shows
+        // the clip has started.
+        if (status.playing && status.currentTime > 0 && status.duration > 0 && !session?.isPaused) {
           clearTimeout(timer);
           timer = setTimeout(
             () => finish(new Error(t`Could not play that clip.`)),

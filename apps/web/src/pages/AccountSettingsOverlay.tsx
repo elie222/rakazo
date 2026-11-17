@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, UsageSummary } from "@rakazo/contracts";
+import type { AccountSecurity, BotAvatarSet, SignInProvider } from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
@@ -13,24 +13,13 @@ import {
   FieldLabel,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
   OptionSelect,
   SectionHeading,
   Switch,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@rakazo/ui-web/components/ui/table";
-import type { RefObject } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../components/AccountAccess";
 import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
@@ -45,14 +34,18 @@ import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import { usePasskeysSupported } from "../lib/passkeys";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { responseStreamingPreference } from "../lib/response-streaming";
+import type { RpcClient } from "../lib/rpc";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import type { AppearancePreference } from "../lib/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
@@ -66,7 +59,7 @@ export type SettingsGeneralProps = {
   onNameSaved?: () => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
-  onTimezoneChange?: (timezone: string) => Promise<void>;
+  onTimezoneChange?: (timezone: string, client: RpcClient) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -89,40 +82,39 @@ export function GeneralSettingsPanels({
   const account = accountDisplay({ name, email }, t`You`);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [namePending, setNamePending] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const nameSave = useSave({
+    save: async (nextName: string) => {
+      const result = await authClient.updateUser({ name: nextName }).catch(() => {
+        throw new Error(t`Could not update name`);
+      });
+      if (result.error) throw new Error(authErrorText(result.error, t`Could not update name`));
+      // The shell shows the name too, so it refreshes even after this panel is gone.
+      void Promise.resolve()
+        .then(() => onNameSaved?.())
+        .catch(() => undefined);
+    },
+    onSaved: () => setEditingName(false),
+  });
+  const namePending = nameSave.pending;
   const nameId = useId();
+  const shownNameError = nameSave.error?.message ?? nameError;
 
-  async function saveName() {
+  function saveName() {
     const nextName = nameDraft.trim();
     if (namePending || !nextName || nextName.length > 80) return;
+    nameSave.reset();
     if (!displayName(nextName, "")) {
       setNameError(t`Could not update name`);
       return;
     }
+    setNameError(null);
     // Nothing to save, so close without a request that could only fail.
     if (nextName === (account.label === email ? "" : displayName(name, ""))) {
-      setNameError(null);
       setEditingName(false);
       return;
     }
-    setNamePending(true);
-    setNameError(null);
-    try {
-      const result = await authClient.updateUser({ name: nextName });
-      if (result.error) {
-        setNameError(authErrorText(result.error, t`Could not update name`));
-        return;
-      }
-      setEditingName(false);
-      void Promise.resolve()
-        .then(() => onNameSaved?.())
-        .catch(() => undefined);
-    } catch {
-      setNameError(t`Could not update name`);
-    } finally {
-      setNamePending(false);
-    }
+    nameSave.run(nextName);
   }
 
   const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
@@ -141,17 +133,43 @@ export function GeneralSettingsPanels({
   const showToolActivityId = useId();
   const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
+  const composerModel = composerModelPickerPreference.use();
+  const composerModelId = useId();
   const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
   const timezoneId = useId();
   const showPassword = Boolean(
     accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false,
   );
+  const [providers, setProviders] = useState<SignInProvider[]>([]);
   const passkeysSupported = usePasskeysSupported();
+  useEffect(() => {
+    let active = true;
+    void fetchAuthCapabilities()
+      .then((value) => {
+        if (active) setProviders(value.providers ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const unlinkedProviders = accountSecurity?.linkedProviderIds
+    ? providers.filter(
+        (provider) =>
+          provider.id !== "oidc" && !accountSecurity.linkedProviderIds?.includes(provider.id),
+      )
+    : [];
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
-  const [timezonePending, setTimezonePending] = useState(false);
-  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+  const queries = useSpaceQueries();
+  const timezoneSave = useSave({
+    save: (next: string, client) => onTimezoneChange?.(next, client) ?? Promise.resolve(),
+    // Usage is grouped by day in the account's timezone.
+    stale: [queries.usage.breakdown.key()],
+  });
+  const timezonePending = timezoneSave.pending;
   const deviceTimezone = localTimezone();
+  const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -163,17 +181,9 @@ export function GeneralSettingsPanels({
     });
   }
 
-  async function chooseTimezone(next: string) {
+  function chooseTimezone(next: string) {
     if (!onTimezoneChange || timezonePending || next === timezone) return;
-    setTimezonePending(true);
-    setTimezoneError(null);
-    try {
-      await onTimezoneChange(next);
-    } catch {
-      setTimezoneError(t`Couldn't update your timezone`);
-    } finally {
-      setTimezonePending(false);
-    }
+    timezoneSave.run(next);
   }
 
   return (
@@ -184,7 +194,7 @@ export function GeneralSettingsPanels({
             className="space-y-3 px-4 py-4"
             onSubmit={(event) => {
               event.preventDefault();
-              void saveName();
+              saveName();
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -208,12 +218,13 @@ export function GeneralSettingsPanels({
                 onChange={(event) => {
                   setNameDraft(event.target.value);
                   setNameError(null);
+                  nameSave.reset();
                 }}
               />
             </Field>
-            {nameError ? (
+            {shownNameError ? (
               <p role="alert" className="text-body-sm text-destructive">
-                {nameError}
+                {shownNameError}
               </p>
             ) : null}
             <div className="flex items-center gap-3">
@@ -247,6 +258,7 @@ export function GeneralSettingsPanels({
                 onClick={() => {
                   setNameDraft(account.label === email ? "" : displayName(name, ""));
                   setNameError(null);
+                  nameSave.reset();
                   setEditingName(true);
                 }}
               >
@@ -270,7 +282,7 @@ export function GeneralSettingsPanels({
             />
           }
         />
-        {botAvatarSet && onBotAvatarSetChange ? (
+        {onBotAvatarSetChange ? (
           <SettingsRow
             label={
               <span id={botStyleLabelId}>
@@ -282,7 +294,7 @@ export function GeneralSettingsPanels({
                 <ToggleGroup
                   aria-labelledby={botStyleLabelId}
                   data-testid="bot-style-select"
-                  value={[botAvatarSet]}
+                  value={botAvatarSet ? [botAvatarSet] : []}
                   onValueChange={([next]) => {
                     if (!next || next === botAvatarSet) return;
                     setBotStyleError(null);
@@ -362,23 +374,21 @@ export function GeneralSettingsPanels({
                 </span>
               }
               control={
-                <NativeSelect
+                <OptionSelect
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
-                  value={timezone ?? deviceTimezone}
+                  value={selectedTimezone}
                   disabled={timezonePending}
-                  onChange={(event) => void chooseTimezone(event.target.value)}
+                  options={timezoneOptions(selectedTimezone).map((zone) => ({
+                    value: zone,
+                    label: zone.replaceAll("_", " "),
+                  }))}
+                  onValueChange={(zone) => chooseTimezone(zone)}
                   className="w-56 max-w-full"
-                >
-                  {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone.replaceAll("_", " ")}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                />
               }
             >
-              {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
+              {!sameTimeZone(selectedTimezone, deviceTimezone) ? (
                 <div className="mt-2 flex justify-end">
                   <Button
                     variant="outline"
@@ -386,7 +396,7 @@ export function GeneralSettingsPanels({
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
                     disabled={timezonePending}
                     data-testid="timezone-use-device"
-                    onClick={() => void chooseTimezone(deviceTimezone)}
+                    onClick={() => chooseTimezone(deviceTimezone)}
                   >
                     <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
                       Use {deviceTimezone.replaceAll("_", " ")}
@@ -394,9 +404,9 @@ export function GeneralSettingsPanels({
                   </Button>
                 </div>
               ) : null}
-              {timezoneError ? (
+              {timezoneSave.error ? (
                 <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
-                  {timezoneError}
+                  {t`Couldn't update your timezone`}
                 </p>
               ) : null}
             </SettingsRow>
@@ -417,6 +427,21 @@ export function GeneralSettingsPanels({
               data-testid="composer-enter-to-send-toggle"
               checked={enterToSend}
               onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
+            />
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={composerModelId} className="text-body font-normal text-foreground">
+              <Trans>Model picker in chat</Trans>
+            </Label>
+          }
+          control={
+            <Switch
+              id={composerModelId}
+              data-testid="composer-model-picker-toggle"
+              checked={composerModel}
+              onCheckedChange={(checked) => composerModelPickerPreference.set(checked)}
             />
           }
         />
@@ -470,10 +495,20 @@ export function GeneralSettingsPanels({
       <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
-      {showPassword || passkeysSupported || canLinkSso ? (
+      {showPassword || canLinkSso || passkeysSupported || unlinkedProviders.length > 0 ? (
         <SettingsGroup title={<Trans>Security</Trans>}>
           {showPassword ? <ChangePasswordRow email={email} /> : null}
-          {canLinkSso ? <LinkSsoRow /> : null}
+          {canLinkSso ? (
+            <LinkSsoRow
+              provider={
+                accountSecurity?.sso ? { id: "oidc", name: accountSecurity.sso.name } : undefined
+              }
+              onSecurity={setAccountSecurity}
+            />
+          ) : null}
+          {unlinkedProviders.map((provider) => (
+            <LinkSsoRow key={provider.id} provider={provider} onSecurity={setAccountSecurity} />
+          ))}
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
@@ -482,90 +517,6 @@ export function GeneralSettingsPanels({
         <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
         <AccountAccess onSecurity={setAccountSecurity} />
       </SettingsGroup>
-    </div>
-  );
-}
-
-export function UsageSettingsPanel({
-  usage,
-  panelRef,
-}: {
-  usage?: UsageSummary | null;
-  panelRef?: RefObject<HTMLDivElement | null>;
-}) {
-  const { t, i18n } = useLingui();
-  const count = new Intl.NumberFormat(i18n.locale);
-  const usd = new Intl.NumberFormat(i18n.locale, {
-    style: "currency",
-    currency: "USD",
-  });
-  const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
-  const cost = (value: number | null | undefined) =>
-    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
-  const models = usage?.models ?? [];
-  return (
-    <div ref={panelRef} tabIndex={-1} data-testid="usage-settings" className="outline-none">
-      {usage ? (
-        <dl className="grid grid-cols-3 gap-3">
-          {[
-            { label: t`Runs`, value: number(usage.runs) },
-            { label: t`Tokens`, value: number(usage.totalTokens) },
-            { label: t`Cost`, value: cost(usage.costUsd) },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
-              <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
-              <dd className="mt-1 text-heading3 font-medium tabular-nums text-foreground">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {models.length > 0 ? (
-        <div className="mt-4 rounded-xl border border-border px-2">
-          <Table className="text-body">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-muted-foreground">
-                  <Trans>Model</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Calls</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Input</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Output</Trans>
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  <Trans>Cost</Trans>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {models.map((row) => (
-                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
-                  <TableCell>
-                    <div className="text-foreground">{row.model}</div>
-                    <div className="text-label text-muted-foreground">{row.provider}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.modelCalls)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -628,39 +579,38 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function changePassword() {
-    if (pending) return;
-    if (newPassword !== confirmation) {
-      setError(t`Passwords do not match`);
-      return;
-    }
-    setPending(true);
-    setSaved(false);
-    setError(null);
-    try {
-      const result = await authClient.changePassword({
-        currentPassword,
-        newPassword,
-        revokeOtherSessions: true,
-      });
-      if (result.error) {
-        setError(authErrorText(result.error, t`Could not change password`));
-        return;
-      }
+  const [mismatch, setMismatch] = useState(false);
+  const change = useSave({
+    save: async (passwords: { currentPassword: string; newPassword: string }) => {
+      const result = await authClient
+        .changePassword({ ...passwords, revokeOtherSessions: true })
+        .catch(() => {
+          throw new Error(t`Could not reach the server`);
+        });
+      if (result.error) throw new Error(authErrorText(result.error, t`Could not change password`));
+    },
+    onSaved: () => {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmation("");
       setOpen(false);
       setSaved(true);
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      setPending(false);
+    },
+  });
+  const pending = change.pending;
+  const error = change.error?.message ?? (mismatch ? t`Passwords do not match` : null);
+
+  function changePassword() {
+    if (pending) return;
+    change.reset();
+    if (newPassword !== confirmation) {
+      setMismatch(true);
+      return;
     }
+    setMismatch(false);
+    setSaved(false);
+    change.run({ currentPassword, newPassword });
   }
 
   function close() {
@@ -668,7 +618,8 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
     setCurrentPassword("");
     setNewPassword("");
     setConfirmation("");
-    setError(null);
+    setMismatch(false);
+    change.reset();
   }
 
   return (
@@ -697,7 +648,7 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
           className="mt-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void changePassword();
+            changePassword();
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape" && !pending) {

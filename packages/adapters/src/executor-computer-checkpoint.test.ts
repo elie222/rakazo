@@ -98,6 +98,7 @@ vi.mock("./run-model.js", async (importOriginal) => ({
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async (
     _prisma: unknown,
     input: { computerId: string; botId: string; runId: string },
@@ -309,6 +310,10 @@ function fixture(runId = "run-1") {
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+    computer: {
+      findUnique: vi.fn(async () => null),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
@@ -534,7 +539,7 @@ it("retries without an error report while the paused action's tool is offline", 
   } finally {
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   }
-  expect(sink.events.filter((event) => event.message === "run setup failed")).toEqual([
+  expect(sink.events.filter((event) => event.message === "run.setup_failed")).toEqual([
     expect.objectContaining({ level: "warn" }),
   ]);
   expect(fake.stream).not.toHaveBeenCalled();

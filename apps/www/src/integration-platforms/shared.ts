@@ -172,7 +172,6 @@ export function zapierPlan(calls: number): { tasks: number; price: number } {
   return ZAPIER.pro.find((plan) => plan.tasks >= needed) ?? ZAPIER.pro[ZAPIER.pro.length - 1];
 }
 
-
 export const ARCADE = { fee: 25, perCall: 0.01, freeCalls: 2_000, toolkits: 81, tools: "7,500+" };
 
 /** Arcade's page lists no calls included in the Team fee, so every call is billed. */
@@ -235,4 +234,3 @@ export const TWILIO = {
   carrierHigh: 0.005,
   carrierTypical: 0.0045,
 };
-

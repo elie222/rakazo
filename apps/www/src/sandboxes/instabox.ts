@@ -1,24 +1,24 @@
 import {
   BOAT_RAKAZO,
+  boatMonthly,
   E2B_PRO_FEE,
+  hourly,
   INSTABOX,
+  instaboxCreditHours,
+  instaboxHour,
+  instaboxProMonthly,
+  instaboxShape,
   METHOD_NOTE,
   MONTH_HOURS,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
   RATES,
   RUNTIME_DOC,
-  WORKDAY_HOURS,
-  boatMonthly,
-  hourly,
-  instaboxCreditHours,
-  instaboxHour,
-  instaboxProMonthly,
-  instaboxShape,
-  monthly,
   rateUsd,
   usd,
+  WORKDAY_HOURS,
 } from "./shared";
 import type { Sandbox } from "./types";
 
@@ -26,7 +26,8 @@ const shape = instaboxShape();
 const hour = instaboxHour();
 const workdayUsage = monthly(RATES.instabox, WORKDAY_HOURS, INSTABOX.size);
 const creditHours = instaboxCreditHours();
-const atSize = (rate: (typeof RATES)[keyof typeof RATES], hours: number) => usd(monthly(rate, hours, INSTABOX.size));
+const atSize = (rate: (typeof RATES)[keyof typeof RATES], hours: number) =>
+  usd(monthly(rate, hours, INSTABOX.size));
 
 export const instabox: Sandbox = {
   slug: "instabox",
@@ -78,10 +79,28 @@ export const instabox: Sandbox = {
           { topic: "Free", cells: ["$0", "1, paused ones included", "4 vCPU / 8 GiB only"] },
           {
             topic: "Pro",
-            cells: [`$${INSTABOX.proFee}, returned as usage credit`, "100 running, 500 in all", "Up to 8 vCPU / 16 GiB"],
+            cells: [
+              `$${INSTABOX.proFee}, returned as usage credit`,
+              "100 running, 500 in all",
+              "Up to 8 vCPU / 16 GiB",
+            ],
           },
-          { topic: "Builder", cells: ["$100, returned as usage credit", "200 running, 1,000 in all", "Up to 16 vCPU / 32 GiB"] },
-          { topic: "Team", cells: ["$500, returned as usage credit", "500 running, no cap in all", "Up to 32 vCPU / 64 GiB"] },
+          {
+            topic: "Builder",
+            cells: [
+              "$100, returned as usage credit",
+              "200 running, 1,000 in all",
+              "Up to 16 vCPU / 32 GiB",
+            ],
+          },
+          {
+            topic: "Team",
+            cells: [
+              "$500, returned as usage credit",
+              "500 running, no cap in all",
+              "Up to 32 vCPU / 64 GiB",
+            ],
+          },
           { topic: "Enterprise", cells: ["Custom", "No cap", "Up to 32 vCPU / 64 GiB"] },
         ],
         note: `${PRICES_NOTE} Sources: [InstaBox pricing](https://instabox.sh/pricing) and [limits](https://instabox.sh/docs/account/limits).`,
@@ -96,7 +115,7 @@ export const instabox: Sandbox = {
     {
       heading: "What a Rakazo computer costs on InstaBox",
       paragraphs: [
-        `${METHOD_NOTE} Rakazo's InstaBox computers are bigger: Rakazo doesn't pick a size, so every computer gets the plan's default, ${shape}, about ${rateUsd(hour)} an hour. The table compares that size. On Pro, the $${INSTABOX.proFee} fee comes back as usage credit, enough for about ${creditHours} hours of it a month, shared by every computer on the account.`,
+        `${METHOD_NOTE} Rakazo's InstaBox computers are bigger: Rakazo's standard size, ${shape}, is also InstaBox's default, about ${rateUsd(hour)} an hour. The table compares that size. On Pro, the $${INSTABOX.proFee} fee comes back as usage credit, enough for about ${creditHours} hours of it a month, shared by every computer on the account.`,
       ],
       table: {
         caption: `One ${shape} computer a month`,
@@ -104,7 +123,10 @@ export const instabox: Sandbox = {
         rows: [
           {
             topic: "InstaBox, free plan",
-            cells: ["$0, if the plan's monthly hours cover it", "Not possible: each run pauses after 8 hours"],
+            cells: [
+              "$0, if the plan's monthly hours cover it",
+              "Not possible: each run pauses after 8 hours",
+            ],
           },
           {
             topic: "InstaBox, Pro",
@@ -120,7 +142,10 @@ export const instabox: Sandbox = {
               usd(boatMonthly(BOAT_RAKAZO.hour, MONTH_HOURS)),
             ],
           },
-          { topic: "[Novita](/sandboxes/novita/)", cells: [atSize(RATES.novita, WORKDAY_HOURS), atSize(RATES.novita, MONTH_HOURS)] },
+          {
+            topic: "[Novita](/sandboxes/novita/)",
+            cells: [atSize(RATES.novita, WORKDAY_HOURS), atSize(RATES.novita, MONTH_HOURS)],
+          },
           {
             topic: "[E2B](/sandboxes/e2b/)",
             cells: [
@@ -128,7 +153,10 @@ export const instabox: Sandbox = {
               `${atSize(RATES.e2b, MONTH_HOURS)}, or ${usd(monthly(RATES.e2b, MONTH_HOURS, INSTABOX.size) + E2B_PRO_FEE)} with Pro for 24-hour sessions`,
             ],
           },
-          { topic: "[Daytona](/sandboxes/daytona/)", cells: [atSize(RATES.daytona, WORKDAY_HOURS), atSize(RATES.daytona, MONTH_HOURS)] },
+          {
+            topic: "[Daytona](/sandboxes/daytona/)",
+            cells: [atSize(RATES.daytona, WORKDAY_HOURS), atSize(RATES.daytona, MONTH_HOURS)],
+          },
         ],
         note: "Computed from each provider's rates, checked November 2026, before free credits. Your model provider bills separately.",
       },
@@ -160,7 +188,8 @@ export const instabox: Sandbox = {
       heading: "Limits",
       bullets: [
         "The free plan allows one machine, paused ones included, which fits one person's bots in one space. More computers need a paid plan.",
-        `You can't choose a size or a region from Rakazo. Every computer gets the plan's default ${shape}.`,
+        `Computers run at Rakazo's standard size, ${shape}, unless the deployment's own-key plan tiers give a larger one. 8 vCPU / 16 GB needs a paid InstaBox plan, and 16 vCPU / 32 GB needs Builder or above. Moving an existing computer to another size restarts it, so its running programs end.`,
+        "You can't choose a region from Rakazo.",
         "InstaBox also pauses a computer after 30 idle minutes on its own. Rakazo's default idle stop, after 10 minutes, normally comes first.",
         "Rakazo creates every InstaBox computer without your account's vault, so secrets saved on that InstaBox account never reach a bot's computer. Anything a bot needs has to come through Rakazo.",
         "The desktop is served on the computer's public HTTPS address, and every screen and terminal needs its own token.",
@@ -204,7 +233,10 @@ export const instabox: Sandbox = {
     PRICING.instabox,
     { label: "InstaBox docs, pricing", href: "https://instabox.sh/docs/account/pricing" },
     { label: "InstaBox docs, limits", href: "https://instabox.sh/docs/account/limits" },
-    { label: "InstaBox docs, auto-pause and max-run", href: "https://instabox.sh/docs/machines/auto-pause" },
+    {
+      label: "InstaBox docs, auto-pause and max-run",
+      href: "https://instabox.sh/docs/machines/auto-pause",
+    },
     { label: "InstaBox docs, errors", href: "https://instabox.sh/docs/reference/errors" },
     PRICING.boat,
     PRICING.novita,

@@ -2,7 +2,13 @@ import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { toHistory } from "./pi-runtime-history.js";
-import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  loadReplyContext,
+  messageToAgentHistorySegments,
+  messageToAgentHistoryText,
+} from "./reply-context.js";
+
+const OFFERED = new Set(["shell", "SLACK_FIND_CHANNELS", "read_file"]);
 
 function harness(replyTo: unknown = null, replyQuote: string | null = null) {
   const findFirst = vi.fn().mockResolvedValue({
@@ -213,8 +219,7 @@ it("includes the server-derived first line and author role for an id-only reply"
 });
 
 describe("earlier turns' tool work", () => {
-  // Replayed in the bot's own turn, the step list was copied as whole replies instead of tool calls.
-  it("keeps tool steps, and step lists a reply copied, out of the bot's replayed turn", () => {
+  it("replays what an earlier reply did on the computer, not only its final text", () => {
     const install = messageToAgentHistoryText({
       id: "bot-install",
       threadId: "thread-1",
@@ -228,7 +233,7 @@ describe("earlier turns' tool work", () => {
           ],
           durationMs: 9_000,
         },
-        { kind: "text", text: "Done.\n[tool calls this reply made]\n- Shell (succeeded)" },
+        { kind: "text", text: "Done." },
       ],
     });
     const [, replayed] = toHistory(
@@ -241,42 +246,54 @@ describe("earlier turns' tool work", () => {
     );
     expect(replayed).toMatchObject({ role: "assistant" });
     const text = JSON.stringify(replayed);
+    expect(text).toContain("Shell ×2: Installing the password manager extension.");
+    expect(text).toContain("Computer screenshot");
     expect(text).toContain("Done.");
-    expect(text).not.toContain("tool calls this reply made");
-    expect(text).not.toContain("Shell");
   });
 
-  it("quotes a copied step list as the message someone replied to", () => {
-    const text = messageToAgentHistoryText({
-      id: "reaction",
+  it("replays the stored steps as the bot's own tool calls when the run has tools", () => {
+    const message = {
+      id: "bot-install",
       threadId: "thread-1",
-      role: "user",
-      blocks: [{ kind: "text", text: "👍" }],
-      replyToMessageId: "bot-copied",
-      replyTo: {
-        id: "bot-copied",
-        threadId: "thread-1",
-        role: "bot",
-        blocks: [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
-      },
+      role: "bot",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 1,
+              note: "Installing the extension.",
+              calls: [{ arguments: '{"command":"ls ext"}', result: "10.7.1_0" }],
+            },
+          ],
+        },
+        { kind: "text", text: "Done." },
+      ],
+    };
+    const replayed = toHistory(
+      [
+        {
+          id: "bot-install",
+          role: "assistant",
+          content: messageToAgentHistoryText(message),
+          segments: messageToAgentHistorySegments(message),
+        },
+      ],
+      "Did you install the extension?",
+      undefined,
+      OFFERED,
+    );
+    expect(replayed.map((entry) => entry.role)).toEqual(["assistant", "toolResult", "assistant"]);
+    expect(replayed[0]).toMatchObject({
+      content: [
+        { type: "text", text: "Installing the extension." },
+        { type: "toolCall", name: "shell", arguments: { command: "ls ext" } },
+      ],
     });
-    expect(text).toContain("List files (succeeded)");
-  });
-
-  it("quotes the tool steps of a reply someone reacted to", () => {
-    const text = messageToAgentHistoryText({
-      id: "reaction",
-      threadId: "thread-1",
-      role: "user",
-      blocks: [{ kind: "text", text: "👍" }],
-      replyToMessageId: "bot-tools",
-      replyTo: {
-        id: "bot-tools",
-        threadId: "thread-1",
-        role: "bot",
-        blocks: [{ kind: "steps", steps: [{ label: "Shell", count: 1 }] }],
-      },
-    });
-    expect(text).toContain("Shell");
+    expect(
+      messageToAgentHistorySegments({ ...message, blocks: [{ kind: "text", text: "Hi." }] }),
+    ).toBeUndefined();
   });
 });

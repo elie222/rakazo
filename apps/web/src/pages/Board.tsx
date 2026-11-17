@@ -8,7 +8,7 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
-import { isRetryableError, retryDelayMs } from "@rakazo/core";
+import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -18,15 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Textarea,
 } from "@rakazo/ui-web";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useTicketPriorityLabels } from "../lib/ticket-priority";
@@ -48,8 +47,6 @@ export function BoardPage() {
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
   const error = streamError || (loadFailed ? errorText(loadFailed) : "");
-  /** A read sent after a change, so an older one in flight cannot bring back the old board. */
-  const reload = () => fetchFresh(queryClient, ticketsOptions).then(() => undefined);
 
   useEffect(() => {
     let currentController: AbortController | undefined;
@@ -61,12 +58,13 @@ export function BoardPage() {
           ? queries.tickets.comments.queryKey({ input: { ticketId } })
           : queries.tickets.comments.key(),
       });
-    let cancelRetry: (() => void) | undefined;
+    const stopped = new AbortController();
     void (async () => {
       while (active) {
         const controller = new AbortController();
         currentController = controller;
         let failure: unknown;
+        let opened = false;
         try {
           const stream = await rpc.boards.subscribe(undefined, {
             signal: controller.signal,
@@ -76,6 +74,7 @@ export function BoardPage() {
           if (!active) return;
           refreshComments();
           setError("");
+          opened = true;
           for await (const event of stream) {
             if (!active) return;
             refreshComments(event.ticketId);
@@ -88,20 +87,16 @@ export function BoardPage() {
           controller.abort();
         }
         if (!active || !isRetryableError(failure)) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
+        await abortableDelay(
+          opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
+          stopped.signal,
+        );
       }
     })();
     return () => {
       active = false;
       currentController?.abort();
-      cancelRetry?.();
+      stopped.abort();
     };
   }, [queries]);
 
@@ -165,7 +160,6 @@ export function BoardPage() {
           ticket={selected === "new" ? null : selected}
           bots={bots}
           onClose={() => setSelected(null)}
-          onSaved={reload}
         />
       ) : null}
     </div>
@@ -176,12 +170,10 @@ function TicketDialog({
   ticket,
   bots,
   onClose,
-  onSaved,
 }: {
   ticket: Ticket | null;
   bots: Bot[];
   onClose: () => void;
-  onSaved: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const formId = useId();
@@ -200,14 +192,8 @@ function TicketDialog({
   const commentsQuery = useQuery(commentsOptions);
   const comments = commentsQuery.data ?? [];
   const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const shownError = error || (commentsQuery.error ? errorText(commentsQuery.error) : "");
-
-  async function save() {
-    setBusy(true);
-    setError("");
-    try {
+  const saving = useSave({
+    save: async (_input, rpc) => {
       if (ticket)
         await rpc.tickets.update({
           id: ticket.id,
@@ -226,36 +212,36 @@ function TicketDialog({
           assigneeBotId: owner,
           priority,
         });
-      await onSaved();
-      onClose();
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function comment() {
-    if (!ticket) return;
-    setBusy(true);
-    setError("");
-    try {
-      const row = await rpc.tickets.comment({ ticketId: ticket.id, body });
-      const options = queries.tickets.comments.queryOptions({ input: { ticketId: ticket.id } });
+    },
+    stale: [queries.tickets.list.key()],
+    closesScreen: true,
+    onSaved: () => onClose(),
+  });
+  const commenting = useSave({
+    save: async (text: string, rpc) => {
+      if (!ticket) return;
+      const row = await rpc.tickets.comment({ ticketId: ticket.id, body: text });
       // A list already on screen shows the comment at once, unless a read already brought it.
-      if (queryClient.getQueryData(options.queryKey)) {
-        await writeSaved(queryClient, options.queryKey, (previous = []) =>
+      if (queryClient.getQueryData(commentsOptions.queryKey)) {
+        await writeSaved(queryClient, commentsOptions.queryKey, (previous = []) =>
           previous.some((item) => item.id === row.id) ? previous : [...previous, row],
         );
+      } else {
+        // A first read still in flight was sent before the post, so it is not waited for.
+        await queryClient.cancelQueries({ queryKey: commentsOptions.queryKey, exact: true });
       }
+      // Listed now, so the box empties before the list is read again.
       setBody("");
-      // Saving cancelled any read in flight, so the whole list is read again after the post.
-      void fetchFresh(queryClient, options).catch(() => undefined);
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    stale: [commentsOptions.queryKey],
+  });
+  const busy = saving.pending || commenting.pending;
+  const failure = saving.error ?? commenting.error;
+  const shownError = failure
+    ? errorText(failure)
+    : commentsQuery.error
+      ? errorText(commentsQuery.error)
+      : "";
 
   return (
     <Dialog
@@ -272,7 +258,8 @@ function TicketDialog({
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            commenting.reset();
+            saving.run();
           }}
         >
           <label htmlFor={`${formId}-title`} className="block space-y-1 text-body">
@@ -303,55 +290,37 @@ function TicketDialog({
             <span>
               <Trans>Owner</Trans>
             </span>
-            <NativeSelect
-              className="w-full"
+            <OptionSelect
               id={`${formId}-owner`}
-              value={owner}
-              onChange={(event) => setOwner(event.target.value)}
+              value={owner || null}
+              onValueChange={setOwner}
               required
-            >
-              {bots.map((bot) => (
-                <NativeSelectOption key={bot.id} value={bot.id}>
-                  {bot.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+            />
           </label>
           {ticket ? (
             <label htmlFor={`${formId}-status`} className="block space-y-1 text-body">
               <span>
                 <Trans>Status</Trans>
               </span>
-              <NativeSelect
-                className="w-full"
+              <OptionSelect<TicketStatus>
                 id={`${formId}-status`}
                 value={status}
-                onChange={(event) => setStatus(event.target.value as TicketStatus)}
-              >
-                {TICKET_STATUSES.map((value) => (
-                  <NativeSelectOption key={value} value={value}>
-                    {statuses[value]}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={setStatus}
+                options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
+              />
             </label>
           ) : null}
           <label htmlFor={`${formId}-priority`} className="block space-y-1 text-body">
             <span>
               <Trans>Priority</Trans>
             </span>
-            <NativeSelect
-              className="w-full"
+            <OptionSelect<TicketPriority>
               id={`${formId}-priority`}
               value={priority}
-              onChange={(event) => setPriority(event.target.value as TicketPriority)}
-            >
-              {TICKET_PRIORITIES.map((value) => (
-                <NativeSelectOption key={value} value={value}>
-                  {priorities[value]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              onValueChange={setPriority}
+              options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
+            />
           </label>
           <div className="flex justify-end">
             <Button type="submit" disabled={busy || !title.trim() || !owner}>
@@ -374,7 +343,8 @@ function TicketDialog({
               className="space-y-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                void comment();
+                saving.reset();
+                commenting.run(body);
               }}
             >
               <Textarea

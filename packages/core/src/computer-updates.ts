@@ -2,45 +2,109 @@ import type { ComputerUpdate } from "@rakazo/contracts";
 import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
-/** Shared polling and local presentation state; the server owns operation lifetime. */
+/** Failed reads retry on this backoff (or the server's Retry-After); nothing else re-reads on a timer. */
+const RETRY_MS = 5_000;
+
+/**
+ * Shared list and local presentation state; the server owns operation lifetime. The list is read
+ * when watching starts and whenever the app's live stream signals a change. The stream signals once
+ * on every (re)connect, so a change missed while it was down is caught then.
+ */
 export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
   start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
+  /** The list belongs to the selected Space, so switching starts over. */
+  onSpaceChange?: (listener: () => void) => () => void;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Bumped by every watch and unwatch, so a late response from another watch is dropped.
   let generation = 0;
+  let watching = false;
+  // The server refused a read (signed out, or this build): nothing is asked again until rewatched.
+  let refused = false;
+  // After a failed read, signals wait for its scheduled retry, which honors Retry-After.
+  let backoffUntil = 0;
   let revision = 0;
+  let fetching = false;
+  let again = false;
   const emit = () => {
     for (const listener of listeners) listener();
   };
-  const poll = async (epoch: number) => {
+  const retry = (failure: unknown) => {
+    clearTimeout(timer);
+    const delay = retryDelayMs(failure, RETRY_MS);
+    backoffUntil = Date.now() + delay;
+    timer = setTimeout(() => {
+      // The timer is the retry the backoff waited for, even if it fires a little early.
+      backoffUntil = 0;
+      void refresh();
+    }, delay);
+  };
+  const read = async () => {
+    const epoch = generation;
     const stamp = revision;
-    let failure: unknown;
+    clearTimeout(timer);
     try {
       const updates = await client.list();
-      if (epoch !== generation || stamp !== revision) return;
-      if (JSON.stringify(state.updates) === JSON.stringify(updates)) return;
-      state = {
-        updates,
-        openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
-      };
-      emit();
-    } catch (error) {
-      // Keep the last known operation through transient failures; a 401 or other refusal stops
-      // polling until the next watch, since asking again cannot change the answer.
-      failure = error;
-    } finally {
-      if (epoch === generation) {
-        clearTimeout(timer);
-        if (failure === undefined || isRetryableError(failure)) {
-          const delay = retryDelayMs(failure, state.updates.length ? 1500 : 15000);
-          timer = setTimeout(() => void poll(epoch), delay);
-        }
+      if (epoch !== generation) return;
+      // A start or dismiss landed while this was in flight; its result is newer than this read.
+      if (stamp !== revision) {
+        again = true;
+        return;
       }
+      backoffUntil = 0;
+      if (JSON.stringify(state.updates) !== JSON.stringify(updates)) {
+        state = {
+          updates,
+          openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
+        };
+        emit();
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      // Keep the last known operation through transient failures; a 401 or other refusal stops
+      // reading until the next watch, since asking again cannot change the answer.
+      if (!isRetryableError(error)) {
+        refused = true;
+        clearTimeout(timer);
+        return;
+      }
+      retry(error);
     }
+  };
+  /** One read at a time; signals that arrive meanwhile become one more read. */
+  const mayRead = () => watching && !refused && Date.now() >= backoffUntil;
+  const refresh = async () => {
+    if (!mayRead()) return;
+    if (fetching) {
+      again = true;
+      return;
+    }
+    fetching = true;
+    try {
+      do {
+        again = false;
+        await read();
+      } while (again && mayRead());
+    } finally {
+      fetching = false;
+    }
+  };
+  const begin = () => {
+    generation++;
+    watching = true;
+    refused = false;
+    backoffUntil = 0;
+    void refresh();
+    return () => {
+      generation++;
+      watching = false;
+      clearTimeout(timer);
+      state = { updates: [], openId: null };
+    };
   };
   return {
     getSnapshot: () => state,
@@ -51,21 +115,37 @@ export function createComputerUpdates(client: {
       };
     },
     watch() {
-      const epoch = ++generation;
-      void poll(epoch);
+      let stop = begin();
+      // Another Space has its own list, and nothing from the old one may land.
+      const unfollowSpace = client.onSpaceChange?.(() => {
+        stop();
+        emit();
+        stop = begin();
+      });
       return () => {
-        generation++;
-        clearTimeout(timer);
-        state = { updates: [], openId: null };
+        unfollowSpace?.();
+        stop();
       };
+    },
+    /** Call when the app's live stream opens and on each change it signals. */
+    signalled() {
+      void refresh();
     },
     open(id: string | null) {
       state = { ...state, openId: id };
       emit();
     },
-    async start(botId: string, action: "update" | "recover" = "update") {
+    /** `begin` sends the start through the caller's own client instead of this store's. */
+    async start(
+      botId: string,
+      action: "update" | "recover" = "update",
+      begin: (
+        botId: string,
+        action: "update" | "recover",
+      ) => Promise<ComputerUpdate> = client.start,
+    ) {
       const epoch = generation;
-      const update = await client.start(botId, action);
+      const update = await begin(botId, action);
       if (epoch !== generation) return;
       revision++;
       state = {
@@ -73,8 +153,6 @@ export function createComputerUpdates(client: {
         openId: update.id,
       };
       emit();
-      clearTimeout(timer);
-      timer = setTimeout(() => void poll(epoch), 1500);
     },
     async dismiss(id: string) {
       const epoch = generation;

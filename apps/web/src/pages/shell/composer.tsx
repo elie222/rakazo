@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
 import type { ComposerMention, ComposerMentionRange, SlashActionId } from "@rakazo/core";
 import {
@@ -15,7 +16,7 @@ import {
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Box, Plus } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, RefObject } from "react";
+import type { ClipboardEvent, ComponentProps, ReactNode, RefObject } from "react";
 import {
   memo,
   useEffect,
@@ -49,6 +50,7 @@ import {
 import { hasOpenDialog } from "../../lib/has-open-dialog";
 import { usePageSession } from "../../lib/pages";
 import { isFilePaste } from "../../lib/pending-attachments";
+import { useEventListener } from "../../lib/use-event-listener";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -64,6 +66,8 @@ import { isApplePlatform, isEditableTarget, primaryModifier } from "./shell-shor
 import { useComposerFileDrop } from "./use-composer-file-drop";
 import { useComposerLayout } from "./use-composer-layout";
 import { useComposerTriggers } from "./use-composer-triggers";
+
+export const LARGE_PASTE_THRESHOLD = 4_000;
 
 const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 const COMPOSER_TEXT = "rk-scroll whitespace-pre-wrap break-words px-0.5 py-0.5 text-body-lg";
@@ -103,6 +107,7 @@ const ComposerBody = memo(function Composer({
   draftKey,
   enterToSend,
   sendColors,
+  modelPicker,
   docked = false,
 }: {
   activeName?: string;
@@ -147,6 +152,8 @@ const ComposerBody = memo(function Composer({
   enterToSend: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
   sendColors?: { background: string; foreground: string };
+  /** The chat's model, shown beside Send when the person turned that on. */
+  modelPicker?: ReactNode;
   /** Floating over an open page instead of sitting under the chat. */
   docked?: boolean;
 }) {
@@ -155,6 +162,12 @@ const ComposerBody = memo(function Composer({
     text: readComposerDraft(draftKey),
     bindings: readComposerDraftBindings(draftKey),
   }));
+  const [largePaste, setLargePaste] = useState<{
+    text: string;
+    before: typeof composition;
+    start: number;
+    end: number;
+  } | null>(null);
   const draft = composition.text;
   const mentionBindings = composition.bindings;
   const compositionRef = useRef(composition);
@@ -171,6 +184,7 @@ const ComposerBody = memo(function Composer({
     ].slice(0, 3);
   }
   function commitComposition(next: typeof composition, persist = true) {
+    setLargePaste(null);
     compositionRef.current = next;
     setComposition(next);
     editSelections.current = [];
@@ -198,18 +212,24 @@ const ComposerBody = memo(function Composer({
     selectedSkill,
     setSelectedSkill,
     updatePickers,
+    updateSlashQuery,
     insertMention,
     insertSkill,
     runSlashAction,
     removeSkill,
     mentionListboxId,
+    slashListboxId,
     mentionOptions,
     activeMentionIndex,
     mentionPickerOpen,
-    activeMentionOptionId,
     slashSkillOptions,
     slashActionOptions,
     showSlashPicker,
+    slashOptionKeys,
+    setSlashHighlightKey,
+    activeSlashIndex,
+    activeOptionId,
+    pickSlashOption,
   } = useComposerTriggers({
     draft,
     mentionBindings,
@@ -317,6 +337,7 @@ const ComposerBody = memo(function Composer({
   }, [dictationSendDue, sending]);
   const {
     textareaRef,
+    onTextareaScroll,
     mirrorRef,
     attachButtonRef,
     composerActionsRef,
@@ -331,27 +352,21 @@ const ComposerBody = memo(function Composer({
     talk,
     available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
   };
-  useEffect(() => {
-    const apple = isApplePlatform();
-    function onKey(event: KeyboardEvent) {
-      if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d")
-        return;
-      if (!primaryModifier(event, apple)) return;
-      const { talk, available } = dictateKey.current;
-      if (talk.recording) {
-        // Pressed while typing elsewhere, it belongs to that field rather than this recording.
-        if (!talk.recording.locked || talk.transcribing) return;
-        if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
-        event.preventDefault();
-        talk.submit();
-      } else if (available && document.activeElement === textareaRef.current) {
-        event.preventDefault();
-        talk.startHandsFree();
-      }
+  useEventListener(window, "keydown", (event) => {
+    if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d") return;
+    if (!primaryModifier(event, isApplePlatform())) return;
+    const { talk, available } = dictateKey.current;
+    if (talk.recording) {
+      // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+      if (!talk.recording.locked || talk.transcribing) return;
+      if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+      event.preventDefault();
+      talk.submit();
+    } else if (available && document.activeElement === textareaRef.current) {
+      event.preventDefault();
+      talk.startHandsFree();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [textareaRef]);
+  });
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
     const selection = pendingCaret.current;
@@ -395,6 +410,7 @@ const ComposerBody = memo(function Composer({
     draft.trim().length > 0 || selectedSkill !== null || pendingAttachments.length > 0;
 
   function markEdited() {
+    setLargePaste(null);
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
@@ -450,6 +466,7 @@ const ComposerBody = memo(function Composer({
 
   async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
+    setLargePaste(null);
     const revision = editRevision.current;
     // Recovery rebuilds the draft from text alone, so only a plain-text send —
     // no reply target, no attachments, no skill, no open page — can share its
@@ -530,42 +547,65 @@ const ComposerBody = memo(function Composer({
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const clipboardData = event.clipboardData;
-    // Only intercept real FileList pastes; leave text-only / empty-files native.
-    if (disabled || !clipboardData || !isFilePaste(clipboardData)) return;
-    event.preventDefault();
-    pickAttachments(clipboardData.files);
+    if (disabled || !clipboardData) return;
     const text = clipboardData.getData("text/plain");
+    const files = isFilePaste(clipboardData);
+    if (!files && text.length <= LARGE_PASTE_THRESHOLD) return;
+    event.preventDefault();
+    if (files) pickAttachments(clipboardData.files);
     if (!text) return;
     const textarea = event.currentTarget;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
+    const before = compositionRef.current;
     rememberSelection(textarea);
-    updateDraft(`${draft.slice(0, start)}${text}${draft.slice(end)}`, start + text.length);
     const caret = start + text.length;
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.setSelectionRange(caret, caret);
-    });
+    updateDraft(`${before.text.slice(0, start)}${text}${before.text.slice(end)}`, caret);
+    pendingCaret.current = { start: caret, end: caret };
+    if (!files) setLargePaste({ text, before, start, end });
+  }
+
+  function attachLargePaste() {
+    if (!largePaste || disabled) return;
+    const file = new File([largePaste.text], "pasted-text.txt", { type: "text/plain" });
+    // Rejection leaves the pasted text available and the normal attachment notice visible.
+    if (!onAttachmentPick([file])) return;
+    markEdited();
+    commitComposition(largePaste.before);
+    updatePickers(
+      largePaste.before.text,
+      largePaste.start,
+      largePaste.end,
+      largePaste.before.bindings,
+    );
+    pendingCaret.current = { start: largePaste.start, end: largePaste.end };
   }
 
   const showComposerPlaceholder = draft.length === 0 && selectedSkill === null;
 
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
-  const replyNameRef = useRef(replyName);
-  replyNameRef.current = replyName;
-  const announceTimer = useRef(0);
-  useEffect(() => () => window.clearTimeout(announceTimer.current), []);
+  // A new object restarts the wait; null cancels it.
+  const [pendingAnnounce, setPendingAnnounce] = useState<object | null>(null);
+  useTimeout(
+    () => {
+      replyAnnouncementKind.current = "reply";
+      setReplyAnnouncement(t`Replying to ${replyName}`);
+    },
+    pendingAnnounce ? 50 : null,
+    pendingAnnounce,
+  );
 
   // Arming or retargeting a reply unmounts the control that started it, so
   // focus would drop to <body>; announce on start and when the target changes.
-  // The timer lives in a ref: a same-id rerender (e.g. the display name
-  // resolving after arming) must not cancel the pending announcement.
+  // A same-id rerender (e.g. the display name resolving after arming) must not
+  // cancel the pending announcement.
   useEffect(() => {
     const prev = prevReplyTarget.current;
     prevReplyTarget.current = replyTarget ?? null;
     if (!replyTarget) {
       // Cancel (or send) within the delay must not let a stale "Replying to"
       // overwrite the cancel announcement — kill the pending timer.
-      window.clearTimeout(announceTimer.current);
+      setPendingAnnounce(null);
       // A send disarms the reply without touching the region — drop the stale
       // "Replying to" so it cannot linger or re-announce. An explicit cancel
       // sets "Reply cancelled" in the same event, so only clear "reply" text.
@@ -581,11 +621,7 @@ const ComposerBody = memo(function Composer({
       // identical live-region text would otherwise be a no-op.
       setReplyAnnouncement("");
       replyAnnouncementKind.current = null;
-      window.clearTimeout(announceTimer.current);
-      announceTimer.current = window.setTimeout(() => {
-        replyAnnouncementKind.current = "reply";
-        setReplyAnnouncement(t`Replying to ${replyNameRef.current}`);
-      }, 50);
+      setPendingAnnounce({});
     }
   }, [replyTarget, replyName, t]);
 
@@ -623,7 +659,7 @@ const ComposerBody = memo(function Composer({
           target={artifactTarget}
           onDismiss={() => {
             replyAnnouncementKind.current = "cancelled";
-            window.clearTimeout(announceTimer.current);
+            setPendingAnnounce(null);
             onClearReply?.();
             setReplyAnnouncement(t`Reply cancelled`);
             textareaRef.current?.focus();
@@ -634,6 +670,26 @@ const ComposerBody = memo(function Composer({
         <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-body-sm text-warning">
           {attachmentNotice}
         </div>
+      ) : null}
+      <span className="sr-only" role="status">
+        {largePaste ? t`Large text pasted inline` : ""}
+      </span>
+      {largePaste ? (
+        <fieldset className="mb-2 flex items-center gap-1" aria-label={t`Large paste`}>
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={attachLargePaste}>
+            {t`Attach as file`}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLargePaste(null);
+              textareaRef.current?.focus();
+            }}
+          >
+            {t`Keep inline`}
+          </Button>
+        </fieldset>
       ) : null}
       <PendingAttachmentChips
         attachments={pendingAttachments}
@@ -653,6 +709,9 @@ const ComposerBody = memo(function Composer({
       ) : null}
       {showSlashPicker ? (
         <SlashPicker
+          listboxId={slashListboxId}
+          activeIndex={activeSlashIndex}
+          onHighlight={setSlashHighlightKey}
           skills={slashSkillOptions}
           actions={slashActionOptions}
           onSkill={insertSkill}
@@ -716,6 +775,7 @@ const ComposerBody = memo(function Composer({
           <div className="relative min-w-[8rem] flex-1" hidden={talk.recording !== null}>
             <textarea
               ref={textareaRef}
+              onScroll={onTextareaScroll}
               value={draft}
               onChange={(event) => {
                 completedSelection.current = null;
@@ -746,6 +806,12 @@ const ComposerBody = memo(function Composer({
                     mentionBindings,
                   )?.query ?? null,
                 );
+                updateSlashQuery(
+                  field.value,
+                  field.selectionStart,
+                  field.selectionEnd,
+                  mentionBindings,
+                );
               }}
               onPaste={handlePaste}
               onKeyDown={(event) => {
@@ -760,11 +826,25 @@ const ComposerBody = memo(function Composer({
                   shiftKey: event.shiftKey,
                   ctrlKey: event.ctrlKey,
                   metaKey: event.metaKey,
+                  altKey: event.altKey,
                   enterToSend,
                   isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                  optionCount: mentionOptions.length,
-                  highlightedIndex: activeMentionIndex,
+                  optionCount: mentionPickerOpen ? mentionOptions.length : slashOptionKeys.length,
+                  highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
                 });
+                // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
+                if (showSlashPicker && action.type !== "none") {
+                  event.preventDefault();
+                  if (action.type === "complete" || action.type === "send")
+                    pickSlashOption(activeSlashIndex);
+                  else if (action.type === "move")
+                    setSlashHighlightKey(slashOptionKeys[action.index] ?? null);
+                  else {
+                    completedSelection.current = event.currentTarget.selectionStart;
+                    setSlashQuery(null);
+                  }
+                  return;
+                }
                 if (action.type === "complete") {
                   const mention = mentionOptions[action.index];
                   if (!mention) return;
@@ -800,12 +880,6 @@ const ComposerBody = memo(function Composer({
                   event.altKey
                 )
                   return;
-                // An open picker closes first; a held Escape never goes on to stop the reply.
-                if (showSlashPicker) {
-                  event.preventDefault();
-                  setSlashQuery(null);
-                  return;
-                }
                 if (running && !sending && !talk.recording?.locked) {
                   event.preventDefault();
                   void onStop();
@@ -823,9 +897,11 @@ const ComposerBody = memo(function Composer({
               role="combobox"
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={mentionPickerOpen}
-              aria-controls={mentionPickerOpen ? mentionListboxId : undefined}
-              aria-activedescendant={activeMentionOptionId}
+              aria-expanded={mentionPickerOpen || showSlashPicker}
+              aria-controls={
+                mentionPickerOpen ? mentionListboxId : showSlashPicker ? slashListboxId : undefined
+              }
+              aria-activedescendant={activeOptionId}
               name="chat-message"
               autoComplete="off"
               dir="auto"
@@ -851,6 +927,7 @@ const ComposerBody = memo(function Composer({
           sendDisabled={sending || !canSend || disabled}
           stopDisabled={sending}
           sendColors={sendColors}
+          modelPicker={modelPicker}
           onSend={() => void send()}
           onStop={() => void onStop()}
         />

@@ -1,8 +1,9 @@
 import type { IncomingBotCall } from "@rakazo/contracts";
-import { IncomingBotCallSchema } from "@rakazo/contracts";
+import { IncomingBotCallSchema, SpaceChangeKind } from "@rakazo/contracts";
 import {
   cancelResponseBody,
   displayIdentityEvent,
+  IDLE_TIMEOUT_MS,
   isServerUnreachable,
   isUnreachableStatus,
 } from "@rakazo/core";
@@ -33,8 +34,6 @@ type ThreadEvent = {
   threadId?: string;
   payload?: Record<string, unknown>;
 };
-/** No frame at all for this long means the stream is half-open; the server beats far faster. */
-export const IDLE_TIMEOUT_MS = 45_000;
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -78,6 +77,31 @@ export async function subscribeIncomingCallEvents(
       if (event.type !== "incoming.calls") return;
       const calls = IncomingBotCallSchema.array().safeParse(event.payload?.calls);
       if (calls.success) onCalls(calls.data);
+    },
+    signal,
+    context,
+  );
+}
+/**
+ * Calls `onSignal` for each roster signal, `onSpaceChange` for each Space change signal and
+ * `onOrganizationsChange` when the user's organizations or their members may have changed: each
+ * kind once when the stream opens, then once per change. Kinds this build does not know are skipped.
+ */
+export async function subscribeRosterSignals(
+  onSignal: () => void,
+  signal: AbortSignal,
+  onSpaceChange: (kind: SpaceChangeKind) => void = () => {},
+  onOrganizationsChange: () => void = () => {},
+) {
+  const context = await captureApiRequestContext();
+  return subscribeRpcEvents(
+    "notifications/subscribe",
+    {},
+    (event) => {
+      if (event.type === "roster") onSignal();
+      if (event.type === "organizations") onOrganizationsChange();
+      const kind = SpaceChangeKind.safeParse(event.type);
+      if (kind.success) onSpaceChange(kind.data);
     },
     signal,
     context,

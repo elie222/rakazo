@@ -224,6 +224,7 @@ describe("buildPlaywrightPrScreenshotComment", () => {
       "[Open screenshot gallery](https://example.com/playwright/prs/452/index.html) · [Dashboard](https://example.com/playwright/index.html) · [CI run](https://github.com/example/rakazo/actions/runs/1)",
     );
     expect(body).toContain("Updated for commit `abcdef1`.");
+    expect(body).toContain("<!-- screenshot-commit:abcdef1234567890 -->");
     expect(body).not.toContain("—");
   });
 

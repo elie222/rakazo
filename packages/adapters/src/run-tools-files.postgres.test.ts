@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { createDb, createThreadEvents, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LocalArtifactStore } from "./artifacts.js";
@@ -111,6 +112,7 @@ postgres("attach_file (PostgreSQL)", () => {
         runId: run.id,
         signal: new AbortController().signal,
       },
+      source: {},
       secrets: [],
       computer: {
         mode: "personal",
@@ -205,27 +207,21 @@ postgres("attach_file (PostgreSQL)", () => {
     // the thread-lock budget.
     const holdMs = 6_000;
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const hold = fixture(() =>
       prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR SHARE`;
           const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
             SELECT pg_current_xact_id()::text AS "xactId"`;
-          locked(rows[0]?.xactId ?? "");
-          await opened;
+          lockTaken.resolve(rows[0]?.xactId ?? "");
+          await opened.promise;
         },
         { timeout: 30_000 },
       ),
     );
-    const xactId = await lockTaken;
+    const xactId = await lockTaken.promise;
     const before = await state();
     const probe = await fixture(() => pool.connect());
     let posted: { artifactId: string };
@@ -246,11 +242,11 @@ postgres("attach_file (PostgreSQL)", () => {
       // The blocked write sits in Postgres until the row is released; on the default budget
       // Prisma reports the expiry then, and the attach returns an error instead of posting.
       await sleep(holdMs);
-      open();
+      opened.resolve();
       posted = (await attaching) as { artifactId: string };
       expect(posted).toMatchObject({ artifactId: expect.any(String) });
     } finally {
-      open();
+      opened.resolve();
       probe.release();
       await hold.catch(() => undefined);
     }

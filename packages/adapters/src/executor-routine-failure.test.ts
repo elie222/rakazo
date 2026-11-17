@@ -16,6 +16,7 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
@@ -1098,6 +1099,26 @@ describe("reporting a failed run", () => {
       expect.objectContaining({ level: "error" }),
     ]);
   });
+
+  it.each([
+    [
+      "a failure the provider classified",
+      '404: {"error":{"message":"No endpoints found for thread-42"}}',
+      ["run.failed", "openrouter", "model", "404"],
+    ],
+    [
+      "an unclassified failure",
+      "Unexpected message role in thread-42",
+      ["run.failed", "openrouter", "unclassified", "none"],
+    ],
+  ])(
+    "fingerprints %s by provider, kind and status, not its text",
+    async (_label, message, fingerprint) => {
+      expect(await failedRunLog(new Error(message))).toEqual([
+        expect.objectContaining({ "error.fingerprint": fingerprint }),
+      ]);
+    },
+  );
 
   it.each([
     ["warning", overloaded()],

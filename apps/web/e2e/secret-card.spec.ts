@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { BLOCKED_ITEM_ANSWER } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("renders masked secret card and saves without putting the value in chat", async ({
@@ -71,6 +72,21 @@ test("renders masked secret card and saves without putting the value in chat", a
   await expect(card.getByText("Could not submit this answer", { exact: true })).toBeVisible();
   await expect(page.getByText(secretValue)).toHaveCount(0);
   await expect(secretField).toHaveValue("");
+  await page.unroute("**/rpc/threads/answer");
+
+  // The owner blocked bots from this item while the card waited: the card says why, translated.
+  await page.route("**/rpc/threads/answer", (route) =>
+    route.fulfill({
+      status: 400,
+      json: {
+        json: { defined: false, code: "BAD_REQUEST", status: 400, message: BLOCKED_ITEM_ANSWER },
+      },
+    }),
+  );
+  await secretField.fill(secretValue);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(card.getByText(BLOCKED_ITEM_ANSWER, { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "secret-card-blocked");
   await page.unroute("**/rpc/threads/answer");
 
   await secretField.fill(secretValue);

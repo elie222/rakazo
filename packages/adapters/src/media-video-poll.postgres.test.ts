@@ -125,6 +125,8 @@ describePostgres("background video delivery (PostgreSQL)", () => {
           if (queue.down) throw new Error("queue unavailable");
           enqueued.push(job);
         },
+        enqueueIn: async () => undefined,
+        cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,
       };

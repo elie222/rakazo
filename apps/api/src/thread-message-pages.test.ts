@@ -54,6 +54,39 @@ describe("thread message pages", () => {
     expect(byId.get("gone")).not.toHaveProperty("author");
   });
 
+  it("loads a page whose row holds no block list as a message without blocks", async () => {
+    const row = (id: string, seq: number, blocks: unknown) => ({
+      id,
+      threadId: "thread-1",
+      seq,
+      role: "bot",
+      blocks,
+      botId: "bot-1",
+      authorUserId: null,
+      replyToMessageId: null,
+      replyQuote: null,
+      replyTo: null,
+      runId: null,
+      createdAt: new Date("2026-10-22T00:00:00.000Z"),
+    });
+    const prisma = {
+      message: {
+        findMany: vi.fn(async () => [
+          row("fine", 2, [{ kind: "text", text: "hello" }]),
+          row("broken", 1, { kind: "text", text: "not a list" }),
+        ]),
+      },
+      user: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => [message.id, message.blocks])).toEqual([
+      ["broken", []],
+      ["fine", [{ kind: "text", text: "hello" }]],
+    ]);
+  });
+
   it("caches peer-run classification for live events", async () => {
     const findUnique = vi.fn(async () => ({ trigger: "bot_message" }));
     const prisma = { run: { findUnique } } as unknown as PrismaClient;

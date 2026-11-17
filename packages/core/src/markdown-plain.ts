@@ -228,6 +228,10 @@ export function truncatePlainText(text: string, maxChars: number): string {
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. */
 function htmlTagClose(text: string, open: number): number {
+  if (text.startsWith("<!--", open)) {
+    const close = text.indexOf("-->", open + 4);
+    return close === -1 ? text.length - 1 : close + 2;
+  }
   let quote: '"' | "'" | undefined;
   let gtInOpenQuote = -1;
   for (let i = open + 1; i < text.length; i++) {
@@ -297,7 +301,7 @@ function boundedPreviewSource(
   markdown: string,
   maxSource: number,
 ): { text: string; truncated: boolean } {
-  const normalized = markdown.replace(/\r\n/g, "\n");
+  const normalized = markdown.replace(/\r\n?/g, "\n");
   if (normalized.length <= maxSource) return { text: normalized, truncated: false };
   const body = normalized.trimStart();
   if (body.length <= maxSource) return { text: body, truncated: false };

@@ -10,12 +10,15 @@ type AskSnapshot = {
   activeRuns?: readonly { id: string; status: string; userId?: string }[];
 };
 
-export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<string> {
+export function answerableAskMessageIds(
+  snapshot: AskSnapshot | null,
+  userId?: string,
+): Set<string> {
   const answerable = new Set<string>();
   if (!snapshot) return answerable;
   const waitingRunIds = new Set(
     (snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : []))
-      .filter((run) => run.status === "waiting_input")
+      .filter((run) => run.status === "waiting_input" && (!userId || run.userId === userId))
       .map((run) => run.id),
   );
   for (const message of snapshot.messages) {

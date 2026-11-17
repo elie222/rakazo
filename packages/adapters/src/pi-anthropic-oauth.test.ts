@@ -1,4 +1,5 @@
 import type { AuthInteraction } from "@earendil-works/pi-ai";
+import { ResponseTooLargeError } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   createManualAnthropicOAuthLogin,
@@ -174,3 +175,26 @@ function interactionFor(input: string, signal = new AbortController().signal): A
     },
   };
 }
+
+describe("oversized token exchange answers", () => {
+  const login = (response: Response) =>
+    createManualAnthropicOAuthLogin({
+      fetch: vi.fn().mockResolvedValue(response),
+      createVerifier: () => "expected-state",
+    })(interactionFor("code#expected-state"));
+
+  it("refuses a streamed answer over the cap as too large", async () => {
+    const failure = login(new Response(new Uint8Array(MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES + 1)));
+    await expect(failure).rejects.toBeInstanceOf(ResponseTooLargeError);
+    await expect(failure).rejects.toThrow("Anthropic token exchange response is too large.");
+  });
+
+  it("does not call another read failure too large", async () => {
+    const body = new ReadableStream({
+      pull: (controller) => controller.error(new Error("Response is too large")),
+    });
+    const failure = login(new Response(body));
+    await expect(failure).rejects.toThrow("Response is too large");
+    await expect(failure).rejects.not.toBeInstanceOf(ResponseTooLargeError);
+  });
+});

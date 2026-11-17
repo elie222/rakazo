@@ -19,7 +19,7 @@ import {
   parseStripeWebhook,
   pickBillingSubscription,
   signStripeWebhook,
-} from "./stripe-billing.js";
+} from "./providers/billing/stripe/stripe-billing.js";
 
 const WEBHOOK_SECRET = "billing-emulator-webhook-secret";
 const BYOK_PRICE_ID = "price_byok_emulated";
@@ -283,6 +283,11 @@ export class BillingEmulator implements BillingProvider {
     this.checkouts.delete(customerId);
     this.byokCheckouts.delete(customerId);
     this.creditCheckouts.delete(customerId);
+  }
+
+  /** The emulator takes no payments outside a customer. */
+  async customerForPayment(_paymentId: string): Promise<string | null> {
+    return null;
   }
 
   parseWebhook(rawBody: string, headers: Headers) {

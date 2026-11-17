@@ -66,7 +66,7 @@ export function extraDisplayActionCommand(
     return `DISPLAY=${layout.display} xdotool key ${shellQuote(keys)}`;
   }
   if (action.kind === "clipboard") {
-    return `DISPLAY=${layout.display} xdotool type ${shellQuote(action.text)}`;
+    return `DISPLAY=${layout.display} xdotool type -- ${shellQuote(action.text)}`;
   }
   if (action.kind === "pointer") {
     const button = action.button === "right" ? "3" : "1";
@@ -92,7 +92,7 @@ export function extraDisplayInputCommand(layout: ExtraDisplayLayout, input: Comp
     return `DISPLAY=${layout.display} xdotool key ${shellQuote(input.key)}`;
   }
   if (input.kind === "clipboard") {
-    return `DISPLAY=${layout.display} xdotool type ${shellQuote(input.text)}`;
+    return `DISPLAY=${layout.display} xdotool type -- ${shellQuote(input.text)}`;
   }
   const button = input.button === "right" ? "3" : "1";
   if (input.type === "move") {

@@ -4,7 +4,10 @@ import { DesktopSandbox, SandboxNotFoundError } from "novita-sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { createRunSandbox } from "./host-aware-sandbox.js";
-import { nativeNovitaApi, runningNovitaDesktop } from "./novita-sandbox.js";
+import {
+  nativeNovitaApi,
+  runningNovitaDesktop,
+} from "./providers/computer/novita/novita-sandbox.js";
 import {
   isSandboxDamagedError,
   isSandboxGoneError,
@@ -73,7 +76,11 @@ describe("unsafe computer stop", () => {
       return { count: 1 };
     });
     const prisma = {
-      computer: { updateMany, findUniqueOrThrow: vi.fn(async () => computer) },
+      computer: {
+        updateMany,
+        findMany: vi.fn(async () => []),
+        findUniqueOrThrow: vi.fn(async () => computer),
+      },
     } as unknown as PrismaClient;
     const handle = {
       wait: vi.fn(() => new Promise(() => undefined)),

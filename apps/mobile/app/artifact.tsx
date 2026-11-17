@@ -4,9 +4,9 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ArtifactVersion, ArtifactWithContent } from "@rakazo/contracts";
 import { artifactPreviewKind } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -83,6 +83,15 @@ export default function ArtifactDetailScreen() {
   const { artifactId, exact } = useLocalSearchParams<{ artifactId: string; exact?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
+  const deletionContext = useRef<object | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      deletionContext.current = {};
+      return () => {
+        deletionContext.current = null;
+      };
+    }, [artifactId]),
+  );
   const headerInset = useFloatingHeaderInset();
   const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
@@ -138,6 +147,9 @@ export default function ArtifactDetailScreen() {
 
   const confirmDelete = useCallback(() => {
     if (content.status !== "ready") return;
+    const context = deletionContext.current;
+    if (!context) return;
+    const isCurrent = () => deletionContext.current === context;
     const name = content.artifact.name;
     const versionCount = versions?.length ?? 1;
     Alert.alert(
@@ -150,12 +162,18 @@ export default function ArtifactDetailScreen() {
         {
           text: t`Delete`,
           style: "destructive",
-          onPress: () =>
+          onPress: () => {
+            if (!isCurrent()) return;
             void removeArtifact(artifactId)
-              .then(() => router.back())
-              .catch((error: unknown) =>
-                Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
-              ),
+              .then(() => {
+                if (isCurrent()) router.back();
+              })
+              .catch((error: unknown) => {
+                if (isCurrent()) {
+                  Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`));
+                }
+              });
+          },
         },
       ],
     );

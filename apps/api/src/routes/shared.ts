@@ -13,7 +13,10 @@ import {
   attachmentMaxBytes,
   attachmentMaxCount,
   canonicalPiProviderId,
+  LAB_FEATURES,
+  modelCreditsUsd,
   resolveBotAvatarSet,
+  resolveLabs,
 } from "@rakazo/contracts";
 import { isAdmin } from "../admins.js";
 import { effectiveSandboxProvider } from "../computer-provider-config.js";
@@ -37,6 +40,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         botAvatarSet: true,
+        labs: true,
         signupSurvey: { select: { userId: true } },
       },
     }),
@@ -45,8 +49,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   ]);
   // Where the deployment runs computers once an admin's choice in Settings applies.
   const sandboxProvider = effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider);
+  const deploymentLabs = deps.env.deploymentLabs ?? [];
+  const labs = resolveLabs(user.labs, deploymentLabs);
   return {
-    ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
+    labs,
+    labsAvailable: LAB_FEATURES.filter((feature) => !deploymentLabs.includes(feature)),
+    ticketBoardEnabled: labs.includes("board"),
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
@@ -116,8 +124,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
       ? member
       : null;
   const funding = deps.billing ? await deps.billing.status(actor) : null;
-  // A balance keeps paying for the deployment model after switching to an own key.
-  const creditsAvailable = funding?.funding === "credits" || (funding?.balanceUsd ?? 0) > 0;
+  const creditsAvailable = modelCreditsUsd(funding) !== null;
   const hasDeployment =
     Boolean(deps.env.deploymentModelConfigured) &&
     (!funding?.creditPurchasesEnabled || creditsAvailable);
@@ -228,5 +235,36 @@ export async function* withHeartbeats<T>(
     // Not awaited: closing queues behind an in-flight read until the abort lands on it, and the
     // stream (including an UNAUTHORIZED end) must not wait for that.
     void source.return(undefined).catch(() => {});
+  }
+}
+
+/** Interleaves streams in arrival order; one that fails ends the rest, and stopping ends them all. */
+export async function* mergeStreams<T extends unknown[]>(
+  ...sources: { [K in keyof T]: AsyncGenerator<T[K]> }
+): AsyncGenerator<T[number]> {
+  const streams: AsyncGenerator<T[number]>[] = sources;
+  const reads = new Map<number, Promise<{ index: number; result: IteratorResult<T[number]> }>>();
+  const read = (index: number, stream: AsyncGenerator<T[number]>) => {
+    const pending = stream.next().then((result) => ({ index, result }));
+    // Raced on the next loop; this only keeps a rejection while the consumer is paused handled.
+    pending.catch(() => {});
+    // Re-adding moves this stream behind the others, so a busy one cannot starve the rest.
+    reads.delete(index);
+    reads.set(index, pending);
+  };
+  for (const [index, stream] of streams.entries()) read(index, stream);
+  try {
+    while (reads.size > 0) {
+      const { index, result } = await Promise.race(reads.values());
+      if (result.done) {
+        reads.delete(index);
+        continue;
+      }
+      read(index, streams[index]!);
+      yield result.value;
+    }
+  } finally {
+    for (const pending of reads.values()) pending.catch(() => {});
+    for (const stream of streams) void stream.return(undefined).catch(() => {});
   }
 }

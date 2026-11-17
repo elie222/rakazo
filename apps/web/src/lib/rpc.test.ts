@@ -62,6 +62,8 @@ describe("unavailable space", () => {
               defaultSpaceId: "home",
               spaceIds: spaces,
               canManage: true,
+              role: "owner",
+              memberCount: 1,
             },
             {
               id: "work",
@@ -69,6 +71,8 @@ describe("unavailable space", () => {
               defaultSpaceId: "work-home",
               spaceIds: ["work-home"],
               canManage: true,
+              role: "owner",
+              memberCount: 1,
             },
             {
               id: "team",
@@ -76,6 +80,8 @@ describe("unavailable space", () => {
               defaultSpaceId: "team-home",
               spaceIds: ["team-home"],
               canManage: false,
+              role: "member",
+              memberCount: 2,
             },
           ],
         },

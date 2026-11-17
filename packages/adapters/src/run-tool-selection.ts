@@ -4,7 +4,7 @@ import {
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
@@ -28,6 +28,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "run_subagent",
   "task_catalog",
   "recall_memory",
+  "reflect_memory",
   "schedule_list",
   "scratchpad_list",
   "board_tickets",
@@ -63,21 +64,17 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
-/**
- * A background helper works while the bot keeps talking, so it only reads and looks things up:
- * no computer (the bot's own turns keep it), no questions to the user, and no changes to
- * memory, skills or routines, which the bot makes itself when the result comes back.
- */
-export const BACKGROUND_HELPER_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search",
-  "web_fetch",
-  "recall_memory",
-  "skill_read",
-  "task_catalog",
-  "scratchpad_list",
-  "board_tickets",
-  "ticket_get",
-  "cloud_agent_status",
+/** Delegation stays one level deep; account settings and direct replies remain the parent's. */
+export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
+  "run_subagent",
+  "spawn_bot",
+  "message_user",
+  "call_user",
+  "end_call",
+  "request_takeover",
+  "update_bot",
+  "update_preferences",
+  "feedback",
 ]);
 
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
@@ -107,7 +104,10 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryEnabled: boolean;
   /** The configured provider can forget individual facts. */
   semanticMemoryForgets?: boolean;
+  /** The configured provider can answer a question from many memories. */
+  semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
+  cloudAgentCleanupEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
@@ -124,7 +124,7 @@ export function selectBuiltinToolsForRun(options: {
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
   userComputer?: boolean;
-  /** That desktop can look at and drive its apps. */
+  /** Their connected desktop can look at and drive its apps. */
   userComputerScreen?: boolean;
   /** The bot has an email address and this run is its owner's own, outside any group or channel. */
   emailInbox?: boolean;
@@ -157,14 +157,15 @@ export function selectBuiltinToolsForRun(options: {
       ),
       options.semanticMemoryEnabled,
       Boolean(options.semanticMemoryForgets),
+      Boolean(options.semanticMemoryReflects),
     ),
     Boolean(options.cloudAgentEnabled),
+    Boolean(options.cloudAgentCleanupEnabled),
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
-      (options.trigger !== BACKGROUND_HELPER_TRIGGER ||
-        BACKGROUND_HELPER_TOOL_NAMES.has(tool.name)) &&
+      (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && ownerStartedRun)) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
@@ -188,8 +189,7 @@ export function selectBuiltinToolsForRun(options: {
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
-      ((options.userComputer && options.userComputerScreen) ||
-        !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
+      (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&
         !options.groupId &&
@@ -208,6 +208,7 @@ export function selectBuiltinToolsForRun(options: {
             "save_memory",
             "recall_memory",
             "forget_memory",
+            "reflect_memory",
             "task_catalog",
             "board_tickets",
           ].includes(tool.name) &&

@@ -1,30 +1,30 @@
-import type { IntegrationPlatform } from "./types";
 import {
   ARCADE,
   ARCADE_PRICING,
   COMPOSIO,
   COMPOSIO_PRICING,
-  INTEGRATIONS_DOC,
-  LARGE_TEAM,
-  MERGE_PRICING,
-  NANGO_PRICING,
-  PIPEDREAM_PRICING,
-  PRICES_CHECKED,
-  PRICE_SUMMARY,
-  SMALL_TEAM,
-  WORKLOADS,
-  ZAPIER,
-  ZAPIER_PRICING,
-  roundUsd,
   composioExtraCalls,
   composioHobby,
   composioPro,
   count,
   homepage,
+  INTEGRATIONS_DOC,
+  LARGE_TEAM,
+  MERGE_PRICING,
   monthlyCalls,
+  NANGO_PRICING,
+  PIPEDREAM_PRICING,
+  PRICE_SUMMARY,
+  PRICES_CHECKED,
+  roundUsd,
+  SMALL_TEAM,
   teamLabel,
   usd,
+  WORKLOADS,
+  ZAPIER,
+  ZAPIER_PRICING,
 } from "./shared";
+import type { IntegrationPlatform } from "./types";
 
 const SMALL = monthlyCalls(SMALL_TEAM);
 const LARGE = monthlyCalls(LARGE_TEAM);
@@ -77,10 +77,17 @@ export const composio: IntegrationPlatform = {
         caption: "Composio plans as of November 2026",
         columns: ["Plan", "Hobby", "Pro", "Enterprise"],
         rows: [
-          { topic: "Price", cells: ["$0", `${PRO}/mo, as ${PRO} of usage credit`, "Custom, committed volume"] },
+          {
+            topic: "Price",
+            cells: ["$0", `${PRO}/mo, as ${PRO} of usage credit`, "Custom, committed volume"],
+          },
           {
             topic: "Tool calls included",
-            cells: [`${FREE_CALLS}/mo, then usage stops`, `${FREE_CALLS}/mo, then billed`, "Custom"],
+            cells: [
+              `${FREE_CALLS}/mo, then usage stops`,
+              `${FREE_CALLS}/mo, then billed`,
+              "Custom",
+            ],
           },
           {
             topic: "Of those, on managed apps",
@@ -117,7 +124,11 @@ export const composio: IntegrationPlatform = {
           { topic: "Team", cells: ["3 members", "Unlimited", "Unlimited, SSO and SCIM"] },
           {
             topic: "Compliance",
-            cells: ["None listed", "Self-serve DPA; BAA and zero data retention as per-call add-ons", "MSA, DPA, BAA, customer-managed keys"],
+            cells: [
+              "None listed",
+              "Self-serve DPA; BAA and zero data retention as per-call add-ons",
+              "MSA, DPA, BAA, customer-managed keys",
+            ],
           },
         ],
         note: `Prices from [Composio's pricing page](${COMPOSIO_PRICING}), checked ${PRICES_CHECKED}. The rates apply to sign-ups from August 15, 2026; earlier customers keep their old plan until December 31, 2026. Pro credit doesn't roll over.`,
@@ -171,7 +182,15 @@ export const composio: IntegrationPlatform = {
       ],
       table: {
         caption: "Composio and its main alternatives",
-        columns: ["Option", "Free tier", "Paid from", "Billed by", "Apps", "Self-host", "In Rakazo"],
+        columns: [
+          "Option",
+          "Free tier",
+          "Paid from",
+          "Billed by",
+          "Apps",
+          "Self-host",
+          "In Rakazo",
+        ],
         rows: [
           {
             topic: "Composio",
@@ -263,7 +282,7 @@ export const composio: IntegrationPlatform = {
         "With Composio set up, the Apps list under Integrations shows Composio's catalog. Browse what is in it on the [integrations page](/integrations/), for example [Gmail](/integrations/gmail/), [Slack](/integrations/slack/), [GitHub](/integrations/github/), [Notion](/integrations/notion/) and [HubSpot](/integrations/hubspot/).",
       ],
       bullets: [
-        "Connect an app in one step. Choose Connect under Integrations, or ask a bot to \"connect my Google Calendar\" and use the card it posts. You sign in on the app's own page through Composio.",
+        'Connect an app in one step. Choose Connect under Integrations, or ask a bot to "connect my Google Calendar" and use the card it posts. You sign in on the app\'s own page through Composio.',
         "Share it across the space. Once an app is connected, every bot in that space can use it. You don't set it up per bot.",
         "Keep accounts apart. Rakazo pins each connection to the exact account you signed in with, so a bot never falls back to another mailbox or workspace. You can connect more than one account of the same app.",
         "Find the right action. Bots search Composio's actions and can run several in one batch.",
@@ -311,13 +330,11 @@ export const composio: IntegrationPlatform = {
   faq: [
     {
       question: "How much does Composio cost?",
-      answer:
-        `As of ${PRICES_CHECKED}, the Hobby plan is free with ${FREE_CALLS} tool calls a month, up to ${FREE_MANAGED} of them on Composio's managed apps, and stops at that cap. Pro is ${PRO} a month, paid as usage credit, and bills extra calls at ${usd(RATE.own)} per 1,000 on your own apps and ${usd(RATE.managed)} to ${usd(RATE.premium)} per 1,000 on managed apps. Enterprise is custom. See [Composio's pricing page](${COMPOSIO_PRICING}).`,
+      answer: `As of ${PRICES_CHECKED}, the Hobby plan is free with ${FREE_CALLS} tool calls a month, up to ${FREE_MANAGED} of them on Composio's managed apps, and stops at that cap. Pro is ${PRO} a month, paid as usage credit, and bills extra calls at ${usd(RATE.own)} per 1,000 on your own apps and ${usd(RATE.managed)} to ${usd(RATE.premium)} per 1,000 on managed apps. Enterprise is custom. See [Composio's pricing page](${COMPOSIO_PRICING}).`,
     },
     {
       question: "Is Composio free?",
-      answer:
-        `Yes, for up to ${FREE_CALLS} tool calls a month, with no credit card. Only ${FREE_MANAGED} of those can go through Composio's managed OAuth apps, and the plan pauses at the cap rather than billing you.`,
+      answer: `Yes, for up to ${FREE_CALLS} tool calls a month, with no credit card. Only ${FREE_MANAGED} of those can go through Composio's managed OAuth apps, and the plan pauses at the cap rather than billing you.`,
     },
     {
       question: "Is Composio open source?",
@@ -354,7 +371,10 @@ export const composio: IntegrationPlatform = {
     { label: "Composio", href: "https://composio.dev" },
     { label: "Composio pricing", href: COMPOSIO_PRICING },
     { label: "Composio startup program", href: "https://composio.dev/startups" },
-    { label: "Composio MCP gateway, compliance and deployment", href: "https://composio.dev/mcp-gateway" },
+    {
+      label: "Composio MCP gateway, compliance and deployment",
+      href: "https://composio.dev/mcp-gateway",
+    },
     {
       label: "Composio, May 2026 security incident",
       href: "https://composio.dev/blog/composio-may-2026-security-incident",

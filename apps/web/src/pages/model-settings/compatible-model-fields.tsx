@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
-import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
+import { toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
@@ -8,9 +7,7 @@ import {
   Input,
   Label,
   ListSearchInput,
-  ModelThinkingOptions,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
@@ -29,34 +26,22 @@ export function CompatibleModelFields({
   busy,
   cancelOAuthAttempt,
   compatibleRows,
-  contextWindow,
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
   endpointPreset,
   invalidatePreflight,
-  maxImagesPerPrompt,
-  maxTokens,
   modelId,
+  setModelId,
   preflightFailure,
   preflightTarget,
   probeModels,
   probeServerModels,
   probing,
-  reasoning,
   selectionRevisionRef,
-  setContextWindow,
   setEnabledModelIds,
   setError,
-  setMaxImagesPerPrompt,
-  setMaxTokens,
   setNotice,
-  setReasoning,
-  setSupportsImages,
-  setThinkingLevel,
-  stageCompatibleModelId,
-  supportsImages,
-  thinkingLevel,
   updateApiProtocol,
   updateBaseUrl,
 }: Pick<
@@ -71,46 +56,26 @@ export function CompatibleModelFields({
   | "busy"
   | "cancelOAuthAttempt"
   | "compatibleRows"
-  | "contextWindow"
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
   | "endpointPreset"
   | "invalidatePreflight"
-  | "maxImagesPerPrompt"
-  | "maxTokens"
   | "modelId"
+  | "setModelId"
   | "preflightFailure"
   | "preflightTarget"
   | "probeModels"
   | "probeServerModels"
   | "probing"
-  | "reasoning"
   | "selectionRevisionRef"
-  | "setContextWindow"
   | "setEnabledModelIds"
   | "setError"
-  | "setMaxImagesPerPrompt"
-  | "setMaxTokens"
   | "setNotice"
-  | "setReasoning"
-  | "setSupportsImages"
-  | "setThinkingLevel"
-  | "stageCompatibleModelId"
-  | "supportsImages"
-  | "thinkingLevel"
   | "updateApiProtocol"
   | "updateBaseUrl"
 >) {
   const { t } = useLingui();
-  const thinkingLevelLabels = {
-    minimal: t`Minimal`,
-    low: t`Low`,
-    medium: t`Medium`,
-    high: t`High`,
-    xhigh: t`Extra high`,
-    max: t`Max`,
-  } as const;
   const {
     query,
     setQuery,
@@ -161,29 +126,24 @@ export function CompatibleModelFields({
       <div className="mt-4 block">
         <label className="block" htmlFor="model-protocol">
           <Trans>Protocol</Trans>
-          <NativeSelect
+          <OptionSelect<ModelSettingsState["apiProtocol"]>
             id="model-protocol"
-            className="mt-2 w-full text-foreground"
+            className="mt-2 text-foreground"
             value={apiProtocol}
             disabled={busy}
-            onChange={(event) => {
+            onValueChange={(value) => {
               selectionRevisionRef.current += 1;
-              updateApiProtocol(event.target.value as ModelSettingsState["apiProtocol"]);
+              updateApiProtocol(value);
               setError(null);
               setNotice(null);
             }}
             aria-label={t`Protocol`}
-          >
-            <NativeSelectOption value="chat-completions">
-              <Trans>Chat Completions</Trans>
-            </NativeSelectOption>
-            <NativeSelectOption value="responses">
-              <Trans>Responses</Trans>
-            </NativeSelectOption>
-            <NativeSelectOption value="anthropic-messages">
-              <Trans>Anthropic Messages</Trans>
-            </NativeSelectOption>
-          </NativeSelect>
+            options={[
+              { value: "chat-completions", label: t`Chat Completions` },
+              { value: "responses", label: t`Responses` },
+              { value: "anthropic-messages", label: t`Anthropic Messages` },
+            ]}
+          />
         </label>
       </div>
       {preflightTarget === "compatible" ? (
@@ -194,28 +154,23 @@ export function CompatibleModelFields({
           <Trans>Model</Trans>
         </span>
         {compatibleRows.includes(modelId) ? (
-          <NativeSelect
-            className="mt-2 w-full text-foreground"
+          <OptionSelect
+            className="mt-2 text-foreground"
             value={modelId}
-            onChange={(event) => {
+            onValueChange={(value) => {
               cancelOAuthAttempt();
               selectionRevisionRef.current += 1;
               invalidatePreflight();
-              stageCompatibleModelId(event.target.value);
+              setModelId(value);
               setError(null);
               setNotice(null);
             }}
             aria-label={t`Models from server`}
-          >
-            {defaultModelOptions.map((id) => (
-              <NativeSelectOption key={id} value={id}>
-                {id}
-              </NativeSelectOption>
-            ))}
-            <NativeSelectOption value="">
-              <Trans>Other model…</Trans>
-            </NativeSelectOption>
-          </NativeSelect>
+            options={[
+              ...defaultModelOptions.map((id) => ({ value: id, label: id })),
+              { value: "", label: t`Other model…` },
+            ]}
+          />
         ) : (
           <Input
             value={modelId}
@@ -223,7 +178,7 @@ export function CompatibleModelFields({
               cancelOAuthAttempt();
               selectionRevisionRef.current += 1;
               invalidatePreflight();
-              stageCompatibleModelId(event.target.value);
+              setModelId(event.target.value);
               setError(null);
               setNotice(null);
             }}
@@ -279,65 +234,14 @@ export function CompatibleModelFields({
             className="mt-2 h-auto px-0 text-body-sm leading-[1.5] text-muted-foreground underline"
             onClick={() => {
               invalidatePreflight();
-              stageCompatibleModelId(probeModels[0] ?? "");
+              setModelId(probeModels[0] ?? "");
             }}
           >
             <Trans>Use a found model</Trans>
           </Button>
         ) : null}
       </div>
-      <ModelThinkingOptions
-        reasoning={reasoning}
-        onReasoningChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setReasoning(value);
-          if (!value) setThinkingLevel(null);
-          setNotice(null);
-        }}
-        disabled={busy}
-        advancedLabel={t`Advanced`}
-        thinkingLabel={t`Supports thinking`}
-        thinkingLevel={thinkingLevel}
-        onThinkingLevelChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setThinkingLevel(value as ThinkingLevel | null);
-          setNotice(null);
-        }}
-        thinkingLevelOptions={compatibleThinkingLevels(apiProtocol).map((level) => ({
-          value: level,
-          label: thinkingLevelLabels[level],
-        }))}
-        thinkingLevelLabel={t`Reasoning effort`}
-        thinkingLevelDefaultLabel={t`Default`}
-        maxTokens={maxTokens}
-        onMaxTokensChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setMaxTokens(value);
-          setNotice(null);
-        }}
-        maxTokensLabel={t`Maximum output tokens`}
-        contextWindow={contextWindow}
-        onContextWindowChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setContextWindow(value);
-          setNotice(null);
-        }}
-        contextWindowLabel={t`Context limit`}
-        supportsImages={supportsImages}
-        onSupportsImagesChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setSupportsImages(value);
-          setNotice(null);
-        }}
-        imagesLabel={t`Supports images`}
-        maxImagesPerPrompt={maxImagesPerPrompt}
-        onMaxImagesPerPromptChange={(value) => {
-          selectionRevisionRef.current += 1;
-          setMaxImagesPerPrompt(value);
-          setNotice(null);
-        }}
-        maxImagesLabel={t`Maximum images per request`}
-      >
+      <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
         <ModelHeadersEditor
           rows={headerRows}
           savedNames={savedHeaderEndpointMatches ? credential?.headerNames : []}
@@ -349,7 +253,7 @@ export function CompatibleModelFields({
             setNotice(null);
           }}
         />
-      </ModelThinkingOptions>
+      </Disclosure>
     </div>
   );
 }

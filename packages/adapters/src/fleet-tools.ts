@@ -1,5 +1,5 @@
 import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
-import type { Actor, Group, MessageBlock } from "@rakazo/contracts";
+import type { Actor, Group } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSectionName,
@@ -24,6 +24,7 @@ import {
   IsolationError,
   isRecordNotFound,
   SpaceDeletionInProgressError,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
@@ -1314,10 +1315,10 @@ export async function updateOwnBotFromTool(
   if (wantsImage && run.sourceMessageId) {
     const source = await deps.prisma.message.findUnique({
       where: { id: run.sourceMessageId },
-      select: { blocks: true, threadId: true },
+      select: { id: true, blocks: true, threadId: true },
     });
     if (source?.threadId === threadId) {
-      sourceImageArtifactIds = attachedImageArtifactIds(source.blocks as MessageBlock[]);
+      sourceImageArtifactIds = attachedImageArtifactIds(storedMessageBlocks(source));
     }
   }
   const avatar = await resolveUpdateBotAvatar({

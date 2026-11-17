@@ -2,6 +2,7 @@ import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type {
   buildComposerMentionOptions,
@@ -17,11 +18,13 @@ import {
   composerMentionSegments,
   composerMentionsForPrompt,
   composerSelectedMentions,
+  composerSlashOptions,
+  composerSlashQuery,
   filterComposerMentionTargets,
   mentionChipKey,
+  removeComposerSlashQuery,
   resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
-  SLASH_ACTIONS,
   serializeComposerPrompt,
   truncateSlashDescription,
 } from "@rakazo/core";
@@ -131,12 +134,13 @@ export function ThreadComposer({
   const inputRef = useRef<TextInputInstance>(null);
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
+  const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
   const [selection, setSelection] = useState<{ start: number; end: number }>();
   const [mentionQuery, setMentionQuery] = useState<ComposerMentionQuery | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashQuery, setSlashQuery] = useState<ComposerMentionQuery | null>(null);
   const [mentionBindings, setMentionBindings] = useState(saved.bindings);
   const bindingsRef = useRef(saved.bindings);
   const selectionHistory = useRef<ComposerMentionRange[]>([]);
@@ -188,20 +192,19 @@ export function ThreadComposer({
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function flushDraftSave() {
-    clearTimeout(saveTimer.current);
     // A failed save stays pending, so the next flush retries it.
     if (pendingSave.current?.()) pendingSave.current = null;
   }
   useEffect(() => {
     if (!draftScope) return;
     pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
-    clearTimeout(saveTimer.current);
     // An emptied composer, such as after a send, forgets the draft right away.
     if (!draft) flushDraftSave();
-    else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
   }, [draftScope, draft, mentionBindings]);
+  // Each edit starts the pause again.
+  const draftEdit = useMemo(() => ({}), [draftScope, draft, mentionBindings]);
+  useTimeout(flushDraftSave, draftScope && draft ? DRAFT_SAVE_DELAY_MS : null, draftEdit);
   useEffect(() => {
     if (!draft) onEmptied?.();
   }, [draft, onEmptied]);
@@ -242,11 +245,17 @@ export function ThreadComposer({
       pendingNativeEdit.current = null;
     },
     insert: (text) => {
+      setSlashQuery(null);
+      setMentionQuery(null);
+      // A delayed selection must not replay the edit from before the share.
+      pendingNativeEdit.current = null;
       const current = draftRef.current;
       draftRef.current = current ? `${current}\n${text}` : text;
       setDraft(draftRef.current);
     },
     addReply: (text) => {
+      setSlashQuery(null);
+      setMentionQuery(null);
       const current = draftRef.current;
       draftRef.current = current.trim() ? `${current.trimEnd()} ${text}` : text;
       setDraft(draftRef.current);
@@ -266,19 +275,6 @@ export function ThreadComposer({
       MENTION_PICKER_MAX_ROWS,
     );
   }, [composerMentionTargets, mentionQuery]);
-  const slashQueryNormalized = slashQuery?.trim().toLowerCase() ?? null;
-  const slashSkillOptions =
-    slashQuery !== null && mentionQuery === null
-      ? agentSkills
-          .filter((skill) => {
-            if (!slashQueryNormalized) return true;
-            return (
-              skill.name.toLowerCase().includes(slashQueryNormalized) ||
-              skill.description.toLowerCase().includes(slashQueryNormalized)
-            );
-          })
-          .slice(0, 8)
-      : [];
   function slashActionLabel(id: SlashActionId) {
     switch (id) {
       case "chat-settings":
@@ -289,18 +285,15 @@ export function ThreadComposer({
         return t`Settings: Usage`;
     }
   }
-  const slashActionOptions =
+  const { skills: slashSkillOptions, actions: slashActionOptions } =
     slashQuery !== null && mentionQuery === null
-      ? SLASH_ACTIONS.filter((action) => {
-          if (!slashQueryNormalized) return true;
-          const label = slashActionLabel(action.id);
-          return (
-            action.label.toLowerCase().includes(slashQueryNormalized) ||
-            label.toLowerCase().includes(slashQueryNormalized)
-          );
-        })
-      : [];
-  function updateMentionQuery(value: string, start: number, end = start) {
+      ? composerSlashOptions(slashQuery, agentSkills, (action) => slashActionLabel(action.id))
+      : { skills: [], actions: [] };
+  function updatePickerQueries(value: string, start: number, end = start) {
+    // One skill per message: a chosen skill keeps the slash menu closed.
+    setSlashQuery(
+      selectedSkill ? null : composerSlashQuery(value, start, end, bindingsRef.current),
+    );
     // A mention selected by a backspace is waiting to be deleted, not re-picked.
     if (selectedMentionRef.current !== null) {
       setMentionQuery(null);
@@ -353,9 +346,7 @@ export function ThreadComposer({
     const caret = widenedCaret ?? nativeValue.length - suffix;
     if (widenedCaret !== null) nativeSelection.current = { start: caret, end: caret };
     setSelection(widenedCaret === null ? undefined : nativeSelection.current);
-    updateMentionQuery(value, caret);
-    const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
-    setSlashQuery(slashMatch ? (slashMatch[1] ?? "") : null);
+    updatePickerQueries(value, caret);
   }
 
   function applyNativeEdit(edit: NativeEdit, after: ComposerMentionRange) {
@@ -394,32 +385,29 @@ export function ThreadComposer({
     inputRef.current?.focus();
   }
 
-  function insertSkill(skill: AgentSkillCatalogEntry) {
-    setSelectedSkill(skill);
-    draftRef.current = "";
-    setDraft("");
-    nativeSelection.current = { start: 0, end: 0 };
+  /** Takes the `/query` out of the draft, keeping the words and mentions around it. */
+  function removeSlashQuery(): boolean {
+    if (!slashQuery) return false;
+    const next = removeComposerSlashQuery(draftRef.current, slashQuery, bindingsRef.current);
+    draftRef.current = next.text;
+    setDraft(next.text);
+    nativeSelection.current = { start: next.caret, end: next.caret };
     completedSelection.current = null;
     setSelection(nativeSelection.current);
-    updateBindings([]);
+    updateBindings(next.bindings);
     selectMention(null);
     selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
+    return true;
+  }
+
+  function insertSkill(skill: AgentSkillCatalogEntry) {
+    if (removeSlashQuery()) setSelectedSkill(skill);
   }
 
   function runSlashAction(action: SlashActionId) {
-    draftRef.current = "";
-    setDraft("");
-    nativeSelection.current = { start: 0, end: 0 };
-    completedSelection.current = null;
-    setSelection(nativeSelection.current);
-    updateBindings([]);
-    selectMention(null);
-    selectionHistory.current = [];
-    pendingNativeEdit.current = null;
-    setSlashQuery(null);
-    onSlashAction(action);
+    if (removeSlashQuery()) onSlashAction(action);
   }
 
   const composerPillStyle = {
@@ -430,9 +418,15 @@ export function ThreadComposer({
     justifyContent: "center",
   } as const;
 
+  // One line of text with its padding, as measured while the box is empty. The pills and attach
+  // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
+  // bottom margin would leave them high.
+  const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
+  const pillInset = (lineHeight - composerPillStyle.height) / 2;
+
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
-  // Sending resets the box, which would drop words a provider is still transcribing.
-  const sendBlocked = sending || !canSend || dictation.status === "transcribing";
+  // Sending resets the box, which would drop a clip still recording or words still being transcribed.
+  const sendBlocked = sending || !canSend || dictation.status !== "idle";
 
   return (
     <>
@@ -579,7 +573,7 @@ export function ThreadComposer({
             accessible
             accessibilityRole="button"
             accessibilityLabel={t`Attach file`}
-            style={{ width: 44, height: 44 }}
+            style={{ width: 44, height: 44, marginBottom: (lineHeight - 44) / 2 }}
           >
             <GlassSurface
               shape="circle"
@@ -643,7 +637,17 @@ export function ThreadComposer({
                 <Pressable
                   accessibilityLabel={t`Remove skill ${ph({ name: selectedSkill.name })}`}
                   hitSlop={8}
-                  onPress={() => setSelectedSkill(null)}
+                  onPress={() => {
+                    setSelectedSkill(null);
+                    setSlashQuery(
+                      composerSlashQuery(
+                        draftRef.current,
+                        nativeSelection.current.start,
+                        nativeSelection.current.end,
+                        bindingsRef.current,
+                      ),
+                    );
+                  }}
                 >
                   <NativeSymbol
                     ios="xmark"
@@ -656,6 +660,9 @@ export function ThreadComposer({
             ) : null}
             <Pressable
               accessible={false}
+              onLayout={(event) => {
+                if (!draftRef.current) setEmptyRowHeight(event.nativeEvent.layout.height);
+              }}
               onPress={() => inputRef.current?.focus()}
               style={{
                 flexGrow: 1,
@@ -706,7 +713,7 @@ export function ThreadComposer({
                           : { start: resolved.caret, end: resolved.caret };
                       selectionHistory.current = [nativeSelection.current];
                       setSelection(nativeSelection.current);
-                      updateMentionQuery(
+                      updatePickerQueries(
                         resolved.text,
                         nativeSelection.current.start,
                         nativeSelection.current.end,
@@ -741,7 +748,7 @@ export function ThreadComposer({
                     return;
                   }
                   completedSelection.current = null;
-                  updateMentionQuery(draftRef.current, next.start, next.end);
+                  updatePickerQueries(draftRef.current, next.start, next.end);
                 }}
                 accessibilityLabel={composerPrompt}
                 onKeyPress={(event) => {
@@ -791,7 +798,7 @@ export function ThreadComposer({
               disabled={dictation.status === "transcribing"}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={toggleDictation}
-              style={{ marginBottom: 8 }}
+              style={{ marginBottom: pillInset }}
             >
               <GlassSurface
                 tint={dictation.status === "idle" ? undefined : tokens.foreground}
@@ -820,7 +827,7 @@ export function ThreadComposer({
               accessibilityLabel={t`Call`}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void startVoiceCall()}
-              style={{ marginBottom: 8 }}
+              style={{ marginBottom: pillInset }}
             >
               <GlassSurface
                 tint={tokens.primary}
@@ -842,7 +849,7 @@ export function ThreadComposer({
               disabled={sendBlocked}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               onPress={() => void send()}
-              style={{ marginBottom: 8, opacity: sendBlocked ? 0.5 : 1 }}
+              style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
             >
               <GlassSurface
                 tint={tokens.primary}

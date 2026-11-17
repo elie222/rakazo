@@ -99,7 +99,13 @@ describePostgres("computer stop (PostgreSQL)", () => {
     await system.thread.create({ data: { spaceId: id, userId: id, botId: bot.id } });
     const sandbox = new FailingSandbox();
     const enqueue = vi.fn<JobPublisher["enqueue"]>(async () => undefined);
-    const jobs: JobPublisher = { enqueue, cancel: vi.fn(), close: async () => undefined };
+    const jobs: JobPublisher = {
+      enqueue,
+      enqueueIn: vi.fn(),
+      cancelIn: vi.fn(),
+      cancel: vi.fn(),
+      close: async () => undefined,
+    };
     const events = createThreadEvents(prisma);
     const home = new LocalAgentHomeStore(dataDir);
     const actor: Actor = {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getPage, removePage, setPageVisibility } from "./pages.js";
+import { getPage, listPages, removePage, setPageVisibility } from "./pages.js";
 
 type Row = { id: string; title: string; visibility: string; shareSecretId: string | null };
 
@@ -193,5 +193,35 @@ describe("page links", () => {
     fake.store.load.mockRejectedValue(new Error("provider down"));
     const detail = await getPage(fake.deps, actor, { pageId: "page-1", link: true });
     expect(detail).toMatchObject({ code: "compiled", visibility: "link", shareUrl: null });
+  });
+});
+
+describe("page title search", () => {
+  it.each([
+    ["release_", "release\\_"],
+    ["10%", "10\\%"],
+    ["folder\\draft", "folder\\\\draft"],
+    ["Release notes", "Release notes"],
+  ])("treats %s as literal text", async (query, contains) => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    await listPages({ page: { findMany } } as never, actor, { query });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          spaceId: "space-1",
+          userId: "user-1",
+          title: { contains, mode: "insensitive" },
+        },
+      }),
+    );
+  });
+
+  it("omits the title filter for an empty query", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    await listPages({ page: { findMany } } as never, actor, { query: "" });
+    expect(findMany.mock.calls[0]?.[0].where).toEqual({
+      spaceId: "space-1",
+      userId: "user-1",
+    });
   });
 });

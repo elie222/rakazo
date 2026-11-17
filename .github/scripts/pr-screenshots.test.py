@@ -2,10 +2,13 @@
 
 import importlib.util
 import json
+import contextlib
+import io
 import re
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = pathlib.Path(__file__).with_name("pr-screenshots.py").resolve()
 spec = importlib.util.spec_from_file_location("pr_screenshots", SCRIPT)
@@ -106,6 +109,12 @@ class SectionTest(unittest.TestCase):
 class SpliceTest(unittest.TestCase):
     new = f"{shots.START}\nnew\n{shots.END}"
 
+    def test_no_change_preserves_exact_author_formatting(self):
+        for body in ("Author text  \n\n", "Author text without a newline", ""):
+            self.assertEqual(shots.splice(body, ""), body)
+        body = f"Author text  \n\n{self.new}\nFooter  "
+        self.assertEqual(shots.splice(body, self.new), body)
+
     def test_appends_when_missing(self):
         self.assertEqual(shots.splice("## What\nx\n", self.new), f"## What\nx\n\n{self.new}\n")
 
@@ -126,18 +135,276 @@ class SpliceTest(unittest.TestCase):
         self.assertNotIn("\nnew\n", twice)
 
 
+class RetainTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def section(self, name, sha=None):
+        return shots.section([(name, name)], BASE).replace(shots.START, f"{shots.START}\n<!-- screenshot-commit:{sha or self.sha} -->")
+
+    def test_no_new_capture_keeps_the_image_used_as_evidence(self):
+        existing = self.section("first.png")
+        body = f"Author text\n\n{existing}\n\nFooter"
+        kept = shots.retain_section(body, "", self.sha)
+        self.assertEqual(kept, existing)
+        published = shots.splice(body, kept)
+        self.assertIn("![first.png]", published)
+        self.assertIn("Author text", published)
+        self.assertIn("Footer", published)
+
+    def test_missing_views_are_appended_without_losing_prior_coverage(self):
+        merged = shots.retain_section(self.section("first.png"), self.section("second.png"), self.sha)
+        self.assertIn("![first.png]", merged)
+        self.assertIn("![second.png]", merged)
+        self.assertEqual(merged.count(shots.START), 1)
+        self.assertEqual(merged.count(shots.END), 1)
+        self.assertEqual(merged.count("## Screenshots"), 1)
+        self.assertEqual(merged.count(f"<!-- screenshot-commit:{self.sha} -->"), 1)
+
+    def test_web_editor_line_endings_keep_evidence_and_noop_description(self):
+        existing = self.section("first.png")
+        original = f"Author text  \n\n{existing}\n\nFooter  ".replace("\n", "\r\n")
+        with tempfile.TemporaryDirectory() as directory:
+            body, section = pathlib.Path(directory) / "body.md", pathlib.Path(directory) / "section.md"
+            body.write_bytes(original.encode())
+            section.write_text("")
+            retained = io.StringIO()
+            with contextlib.redirect_stdout(retained):
+                self.assertEqual(shots.main(["x", "retain", str(body), str(section), self.sha]), 0)
+            self.assertIn("![first.png]", retained.getvalue())
+            section.write_text(retained.getvalue())
+            published = io.StringIO()
+            with contextlib.redirect_stdout(published):
+                self.assertEqual(shots.main(["x", "splice", str(body), str(section)]), 0)
+            self.assertEqual(published.getvalue(), original)
+
+    def test_duplicate_urls_are_not_appended(self):
+        existing = self.section("first.png")
+        merged = shots.retain_section(existing, self.section("first.png"), self.sha)
+        self.assertEqual(merged, existing)
+
+    def test_merged_capture_limit_fails_instead_of_caching_missing_views(self):
+        existing = shots.section([(f"s{i}.png", "View") for i in range(shots.MAX_SHOTS)], BASE)
+        existing = existing.replace(shots.START, f"{shots.START}\n{shots.commit_marker(self.sha)}")
+        with self.assertRaisesRegex(ValueError, "publication limit"):
+            shots.retain_section(existing, self.section("one-more.png"), self.sha)
+
+    def test_stale_sections_are_replaced_or_removed(self):
+        old = self.section("stale.png", "b" * 40)
+        current = self.section("current.png")
+        self.assertEqual(shots.retain_section(old, current, self.sha), current)
+        self.assertEqual(shots.retain_section(old, "", self.sha), "")
+
+    def test_missing_and_malformed_sections_do_not_consume_author_text(self):
+        current = self.section("current.png")
+        self.assertEqual(shots.retain_section("Author text", current, self.sha), current)
+        self.assertEqual(shots.retain_section(shots.START + "Author text", current, self.sha), current)
+
+
+class PromptTest(unittest.TestCase):
+    PR = {"title": "Fix", "body": "", "changed_files": ["apps/web/src/a.tsx"], "preview_url": "https://x"}
+
+    def test_keeps_a_small_diff_whole(self):
+        text = shots.prompt("Do it.", self.PR, "+line\n")
+        self.assertTrue(text.startswith("Do it.\n\n<pull_request>\n"))
+        self.assertTrue(text.endswith("<diff>\n+line\n\n</diff>\n"))
+
+    def test_fits_huge_inputs_in_one_environment_variable(self):
+        pr = {**self.PR, "body": "\u00e9\"" * 70_000, "changed_files": [f"f{i}" for i in range(5000)]}
+        text = shots.prompt("Do it.", pr, '"\\\n' * 200_000)
+        self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+        self.assertLess(len(json.dumps(text, ensure_ascii=False).encode()), 128 * 1024)
+        self.assertTrue(text.endswith("\n</diff>\n"))
+        self.assertIn('"f299"', text)
+        self.assertNotIn('"f300"', text)
+
+
+    def test_an_emoji_body_alone_cannot_overflow(self):
+        text = shots.prompt("Do it.", {**self.PR, "body": "\U0001f600" * 8_000}, "")
+        self.assertLessEqual(len(json.dumps(text)), shots.MAX_PROMPT_JSON)
+
+class EfficiencyTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def pr(self, body):
+        return {"state": "open", "head": {"sha": self.sha}, "body": body}
+
+    def test_author_markers_and_images_cannot_skip_assessment(self):
+        body = f"{shots.START}\n<!-- screenshot-commit:{self.sha} -->\n![Chat](https://example.com/a.png)\n{shots.END}\n<!-- rakazo-screenshot-reviewed:{self.sha} -->"
+        self.assertFalse(shots.obsolete(self.pr(body), self.sha))
+        with mock.patch.object(shots, "api", return_value=[{"artifacts": []}]):
+            self.assertFalse(shots.assessed("example/repo", "1", self.sha))
+
+    def test_obsolete_runs_skip(self):
+        self.assertTrue(shots.obsolete({**self.pr(""), "state": "closed"}, self.sha))
+        self.assertTrue(shots.obsolete(self.pr(""), "b" * 40))
+
+    def test_evidence_requires_publisher_and_current_commit(self):
+        body = f"<!-- rakazo-playwright-screenshots -->\n<!-- screenshot-commit:{self.sha} -->\nGallery"
+        comment = {"user": {"login": "github-actions[bot]"}, "body": body}
+        pages = [[{**comment, "user": {"login": "someone"}}], [comment]]
+        self.assertEqual(shots.evidence(pages, self.sha), body)
+        self.assertEqual(shots.evidence(pages, "b" * 40), "")
+
+    def test_evidence_cannot_overflow_prompt(self):
+        pr = {**PromptTest.PR, "existing_e2e_screenshots": '"' * 100_000}
+        self.assertLessEqual(shots.json_size(shots.prompt("Do it.", pr, "x" * 200_000)), shots.MAX_PROMPT_JSON)
+
+
+class PullRequestDiscoveryTest(unittest.TestCase):
+    sha = "a" * 40
+
+    def test_all_current_fork_pull_requests_are_selected_across_pages(self):
+        pages = [[{"number": 2, "state": "open", "head": {"sha": self.sha}}], [
+            {"number": 1, "state": "open", "head": {"sha": self.sha}},
+            {"number": 3, "state": "closed", "head": {"sha": self.sha}},
+            {"number": 4, "state": "open", "head": {"sha": "b" * 40}},
+        ]]
+        with mock.patch.object(shots, "api", return_value=pages) as api:
+            self.assertEqual(shots.pull_requests("example/repo", "contributor", "feature/test", self.sha), [1, 2])
+            path = api.call_args.args[0]
+            self.assertIn("head=contributor%3Afeature%2Ftest", path)
+            self.assertTrue(api.call_args.kwargs["paginate"])
+
+    def test_api_failure_is_not_an_empty_successful_matrix(self):
+        with mock.patch.object(shots, "api", side_effect=shots.subprocess.CalledProcessError(1, "gh")), self.assertRaises(shots.subprocess.CalledProcessError):
+            shots.pull_requests("example/repo", "contributor", "branch", self.sha)
+
+
+class SourcesReadyTest(unittest.TestCase):
+    sha = "a" * 40
+    repo = "example/repo"
+
+    def preview(self, **overrides):
+        return [[{"user": {"login": "github-actions[bot]"}, "body": "<!-- rakazo-preview -->\n" + shots.commit_marker(self.sha), **overrides}]]
+
+    def artifacts(self, source="e2e", **overrides):
+        return [{"artifacts": [{"name": f"pr-screenshot-{source}-{self.sha}", "expired": False, "workflow_run": {"id": 1}, **overrides}]}]
+
+    def source_run(self, workflow="publish-playwright-report", **overrides):
+        return {"event": "workflow_run", "path": f".github/workflows/{workflow}.yml", "head_repository": {"full_name": self.repo}, **overrides}
+
+    def test_both_signals_allow_capture(self):
+        with mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(), self.source_run()]):
+            self.assertTrue(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_e2e_finishes_first_or_another_pr_has_the_preview(self):
+        with mock.patch.object(shots, "api", return_value=[[]]) as api:
+            self.assertFalse(shots.sources_ready(self.repo, "2", self.sha))
+            api.assert_called_once_with(f"repos/{self.repo}/issues/2/comments?per_page=100", paginate=True)
+
+    def test_preview_finishes_first(self):
+        with mock.patch.object(shots, "api", side_effect=[self.preview(), [{"artifacts": []}]]):
+            self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_author_and_stale_preview_comments_do_not_prove_deployment(self):
+        for overrides in ({"user": {"login": "contributor"}}, {"body": "<!-- rakazo-preview -->\n" + shots.commit_marker("b" * 40)}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", return_value=self.preview(**overrides)) as api:
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+                self.assertEqual(api.call_count, 1)
+
+    def test_expired_or_other_commit_signal_does_not_allow_capture(self):
+        for overrides in ({"expired": True}, {"name": "pr-screenshot-e2e-" + "b" * 40}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(**overrides)]):
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_pr_cannot_forge_trusted_readiness_with_an_artifact_name(self):
+        for overrides in ({"event": "pull_request"}, {"path": ".github/workflows/ci.yml"}, {"head_repository": {"full_name": "other/repo"}}):
+            with self.subTest(overrides=overrides), mock.patch.object(shots, "api", side_effect=[self.preview(), self.artifacts(), self.source_run(**overrides)]):
+                self.assertFalse(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_forged_artifact_does_not_hide_a_trusted_one_on_another_page(self):
+        responses = [self.preview(), self.artifacts() + self.artifacts(), self.source_run(event="pull_request"), self.source_run()]
+        with mock.patch.object(shots, "api", side_effect=responses):
+            self.assertTrue(shots.sources_ready(self.repo, "1", self.sha))
+
+    def test_assessment_requires_trusted_exact_pr_and_commit_artifact(self):
+        name = f"pr-screenshot-reviewed-1-{self.sha}"
+        artifact = self.artifacts(name=name)
+        with mock.patch.object(shots, "api", side_effect=[artifact, self.source_run("preview-deploy")]):
+            self.assertTrue(shots.assessed(self.repo, "1", self.sha))
+        with mock.patch.object(shots, "api", side_effect=[artifact, self.source_run("preview-deploy", event="pull_request")]):
+            self.assertFalse(shots.assessed(self.repo, "1", self.sha))
+        with mock.patch.object(shots, "api", return_value=artifact):
+            self.assertFalse(shots.assessed(self.repo, "2", self.sha))
+
+    def test_invalid_sha_is_rejected_before_api_access(self):
+        with mock.patch.object(shots, "api") as api, self.assertRaises(ValueError):
+            shots.sources_ready(self.repo, "1", "../other")
+        api.assert_not_called()
+
+
+class CodexConfigTest(unittest.TestCase):
+    def test_browser_only_configuration(self):
+        import tomllib
+        adapter_spec = importlib.util.spec_from_file_location("adapter", SCRIPT.with_name("pr-screenshot-codex.py"))
+        adapter = importlib.util.module_from_spec(adapter_spec)
+        adapter_spec.loader.exec_module(adapter)
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            mcp = root / "mcp.json"
+            mcp.write_text(json.dumps({"mcpServers": {"playwright": {"command": "sudo", "args": ["--isolated"]}}}))
+            adapter.configure(mcp, root)
+            config = tomllib.loads((root / "config.toml").read_text())
+            self.assertEqual(config["permissions"]["screenshots"]["filesystem"][str(root)], "deny")
+            self.assertEqual(config["web_search"], "disabled")
+            self.assertTrue(all(value is False for value in config["features"].values()))
+            allowed = config["mcp_servers"]["playwright"]["enabled_tools"]
+            self.assertIn("browser_take_screenshot", allowed)
+            self.assertNotIn("browser_evaluate", allowed)
+            self.assertNotIn("browser_file_upload", allowed)
+            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(shots.main(["x", "contract"]), 0)
+            generated = dict(line.split("=", 1) for line in output.getvalue().splitlines())
+            self.assertEqual(generated["tools"].split(","), [f"mcp__playwright__{tool}" for tool in allowed])
+            self.assertEqual(json.loads(generated["schema"]), adapter.SCHEMA)
+
+
 class CliTest(unittest.TestCase):
     def test_prepare_writes_uploads_and_section(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             (root / "shots").mkdir()
             (root / "shots" / "01-chat.png").write_bytes(PNG)
-            result = json.dumps({"screenshots": [{"file": "01-chat.png", "caption": "Chat"}]})
+            result = json.dumps({"complete": True, "screenshots": [{"file": "01-chat.png", "caption": "Chat"}]})
             self.assertEqual(shots.main(["x", "prepare", result, str(root / "shots"), BASE, str(root / "out")]), 0)
             self.assertEqual((root / "out" / "uploads.txt").read_text(), "01-chat.png\n")
             self.assertIn("01-chat.png", (root / "out" / "section.md").read_text())
-            self.assertEqual(shots.main(["x", "prepare", "not json", str(root / "shots"), BASE, str(root / "o2")]), 0)
-            self.assertEqual((root / "o2" / "uploads.txt").read_text(), "")
+            self.assertEqual(shots.main(["x", "prepare", "not json", str(root / "shots"), BASE, str(root / "o2")]), 2)
+            self.assertFalse((root / "o2").exists())
+
+    def test_partially_rejected_capture_cannot_be_published_as_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "good.png").write_bytes(PNG)
+            result = {"complete": True, "screenshots": [{"file": "good.png"}, {"file": "missing.png"}]}
+            self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 2)
+            self.assertFalse((root / "out").exists())
+
+    def test_incomplete_capture_is_publishable_but_not_marked_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "good.png").write_bytes(PNG)
+            result = {"complete": False, "screenshots": [{"file": "good.png"}]}
+            self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 0)
+            self.assertIn("good.png", (root / "out" / "section.md").read_text())
+            self.assertFalse((root / "out" / "complete.txt").exists())
+
+    def test_duplicate_references_keep_each_valid_file_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "good.png").write_bytes(PNG)
+            result = {"complete": True, "screenshots": [{"file": "good.png", "caption": "View"}] * 2}
+            self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 0)
+            self.assertEqual((root / "out" / "uploads.txt").read_text(), "good.png\n")
+
+    def test_prepare_requires_explicit_boolean_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for result in ({"screenshots": []}, {"screenshots": [], "complete": "true"}):
+                self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 2)
+                self.assertFalse((root / "out").exists())
 
 
 if __name__ == "__main__":

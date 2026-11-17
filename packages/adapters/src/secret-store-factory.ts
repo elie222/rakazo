@@ -148,6 +148,9 @@ export class ComposedSecretStore extends SecretChanges implements SecretStore {
       await this.publish(ref);
     }
   }
+  isRemote(ref: string): boolean {
+    return Boolean(this.remote?.isRemote(ref));
+  }
 
   redact(_value: string): string {
     return "[redacted]";

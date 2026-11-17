@@ -7,9 +7,11 @@ import {
   normalizeOneTimeCode,
   vaultKind,
 } from "@rakazo/contracts";
+import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useEventListener } from "../lib/use-event-listener";
 import type { AskBlock, AskCardProps } from "./AskCard";
 import { BuiCard } from "./ai/primitives";
 import { siteHost, VaultTile } from "./vault/kinds";
@@ -63,24 +65,20 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
   // such as an SSH private key. That text is kept as is and the field turns read-only, so what
   // is saved is exactly what was pasted; Clear makes it editable again.
-  useEffect(() => {
-    if (!commandInput || !secretField) return;
+  useEventListener(commandInput ? secretField : null, "beforeinput", (event) => {
+    if (!secretField) return;
     const field = secretField;
-    const keepLineBreaks = (event: InputEvent) => {
-      const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
-        /\r\n?/g,
-        "\n",
-      );
-      if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
-      event.preventDefault();
-      const start = field.selectionStart ?? field.value.length;
-      const end = field.selectionEnd ?? start;
-      setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
-      setPastedLines(true);
-    };
-    field.addEventListener("beforeinput", keepLineBreaks);
-    return () => field.removeEventListener("beforeinput", keepLineBreaks);
-  }, [commandInput, secretField]);
+    const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
+      /\r\n?/g,
+      "\n",
+    );
+    if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
+    event.preventDefault();
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
+    setPastedLines(true);
+  });
 
   async function send(value: string, fields?: LoginFieldInput[], remember?: false) {
     setPending("submit");
@@ -102,9 +100,9 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
     if (submitting || answer.length === 0) return;
     try {
       await send(answer);
-    } catch {
-      // A secret answer's failure may echo the secret, so never show its message.
-      setError(t`Could not submit this answer`);
+    } catch (err) {
+      // A secret answer's failure may echo the secret, so only a known fixed message shows.
+      setError(secretAnswerErrorText(err, t`Could not submit this answer`));
     }
   }
 
@@ -166,7 +164,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             : undefined,
         onDismiss: canDismiss ? dismiss : undefined,
         onSave: saveForm,
-        failureText: () => t`Could not submit this answer`,
+        failureText: (err: unknown) => secretAnswerErrorText(err, t`Could not submit this answer`),
       }
     : undefined;
 

@@ -1,8 +1,12 @@
 import { GITHUB_URL } from "../site";
 import {
+  aboutUsd,
   E2B_PRO_FEE,
+  euro,
+  homepage,
   KUBERNETES_NODE_FITS,
   MONTH_HOURS,
+  monthly,
   PRICES_NOTE,
   PRICING,
   PROVIDERS_DOC,
@@ -10,14 +14,12 @@ import {
   RUNTIME_DOC,
   SERVERS,
   WORKDAY_HOURS,
-  aboutUsd,
-  euro,
-  homepage,
-  monthly,
 } from "./shared";
 import type { Sandbox } from "./types";
 
-const FITS_WORD = ["no", "one", "two", "three", "four", "five"][KUBERNETES_NODE_FITS] ?? String(KUBERNETES_NODE_FITS);
+const FITS_WORD =
+  ["no", "one", "two", "three", "four", "five"][KUBERNETES_NODE_FITS] ??
+  String(KUBERNETES_NODE_FITS);
 const CONTROL_PLANE = `about $${Math.round(SERVERS.controlPlane)}`;
 
 export const kubernetes: Sandbox = {
@@ -68,11 +70,46 @@ export const kubernetes: Sandbox = {
         caption: "A small cluster for bot computers, per month",
         columns: ["Where", "Control plane", "One 8 vCPU node", "Notes"],
         rows: [
-          { topic: "DigitalOcean Kubernetes", cells: ["Free, or $40 for high availability", `$${SERVERS.digitalOcean16} for 16 GB`, "Simplest managed option at this size"] },
-          { topic: "Google Kubernetes Engine", cells: [`$0.10 an hour, ${CONTROL_PLANE}. A monthly free credit covers one zonal cluster`, "Varies by machine type", "GKE Sandbox gives you gVisor with no extra fee"] },
-          { topic: "Amazon EKS", cells: [`$0.10 an hour, ${CONTROL_PLANE}. $0.60 an hour on extended support`, `About $${SERVERS.awsM7i2xlarge} for an m7i.2xlarge with 32 GB`, "m7i and similar types support nested virtualization, so Kata works"] },
-          { topic: "Azure AKS", cells: ["Free tier without an SLA, or a paid tier", "Varies by VM size", "Microsoft suggests the free tier only up to 10 nodes"] },
-          { topic: "k3s on Hetzner", cells: ["Free, you run it", `${euro(SERVERS.hetznerCx43)} for a CX43 with 16 GB`, "Kata needs nested virtualization, which Hetzner doesn't offer on cloud VMs; its dedicated servers work"] },
+          {
+            topic: "DigitalOcean Kubernetes",
+            cells: [
+              "Free, or $40 for high availability",
+              `$${SERVERS.digitalOcean16} for 16 GB`,
+              "Simplest managed option at this size",
+            ],
+          },
+          {
+            topic: "Google Kubernetes Engine",
+            cells: [
+              `$0.10 an hour, ${CONTROL_PLANE}. A monthly free credit covers one zonal cluster`,
+              "Varies by machine type",
+              "GKE Sandbox gives you gVisor with no extra fee",
+            ],
+          },
+          {
+            topic: "Amazon EKS",
+            cells: [
+              `$0.10 an hour, ${CONTROL_PLANE}. $0.60 an hour on extended support`,
+              `About $${SERVERS.awsM7i2xlarge} for an m7i.2xlarge with 32 GB`,
+              "m7i and similar types support nested virtualization, so Kata works",
+            ],
+          },
+          {
+            topic: "Azure AKS",
+            cells: [
+              "Free tier without an SLA, or a paid tier",
+              "Varies by VM size",
+              "Microsoft suggests the free tier only up to 10 nodes",
+            ],
+          },
+          {
+            topic: "k3s on Hetzner",
+            cells: [
+              "Free, you run it",
+              `${euro(SERVERS.hetznerCx43)} for a CX43 with 16 GB`,
+              "Kata needs nested virtualization, which Hetzner doesn't offer on cloud VMs; its dedicated servers work",
+            ],
+          },
         ],
         note: `${PRICES_NOTE} Hetzner prices exclude VAT. AWS price for us-east-1 on demand.`,
       },
@@ -162,12 +199,24 @@ export const kubernetes: Sandbox = {
     { label: "Kata Containers", href: "https://katacontainers.io" },
     { label: "Kubernetes Agent Sandbox", href: "https://agent-sandbox.sigs.k8s.io" },
     { label: "Agent Sandbox on GitHub", href: "https://github.com/kubernetes-sigs/agent-sandbox" },
-    { label: "GKE Sandbox", href: "https://docs.cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods" },
+    {
+      label: "GKE Sandbox",
+      href: "https://docs.cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods",
+    },
     { label: "GKE pricing", href: "https://cloud.google.com/kubernetes-engine/pricing" },
     { label: "Amazon EKS pricing", href: "https://aws.amazon.com/eks/pricing/" },
-    { label: "Azure AKS pricing", href: "https://azure.microsoft.com/en-us/pricing/details/kubernetes-service/" },
-    { label: "DigitalOcean Kubernetes pricing", href: "https://www.digitalocean.com/pricing/kubernetes" },
-    { label: "AWS, nested virtualization", href: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/amazon-ec2-nested-virtualization.html" },
+    {
+      label: "Azure AKS pricing",
+      href: "https://azure.microsoft.com/en-us/pricing/details/kubernetes-service/",
+    },
+    {
+      label: "DigitalOcean Kubernetes pricing",
+      href: "https://www.digitalocean.com/pricing/kubernetes",
+    },
+    {
+      label: "AWS, nested virtualization",
+      href: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/amazon-ec2-nested-virtualization.html",
+    },
     PRICING.digitalocean,
     PRICING.hetzner,
     PRICING.e2b,

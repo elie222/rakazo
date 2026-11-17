@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSharedSpaceNote } from "./shared-space-note.js";
+import { formatSharedSpaceNote } from "./run-instructions.prompt.js";
 
 describe("formatSharedSpaceNote", () => {
   it("names the members and whose accounts the turn uses", () => {

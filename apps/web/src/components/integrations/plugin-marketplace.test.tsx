@@ -58,7 +58,11 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { PluginDetail } from "./plugin-marketplace";
+import { ConnectorDetail } from "../../pages/plugins/connector-detail";
+import { ConnectorIcon } from "../../pages/plugins/parts";
+import type { PluginConnections } from "../../pages/plugins/use-plugin-connections";
+
+import { PluginDetail, PluginLogo } from "./plugin-marketplace";
 
 const source = "https://github.com/example/notes";
 const preview = {
@@ -340,4 +344,77 @@ describe("plugin detail", () => {
       expect(signIn).toEqual(actions);
     },
   );
+});
+
+describe("integration fallback icons", () => {
+  it.each([
+    ["🦞 OpenClaw", "🦞", "🦞"],
+    ["𠮷野", "𠮷", "𠮷"],
+    ["中文", "中", "中"],
+    ["notes", "N", "n"],
+    ["", "", ""],
+  ])("preserves the first code point of %s", async (name, pluginInitial, connectorInitial) => {
+    const item = {
+      connectorId: "test",
+      slug: "test",
+      name,
+      logo: null,
+      connected: false,
+      noAuth: false,
+    };
+    const state = {
+      connections: [],
+      pending: null,
+      tools: [],
+      labelDrafts: {},
+    } as unknown as PluginConnections;
+    await act(async () =>
+      root.render(
+        <>
+          <section data-icon="plugin">
+            <PluginLogo name={name} />
+          </section>
+          <section data-icon="connector">
+            <ConnectorIcon name={name} />
+          </section>
+          <ConnectorDetail item={item} state={state} onBack={() => undefined} />
+        </>,
+      ),
+    );
+    expect(container.querySelector('[data-icon="plugin"]')?.textContent).toBe(pluginInitial);
+    expect(container.querySelector('[data-icon="connector"]')?.textContent).toBe(connectorInitial);
+    expect(
+      container.querySelector('[data-testid="connection-detail"] .place-items-center')?.textContent,
+    ).toBe(connectorInitial);
+  });
+
+  it("keeps explicit image logos instead of initials", async () => {
+    const logo = "https://example.test/logo.png";
+    const item = {
+      connectorId: "test",
+      slug: "test",
+      name: "🦞 OpenClaw",
+      logo,
+      connected: false,
+      noAuth: false,
+    };
+    const state = {
+      connections: [],
+      pending: null,
+      tools: [],
+      labelDrafts: {},
+    } as unknown as PluginConnections;
+    await act(async () =>
+      root.render(
+        <>
+          <PluginLogo name={item.name} logo={logo} />
+          <ConnectorIcon name={item.name} logo={logo} />
+          <ConnectorDetail item={item} state={state} onBack={() => undefined} />
+        </>,
+      ),
+    );
+    expect(
+      [...container.querySelectorAll("img")].map((image) => image.getAttribute("src")),
+    ).toEqual([logo, logo, logo]);
+  });
 });

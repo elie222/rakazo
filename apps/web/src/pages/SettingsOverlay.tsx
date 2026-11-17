@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
-import type { BotAvatarSet, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import type { BotAvatarSet, LabFeature, SpaceMemoryConfig } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -12,19 +13,21 @@ import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { PlanUsage } from "../components/PlanUsage";
 import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
 import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import type { RpcClient } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
+import { useEventListener } from "../lib/use-event-listener";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
   UpdatesSettingsPanel,
-  UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
+import { LabsSettingsPanel } from "./LabsSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
@@ -34,6 +37,7 @@ import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
 import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
+import { UsageSettingsPanel } from "./UsageSettingsPanel";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 export function SettingsOverlay({
@@ -44,8 +48,6 @@ export function SettingsOverlay({
   onDeleteSpace,
   email,
   name,
-  usage,
-  onUsageOpen,
   section: requestedSection,
   onSectionChange,
   onNameSaved,
@@ -55,6 +57,9 @@ export function SettingsOverlay({
   onBotAvatarSetChange,
   onAccountImported,
   onImportAgent,
+  labs,
+  labsAvailable,
+  onLabsChange,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
@@ -73,21 +78,23 @@ export function SettingsOverlay({
   space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   onOpenSpace?: (spaceId: string) => void;
-  onRenameSpace?: (spaceId: string, name: string) => Promise<void>;
+  onRenameSpace?: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
-  usage?: UsageSummary | null;
-  onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
-  onTimezoneChange: (timezone: string) => Promise<void>;
+  onTimezoneChange: (timezone: string, client: RpcClient) => Promise<void>;
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
+  labs: readonly LabFeature[];
+  /** The Labs features this account can switch; Labs is hidden when there are none. */
+  labsAvailable: readonly LabFeature[];
+  onLabsChange: (labs: LabFeature[], client: RpcClient) => Promise<void>;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -114,8 +121,9 @@ export function SettingsOverlay({
   const usageRef = useRef<HTMLDivElement>(null);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
-  const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
-  const recoveryHoldTimer = useRef<number | undefined>(undefined);
+  // A new object holds the hint for another four seconds; null lets it go.
+  const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
+  const keepComputerRecovery = recoveryHold !== null;
   const showComputer =
     computerSettingsEnabled &&
     (canConfigureComputers ||
@@ -129,38 +137,25 @@ export function SettingsOverlay({
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
-    (requestedSection === "updates" && !showUpdates)
+    (requestedSection === "updates" && !showUpdates) ||
+    (requestedSection === "labs" && labsAvailable.length === 0)
       ? "general"
       : requestedSection;
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
-  const spaceId = section === "space" ? (space?.id ?? null) : null;
-  const releaseComputerRecovery = useCallback(() => {
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = undefined;
-    setKeepComputerRecovery(false);
-  }, []);
-  const holdComputerRecovery = useCallback(() => {
-    setKeepComputerRecovery(true);
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = window.setTimeout(() => {
-      recoveryHoldTimer.current = undefined;
-      setKeepComputerRecovery(false);
-    }, 4000);
-  }, []);
+  const spaceId = section === "space" ? (space?.id ?? null) : undefined;
+  const releaseComputerRecovery = useCallback(() => setRecoveryHold(null), []);
+  const holdComputerRecovery = useCallback(() => setRecoveryHold({}), []);
+  useTimeout(releaseComputerRecovery, recoveryHold ? 4000 : null, recoveryHold);
 
   useEffect(() => {
     if (section !== "computer") releaseComputerRecovery();
   }, [section, releaseComputerRecovery]);
-  useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
 
   useEffect(() => {
-    if (section === "usage") {
-      onUsageOpen();
-      usageRef.current?.focus();
-    }
-  }, [section, onUsageOpen]);
+    if (section === "usage") usageRef.current?.focus();
+  }, [section]);
 
   const navItems = useSettingsNavItems({
     messaging: messagingEnabled,
@@ -168,17 +163,20 @@ export function SettingsOverlay({
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
+    labs: labsAvailable.length > 0,
   });
 
+  const measureNav = () => {
+    if (!nav) return;
+    const offset = Math.abs(nav.scrollLeft);
+    setNavOverflow({
+      previous: offset > 1,
+      next: nav.scrollWidth - nav.clientWidth - offset > 1,
+    });
+  };
+  useEventListener(nav, "scroll", measureNav);
   useEffect(() => {
     if (!nav) return;
-    const measure = () => {
-      const offset = Math.abs(nav.scrollLeft);
-      setNavOverflow({
-        previous: offset > 1,
-        next: nav.scrollWidth - nav.clientWidth - offset > 1,
-      });
-    };
     const revealSection = () => {
       if (nav.scrollWidth > nav.clientWidth) {
         nav.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({
@@ -186,17 +184,13 @@ export function SettingsOverlay({
           inline: "nearest",
         });
       }
-      measure();
+      measureNav();
     };
     revealSection();
-    nav.addEventListener("scroll", measure);
     const observer =
       typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(revealSection);
     observer?.observe(nav);
-    return () => {
-      nav.removeEventListener("scroll", measure);
-      observer?.disconnect();
-    };
+    return () => observer?.disconnect();
   }, [
     nav,
     section,
@@ -421,7 +415,9 @@ export function SettingsOverlay({
                     <SpaceSettingsPanel
                       key={space.id}
                       space={space}
-                      onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
+                      onRename={(name, client) =>
+                        onRenameSpace?.(space.id, name, client) ?? Promise.resolve()
+                      }
                       onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
                       onLeft={(activeSpaceId) => onLeftSpace?.(space.id, activeSpaceId)}
                       onClose={requestClose}
@@ -438,7 +434,10 @@ export function SettingsOverlay({
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
                   ) : null}
                   {section === "usage" ? (
-                    <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                    <>
+                      <PlanUsage />
+                      <UsageSettingsPanel panelRef={usageRef} />
+                    </>
                   ) : null}
                   {section === "computer" && showComputer ? (
                     <ComputerSettingsPanel
@@ -450,6 +449,13 @@ export function SettingsOverlay({
                       onRecoveryDismissed={releaseComputerRecovery}
                       canConfigureComputers={canConfigureComputers}
                       computerSettingsEnabled={computerSettingsEnabled}
+                    />
+                  ) : null}
+                  {section === "labs" ? (
+                    <LabsSettingsPanel
+                      labs={labs}
+                      available={labsAvailable}
+                      onLabsChange={onLabsChange}
                     />
                   ) : null}
                   {section === "billing" && billingEnabled ? (

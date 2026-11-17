@@ -9,9 +9,32 @@ export interface CloudAgentConnection {
   provider: CloudAgentProvider;
   /** Opaque credential binding. Rotation fails closed for existing agents. */
   key: string;
+  /** A user's own environment, disclosed for consent; a new one asks again. */
+  baseUrl?: string;
   /** Only the offline emulator may be available in every Space. */
   spaceId?: string;
 }
+
+export type CloudAgentActor = { spaceId: string; userId: string };
+
+/** Environments users connected themselves as MCP servers, wherever those servers reach. */
+export interface UserCloudAgents {
+  /**
+   * The actor's connection for new agents, if any. With `botIds`, require each agent's
+   * permission to use the complete bridge protocol; without, list for owner consent.
+   */
+  forActor(actor: CloudAgentActor & { botIds?: string[] }): Promise<CloudAgentConnection | null>;
+  /** Every environment the actor connected in the Space, whichever agents may use it. */
+  listForActor(actor: CloudAgentActor): Promise<CloudAgentConnection[]>;
+  /** Resolve a stored key; with botIds, require current permission to start new work. */
+  forKey(
+    key: string,
+    actor: CloudAgentActor & { botIds?: string[] },
+  ): Promise<CloudAgentConnection | null>;
+}
+
+/** Their agents are keyed by this prefix and the MCP server's id, which survives a reconnect. */
+export const USER_CLOUD_AGENT_KEY_PREFIX = "mcp:";
 
 export function cloudAgentsEnabled(
   connection: CloudAgentConnection | null | undefined,

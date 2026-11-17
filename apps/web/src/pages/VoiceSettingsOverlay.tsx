@@ -22,13 +22,13 @@ import {
   Field,
   FieldLabel,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallSession } from "../lib/call-session";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
@@ -51,7 +51,7 @@ export function VoiceSettingsOverlay({
   scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
-  const spaceId = useBoundSpaceId();
+  const spaceId = useBoundSpaceId() ?? null;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const scoped = { input: { scope } };
@@ -70,12 +70,15 @@ export function VoiceSettingsOverlay({
     return { catalog, credentials, status, provider, credential, voices };
   });
   const { t } = useLingui();
+  const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
   const baseUrlId = useId();
   const ttsModelId = useId();
   const sttModelId = useId();
+  const sttBaseUrlId = useId();
+  const sttApiKeyId = useId();
   const providerSelectId = useId();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
@@ -99,9 +102,19 @@ export function VoiceSettingsOverlay({
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
+  const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
-  const connection = useRef({ speechModel, baseUrl, ttsModel, sttModel });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel };
+  const connection = useRef({
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  });
+  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, apiKey, sttApiKey };
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -145,6 +158,7 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
+    if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
       .fetchQuery(
@@ -182,6 +196,7 @@ export function VoiceSettingsOverlay({
 
   async function chooseProvider(nextProvider: string) {
     setApiKey("");
+    setSttApiKey("");
     setError(null);
     setNotice(null);
     const cred = credentials.find((entry) => entry.provider === nextProvider);
@@ -244,6 +259,7 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     // What this connect carries; anything typed after this point was not saved.
     const sentApiKey = apiKey;
+    const sentSttApiKey = sttApiKey;
     const sent = connection.current;
     markPending("connect");
     try {
@@ -261,6 +277,8 @@ export function VoiceSettingsOverlay({
                 baseUrl: baseUrl.trim(),
                 ttsModel: ttsModel.trim() || undefined,
                 sttModel: sttModel.trim() || undefined,
+                sttBaseUrl: sttBaseUrl.trim(),
+                sttApiKey: sentSttApiKey.trim(),
               }
             : {}),
         });
@@ -270,6 +288,7 @@ export function VoiceSettingsOverlay({
       }
       // A key typed while the connect ran was not saved; keep it for the next try.
       setApiKey((current) => (current === sentApiKey ? "" : current));
+      setSttApiKey((current) => (current === sentSttApiKey ? "" : current));
       // The connect saved the voice the server kept for these values, and the
       // disabled field cannot hold a newer edit, so the voice follows the saved one.
       edited.current.delete("voiceId");
@@ -278,6 +297,9 @@ export function VoiceSettingsOverlay({
       for (const field of CONNECTION_FIELDS) {
         if (connection.current[field] === sent[field]) edited.current.delete(field);
       }
+      // A key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
+      if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
       setNotice(t`Connected ${selected.name}.`);
       // The saved connection (the server may have picked another voice for a new address) shows
       // at once in untouched fields, so a failed read after it cannot leave stale values to send.
@@ -302,11 +324,24 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("disconnect");
     try {
-      await rpc.voice.disconnect({ provider: providerId });
+      try {
+        await rpc.voice.disconnect({ provider: providerId });
+      } catch (err) {
+        setError(errorText(err, t`Could not disconnect this voice provider`));
+        return;
+      }
       setApiKey("");
-      await refresh(providerId);
-    } catch (err) {
-      setError(errorText(err, t`Could not disconnect this voice provider`));
+      setSttApiKey("");
+      if (providerId === providerRef.current) setVoiceId("");
+      const drop = (current: VoiceCredential[]) =>
+        current.filter((entry) => entry.provider !== providerId);
+      setCredentials(drop);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), (current) =>
+        current ? drop(current) : current,
+      );
+      await refresh(providerId).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } finally {
       markPending(null);
     }
@@ -364,6 +399,8 @@ export function VoiceSettingsOverlay({
   }
 
   async function testVoice() {
+    // The sample uses the call's speaker, so it would cut off the reply.
+    if (call) return;
     setError(null);
     setNotice(null);
     markPending("test");
@@ -376,7 +413,12 @@ export function VoiceSettingsOverlay({
         setError(speaker.state.error);
         return;
       }
-      setNotice(t`If you heard that, voice is ready.`);
+      const served = speaker.substitutedVoice;
+      setNotice(
+        served
+          ? t`That voice isn't offered by this server, so it used ${served} instead.`
+          : t`If you heard that, voice is ready.`,
+      );
     } catch (err) {
       setError(errorText(err, t`Could not play a test clip`));
     } finally {
@@ -401,23 +443,18 @@ export function VoiceSettingsOverlay({
           <FieldLabel htmlFor={providerSelectId}>
             <Trans>Provider</Trans>
           </FieldLabel>
-          <NativeSelect
+          <OptionSelect
             id={providerSelectId}
-            className="w-full"
             value={provider}
             disabled={busy}
-            onChange={(event) => void chooseProvider(event.target.value)}
-          >
-            {catalog.map((entry) => {
-              const connected = credentials.some((cred) => cred.provider === entry.id);
-              return (
-                <NativeSelectOption key={entry.id} value={entry.id}>
-                  {entry.name}
-                  {connected ? ` (${t`Connected`})` : ""}
-                </NativeSelectOption>
-              );
-            })}
-          </NativeSelect>
+            options={catalog.map((entry) => ({
+              value: entry.id,
+              label: credentials.some((cred) => cred.provider === entry.id)
+                ? `${entry.name} (${t`Connected`})`
+                : entry.name,
+            }))}
+            onValueChange={(next) => void chooseProvider(next)}
+          />
         </Field>
       ) : null}
       {hiddenSelfHosted && scope === "account" ? (
@@ -462,7 +499,11 @@ export function VoiceSettingsOverlay({
                     type="password"
                     autoComplete="new-password"
                     value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
+                    onChange={(event) => {
+                      // The key belongs to this address, so a refresh must not swap it.
+                      edited.current.add("baseUrl");
+                      setApiKey(event.target.value);
+                    }}
                     placeholder={
                       selfHosted || keyOptional
                         ? t`Optional`
@@ -509,6 +550,42 @@ export function VoiceSettingsOverlay({
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
+                  <Field className="mt-5">
+                    <FieldLabel htmlFor={sttBaseUrlId}>
+                      <Trans>Transcription server URL</Trans>
+                    </FieldLabel>
+                    <Input
+                      id={sttBaseUrlId}
+                      type="url"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={sttBaseUrl}
+                      onChange={(event) => {
+                        edited.current.add("sttBaseUrl");
+                        setSttBaseUrl(event.target.value);
+                      }}
+                      placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
+                    />
+                  </Field>
+                  {sttBaseUrl.trim() ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={sttApiKeyId}>
+                        <Trans>Transcription API key</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={sttApiKeyId}
+                        type="password"
+                        autoComplete="new-password"
+                        value={sttApiKey}
+                        onChange={(event) => {
+                          // The key belongs to this address, so a refresh must not swap it.
+                          edited.current.add("sttBaseUrl");
+                          setSttApiKey(event.target.value);
+                        }}
+                        placeholder={t`Optional`}
+                      />
+                    </Field>
+                  ) : null}
                 </>
               ) : null}
               {(keyless && credential) || linked ? null : (
@@ -591,20 +668,18 @@ export function VoiceSettingsOverlay({
                     </datalist>
                   </>
                 ) : (
-                  <NativeSelect
+                  <OptionSelect
                     id={voiceSelectId}
-                    className="w-full"
                     value={voiceId}
                     disabled={busy}
-                    onChange={(event) => void chooseVoice(event.target.value)}
-                  >
-                    {voiceOptions.map((voice) => (
-                      <NativeSelectOption key={voice.id} value={voice.id}>
-                        {voice.label}
-                        {voice.description ? ` (${voice.description})` : ""}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                    options={voiceOptions.map((voice) => ({
+                      value: voice.id,
+                      label: voice.description
+                        ? `${voice.label} (${voice.description})`
+                        : voice.label,
+                    }))}
+                    onValueChange={(next) => void chooseVoice(next)}
+                  />
                 )}
               </Field>
               {selected.speechModel ? (
@@ -637,7 +712,7 @@ export function VoiceSettingsOverlay({
                 type="button"
                 variant="secondary"
                 className="mt-4"
-                disabled={busy || !status?.ready}
+                disabled={busy || !status?.ready || call !== null}
                 onClick={() => void testVoice()}
               >
                 {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
@@ -700,6 +775,6 @@ function selectedProvider(
 
 const NO_VOICES: VoiceInfo[] = [];
 
-const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel"] as const;
+const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
 
 type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];
