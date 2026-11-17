@@ -316,6 +316,12 @@ export function SidebarRoster({
                 const rowSameList =
                   Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const groupMembers =
+                  item.kind === "group" && item.chat.id === activeSnapshot?.groupId
+                    ? (activeSnapshot.members ?? item.chat.members)
+                    : item.kind === "group"
+                      ? item.chat.members
+                      : [];
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
@@ -326,14 +332,7 @@ export function SidebarRoster({
                       status={item.chat.status}
                     />
                   ) : (
-                    <GroupAvatar
-                      members={
-                        item.chat.id === activeSnapshot?.groupId
-                          ? (activeSnapshot.members ?? item.chat.members)
-                          : item.chat.members
-                      }
-                      size={mini ? 40 : compact ? 28 : 38}
-                    />
+                    <GroupAvatar members={groupMembers} size={mini ? 40 : compact ? 28 : 38} />
                   );
                 const chatTrigger = (
                   <ContextMenuTrigger
@@ -572,7 +571,7 @@ export function SidebarRoster({
                                   status={item.chat.status}
                                 />
                               ) : (
-                                <GroupAvatar members={item.chat.members} size={18} />
+                                <GroupAvatar members={groupMembers} size={18} />
                               )}
                               <span
                                 dir="auto"
