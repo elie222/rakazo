@@ -18,6 +18,7 @@ import {
 } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SpaceQueries } from "../../lib/query";
+import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { useMessageJump } from "./use-message-jump";
 import type { ThreadState } from "./use-thread-state";
@@ -61,10 +62,14 @@ function Harness({
   rpc,
   locations,
   navigateRef,
+  setPanel = () => undefined,
+  routinesBotId = null,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   locations: string[];
   navigateRef: { current: NavigateFunction | null };
+  setPanel?: (panel: Panel) => void;
+  routinesBotId?: string | null;
 }) {
   const { kind, id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,7 +85,7 @@ function Harness({
     commitSnapshot: () => undefined,
     routines: [],
     setRoutines: () => undefined,
-    routinesBotId: null,
+    routinesBotId,
     setRoutinesBotId: () => undefined,
     expandedHistoryThread: useRef<string | null>(null),
     historyEpoch: useRef(0),
@@ -100,7 +105,7 @@ function Harness({
     activeGroupId,
     searchParams,
     setSearchParams,
-    setPanel: () => undefined,
+    setPanel,
     setPanelState: () => undefined,
     editRoutine: () => undefined,
     resetRoutineTarget: () => undefined,
@@ -257,4 +262,33 @@ it.each([
   });
 
   expect(locations.at(-1)).toBe("/app/artifacts?view=grid");
+});
+
+it("opens the routine list when a link names a routine that is gone", async () => {
+  const { rpc } = heldRpc();
+  const setPanel = vi.fn();
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <MemoryRouter initialEntries={["/app/bot/bot-a?routine=deleted"]}>
+        <Routes>
+          <Route
+            path="/app/:kind/:id"
+            element={
+              <Harness
+                rpc={rpc}
+                locations={[]}
+                navigateRef={{ current: null }}
+                setPanel={setPanel}
+                routinesBotId="bot-a"
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  expect(setPanel).toHaveBeenCalledWith("routines");
+  expect(setPanel).not.toHaveBeenCalledWith("settings");
 });

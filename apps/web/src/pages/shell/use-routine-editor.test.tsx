@@ -41,6 +41,7 @@ let root: Root;
 let editor: ReturnType<typeof useRoutineEditor>;
 let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
+const setPanel = vi.fn();
 const rotateWebhookSecret = vi.fn();
 let activeBot: Bot;
 const activeBotId = { current: "" };
@@ -56,7 +57,7 @@ function Harness() {
     messageProviders: [],
     setBots: () => {},
     refreshThread: async () => ({}) as never,
-    setPanel: () => {},
+    setPanel,
   });
   return null;
 }
@@ -192,4 +193,14 @@ it("drops a key failure that arrives after switching to another bot", async () =
     await ensuring;
   });
   expect(editor.editorProps!.error).toBeNull();
+});
+
+it("returns to the routine list, not Settings, when the editor is left or an unsaved draft is deleted", () => {
+  act(() => editor.editRoutine(routine));
+  act(() => editor.editorProps!.onBack());
+  expect(setPanel).toHaveBeenLastCalledWith("routines");
+  act(() => editor.startRoutine());
+  act(() => editor.editorProps!.onDelete());
+  expect(setPanel).toHaveBeenLastCalledWith("routines");
+  expect(setPanel).not.toHaveBeenCalledWith("settings");
 });

@@ -195,7 +195,7 @@ export function useMessageJump({
         editRoutine(routine);
         setPanel("routine");
       } else {
-        setPanel("settings");
+        setPanel("routines");
       }
       const next = new URLSearchParams(searchParams);
       next.delete("routine");

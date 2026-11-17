@@ -14,7 +14,7 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
 
   await openBotPanel(page);
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel).toHaveAttribute("data-panel", "settings");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);
   await expect(sidePanel.getByTestId("teach-start-button")).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Recover computer" })).toHaveCount(0);

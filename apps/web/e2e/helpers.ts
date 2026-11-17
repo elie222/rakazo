@@ -122,7 +122,8 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
-export type BotPanelTab = "Computer" | "Routines" | "Pages" | "Settings";
+const BOT_PANEL_TABS = ["Computer", "Routines", "Pages", "Settings"] as const;
+export type BotPanelTab = (typeof BOT_PANEL_TABS)[number];
 
 /**
  * Opens the bot panel from the header pill on the given tab (the Computer tab unless named),
@@ -145,7 +146,11 @@ export async function openBotPanel(page: Page, tab: BotPanelTab = "Computer") {
     await expect(profile).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
   // The panel reopens on the tab it was left on.
-  const trigger = page.getByTestId("bot-settings").getByRole("tab", { name: tab, exact: true });
+  // By position, not label, so a test in another language opens the same tab.
+  const trigger = page
+    .getByTestId("bot-settings")
+    .getByRole("tab")
+    .nth(BOT_PANEL_TABS.indexOf(tab));
   if ((await trigger.getAttribute("aria-selected")) !== "true") await trigger.click();
   await expect(trigger).toHaveAttribute("aria-selected", "true");
 }

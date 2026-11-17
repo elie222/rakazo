@@ -397,7 +397,7 @@ export function useComputerState({
   // The tab can open after a URL was read long ago, and another viewer's read signs that one out.
   useEffect(() => {
     if (!previewWanted || !activeId) return;
-    void refreshComputerScreen(activeId).catch(() => null);
+    void refreshComputerScreen(activeId);
   }, [previewWanted, activeId]);
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;

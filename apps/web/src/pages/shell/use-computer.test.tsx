@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { RunStatus } from "@rakazo/contracts";
+import type { ComputerStatus, RunStatus } from "@rakazo/contracts";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
@@ -108,7 +108,11 @@ afterEach(() => {
 });
 
 it("reads the screen for the Computer tab only while the bot's own run holds a running computer up", async () => {
-  const running = { botId: "bot-1", state: "running", kind: "browser" } as never;
+  const running = {
+    botId: "bot-1",
+    state: "running",
+    kind: "browser",
+  } as unknown as ComputerStatus;
   const show = (panel: Panel, runStatus?: RunStatus) =>
     act(async () => root.render(<Harness panel={panel} runStatus={runStatus} />));
   await act(async () => state.setComputerOpen(false));
