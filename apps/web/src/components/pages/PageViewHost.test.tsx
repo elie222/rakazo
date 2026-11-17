@@ -7,7 +7,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { createPageSession, PagesProvider } from "../../lib/pages";
+import { createPageSession, PagesProvider } from "../../lib/pages/pages";
 import { PageNotice } from "./PageNotice";
 import { PageViewHost } from "./PageViewHost";
 
@@ -15,7 +15,7 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ i18n: { locale: "en" }, t: String.raw }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
   useSpaceQueries: () => ({
     pages: {
       get: {
@@ -35,7 +35,7 @@ vi.mock("../../lib/query", () => ({
     },
   }),
 }));
-vi.mock("../../lib/page-actions", () => ({
+vi.mock("../../lib/pages/page-actions", () => ({
   pageMutationOptions: () => ({ rename: {}, setVisibility: {} }),
 }));
 vi.mock("./PageView", () => ({

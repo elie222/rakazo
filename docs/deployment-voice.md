@@ -48,7 +48,9 @@ Configure a provider-side spend limit as well. Upload byte limits do not bound a
 
 `connection` uses the existing voice connection fields: `plaintext`, optional `baseUrl`,
 `sttBaseUrl`, `sttApiKey`, `ttsModel`, `sttModel`. For compatible servers, set the model fields to
-match the pricing models; endpoint/private-network restrictions remain in force. Keep server keys
+match the pricing models. Endpoint fields require valid HTTP(S) URLs and a provider that
+supports custom endpoints; unsupported fields are rejected so consent names the actual recipient.
+Endpoint/private-network restrictions remain in force. Keep server keys
 out of account settings, client configuration, repository files and logs. Use a dedicated speech
 service key, separate from reasoning credentials. No provider purchase or key retrieval is automated.
 

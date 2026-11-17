@@ -53,3 +53,18 @@ export function voiceDeploymentModelSupported(provider: string, model: string): 
   const definition = knownVoiceProvider(provider);
   return !!definition && (!definition.synthesisModel || definition.synthesisModel === model);
 }
+
+/** Endpoint fields must affect dispatch whenever consent uses them to identify a recipient. */
+export function voiceDeploymentConnectionSupported(
+  provider: string,
+  connection: { baseUrl?: string; sttBaseUrl?: string; sttApiKey?: string },
+): boolean {
+  const definition = knownVoiceProvider(provider);
+  return (
+    Boolean(definition) &&
+    (definition?.customEndpoints === true ||
+      [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].every(
+        (value) => value === undefined,
+      ))
+  );
+}

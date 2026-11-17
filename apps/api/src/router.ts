@@ -124,6 +124,7 @@ export interface RouterDeps {
     enabled: boolean;
     providers: string[];
     addresses: Record<string, string>;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     openSignup: boolean;
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */

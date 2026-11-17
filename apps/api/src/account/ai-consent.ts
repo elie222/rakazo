@@ -94,7 +94,7 @@ export async function aiConsentStatus(
       uses.includes("voice")
         ? query.uses
           ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential }] : []),
+              (credential) => (credential ? [{ credential, isDefault: true }] : []),
             )
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
@@ -222,7 +222,7 @@ export async function aiConsentStatus(
       );
     }
   }
-  if (uses.includes("voice") && voices.length === 0) {
+  if (uses.includes("voice") && !voices.some((voice) => voice.isDefault)) {
     const included = await includedVoice(deps, actor, query.settingsScope);
     if (included) {
       const { provider, connection } = included.deployment;

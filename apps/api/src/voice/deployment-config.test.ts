@@ -69,6 +69,40 @@ describe("deployment speech default", () => {
       "Invalid DEPLOYMENT_VOICE",
     );
   });
+  it.each(["baseUrl", "sttBaseUrl", "sttApiKey"])(
+    "rejects unsupported %s fields instead of disclosing an unused endpoint",
+    (field) => {
+      expect(() =>
+        deploymentVoiceFromEnv(
+          JSON.stringify({
+            ...config,
+            provider: "openai",
+            connection: {
+              plaintext: "fake-server-key",
+              [field]: field === "sttApiKey" ? "fake-stt-key" : "https://unused.example.test",
+            },
+          }),
+        ),
+      ).toThrow("Invalid DEPLOYMENT_VOICE");
+    },
+  );
+  it.each(["baseUrl", "sttBaseUrl"])("rejects an invalid %s before consent", (field) => {
+    for (const value of ["not a url", "ftp://speech.example.test"]) {
+      expect(() =>
+        deploymentVoiceFromEnv(
+          JSON.stringify({
+            ...config,
+            provider: "openai-compatible",
+            connection: {
+              plaintext: "fake-server-key",
+              baseUrl: "https://speech.example.test/v1",
+              [field]: value,
+            },
+          }),
+        ),
+      ).toThrow("Invalid DEPLOYMENT_VOICE");
+    }
+  });
   it("does not advertise or choose included speech without an available grant", async () => {
     for (const allowance of [null, { limitMicros: 10n, usedMicros: 10n }]) {
       const d = deps();

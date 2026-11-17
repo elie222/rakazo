@@ -443,3 +443,23 @@ it("discloses only the saved personal voice when it overrides included speech", 
   expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);
   expect(deps.prisma.speechAllowance.findFirst).not.toHaveBeenCalled();
 });
+
+it("allows included speech consent with saved non-default voice preferences", async () => {
+  const { deps, actor, upsert } = includedSpeechSetup();
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([
+    { credential: { provider: "openai" }, isDefault: false, voiceId: "alloy" },
+  ] as never);
+  const reviewed = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  const granted = await allowAiConsent(deps, actor, {
+    scope: reviewed.scope,
+    version: reviewed.version,
+    keys: reviewed.recipients.map((recipient) => recipient.key),
+  });
+  expect(upsert).toHaveBeenCalledTimes(2);
+  expect(
+    granted.recipients.filter((recipient) =>
+      reviewed.recipients.some((r) => r.key === recipient.key),
+    ),
+  ).toHaveLength(2);
+  expect(granted.recipients.filter((recipient) => recipient.allowed)).toHaveLength(2);
+});

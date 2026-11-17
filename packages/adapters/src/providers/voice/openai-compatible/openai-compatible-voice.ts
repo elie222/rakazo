@@ -623,6 +623,7 @@ function isNetworkError(error: Error): boolean {
 }
 
 export const openAiCompatibleVoice: VoiceProviderDefinition = {
+  customEndpoints: true,
   catalog: {
     name: "Self-hosted",
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",

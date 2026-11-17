@@ -668,7 +668,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
       deps.prisma,
       actor,
       "approval",
-      { env: process.env },
+      { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true },
       scope === "account" ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
@@ -683,7 +683,12 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),
     ...role.backups,
   ];
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({
+    env: process.env,
+    checker: deploymentChecker
+      ? { provider: deploymentChecker.provider, model: deploymentChecker.modelId }
+      : undefined,
+  });
   if (memberChoices.length === 0) {
     // The deployment's checker runs on its own configuration or on the member's key for it.
     const requiredUserProvider =

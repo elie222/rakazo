@@ -14,6 +14,8 @@ export interface VoiceProviderDefinition {
   available?(): boolean;
   /** Whether Settings offers it, beyond being available. */
   listed?(options: VoiceProviderOptions): boolean;
+  /** The connection can route synthesis and recognition to operator-specified servers. */
+  customEndpoints?: boolean;
   /** A fixed synthesis model when the endpoint has no model selector. */
   synthesisModel?: string;
   create(options: VoiceProviderOptions): VoiceProvider;
