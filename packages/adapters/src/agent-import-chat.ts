@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
-import type { Actor, AgentImportPlan, McpServerConfigInput } from "@rakazo/contracts";
+import type {
+  Actor,
+  AgentImportPlan,
+  AgentImportStatus,
+  McpServerConfigInput,
+} from "@rakazo/contracts";
 import {
   AgentImportCreateInput,
+  ConnectionSetupError,
   GROK_BOT_EXPORT_MAX_LENGTH,
   GROK_BOT_EXPORT_PATH,
 } from "@rakazo/contracts";
@@ -23,10 +29,14 @@ import {
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import {
   AGENT_EXPORT_CHANGED,
   AGENT_EXPORT_NOT_FOUND,
+  AGENT_IMPORT_FAILED,
   AGENT_IMPORT_RESULT_NOTE,
+  agentExportSharedName,
   agentExportUnknownBots,
   agentExportUnreadable,
 } from "./agent-import-chat.prompt.js";
@@ -81,8 +91,8 @@ export async function readRunAgentExport(
     }
     if (block.kind !== "file" || !deps.artifacts) continue;
     if (!EXPORT_FILE.test(block.mimeType) && !block.name.toLowerCase().endsWith(".json")) continue;
-    // Past the size an export may have, it is refused as too large without reading more.
-    if (length + block.size > GROK_BOT_REPLY_MAX_LENGTH) return "x".repeat(length + block.size);
+    // A file that would take the text past the size an export may have is not one.
+    if (length + block.size > GROK_BOT_REPLY_MAX_LENGTH) continue;
     const row = await deps.prisma.artifact.findFirst({
       where: { id: block.artifactId, spaceId: run.spaceId },
       select: { storageKey: true },
@@ -124,7 +134,14 @@ export function prepareAgentImportRequest(
   const requested = Array.isArray(args.bot_names)
     ? args.bot_names.filter((name): name is string => typeof name === "string")
     : [];
-  const names = [...new Set(requested.map((name) => name.trim()).filter(Boolean))];
+  const names = [
+    ...new Map(
+      requested
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => [name.toLowerCase(), name]),
+    ).values(),
+  ];
   if (!names.length) return { ok: false, error: "Pass bot_names: the bots to import." };
   const bots = readExport(exportText);
   if ("error" in bots) return { ok: false, error: bots.error };
@@ -132,6 +149,10 @@ export function prepareAgentImportRequest(
     name,
     index: bots.findIndex((bot) => bot.name.toLowerCase() === name.toLowerCase()),
   }));
+  const shared = names.find(
+    (name) => bots.filter((bot) => bot.name.toLowerCase() === name.toLowerCase()).length > 1,
+  );
+  if (shared) return { ok: false, error: agentExportSharedName(shared) };
   const missing = chosen.filter((item) => item.index < 0).map((item) => item.name);
   if (missing.length) {
     return {
@@ -224,12 +245,9 @@ async function checkRemoteEndpoint(deps: ExecutorDeps, endpoint: string): Promis
     });
     assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
-    throw new ClientError(
-      "BAD_REQUEST",
-      error instanceof Error ? error.message : "Invalid MCP endpoint",
-      "BAD_REQUEST",
-      { cause: error },
-    );
+    // Only a refused address is the user's to fix; anything else is a server failure.
+    if (!(error instanceof ConnectionSetupError)) throw error;
+    throw new ClientError("BAD_REQUEST", error.message, "BAD_REQUEST", { cause: error });
   }
 }
 
@@ -241,7 +259,7 @@ export type ImportedAgent =
       instructions: boolean;
       memory: string[];
       skills: string[];
-      mcpServers: string[];
+      mcpServers: { name: string; needs: string[] }[];
       routines: { name: string; needs: string[] }[];
       leftOut: LeftOut[];
     }
@@ -249,6 +267,11 @@ export type ImportedAgent =
 
 const NEED_TEXT: Record<string, string> = {
   turn_on: "turn it on",
+  credentials: "sign in again with",
+  env: "set the variables",
+  requires: "needs",
+  local_paths: "uses paths on the user's computer",
+  bundled_files: "uses files that were not imported",
   webhook: "point its source at the webhook address the routine shows",
   email_address: "give the bot an email address",
 };
@@ -311,13 +334,13 @@ export async function importAgentsFromChat(
   effectKey: string,
   services: AgentImportServices = runAgentImportServices(deps),
 ): Promise<{ bots: ImportedAgent[]; note: string } | { error: string }> {
+  const stored = ApprovedImportSchema.safeParse(request);
+  if (!stored.success) return { error: AGENT_EXPORT_CHANGED };
   const exportText = await readRunAgentExport(deps, run, context);
-  if (digestOf(exportText) !== request.exportDigest) return { error: AGENT_EXPORT_CHANGED };
+  if (digestOf(exportText) !== stored.data.exportDigest) return { error: AGENT_EXPORT_CHANGED };
   const bots = readExport(exportText);
   if ("error" in bots) return bots;
-  const approved = Array.isArray(request.bots)
-    ? (request.bots as { index?: unknown; name?: unknown }[])
-    : [];
+  const approved = stored.data.bots;
   const actor: Actor = {
     userId: run.userId,
     spaceId: run.spaceId,
@@ -326,8 +349,8 @@ export async function importAgentsFromChat(
   };
   const results: ImportedAgent[] = [];
   for (const entry of approved) {
-    const bot = typeof entry.index === "number" ? bots[entry.index] : undefined;
-    const name = String(entry.name ?? "");
+    const bot = bots[entry.index];
+    const { name } = entry;
     if (!bot || bot.name !== name) {
       results.push({ name, error: AGENT_EXPORT_CHANGED });
       continue;
@@ -336,6 +359,12 @@ export async function importAgentsFromChat(
   }
   return { bots: results, note: AGENT_IMPORT_RESULT_NOTE };
 }
+
+/** The request the owner approved, as `prepareAgentImportRequest` stored it. */
+const ApprovedImportSchema = z.object({
+  exportDigest: z.string(),
+  bots: z.array(z.object({ index: z.number().int().nonnegative(), name: z.string() })),
+});
 
 async function importOne(
   services: AgentImportServices,
@@ -354,41 +383,73 @@ async function importOne(
       includeSecrets: false,
       skillFiles: {},
     });
-    const { selection, kept, leftOut } = chatSelection(plan);
+    const chosen = chatSelection(plan);
     // The same key on a replay returns the bot this call already made.
-    const created = await createImportedBot(
-      services,
-      actor,
-      AgentImportCreateInput.parse({
-        importKey: `chat:${digestOf(key).slice(0, 40)}`,
-        files,
-        name: plan.suggestedName || bot.name,
-        description: plan.suggestedDescription,
-        selection,
-      }),
-    );
+    const create = (selection: typeof chosen.selection, attempt: string) =>
+      createImportedBot(
+        services,
+        actor,
+        AgentImportCreateInput.parse({
+          importKey: `chat:${digestOf(`${key}:${attempt}`).slice(0, 40)}`,
+          files,
+          name: plan.suggestedName || bot.name,
+          description: plan.suggestedDescription,
+          selection,
+        }),
+      );
+    let created: Awaited<ReturnType<typeof create>>;
+    let servers = chosen.kept(plan.mcpServers);
+    let leftOut = chosen.leftOut;
+    try {
+      created = await create(chosen.selection, "all");
+    } catch (error) {
+      // An address this server refuses would keep the whole bot out; the bot comes without
+      // its servers instead, and they are reported. Settings lets the user untick one.
+      if (!(error instanceof ClientError) || servers.length === 0) throw error;
+      created = await create({ ...chosen.selection, mcpServers: [] }, "without-servers");
+      leftOut = [
+        ...leftOut,
+        ...servers.map((server) => ({ item: server.title, reason: error.message })),
+      ];
+      servers = [];
+    }
     return {
       name: created.name,
       botId: created.id,
-      instructions: selection.instructions.length > 0,
-      memory: kept(plan.memory).map((item) => item.path),
-      skills: kept(plan.skills).map((item) => item.name),
-      mcpServers: kept(plan.mcpServers).map((item) => item.name),
-      routines: kept(plan.routines).map((item) => ({
+      instructions: chosen.selection.instructions.length > 0,
+      memory: chosen.kept(plan.memory).map((item) => item.path),
+      skills: chosen.kept(plan.skills).map((item) => item.name),
+      mcpServers: servers.map((item) => ({ name: item.name, needs: needsText(item.status) })),
+      routines: chosen.kept(plan.routines).map((item) => ({
         name: item.title,
-        needs:
-          item.status.kind === "needs_setup"
-            ? item.status.needs.map((need) =>
-                need.kind === "chat_app"
-                  ? `connect the bot to ${need.provider}`
-                  : (NEED_TEXT[need.kind] ?? need.kind),
-              )
-            : [],
+        needs: needsText(item.status),
       })),
       leftOut,
     };
   } catch (error) {
     if (error instanceof ClientError) return { name: bot.name, error: error.message };
-    throw error;
+    // The other bots still come over; this one is reported, and the failure logged.
+    getLogger().error("chat agent import failed", error);
+    return { name: bot.name, error: AGENT_IMPORT_FAILED };
   }
+}
+
+function needsText(status: AgentImportStatus): string[] {
+  if (status.kind !== "needs_setup") return [];
+  return status.needs.map((need) => {
+    switch (need.kind) {
+      case "chat_app":
+        return `connect the bot to ${need.provider}`;
+      case "credentials":
+      case "env":
+      case "requires":
+        return `${NEED_TEXT[need.kind]}: ${need.names.join(", ")}`;
+      case "api_key":
+        return `an API key for ${need.provider}`;
+      case "program":
+        return `the program ${need.name}`;
+      default:
+        return NEED_TEXT[need.kind] ?? need.kind;
+    }
+  });
 }

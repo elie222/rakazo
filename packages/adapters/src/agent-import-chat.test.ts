@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   importAgentsFromChat,
@@ -80,6 +81,16 @@ describe("the import_agents approval card", () => {
         title: "Import 2 bots?",
         lines: ["Bramble: 1 skill, 2 routines, 1 app", "Wren: 0 skills, 0 routines, 0 apps"],
       },
+    });
+  });
+
+  it("matches names in any case, once, and refuses a name two bots share", () => {
+    const prepared = prepareAgentImportRequest(reply, { bot_names: ["Bramble", "bramble"] });
+    expect(prepared).toMatchObject({ ok: true, canonical: { bots: [{ index: 0 }] } });
+    const twins = JSON.stringify({ bots: [bramble, { ...bramble, export_id: "other" }] });
+    expect(prepareAgentImportRequest(twins, { bot_names: ["Bramble"] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('more than one bot named "Bramble"'),
     });
   });
 
@@ -166,6 +177,39 @@ describe("importing the approved bots", () => {
       await importAgentsFromChat(deps, run, context, approved(), "effect-1", services);
     }
     expect(createBot).toHaveBeenCalledTimes(2);
+  });
+
+  it("brings a bot over without its servers when this server refuses their address", async () => {
+    const withServer = JSON.stringify({
+      bots: [{ ...bramble, apps: [{ name: "Tracker", mcp_url: "https://mcp.example.com/mcp" }] }],
+    });
+    const prepared = prepareAgentImportRequest(withServer, { bot_names: ["Bramble"] });
+    if (!prepared.ok) throw new Error(prepared.error);
+    const createBot = vi.fn<AgentImportServices["createBot"]>(async (_actor, input) => {
+      await input.seed(services.prisma, importedBot.id);
+      return importedBot;
+    });
+    const services = fakeImportServices({
+      createBot,
+      prepareMcpServer: async () => {
+        throw new ClientError("BAD_REQUEST", "Connector URL targets a private host");
+      },
+    });
+    const result = await importAgentsFromChat(
+      depsWith({ threadId: "thread-1", role: "user", text: withServer }),
+      run,
+      context,
+      prepared.canonical,
+      "effect-1",
+      services,
+    );
+    if ("error" in result) throw new Error(result.error);
+    expect(createBot).toHaveBeenCalledTimes(1);
+    expect(result.bots[0]).toMatchObject({
+      botId: importedBot.id,
+      mcpServers: [],
+      leftOut: [{ item: "Tracker", reason: "Connector URL targets a private host" }],
+    });
   });
 
   it("refuses an export that changed after approval", async () => {

@@ -6,8 +6,11 @@ export const AGENT_EXPORT_NOT_FOUND =
 export const AGENT_EXPORT_CHANGED =
   "The export is not the one the user approved. Ask the user to send it again.";
 
+export const AGENT_IMPORT_FAILED =
+  "This bot could not be imported because of a server error. Nothing was created for it; the user can try again.";
+
 export const AGENT_IMPORT_RESULT_NOTE =
-  "Every bot listed was created. Give the user one short summary per bot: what came over, what still needs them (routines are paused until they turn each on; webhook and Git routines need their source pointed at the address the routine shows; MCP servers wait for the user to approve them on the new bot's chat and sign in again), and what was left out and why.";
+  "Bots with a botId were created; a bot with an error was not. Give the user one short summary per bot: what came over, what still needs them (routines are paused until they turn each on; webhook and Git routines need their source pointed at the address the routine shows; MCP servers wait for the user to approve them on the new bot's chat and sign in again), and what was left out and why.";
 
 export function agentExportUnreadable(code: string): string {
   switch (code) {
@@ -24,4 +27,8 @@ export function agentExportUnreadable(code: string): string {
 
 export function agentExportUnknownBots(missing: string[], available: string[]): string {
   return `The export has no bot named ${missing.map((name) => `"${name}"`).join(", ")}. Bots in it: ${available.map((name) => `"${name}"`).join(", ")}.`;
+}
+
+export function agentExportSharedName(name: string): string {
+  return `The export has more than one bot named "${name}". Ask the user to import these in Settings, where they can pick each one.`;
 }
