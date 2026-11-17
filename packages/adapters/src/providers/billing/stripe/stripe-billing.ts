@@ -55,6 +55,7 @@ const priceSchema = z.object({
 });
 const idSchema = z.object({ id: z.string().min(1) });
 const urlSchema = z.object({ url: z.string().min(1) });
+const checkoutSessionSchema = z.object({ id: z.string().min(1), url: z.string().min(1) });
 const subscriptionSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -195,8 +196,7 @@ export class StripeBillingProvider implements BillingProvider {
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
-    const session = urlSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
-    return { url: session.url };
+    return checkoutSessionSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
   }
 
   async createCreditCheckout(input: BillingCreditCheckoutRequest) {
@@ -213,7 +213,7 @@ export class StripeBillingProvider implements BillingProvider {
         throw new BillingCheckoutCompletedError();
     }
     const metadata = { rakazo_credit_cents: String(input.amountCents) };
-    const session = urlSchema.parse(
+    const session = checkoutSessionSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
         mode: input.monthly ? "subscription" : "payment",
@@ -248,7 +248,7 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_url: input.cancelUrl,
       }),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async setMonthlyCredits(customerId: string, amountCents: number) {
@@ -292,7 +292,7 @@ export class StripeBillingProvider implements BillingProvider {
       throw new BillingCheckoutCompletedError();
     const metadata = { [BYOK_PLAN_METADATA]: "byok" };
     const interval = input.interval ?? "month";
-    const session = urlSchema.parse(
+    const session = checkoutSessionSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
         mode: "subscription",
@@ -319,7 +319,7 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_url: input.cancelUrl,
       }),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async changeByokPlan(
@@ -834,17 +834,18 @@ export class StripeBillingProvider implements BillingProvider {
       if (fresh.length === 0) return;
       for (const session of fresh) {
         seen.add(session.id);
-        try {
-          await this.request(
-            "POST",
-            `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
-          );
-        } catch (error) {
-          // No longer open: it expired on its own or was just paid, which the caller rechecks.
-          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
-            throw error;
-        }
+        await this.expireCheckout(session.id);
       }
+    }
+  }
+
+  async expireCheckout(id: string): Promise<void> {
+    try {
+      await this.request("POST", `/v1/checkout/sessions/${encodeURIComponent(id)}/expire`);
+    } catch (error) {
+      // No longer open: it expired on its own or was just paid, which the caller rechecks.
+      if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
+        throw error;
     }
   }
 
