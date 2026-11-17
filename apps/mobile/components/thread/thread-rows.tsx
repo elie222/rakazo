@@ -258,6 +258,7 @@ export function useThreadRows({
             group={item}
             selectedIds={selectedIds}
             onToggleSelection={rowActions.toggleSelection}
+            onStartSelection={rowActions.startSelection}
           />
         </View>
       ) : (
@@ -265,6 +266,7 @@ export function useThreadRows({
       ),
     [
       renderMessageRow,
+      rowActions.startSelection,
       rowActions.toggleSelection,
       selectedIds,
       separatorIds,

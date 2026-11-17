@@ -23,12 +23,16 @@ vi.mock("react-native", async () => {
       children,
       style,
       onPress,
+      onLongPress,
+      onAccessibilityAction,
       accessibilityRole,
       accessibilityState,
     }: {
       children?: ReactNode;
       style?: unknown;
       onPress?: () => void;
+      onLongPress?: () => void;
+      onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
       accessibilityRole?: string;
       accessibilityState?: { checked?: boolean };
     }) =>
@@ -42,6 +46,8 @@ vi.mock("react-native", async () => {
               ? undefined
               : String(accessibilityState.checked),
           onClick: onPress,
+          onContextMenu: onLongPress,
+          onFocus: () => onAccessibilityAction?.({ nativeEvent: { actionName: "selectMessages" } }),
         },
         children,
       ),
@@ -125,6 +131,39 @@ describe("VoiceChatCard", () => {
       container.querySelector<HTMLElement>("button")?.click();
     });
     expect(toggled).toEqual(["m2"]);
+    await act(async () => root.unmount());
+  });
+
+  it("starts choosing when a transcript turn is long-pressed", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const group = {
+      kind: "voiceChat",
+      key: "call:1",
+      callId: "1",
+      messages: [{ id: "m1", role: "user", blocks: [{ kind: "text", text: "Hello there" }] }],
+    } as unknown as VoiceChatGroup<MobileMessage>;
+    const started: string[] = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <VoiceChatCard group={group} onStartSelection={(message) => started.push(message.id)} />,
+      );
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>("button")?.click();
+    });
+    const turn = container.querySelectorAll<HTMLElement>("button")[1];
+    await act(async () => {
+      turn?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    expect(started).toEqual(["m1"]);
+    // Screen readers cannot long-press: the same turn offers the action instead.
+    await act(async () => {
+      turn?.focus();
+    });
+    expect(started).toEqual(["m1", "m1"]);
     await act(async () => root.unmount());
   });
 

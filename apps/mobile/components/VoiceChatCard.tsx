@@ -18,11 +18,14 @@ export function VoiceChatCard({
   group,
   selectedIds = null,
   onToggleSelection,
+  onStartSelection,
 }: {
   group: VoiceChatGroup<MobileMessage>;
   /** The messages chosen to copy together; null while not choosing. */
   selectedIds?: ReadonlySet<string> | null;
   onToggleSelection?: (message: MobileMessage) => void;
+  /** Long-pressing a turn starts choosing, as a message's menu does elsewhere. */
+  onStartSelection?: (message: MobileMessage) => void;
 }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
@@ -79,6 +82,21 @@ export function VoiceChatCard({
                   {text}
                 </Text>
               );
+            if (!selectedIds && onStartSelection && canSelectMessage(message)) {
+              return (
+                <Pressable
+                  key={message.id}
+                  accessibilityActions={[{ name: "selectMessages", label: t`Select messages` }]}
+                  onAccessibilityAction={(event) => {
+                    if (event.nativeEvent.actionName === "selectMessages")
+                      onStartSelection(message);
+                  }}
+                  onLongPress={() => onStartSelection(message)}
+                >
+                  {turn}
+                </Pressable>
+              );
+            }
             if (!selectedIds || !onToggleSelection || !canSelectMessage(message)) {
               return <Fragment key={message.id}>{turn}</Fragment>;
             }
