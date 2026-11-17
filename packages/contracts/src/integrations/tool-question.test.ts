@@ -46,6 +46,21 @@ describe("tool question forms", () => {
     expect(checkToolQuestionValues(optional, {})).toEqual({ ok: true, values: {} });
   });
 
+  it("checks a text field's declared format", () => {
+    const formatted = (format: "email" | "uri" | "date" | "date-time"): ToolQuestionField[] => [
+      { name: "v", label: "V", required: true, type: "text", format, maxLength: 100 },
+    ];
+    const ok = (format: Parameters<typeof formatted>[0], v: string) =>
+      checkToolQuestionValues(formatted(format), { v }).ok;
+    expect([ok("email", "sam@example.test"), ok("email", "sam")]).toEqual([true, false]);
+    expect([ok("uri", "https://example.test/a"), ok("uri", "not a url")]).toEqual([true, false]);
+    expect([ok("date", "2026-11-18"), ok("date", "2026-02-30")]).toEqual([true, false]);
+    expect([
+      ok("date-time", "2026-11-18T09:30:00.000Z"),
+      ok("date-time", "2026-11-18T09:30"),
+    ]).toEqual([true, false]);
+  });
+
   it("shows the answer just sent until the card itself changes", () => {
     expect(toolQuestionShownStatus("pending", "accept")).toBe("accepted");
     expect(toolQuestionShownStatus("pending", undefined)).toBe("pending");

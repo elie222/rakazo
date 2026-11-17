@@ -104,13 +104,27 @@ export function checkToolQuestionValues(
   return { ok: true, values: Object.fromEntries(out) };
 }
 
+/** The JSON Schema formats a form may name, checked as the server will read them. */
+const FORMATS: Record<"email" | "uri" | "date" | "date-time", (value: string) => boolean> = {
+  email: (value) => /^[^\s@]+@[^\s@]+$/.test(value),
+  uri: (value) => URL.canParse(value),
+  date: (value) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    new Date(`${value}T00:00:00Z`).toISOString().startsWith(value),
+  "date-time": (value) =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i.test(value) &&
+    !Number.isNaN(Date.parse(value)),
+};
+
 function fieldProblem(field: ToolQuestionField, value: unknown): string | undefined {
   switch (field.type) {
     case "text":
       if (typeof value !== "string") return "expected text";
       if (value.length > field.maxLength) return "too long";
       if (field.minLength !== undefined && value.length < field.minLength) return "too short";
-      return undefined;
+      return field.format && !FORMATS[field.format](value)
+        ? `not a valid ${field.format}`
+        : undefined;
     case "number":
       if (typeof value !== "number" || !Number.isFinite(value)) return "expected a number";
       if (field.integer && !Number.isInteger(value)) return "expected a whole number";
