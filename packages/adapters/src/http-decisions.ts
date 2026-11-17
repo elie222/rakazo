@@ -60,7 +60,10 @@ export class HttpDecisionProvider implements DecisionProvider {
         : undefined,
     });
     let usage: AgentUsage | null = null;
-    const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
+    const pricingSnapshot = pricing
+      ? { input: pricing.inputUsdPerMillion, output: 0, source: pricing.pricingUrl }
+      : null;
+    let providerRequestId: string | null = null;
     // Deliberately low, for a sent request whose usage never arrives.
     const countedTokens = {
       inputTokens: lowTextTokens(body),
@@ -89,6 +92,9 @@ export class HttpDecisionProvider implements DecisionProvider {
         if (!context.signal.aborted) sent = false;
         throw error;
       });
+      providerRequestId = response.headers.get("x-request-id");
+      if (providerRequestId && reservation)
+        await this.options.callObserver?.onRequestId?.(reservation, providerRequestId);
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
@@ -108,6 +114,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           new TextDecoder().decode(await readBodyCapped(response, 64_000, context.signal)),
         ),
       );
+      providerRequestId = parsed.id ?? providerRequestId;
       if (parsed.id && reservation)
         await this.options.callObserver?.onRequestId?.(reservation, parsed.id);
       usage = {
@@ -117,7 +124,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         costSource: parsed.usage?.cost === undefined ? null : "provider-reported",
         pricingSnapshot,
         ...(parsed.usage?.cost === undefined ? { countedTokens } : {}),
-        providerRequestId: parsed.id ?? null,
+        providerRequestId,
         usageSource: "response",
         operationKind: "setup",
       };
@@ -134,6 +141,45 @@ export class HttpDecisionProvider implements DecisionProvider {
       // Transport and validation errors can contain credentials or supplied state.
       throw new DecisionProviderError("unavailable");
     } finally {
+      usage ??= sent
+        ? {
+            inputTokens: null,
+            outputTokens: null,
+            costUsd: null,
+            usageSource: context.signal.aborted ? "aborted" : "unavailable",
+            countedTokens: context.signal.aborted
+              ? {
+                  ...countedTokens,
+                  ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
+                }
+              : countedTokens,
+          }
+        : null;
+      if (usage) {
+        const estimatedInput = usage.inputTokens ?? estimateTextTokens(body);
+        usage = {
+          ...usage,
+          operationKind: "setup",
+          providerRequestId,
+          pricingSnapshot: pricingSnapshot
+            ? {
+                ...pricingSnapshot,
+                ...(usage.inputTokens == null ? { estimatedInputTokens: estimatedInput } : {}),
+              }
+            : null,
+          pricingVersion: pricing?.pricingVersion ?? null,
+          ...(usage.costUsd == null && pricing
+            ? {
+                costUsd: (estimatedInput * pricing.inputUsdPerMillion) / 1_000_000,
+                costSource:
+                  usage.inputTokens == null ? "request-token-estimate" : "catalog-estimate",
+              }
+            : {}),
+          ...(usage.usageSource === "provider-rejected"
+            ? { costSource: "provider-rejection" }
+            : {}),
+        };
+      }
       try {
         if (usage)
           await this.options.onUsage?.({
@@ -144,26 +190,7 @@ export class HttpDecisionProvider implements DecisionProvider {
             callId,
           });
       } finally {
-        if (reservation)
-          await this.options.callObserver?.afterCall(
-            reservation,
-            usage ??
-              (sent
-                ? {
-                    inputTokens: null,
-                    outputTokens: null,
-                    costUsd: null,
-                    operationKind: "setup",
-                    pricingSnapshot,
-                    countedTokens: context.signal.aborted
-                      ? {
-                          ...countedTokens,
-                          ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
-                        }
-                      : countedTokens,
-                  }
-                : null),
-          );
+        if (reservation) await this.options.callObserver?.afterCall(reservation, usage);
       }
     }
   }

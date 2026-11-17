@@ -68,3 +68,40 @@ it("keeps project routing from the saved checker connection through the runtime 
     apiKey: "fixture-model-key",
   });
 });
+
+it("uses operator auth for a paid included checker even when a personal connection exists", async () => {
+  const selection = await import("./model-selection.js");
+  const runModel = await import("./run-model.js");
+  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  const deps = {
+    billingEnabled: true,
+    prisma: {
+      space: { findUnique: async () => ({ organizationId: "organization-fixture" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+      billingAccount: { findUnique: async () => ({ status: "active", paidAt: new Date(0) }) },
+    },
+    secretStore: {},
+  } as unknown as ExecutorDeps;
+  await autoReviewCheckerProvider(
+    deps,
+    {
+      runId: "run-fixture",
+      spaceId: "space-fixture",
+      userId: "user-fixture",
+      botId: "bot-fixture",
+      threadId: "thread-fixture",
+    },
+    { memberChecker: false, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "typesafe/jev-1.14" },
+  );
+  expect(selection.findConnectedModelCredential).not.toHaveBeenCalled();
+  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+    expect.objectContaining({ billingEnabled: false }),
+    "user-fixture",
+    "space-fixture",
+    null,
+    "openrouter",
+    "typesafe/jev-1.14",
+    expect.any(Function),
+  );
+});

@@ -8,7 +8,8 @@ import { decisionModel } from "./decision-models.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
-import { resolveModelKey } from "./run-model.js";
+import { operatorReviewObserver, requirePaidReviewAccount } from "./operator-review-usage.js";
+import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
@@ -24,21 +25,45 @@ export async function autoReviewCheckerProvider(
   const { runId, spaceId, userId, botId, threadId } = scope;
   const { injectedReview, memberChecker, backups, registerSecrets } = options;
   if (injectedReview) return injectedReview;
+  const deploymentChoice =
+    !memberChecker &&
+    !checker.credentialId &&
+    !backups?.some(
+      (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
+    );
+  const hosted = deploymentChoice && (await modelCreditBillingEnabled(deps));
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
       : resolveAutoReviewProviderKind();
+  // Self-hosters retain their existing own-key fallback; hosted defaults use operator auth.
+  const reviewCredential =
+    hosted || kind === "jev" || kind === "scripted"
+      ? null
+      : await findConnectedModelCredential(
+          deps.prisma,
+          deps.secretStore,
+          { userId, spaceId },
+          checker.provider,
+          checker.model,
+          { credentialId: checker.credentialId },
+        );
+  const operatorFunded = deploymentChoice && !reviewCredential;
+  if (hosted) await requirePaidReviewAccount(deps.prisma, scope);
+  const operatorObserver = operatorFunded
+    ? operatorReviewObserver(deps.prisma, {
+        spaceId,
+        userId,
+        botId,
+        runId,
+        parentRunId: runId,
+        operationId: `auto-review:${runId}`,
+        operationKind: "setup",
+      })
+    : undefined;
   if (kind === "jev" || kind === "scripted") {
-    return createAutoReviewProvider(kind);
+    return createAutoReviewProvider(kind, { callObserver: operatorObserver });
   }
-  const reviewCredential = await findConnectedModelCredential(
-    deps.prisma,
-    deps.secretStore,
-    { userId, spaceId },
-    checker.provider,
-    checker.model,
-    { credentialId: checker.credentialId },
-  );
   if (
     (memberChecker ||
       checker.credentialId ||
@@ -51,7 +76,7 @@ export async function autoReviewCheckerProvider(
     throw new Error("Selected checker connection is unavailable");
   }
   const judgeKey = await resolveModelKey(
-    deps,
+    operatorFunded ? { ...deps, billingEnabled: false } : deps,
     userId,
     spaceId,
     reviewCredential,
@@ -59,6 +84,7 @@ export async function autoReviewCheckerProvider(
     checker.model,
     registerSecrets,
   );
+  const callObserver = operatorObserver ?? judgeKey.callObserver;
   const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
     recordUsage(deps.prisma, event, {
       spaceId,
@@ -68,13 +94,14 @@ export async function autoReviewCheckerProvider(
       runId,
       operationId: `auto-review:${runId}`,
       operationKind: "setup",
+      fundingSource: operatorFunded ? "operator" : "customer",
     });
   return decisionModel(checker.provider, checker.model)
     ? new DecisionAutoReviewProvider({
         provider: new HttpDecisionProvider("openrouter", {
           apiKey: judgeKey.apiKey ?? "",
-          callObserver: judgeKey.callObserver,
-          onUsage,
+          callObserver,
+          onUsage: operatorFunded ? undefined : onUsage,
         }),
         providerId: checker.provider,
         model: checker.model,
@@ -85,7 +112,7 @@ export async function autoReviewCheckerProvider(
           runtime: deps.runtime,
           checker,
           apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
-          callObserver: judgeKey.callObserver,
+          callObserver,
           accountId: judgeKey.accountId,
           gatewayId: judgeKey.gatewayId,
           projectId: judgeKey.projectId,
