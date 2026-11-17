@@ -91,6 +91,9 @@ const routineEventsSpec = {
   additionalProperties: false,
 };
 
+/** As with timing, a serializer's null or blank for an unused `on` is no events. */
+const optionalRoutineEvents = { anyOf: [routineEventsSpec, ...blankScheduleTiming.anyOf] };
+
 const startAtSpec = {
   type: "string",
   description:
@@ -115,7 +118,7 @@ export function scheduleCreateBranch(
     properties.cron = { anyOf: [scheduleTimingSpecs.cron, { type: "null" }] };
   }
   const repeats = activeNames.has("cron") || activeNames.has("every");
-  properties.on = repeats || activeNames.has("watch") ? routineEventsSpec : blankScheduleTiming;
+  properties.on = repeats || activeNames.has("watch") ? optionalRoutineEvents : blankScheduleTiming;
   properties.startAt = repeats ? startAtSpec : blankScheduleTiming;
   return {
     type: "object",
@@ -343,7 +346,7 @@ export const workTools: ConnectorTool[] = [
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,
-        on: routineEventsSpec,
+        on: optionalRoutineEvents,
       },
       required: ["routineId"],
     },

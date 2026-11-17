@@ -29,7 +29,12 @@ describe("release-watch guidance", () => {
     expect(parseConnectorToolArgs(schema, { ...named, on: { webhook: true } })).toMatchObject({
       on: { webhook: true },
     });
-    // A serializer's null for the unused cron is no cron.
+    // A serializer's null or blank for an unused field is no value.
+    for (const on of [null, ""]) {
+      expect(parseConnectorToolArgs(schema, { ...named, cron: "0 9 * * *", on })).toMatchObject({
+        cron: "0 9 * * *",
+      });
+    }
     expect(
       parseConnectorToolArgs(schema, { ...named, cron: null, on: { webhook: true } }),
     ).toMatchObject({ on: { webhook: true } });
