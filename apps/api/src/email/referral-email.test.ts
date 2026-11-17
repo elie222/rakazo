@@ -42,7 +42,7 @@ function fixture() {
 afterEach(() => vi.useRealTimers());
 
 describe("day-one referral email", () => {
-  it("emails verified owners aged 24–72 hours with consent and no previous send", async () => {
+  it("emails verified owners aged 24–72 hours with consent, no previous send and no other mail in the last day", async () => {
     const f = fixture();
     await f.sweep();
     expect(f.findMany).toHaveBeenCalledWith(
@@ -55,7 +55,11 @@ describe("day-one referral email", () => {
           emailVerified: true,
           marketingEmailOptOutAt: null,
           members: { some: { role: { contains: "owner" } } },
-          emailSends: { none: { kind: "referral-day1" } },
+          emailSends: {
+            none: {
+              OR: [{ kind: "referral-day1" }, { sentAt: { gt: new Date(now.getTime() - DAY) } }],
+            },
+          },
         },
       }),
     );

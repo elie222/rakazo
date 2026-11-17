@@ -14,6 +14,7 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -22,6 +23,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDeadJobPruner,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
@@ -229,6 +231,18 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
+  // Account mail, for the lifecycle mails the queue holds; without it those jobs are dropped.
+  const optionalEnv = (name: string) => process.env[name]?.trim() || undefined;
+  const accountEmail = configuredEmailProvider({
+    provider: optionalEnv("EMAIL_PROVIDER"),
+    apiKey: optionalEnv("EMAIL_API_KEY"),
+    from: optionalEnv("EMAIL_FROM"),
+    replyTo: optionalEnv("EMAIL_REPLY_TO"),
+    smtpUrl: optionalEnv("SMTP_URL"),
+  });
+  const lifecycleEmail = accountEmail
+    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+    : undefined;
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     prisma,
@@ -247,6 +261,7 @@ async function main() {
     onTicketChange: ticketChanges,
     // Bots use a separate sending connection from account email.
     email,
+    lifecycleEmail,
     messaging,
     isMessagingInstallationActive: messagingInstallations
       ? (id: string) => messagingInstallations.isActive(id)
@@ -319,6 +334,7 @@ async function main() {
         await jobHost.stop();
         // A bot's email still on its way finishes before the process exits.
         await email?.drain?.();
+        await accountEmail?.drain?.();
         await jobs.close();
         await secrets.close();
         await realtime.close();

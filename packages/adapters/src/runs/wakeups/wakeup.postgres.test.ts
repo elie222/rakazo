@@ -7,6 +7,7 @@ import {
   CONNECTION_CLEANUP_MAX_ATTEMPTS,
   connectionCleanupJob,
   connectionCleanupJobKey,
+  lifecycleEmailJob,
   MESSAGING_SEND_MAX_ATTEMPTS,
   messagingSendJob,
   messagingSendJobKey,
@@ -69,6 +70,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
+    "email.lifecycle": vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -438,6 +440,53 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       hung.resolve();
       await host.stop();
       await testPool().query("select graphile_worker.remove_job($1::text)", [key]);
+      await publisher.close();
+    }
+  });
+
+  it("runs a lifecycle mail again after it postpones itself, one at a time per person", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 4, pollInterval: 25 });
+    const userId = `lifecycle-user-${Date.now()}`;
+    const payload = {
+      kind: "model-connection",
+      organizationId: "lifecycle-organization",
+      userId,
+      message: { subject: "Subject", text: "Text" },
+    } as const;
+    const second = { ...payload, organizationId: "another-organization" };
+    let running = 0;
+    const overlapped: number[] = [];
+    const ran: string[] = [];
+    const target = handlers({
+      "email.lifecycle": async ({ organizationId }) => {
+        overlapped.push(++running);
+        // Its first run postpones the job under its own key, as a mail inside the gap does.
+        if (ran.push(organizationId) === 1)
+          await publisher.enqueue(lifecycleEmailJob(payload, new Date(Date.now() + 200)));
+        // A round trip gives a second runner the time to overlap if the queue let it.
+        await testPool().query("select 1");
+        running--;
+      },
+    });
+    try {
+      await host.start(target);
+      await publisher.enqueue(lifecycleEmailJob(payload, new Date()));
+      // Another of the person's mails, under its own key, shares their queue.
+      await publisher.enqueue({
+        ...lifecycleEmailJob(second, new Date()),
+        replaceKey: `email.lifecycle:another-kind:${userId}`,
+      });
+      await waitFor(() =>
+        expect(ran).toEqual([
+          "lifecycle-organization",
+          "another-organization",
+          "lifecycle-organization",
+        ]),
+      );
+      expect(overlapped).toEqual([1, 1, 1]);
+    } finally {
+      await host.stop();
       await publisher.close();
     }
   });

@@ -1,4 +1,5 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { LIFECYCLE_EMAIL_GAP_MS } from "@rakazo/adapters";
 import { emailLocale, referralEmail } from "@rakazo/auth";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -26,7 +27,12 @@ export function sendReferralEmails(deps: {
         emailVerified: true,
         marketingEmailOptOutAt: null,
         members: { some: { role: { contains: "owner" } } },
-        emailSends: { none: { kind: KIND } },
+        // Never twice, and never within a day of another of our mails to the same person.
+        emailSends: {
+          none: {
+            OR: [{ kind: KIND }, { sentAt: { gt: new Date(now - LIFECYCLE_EMAIL_GAP_MS) } }],
+          },
+        },
       },
       select: {
         id: true,

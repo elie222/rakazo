@@ -75,6 +75,7 @@ export * from "./connectors/third-party-connector-emulator.js";
 export * from "./email/email-emulator.js";
 export * from "./email/email-provider.js";
 export * from "./email/inbound-email.js";
+export * from "./email/lifecycle-email.js";
 export * from "./mcp/mcp-connector.js";
 export * from "./mcp/mcp-emulator.js";
 export * from "./mcp/mcp-oauth.js";

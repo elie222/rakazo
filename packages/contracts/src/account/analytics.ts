@@ -73,6 +73,14 @@ const planTerms = {
   interval: ByokIntervalSchema,
   amountCents: z.number().int().positive(),
 };
+/**
+ * The mails of a person's lifecycle sequence. One job sends each, no two within a day of each
+ * other, and each at most once per person.
+ */
+export const LIFECYCLE_EMAIL_KINDS = ["model-connection"] as const;
+export const LifecycleEmailKind = z.enum(LIFECYCLE_EMAIL_KINDS);
+export type LifecycleEmailKind = z.infer<typeof LifecycleEmailKind>;
+
 export const AnalyticsEvent = z.discriminatedUnion("name", [
   SignupAttribution.extend({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
@@ -119,6 +127,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   // A trial's end: its first payment, or access lost without one.
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
   // Only the fixed reason; the comment stays in the database.
+  // Which lifecycle mail went out; never the address or the person.
+  z.object({ name: z.literal("lifecycle_email_sent"), email: LifecycleEmailKind }).strict(),
   z
     .object({
       name: z.literal("subscription_cancel_feedback"),

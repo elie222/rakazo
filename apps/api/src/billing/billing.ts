@@ -58,6 +58,8 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
+import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
+import { MODEL_CONNECTION_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { createExperiments } from "../telemetry/experiments.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
@@ -150,6 +152,15 @@ function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
   return null;
 }
 
+/** Whether this sync is the one that records a subscription starting, trial or paid. */
+function subscriptionStarted(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+  // A checkout whose first payment was still pending syncs as incomplete before it starts.
+  return (
+    hasBillingAccess(live.status) &&
+    (live.subscriptionId !== previous.subscriptionId || previous.status === "incomplete")
+  );
+}
+
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
 function subscribedByokPrice(account: BillingAccount | null) {
   const status = account?.status ?? null;
@@ -190,6 +201,7 @@ export function createBillingService(deps: {
   analytics?: ProductAnalytics;
   experiments?: ReturnType<typeof createExperiments>;
   partnerProgram?: PartnerProgram;
+  scheduleLifecycleEmail?: ScheduleLifecycleEmail;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -298,6 +310,8 @@ export function createBillingService(deps: {
           "error.message": error instanceof Error ? error.message : String(error),
         });
       }
+    if (live && subscriptionStarted(previous, live))
+      await bestEffort("schedule the model connection email", remindToConnectModel(previous, live));
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -353,10 +367,11 @@ export function createBillingService(deps: {
    */
   async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
     const { analytics } = deps;
-    const same = live.subscriptionId === previous.subscriptionId;
-    // A checkout whose first payment was still pending syncs as incomplete before it starts.
-    const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
-    const trialEnded = same && previous.status === "trialing" && live.status !== "trialing";
+    const started = subscriptionStarted(previous, live);
+    const trialEnded =
+      live.subscriptionId === previous.subscriptionId &&
+      previous.status === "trialing" &&
+      live.status !== "trialing";
     const terms = planTerms(live);
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
@@ -369,6 +384,21 @@ export function createBillingService(deps: {
         : { name: "trial_ended", ...terms, converted: live.status === "active" },
       { id: live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
+    );
+  }
+
+  /**
+   * An own-key plan runs nothing until its owner connects a model, so a day in they are reminded
+   * if they still have not. Concurrent syncs that both see the start queue the same keyed job.
+   */
+  async function remindToConnectModel(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    if (!deps.scheduleLifecycleEmail || !live.byokPlan || live.creditAmountCents) return;
+    const userId = await ownerUserId(previous.organizationId);
+    if (!userId) return;
+    await deps.scheduleLifecycleEmail(
+      "model-connection",
+      { organizationId: previous.organizationId, userId },
+      new Date(Date.now() + MODEL_CONNECTION_EMAIL_DELAY_MS),
     );
   }
 
