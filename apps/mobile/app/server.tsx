@@ -5,14 +5,13 @@ import { Stack, useRouter } from "expo-router";
 import { useContext, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { HeaderRowsEditor } from "../components/header-rows-editor";
-import { LongPressMenu } from "../components/long-press-menu";
-import { NativeActionButton } from "../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
-import { currentApiBase } from "../lib/api";
-import { resetApiBase, saveApiBase } from "../lib/api-server";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { HeaderRowsEditor } from "../components/integrations/header-rows-editor";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { cancelHeaderOptions, trailingHeaderOptions } from "../components/native/sheet-header";
+import { LongPressMenu } from "../components/ui/long-press-menu";
+import { currentApiBase } from "../lib/api/api";
+import { resetApiBase, saveApiBase } from "../lib/api/api-server";
 import {
   apiBaseWarning,
   defaultApiBase,
@@ -20,14 +19,15 @@ import {
   normalizeApiBase,
   probeApiBase,
   usesCustomApiBase,
-} from "../lib/endpoint";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import type { SavedServer } from "../lib/saved-servers";
-import { removeSavedServer, savedServers } from "../lib/saved-servers";
-import { serverHeaders } from "../lib/server-headers";
-import { useSideInsets } from "../lib/side-insets";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { errorText } from "../lib/user-error";
+} from "../lib/api/endpoint";
+import type { SavedServer } from "../lib/api/saved-servers";
+import { removeSavedServer, savedServers } from "../lib/api/saved-servers";
+import { serverHeaders } from "../lib/api/server-headers";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 export default function ServerScreen() {
   const call = useContext(CallKeyboardContext);

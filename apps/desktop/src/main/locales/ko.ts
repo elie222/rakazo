@@ -222,4 +222,12 @@ export const KO_MESSAGES: Record<string, string> = {
     "Docker가 설치되어 있지만 실행 중이 아닙니다. 계속하려면 Docker 서비스를 시작하세요.",
   "Rakazo stopped unexpectedly.": "Rakazo가 예기치 않게 중단되었습니다.",
   Reload: "다시 로드",
+  "Mac app control": "Mac 앱 제어",
+  "Set up Mac app control": "Mac 앱 제어 설정",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "명령은 이미 사용할 수 있습니다. 앱을 사용하려면 시스템 설정에서 Rakazo의 손쉬운 사용 및 화면 기록을 허용한 다음 Rakazo를 재시동하세요.",
+  "Open System Settings": "시스템 설정 열기",
+  "Restart Rakazo": "Rakazo 재시동",
+  "Not Now": "나중에",
+  "Restart Rakazo to finish setup": "Rakazo를 재시동하여 설정 완료",
 };

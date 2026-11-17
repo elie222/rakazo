@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ComputerStatusSchema } from "./computer.js";
+import { ComputerStatusSchema } from "./computers/computer.js";
 import { SandboxKind } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
-} from "./integration-settings.js";
+} from "./integrations/integration-settings.js";
 import { appContract } from "./rpc.js";
 
 const status = {

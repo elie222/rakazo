@@ -285,6 +285,22 @@ export function isHeredocDataSinkPipeline(names: readonly string[]): boolean {
   return names.length > 0 && names.every((name) => HEREDOC_DATA_SINKS.has(name));
 }
 
+/**
+ * A script interpreter reading a quoted heredoc as its program, with nothing after it in the
+ * pipeline that runs code. Its body is scanned like heredoc data, which is more than a script
+ * written with the file tools gets.
+ */
+export function isHeredocScriptPipeline(names: readonly string[]): boolean {
+  const [first, ...rest] = names;
+  return (
+    first !== undefined &&
+    /^(?:python|pypy|node|nodejs|ruby|perl|php)[\d.]*$/.test(first) &&
+    rest.every((name) => !isHeredocInterpreter(name) && !RUNS_ITS_INPUT.has(name))
+  );
+}
+
+const RUNS_ITS_INPUT = new Set([".", "busybox", "source", "sudo", "xargs"]);
+
 /** Shell, source, or a wrapper that can hide them. Used after a heredoc was consumed. */
 export function isShellOrSourceCommand(words: readonly string[]): boolean {
   const base = commandBasename(words);
