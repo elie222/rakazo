@@ -133,7 +133,7 @@ export function CatalogTile({
   const tile = (
     <div
       data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
-      className={`${ROW_SHELL}${openable ? ` ${ROW_HOVER}` : ""}`}
+      className={`${ROW_SHELL} self-start${openable ? ` ${ROW_HOVER}` : ""}`}
     >
       {openable ? (
         <button type="button" className={ROW_BUTTON} onClick={() => onOpenApp(item)}>
