@@ -202,6 +202,8 @@ describe("MCP elicitation", () => {
       setRequestHandler: (_: unknown, h: typeof handler) => (handler = h),
     } as never);
     const call = new AbortController();
+    const sibling = new AbortController();
+    router.track({ owner: "run-1", source: "Gateway", signal: sibling.signal });
     const seen = deferred<AbortSignal>();
     router.track({
       owner: "run-1",
@@ -216,6 +218,9 @@ describe("MCP elicitation", () => {
     });
     const answered = handler!({ params: APPROVAL }, { signal: new AbortController().signal });
     const signal = await seen.promise;
+    // Another call of the same run ending leaves the question open; the last one closes it.
+    sibling.abort();
+    expect(signal.aborted).toBe(false);
     call.abort();
     expect(signal.aborted).toBe(true);
     expect(await answered).toEqual({ action: "cancel" });
@@ -376,6 +381,20 @@ describe("toolQuestionFromElicitation", () => {
         requestedSchema: { properties: {}, required: ["approve"] },
       }),
     ).toBeUndefined();
+  });
+
+  it("drops a default its own field would refuse", () => {
+    const question = toolQuestionFromElicitation("G", {
+      message: "m",
+      requestedSchema: {
+        properties: {
+          count: { type: "integer", minimum: 1, maximum: 5, default: 9 },
+          ratio: { type: "number", default: 0.5 },
+          code: { type: "string", maxLength: 3, default: "toolong" },
+        },
+      },
+    });
+    expect(question?.fields.map((field) => "default" in field)).toEqual([false, true, false]);
   });
 
   it("skips URL mode, nested objects and multi-select", () => {

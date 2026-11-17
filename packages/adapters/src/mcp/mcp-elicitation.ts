@@ -94,7 +94,15 @@ function questionField(
   if (s.type === "number" || s.type === "integer") {
     const minimum = num(s.minimum);
     const maximum = num(s.maximum);
-    const fallback = num(s.default);
+    const value = num(s.default);
+    // A default the field itself would refuse is no default: the person starts empty.
+    const fallback =
+      value !== undefined &&
+      (s.type !== "integer" || Number.isInteger(value)) &&
+      (minimum === undefined || value >= minimum) &&
+      (maximum === undefined || value <= maximum)
+        ? value
+        : undefined;
     return {
       ...base,
       type: "number",
@@ -133,7 +141,11 @@ function questionField(
     ...(format ? { format } : {}),
     ...(minLength !== undefined && minLength >= 0 ? { minLength: Math.floor(minLength) } : {}),
     maxLength: Math.floor(maxLength),
-    ...(fallback !== undefined ? { default: fallback } : {}),
+    ...(fallback !== undefined &&
+    fallback.length <= maxLength &&
+    (minLength === undefined || fallback.length >= minLength)
+      ? { default: fallback }
+      : {}),
   };
 }
 
@@ -306,10 +318,11 @@ export class McpElicitationRouter {
     try {
       // A failed ask is a question nobody answered: the server hears a cancel and decides
       // what its call does next.
-      const callsEnded = calls.flatMap((call) => (call.signal ? [call.signal] : []));
+      // Which of the run's calls asked is unknown, so the question closes once none of them runs.
+      const callsEnded = whenAllEnd(calls.flatMap((call) => (call.signal ? [call.signal] : [])));
       const answer = (await bestEffort(
         "mcp.elicitation",
-        ask(question, AbortSignal.any([signal, ...callsEnded])),
+        ask(question, AbortSignal.any([signal, callsEnded])),
       )) ?? {
         action: "cancel",
       };
@@ -385,4 +398,16 @@ export function newRemoteMcpClient(router?: McpElicitationRouter): Client {
   );
   router?.install(client);
   return client;
+}
+
+/** Aborts once every one of `signals` has; never, when there are none. */
+function whenAllEnd(signals: readonly AbortSignal[]): AbortSignal {
+  const ended = new AbortController();
+  if (signals.length === 0) return ended.signal;
+  const check = () => {
+    if (signals.every((signal) => signal.aborted)) ended.abort();
+  };
+  for (const signal of signals) signal.addEventListener("abort", check, { once: true });
+  check();
+  return ended.signal;
 }

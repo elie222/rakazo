@@ -26,7 +26,7 @@ import {
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
 import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
 import { answerComputerRequest } from "../computers/computer-control.js";
@@ -633,7 +633,12 @@ export function threadsRoutes(ctx: RouterContext) {
           values: input.values,
         });
         // The call waiting on this card hears it through the thread's events, wherever it runs.
-        if (committed) await deps.events.notify(committed.threadId, committed.seq);
+        // The answer is saved: a missed signal only delays it to the waiting call's re-read.
+        if (committed)
+          await bestEffort(
+            "tool question notify",
+            deps.events.notify(committed.threadId, committed.seq),
+          );
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {
