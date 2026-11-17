@@ -866,6 +866,12 @@ export class BoatSandboxProvider implements SandboxProvider {
     reconnect?: { savedAt?: Date; type?: SandboxTypeEnum },
   ): Promise<boolean> {
     const logWait = sandboxWaitLog(id, "start");
+    const gone = (sandbox: BoatMachine, reason: string) => {
+      logRecovery("gone", reason);
+      const error = boatSandboxGone(id);
+      logWait(sandbox, "failed", error);
+      return error;
+    };
     let deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let started = false;
     let recovering = false;
@@ -882,16 +888,18 @@ export class BoatSandboxProvider implements SandboxProvider {
         return started;
       }
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
-      if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
-      if (Date.now() < deadline) logWait(sandbox);
+      if (sandbox.state === "cancelled" || sandbox.dataExpiredAt)
+        throw gone(sandbox, sandbox.dataExpiredAt ? "data_expired" : "cancelled");
+      const snapshotAt = sandbox.snapshotCompletedAt;
       if (sandbox.state === "archived" && !started) {
         // A stop forced past a failing save, or one whose last save failed, keeps an older
         // snapshot than the workspace the caller saved since; that save wins.
-        const snapshotAt = sandbox.snapshotCompletedAt;
         if (reconnect?.savedAt && snapshotAt && reconnect.savedAt > snapshotAt) {
-          logRecovery("gone", "checkpoint_newer");
-          throw boatSandboxGone(id);
+          throw gone(sandbox, "checkpoint_newer");
         }
+      }
+      if (Date.now() < deadline) logWait(sandbox);
+      if (sandbox.state === "archived" && !started) {
         // Only a reconnect moves the sandbox to another size; other wakes keep the one it has.
         await this.resume(id, signal, reconnect?.type);
         started = true;
@@ -907,12 +915,8 @@ export class BoatSandboxProvider implements SandboxProvider {
           logWait(sandbox, "failed", error);
           throw error;
         }
-        const snapshotAt = sandbox.snapshotCompletedAt;
         if (forced || !snapshotAt) {
-          logRecovery("gone", forced ? "resume_failed" : "no_snapshot");
-          const error = boatSandboxGone(id);
-          logWait(sandbox, "failed", error);
-          throw error;
+          throw gone(sandbox, forced ? "resume_failed" : "no_snapshot");
         }
         if (!reconnect) {
           logRecovery("deferred");
@@ -923,10 +927,7 @@ export class BoatSandboxProvider implements SandboxProvider {
           throw error;
         }
         if (reconnect.savedAt && reconnect.savedAt >= snapshotAt) {
-          logRecovery("gone", "checkpoint_newer");
-          const error = boatSandboxGone(id);
-          logWait(sandbox, "failed", error);
-          throw error;
+          throw gone(sandbox, "checkpoint_newer");
         }
         // Read just now and still not answering, so the stop cannot cut off live work.
         logRecovery("force_stop");

@@ -567,6 +567,8 @@ describe("background computer maintenance", () => {
 
   it("clears the lease when lease clear loses the reservation after revocation", async () => {
     const harness = takeoverQueue();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     harness.computer.updateMany
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 1 })
@@ -576,6 +578,13 @@ describe("background computer maintenance", () => {
       "Computer is busy",
     );
 
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.maintenance_refused",
+        reason: "control_lease_clear_refused",
+        updateId: "update-1",
+      }),
+    );
     expect(harness.setScreenControl).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
     expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
@@ -793,6 +802,35 @@ describe("background computer maintenance", () => {
       expect.objectContaining({
         data: expect.objectContaining({ controlHolder: "user" }),
       }),
+    );
+  });
+
+  it.each([
+    ["reserving", "revoking_claim_lost"],
+    ["revoking", "release_confirmation_lost"],
+    ["revoked", "queue_claim_lost"],
+  ])("records the refusal when the %s handback marker is lost", async (status, reason) => {
+    const harness = takeoverQueue();
+    const change = harness.computerUpdate.updateMany.getMockImplementation()!;
+    harness.computerUpdate.updateMany.mockImplementation(async (args) =>
+      args.where.status === status ? { count: 0 } : change(args),
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await expect(
+      queueComputerUpdate(harness.deps, "computer-1", "bot-1", "recover"),
+    ).rejects.toThrow("Computer is busy");
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(sink.events.filter((event) => event.message === "computer.maintenance_refused")).toEqual(
+      [
+        expect.objectContaining({
+          "computer.id": "computer-1",
+          "bot.id": "bot-1",
+          action: "recover",
+          updateId: "update-1",
+          reason,
+        }),
+      ],
     );
   });
 

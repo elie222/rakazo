@@ -1076,6 +1076,26 @@ describe("BoatSandboxProvider", () => {
     }
   });
 
+  it.each(["cancelled", "data_expired"])(
+    "records the final state before replacing a %s sandbox",
+    async (reason) => {
+      const { api, provider, computer } = await boat();
+      if (reason === "data_expired") api.expire(computer.id);
+      else api.setState(computer.id, "cancelled");
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: true });
+      expect(sink.events.filter((event) => event.message === "sandbox.wait")).toEqual([
+        expect.objectContaining({
+          "sandbox.id": computer.id,
+          state: reason === "data_expired" ? "archived" : "cancelled",
+          outcome: "failed",
+          level: "warn",
+        }),
+      ]);
+    },
+  );
+
   describe("wait diagnostics", () => {
     it("reports a stuck start once with safe provider state and keeps the same failure", async () => {
       const api = new FakeBoatApi();
@@ -1370,7 +1390,19 @@ describe("BoatSandboxProvider", () => {
       await provider.stop(computer, context, { discardUnsaved: true });
       vi.setSystemTime(Date.now() + 60_000);
 
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
       const ref = await reconnect(provider, computer, new Date());
+      expect(sink.events.filter((event) => event.message === "sandbox.wait")).toEqual([
+        expect.objectContaining({
+          message: "sandbox.wait",
+          "sandbox.id": computer.id,
+          state: "archived",
+          outcome: "failed",
+          level: "warn",
+          snapshotCompletedAt: expect.any(String),
+        }),
+      ]);
 
       expect(ref).toMatchObject({ fresh: true });
       expect(ref.providerRef).not.toBe(computer.providerRef);
