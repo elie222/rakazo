@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import type * as Undici from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const agentOptions = vi.hoisted(() => [] as unknown[]);
 
 vi.mock("undici", async (importOriginal) => {
-  const undici = await importOriginal<typeof import("undici")>();
+  const undici = await importOriginal<typeof Undici>();
   class RecordedAgent extends undici.Agent {
     constructor(options?: ConstructorParameters<typeof undici.Agent>[0]) {
       super(options);
