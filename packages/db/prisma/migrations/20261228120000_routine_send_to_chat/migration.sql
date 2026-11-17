@@ -3,18 +3,28 @@ ALTER TABLE "routines" ADD COLUMN IF NOT EXISTS "sendToChat" BOOLEAN NOT NULL DE
 
 -- Such a run gets the same backup reply job as a chat run, scheduled in the transaction that ends
 -- it. A trigger's WHEN cannot read another table, so the function skips a routine run whose
--- routine does not send to chat. That is read as the table owner, so the answer never depends on
--- the Space the ending transaction runs in. Fresh installations create Graphile's schema after
--- application migrations.
+-- routine does not send to chat. The lookup runs with owner rights but answers only for a routine
+-- of the caller's Space, or in a system context, so a session that calls the function directly
+-- learns nothing about another Space's routine; only the runtime role may call it. Fresh
+-- installations create Graphile's schema after application migrations.
 CREATE OR REPLACE FUNCTION app_routine_sends_to_chat(routine_id text) RETURNS boolean
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = pg_catalog, pg_temp
   AS $$
     SELECT coalesce(
-      (SELECT "sendToChat" FROM public.routines WHERE id = routine_id),
+      (SELECT "sendToChat" FROM public.routines
+        WHERE id = routine_id
+          AND (public.app_rls_bypass()
+            OR "spaceId" = NULLIF(current_setting('app.space_id', true), ''))),
       false
     )
   $$;
+REVOKE EXECUTE ON FUNCTION app_routine_sends_to_chat(text) FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rakazo_app') THEN
+    GRANT EXECUTE ON FUNCTION app_routine_sends_to_chat(text) TO rakazo_app;
+  END IF;
+END $$;
 CREATE OR REPLACE FUNCTION schedule_run_reply_delivery() RETURNS trigger
 LANGUAGE plpgsql AS $reply$
 BEGIN

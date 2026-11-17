@@ -662,6 +662,53 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it("answers whether a routine sends to chat only for the caller's Space, and only to the runtime role", async () => {
+    const publicGrants = await owner.pool.query(
+      `SELECT p.proname FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+       WHERE p.proname = 'app_routine_sends_to_chat' AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'`,
+    );
+    expect(publicGrants.rows).toEqual([]);
+    const [own, other] = await Promise.all(
+      [a, b].map((t) =>
+        owner.prisma.routine.create({
+          data: {
+            spaceId: t.spaceId,
+            botId: t.botId,
+            userId: t.userId,
+            name: `send-to-chat-${t.userId}`,
+            prompt: "p",
+            crons: [],
+            sendToChat: true,
+          },
+        }),
+      ),
+    );
+    try {
+      const ask = (id: string, as: "tenant" | "system") =>
+        (as === "tenant"
+          ? runAsTenant(
+              a,
+              () => db.$queryRaw<Array<{ sends: boolean }>>`
+              SELECT app_routine_sends_to_chat(${id}) AS sends`,
+            )
+          : runAsSystem(
+              "row-level security test",
+              () => db.$queryRaw<Array<{ sends: boolean }>>`
+              SELECT app_routine_sends_to_chat(${id}) AS sends`,
+            )
+        ).then((rows) => rows[0]?.sends);
+      expect(await ask(own!.id, "tenant")).toBe(true);
+      // Another Space's routine reads the same as a missing one.
+      expect(await ask(other!.id, "tenant")).toBe(false);
+      expect(await ask("missing-routine", "tenant")).toBe(false);
+      expect(await ask(other!.id, "system")).toBe(true);
+    } finally {
+      await owner.prisma.routine.deleteMany({ where: { id: { in: [own!.id, other!.id] } } });
+    }
+  });
+
   it.each([false, true])(
     "preserves legacy unrestricted use and fences restrictions, including system=%s",
     async (system) => {

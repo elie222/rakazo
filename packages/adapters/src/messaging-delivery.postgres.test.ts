@@ -552,6 +552,7 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
           userId: identity.userId,
           name: `delivery-${randomUUID()}`,
           prompt: "Summarize.",
+          crons: [],
           sendToChat,
         },
       });
