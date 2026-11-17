@@ -452,8 +452,16 @@ case "$language" in
     LANGUAGE_FLAGS="--accept-lang=$languages"
     ;;
 esac
+# An operator may send some sites through a proxy with a PAC script
+# (SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL on the supervisor). It is passed as
+# one quoted argument, so a data: URL's * is never globbed; a value with
+# whitespace is not a URL the supervisor would set, so it is ignored.
+PROXY_PAC_URL="${RAKAZO_BROWSER_PROXY_PAC_URL:-}"
+case "$PROXY_PAC_URL" in
+  *[[:space:]]*) PROXY_PAC_URL="" ;;
+esac
 FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader $LANGUAGE_FLAGS --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
-  exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
+  exec "$BIN" $FLAGS ${PROXY_PAC_URL:+"--proxy-pac-url=$PROXY_PAC_URL"} --user-data-dir="$PROFILE" "$@"
 fi
-exec "$BIN" $FLAGS "$@"
+exec "$BIN" $FLAGS ${PROXY_PAC_URL:+"--proxy-pac-url=$PROXY_PAC_URL"} "$@"

@@ -1,6 +1,6 @@
 {
   "apps/api/src/billing.ts": 1,
-  "apps/desktop/src/main/renderer-assets.ts": 3,
+  "apps/desktop/src/main/windows/renderer-assets.ts": 3,
   "apps/web/server/preview-middleware.ts": 3,
   "apps/web/server/screen-proxy.ts": 1,
   "packages/adapter-kit/src/types.ts": 1,

@@ -3,6 +3,7 @@ import {
   messagingConnectOptions,
   messagingProviderLabel,
   messagingProviderName,
+  messagingProviderNamed,
 } from "./messaging-providers.js";
 
 describe("messaging provider labels", () => {
@@ -11,6 +12,13 @@ describe("messaging provider labels", () => {
     expect(messagingProviderName("telegram")).toBe("Telegram");
     expect(messagingProviderName("photon")).toBe("iMessage (Photon)");
     expect(messagingProviderName("teams")).toBe("teams");
+  });
+
+  it("finds a provider a user names by its id or its name", () => {
+    expect(messagingProviderNamed("Slack", ["telegram", "slack"])).toBe("slack");
+    expect(messagingProviderNamed("imessage", ["sendblue"])).toBe("sendblue");
+    expect(messagingProviderNamed("slack", ["telegram"])).toBeNull();
+    expect(messagingProviderNamed(" ", ["slack"])).toBeNull();
   });
 
   it("names extra Telegram bots after their configured name", () => {
