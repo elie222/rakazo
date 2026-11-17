@@ -345,9 +345,33 @@ it("bounds memories by the size of the document they become, not by count", () =
   if ("error" in onceParsed) throw new Error(onceParsed.error);
   expect(onceParsed.memory).toHaveLength(1);
 
-  const oversized = Array.from({ length: 30 }, (_, index) => `${index} ${"x".repeat(4_000)}`);
+  // More than one document holds is split across several, every entry whole and in order.
+  const longMemories = Array.from({ length: 60 }, (_, index) => `${index} ${"x".repeat(4_000)}`);
+  const [split] = readGrokBotExportJson(
+    JSON.stringify({
+      bots: [{ name: "Example", memories: longMemories, user_facts: ["Name: Sam"] }],
+    }),
+  );
+  const splitPlan = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(split!) },
+  ]);
+  if ("error" in splitPlan) throw new Error(splitPlan.error);
+  expect(splitPlan.memory.map((item) => item.path)).toEqual([
+    "MEMORY.md",
+    "MEMORY-2.md",
+    "MEMORY-3.md",
+    "USER.md",
+  ]);
+  const memoryText = splitPlan.memory
+    .filter((item) => item.path.startsWith("MEMORY"))
+    .map((item) => item.content);
+  expect(memoryText.every((text) => text.length <= 100_000)).toBe(true);
+  expect(memoryText.join("")).toBe(longMemories.map((entry) => `- ${entry}\n`).join(""));
+  // Only an entry too long for a document of its own is refused.
   expect(() =>
-    readGrokBotExportJson(JSON.stringify({ bots: [{ name: "Example", memories: oversized }] })),
+    readGrokBotExportJson(
+      JSON.stringify({ bots: [{ name: "Example", memories: ["z".repeat(100_000)] }] }),
+    ),
   ).toThrow(GrokBotExportError);
   // A pasted reply full of repeats is re-sent with each entry once, within the upload limit.
   const longRepeats = Array.from({ length: 300 }, () => "y".repeat(4_000));
