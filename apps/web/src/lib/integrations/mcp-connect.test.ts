@@ -26,7 +26,7 @@ beforeEach(() => {
   rpcMock.mcp.oauth.complete.mockReset().mockResolvedValue({ ok: true });
 });
 
-it("gives the desktop shell a per-server sign-in window and completes its captured code", async () => {
+it("gives the desktop shell a per-server sign-in window and completes its captured code once", async () => {
   let captured: ((callback: RakazoDesktopMcpOAuthCallback) => void) | undefined;
   const unsubscribe = vi.fn();
   window.rakazoDesktop = {
@@ -55,8 +55,11 @@ it("gives the desktop shell a per-server sign-in window and completes its captur
     captured?.({ serverId: "clx123", code: "code-0", state: "session-0" });
     expect(rpcMock.mcp.oauth.complete).not.toHaveBeenCalled();
 
+    // The shell can report one callback twice; the session completes only once.
+    captured?.({ serverId: "clx123", code: "code-1", state: "session-1" });
     captured?.({ serverId: "clx123", code: "code-1", state: "session-1" });
     await expect(connecting).resolves.toBe("connected");
+    expect(rpcMock.mcp.oauth.complete).toHaveBeenCalledOnce();
     expect(rpcMock.mcp.oauth.complete).toHaveBeenCalledWith({
       sessionId: "session-1",
       code: "code-1",
