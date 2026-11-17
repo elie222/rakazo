@@ -50,4 +50,19 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "GET /health": "public: liveness, a constant body",
   "GET /ready": "public: readiness, no deployment details",
   "GET /internal/health": "operators on the API port: 404 for a request the public proxy forwarded",
+  "GET /api/model-account/config":
+    "public: deployment configuration the sign-in page reads before any session, no user data",
+  "GET /api/model-account/status":
+    "a session when configured; unconfigured, a constant enabled:false probe with no user data",
+  "GET /api/model-account/balance":
+    "a session when configured; unconfigured, a constant disabled error",
+  "GET /api/model-account/oidc": "the auth library's own OIDC sign-in start, on account tables",
+  "GET /api/model-account/launch":
+    "a one-time ticket in the link, hashed, TTL-bound and claimed exactly once",
+  "GET /api/model-account/callback":
+    "the OAuth state and code, bound to a stored transaction and its browser proof",
+  "POST /api/model-account/computer":
+    "a signed initialization grant as a bearer token; unconfigured, a constant disabled error",
+  "POST /internal/apps/:id":
+    "the application forward secret as a bearer token, compared timing-safely; an unknown app id answers a constant 404",
 };

@@ -1,7 +1,5 @@
 {
-  "app": [
-    "packages/testkit/src/pi-image-file.postgres.test.ts -> ../../../apps/api/src/app.ts"
-  ],
+  "app": ["packages/testkit/src/pi-image-file.postgres.test.ts -> ../../../apps/api/src/app.ts"],
   "relative": [
     ".github/builds/desktop-release.cjs -> ../../apps/desktop/package.json",
     ".github/builds/desktop.cjs -> ../../apps/desktop/package.json",
