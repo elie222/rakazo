@@ -33,6 +33,7 @@ import type { ExecutorDeps } from "../executor-deps.js";
 import { cardName } from "../fleet-tools.js";
 import { insertMcpServerRow } from "../mcp-server-rows.js";
 import { buildMcpCredentialBlob } from "../mcp-server-tool.js";
+import { isHostNotFound } from "../network-address.js";
 import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "../remote-mcp.js";
 import {
   announceRoutineRow,
@@ -290,9 +291,13 @@ async function checkRemoteEndpoint(deps: ExecutorDeps, endpoint: string): Promis
     });
     assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
-    // Only a refused address is the user's to fix; anything else is a server failure.
-    if (!(error instanceof ConnectionSetupError)) throw error;
-    throw new ClientError("BAD_REQUEST", error.message, ADDRESS_REFUSED, { cause: error });
+    // Only a refused or unknown address is the user's to fix; anything else is a server failure.
+    if (!(error instanceof ConnectionSetupError) && !isHostNotFound(error)) throw error;
+    const message =
+      error instanceof ConnectionSetupError
+        ? error.message
+        : "Connector URL host could not be found";
+    throw new ClientError("BAD_REQUEST", message, ADDRESS_REFUSED, { cause: error });
   }
 }
 

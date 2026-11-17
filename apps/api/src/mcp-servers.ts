@@ -5,6 +5,7 @@ import {
   assertSafeRemoteUrl,
   buildMcpCredentialBlob,
   insertMcpServerRow,
+  isHostNotFound,
   mcpServerHealthDto,
   mcpStdioRefusal,
   recordMcpServerHealth,
@@ -334,9 +335,4 @@ export function createMcpServers(
     insertMcpServer,
     announceMcpServer,
   };
-}
-
-function isHostNotFound(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "ENOTFOUND" || code === "ENODATA";
 }

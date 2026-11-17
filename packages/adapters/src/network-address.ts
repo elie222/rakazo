@@ -158,3 +158,9 @@ export async function withPinnedDnsLookup<T>(
   installDnsPin();
   return pinnedDns.run({ hostname, addresses }, run);
 }
+
+/** The address's host does not exist: the person's to fix, not a server failure. */
+export function isHostNotFound(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "ENOTFOUND" || code === "ENODATA";
+}

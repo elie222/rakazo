@@ -167,6 +167,7 @@ export * from "./model-selection.js";
 export * from "./model-settings.js";
 export * from "./model-vision.js";
 export { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.prompt.js";
+export { isHostNotFound } from "./network-address.js";
 export * from "./openai-compatible-url.js";
 export * from "./openrouter-usage.js";
 export * from "./page-browser-session.js";
