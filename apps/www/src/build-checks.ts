@@ -60,7 +60,7 @@ export function buildChecks(): AstroIntegration {
         const pathnames = pages.map((page) => page.pathname);
         const problems = [
           ...missingOgImages(pathnames, dir).map(
-            (page) => `Missing Open Graph image for ${page}. Render it with scripts/render-og.mjs.`,
+            (page) => `Missing Open Graph image for ${page}. Render it with scripts/render-og.mjs in the marketing repository.`,
           ),
           ...missingMarkdownTwins(pathnames, dir).map(
             (page) => `Missing Markdown twin for ${page}. Add a .md endpoint beside the page.`,
