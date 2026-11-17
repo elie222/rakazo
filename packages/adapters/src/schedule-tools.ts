@@ -477,7 +477,7 @@ async function activeRoutineConflict(
       row.threadId === input.threadId && row.name.trim().toLowerCase() === input.name.toLowerCase(),
   );
   if (sameName) {
-    return `An active routine named "${sameName.name}" already exists (${sameName.id}). Update or cancel it instead.`;
+    return `An active routine named "${sameName.name}" (${sameName.id}) is already scheduled. Do not create it again; update or cancel it to change it.`;
   }
   if (active.length >= MAX_ACTIVE_ROUTINES_PER_BOT) {
     return `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`;

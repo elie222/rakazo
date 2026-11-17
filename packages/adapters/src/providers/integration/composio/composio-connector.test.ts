@@ -2,6 +2,9 @@ import type { ToolkitConnectionState } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { collectPages, filterCatalog } from "../../../connector-catalog.js";
+import { ConnectorRegistry } from "../../../connector-registry.js";
+import { DestinationEmulator } from "../../../destination-emulator.js";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
@@ -20,9 +23,6 @@ import {
   sanitizeIntegrationError,
   withSharedAccessHint,
 } from "./composio-connector.js";
-import { collectPages, filterCatalog } from "./connector-catalog.js";
-import { ConnectorRegistry } from "./connector-registry.js";
-import { DestinationEmulator } from "./destination-emulator.js";
 
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,

@@ -7,8 +7,8 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { ComposioProvider } from "./composio-connector.js";
-import { sanitizeIntegrationError } from "./composio-connector.js";
+import type { ComposioProvider } from "./providers/integration/composio/composio-connector.js";
+import { sanitizeIntegrationError } from "./providers/integration/composio/composio-connector.js";
 
 /**
  * The connector a request, card or tool call means when it names none. Stored cards and older
