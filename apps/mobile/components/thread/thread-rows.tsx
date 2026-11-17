@@ -254,12 +254,23 @@ export function useThreadRows({
               afterSeparator={Boolean(item.messages[0] && separatorIds.has(item.messages[0].id))}
             />
           ) : null}
-          <VoiceChatCard group={item} />
+          <VoiceChatCard
+            group={item}
+            selectedIds={selectedIds}
+            onToggleSelection={rowActions.toggleSelection}
+          />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadDividerId, visibleMessages[0]?.id],
+    [
+      renderMessageRow,
+      rowActions.toggleSelection,
+      selectedIds,
+      separatorIds,
+      unreadDividerId,
+      visibleMessages[0]?.id,
+    ],
   );
 
   return { liveItems, renderMessageRow, renderItem };

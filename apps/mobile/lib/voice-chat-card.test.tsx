@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { ReactNode } from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -17,7 +19,32 @@ vi.mock("react-native", async () => {
       );
 
   return {
-    Pressable: element("button"),
+    Pressable: ({
+      children,
+      style,
+      onPress,
+      accessibilityRole,
+      accessibilityState,
+    }: {
+      children?: ReactNode;
+      style?: unknown;
+      onPress?: () => void;
+      accessibilityRole?: string;
+      accessibilityState?: { checked?: boolean };
+    }) =>
+      createElement(
+        "button",
+        {
+          "data-style": JSON.stringify(Object.assign({}, ...[style].flat())),
+          "data-role": accessibilityRole,
+          "data-checked":
+            accessibilityState?.checked === undefined
+              ? undefined
+              : String(accessibilityState.checked),
+          onClick: onPress,
+        },
+        children,
+      ),
     StyleSheet: { create: <T,>(styles: T) => styles },
     Text: element("span"),
     View: element("div"),
@@ -31,7 +58,9 @@ vi.mock("./native", () => ({
 
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 
+import type { VoiceChatGroup } from "@rakazo/core";
 import { VoiceChatCard } from "../components/VoiceChatCard";
+import type { MobileMessage } from "./mobile-types";
 
 function styleOf(element: Element | null) {
   return JSON.parse(element?.getAttribute("data-style") ?? "{}") as Record<string, unknown>;
@@ -49,5 +78,75 @@ describe("VoiceChatCard", () => {
     expect(header.height).toBeUndefined();
     expect(header.minHeight).toBe(40);
     expect(Number(header.paddingVertical) * 2 + Number(title.lineHeight)).toBe(40);
+  });
+
+  it("lets each transcript turn be chosen while messages are being selected", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const turn = (id: string, role: "user" | "bot", text: string) =>
+      ({
+        id,
+        role,
+        blocks: [{ kind: "text", text }],
+      }) as unknown as MobileMessage;
+    const hello = turn("m1", "user", "Hello there");
+    const answer = turn("m2", "bot", "Hi, how can I help?");
+    const group = {
+      kind: "voiceChat",
+      key: "call:1",
+      callId: "1",
+      messages: [hello, answer],
+    } as unknown as VoiceChatGroup<MobileMessage>;
+    const toggled: string[] = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <VoiceChatCard
+          group={group}
+          selectedIds={new Set(["m2"])}
+          onToggleSelection={(message) => toggled.push(message.id)}
+        />,
+      );
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>("button")?.click();
+    });
+
+    const checkboxes = [...container.querySelectorAll<HTMLElement>('[data-role="checkbox"]')];
+    expect(checkboxes.map((box) => box.dataset.checked)).toEqual(["false", "true"]);
+    await act(async () => {
+      checkboxes[0]?.click();
+    });
+    expect(toggled).toEqual(["m1"]);
+
+    toggled.length = 0;
+    await act(async () => {
+      container.querySelector<HTMLElement>("button")?.click();
+    });
+    expect(toggled).toEqual(["m2"]);
+    await act(async () => root.unmount());
+  });
+
+  it("shows plain turns when not selecting", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const group = {
+      kind: "voiceChat",
+      key: "call:1",
+      callId: "1",
+      messages: [{ id: "m1", role: "user", blocks: [{ kind: "text", text: "Hello there" }] }],
+    } as unknown as VoiceChatGroup<MobileMessage>;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<VoiceChatCard group={group} onToggleSelection={() => undefined} />);
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>("button")?.click();
+    });
+    expect(container.querySelector('[data-role="checkbox"]')).toBeNull();
+    expect(container.textContent).toContain("Hello there");
+    await act(async () => root.unmount());
   });
 });

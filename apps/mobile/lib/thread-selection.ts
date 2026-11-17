@@ -71,8 +71,9 @@ export function useThreadSelection({
     let written = false;
     try {
       written = await Clipboard.setStringAsync(text);
-    } catch {
+    } catch (error) {
       // Handled with a refusal below: the selection stays, so the person can try again.
+      console.warn("Clipboard write failed", error);
     }
     if (!written) return;
     hapticSuccess();

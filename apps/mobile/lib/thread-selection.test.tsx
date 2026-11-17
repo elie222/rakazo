@@ -85,13 +85,18 @@ it("copies the chosen messages together in chat order, then leaves selection mod
 });
 
 it("stays in selection mode when the clipboard write fails, so the person can try again", async () => {
-  setString.mockRejectedValueOnce(new Error("denied"));
+  const denied = new Error("denied");
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  setString.mockRejectedValueOnce(denied);
   await render(base);
   act(() => latest.start(messages[0]!));
 
   await act(async () => latest.copy());
   expect(native.success).not.toHaveBeenCalled();
   expect(latest.ids).not.toBeNull();
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(warn).toHaveBeenCalledWith("Clipboard write failed", denied);
+  warn.mockRestore();
 
   setString.mockResolvedValueOnce(true);
   await act(async () => latest.copy());

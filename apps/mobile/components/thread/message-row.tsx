@@ -449,8 +449,8 @@ export const MessageRow = memo(function MessageRow({
         <View
           // Taps belong to the selection while messages are being chosen, not to links and buttons in them.
           pointerEvents={selecting ? "none" : undefined}
-          importantForAccessibility={selecting ? "no-hide-descendants" : undefined}
-          accessibilityElementsHidden={selecting}
+          importantForAccessibility={choosable ? "no-hide-descendants" : undefined}
+          accessibilityElementsHidden={choosable}
           style={{
             width: layout.width,
             maxWidth: layout.maxWidth,
