@@ -8,7 +8,7 @@ import type {
   MessagingSendRequest,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import { MessagingSendError, messagingAddresses } from "./chat-sdk-surface.js";
 
 type CachedSurface = {

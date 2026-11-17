@@ -8,12 +8,9 @@ import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryJobQueue } from "../runs/wakeups/wakeup.js";
-import {
-  deleteUnreferencedMachine,
-  recordUnreferencedMachine,
-} from "../sandboxes/sandbox-cleanup.js";
-import { settleMachineCleanup } from "../sandboxes/sandbox-test-support.js";
 import { machineCleanupRecords, retryMachineCleanup } from "./machine-cleanup.js";
+import { deleteUnreferencedMachine, recordUnreferencedMachine } from "./sandbox/sandbox-cleanup.js";
+import { settleMachineCleanup } from "./sandbox/sandbox-test-support.js";
 
 type ComputerRow = { homeKey: string; kind: string; providerRef: string | null; state: string };
 

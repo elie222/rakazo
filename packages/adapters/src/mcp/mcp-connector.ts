@@ -35,9 +35,9 @@ import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../connectors/connector-safety.js";
+} from "../integrations/connector-safety.js";
 import { appendToolCompletionAudit } from "../runs/turn/tool-completion-audit.js";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import type { CatalogEntry } from "../tools/lazy-tool-catalog.js";
 import {
   CATALOG_EXECUTE,

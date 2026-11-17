@@ -8,7 +8,7 @@ import { PaidRequestInput } from "@rakazo/contracts";
 import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import type { Purchase } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { redactConnectorPayload } from "../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../integrations/connector-safety.js";
 import type { SecretCleanup } from "../secrets/secret-cleanup.js";
 import { cleanUpUnsavedSecret, purchaseRequestRecordId } from "../secrets/secret-cleanup.js";
 import type { SafeHttpResponse } from "../web/web-ssrf.js";

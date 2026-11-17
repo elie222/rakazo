@@ -15,7 +15,7 @@ import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@
 import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
 import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
-import { recordConnectionCleanupAttemptsExhausted } from "../../connectors/connection-cleanup.js";
+import { recordConnectionCleanupAttemptsExhausted } from "../../integrations/connection-cleanup.js";
 import { recordHistoryCompactAttemptsExhausted } from "../../runtime/context/history-compaction.js";
 import { RunExecutionHost } from "../lifecycle/run-execution.js";
 import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";

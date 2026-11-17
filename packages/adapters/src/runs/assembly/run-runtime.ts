@@ -20,10 +20,10 @@ import { cliModelRuntime } from "../../cli-models/runtime.js";
 import { reconcileCloudAgents } from "../../cloud-agents/cloud-agent-service.js";
 import { createIdleComputerSweeper } from "../../computers/computer-idle.js";
 import { reconcileComputerUpdates } from "../../computers/computer-update.js";
-import { createConnectorStack } from "../../connectors/connector-registry.js";
-import type { RemoteConnectorDependencies } from "../../connectors/installed-connectors.js";
-import { InstalledConnectorProvider } from "../../connectors/installed-connectors.js";
-import { IntegrationProviderSettings } from "../../connectors/integration-provider-settings.js";
+import { createConnectorStack } from "../../integrations/connector-registry.js";
+import type { RemoteConnectorDependencies } from "../../integrations/installed-connectors.js";
+import { InstalledConnectorProvider } from "../../integrations/installed-connectors.js";
+import { IntegrationProviderSettings } from "../../integrations/integration-provider-settings.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { McpOAuthBroker } from "../../mcp/mcp-oauth.js";
 import { reconcileMediaVideos } from "../../media/media-video-poll.js";
@@ -53,11 +53,11 @@ import {
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
-import { deploymentLabsFromEnv } from "../../shared/labs-env.js";
 import { createWebProvider } from "../../web/web-provider-factory.js";
 import { auditLogConfig, createAuditLogReconciler } from "../../webhooks/audit-forwarding.js";
 import { createRunExecutor } from "../executor/executor.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { deploymentLabsFromEnv } from "../labs-env.js";
 import { createBackgroundJobHandlers } from "../wakeups/background-job-handlers.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 

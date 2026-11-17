@@ -27,6 +27,17 @@ import {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "../../../computers/computer-workspace.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../computers/sandbox/sandbox-command-events.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import { shellExportScript } from "../../../computers/sandbox/sandbox-shell-environment.js";
 import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
   boundedComputerActions,
@@ -37,17 +48,6 @@ import {
   workspaceCwd,
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
-import {
-  deleteUnreferencedMachine,
-  recordUnreferencedMachine,
-} from "../../../sandboxes/sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
-import {
-  abortedCommandEvents,
-  timedOutCommandEvents,
-} from "../../../sandboxes/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
-import { shellExportScript } from "../../../sandboxes/sandbox-shell-environment.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 

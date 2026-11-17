@@ -1,7 +1,7 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it } from "vitest";
 import { assertSafeRemoteUrl, createSafeLookup } from "../mcp/remote-mcp.js";
-import { egressRefused, isEgressRefused } from "./network-address.js";
+import { egressRefused, isEgressRefused } from "../network/network-address.js";
 import { assertSafeWebUrl } from "./web-ssrf.js";
 
 let sink: ReturnType<typeof createTestSink>;

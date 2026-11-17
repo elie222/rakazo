@@ -1,6 +1,6 @@
 import { bestEffort } from "@rakazo/logging";
-import type { LocalServiceConnection } from "../../../web/local-service-endpoint.js";
-import { fetchLocalService } from "../../../web/local-service-endpoint.js";
+import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
+import { fetchLocalService } from "../../../network/local-service-endpoint.js";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 export const HINDSIGHT_CLOUD_BASE_URL = "https://api.hindsight.vectorize.io";

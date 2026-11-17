@@ -24,18 +24,18 @@ import {
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
-import { sensitiveQueryParameter } from "../connectors/connector-http.js";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { composioToolBatch } from "../providers/integration/composio/composio-batch.js";
-import { credentialDigest } from "../shared/credential-digest.js";
-import type { ResolvedAddress, ResolveHostname } from "../web/network-address.js";
+import { sensitiveQueryParameter } from "../integrations/connector-http.js";
+import { combineSignals } from "../integrations/connector-safety.js";
+import type { ResolvedAddress, ResolveHostname } from "../network/network-address.js";
 import {
   createAddressCheckedLookup,
   egressRefused,
   withPinnedDnsLookup,
-} from "../web/network-address.js";
-import { createCheckedProxyDispatcher } from "../web/proxy-dispatcher.js";
-import { dispatcherFetch, fetchPairedWithDispatcher } from "../web/undici-fetch.js";
+} from "../network/network-address.js";
+import { createCheckedProxyDispatcher } from "../network/proxy-dispatcher.js";
+import { dispatcherFetch, fetchPairedWithDispatcher } from "../network/undici-fetch.js";
+import { composioToolBatch } from "../providers/integration/composio/composio-batch.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
 import {
@@ -66,7 +66,7 @@ export const MCP_HTTP_TIMEOUTS = {
 } as const;
 const MAX_RESULT_BYTES = 1_000_000;
 
-export type { ResolveHostname } from "../web/network-address.js";
+export type { ResolveHostname } from "../network/network-address.js";
 
 export interface RemoteUrlPolicy {
   /** Deployment-owner escape for loopback / LAN / Docker-network endpoints. Default off. */

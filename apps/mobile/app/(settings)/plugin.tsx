@@ -34,6 +34,7 @@ import {
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import { sourceHref } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
@@ -205,14 +206,7 @@ function PluginScreen() {
     run(
       server.id,
       async (send) => {
-        const { webUrl } = await send("integrationSetup/get", undefined);
-        const started = await send("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required")
-          await Linking.openURL(started.authorizationUrl);
-        else if (started.status === "authorization_not_requested")
+        if ((await signInToMcpServer(send, server.id)) === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
       },
       t`Could not sign in`,

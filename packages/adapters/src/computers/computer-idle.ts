@@ -28,16 +28,13 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "../cloud-agents/coding-agent-activity.js";
-import { sandboxAllowanceUsedUp } from "../sandboxes/sandbox-allowance.js";
-import { isSandboxDamagedError, isSandboxGoneError } from "../sandboxes/sandbox-errors.js";
-import {
-  sandboxKindCapabilities,
-  sandboxKindsWhere,
-} from "../sandboxes/sandbox-kind-capabilities.js";
 import { HomeSaveConflictError } from "../storage/home-object-store.js";
 import { diskUpdate, measureComputerDisk } from "./computer-disk.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { sandboxAllowanceUsedUp } from "./sandbox/sandbox-allowance.js";
+import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox/sandbox-errors.js";
+import { sandboxKindCapabilities, sandboxKindsWhere } from "./sandbox/sandbox-kind-capabilities.js";
 import {
   endTeachingWithLease,
   expireComputerControl,

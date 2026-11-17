@@ -14,9 +14,9 @@ import type {
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { humanizeToolName } from "@rakazo/core";
+import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
-import { collectPages, filterCatalog } from "../../../connectors/connector-catalog.js";
-import { isVitestRuntime } from "../../../shared/test-runtime.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {

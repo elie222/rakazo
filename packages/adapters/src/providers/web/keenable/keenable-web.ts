@@ -7,7 +7,7 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { z } from "zod";
-import { combineSignals } from "../../../connectors/connector-safety.js";
+import { combineSignals } from "../../../integrations/connector-safety.js";
 import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
 import { callRemoteMcpTool } from "../../../mcp/remote-mcp.js";
 import {

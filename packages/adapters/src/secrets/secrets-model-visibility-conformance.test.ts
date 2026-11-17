@@ -4,7 +4,10 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalAskBlock } from "../approvals/approval-ask.js";
 import { redactToolArgsForReview } from "../approvals/auto-review.js";
-import { redactConnectorPayload, sanitizeConnectorError } from "../connectors/connector-safety.js";
+import {
+  redactConnectorPayload,
+  sanitizeConnectorError,
+} from "../integrations/connector-safety.js";
 import { McpConnector } from "../mcp/mcp-connector.js";
 import type { OAuthMaterial } from "../mcp/mcp-oauth.js";
 import { oauthMaterialSecrets } from "../mcp/mcp-oauth.js";

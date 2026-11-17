@@ -15,13 +15,13 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { openRouterInferenceFetch } from "../../../models/credits/openrouter-usage.js";
+import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
+import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
-import { fetchForRequest } from "../../../web/undici-fetch.js";
+import { fetchForRequest } from "../../../network/undici-fetch.js";
 import { withChatCompletionsCompatibility } from "../../chat-completions-compat.js";
 import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
-import { withGoogleToolHistory } from "../../google-tool-history.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
