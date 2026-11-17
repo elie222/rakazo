@@ -1243,6 +1243,67 @@ it("persists an explicit approved credit route alongside the personal route", as
   }
 });
 
+it("lists and saves an approved live-only model without a member connection", async () => {
+  const { call, deps, prisma, roles } = setup({ credits: true });
+  const offering = {
+    id: "future-approved",
+    connectionId: "operator-example",
+    provider: "openai",
+    modelId: "gpt-future-credit-test",
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  };
+  Object.assign(prisma.userModelCredential, {
+    findUnique: vi.fn(async () => ({
+      id: offering.connectionId,
+      provider: offering.provider,
+      userId: "operator-example",
+      secretId: "operator-secret",
+    })),
+  });
+  vi.mocked(deps.secrets.load).mockResolvedValue(
+    JSON.stringify({
+      kind: "api_key",
+      key: "fake-key",
+      models: {
+        [offering.modelId]: {
+          images: true,
+          reasoning: true,
+          contextWindow: 32000,
+          maxTokens: 4000,
+        },
+      },
+    }),
+  );
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({ defaultOfferingId: offering.id, offerings: [offering] }),
+  );
+  try {
+    const catalog = (await (await call("models/forRole", { role: "main" })).response.json()).json;
+    expect(catalog).toContainEqual(
+      expect.objectContaining({
+        id: offering.modelId,
+        provider: offering.provider,
+        creditOfferingId: offering.id,
+        live: true,
+        images: true,
+        reasoning: true,
+        contextWindow: 32000,
+        maxTokens: 4000,
+      }),
+    );
+    const primary = {
+      provider: offering.provider,
+      modelId: offering.modelId,
+      creditOfferingId: offering.id,
+    };
+    expect((await call("models/setRole", { role: "main", primary })).response.status).toBe(200);
+    expect(roles()).toEqual([expect.objectContaining({ ...primary, credentialId: null })]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 it("offers a ready decision credit route independently of the reasoning catalog", async () => {
   const { call, deps, prisma } = setup();
   deps.billing = { modelCreditsEnabled: true } as never;

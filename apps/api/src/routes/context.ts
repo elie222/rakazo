@@ -3,6 +3,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
+  approvedModelCreditCatalogEntry,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
@@ -176,19 +177,6 @@ export function createRouterContext(deps: RouterDeps) {
       ).filter(Boolean),
     );
     const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
-    for (const offering of approved) {
-      if (
-        !fundedProviders.has(offering.provider) ||
-        available.some(
-          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
-        )
-      )
-        continue;
-      const entry = listAvailablePiCatalog({ [offering.provider]: "api_key" }).find(
-        (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
-      );
-      if (entry) available.push(entry);
-    }
     const [live, providerLive] = await Promise.all([
       codexLiveCatalogsForSpace(deps.prisma, deps.secrets, actor, auth, codexCatalog, {
         // An expired bearer yields no catalog this round; kick the runtime's
@@ -215,6 +203,26 @@ export function createRouterContext(deps: RouterDeps) {
       ),
       ...(role === "approval" ? decisionModelCatalog() : []),
     ];
+    for (const offering of approved) {
+      if (
+        !fundedProviders.has(offering.provider) ||
+        merged.some(
+          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+        )
+      )
+        continue;
+      const entry =
+        listAvailablePiCatalog({ [offering.provider]: "api_key" }).find(
+          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+        ) ??
+        (await approvedModelCreditCatalogEntry(
+          deps.prisma,
+          deps.secrets,
+          offering.provider,
+          offering.modelId,
+        ));
+      if (entry) merged.push(entry);
+    }
     // Legacy decision protocols have their own prices, outside the bundled chat catalog.
     const canRun = (entry: ModelCatalogEntry) =>
       (entry.protocol === "decisions" && !modelCreditOfferings()) ||

@@ -6,6 +6,7 @@ import { getLogger } from "@rakazo/logging";
 import { modelProviderDefinition } from "../models/model-provider-registry.js";
 import { parseModelSecret, secretValuesToRedact } from "../models/model-secret.js";
 import { connectionModelSettings } from "../models/model-settings.js";
+import { liveCatalogEntry } from "../runtime/pi/models/pi-live-catalog.js";
 import type { ModelCreditOffering } from "./offerings.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "./offerings.js";
 
@@ -80,6 +81,27 @@ export async function availableModelCreditOfferings(
     }),
   );
   return result.flat();
+}
+
+/** Describe an approved live model using the same adapter fallback and settings as execution. */
+export async function approvedModelCreditCatalogEntry(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  provider: string,
+  modelId: string,
+) {
+  const offering = approvedModelCreditOffering(provider, modelId);
+  if (!offering) return undefined;
+  const { connection, secret } = await loadCreditConnection(prisma, secrets, offering);
+  const settings = connectionModelSettings(secret, provider, modelId, connection);
+  const entry = liveCatalogEntry(provider, modelId, settings);
+  return entry
+    ? {
+        ...entry,
+        ...(settings.contextWindow !== undefined ? { contextWindow: settings.contextWindow } : {}),
+        ...(settings.maxTokens !== undefined ? { maxTokens: settings.maxTokens } : {}),
+      }
+    : undefined;
 }
 
 /** Only an operator allowlist may select a deployment-owned stored connection. */
