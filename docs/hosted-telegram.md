@@ -105,6 +105,11 @@ except Exception:
 PY
 ```
 
+Restart every API instance after registration succeeds, so automatic transport selection runs
+again and any polling receiver from the initial startup stops. Verify the restarted API uses the
+registered webhook before adding more API instances. Workers do not receive updates and need no
+second restart unless their configuration changed.
+
 For a named mount, substitute that mount's three environment names and webhook path in the
 example. Registration replaces any webhook previously registered for the same bot. Schedule
 that change deliberately. Do not use `drop_pending_updates=true` for routine setup or recovery.
@@ -151,7 +156,8 @@ these checks pass should a separate marketing change remove the hosted restricti
 
 If inbound is silent, inspect `getWebhookInfo` privately for endpoint, backlog and recent error,
 then check ingress forwarding, matching secrets, and API startup. Re-register the correct
-endpoint/secret after rotation; synchronize API and worker credentials first. Never log raw
+endpoint/secret after rotation; synchronize API and worker credentials first, then restart all API
+instances after registration. Never log raw
 requests or credential-bearing Telegram request URLs. If the bot token is compromised, revoke
 it through BotFather and replace it in both processes before re-registering the webhook.
 
