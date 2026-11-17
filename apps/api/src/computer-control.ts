@@ -302,13 +302,16 @@ export async function restartBotScreen(
   if (sandboxKindCapabilities(computer.kind).restartScreen !== true || !releaseScreen) {
     throw new ClientError("BAD_REQUEST", "Restarting the screen is not available on this computer");
   }
-  const working = await deps.prisma.run.findFirst({
-    where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
-    select: { id: true },
-  });
-  if (working) {
-    throw new ClientError("CONFLICT", "This bot is working or waiting. Stop it, then try again");
-  }
+  const refuseWhileWorking = async () => {
+    const working = await deps.prisma.run.findFirst({
+      where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
+      select: { id: true },
+    });
+    if (working) {
+      throw new ClientError("CONFLICT", "This bot is working or waiting. Stop it, then try again");
+    }
+  };
+  await refuseWhileWorking();
 
   const manualRunId = `${SCREEN_RESTART_RUN_PREFIX}${randomUUID()}`;
   // Held while the screen goes down, so a run of this bot cannot claim it half way.
@@ -319,6 +322,9 @@ export async function restartBotScreen(
     botId: bot.id,
   });
   try {
+    // Checked again under the lease: a run that began or paused for input after the first check
+    // is counted now. Runs that need the computer from here on wait behind our lease.
+    await refuseWhileWorking();
     // Control of this bot's screen ends first: a person's session must not outlive its browser.
     if (holdsComputerControl(computer, bot.id, context.actor)) {
       await releaseComputerControl(deps, context.actor, computer, bot.id);

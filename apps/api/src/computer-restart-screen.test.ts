@@ -186,6 +186,19 @@ describe("restartBotScreen", () => {
     expect(releaseScreen).not.toHaveBeenCalled();
   });
 
+  it("refuses when a run appears between the first check and holding the lease", async () => {
+    const { deps, prisma, releaseScreen } = setup();
+    (prisma.run.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "run-paused" });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(lifecycle.acquire).toHaveBeenCalledOnce();
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
   it("refuses a computer that is not a Team computer", async () => {
     const { deps, releaseScreen } = setup({ computer: { scope: "dedicated" } });
     await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
