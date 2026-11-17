@@ -6,8 +6,8 @@ import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
   readBoundedText,
-} from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+} from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 
 const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 /** What Slack answers for a code the person can get again by starting over. */

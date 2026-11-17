@@ -1,7 +1,10 @@
 import { PiAgentRuntime } from "@rakazo/adapters";
 import { expect, it, vi } from "vitest";
-import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
-import { recordEffect, runScopedToolExecutionId } from "../../../adapters/src/run-effects.js";
+import {
+  recordEffect,
+  runScopedToolExecutionId,
+} from "../../../adapters/src/runs/lifecycle/run-effects.js";
+import { builtinAgentTools } from "../../../adapters/src/tools/builtin.tool-definition.js";
 import { startModelEmulator } from "../model-emulator.js";
 
 it("isolates independent subagent effects with identical wire IDs and reconciles a retry", async () => {

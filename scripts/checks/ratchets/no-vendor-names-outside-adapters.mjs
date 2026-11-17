@@ -40,7 +40,7 @@ const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "lo
 // the pull request that adds it.
 function computerProviderIds() {
   const source = readFileSync(
-    new URL("../../../packages/adapters/src/computer-providers.ts", import.meta.url),
+    new URL("../../../packages/adapters/src/computers/computer-providers.ts", import.meta.url),
     "utf8",
   );
   const ids = topLevelKeys(source, /computerProviders[^=]*=\s*\{/);

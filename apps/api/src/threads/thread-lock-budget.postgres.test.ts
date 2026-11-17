@@ -14,8 +14,8 @@ import {
   sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { destroyBot } from "../../../../packages/adapters/src/child-bots.js";
-import { publishMessage } from "../../../../packages/adapters/src/run-messages.js";
+import { destroyBot } from "../../../../packages/adapters/src/bots/child-bots.js";
+import { publishMessage } from "../../../../packages/adapters/src/runs/assembly/run-messages.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 

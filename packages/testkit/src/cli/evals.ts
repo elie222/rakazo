@@ -499,7 +499,7 @@ async function main() {
       modelCalls: 0,
       costUsd: null,
     };
-    const { PiAgentRuntime } = await import("../../../adapters/src/pi-runtime.ts");
+    const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
     const runtime = new PiAgentRuntime({
       modelCallObserver: {
         beforeCall: (call) => {
@@ -565,7 +565,7 @@ async function main() {
   }
   save();
   if (values["cache-probe"]) {
-    const { PiAgentRuntime } = await import("../../../adapters/src/pi-runtime.ts");
+    const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
     const { runCachePrefixProbe } = await import("../evals/cache-probe.js");
     const decisions: CacheDecisionMeasurement[] = [];
     const runtime = new PiAgentRuntime({

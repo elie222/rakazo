@@ -3,7 +3,7 @@ import { EncryptedSecretStore, InfisicalSecretStore, migrateSecrets } from "@rak
 import type { PrismaClient, SpaceKeyRecord } from "@rakazo/db";
 import { ContentKeyRing, encryptText, LocalKeyProvider } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { infisicalFake } from "../../../../packages/adapters/src/secret-store-fake.js";
+import { infisicalFake } from "../../../../packages/adapters/src/secrets/secret-store-fake.js";
 import { createSecretMigrationRepository } from "./secret-migration.js";
 
 function fixture() {

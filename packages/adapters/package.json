@@ -5,13 +5,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./agent-desktop-host-screen": "./src/agent-desktop-host-screen.ts",
-    "./cua-host-screen": "./src/cua-host-screen.ts",
-    "./host-computer-server": "./src/host-computer-server.ts",
-    "./host-screen": "./src/host-screen.ts",
-    "./model-json": "./src/model-json.ts",
+    "./agent-desktop-host-screen": "./src/computers/screens/agent-desktop-host-screen.ts",
+    "./cua-host-screen": "./src/computers/screens/cua-host-screen.ts",
+    "./host-computer-server": "./src/computers/host/host-computer-server.ts",
+    "./host-screen": "./src/computers/screens/host-screen.ts",
+    "./model-json": "./src/models/model-json.ts",
     "./wuying-screen-policy": "./src/providers/computer/wuying/wuying-screen-policy.ts",
-    "./user-device-client": "./src/user-device-client.ts"
+    "./user-device-client": "./src/computers/host/user-device-client.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
