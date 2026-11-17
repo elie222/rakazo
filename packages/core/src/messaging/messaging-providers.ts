@@ -18,6 +18,19 @@ export function messagingProviderName(provider: string): string {
   return PROVIDER_NAMES[provider] ?? provider;
 }
 
+/** The provider among `providers` a user names by its id or its name ("Slack"); null for none. */
+export function messagingProviderNamed(name: string, providers: readonly string[]): string | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return null;
+  return (
+    providers.find(
+      (provider) =>
+        provider.toLowerCase() === wanted ||
+        messagingProviderName(provider).toLowerCase() === wanted,
+    ) ?? null
+  );
+}
+
 /** Per-message provider label, narrowed to a recognized transport when available. */
 export function messagingProviderLabel(provider: string, transport?: string): string {
   if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
