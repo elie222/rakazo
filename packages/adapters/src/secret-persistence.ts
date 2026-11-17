@@ -179,7 +179,7 @@ export function withSecretPersistence(
   async function dropping(state: Cleanup, dropped: SecretCleanup[]): Promise<void> {
     const queue = jobs?.();
     if (!queue) {
-      state.old.push(...dropped);
+      for (const cleanup of dropped) state.old.push(cleanup);
       return;
     }
     // One job stands for a reference however many of the rows share it.
@@ -195,7 +195,7 @@ export function withSecretPersistence(
     // commits, so the caller does not wait on a remote delete for each.
     if (remote.length > DIRECT_CLEANUPS)
       for (const cleanup of remote) state.queued.add(cleanup.ref);
-    state.old.push(...dropped.filter((cleanup) => !state.queued.has(cleanup.ref)));
+    for (const cleanup of dropped) if (!state.queued.has(cleanup.ref)) state.old.push(cleanup);
   }
   async function lockedRows<Row extends { id: string } = Candidate>(
     state: Cleanup,
@@ -290,14 +290,14 @@ export function withSecretPersistence(
     }
     const secretRows = async (table: string) =>
       (await lockedRows(state, table, filter)).map(cleanupOf);
-    const cleanups: SecretCleanup[] = [];
+    const cleanups: SecretCleanup[][] = [];
     if (model !== "Bot") {
-      cleanups.push(...(await secretRows("Secret")), ...(await secretRows("VaultCredential")));
+      cleanups.push(await secretRows("Secret"), await secretRows("VaultCredential"));
     }
-    cleanups.push(...(await secretRows("BotSecret")));
+    cleanups.push(await secretRows("BotSecret"));
     const installs = await lockedRows(state, "MessagingInstallation", filter, "id, ciphertext");
     cleanups.push(
-      ...installs.map((row) => ({
+      installs.map((row) => ({
         kind: "messaging_installation" as const,
         recordId: row.id,
         ref: row.ciphertext,
@@ -311,7 +311,7 @@ export function withSecretPersistence(
         'id, "userId", ciphertext',
       );
       cleanups.push(
-        ...wallets.map((row) => ({
+        wallets.map((row) => ({
           kind: "payment_wallet" as const,
           recordId: paymentWalletRecordId(row.userId),
           ref: row.ciphertext,
@@ -326,9 +326,9 @@ export function withSecretPersistence(
         filter,
         'id, "operationKey", "cardCiphertext", "requestCiphertext", "tokenCiphertext"',
       );
-      cleanups.push(...purchases.flatMap(purchaseCleanups));
+      cleanups.push(purchases.flatMap(purchaseCleanups));
     }
-    return cleanups;
+    return cleanups.flat();
   }
   const extended = prisma.$extends({
     query: {
