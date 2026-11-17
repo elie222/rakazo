@@ -582,7 +582,7 @@ whole checklist is complete. The implementation goal resumed after this handoff.
 - The runtime invokes the shared context policy inside the guarded provider call,
   before spend reservation, for both main agents and subagents. Screenshot pruning
   still runs first. Generic configured cache retention is forwarded to Pi.
-- `packages/testkit/src/pi-offline.test.ts` verifies actual outgoing HTTP requests
+- `packages/testkit/src/runtime/pi-offline.test.ts` verifies actual outgoing HTTP requests
   for retrieval, snapshots, and cache-aware strategies, oversized tool-result
   shortening, intact tool pairs, delegated tool loops, and rejection of oversized
   required input before provider invocation or spend reservation. All 11 tests passed.

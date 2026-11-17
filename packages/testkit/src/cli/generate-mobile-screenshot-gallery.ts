@@ -1,12 +1,12 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { MobileScreenshot } from "../playwright-report-dashboard.js";
+import type { MobileScreenshot } from "../screenshots/playwright-report-dashboard.js";
 import {
   MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
   renderMobileScreenshotGallery,
   screenshotTitleFromFileName,
-} from "../playwright-report-dashboard.js";
-import { validatePngScreenshot } from "../png-validation.js";
+} from "../screenshots/playwright-report-dashboard.js";
+import { validatePngScreenshot } from "../screenshots/png-validation.js";
 
 const [screenshotsPath, galleryPath] = process.argv.slice(2);
 const MAX_SCREENSHOT_COUNT = 100;
