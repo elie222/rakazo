@@ -82,7 +82,7 @@ export type FleetPrepareDeps = {
   prisma: PrismaClient;
   modelChange: Omit<BotModelChangeDeps, "prisma">;
   /** The agent export the owner sent with this run, read only by import_agents. */
-  agentExport?: () => Promise<string>;
+  agentExport?: () => Promise<string[]>;
 };
 
 export type FleetPrepared =
@@ -147,7 +147,7 @@ async function prepareImportAgents(
   deps: FleetPrepareDeps,
   args: Record<string, unknown>,
 ): Promise<FleetPrepared> {
-  return prepareAgentImportRequest((await deps.agentExport?.()) ?? "", args);
+  return prepareAgentImportRequest((await deps.agentExport?.()) ?? [], args);
 }
 
 async function prepareCreateGroup(

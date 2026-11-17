@@ -16,6 +16,7 @@ import {
   GROK_BOT_REPLY_MAX_LENGTH,
   GrokBotExportError,
   grokBotExportJson,
+  looksLikeCredential,
   parseGrokBotExport,
 } from "@rakazo/core";
 import {
@@ -70,18 +71,18 @@ type RunScope = {
 /** Text attachments an export may come in: the `.json` file a Bot writes, or plain text. */
 const EXPORT_FILE = /^(?:application\/json|text\/)/;
 
-/** The text of the message that started this run, and of its attached text files. */
+/** The text of the message that started this run, and of each attached text file. */
 export async function readRunAgentExport(
   deps: Pick<ExecutorDeps, "prisma" | "artifacts">,
   run: RunScope,
   context: AdapterContext,
-): Promise<string> {
-  if (!run.sourceMessageId) return "";
+): Promise<string[]> {
+  if (!run.sourceMessageId) return [];
   const source = await deps.prisma.message.findUnique({
     where: { id: run.sourceMessageId },
     select: { id: true, threadId: true, role: true, blocks: true },
   });
-  if (!source || source.threadId !== run.threadId || source.role !== "user") return "";
+  if (!source || source.threadId !== run.threadId || source.role !== "user") return [];
   const parts: string[] = [];
   let length = 0;
   for (const block of storedMessageBlocks(source)) {
@@ -94,8 +95,8 @@ export async function readRunAgentExport(
     const fileName = typeof block.name === "string" ? block.name : "";
     if (!EXPORT_FILE.test(String(block.mimeType)) && !fileName.toLowerCase().endsWith(".json"))
       continue;
-    // A file that would take the text past the size an export may have is not one.
-    if (length + block.size > GROK_BOT_REPLY_MAX_LENGTH) continue;
+    // Its size is in bytes, and a character takes up to four: past that it cannot fit.
+    if (length + block.size > GROK_BOT_REPLY_MAX_LENGTH * 4) continue;
     const row = await deps.prisma.artifact.findFirst({
       where: { id: block.artifactId, spaceId: run.spaceId },
       select: { storageKey: true },
@@ -113,22 +114,43 @@ export async function readRunAgentExport(
       continue;
     }
     const text = new TextDecoder().decode(bytes);
+    // A file that would take the text past the size an export may have is not one.
+    if (length + text.length > GROK_BOT_REPLY_MAX_LENGTH) continue;
     parts.push(text);
     length += text.length;
   }
-  return parts.join("\n\n");
+  return parts;
 }
 
 const digestOf = (text: string) => createHash("sha256").update(text).digest("hex");
+const exportDigest = (parts: readonly string[]) => digestOf(JSON.stringify(parts));
 
 type Prepared =
   | { ok: true; canonical: Record<string, unknown>; summary: FleetCardSummary }
   | { ok: false; error: string };
 
-function readExport(text: string): GrokBot[] | { error: string } {
-  if (!text.trim()) return { error: AGENT_EXPORT_NOT_FOUND };
+/**
+ * The bots in the message and its files. Each part is read on its own, as Settings reads chosen
+ * files, so a stray fragment in the text cannot swallow an attached export; split parts of one
+ * Bot still join.
+ */
+function readExport(parts: readonly string[]): GrokBot[] | { error: string } {
+  const documents: string[] = [];
+  let failure: GrokBotExportError | undefined;
+  for (const part of parts) {
+    if (!part.trim()) continue;
+    try {
+      documents.push(...parseGrokBotExport(part).map(grokBotExportJson));
+    } catch (error) {
+      if (!(error instanceof GrokBotExportError)) throw error;
+      failure = error;
+    }
+  }
+  if (!documents.length) {
+    return { error: failure ? agentExportUnreadable(failure.code) : AGENT_EXPORT_NOT_FOUND };
+  }
   try {
-    return parseGrokBotExport(text);
+    return parseGrokBotExport(documents.join("\n\n"));
   } catch (error) {
     if (error instanceof GrokBotExportError) return { error: agentExportUnreadable(error.code) };
     throw error;
@@ -143,7 +165,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * approved request is pinned to this export by its digest.
  */
 export function prepareAgentImportRequest(
-  exportText: string,
+  exportParts: readonly string[] | string,
   args: Record<string, unknown>,
 ): Prepared {
   const requested = Array.isArray(args.bot_names)
@@ -158,7 +180,8 @@ export function prepareAgentImportRequest(
     ).values(),
   ];
   if (!names.length) return { ok: false, error: "Pass bot_names: the bots to import." };
-  const bots = readExport(exportText);
+  const parts = typeof exportParts === "string" ? [exportParts] : exportParts;
+  const bots = readExport(parts);
   if ("error" in bots) return { ok: false, error: bots.error };
   const chosen = names.map((name) => ({
     name,
@@ -182,7 +205,7 @@ export function prepareAgentImportRequest(
   return {
     ok: true,
     canonical: {
-      exportDigest: digestOf(exportText),
+      exportDigest: exportDigest(parts),
       bots: picked.map(({ index, bot }) => ({ index, name: bot.name })),
     },
     summary: {
@@ -340,9 +363,9 @@ export async function importAgentsFromChat(
 ): Promise<{ bots: ImportedAgent[]; note: string } | { error: string }> {
   const stored = ApprovedImportSchema.safeParse(request);
   if (!stored.success) return { error: AGENT_EXPORT_CHANGED };
-  const exportText = await readRunAgentExport(deps, run, context);
-  if (digestOf(exportText) !== stored.data.exportDigest) return { error: AGENT_EXPORT_CHANGED };
-  const bots = readExport(exportText);
+  const parts = await readRunAgentExport(deps, run, context);
+  if (exportDigest(parts) !== stored.data.exportDigest) return { error: AGENT_EXPORT_CHANGED };
+  const bots = readExport(parts);
   if ("error" in bots) return bots;
   const approved = stored.data.bots;
   const actor: Actor = {
@@ -388,6 +411,8 @@ async function importOne(
       skillFiles: {},
     });
     const chosen = chatSelection(plan);
+    // Like key-shaped instructions, a key-shaped description stays out of the bot's profile.
+    const keyedDescription = looksLikeCredential(plan.suggestedDescription);
     // The same key on a replay returns the bot this call already made.
     const keyFor = (attempt: string) => `chat:${digestOf(`${key}:${attempt}`).slice(0, 40)}`;
     const create = (selection: typeof chosen.selection, attempt: string) =>
@@ -398,12 +423,14 @@ async function importOne(
           importKey: keyFor(attempt),
           files,
           name: plan.suggestedName || bot.name,
-          description: plan.suggestedDescription,
+          description: keyedDescription ? "" : plan.suggestedDescription,
           selection,
         }),
       );
     let servers = chosen.kept(plan.mcpServers);
-    let leftOut = chosen.leftOut;
+    let leftOut = keyedDescription
+      ? [...chosen.leftOut, { item: "Description", reason: LEFT_OUT_FOR_REVIEW }]
+      : chosen.leftOut;
     const withoutServers = async (reason: string) => {
       leftOut = [...leftOut, ...servers.map((server) => ({ item: server.title, reason }))];
       servers = [];

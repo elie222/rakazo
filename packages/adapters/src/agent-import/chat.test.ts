@@ -18,10 +18,12 @@ const bramble = {
   ],
   apps: [{ name: "Gmail" }],
 };
+// Built from parts so no scanner mistakes this file for a leak.
+const fakeKey = ["sk", "-proj-", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0z"].join("");
 const wren = {
   name: "Wren",
-  // Built from parts so no scanner mistakes this file for a leak.
-  instructions: `Plan trips. Use ${["sk", "-proj-", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0z"].join("")}.`,
+  description: `Uses ${fakeKey}`,
+  instructions: `Plan trips. Use ${fakeKey}.`,
 };
 const reply = `Here is my setup.\n\n\`\`\`json\n${JSON.stringify({
   format: "grok-bot-export",
@@ -56,9 +58,9 @@ describe("reading the export a run was sent", () => {
   it("reads the owner's message in this thread only", async () => {
     const read = (message: { threadId: string; role: string }) =>
       readRunAgentExport(depsWith({ ...message, text: reply }), run, context);
-    await expect(read({ threadId: "thread-1", role: "user" })).resolves.toBe(reply);
-    await expect(read({ threadId: "thread-2", role: "user" })).resolves.toBe("");
-    await expect(read({ threadId: "thread-1", role: "bot" })).resolves.toBe("");
+    await expect(read({ threadId: "thread-1", role: "user" })).resolves.toEqual([reply]);
+    await expect(read({ threadId: "thread-2", role: "user" })).resolves.toEqual([]);
+    await expect(read({ threadId: "thread-1", role: "bot" })).resolves.toEqual([]);
   });
 });
 
@@ -87,6 +89,13 @@ describe("the import_agents approval card", () => {
     expect(prepareAgentImportRequest(twins, { bot_names: ["Bramble"] })).toMatchObject({
       ok: false,
       error: expect.stringContaining('more than one bot named "Bramble"'),
+    });
+  });
+
+  it("reads an attached export even when the message text holds an unfinished one", () => {
+    const fragment = '{"format": "grok-bot-export", "bots": [{"name": "Draft"';
+    expect(prepareAgentImportRequest([fragment, reply], { bot_names: ["Wren"] })).toMatchObject({
+      ok: true,
     });
   });
 
@@ -158,7 +167,10 @@ describe("importing the approved bots", () => {
     expect(result.bots[1]).toMatchObject({
       name: "Wren",
       instructions: false,
-      leftOut: [expect.objectContaining({ item: "Instructions" })],
+      leftOut: expect.arrayContaining([
+        expect.objectContaining({ item: "Instructions" }),
+        expect.objectContaining({ item: "Description" }),
+      ]),
     });
   });
 
