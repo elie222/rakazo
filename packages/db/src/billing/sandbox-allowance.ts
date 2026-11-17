@@ -7,8 +7,7 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
-
-const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active"]);
+import { hasBillingAccess } from "./billing.js";
 
 /**
  * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever
@@ -22,7 +21,7 @@ function byokTierOf(
     | null
     | undefined,
 ): ByokTier | null {
-  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
+  const live = hasBillingAccess(billing?.status ?? null);
   if (mode !== "byok" && !(live && billing?.byokPriceCents)) return null;
   return (live && ByokTierSchema.safeParse(billing?.byokTier).data) || "standard";
 }
@@ -64,7 +63,7 @@ export async function sandboxAllowancePlan(
   ]);
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
-  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
+  const live = hasBillingAccess(billing?.status ?? null);
   const periodStart =
     live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
       ? billing.currentPeriodStartsAt

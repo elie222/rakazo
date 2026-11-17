@@ -381,16 +381,18 @@ export function createBillingService(deps: {
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
-    // A payment's own time, so one that settles an earlier failed charge is not deduplicated away.
+    // A payment that settles a failed first charge is a second report for the same subscription,
+    // so it gets its own identity instead of being deduplicated against the first.
+    const settled = converted === true && needsBillingPortal(previous.status);
     const at =
-      (started ? live.currentPeriodStartsAt : converted ? live.paidAt : live.trialEndsAt) ??
+      (started ? live.currentPeriodStartsAt : settled ? live.paidAt : live.trialEndsAt) ??
       new Date();
     analytics.capture(
       owner,
       started
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
         : { name: "trial_ended", ...terms, converted: converted === true },
-      { id: live.subscriptionId, at },
+      { id: settled ? `${live.subscriptionId}:settled` : live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
     );
   }
