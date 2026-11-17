@@ -83,6 +83,29 @@ export async function availableModelCreditOfferings(
   return result.flat();
 }
 
+/** Recovery uses the reservation's original connection, including after an offering is withdrawn. */
+export async function modelCreditUsageLookup(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  offering: ModelCreditOffering,
+) {
+  const create = modelProviderDefinition(offering.provider)?.usageLookup;
+  if (!create) return undefined;
+  const { secret } = await loadCreditConnection(prisma, secrets, offering);
+  const lookup = create(secret.key);
+  return {
+    provider: lookup.provider,
+    async lookupUsage(requestId: string) {
+      try {
+        return await lookup.lookupUsage(requestId);
+      } catch {
+        // Provider diagnostics may echo the stored key. The reconciler reports this safe error.
+        throw new Error("Approved model usage lookup unavailable");
+      }
+    },
+  };
+}
+
 /** Describe an approved live model using the same adapter fallback and settings as execution. */
 export async function approvedModelCreditCatalogEntry(
   prisma: PrismaClient,

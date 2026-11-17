@@ -64,8 +64,10 @@ all offerings, keep the variable set to:
 Do not unset it to withdraw service: absence restores legacy deployment behavior.
 Withdrawal prevents new resolutions but does not delete balances, expire purchased
 credit lots, or change existing holds. Calls already resolved keep their tariff;
-reservations persist the tariff before dispatch. Unknown usage retains its hold
-for review; it is not replaced with a free provider bill or an estimated tariff.
+reservations persist the tariff before dispatch. When an interrupted call has a recoverable request ID, supported providers can recover measured
+token buckets through the original stored connection and price them at the saved tariff, even
+after withdrawal. Unknown usage retains its hold for review; it is not replaced with a free
+provider bill, current prices or an estimated tariff.
 A lost response after dispatch remains uncertain. Cancellation known to occur
 before dispatch releases the hold with a zero-cost not-started receipt.
 Existing credit-lot expiration policy remains unchanged.

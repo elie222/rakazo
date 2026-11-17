@@ -2,7 +2,6 @@ import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
-import { OpenRouterUsageLookup } from "./credits/openrouter-usage.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;
@@ -66,7 +65,5 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
 
 export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
   const model = resolveDeploymentModel();
-  return model.provider === "openrouter" && model.key
-    ? new OpenRouterUsageLookup(model.key)
-    : undefined;
+  return model.key ? modelProviderDefinition(model.provider)?.usageLookup?.(model.key) : undefined;
 }

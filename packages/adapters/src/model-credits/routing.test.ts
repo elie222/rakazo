@@ -1,6 +1,10 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { approvedModelCreditMaterial, availableModelCreditOfferings } from "./routing.js";
+import {
+  approvedModelCreditMaterial,
+  availableModelCreditOfferings,
+  modelCreditUsageLookup,
+} from "./routing.js";
 
 vi.mock("@rakazo/db", () => ({ runAsSystem: (_label: string, work: () => unknown) => work() }));
 const offering = {
@@ -26,7 +30,10 @@ function setup(provider = offering.provider, secret = { kind: "api_key", key: "f
   const prisma = { userModelCredential: { findUnique }, secret: { findFirst } };
   return { prisma, secrets: { load }, findUnique, findFirst, load };
 }
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 describe("approved credit connection routing", () => {
   it("loads only the configured connection and its owner-scoped secret", async () => {
     const deps = setup();
@@ -154,4 +161,65 @@ it("reports invalid operator secrets without logging credential values", async (
   } finally {
     installLogger(previous);
   }
+});
+
+it("recovers through the saved connection after withdrawal without using an environment key", async () => {
+  const deps = setup("openrouter");
+  const saved = { ...offering, provider: "openrouter" };
+  vi.stubEnv("MODEL_CREDIT_OFFERINGS", JSON.stringify({ defaultOfferingId: null, offerings: [] }));
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-wrong-environment-key");
+  const fetcher = vi.fn(async () =>
+    Response.json({
+      data: {
+        id: "gen-recovery",
+        total_cost: 0,
+        native_tokens_prompt: 100,
+        native_tokens_completion: 10,
+        native_tokens_cached: 0,
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const lookup = await modelCreditUsageLookup(deps.prisma as never, deps.secrets, saved);
+  expect(await lookup!.lookupUsage("gen-recovery")).toMatchObject({
+    inputTokens: 100,
+    outputTokens: 10,
+    costUsd: 0,
+  });
+  expect(fetcher).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ headers: { Authorization: "Bearer fake-key" } }),
+  );
+  expect(deps.findUnique).toHaveBeenCalledWith({ where: { id: offering.connectionId } });
+});
+it("does not read a connection for a provider without recovery support", async () => {
+  const deps = setup();
+  expect(
+    await modelCreditUsageLookup(deps.prisma as never, deps.secrets, offering),
+  ).toBeUndefined();
+  expect(deps.findUnique).not.toHaveBeenCalled();
+});
+it("refuses recovery with a connection belonging to another provider", async () => {
+  const deps = setup("anthropic");
+  await expect(
+    modelCreditUsageLookup(deps.prisma as never, deps.secrets, {
+      ...offering,
+      provider: "openrouter",
+    }),
+  ).rejects.toThrow("unavailable");
+  expect(deps.load).not.toHaveBeenCalled();
+});
+it("keeps provider diagnostics that echo credentials out of recovery errors", async () => {
+  const deps = setup("openrouter");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ error: { message: "rejected fake-key" } }, { status: 400 })),
+  );
+  const lookup = await modelCreditUsageLookup(deps.prisma as never, deps.secrets, {
+    ...offering,
+    provider: "openrouter",
+  });
+  await expect(lookup!.lookupUsage("gen-recovery")).rejects.toThrow(
+    /^Approved model usage lookup unavailable$/,
+  );
 });
