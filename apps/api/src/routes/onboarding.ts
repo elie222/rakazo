@@ -6,7 +6,7 @@ import {
   markAppConnected,
   promptFocus,
   startOnboarding,
-} from "../onboarding.js";
+} from "../account/onboarding.js";
 import type { RouterContext } from "./context.js";
 
 export function onboardingRoutes(ctx: RouterContext) {

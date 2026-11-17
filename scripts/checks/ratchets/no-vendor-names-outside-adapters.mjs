@@ -19,7 +19,8 @@ export const exclude = [
   "packages/core/src/{models/model-providers,messaging/messaging-providers,integrations/featured-connectors,integrations/plugin-catalog}.ts",
   "packages/core/src/agent-import/**",
   // Composition roots wire vendors up and read their configuration, which AGENTS.md allows.
-  "apps/api/src/{app,env,index,monitoring,native-monitoring}.ts",
+  "apps/api/src/{app,env,index}.ts",
+  "apps/api/src/telemetry/{monitoring,native-monitoring}.ts",
   "apps/api/src/cli/**",
   "apps/worker/src/index.ts",
   // Build configuration. Deployment and tooling under infra/ and scripts/ are not included at all.
@@ -39,7 +40,7 @@ const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "lo
 // the pull request that adds it.
 function computerProviderIds() {
   const source = readFileSync(
-    new URL("../../../packages/adapters/src/computer-providers.ts", import.meta.url),
+    new URL("../../../packages/adapters/src/computers/computer-providers.ts", import.meta.url),
     "utf8",
   );
   const ids = topLevelKeys(source, /computerProviders[^=]*=\s*\{/);

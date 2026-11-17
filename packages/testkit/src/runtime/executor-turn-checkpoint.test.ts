@@ -2,12 +2,12 @@ import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { APPROVED_ACTION_NOT_RUN_ERROR, isConversationalRun } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import type * as ComputerLifecycle from "../../../adapters/src/computer-lifecycle.js";
-import { createRunExecutor } from "../../../adapters/src/executor.js";
-import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
+import type * as ComputerLifecycle from "../../../adapters/src/computers/computer-lifecycle.js";
+import { createRunExecutor } from "../../../adapters/src/runs/executor/executor.js";
+import { PiAgentRuntime } from "../../../adapters/src/runtime/pi/pi-runtime.js";
 import { startModelEmulator } from "../model-emulator.js";
 
-vi.mock("../../../adapters/src/computer-lifecycle.js", async (original) => ({
+vi.mock("../../../adapters/src/computers/computer-lifecycle.js", async (original) => ({
   ...(await original<typeof ComputerLifecycle>()),
   acquireComputerExecutionLease: async () => null,
   waitForRunComputerLease: async () => null,

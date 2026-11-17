@@ -1,11 +1,11 @@
 import { TeamsAdapter } from "@chat-adapter/teams";
 import type { MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
 import {
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-} from "../../../messaging-platforms.js";
+} from "../../../messaging/messaging-platforms.js";
 
 const credentials = {
   teamsAppId: "00000000-0000-4000-8000-000000000001",
