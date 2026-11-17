@@ -796,7 +796,7 @@ it("turns events this server receives into paused event routines with their trig
           skills: [{ name: "Triage", instructions: "Sort by urgency." }],
           routines: [
             event("slack", "#support\nchannel"),
-            event("github", "acme/app pull requests"),
+            { ...event("github", "acme/app"), schedule_text: "when a pull request opens" },
             event("linear"),
             event("email", "from Sam"),
             event("other", "calendar invites"),
@@ -816,6 +816,9 @@ it("turns events this server receives into paused event routines with their trig
   ]);
   expect(all.routines[0]?.prompt).toBe(
     "Trigger: slack (#support channel)\n\nHandle it.\n\nUse these skills: @triage.",
+  );
+  expect(all.routines[1]?.prompt).toMatch(
+    /^Trigger: github \(acme\/app; when a pull request opens\)\n/,
   );
   expect(all.routines[2]?.prompt).toBe(
     "Trigger: linear\n\nHandle it.\n\nUse these skills: @triage.",

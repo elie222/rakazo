@@ -223,10 +223,11 @@ export function readGrokBotImportSettings(
     const uses = source.skills.flatMap((name) => skillNames.get(name.toLowerCase()) ?? []);
     // An event routine says what started it first, so the bot reads which channel, repository
     // or senders it is for before the event it is given.
+    const scope = [source.details, source.when].filter(Boolean).map(oneLine).join("; ");
     const instruction =
       trigger.kind === "schedule"
         ? [source.instruction, source.details, source.when].filter(Boolean).join("\n\n")
-        : `Trigger: ${source.trigger}${source.details ? ` (${oneLine(source.details)})` : ""}\n\n${source.instruction}`;
+        : `Trigger: ${source.trigger}${scope ? ` (${scope})` : ""}\n\n${source.instruction}`;
     if (instruction.length > AGENT_IMPORT_MAX_FILE_LENGTH) {
       skipped.push({ path: `routines: ${safeLabel}`, reason: "unsupported" });
       continue;
