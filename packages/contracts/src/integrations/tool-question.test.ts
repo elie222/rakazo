@@ -29,7 +29,8 @@ describe("tool question forms", () => {
 
   it("sends a date-time with seconds and an offset", () => {
     const at = toolQuestionSentValues(fields, { at: "2026-11-18T09:30" }).at as string;
-    expect(at).toMatch(/^2026-11-1[78]T\d{2}:30:00\.000Z$/);
+    // The same instant, whatever this machine's offset.
+    expect(at).toBe(new Date(2026, 10, 18, 9, 30).toISOString());
   });
 
   it("keeps a field named like an object internal", () => {
