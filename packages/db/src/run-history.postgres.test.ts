@@ -115,6 +115,67 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
     expect(await history({ channelId: "channel-a" })).toEqual([ids.channel, ids.ownReply].sort());
   });
 
+  it("adds a routine's earlier results, however far back, to its latest messages", async () => {
+    const routine = await system.routine.create({
+      data: { spaceId, botId, userId, threadId, name: "Digest", prompt: "Send it", crons: [] },
+    });
+    const routineRun = async (status: string) => {
+      const task = await system.task.create({
+        data: { spaceId, botId, threadId, userId, prompt: "Send it", status },
+      });
+      return system.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          taskId: task.id,
+          userId,
+          status,
+          trigger: "routine",
+          routineId: routine.id,
+        },
+      });
+    };
+    const earlier = await routineRun("completed");
+    const failed = await routineRun("failed");
+    const current = await routineRun("running");
+    const { id: earlierResult } = await createThreadMessage(system, {
+      threadId,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Digest: three items" }],
+      botId,
+    });
+    await system.message.update({ where: { id: earlierResult }, data: { runId: earlier.id } });
+    const { id: failedResult } = await createThreadMessage(system, {
+      threadId,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Could not finish" }],
+      botId,
+    });
+    await system.message.update({ where: { id: failedResult }, data: { runId: failed.id } });
+    const { id: latest } = await createThreadMessage(system, {
+      threadId,
+      role: "user",
+      blocks: [{ kind: "text", text: "Thanks" }],
+      botId,
+    });
+    try {
+      const read = await runAsTenant({ spaceId, userId }, () =>
+        loadRunHistoryMessages(prisma, current, 1, undefined, {
+          routineId: routine.id,
+          limit: 2,
+        }),
+      );
+      expect(read.map((message) => message.id)).toEqual([latest, earlierResult]);
+    } finally {
+      await system.message.deleteMany({
+        where: { id: { in: [earlierResult, failedResult, latest] } },
+      });
+      await system.run.deleteMany({ where: { routineId: routine.id } });
+      await system.routine.delete({ where: { id: routine.id } });
+    }
+  });
+
   it("gives a run that does not know its channel only its waking message and own replies", async () => {
     expect(await history({ sourceMessageId: ids.lostMarker })).toEqual(
       [ids.lostMarker, ids.ownReply].sort(),

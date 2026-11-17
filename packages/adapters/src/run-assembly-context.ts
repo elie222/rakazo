@@ -362,7 +362,7 @@ export async function buildTurnPrompt(
         select: { name: true, timezone: true },
       }),
     );
-    routineNote = routineRunInstruction(routine?.name);
+    routineNote = routineRunInstruction(routine?.name, parts.records.historyReach === "recent");
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }

@@ -1,7 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
-import { Button, OptionSelect, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
+import {
+  Button,
+  OptionSelect,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Switch,
+} from "@rakazo/ui-web";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -66,7 +73,7 @@ export function RoutineModelSettings({
         }
       >
         <SlidersHorizontal />
-        {draft.modelKey ? (
+        {draft.modelKey || (draft.inChat && !draft.watch) ? (
           <span
             aria-hidden
             className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
@@ -112,6 +119,20 @@ export function RoutineModelSettings({
             />
           </label>
         ) : null}
+
+        {draft.watch ? null : (
+          <label
+            htmlFor={`${fieldId}-in-chat`}
+            className="mt-5 flex items-center gap-2.5 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${fieldId}-in-chat`}
+              checked={draft.inChat}
+              onCheckedChange={(inChat) => onChange({ ...draft, inChat })}
+            />
+            <Trans>Run in the chat</Trans>
+          </label>
+        )}
       </PopoverContent>
     </Popover>
   );

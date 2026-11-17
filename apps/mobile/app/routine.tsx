@@ -565,6 +565,16 @@ function RoutineEditor({
           onRemove={() => update({ emailSenders: null })}
         />
       ) : null}
+      {kept?.watch ? null : (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="inChat"
+            label={t`Run in the chat`}
+            value={draft.inChat ?? base?.inChat ?? false}
+            onChange={(inChat) => update({ inChat })}
+          />
+        </SettingsGroup>
+      )}
       {base ? (
         <SettingsGroup>
           <SettingsRow

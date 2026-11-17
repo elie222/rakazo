@@ -12,6 +12,7 @@ const routine: Routine = {
   timezone: "Europe/Berlin",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -137,6 +138,39 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest(draft, once, "bot-1", "UTC")).toEqual({
       update: { routineId: "routine-1", name: "Call Dana" },
     });
+  });
+});
+
+describe("routineSaveRequest inChat", () => {
+  it("sends running in the chat only once flipped, and never for a change trigger", () => {
+    const opened = draftFromRoutine(routine);
+    expect(routineSaveRequest({ ...opened, inChat: false }, routine, "bot-1", "UTC")).toEqual({
+      unchanged: true,
+    });
+    expect(routineSaveRequest({ ...opened, inChat: true }, routine, "bot-1", "UTC")).toEqual({
+      update: { routineId: routine.id, inChat: true },
+    });
+    const watched: Routine = {
+      ...routine,
+      watch: { kind: "files", paths: ["inbox/"], everyMinutes: 15, loud: false },
+    };
+    expect(
+      routineSaveRequest({ ...draftFromRoutine(watched), inChat: true }, watched, "bot-1", "UTC"),
+    ).toEqual({ unchanged: true });
+    expect(
+      routineSaveRequest(
+        {
+          ...emptyRoutineDraft(),
+          name: "Digest",
+          prompt: "Go.",
+          schedules: [defaultCronPreset()],
+          inChat: true,
+        },
+        null,
+        "bot-1",
+        "UTC",
+      ),
+    ).toMatchObject({ create: { inChat: true } });
   });
 });
 

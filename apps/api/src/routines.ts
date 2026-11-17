@@ -50,6 +50,8 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     crons: input.crons,
     timezone: input.timezone,
     notify: input.notify,
+    // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+    inChat: input.inChat && !input.watch,
     active: input.active,
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
@@ -89,6 +91,7 @@ export function mapRoutine(row: {
   timezone: string;
   active: boolean;
   notify: boolean;
+  inChat: boolean;
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
@@ -111,6 +114,7 @@ export function mapRoutine(row: {
     timezone: row.timezone,
     active: row.active,
     notify: row.notify,
+    inChat: row.inChat,
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,

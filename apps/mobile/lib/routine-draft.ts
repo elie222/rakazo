@@ -6,9 +6,10 @@ import { routineTriggerNames } from "./routine";
 
 /**
  * The editor's draft. A web-only trigger is left out until the person removes it here, so a
- * draft only ever turns one off.
+ * draft only ever turns one off; `inChat` is left out until the person flips it.
  */
-export type MobileRoutineDraft = RoutineDraft & Partial<Pick<Routine, RoutineWebTrigger>>;
+export type MobileRoutineDraft = RoutineDraft &
+  Partial<Pick<Routine, RoutineWebTrigger>> & { inChat?: boolean };
 
 /** The routine as this draft would leave it, for the triggers mobile can only remove. */
 export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
@@ -48,6 +49,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
+    ...(draft.inChat !== undefined &&
+    draft.inChat !== routine.inChat &&
+    !routineWithDraftTriggers(routine, draft).watch
+      ? { inChat: draft.inChat }
+      : {}),
   };
 }
 
@@ -98,6 +104,7 @@ export function routineSaveRequest(
         timezone,
         active: draft.active,
         notify: true,
+        ...(draft.inChat ? { inChat: true } : {}),
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
       },
     };

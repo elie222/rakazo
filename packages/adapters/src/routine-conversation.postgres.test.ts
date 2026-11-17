@@ -89,13 +89,13 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
         leaseOwner: data.status === "running" ? "worker" : null,
         leaseFence: data.status === "running" ? 1 : 0,
       },
-      include: { routine: { select: { name: true } } },
+      include: { routine: { select: { name: true, inChat: true } } },
     });
   }
 
-  async function routine(watch?: Prisma.InputJsonValue) {
+  async function routine(watch?: Prisma.InputJsonValue, inChat = true) {
     return system.routine.create({
-      data: { ...identity, name: "Digest", prompt: "Send the digest", crons: [], watch },
+      data: { ...identity, name: "Digest", prompt: "Send the digest", crons: [], watch, inChat },
     });
   }
 
@@ -103,6 +103,33 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     const scheduled = await createRun({ trigger: "routine", status: "queued" });
 
     expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
+  });
+
+  it("starts a routine that runs alongside its chat while the chat is busy", async () => {
+    await createRun({ trigger: "user", status: "running", startedAt: new Date() });
+    const scheduled = await createRun({
+      trigger: "routine",
+      status: "queued",
+      routineId: (await routine(undefined, false)).id,
+    });
+
+    expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
+  });
+
+  it("does not hold or hand over a routine that runs alongside its chat", async () => {
+    await createRun({ trigger: "user", status: "running", startedAt: new Date() });
+    const scheduled = await createRun({
+      trigger: "routine",
+      status: "queued",
+      routineId: (await routine(undefined, false)).id,
+      createdAt: new Date(Date.now() - 2 * ROUTINE_CONVERSATION_WAIT_MS),
+    });
+
+    await holdRoutineRunForConversation(deps, scheduled);
+    expect(jobs).toHaveLength(0);
+    expect((await system.run.findUniqueOrThrow({ where: { id: scheduled.id } })).status).toBe(
+      "queued",
+    );
   });
 
   it("waits for the chat's working run, then starts when that run lets go", async () => {

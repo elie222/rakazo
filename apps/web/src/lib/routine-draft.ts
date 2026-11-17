@@ -29,6 +29,7 @@ export type RoutineDraftState = RoutineDraft & {
   /** Empty runs this routine on the bot's model. */
   modelKey: string;
   thinkingLevel: string;
+  inChat: boolean;
   /** Null unless the routine starts when something changes. */
   watch: RoutineWatchDraft | null;
 };
@@ -129,6 +130,7 @@ export function emptyRoutineDraftState(): RoutineDraftState {
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
+    inChat: false,
     watch: null,
   };
 }
@@ -145,6 +147,7 @@ export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
         ? modelOptionKey(routine.modelProvider, routine.modelId)
         : "",
     thinkingLevel: routine.thinkingLevel ?? "",
+    inChat: routine.inChat,
     watch: watchDraftFromRoutine(routine.watch),
   };
 }

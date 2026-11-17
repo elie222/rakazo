@@ -1259,7 +1259,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     status: "queued",
     trigger,
     routineId: "routine-1",
-    routine: { name: "Daily check" },
+    routine: { name: "Daily check", inChat: true },
     modelProvider: COMPATIBLE_PROVIDER,
     modelId,
     thinkingLevel: null,

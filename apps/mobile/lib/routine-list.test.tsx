@@ -143,6 +143,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}): Rout
   timezone: "UTC",
   active: true,
   notify: false,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,

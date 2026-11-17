@@ -23,6 +23,7 @@ const routine: Routine = {
   timezone: "UTC",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,

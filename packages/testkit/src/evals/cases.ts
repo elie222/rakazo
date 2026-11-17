@@ -71,7 +71,13 @@ export type Evidence = {
   /** The case's connected services by kind, with every call and write they recorded. */
   apps?: Record<string, AppEmulator>;
   calls: ServiceCall[];
-  routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
+  routines: Array<{
+    name: string;
+    prompt: string;
+    crons: string[];
+    active: boolean;
+    inChat?: boolean;
+  }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;
   memory: string;

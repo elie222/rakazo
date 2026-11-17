@@ -42,6 +42,13 @@ For example, a bot comparing three options can delegate their research, answer a
 Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
 Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
 
+## Routines
+
+A routine runs either in its chat, as a turn with the whole conversation that waits for work already under way there, or alongside it, as its own run that starts on time even while the bot is busy and posts its result in the chat.
+The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
+A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
+A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+
 ## Computers
 
 A Team Computer shares files, installed tools, and a canonical browser identity among bots inside the same trust boundary.

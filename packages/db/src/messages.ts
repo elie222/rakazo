@@ -10,6 +10,26 @@ import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transac
  */
 export type GroupTurnHistory = { channelId: string } | { sourceMessageId: string };
 
+const HISTORY_MESSAGE_SELECT = (botId: string) =>
+  ({
+    id: true,
+    threadId: true,
+    seq: true,
+    role: true,
+    botId: true,
+    runId: true,
+    blocks: true,
+    // Only the bot's own runs read this: it is what its earlier tool calls were sent and returned.
+    toolHistory: true,
+    authorUserId: true,
+    createdAt: true,
+    replyToMessageId: true,
+    replyQuote: true,
+    replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+    clientNonce: true,
+    steeringMessages: { where: { botId, runId: null }, select: { id: true } },
+  }) satisfies Prisma.MessageSelect;
+
 /**
  * Group turns use channel inputs and their own outputs, never private thread history.
  * `steeringMessages` is non-empty for a message still waiting for its own run, which the caller
@@ -20,8 +40,10 @@ export async function loadRunHistoryMessages(
   run: { id: string; threadId: string; botId: string; userId: string },
   limit: number,
   groupTurn?: GroupTurnHistory,
+  /** Also the latest replies of this routine's earlier runs, however far back they are. */
+  earlierResults?: { routineId: string; limit: number },
 ) {
-  const messages = await prisma.message.findMany({
+  const recent = await prisma.message.findMany({
     where: {
       threadId: run.threadId,
       ...(groupTurn
@@ -42,25 +64,35 @@ export async function loadRunHistoryMessages(
     },
     orderBy: { seq: "desc" },
     take: limit,
-    select: {
-      id: true,
-      threadId: true,
-      seq: true,
-      role: true,
-      botId: true,
-      runId: true,
-      blocks: true,
-      // Only the bot's own runs read this: it is what its earlier tool calls were sent and returned.
-      toolHistory: true,
-      authorUserId: true,
-      createdAt: true,
-      replyToMessageId: true,
-      replyQuote: true,
-      replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
-      clientNonce: true,
-      steeringMessages: { where: { botId: run.botId, runId: null }, select: { id: true } },
-    },
+    select: HISTORY_MESSAGE_SELECT(run.botId),
   });
+  const earlierRuns = earlierResults
+    ? await prisma.run.findMany({
+        where: {
+          routineId: earlierResults.routineId,
+          threadId: run.threadId,
+          id: { not: run.id },
+          status: "completed",
+        },
+        orderBy: { createdAt: "desc" },
+        take: earlierResults.limit,
+        select: { id: true },
+      })
+    : [];
+  const earlier = earlierRuns.length
+    ? await prisma.message.findMany({
+        where: {
+          threadId: run.threadId,
+          role: "bot",
+          runId: { in: earlierRuns.map((earlierRun) => earlierRun.id) },
+          id: { notIn: recent.map((message) => message.id) },
+        },
+        orderBy: { seq: "desc" },
+        take: earlierResults?.limit,
+        select: HISTORY_MESSAGE_SELECT(run.botId),
+      })
+    : [];
+  const messages = [...recent, ...earlier].sort((left, right) => right.seq - left.seq);
   return withOwnToolHistory(prisma, run, messages);
 }
 

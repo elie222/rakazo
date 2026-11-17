@@ -22,7 +22,8 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 
 export async function readThreadHistory(hold: RunHold, parts: { records: RunRecords }) {
   const { deps, run } = hold;
-  const { bot, messages, nonOwnerChatRun, replaysToolHistory, thread } = parts.records;
+  const { bot, historyReach, messages, nonOwnerChatRun, replaysToolHistory, thread } =
+    parts.records;
   // Group threads and spaces several people share: who wrote each message, so the model can
   // tell the bots and the people apart. A personal space's direct chat stays plain turns.
   const people = await loadSpacePeople(
@@ -89,6 +90,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
     },
     nonOwnerChatRun,
     run.sourceMessageId,
+    historyReach,
   );
   const compactedHistory = selectCompactedHistory({
     messages: threadContext.messages,
