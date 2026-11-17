@@ -1,7 +1,7 @@
 {
-  "apps/api/src/computer-control.ts": 1,
-  "apps/api/src/messaging-runtime.ts": 1,
-  "apps/api/src/pages.ts": 1,
+  "apps/api/src/computers/computer-control.ts": 1,
+  "apps/api/src/content/pages.ts": 1,
+  "apps/api/src/messaging/messaging-runtime.ts": 1,
   "apps/api/src/routes/bots.ts": 1,
   "apps/api/src/routes/mcp.ts": 1,
   "apps/worker/src/index.ts": 1,

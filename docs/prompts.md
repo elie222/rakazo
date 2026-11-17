@@ -24,7 +24,7 @@ The main entry points are:
   `packages/adapters/src/messaging/team-chat/team-chat-judge.prompt.ts`:
   approval and engagement judges.
 - `packages/adapters/src/runtime/context/history-compaction.prompt.ts` and
-  `apps/api/src/speech-summary.prompt.ts`: conversation and spoken summaries.
+  `apps/api/src/calls/speech-summary.prompt.ts`: conversation and spoken summaries.
 - The remaining prompt files cover shared messaging, helper tasks, memory,
   attachments, time, workspaces and task catalogs.
 

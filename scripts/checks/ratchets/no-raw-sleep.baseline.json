@@ -1,5 +1,5 @@
 {
-  "apps/api/src/computer-control.ts": 1,
+  "apps/api/src/computers/computer-control.ts": 1,
   "apps/worker/src/index.ts": 1,
   "infra/sandboxes/supervisor/src/egress-probe.ts": 1,
   "infra/sandboxes/supervisor/src/readiness.ts": 2,

@@ -18,17 +18,11 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../availability.js";
-import {
   queueMcpConnectedRun,
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
-} from "../mcp-approval.js";
-import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
+} from "../integrations/mcp-approval.js";
+import { buildMcpUpdateMaterial, legacyMcpArgs } from "../integrations/mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
@@ -37,7 +31,13 @@ import {
   MCP_OAUTH_PENDING_MESSAGE,
   mcpAssignmentDto,
   mcpServerDto,
-} from "../mcp-servers.js";
+} from "../integrations/mcp-servers.js";
+import {
+  assertNameFreeWhereAvailable,
+  lockOwner,
+  serverAvailability,
+  serverSecretSpace,
+} from "../spaces/availability.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 

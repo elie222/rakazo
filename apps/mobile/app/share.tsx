@@ -4,16 +4,16 @@ import { useNavigation, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { NativeSymbol } from "../components/native-symbol";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeSymbol } from "../components/native/native-symbol";
+import type { MobileBot } from "../lib/api/mobile-types";
 import {
   cancelIncomingShare,
   getIncomingShare,
   subscribeIncomingShare,
-} from "../lib/incoming-share";
-import type { MobileBot } from "../lib/mobile-types";
-import { useMobileTokens } from "../lib/native";
-import { sharePreview } from "../lib/share-preview";
+} from "../lib/composer/incoming-share";
+import { sharePreview } from "../lib/composer/share-preview";
+import { useMobileTokens } from "../lib/native/native";
 import { HomeSession } from "./index";
 
 export default function ShareRoute() {

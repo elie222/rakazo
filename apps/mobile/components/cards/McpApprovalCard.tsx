@@ -1,0 +1,135 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { MessageBlock } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
+import { useEffect, useState } from "react";
+import type { ViewProps } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
+import { errorText } from "../../lib/api/user-error";
+import { native, useMobileTokens } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
+import { NativeActionButton } from "../native/native-action-button";
+
+const styles = StyleSheet.create({
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  badge: { alignItems: "center", borderRadius: 8, height: 28, justifyContent: "center", width: 28 },
+  badgeText: { fontSize: 12, fontWeight: "600" },
+  card: {
+    maxWidth: 576,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  description: { ...typeScale.secondary, opacity: 0.75 },
+  header: { alignItems: "center", flexDirection: "row", gap: 12 },
+  headline: { flex: 1, gap: 2 },
+  summary: typeScale.caption,
+  title: typeScale.cardTitle,
+});
+
+export function McpApprovalCard({
+  botId,
+  threadId,
+  block,
+  accessibilityActions,
+  onAccessibilityAction,
+}: {
+  botId: string;
+  threadId?: string;
+  block: Extract<MessageBlock, { kind: "mcp_approval" }>;
+  accessibilityActions?: ViewProps["accessibilityActions"];
+  onAccessibilityAction?: ViewProps["onAccessibilityAction"];
+}) {
+  const { t } = useLingui();
+  const readOnly = useThreadReadOnly();
+  const tokens = useMobileTokens();
+  const [localStatus, setLocalStatus] = useState<"pending" | "connected" | "dismissed">("pending");
+  const answer = useSave({
+    save: async (action: "approve" | "dismiss", send) => {
+      const input = { botId, serverId: block.serverId, threadId };
+      if (action === "approve") await send("mcp/assignments/approve", input);
+      else await send("mcp/assignments/dismiss", input);
+    },
+    onSaved: (_, action) => setLocalStatus(action === "approve" ? "connected" : "dismissed"),
+    onFailed: (reason, action) =>
+      Alert.alert(
+        action === "approve" ? t`Could not approve this server` : t`Could not complete action`,
+        errorText(reason, t`Please try again.`),
+      ),
+  });
+  useEffect(() => {
+    if (block.status === "connected" || block.status === "dismissed") return;
+    setLocalStatus((current) =>
+      current === "connected" || current === "dismissed" ? "pending" : current,
+    );
+  }, [block.status]);
+  const status = block.status && block.status !== "pending" ? block.status : localStatus;
+  const summary = block.endpoint ?? `stdio (${block.transport})`;
+
+  function submit(action: "approve" | "dismiss") {
+    if (!readOnly && status === "pending") answer.run(action);
+  }
+
+  return (
+    <View
+      accessibilityLabel={t`Connect MCP server ${ph({ name: block.name })}`}
+      style={[styles.card, { backgroundColor: native.fill }]}
+    >
+      <View style={styles.header}>
+        <View style={[styles.badge, { backgroundColor: native.fillPressed }]}>
+          <Text style={[styles.badgeText, { color: tokens.foreground }]}>M</Text>
+        </View>
+        <View style={styles.headline}>
+          <Text
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
+            style={[styles.title, { color: tokens.foreground }]}
+          >
+            {t`Connect MCP server ${ph({ name: block.name })}`}
+          </Text>
+          <Text style={[styles.summary, { color: tokens.mutedForeground }]} numberOfLines={2}>
+            {summary}
+          </Text>
+        </View>
+      </View>
+      {status !== "pending" ? (
+        <Text
+          style={{
+            color: status === "connected" ? tokens.success : tokens.mutedForeground,
+            ...typeScale.secondary,
+          }}
+        >
+          {status === "connected"
+            ? t`Connected.`
+            : t`Dismissed. Reconnect anytime from MCP settings.`}
+        </Text>
+      ) : !readOnly ? (
+        <>
+          <Text style={[styles.description, { color: tokens.foreground }]}>
+            {block.needsOAuth
+              ? t`Finish MCP authorization in the web app.`
+              : t`Approve this server to let your agent use its tools.`}
+          </Text>
+          <View style={styles.actions}>
+            {!block.needsOAuth ? (
+              <NativeActionButton
+                label={t`Approve`}
+                fill={false}
+                disabled={answer.pending}
+                onPress={() => submit("approve")}
+              />
+            ) : null}
+            <NativeActionButton
+              label={t`Not now`}
+              prominence="secondary"
+              disabled={answer.pending}
+              onPress={() => submit("dismiss")}
+            />
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
