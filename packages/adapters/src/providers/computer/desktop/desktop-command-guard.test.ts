@@ -114,8 +114,14 @@ describe("computer lifecycle command guard", () => {
     expect(protectedComputerLifecycleRefusal("eval 'ls'")).toBe("eval");
     expect(protectedComputerLifecycleRefusal('bash <<< "pkill chromium"')).toBe("herestring");
     expect(desktopProtectionGuardMessage("unresolved variable $f")).toBe(
-      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Do not stop or restart browser or desktop processes.",
+      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error. Do not stop or restart browser or desktop processes.",
     );
+    for (const reason of ["heredoc", "command substitution", "backtick", "subshell"]) {
+      expect(desktopProtectionGuardMessage(reason), reason).toContain("script file");
+    }
+    for (const reason of ["protected command pkill", "systemctl stop", "activate script"]) {
+      expect(desktopProtectionGuardMessage(reason), reason).not.toContain("script file");
+    }
   });
 
   it("allows comments, literal assignments, activate scripts, and quoted heredoc data", () => {
@@ -156,16 +162,12 @@ os.replace(temporary, state)
 with Path("reports/history.jsonl").open("a") as log:
     log.write(json.dumps({"count": 3}) + "\\n")`;
     expect(protectedComputerLifecycleRefusal(`python <<'EOF'\n${script}\nEOF`)).toBe("heredoc");
-    expect(desktopProtectionGuardMessage("heredoc")).toContain("python3 -c");
-    expect(desktopProtectionGuardMessage("heredoc")).toContain(
-      "does not indicate a filesystem permission error",
-    );
+    expect(desktopProtectionGuardMessage("heredoc")).toContain("not a permission");
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'; pkill chromium`)).toBe(
       "protected command pkill",
     );
-    expect(desktopProtectionGuardMessage("protected command pkill")).not.toContain("python3 -c");
   });
 
   it("allows Basic authentication syntax without weakening lifecycle protection", () => {

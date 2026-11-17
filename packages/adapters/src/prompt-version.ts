@@ -14,6 +14,7 @@ import { messageToAgentHistoryText } from "./reply-context.js";
 import {
   botEmailInstruction,
   COMPUTER_USE_INSTRUCTION,
+  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
   PRIVATE_WORKSPACE_INSTRUCTION,
@@ -64,6 +65,7 @@ export function promptVersionParts() {
       ),
     ),
     hosts: ["wuying", "local"].map((kind) => hostComputerInstruction(kind, host)),
+    desktopGuardShell: desktopGuardShellInstruction(allTools),
     dockerComputer: toolSets.map((disabled) => dockerComputerToolInstruction("docker", disabled)),
     workspaces: [PRIVATE_WORKSPACE_INSTRUCTION, teamWorkspaceInstruction("bot")],
     taskCatalog: TASK_CATALOG_GUIDANCE,

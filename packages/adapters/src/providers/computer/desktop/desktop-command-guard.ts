@@ -631,12 +631,27 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
   return protectedComputerLifecycleRefusal(command) !== undefined;
 }
 
+const SYNTAX_REFUSALS = new Set([
+  "arithmetic expansion",
+  "backtick",
+  "command substitution",
+  "comment",
+  "coproc",
+  "eval",
+  "function",
+  "heredoc",
+  "herestring",
+  "source",
+  "subshell",
+  "uninspectable shell syntax",
+  "unsupported shell syntax",
+]);
+
 export function desktopProtectionGuardMessage(reason: string): string {
+  // A refused protected target gets no workaround; only ordinary scripting is pointed at a script file.
   const recovery =
-    reason === "heredoc"
-      ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
-      : reason === "command substitution" || reason === "backtick"
-        ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
-        : "";
+    SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable")
+      ? " Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error."
+      : "";
   return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }

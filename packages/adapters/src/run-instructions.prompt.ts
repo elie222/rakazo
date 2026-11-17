@@ -135,6 +135,13 @@ export function persistentComputerInstruction(options: {
   return `You have a persistent sandbox${capabilities}. This backend does not provide model-visible graphical control.${toolSentence}`;
 }
 
+/** Only where the desktop-protection guard checks shell commands. */
+export function desktopGuardShellInstruction(offeredToolNames: ReadonlySet<string>) {
+  if (!offeredToolNames.has("shell")) return undefined;
+  const write = offeredToolNames.has("write_file") ? "a script with write_file" : "a script file";
+  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, loop or computed variables, or interpreter heredocs. For more, write ${write} and run it with \`python3\` or \`bash\`.`;
+}
+
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
@@ -159,7 +166,7 @@ export function dockerComputerToolInstruction(
   }
   if (shellOffered) {
     parts.push(
-      "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
+      "Python 3 is installed as `python3`; if `python` is not found, retry with `python3`.",
     );
   }
   if (navigate && act) {
