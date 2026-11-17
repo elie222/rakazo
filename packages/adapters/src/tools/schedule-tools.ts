@@ -32,6 +32,10 @@ import {
   storeBotWebhookKey,
   toolEventsFromArg,
 } from "../routines/routine-triggers.js";
+import {
+  ROUTINE_CHAT_TRIGGER_NOTE,
+  ROUTINE_WEBHOOK_SETUP_NOTE,
+} from "../routines/routine-triggers.prompt.js";
 import { validateRoutineWatch } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 
@@ -323,10 +327,6 @@ async function routineEventsFor(
   return resolveRoutineEvents(deps, bot, input.userId, parsed.on);
 }
 
-/** Where the user finds what a sender needs; the key itself never reaches the bot. */
-const WEBHOOK_SETUP_NOTE =
-  "The user copies the URL and key from this routine in Routines on the web or desktop app. Never ask them for the key.";
-
 /** Make the bot's webhook key if a webhook or Git event needs one and it has none yet. */
 async function ensureWebhookKey(
   deps: Pick<ScheduleToolDeps, "prisma" | "secretStore">,
@@ -357,7 +357,8 @@ function eventsResult(events: RoutineEvents) {
   if (!hasRoutineEvents(events)) return {};
   return {
     on: routineEventsView(events),
-    ...(events.webhookEnabled || events.githubEnabled ? { setup: WEBHOOK_SETUP_NOTE } : {}),
+    ...(events.webhookEnabled || events.githubEnabled ? { setup: ROUTINE_WEBHOOK_SETUP_NOTE } : {}),
+    ...(events.messageProvider ? { chatNote: ROUTINE_CHAT_TRIGGER_NOTE } : {}),
   };
 }
 
@@ -618,12 +619,6 @@ export async function createScheduleFromTool(
   });
   if ("error" in resolvedEvents) return { error: resolvedEvents.error };
   const { events } = resolvedEvents;
-  const keyError = await ensureWebhookKey(
-    deps,
-    { spaceId: input.spaceId, botId: routineBotId, userId: input.userId },
-    events,
-  );
-  if (keyError) return { error: keyError };
   if (input.schedule.watch !== undefined) {
     return createWatchFromTool(deps, { ...input, name, prompt, events });
   }
@@ -632,6 +627,21 @@ export async function createScheduleFromTool(
   if (eventsOnly && isScheduleValueProvided(input.schedule.startAt)) {
     return { error: "startAt is only for repeating schedules." };
   }
+  // The timing is checked again at the insert, in the zone it is saved in; checking it here
+  // first means a routine that cannot be saved makes no key.
+  if (!eventsOnly && (events.webhookEnabled || events.githubEnabled)) {
+    const timing = resolveScheduleTiming(
+      input.schedule,
+      input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
+    );
+    if (!timing.ok) return { error: timing.error };
+  }
+  const keyError = await ensureWebhookKey(
+    deps,
+    { spaceId: input.spaceId, botId: routineBotId, userId: input.userId },
+    events,
+  );
+  if (keyError) return { error: keyError };
   // A named zone needs no coordination with a zone change. The account's zone is read
   // under a share lock in the same transaction as the insert, so the two cannot cross.
   let wakeAt: Date | undefined;
@@ -822,6 +832,8 @@ async function createWatchFromTool(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
+  const keyError = await ensureWebhookKey(deps, input, input.events);
+  if (keyError) return { error: keyError };
   const nextRunAt = new Date(Date.now() + 2_000);
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
@@ -1093,9 +1105,19 @@ export async function updateScheduleFromTool(
   if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
+  // Editing hands the routine to the editor, and events only start the bot creator's routines,
+  // so another member's edit would leave them silently off.
+  if (hasRoutineEvents(events) && existing.userId !== input.userId && input.on === undefined) {
+    return {
+      error:
+        "This routine starts on events, which run only for the person who owns it. Ask them to change it, or pass on {} to remove its events.",
+    };
+  }
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
-  if (eventsChanged) {
+  // Events the bot sends were checked against the bot's creator, so their key is made even when
+  // they match what is saved: a routine saved elsewhere may have none.
+  if (input.on !== undefined) {
     const keyError = await ensureWebhookKey(
       deps,
       { spaceId: input.spaceId, botId: input.botId, userId: input.userId },

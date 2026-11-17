@@ -1834,7 +1834,40 @@ describe("schedule tools with events", () => {
     });
     expect(enqueue).toHaveBeenCalledOnce();
     expect(put).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ ok: true, on: { chat: "Slack" } });
+    expect(result).toMatchObject({
+      ok: true,
+      on: { chat: "Slack" },
+      chatNote: expect.stringContaining("instead of a normal reply"),
+    });
+  });
+
+  it("makes no key for a routine that cannot be saved", async () => {
+    const { deps, create, put } = eventDeps();
+    expect(
+      await createScheduleFromTool(deps, {
+        ...owner,
+        ...scheduleCreateFields({
+          name: "Hook",
+          prompt: "Check",
+          timezone: "UTC",
+          cron: "not a cron",
+          on: { webhook: true },
+        }),
+      }),
+    ).toEqual({ error: "cron must be a 5-field cron expression." });
+    expect(
+      await createScheduleFromTool(deps, {
+        ...owner,
+        ...scheduleCreateFields({
+          name: "Hook",
+          prompt: "Check",
+          startAt: "2099-01-01",
+          on: { webhook: true },
+        }),
+      }),
+    ).toEqual({ error: "startAt is only for repeating schedules." });
+    expect(create).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("refuses events on a one-time schedule or another member's bot before saving", async () => {
@@ -1916,6 +1949,16 @@ describe("schedule tools with events", () => {
     expect(await update({})).toEqual({
       error: "A routine needs a schedule or an event. Cancel it instead.",
     });
+    // Another member's edit would take the routine over and leave its events off.
+    expect(
+      await updateScheduleFromTool(updateDeps, {
+        ...owner,
+        userId: "user-2",
+        routineId: "routine-1",
+        prompt: "Summarize less",
+        schedule: {},
+      }),
+    ).toMatchObject({ error: expect.stringContaining("run only for the person who owns it") });
     expect(updateMany).not.toHaveBeenCalled();
 
     const result = await update({ git: true });
