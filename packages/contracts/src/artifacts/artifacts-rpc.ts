@@ -2,11 +2,33 @@ import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
-import { ARTIFACT_DESCRIPTION_MAX_LENGTH, ARTIFACT_NAME_MAX_LENGTH } from "../threads/attachments.js";
+import {
+  ARTIFACT_DESCRIPTION_MAX_LENGTH,
+  ARTIFACT_NAME_MAX_LENGTH,
+} from "../threads/attachments.js";
 import { threadTarget } from "../threads/thread-send.js";
 import { ArtifactSchema, ArtifactVersionSchema, ArtifactWithContentSchema } from "./artifacts.js";
-import { BoardEventSchema, BoardSchema, CommentTicketInput, CreateTicketInput, GetTicketInput, ListTicketsInput, ListTicketsOutput, MoveTicketInput, RenameBoardInput, TicketCommentSchema, TicketSchema, UpdateTicketInput } from "./board.js";
-import { PAGE_LIST_MAX_LIMIT, PageDetailSchema, PageSummarySchema, PageTitleSchema, PageVisibilitySchema } from "./pages.js";
+import {
+  BoardEventSchema,
+  BoardSchema,
+  CommentTicketInput,
+  CreateTicketInput,
+  GetTicketInput,
+  ListTicketsInput,
+  ListTicketsOutput,
+  MoveTicketInput,
+  RenameBoardInput,
+  TicketCommentSchema,
+  TicketSchema,
+  UpdateTicketInput,
+} from "./board.js";
+import {
+  PAGE_LIST_MAX_LIMIT,
+  PageDetailSchema,
+  PageSummarySchema,
+  PageTitleSchema,
+  PageVisibilitySchema,
+} from "./pages.js";
 
 export const artifactsRpc = {
   boards: {
@@ -104,4 +126,3 @@ export const artifactsRpc = {
     remove: oc.input(z.strictObject({ pageId: Id })).output(z.object({ ok: z.literal(true) })),
   },
 };
-
