@@ -145,6 +145,7 @@ export * from "./mcp-transport.js";
 export * from "./media-generation-factory.js";
 export * from "./media-generation-provider.js";
 export * from "./media-video-poll.js";
+export * from "./meeting-link-recognizers.js";
 export { readAgentMemory } from "./memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory-context.prompt.js";
 export * from "./memory-provider-factory.js";

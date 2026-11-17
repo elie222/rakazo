@@ -1,112 +1,59 @@
 import { trimEndChars } from "@rakazo/contracts";
 
 /**
- * The video call services a person names by name when they ask a bot to join. Not covered: Zoom
- * personal-room links (`/my/<name>`), the government Teams subdomains (only `teams.microsoft.us` itself), short links such as `g.co/meet`,
- * and links wrapped by a mail scanner's redirect.
+ * What a recognizer reads from a link that already passed the checks every video call service
+ * shares: https, no login and no port.
  */
-export type MeetingService = "meet" | "zoom" | "teams";
+export interface MeetingLinkParts {
+  /** Lower case, without a trailing dot. */
+  host: string;
+  /** The path segments, without the empty one before the first slash or a trailing slash. */
+  segments: readonly string[];
+  query: URLSearchParams;
+}
+
+/** One video call service's link layout, supplied by its provider. Core never names a service. */
+export interface MeetingLinkRecognizer {
+  /** The provider's id, kept as the opaque `provider` of the links it recognizes. */
+  id: string;
+  /**
+   * The meeting's own id and the query values needed to get in, such as a passcode, or undefined
+   * when the link is not a meeting of this service: another host, or one of its pages that is
+   * not a meeting. Everything else in the query is dropped.
+   */
+  recognize(
+    parts: MeetingLinkParts,
+  ): { id: string; params: Record<string, string | undefined> } | undefined;
+}
 
 export interface MeetingLink {
-  service: MeetingService;
+  /** The id of the recognizer that read it. */
+  provider: string;
   /** The meeting's own code or number; the same meeting reached by two links has one id. */
   id: string;
   /** https only, without tracking parameters or a fragment. Keeps the passcode, so treat it as a secret. */
   url: string;
 }
 
-interface Layout {
-  /** Whether a subdomain of a host belongs to the service, such as `us02web.zoom.us`. */
-  subdomains: boolean;
-  hosts: readonly string[];
-  /** The query parameters needed to get in, such as a passcode. Everything else is dropped. */
-  keep: readonly string[];
-  /** Whether a kept query value is usable; a value that fails is dropped. */
-  valid?: (key: string, value: string) => boolean;
-  /** The meeting id for these path segments, or undefined when they are not a meeting. */
-  idOf: (segments: readonly string[]) => string | undefined;
-}
+const TOKEN = /^[\w-]{1,512}$/;
 
-const digits = (min: number, max: number) => (text: string | undefined) =>
-  text !== undefined && text.length >= min && text.length <= max && /^\d+$/.test(text);
-const zoomId = digits(9, 11);
-const teamsId = digits(9, 15);
-
-/** A meetup-join thread id, decoded so that `%3a` and `%3A` name one meeting. */
-function threadId(segment: string | undefined): string | undefined {
-  if (!segment) return undefined;
-  let id: string;
-  try {
-    id = decodeURIComponent(segment);
-  } catch {
-    return undefined;
-  }
-  return /^19:meeting_[^/\s]+@thread\.(?:v2|skype)$/i.test(id) ? id : undefined;
-}
-
-/** Whether a Teams `context` value is the JSON object it should be, and not a cut-off copy. */
-function jsonObject(value: string): boolean {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-  } catch {
-    return false;
-  }
-}
-
-const SERVICES: Record<MeetingService, Layout> = {
-  meet: {
-    subdomains: false,
-    hosts: ["meet.google.com"],
-    keep: [],
-    idOf: ([code, ...rest]) =>
-      rest.length === 0 && code !== undefined && /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(code)
-        ? code
-        : undefined,
-  },
-  zoom: {
-    subdomains: true,
-    hosts: ["zoom.us", "zoomgov.com"],
-    keep: ["pwd"],
-    idOf: (segments) => {
-      const [first, second, third] = segments;
-      if ((first === "j" || first === "w") && segments.length === 2 && zoomId(second)) {
-        return second;
-      }
-      if (first === "wc" && second === "join" && segments.length === 3 && zoomId(third)) {
-        return third;
-      }
-      return undefined;
-    },
-  },
-  teams: {
-    subdomains: false,
-    hosts: ["teams.microsoft.com", "teams.microsoft.us", "teams.live.com"],
-    keep: ["p", "context"],
-    valid: (key, value) => key !== "context" || jsonObject(value),
-    idOf: (segments) => {
-      const [first, second, third] = segments;
-      if (first === "meet" && segments.length === 2 && teamsId(second)) return second;
-      if (first === "l" && second === "meetup-join" && segments.length <= 5) {
-        return threadId(third);
-      }
-      return undefined;
-    },
-  },
-};
-
-function hostBelongs(host: string, layout: Layout): boolean {
-  return layout.hosts.some(
-    (name) => host === name || (layout.subdomains && host.endsWith(`.${name}`)),
-  );
+/**
+ * A query value that is a bare token, such as a passcode, or undefined. A value with anything
+ * else in it is not guessed at or trimmed, so a passcode is returned exactly or not at all.
+ */
+export function meetingTokenParam(query: URLSearchParams, key: string): string | undefined {
+  const value = query.get(key);
+  return value !== null && TOKEN.test(value) ? value : undefined;
 }
 
 /**
- * The meeting a link joins, or null when it is not a link to one: another scheme, a host that
- * only ends like a service's, an address with a login in it, or a page of the service that is not
- * a meeting (a pricing page, a sign-in). Never throws.
+ * The meeting a link joins, or null when no recognizer reads it as one: another scheme, an
+ * address with a login or a port, or a page of a service that is not a meeting. Never throws.
  */
-export function parseMeetingLink(input: unknown): MeetingLink | null {
+export function parseMeetingLink(
+  input: unknown,
+  recognizers: readonly MeetingLinkRecognizer[],
+): MeetingLink | null {
   if (typeof input !== "string") return null;
   let url: URL;
   try {
@@ -116,67 +63,77 @@ export function parseMeetingLink(input: unknown): MeetingLink | null {
   }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   const host = trimEndChars(url.hostname.toLowerCase(), ".");
-  const segments = trimEndChars(url.pathname, "/").split("/").slice(1);
-  for (const [service, layout] of Object.entries(SERVICES) as [MeetingService, Layout][]) {
-    if (!hostBelongs(host, layout)) continue;
-    const id = layout.idOf(segments);
-    if (!id) return null;
+  const path = trimEndChars(url.pathname, "/");
+  const parts: MeetingLinkParts = {
+    host,
+    segments: path.split("/").slice(1),
+    query: url.searchParams,
+  };
+  for (const recognizer of recognizers) {
+    const meeting = recognizer.recognize(parts);
+    if (!meeting) continue;
     const query = new URLSearchParams();
-    for (const key of layout.keep) {
-      const value = url.searchParams.get(key);
-      if (value && (layout.valid?.(key, value) ?? true)) query.set(key, value);
-    }
+    for (const [key, value] of Object.entries(meeting.params)) if (value) query.set(key, value);
     const search = query.toString();
     return {
-      service,
-      id,
-      url: `https://${host}${trimEndChars(url.pathname, "/")}${search ? `?${search}` : ""}`,
+      provider: recognizer.id,
+      id: meeting.id,
+      url: `https://${host}${path}${search ? `?${search}` : ""}`,
     };
   }
   return null;
 }
 
 const LINK_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+const LINK_END = /[\s<>"'`]/;
 const ENTITY = /&(amp|lt|gt|quot|#0*38|#x0*26);/gi;
 const ENTITY_TEXT: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"' };
 const MAX_DEPTH = 8;
 const MAX_VALUES = 5_000;
 const MAX_TEXT = 1_000_000;
+/** How far past the text limit a link that straddles it is read, before it is left out. */
+const MAX_LINK = 8_192;
 const MAX_LINKS = 20;
 
 /**
  * The meetings linked anywhere in a value such as a calendar event's text, location or nested
- * fields, in the order found and once per meeting (the copy that carries a passcode wins). It reads
- * every string and no particular field, so it works on whatever a calendar connector returns.
- * Values are read level by level, so an event's own fields come before long lists inside it. It
- * stops at a fixed depth, number of values and amount of text, and a link cut off by the text limit
- * is left out rather than read short. It reads plain objects and arrays by their own data
- * properties, never running a getter, skips a value that throws when inspected, and ignores
- * everything else. Never throws.
+ * fields, in the order found and once per meeting (the copy that carries a passcode wins, even
+ * one found after the limit on meetings is reached). It reads every string and no particular
+ * field, so it works on whatever a calendar connector returns. Values are read level by level, so
+ * an event's own fields come before long lists inside it. It stops at a fixed depth, number of
+ * values and amount of text; a link that straddles the text limit is read to its end, or left out
+ * when it has none within MAX_LINK characters, never read short. It reads plain objects and arrays
+ * by their own data properties, never running a getter, skips a value that throws when inspected,
+ * and ignores everything else. Never throws.
  */
-export function findMeetingLinks(value: unknown): MeetingLink[] {
+export function findMeetingLinks(
+  value: unknown,
+  recognizers: readonly MeetingLinkRecognizer[],
+): MeetingLink[] {
   const found = new Map<string, MeetingLink>();
   const seen = new Set<object>();
   const queue: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
   let values = 0;
   let text = 0;
-  for (let head = 0; head < queue.length && found.size < MAX_LINKS; head += 1) {
+  for (let head = 0; head < queue.length; head += 1) {
     if (values >= MAX_VALUES || text >= MAX_TEXT) break;
     const { value: current, depth } = queue[head]!;
     values += 1;
     if (typeof current === "string") {
-      let part = current.slice(0, MAX_TEXT - text);
+      const part = readThroughLink(current, MAX_TEXT - text);
       text += part.length;
-      if (part.length < current.length) part = part.slice(0, lastBreak(part));
       for (const match of part
         .replace(ENTITY, (_, name: string) => ENTITY_TEXT[name.toLowerCase()] ?? "&")
         .match(LINK_IN_TEXT) ?? []) {
-        const link = parseMeetingLink(trimEndChars(match, ".,;:!?)]}*~"));
+        const link = parseMeetingLink(trimEndChars(match, ".,;:!?)]}*~"), recognizers);
         if (!link) continue;
-        const key = `${link.service}:${link.id}`;
+        const key = `${link.provider}:${link.id}`;
         const earlier = found.get(key);
-        if (!earlier || keptParameters(link) > keptParameters(earlier)) found.set(key, link);
-        if (found.size >= MAX_LINKS) break;
+        if (earlier) {
+          if (keptParameters(link) > keptParameters(earlier)) found.set(key, link);
+        } else if (found.size < MAX_LINKS) {
+          found.set(key, link);
+        }
       }
       continue;
     }
@@ -206,12 +163,21 @@ function keptParameters(link: MeetingLink): number {
   return [...new URL(link.url).searchParams.keys()].length;
 }
 
-/** The end of the last whole word, so a string cut mid-link never yields a shorter link. */
-function lastBreak(text: string): number {
-  for (let at = text.length - 1; at >= 0; at -= 1) {
-    if (/\s/.test(text[at]!)) return at;
+/**
+ * The first `limit` characters, extended to the end of the link they stop in so it is never read
+ * short. A link with no end within MAX_LINK characters is left out with the rest of its token.
+ */
+function readThroughLink(text: string, limit: number): string {
+  if (limit >= text.length) return text;
+  const stop = Math.min(text.length, limit + MAX_LINK);
+  for (let at = limit; at < stop; at += 1) {
+    if (LINK_END.test(text[at]!)) return text.slice(0, at);
   }
-  return 0;
+  if (stop === text.length) return text;
+  for (let at = limit - 1; at >= 0; at -= 1) {
+    if (LINK_END.test(text[at]!)) return text.slice(0, at);
+  }
+  return "";
 }
 
 function ownValue(object: object, key: string): unknown {
