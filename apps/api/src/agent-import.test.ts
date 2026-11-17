@@ -1,8 +1,13 @@
 import type { Actor, Bot } from "@rakazo/contracts";
-import { AgentImportCreateInput } from "@rakazo/contracts";
+import { AgentImportCreateInput, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentImportServices } from "./agent-import.js";
-import { agentImportSetupState, createImportedBot, requestDigest } from "./agent-import.js";
+import {
+  agentImportSetupState,
+  createImportedBot,
+  previewAgentImport,
+  requestDigest,
+} from "./agent-import.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -75,6 +80,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
       throw new Error("not used");
     },
     findBot: async () => bot,
+    routineTriggers: { messageProviders: [], email: false },
     assertRoutineSchedule: () => undefined,
     routineNextRunAt: () => null,
     routineRowData: (_actor, input) => ({ ...input }) as never,
@@ -136,6 +142,79 @@ describe("after the import commits", () => {
     ).resolves.toBe(bot);
     expect(writeModelKey).toHaveBeenCalledTimes(1);
     expect(afterModelKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("a Grok Bot's event routines", () => {
+  const event = (name: string, trigger: string) => ({ name, instruction: "Handle it.", trigger });
+  const files = [
+    {
+      path: GROK_BOT_EXPORT_PATH,
+      content: JSON.stringify({
+        format: "grok-bot-export",
+        version: 1,
+        bots: [
+          {
+            name: "Bramble",
+            routines: [
+              event("Hooks", "webhook"),
+              event("Pulls", "github"),
+              event("Support", "slack"),
+              event("Mail", "email"),
+              event("Elsewhere", "other"),
+            ],
+          },
+        ],
+      }),
+    },
+  ];
+  const routineTriggers = { messageProviders: ["slack"], email: true };
+
+  it("become paused routines on the trigger this server receives, saying what each needs", async () => {
+    const plan = await previewAgentImport(services({ routineTriggers }), actor, {
+      files,
+      includeSecrets: false,
+      skillFiles: {},
+    });
+    expect(plan.routines.map((routine) => [routine.title, routine.status])).toEqual([
+      ["Hooks", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "webhook" }] }],
+      ["Pulls", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "webhook" }] }],
+      ["Support", { kind: "needs_setup", needs: [{ kind: "turn_on" }] }],
+      ["Mail", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "email_address" }] }],
+    ]);
+    expect(plan.routines[2]?.content).toBe("Trigger: slack\n\nHandle it.");
+    // Only the routine nothing here can start is left for the bot to set up by hand.
+    const note = plan.memory.find((item) => item.path === "grok-bot-routines.md");
+    expect(note?.content).toContain("## Elsewhere");
+    expect(note?.content).not.toContain("## Support");
+
+    const rows: unknown[] = [];
+    await createImportedBot(
+      services({
+        routineTriggers,
+        routineRowData: (_actor, routine) => {
+          rows.push(routine);
+          return { ...routine } as never;
+        },
+      }),
+      actor,
+      AgentImportCreateInput.parse({
+        files,
+        name: "Bramble",
+        selection: {
+          instructions: [],
+          memory: [],
+          skills: [],
+          routines: plan.routines.map((routine) => routine.id),
+        },
+      }),
+    );
+    expect(rows).toMatchObject([
+      { name: "Hooks", active: false, crons: [], webhookEnabled: true },
+      { name: "Pulls", active: false, githubEnabled: true },
+      { name: "Support", active: false, messageProvider: "slack" },
+      { name: "Mail", active: false, emailSenders: "owner" },
+    ]);
   });
 });
 

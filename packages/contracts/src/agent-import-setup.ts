@@ -11,6 +11,10 @@ export const AgentImportNeedSchema = z.discriminatedUnion("kind", [
   /** Programs, variables or tools a skill declares it needs. */
   z.object({ kind: z.literal("requires"), names: z.array(z.string()) }),
   z.object({ kind: z.literal("turn_on") }),
+  /** A webhook or Git routine: its source must call the new bot's webhook. */
+  z.object({ kind: z.literal("webhook") }),
+  /** An email routine: the new bot has no email address yet. */
+  z.object({ kind: z.literal("email_address") }),
   z.object({ kind: z.literal("bundled_files") }),
 ]);
 export type AgentImportNeed = z.infer<typeof AgentImportNeedSchema>;

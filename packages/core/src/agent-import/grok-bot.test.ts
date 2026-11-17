@@ -1,13 +1,14 @@
 import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import type { GrokBot } from "./index.js";
+import type { GrokBot, RoutineTriggersAvailable } from "./index.js";
 import {
   combineImportedInstructions,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
   grokBotExportJson,
-  grokRoutineCron,
+  grokRoutineTrigger,
   grokSkillNames,
+  NO_OPTIONAL_ROUTINE_TRIGGERS,
   parseAgentImport,
   parseGrokBotExport,
   readGrokBotExportJson,
@@ -170,7 +171,7 @@ describe("reading a Grok Bot's reply", () => {
   });
 });
 
-describe("a Grok Bot routine's schedule", () => {
+describe("a Grok Bot routine's trigger", () => {
   const routine = {
     name: "",
     instruction: "x",
@@ -181,12 +182,36 @@ describe("a Grok Bot routine's schedule", () => {
     skills: [],
     details: "",
   };
+  const none = NO_OPTIONAL_ROUTINE_TRIGGERS;
+  const all: RoutineTriggersAvailable = { messageProviders: ["slack", "telegram"], email: true };
+  const on = (trigger: string, available = all) =>
+    grokRoutineTrigger({ ...routine, trigger }, available);
 
   it("keeps a valid cron on a clock trigger only", () => {
-    expect(grokRoutineCron(routine)).toBe("0 8 * * 1-5");
-    expect(grokRoutineCron({ ...routine, trigger: "slack" })).toBeNull();
-    expect(grokRoutineCron({ ...routine, cron: "", when: "every weekday at 8" })).toBeNull();
-    expect(grokRoutineCron({ ...routine, cron: "", when: "30 9 * * *" })).toBe("30 9 * * *");
+    expect(grokRoutineTrigger(routine, none)).toEqual({ kind: "schedule", cron: "0 8 * * 1-5" });
+    expect(
+      grokRoutineTrigger({ ...routine, cron: "", when: "every weekday at 8" }, all),
+    ).toBeNull();
+    expect(grokRoutineTrigger({ ...routine, cron: "", when: "30 9 * * *" }, none)).toEqual({
+      kind: "schedule",
+      cron: "30 9 * * *",
+    });
+  });
+
+  it("maps events to the trigger that receives them here", () => {
+    for (const trigger of ["webhook", "linear", "sentry", "pagerduty"]) {
+      expect(on(trigger, none)).toEqual({ kind: "webhook" });
+    }
+    expect(on("github", none)).toEqual({ kind: "git" });
+    expect(on("slack")).toEqual({ kind: "message", provider: "slack" });
+    expect(on("email")).toEqual({ kind: "email" });
+  });
+
+  it("leaves events this server does not receive, and unknown ones, unmapped", () => {
+    expect(on("slack", none)).toBeNull();
+    expect(on("email", none)).toBeNull();
+    expect(on("other")).toBeNull();
+    expect(on("calendar")).toBeNull();
   });
 });
 
@@ -227,6 +252,16 @@ describe("a Grok Bot as an import plan", () => {
         ["weekly-account-health", "weekly-account-health"],
       ]),
     );
+  });
+
+  it("leaves an event this server receives out of the note", () => {
+    const parsed = parseAgentImport(
+      [{ path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) }],
+      {},
+      { messageProviders: ["slack"], email: false },
+    );
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.memory.map((item) => item.path)).toEqual(["MEMORY.md", "USER.md"]);
   });
 
   it("keeps a fact in both memory files and files an unreadable schedule to set up again", () => {

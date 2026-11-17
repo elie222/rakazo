@@ -9,6 +9,7 @@ import {
   BOT_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
 import JSON5 from "json5";
+import { messagingProviderNamed } from "../messaging/messaging-providers.js";
 import { nextCronDateAcrossStrict } from "../primitives/cron.js";
 import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
@@ -520,19 +521,56 @@ export function grokBotExportJson(bot: GrokBot): string {
 }
 
 const CLOCK_TRIGGERS = new Set(["", "schedule", "scheduled", "time", "cron", "interval"]);
+/** Services that start a routine by calling a webhook. */
+const WEBHOOK_TRIGGERS = new Set(["webhook", "linear", "sentry", "pagerduty"]);
+const GIT_TRIGGERS = new Set(["github"]);
+const EMAIL_TRIGGERS = new Set(["email"]);
 
-/** The routine's cron when it runs on a clock and the cron is valid; null otherwise. */
-export function grokRoutineCron(routine: GrokBotRoutine): string | null {
-  if (!CLOCK_TRIGGERS.has(routine.trigger)) return null;
-  for (const candidate of [routine.cron, routine.when]) {
-    if (!candidate) continue;
-    try {
-      if (nextCronDateAcrossStrict([candidate], new Date(), "UTC") !== null) return candidate;
-    } catch {
-      // Not a cron: the words, or nothing.
+/** How a routine can start here. Schedules, webhooks and Git events always can. */
+export type GrokRoutineTrigger =
+  | { kind: "schedule"; cron: string }
+  | { kind: "webhook" }
+  | { kind: "git" }
+  | { kind: "message"; provider: string }
+  | { kind: "email" };
+
+/** The event triggers this server receives, as the routine editor offers them. */
+export type RoutineTriggersAvailable = {
+  /** Messaging providers this server runs. */
+  messageProviders: readonly string[];
+  /** Whether it receives email for bots. */
+  email: boolean;
+};
+
+export const NO_OPTIONAL_ROUTINE_TRIGGERS: RoutineTriggersAvailable = {
+  messageProviders: [],
+  email: false,
+};
+
+/** The trigger a routine maps to here, or null when its schedule or event cannot be set up. */
+export function grokRoutineTrigger(
+  routine: GrokBotRoutine,
+  available: RoutineTriggersAvailable,
+): GrokRoutineTrigger | null {
+  const { trigger } = routine;
+  if (CLOCK_TRIGGERS.has(trigger)) {
+    for (const candidate of [routine.cron, routine.when]) {
+      if (!candidate) continue;
+      try {
+        if (nextCronDateAcrossStrict([candidate], new Date(), "UTC") !== null) {
+          return { kind: "schedule", cron: candidate };
+        }
+      } catch {
+        // Not a cron: the words, or nothing.
+      }
     }
+    return null;
   }
-  return null;
+  if (WEBHOOK_TRIGGERS.has(trigger)) return { kind: "webhook" };
+  if (GIT_TRIGGERS.has(trigger)) return { kind: "git" };
+  if (EMAIL_TRIGGERS.has(trigger)) return available.email ? { kind: "email" } : null;
+  const provider = messagingProviderNamed(trigger, available.messageProviders);
+  return provider ? { kind: "message", provider } : null;
 }
 
 function slug(value: string): string {
@@ -616,7 +654,7 @@ function distinct(lines: readonly string[]): string[] {
   });
 }
 
-/** Each routine with every setting the export gave, so it can be set up again by hand. */
+/** Each routine with every setting the export gave, so it can be set up by hand. */
 function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
   const blocks = routines.map((routine) => {
     const fields = [
@@ -629,16 +667,22 @@ function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
     ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
     return `## ${routine.name || "Routine"}\n\n${fields.join("\n")}\n\n${routine.instruction}\n`;
   });
-  return `# Grok Bot routines to set up again\n\nThese run on an event, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
+  return `# Grok Bot routines to set up again\n\nThese start on an event this server does not receive, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
 }
 
-/** Imported text is data: nothing here follows it. Routines and apps are added by the server. */
-export function parseGrokBot(bot: GrokBot): AgentImportParse {
+/**
+ * Imported text is data: nothing here follows it. Routines and apps are added by the server;
+ * a routine none of `triggers` can start is kept in a memory note instead.
+ */
+export function parseGrokBot(
+  bot: GrokBot,
+  triggers: RoutineTriggersAvailable = NO_OPTIONAL_ROUTINE_TRIGGERS,
+): AgentImportParse {
   // Each field on its own: a fact in both stays in both documents.
   const memories = distinct(bot.memories);
   const userFacts = distinct(bot.userFacts);
   const toSetUp = bot.routines.filter(
-    (routine) => routine.instruction && grokRoutineCron(routine) === null,
+    (routine) => routine.instruction && grokRoutineTrigger(routine, triggers) === null,
   );
   const memory: AgentImportMemory[] = [
     ...(memories.length

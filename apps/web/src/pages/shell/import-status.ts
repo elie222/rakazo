@@ -30,6 +30,10 @@ export function useImportStatusText() {
       }
       case "turn_on":
         return t`Paused`;
+      case "webhook":
+        return t`Point its source at the new webhook`;
+      case "email_address":
+        return t`Needs an email address`;
       case "bundled_files":
         return t`Uses files that are not imported`;
     }
