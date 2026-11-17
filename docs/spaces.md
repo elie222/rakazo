@@ -43,6 +43,12 @@ shows up in their space list next to their own spaces, and your other spaces sta
 don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
 they do in the space, but never names their own vault items.
 
+Sharing is per space, not per bot: you can't share one bot and keep the others private. To give
+someone just one bot, create a [new space](#create-a-space), set the bot up there, and invite only
+them. The bot can't message your other bots, and they can't message it (with the chat-app exception
+described [above](#what-stays-inside-a-space)). **Duplicate** makes its copy in the same space, so
+set the new bot up again there.
+
 ### What everyone shares
 
 - **Bots, chats, memory and routines.** Everyone sees and can change them, including chats that come
