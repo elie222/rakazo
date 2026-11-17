@@ -9,10 +9,10 @@ import {
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
+import { operatorReviewObserver } from "./decisions/operator-review-usage.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
-import { operatorReviewObserver } from "./operator-review-usage.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(

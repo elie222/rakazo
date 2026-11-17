@@ -1,5 +1,5 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
-import type { DecisionModelDescriptor } from "./decision-model-descriptor.js";
+import type { DecisionModelDescriptor } from "./decisions/model-descriptor.js";
 import { openRouterDecisionModel } from "./providers/decision/openrouter/decision-model.js";
 import { typesafeDecisionModel } from "./providers/decision/typesafe/decision-model.js";
 
