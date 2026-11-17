@@ -47,13 +47,14 @@ export function SidebarHeader({
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   // In the icon rail the actions stack, so a label above or below covers its neighbour.
   const labelSide = mini ? "inline-end" : undefined;
-  const iconSize = mini ? "icon-lg" : "icon";
+  // In the rail the buttons share the bot tiles' box, so hover shapes line up.
+  const railTile = mini ? " size-12 rounded-xl" : "";
   const toggle = (
     <IconTooltip label={toggleLabel} side={labelSide}>
       <Button
         variant="ghost"
-        size={iconSize}
-        className="app-no-drag hidden text-muted-foreground md:inline-flex"
+        size="icon"
+        className={`app-no-drag hidden text-muted-foreground md:inline-flex${railTile}`}
         aria-label={toggleLabel}
         data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
@@ -79,7 +80,7 @@ export function SidebarHeader({
           <IconTooltip label={t`Search`} side={labelSide}>
             <Button
               variant="ghost"
-              size={iconSize}
+              size="icon"
               aria-label={t`Search`}
               aria-pressed={searchOpen}
               data-testid="sidebar-search-trigger"
@@ -94,7 +95,7 @@ export function SidebarHeader({
           <IconTooltip label={t`Activity`} side={labelSide}>
             <Button
               variant="ghost"
-              size={iconSize}
+              size="icon"
               aria-label={t`Activity`}
               aria-pressed={activityMode}
               data-activity-mode={activityMode ? "on" : "off"}
@@ -117,8 +118,8 @@ export function SidebarHeader({
               render={
                 <Button
                   variant="ghost"
-                  size={iconSize}
-                  className="app-no-drag text-muted-foreground"
+                  size="icon"
+                  className={`app-no-drag text-muted-foreground${railTile}`}
                 />
               }
               aria-label={t`Create`}
