@@ -137,7 +137,13 @@ test("a marker quoted in any code a person adds is not taken for a filed bug", (
   assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
 });
 
-test("keys that differ only past the shown length are different bugs", () => {
+test("a long key read back from its issue matches the issue's fingerprint", () => {
+  const key = `${"pinned-chats-".repeat(8)}hidden`;
+  const shown = /\*\*Bug key:\*\* `([^`]+)`/.exec(issueBody({ ...bug, key }, links))[1];
+  assert.equal(fingerprint({ ...bug, key: shown }), fingerprint({ ...bug, key }));
+});
+
+test("keys that differ only past 60 characters are different bugs", () => {
   const long = "x".repeat(60);
   assert.notEqual(
     fingerprint({ ...bug, key: `${long}-sidebar` }),

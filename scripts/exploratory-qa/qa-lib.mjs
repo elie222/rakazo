@@ -77,9 +77,9 @@ function normalized(text) {
     .replace(/^-+|-+$/g, "");
 }
 
-/** For display only: two keys that differ past this length are still different bugs. */
-function slug(text) {
-  return normalized(text).slice(0, 60);
+/** The bug key as shown, read back and hashed: one value, so a key read from an issue matches it. */
+function bugKey(text) {
+  return normalized(text).slice(0, 120);
 }
 
 /** Stable across runs for the same bug: feature, screen and the agent's short bug key, never its prose. */
@@ -87,7 +87,7 @@ export function fingerprint(finding) {
   const input = [
     normalized(finding.feature),
     normalizePath(finding.path),
-    normalized(finding.key),
+    bugKey(finding.key),
   ].join("|");
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
@@ -136,7 +136,7 @@ export function issueBody(finding, { runUrl, artifactUrl }) {
     "",
     `**Feature:** ${plainText(finding.feature, 80)}`,
     `**Screen:** \`${normalizePath(finding.path)}\``,
-    `**Bug key:** \`${slug(finding.key)}\``,
+    `**Bug key:** \`${bugKey(finding.key)}\``,
     "",
     "### Steps",
     codeBlock(steps, 7000),
