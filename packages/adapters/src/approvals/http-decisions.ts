@@ -55,7 +55,7 @@ export class HttpDecisionProvider implements DecisionProvider {
       modelId: request.model,
       operationKind: "setup",
       inputTokensEstimate,
-      maxOutputTokens: 0,
+      maxOutputTokens: null,
       maxCostUsd: pricing ? decisionInputCost(pricing, inputTokensEstimate) : undefined,
     });
     let result: Pick<DecisionResult, "model" | "answers">;
@@ -178,17 +178,20 @@ export class HttpDecisionProvider implements DecisionProvider {
             ),
           );
         }
-        if (usage)
-          await this.options.onUsage?.({
-            type: "usage",
-            ...usage,
-            provider: this.provider,
-            model: request.model,
-            callId,
-          });
       } finally {
-        if (reservation) await this.options.callObserver?.afterCall(reservation, usage);
+        if (reservation) {
+          const priced = await this.options.callObserver?.afterCall(reservation, usage);
+          if (priced) usage = priced;
+        }
       }
+      if (usage)
+        await this.options.onUsage?.({
+          type: "usage",
+          ...usage,
+          provider: this.provider,
+          model: request.model,
+          callId,
+        });
     }
     return { ...result, usage: usage ?? undefined };
   }

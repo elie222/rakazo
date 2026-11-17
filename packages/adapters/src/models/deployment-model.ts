@@ -1,7 +1,8 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
-import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
+
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;
@@ -30,6 +31,17 @@ export function hostCredentialSource(provider: string): string {
  * Vendor env names and model ids live in the model provider registry, not in core.
  */
 export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
+  const offerings = modelCreditOfferings(env);
+  if (offerings) {
+    const selected = offerings.offerings.find((entry) => entry.id === offerings.defaultOfferingId);
+    return {
+      provider: selected?.provider ?? "",
+      model: selected?.modelId ?? "",
+      key: undefined,
+      configured: Boolean(selected),
+      hostCredentials: false,
+    };
+  }
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   // An unknown provider gets no key rather than another vendor's.
   const deployment = modelProviderDefinition(provider)?.deployment;
@@ -54,7 +66,5 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
 
 export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
   const model = resolveDeploymentModel();
-  return model.provider === "openrouter" && model.key
-    ? new OpenRouterUsageLookup(model.key)
-    : undefined;
+  return model.key ? modelProviderDefinition(model.provider)?.usageLookup?.(model.key) : undefined;
 }

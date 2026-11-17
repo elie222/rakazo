@@ -5,10 +5,11 @@ import type {
   ModelRoleSettings,
   SettingsScope,
 } from "@rakazo/contracts";
-import { backupChoiceKey, usableModelId } from "@rakazo/contracts";
+import { backupChoiceKey, modelRoleConnectionId, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
@@ -39,6 +40,17 @@ export function deploymentModelRole(
   const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
   const modelId =
     usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+  const offerings = modelCreditOfferings(defaults.env);
+  if (
+    offerings &&
+    !offerings.offerings.some((entry) => entry.provider === provider && entry.modelId === modelId)
+  ) {
+    const fallback = offerings.offerings.find((entry) => entry.id === offerings.defaultOfferingId);
+    return {
+      primary: fallback ? { provider: fallback.provider, modelId: fallback.modelId } : null,
+      backups: [],
+    };
+  }
   return { primary: provider && modelId ? { provider, modelId } : null, backups: [] };
 }
 
@@ -80,14 +92,16 @@ export async function resolveMemberMainModel(
 ): Promise<MemberMainModel | null> {
   const { primary } = await appliedModelRole(deps.prisma, scope, "main");
   if (!primary) return null;
-  const credential = await findConnectedModelCredential(
-    deps.prisma,
-    deps.secretStore,
-    scope,
-    primary.provider,
-    primary.modelId,
-    { credentialId: primary.credentialId },
-  );
+  const credential = primary.creditOfferingId
+    ? null
+    : await findConnectedModelCredential(
+        deps.prisma,
+        deps.secretStore,
+        scope,
+        primary.provider,
+        primary.modelId,
+        { credentialId: primary.credentialId },
+      );
   return { ...primary, credential };
 }
 
@@ -103,11 +117,26 @@ export function selectConfiguredModel(input: {
   const { override: bot, overrideCredential, main } = input;
   const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
   // A model runs on its own connection, or on the deployment's for its funded provider.
-  const runnable = (provider: string | null | undefined, credential: ModelCredential) =>
-    Boolean(credential || (provider && provider === input.hostedProvider));
+  const runnable = (
+    provider: string | null | undefined,
+    credential: ModelCredential,
+    modelId?: string | null,
+  ) =>
+    Boolean(
+      credential ||
+        (provider &&
+          input.hostedProvider &&
+          (modelCreditOfferings()
+            ? modelId && approvedModelCreditOffering(provider, modelId)
+            : provider === input.hostedProvider)),
+    );
   // The override provider, model and credential must win together.
-  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential);
-  const useMain = !useOverride && main !== null && runnable(main.provider, main.credential);
+  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
+  const useMain =
+    !useOverride &&
+    main !== null &&
+    (Boolean(main.credentialId || main.creditOfferingId) ||
+      runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
     ? {
@@ -116,7 +145,12 @@ export function selectConfiguredModel(input: {
         credential: overrideCredential,
       }
     : useMain
-      ? { provider: main.provider, id: main.modelId, credential: main.credential }
+      ? {
+          provider: main.provider,
+          id: main.modelId,
+          credential: main.credential,
+          connectionId: modelRoleConnectionId(main),
+        }
       : { provider: fallback?.provider, id: fallback?.modelId ?? null, credential: null };
   // The main model's effort belongs to that model, so an override of the same model keeps it.
   const mainThinking =

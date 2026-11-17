@@ -706,6 +706,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ? createRunReconciler(
         {
           prisma,
+          secretStore: secrets,
           jobs,
           events,
           notifications,

@@ -2703,6 +2703,7 @@ model SpaceModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  creditOfferingId String?
   credentialId  String?
   credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
@@ -2734,6 +2735,7 @@ model UserModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  creditOfferingId String?
   credentialId  String?
   credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
