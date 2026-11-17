@@ -1,5 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { Challenge, Credential } from "mppx";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -638,29 +639,34 @@ describe("paid_request", () => {
     expect(env.purchases[0]!.status).toBe("approved");
   });
 
-  it("removes the sealed request of a purchase that was never recorded, retrying a failed removal", async () => {
+  it("seals the request only once the wallet answers, so a slow wallet outlasts no cleanup", async () => {
     const env = setup(paidApi().fetch);
-    const cleanup = { prisma: env.deps.prisma, secrets: env.secretStore };
+    const answer = deferred<void>();
+    const asked = vi.fn();
+    const create = env.wallet.createPurchase.bind(env.wallet);
+    env.wallet.createPurchase = async (...args) => {
+      asked();
+      await answer.promise;
+      return create(...args);
+    };
+    const pending = env.paid(paidArgs);
+    await vi.waitFor(() => expect(asked).toHaveBeenCalled());
+    expect(env.secrets.size).toBe(0);
+    answer.resolve();
+    expect((await pending).result).toMatchObject({ status: "pending_approval" });
+    expect(env.secrets.has(env.purchases[0]!.requestCiphertext!)).toBe(true);
+  });
+
+  it("writes no sealed request when the wallet refuses", async () => {
+    const env = setup(paidApi().fetch);
     env.wallet.createPurchase = async () => {
       throw new PaymentWalletRequestRejected("The amount is over the wallet's limit.");
     };
-    const refused = { error: "The amount is over the wallet's limit." };
-    expect((await env.paid(paidArgs)).result).toEqual(refused);
-    expect(env.secrets.size).toBe(0);
-
-    env.secretStore.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
-    expect((await env.paid(paidArgs, "op-2")).result).toEqual(refused);
-    expect(env.secrets.size).toBe(1);
-    const unused = { kind: "purchase_request", recordId: "purchase-request:op-2" } as const;
-    const retry = env.enqueued.at(-1)!;
-    expect(retry).toMatchObject({
-      name: "secret.cleanup",
-      payload: { ...unused, ref: expect.any(String) },
+    expect((await env.paid(paidArgs)).result).toEqual({
+      error: "The amount is over the wallet's limit.",
     });
-    expect(retry).not.toHaveProperty("availableAt");
-    expect(JSON.stringify(retry)).not.toContain("days");
-    await retrySecretCleanup(cleanup, retry.payload as SecretCleanup);
     expect(env.secrets.size).toBe(0);
+    expect(env.secretStore.delete).not.toHaveBeenCalled();
   });
 
   it("removes the sealed request when recording the purchase fails, unless the purchase holds it", async () => {
@@ -681,6 +687,25 @@ describe("paid_request", () => {
         availableAt: expect.any(Date),
       },
     ]);
+    env.secretStore.delete.mockRejectedValueOnce(new Error("secret store unavailable"));
+    await expect(env.paid(paidArgs, "op-3")).rejects.toThrow("database unavailable");
+    expect(env.secrets.size).toBe(1);
+    const retry = env.enqueued.at(-1)!;
+    expect(retry).toMatchObject({
+      name: "secret.cleanup",
+      payload: {
+        kind: "purchase_request",
+        recordId: "purchase-request:op-3",
+        ref: expect.any(String),
+      },
+    });
+    expect(retry).not.toHaveProperty("availableAt");
+    expect(JSON.stringify(retry)).not.toContain("days");
+    await retrySecretCleanup(
+      { prisma: env.deps.prisma, secrets: env.secretStore },
+      retry.payload as SecretCleanup,
+    );
+    expect(env.secrets.size).toBe(0);
 
     purchase.upsert = async (args) => {
       await record(args);

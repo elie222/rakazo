@@ -242,7 +242,8 @@ export async function createPurchase(
     merchantName: string;
     merchantUrl: string;
     paymentChallenge?: string;
-    requestCiphertext?: string;
+    /** Seals a copy for the row, written only once the wallet answers, right before the row saves. */
+    sealRequest?: () => Promise<string>;
   },
 ) {
   const existing = await deps.prisma.purchase.findUnique({
@@ -291,6 +292,7 @@ export async function createPurchase(
     where: { id: run.threadId },
     select: { historyCompactionGeneration: true },
   });
+  const requestCiphertext = request.sealRequest ? await request.sealRequest() : null;
   const purchase = ownedReplay(
     await deps.prisma.purchase.upsert({
       where: { operationKey: context.operationId },
@@ -310,7 +312,7 @@ export async function createPurchase(
         merchantAccountId:
           request.credential.kind === "pay_token" ? request.credential.merchantAccountId : null,
         paymentChallenge: request.paymentChallenge ?? null,
-        requestCiphertext: request.requestCiphertext ?? null,
+        requestCiphertext,
         amount: request.amount,
         currency: request.currency,
         status: snapshot.status,

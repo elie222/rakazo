@@ -83,11 +83,11 @@ export async function executePaidRequest(
       error: "The user's wallet can't pay what this request asks for.",
     });
   }
-  // Headers and body can hold personal data or keys, so the request to send again is sealed.
+  // Headers and body can hold personal data or keys, so the request to send again is sealed. The
+  // copy is written after the wallet answers, so its cleanup's save margin covers only the row save.
   const recordId = purchaseRequestRecordId(context.operationId);
-  const sealed = await deps.secretStore.put(JSON.stringify(request), context, { recordId });
   const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
-  const copy: SecretCleanup = { kind: "purchase_request", recordId, ref: sealed.ciphertext };
+  let copy: SecretCleanup | undefined;
   const url = new URL(request.url);
   let result: Awaited<ReturnType<typeof createPurchase>>;
   try {
@@ -99,21 +99,26 @@ export async function executePaidRequest(
       merchantName: url.hostname,
       merchantUrl: `${url.origin}${url.pathname}`,
       paymentChallenge: challenge.challenge,
-      requestCiphertext: sealed.ciphertext,
+      sealRequest: async () => {
+        const sealed = await deps.secretStore.put(JSON.stringify(request), context, { recordId });
+        copy = { kind: "purchase_request", recordId, ref: sealed.ciphertext };
+        return sealed.ciphertext;
+      },
     });
   } catch (error) {
     // The purchase may have been recorded before this failed; the cleanup spares a copy it holds.
-    await cleanUpUnsavedSecret(cleanupDeps, copy);
+    if (copy) await cleanUpUnsavedSecret(cleanupDeps, copy);
     throw error;
   }
+  if (!copy) return plain(result);
   const saved = await deps.prisma.purchase.findUnique({
     where: { operationKey: context.operationId },
     select: { requestCiphertext: true },
   });
-  if (saved?.requestCiphertext !== sealed.ciphertext) {
-    // No purchase holds this copy: the wallet refused, or a replay recorded its own.
+  if (saved?.requestCiphertext !== copy.ref) {
+    // No purchase holds this copy: a replay recorded its own.
     await cleanUpUnsavedSecret(cleanupDeps, copy);
-  } else await savedSecret(cleanupDeps, sealed.ciphertext);
+  } else await savedSecret(cleanupDeps, copy.ref);
   return plain(result);
 }
 
