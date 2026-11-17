@@ -257,6 +257,41 @@ describe("1Password credential source", () => {
     await expect(source.listItems(controller.signal)).rejects.toThrow("caller gave up");
   });
 
+  it("gives a whole listing one time budget, however many vaults there are", async () => {
+    // Each vault answers well inside the budget, but together they run past it.
+    const slowAnswer = () =>
+      new Promise<Response>((resolve) => setTimeout(() => resolve(json([])), 150));
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (new URL(String(input)).pathname === "/v1/vaults") {
+        return json([{ id: VAULT }, { id: OTHER_VAULT }]);
+      }
+      return slowAnswer();
+    });
+    const source = createOnePasswordSource(
+      { endpoint: "https://connect.example.com" },
+      { token: TOKEN },
+      { fetch, resolveHostname: publicResolver, listBudgetMs: 250 },
+    );
+    const error = await source.listItems(signal()).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CredentialSourceUnavailableError);
+    expect((error as Error).cause).toBeUndefined();
+  });
+
+  it("still reports the caller's own abort during a listing, not a slow source", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (new URL(String(input)).pathname === "/v1/vaults") return json([{ id: VAULT }]);
+      controller.abort(new Error("caller gave up"));
+      return new Promise<Response>(() => {});
+    });
+    const source = createOnePasswordSource(
+      { endpoint: "https://connect.example.com" },
+      { token: TOKEN },
+      { fetch, resolveHostname: publicResolver },
+    );
+    await expect(source.listItems(controller.signal)).rejects.toThrow("caller gave up");
+  });
+
   it("works under a path on the server's address", async () => {
     const { source, fetch } = setup(
       { "/connect/v1/vaults": json([]) },

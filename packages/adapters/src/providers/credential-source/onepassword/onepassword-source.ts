@@ -6,6 +6,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { ProviderSettingsField } from "@rakazo/contracts";
 import { DEFAULT_LOGIN_FIELD_LABELS, LoginSecretValue, trimEndChars } from "@rakazo/contracts";
+import { deadlineSignal } from "@rakazo/core";
 import * as z from "zod";
 import { isEgressRefused } from "../../../network-address.js";
 import type { SafeWebFetchOptions } from "../../../web-ssrf.js";
@@ -13,8 +14,11 @@ import { fetchSafeHttpRequest } from "../../../web-ssrf.js";
 
 export const ONEPASSWORD_SOURCE_ID = "onepassword";
 
-/** A Connect server lists every item of every vault its token can read; the answer stays bounded. */
+/** A vault's item list can be long; each single answer stays bounded (a listing is bounded by time). */
 const MAX_ANSWER_BYTES = 5_000_000;
+
+/** Listing asks once per vault, so it has a time limit of its own on top of each request's. */
+const LIST_BUDGET_MS = 60_000;
 
 /** What the settings form asks for. Public metadata only, like every provider's. */
 export const onePasswordSourceSettings: {
@@ -78,7 +82,10 @@ function isWebAddress(address: string): boolean {
   return protocol === "http:" || protocol === "https:";
 }
 
-export type OnePasswordSourceDeps = Pick<SafeWebFetchOptions, "fetch" | "resolveHostname">;
+export type OnePasswordSourceDeps = Pick<SafeWebFetchOptions, "fetch" | "resolveHostname"> & {
+  /** How long a whole listing may take; tests shorten it. */
+  listBudgetMs?: number;
+};
 
 export function createOnePasswordSource(
   settings: Record<string, string>,
@@ -137,24 +144,34 @@ export function createOnePasswordSource(
       capabilities: { readOnly: true },
     }),
 
-    async listItems(signal) {
-      const vaults = Vaults.safeParse(await get("/v1/vaults", signal));
-      if (!vaults.success) return unusable();
-      const listed: CredentialSourceItem[] = [];
-      for (const vault of vaults.data) {
-        const items = Items.safeParse(await get(`/v1/vaults/${vault.id}/items`, signal));
-        if (!items.success) return unusable();
-        for (const item of items.data) {
-          if (item.category !== "LOGIN") continue;
-          const site = (item.urls?.find((url) => url.primary) ?? item.urls?.[0])?.href;
-          listed.push({
-            ref: `${vault.id}/${item.id}`,
-            title: item.title,
-            ...(site && isWebAddress(site) ? { url: site } : {}),
-          });
+    async listItems(callerSignal) {
+      // One request per vault: the whole listing shares a budget, not a fresh timeout per vault.
+      const signal = deadlineSignal(deps.listBudgetMs ?? LIST_BUDGET_MS, callerSignal);
+      try {
+        const vaults = Vaults.safeParse(await get("/v1/vaults", signal));
+        if (!vaults.success) return unusable();
+        const listed: CredentialSourceItem[] = [];
+        for (const vault of vaults.data) {
+          const items = Items.safeParse(await get(`/v1/vaults/${vault.id}/items`, signal));
+          if (!items.success) return unusable();
+          for (const item of items.data) {
+            if (item.category !== "LOGIN") continue;
+            const site = (item.urls?.find((url) => url.primary) ?? item.urls?.[0])?.href;
+            listed.push({
+              ref: `${vault.id}/${item.id}`,
+              title: item.title,
+              ...(site && isWebAddress(site) ? { url: site } : {}),
+            });
+          }
         }
+        return listed;
+      } catch (error) {
+        // Only the abort itself is reclassified; a refusal or a bad answer that lands as the budget
+        // runs out keeps its own kind. The caller's abort wins when both have fired.
+        if (error !== signal.reason) throw error;
+        if (callerSignal.aborted) throw callerSignal.reason;
+        throw new CredentialSourceUnavailableError("The credential source took too long to list");
       }
-      return listed;
     },
 
     async resolve(ref, signal): Promise<LoginSecretValue> {
