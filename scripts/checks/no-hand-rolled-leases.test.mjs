@@ -67,7 +67,7 @@ test("adds no hand-written lease, claim or attempt column", () => {
   assert.deepEqual(
     added,
     [],
-    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/leases.ts), " +
+    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/database/leases.ts), " +
       "and retries with the job queue's attempts and backoff, instead of new lease, claim or attempt columns.",
   );
 });
