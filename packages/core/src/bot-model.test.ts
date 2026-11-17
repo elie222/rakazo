@@ -85,4 +85,16 @@ describe("botModelState", () => {
     });
     expect(unknown.selectedMark).toBeUndefined();
   });
+
+  it("knows nothing is connected even while a disconnected model is still saved", () => {
+    const state = botModelState({
+      credentials: [],
+      catalog,
+      me,
+      modelKey: "gone::old-model",
+      spaceDefaultLabel: "Space default",
+    });
+    expect(state.choices.length).toBe(2);
+    expect(state.nothingConnected).toBe(true);
+  });
 });

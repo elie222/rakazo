@@ -43,8 +43,9 @@ export function botModelState({
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
     : undefined;
+  const connected = connectedModelChoices(credentials, catalog);
   const choices = chatModelChoices(
-    connectedModelChoices(credentials, catalog),
+    connected,
     selectedModelKey,
     spaceDefaultLabel,
     defaultEntry?.images,
@@ -98,6 +99,8 @@ export function botModelState({
     selectedModelKey,
     defaultEntry,
     choices,
+    /** No connected provider offers a model, so a picker should offer to connect one. */
+    nothingConnected: connected.length === 0,
     selectedName,
     selectedMark,
     thinkingLevels,

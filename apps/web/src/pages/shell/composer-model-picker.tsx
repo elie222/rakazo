@@ -56,6 +56,7 @@ export function ComposerModelPicker({
     choices,
     thinkingLevels,
     defaultThinkingLevel,
+    nothingConnected,
   } = botModelState({
     credentials,
     catalog,
@@ -88,8 +89,8 @@ export function ComposerModelPicker({
         if (key !== selectedModelKey) saveModel.run(key);
       }}
       // A model with thinking levels keeps the panel open, so its level can be set next.
-      // With nothing connected the list holds only the Space default, so it offers a connection.
-      onConnect={choices.length < 2 ? onConnect : undefined}
+      // With no provider connected there is nothing to switch to, so the list offers a connection.
+      onConnect={nothingConnected ? onConnect : undefined}
       staysOpen={(key) =>
         botModelState({ credentials, catalog, me, modelKey: key, spaceDefaultLabel: "" })
           .thinkingLevels.length > 0

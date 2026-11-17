@@ -60,8 +60,8 @@ export default function ChatModelScreen() {
     ? (save.input?.thinkingLevel ?? "")
     : (bot.data?.thinkingLevel ?? "");
   const failure = bot.error ?? me.error ?? catalog.error ?? credentials.error;
-  // With nothing connected the list holds only the Space default, so the sheet offers a connection.
-  const connectable = Boolean(state && state.choices.length < 2);
+  // With no provider connected there is nothing to switch to, so the sheet offers a connection.
+  const connectable = Boolean(state?.nothingConnected);
 
   return (
     <ModelPickerList
