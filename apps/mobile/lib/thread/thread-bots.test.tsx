@@ -82,6 +82,30 @@ describe("thread roster refresh", () => {
     expect(state.mentionBots).toBe(shown);
   });
 
+  it("keeps the newest roster in the cache when an older refresh answers last", async () => {
+    const older = deferred<MobileBot[]>();
+    const newer = deferred<MobileBot[]>();
+    const pending = [older, newer];
+    vi.mocked(rpc).mockImplementation(async (method) =>
+      method === "bots/list" ? pending.shift()!.promise : [],
+    );
+    await act(async () => root.render(createElement(Thread, { botId: "bot-1" })));
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = state.refreshMentionBots();
+      second = state.refreshMentionBots();
+    });
+    await act(async () => {
+      newer.resolve([{ id: "bot-1", name: "Newest" }] as MobileBot[]);
+      await second;
+      older.resolve([{ id: "bot-1", name: "Stale" }] as MobileBot[]);
+      await first;
+    });
+
+    expect(queryClient.getQueryData(["bots/list"])).toEqual([{ id: "bot-1", name: "Newest" }]);
+  });
+
   it("refreshes the group title and mention roster when returning from settings", async () => {
     let groups = [group("group-1", "Old name")];
     vi.mocked(rpc).mockImplementation(async (method) => (method === "groups/list" ? groups : []));

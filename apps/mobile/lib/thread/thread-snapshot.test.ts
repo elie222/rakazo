@@ -134,4 +134,16 @@ describe("visible thread snapshot publication", () => {
     expect(next?.messages[0]).toBe(shown.messages[0]);
     expect(next?.messages[1]).toBe(refreshed.messages[1]);
   });
+
+  it("keeps the message list itself when only the run changed", () => {
+    const shown: MobileSnapshot = {
+      ...snapshot(),
+      messages: [{ id: "message-1", role: "user", blocks: [{ kind: "text", text: "Hi" }] }],
+    };
+
+    const next = reconcileVisibleThreadSnapshot(shown, { ...structuredClone(shown), run: null });
+
+    expect(next?.run).toBeNull();
+    expect(next?.messages).toBe(shown.messages);
+  });
 });

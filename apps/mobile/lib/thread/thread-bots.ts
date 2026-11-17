@@ -57,10 +57,10 @@ export function useThreadBots({
     const read = rpcQuery("bots/list");
     try {
       const bots = await rpc("bots/list");
-      queryClient.setQueryData(read.queryKey, bots);
       // Apply any successful response that is still the newest applied so far.
       // A later failed refresh must not discard an earlier success.
       if (generation < mentionBotsAppliedGeneration.current) return;
+      queryClient.setQueryData(read.queryKey, bots);
       if (!isCurrent() || targetBotId !== activeBotId.current) return;
       mentionBotsAppliedGeneration.current = generation;
       setMentionBots((current) => retainUnchangedBotRoster(current, bots));

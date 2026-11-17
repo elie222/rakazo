@@ -37,14 +37,18 @@ export function reconcileVisibleThreadSnapshot(
   const { cursor: _nextCursor, ...nextVisible } = next;
   if (equalValue(previousVisible, nextVisible)) return previous;
   const shown = new Map(previous.messages.map((message) => [message.id, message]));
-  let kept = false;
+  let kept = 0;
   const messages = next.messages.map((message) => {
     const before = shown.get(message.id);
     if (!before || !equalValue(before, message)) return message;
-    kept = true;
+    kept += 1;
     return before;
   });
-  return kept ? { ...next, messages } : next;
+  if (kept === 0) return next;
+  const unchanged =
+    kept === previous.messages.length &&
+    messages.every((message, index) => message === previous.messages[index]);
+  return { ...next, messages: unchanged ? previous.messages : messages };
 }
 
 /** A group chat's members in its order, once the chat or its group list has loaded them. */
