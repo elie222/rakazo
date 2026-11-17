@@ -14,7 +14,7 @@ const childRoutineTargetProperties = {
   bot_name: { type: "string", description: "Exact name of a bot in this space." },
 };
 
-/** Same exactly-one-timing-method rule as schedule_create, plus the target bot. */
+/** Same exactly-one-timing-method rule as schedule_create, without watches, plus the target bot. */
 const createChildRoutineInputSchema = {
   oneOf: [
     scheduleCreateBranch(["cron"], childRoutineTargetProperties),
@@ -358,7 +358,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "create_child_routine",
     description:
-      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.",
+      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. on: events, as in schedule_create.",
     inputSchema: createChildRoutineInputSchema,
   },
   {

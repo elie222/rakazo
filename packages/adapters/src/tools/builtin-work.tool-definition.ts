@@ -83,12 +83,31 @@ const scheduleTimingSpecs = {
   },
 };
 
+/** Events that start the routine besides its timing, or instead of it. */
+const routineEventsSpec = {
+  type: "object",
+  properties: {
+    webhook: { type: "boolean" },
+    git: { type: "boolean" },
+    chat: { type: "string" },
+    email: { type: "string", enum: ["owner", "domain"] },
+  },
+  additionalProperties: false,
+};
+
+/** As with timing, a serializer's null or blank for an unused `on` is no events. */
+const optionalRoutineEvents = { anyOf: [routineEventsSpec, ...blankScheduleTiming.anyOf] };
+
 const startAtSpec = {
   type: "string",
   description:
     "ISO date or datetime a repeating schedule starts; the first run is the first match at or after it. Without an offset, read in timezone. If you already did this period's work yourself, set startAt so the first run does not repeat it.",
 };
 
+/**
+ * One way to time a routine. Repeats and watches also take events (`on`); the cron branch leaves
+ * cron optional, so a routine that only events start matches it alone.
+ */
 export function scheduleCreateBranch(
   active: readonly (keyof typeof scheduleTimingSpecs)[],
   extraProperties: Record<string, unknown> = {},
@@ -98,13 +117,24 @@ export function scheduleCreateBranch(
   for (const name of scheduleTimingNames) {
     properties[name] = activeNames.has(name) ? scheduleTimingSpecs[name] : blankScheduleTiming;
   }
-  properties.startAt =
-    activeNames.has("cron") || activeNames.has("every") ? startAtSpec : blankScheduleTiming;
+  // Optional here, so a serializer's null for it means no cron, as in the other branches.
+  if (activeNames.has("cron")) {
+    properties.cron = { anyOf: [scheduleTimingSpecs.cron, { type: "null" }] };
+  }
+  const repeats = activeNames.has("cron") || activeNames.has("every");
+  properties.on = repeats || activeNames.has("watch") ? optionalRoutineEvents : blankScheduleTiming;
+  properties.startAt = repeats ? startAtSpec : blankScheduleTiming;
   return {
     type: "object",
     properties,
-    // A watch never runs in its chat: what it read is not the user's words.
-    required: ["name", "prompt", ...(activeNames.has("watch") ? [] : ["inChat"]), ...active],
+    // A watch never runs in its chat: what it read is not the user's words. cron is optional, so
+    // a routine only events start matches the cron branch alone.
+    required: [
+      "name",
+      "prompt",
+      ...(activeNames.has("watch") ? [] : ["inChat"]),
+      ...active.filter((name) => name !== "cron"),
+    ],
     additionalProperties: false,
   };
 }
@@ -302,7 +332,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. inChat true only when each run continues work this chat is doing, such as updating a draft or plan written here or fixing something started here; it then waits for work under way here. Otherwise false: it runs on time, seeing this chat\'s latest messages and its own earlier results.',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. inChat true only when each run continues work this chat is doing, such as updating a draft or plan written here or fixing something started here; it then waits for work under way here. Otherwise false: it runs on time, seeing this chat\'s latest messages and its own earlier results. on: run on events too, or only (no timing); each run receives the event: webhook, git (GitHub webhook), chat (your connected chat app, by name), email (to your address from the owner or their domain).',
     inputSchema: scheduleCreateInputSchema,
   },
   {
@@ -313,7 +343,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_update",
     description:
-      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web.",
+      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web. on replaces the routine's events; {} removes them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -327,6 +357,7 @@ export const workTools: ConnectorTool[] = [
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,
+        on: optionalRoutineEvents,
       },
       required: ["routineId"],
     },

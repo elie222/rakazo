@@ -164,10 +164,11 @@ function choiceOptions(
 }
 
 /**
- * How much answering time a call may spend beyond its own total, in all: two full questions
- * (see TOOL_QUESTION_WAIT_MS). Past it the call ends however often the server asks again.
+ * How much answering time a call may spend beyond its own total, in all: one full question (see
+ * TOOL_QUESTION_WAIT_MS) and part of another. Past it the call ends however often the server
+ * asks again.
  */
-export const MCP_ANSWER_ALLOWANCE_MS = 10 * 60_000;
+export const MCP_ANSWER_ALLOWANCE_MS = 15 * 60_000;
 
 /**
  * How long a tool call may go without an answer, a progress report, and how long in all,

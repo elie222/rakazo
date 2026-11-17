@@ -10,10 +10,10 @@ import { publishMessage } from "../assembly/run-messages.js";
 
 /**
  * How long a tool's question waits for the person. The server holds its response to the call open
- * meanwhile, and the HTTP client drops a response that sends nothing for five minutes, so the
- * wait ends first and an answer always has a call to return to.
+ * meanwhile, sending nothing; this stays well below the HTTP client's wait for a silent response
+ * (MCP_HTTP_TIMEOUTS), so an answer always has a call to return to.
  */
-export const TOOL_QUESTION_WAIT_MS = 4 * 60_000;
+export const TOOL_QUESTION_WAIT_MS = 10 * 60_000;
 
 /**
  * Who a tool's server may ask mid-call: the person whose own message in the app started this

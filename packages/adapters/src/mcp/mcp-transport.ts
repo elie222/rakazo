@@ -9,7 +9,9 @@ import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
+import { Agent } from "undici";
 import { combineSignals } from "../connectors/connector-safety.js";
+import { dispatcherFetch, isNodeFetch } from "../web/undici-fetch.js";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
@@ -30,6 +32,7 @@ import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.
 import {
   createSafeRemoteFetch,
   listMcpTools,
+  MCP_HTTP_TIMEOUTS,
   MCP_TOOL_MAX_TOTAL_MS,
   MCP_TOOL_TIMEOUT_MS,
 } from "./remote-mcp.js";
@@ -171,6 +174,8 @@ export function secureFetch(
   urlPolicy: McpUrlPolicy,
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
+  /** The HTTP client's waits, for a tool call's connection; sign-in keeps the client defaults. */
+  responseTimeouts?: typeof MCP_HTTP_TIMEOUTS,
 ): SafeRemoteFetch {
   // A local hostname is not authorization: the unguarded loopback fetch below
   // needs the deployment-owner private-endpoint escape as well.
@@ -202,9 +207,23 @@ export function secureFetch(
     "cookie",
     "proxy-authorization",
   ]);
-  const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname, {
-    allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
-  });
+  const safeRemoteFetch = createSafeRemoteFetch(
+    network.fetch,
+    network.resolveHostname,
+    { allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint },
+    undefined,
+    responseTimeouts,
+  );
+  // The permitted loopback server gets the same waits as remote ones. A fetch someone installed
+  // in place of Node's own is theirs to call as it is.
+  const localAgent =
+    responseTimeouts && !network.fetch ? new Agent({ ...responseTimeouts }) : undefined;
+  const localFetch: typeof globalThis.fetch = (url, init) => {
+    const base = network.fetch ?? globalThis.fetch;
+    return localAgent && isNodeFetch(base)
+      ? dispatcherFetch(url, { ...init, dispatcher: localAgent } as RequestInit)
+      : base(url, init);
+  };
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
@@ -252,7 +271,7 @@ export function secureFetch(
             : undefined,
     } satisfies RequestInit;
     const response = localHttp
-      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
+      ? await localFetch(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
@@ -261,7 +280,9 @@ export function secureFetch(
     return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
-  result.close = () => safeRemoteFetch.close();
+  result.close = async () => {
+    await Promise.all([safeRemoteFetch.close(), localAgent?.close()]);
+  };
   return result;
 }
 
@@ -406,6 +427,7 @@ export class McpSession {
       options.urlPolicy ?? {},
       options.headerPolicy,
       options.network,
+      MCP_HTTP_TIMEOUTS,
     );
     this.remoteFetch = safeFetch;
     const originFetch = withEndpointOriginFallback(url.origin, safeFetch);
