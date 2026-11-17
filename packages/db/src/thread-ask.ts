@@ -244,9 +244,11 @@ async function commitAnswerRunInput(
   const secretAsk = isSecretAskBlock(pendingAsk);
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
+  const customChoiceAnswer = choiceAsk && !selectedChoice ? input.answer.trim() : undefined;
   const dismissed = Boolean(input.dismiss);
   // A secret request can be turned down; every other card needs an answer.
   if (dismissed && (!secretAsk || input.answer)) return null;
+  if (customChoiceAnswer !== undefined && !customChoiceAnswer) return null;
   const secretRequest = {
     runId: input.runId,
     spaceId: input.spaceId,
@@ -351,14 +353,17 @@ async function commitAnswerRunInput(
   });
   if (queued.count !== 1) return null;
 
-  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
+  const recordedAnswer = secretAsk
+    ? ""
+    : (selectedChoice?.id ?? customChoiceAnswer ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
+  let createdAnswerMessageId: string | undefined;
 
-  // Give spoken answers the same durable, call-scoped user utterance as other voice turns.
+  // Give spoken answers and card-typed custom answers the same durable user message.
   // Secret asks stay out of message history; the call UI requires those answers on screen.
-  if (recordsCallUtterance) {
-    const blocks = [{ kind: "text" as const, text: input.answer }];
+  if (recordsCallUtterance || (customChoiceAnswer !== undefined && !input.answerMessageId)) {
+    const blocks = [{ kind: "text" as const, text: customChoiceAnswer ?? input.answer }];
     const utterance = await createThreadMessageInTransaction(tx, {
       threadId: input.threadId,
       role: "user",
@@ -366,8 +371,9 @@ async function commitAnswerRunInput(
       botId: run.botId,
       authorUserId: input.answeredByUserId,
       runId: input.runId,
-      clientNonce: input.clientNonce,
+      ...(recordsCallUtterance ? { clientNonce: input.clientNonce } : {}),
     });
+    if (customChoiceAnswer !== undefined) createdAnswerMessageId = utterance.id;
     const author = await loadMessageAuthor(tx, input.answeredByUserId);
     await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -375,7 +381,13 @@ async function commitAnswerRunInput(
       botId: run.botId,
       type: "thread.message.created",
       runId: input.runId,
-      payload: { messageId: utterance.id, role: "user", blocks, callId, author },
+      payload: {
+        messageId: utterance.id,
+        role: "user",
+        blocks,
+        ...(callId ? { callId } : {}),
+        author,
+      },
     });
   }
 
@@ -469,22 +481,23 @@ async function commitAnswerRunInput(
         prompt: resumePrompt(
           { ...run, trigger: resumedTrigger },
           pendingAsk.text,
-          selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
+          selectedChoice
+            ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
+            : (customChoiceAnswer ?? input.answer),
         ),
       },
     });
     if (task.count !== 1) throw new Error("Run task was not available to answer");
   }
 
+  const answerMessageId = input.answerMessageId ?? createdAnswerMessageId;
   const blocks = parsed.data.map((block) =>
     block === pendingAsk
       ? {
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
-          ...(!secretAsk && input.answerMessageId
-            ? { answerMessageId: input.answerMessageId }
-            : {}),
+          ...(!secretAsk && answerMessageId ? { answerMessageId } : {}),
           ...(dismissed ? { dismissed: true as const } : {}),
           ...(input.remember === false ? { remembered: false as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate

@@ -1052,3 +1052,60 @@ it("leaves plain questions to the composer and dims the question after answering
   ).toBe(true);
   expect(container.textContent).not.toContain("Paris");
 });
+
+it("lets people type a custom answer behind Type your answer on pending option cards only", async () => {
+  const optionCard: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Berlin" },
+      { id: "choice-2", label: "Seoul" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  await render(optionCard, undefined, onAnswer);
+  expect(container.querySelector("textarea")).toBeNull();
+  const toggle = button("Type your answer")!;
+  expect(toggle).toBeDefined();
+
+  await act(async () => toggle.click());
+  const textarea = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Type your answer"]',
+  )!;
+  expect(textarea).not.toBeNull();
+  expect(button("Send answer")?.disabled).toBe(true);
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "  Montreal  ",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(button("Send answer")?.disabled).toBe(false);
+
+  await act(async () => button("Send answer")!.click());
+  expect(onAnswer).toHaveBeenCalledWith("Montreal");
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(button("Type your answer")).toBeUndefined();
+  expect(
+    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
+  ).toBe(true);
+
+  await render({ ...optionCard, status: "answered", answer: "Montreal" }, undefined, onAnswer);
+  expect(button("Type your answer")).toBeUndefined();
+
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={optionCard}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={onAnswer}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(button("Type your answer")).toBeUndefined();
+});

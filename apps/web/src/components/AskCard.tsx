@@ -147,6 +147,8 @@ function PromptAskCard({
 }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
+  const [typingAnswer, setTypingAnswer] = useState(false);
+  const [customAnswer, setCustomAnswer] = useState("");
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
@@ -184,6 +186,8 @@ function PromptAskCard({
     try {
       await onAnswer(submitValue);
       setAcceptedAnswer(submitValue);
+      setTypingAnswer(false);
+      setCustomAnswer("");
     } catch (err) {
       setError(errorText(err, t`Could not submit this answer`));
     } finally {
@@ -300,18 +304,70 @@ function PromptAskCard({
         </form>
       ) : optionQuestion ? (
         // Options stay in place once answered: the chosen one is marked, the rest dim.
-        <div className="mt-2.5 space-y-0.5">
-          {askActions?.map((action, index) => (
-            <OptionRow
-              key={action.id}
-              letter={optionLetter(index)}
-              selected={chosenOption?.id === action.id}
-              disabled={answered || !canAnswer || submitting}
-              onClick={() => void submitAnswer(action.id)}
-            >
-              {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
-            </OptionRow>
-          ))}
+        <div className="mt-2.5">
+          <div className="space-y-0.5">
+            {askActions?.map((action, index) => (
+              <OptionRow
+                key={action.id}
+                letter={optionLetter(index)}
+                selected={chosenOption?.id === action.id}
+                disabled={answered || !canAnswer || submitting}
+                onClick={() => void submitAnswer(action.id)}
+              >
+                {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
+              </OptionRow>
+            ))}
+          </div>
+          {canAnswer && !answered ? (
+            typingAnswer ? (
+              <form
+                className="mt-3 space-y-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitAnswer(customAnswer);
+                }}
+              >
+                <Textarea
+                  aria-label={t`Type your answer`}
+                  placeholder={t`Type your answer`}
+                  value={customAnswer}
+                  disabled={submitting}
+                  onChange={(event) => setCustomAnswer(event.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={submitting || !customAnswer.trim()}>
+                    {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => {
+                      setTypingAnswer(false);
+                      setError(null);
+                    }}
+                  >
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="mt-2">
+                <Button
+                  type="button"
+                  variant="text"
+                  size="sm"
+                  disabled={submitting}
+                  onClick={() => {
+                    setTypingAnswer(true);
+                    setError(null);
+                  }}
+                >
+                  <Trans>Type your answer</Trans>
+                </Button>
+              </div>
+            )
+          ) : null}
         </div>
       ) : typedAnswer ? (
         answerIsSeparate ? null : (

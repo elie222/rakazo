@@ -150,6 +150,28 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
   await customQuestion.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "choice-card-composer-reply-dark");
+
+  // Typing directly on the option card saves a user message and dims the card.
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  await composer.fill("pick from these cities with tappable choices");
+  await page.keyboard.press("Enter");
+  const cardTypedQuestion = page.getByTestId("question-card").last();
+  const typeToggle = cardTypedQuestion.getByRole("button", {
+    name: "Type your answer",
+    exact: true,
+  });
+  await expect(typeToggle).toBeVisible({ timeout: 30_000 });
+  await typeToggle.click();
+  const answerBox = cardTypedQuestion.getByLabel("Type your answer");
+  await expect(answerBox).toBeVisible();
+  await captureScreenshot(page, testInfo, "choice-card-type-your-answer");
+  await answerBox.fill("Montreal");
+  await cardTypedQuestion.getByRole("button", { name: "Send answer", exact: true }).click();
+  await expect(
+    page.getByTestId("message-user-bubble").filter({ hasText: /^Montreal$/ }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(cardTypedQuestion).toHaveClass(/opacity-50/);
+  await expect(cardTypedQuestion).not.toContainText("Montreal");
 });
 
 test("shows the content being decided on above the choices", async ({ page }, testInfo) => {

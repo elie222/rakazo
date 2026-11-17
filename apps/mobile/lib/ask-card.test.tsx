@@ -673,7 +673,9 @@ it("stacks option buttons in a non-wrapping full-width column and keeps approval
         <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
       ),
     );
-    const buttons = [...container.querySelectorAll("button")];
+    const buttons = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent !== "Type your answer",
+    );
     const row = buttons[0]!.parentElement!;
     expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
       approval ? ["false", "false"] : ["true", "true"],
@@ -737,14 +739,58 @@ it("only marks question options selected after an answer exists", async () => {
           approval={false}
           actions={actions}
           selectedAnswer={selectedAnswer}
+          disabled={Boolean(selectedAnswer)}
           onAnswer={async () => undefined}
         />,
       ),
     );
     expect(
-      [...container.querySelectorAll("button")].map((button) =>
-        button.getAttribute("data-selected"),
-      ),
+      [...container.querySelectorAll("button")]
+        .filter((button) => button.textContent === "First" || button.textContent === "Second")
+        .map((button) => button.getAttribute("data-selected")),
     ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);
   }
+});
+
+it("lets people type a custom answer behind Type your answer on active option cards", async () => {
+  const actions = [
+    { id: "choice-1", label: "Berlin" },
+    { id: "choice-2", label: "Seoul" },
+  ];
+  const onAnswer = vi.fn(async () => undefined);
+  await act(async () =>
+    root.render(<AskActions approval={false} actions={actions} onAnswer={onAnswer} />),
+  );
+  expect(container.querySelector("input")).toBeNull();
+  expect(button("Type your answer")).toBeDefined();
+
+  await act(async () => button("Type your answer").click());
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Type your answer"]')!;
+  expect(input).not.toBeNull();
+  expect(button("Send answer").disabled).toBe(true);
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "  Montreal  ",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(button("Send answer").disabled).toBe(false);
+
+  await act(async () => button("Send answer").click());
+  expect(onAnswer).toHaveBeenCalledWith("Montreal");
+
+  await act(async () =>
+    root.render(
+      <AskActions
+        approval={false}
+        actions={actions}
+        disabled
+        selectedAnswer="Montreal"
+        onAnswer={onAnswer}
+      />,
+    ),
+  );
+  expect(button("Type your answer")).toBeUndefined();
 });

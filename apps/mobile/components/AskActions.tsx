@@ -37,7 +37,11 @@ export function AskActions({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
+  const [typingAnswer, setTypingAnswer] = useState(false);
+  const [customAnswer, setCustomAnswer] = useState("");
   const submitting = pendingAction !== null;
+  const canTypeAnswer = !approval && instructions === undefined && !disabled;
+  const trimmedCustomAnswer = customAnswer.trim();
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -52,6 +56,8 @@ export function AskActions({
     setPendingAction(answer);
     try {
       await onAnswer(answer);
+      setTypingAnswer(false);
+      setCustomAnswer("");
     } catch (error) {
       Alert.alert(t`Could not submit answer`, errorText(error, t`Please try again.`));
     } finally {
@@ -131,6 +137,59 @@ export function AskActions({
           );
         })}
       </View>
+      {canTypeAnswer ? (
+        typingAnswer ? (
+          <View style={{ marginTop: 4, gap: 8 }}>
+            <TextInput
+              accessibilityLabel={t`Type your answer`}
+              placeholder={t`Type your answer`}
+              placeholderTextColor={tokens.faintForeground}
+              autoCapitalize="sentences"
+              editable={!submitting}
+              value={customAnswer}
+              onChangeText={setCustomAnswer}
+              onSubmitEditing={() => {
+                if (trimmedCustomAnswer) void submit(trimmedCustomAnswer);
+              }}
+              style={{
+                minHeight: 42,
+                borderRadius: 12,
+                borderWidth: 1,
+                paddingHorizontal: 12,
+                paddingVertical: 9,
+                borderColor: tokens.border,
+                color: tokens.foreground,
+              }}
+            />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              <NativeActionButton
+                label={t`Send answer`}
+                disabled={!trimmedCustomAnswer}
+                busy={submitting}
+                fill={false}
+                onPress={() => void submit(trimmedCustomAnswer)}
+              />
+              <NativeActionButton
+                label={t`Cancel`}
+                prominence="secondary"
+                fill={false}
+                disabled={submitting}
+                onPress={() => setTypingAnswer(false)}
+              />
+            </View>
+          </View>
+        ) : (
+          <NativeActionButton
+            label={t`Type your answer`}
+            prominence="quiet"
+            variant="text"
+            fill={false}
+            size="compact"
+            disabled={submitting}
+            onPress={() => setTypingAnswer(true)}
+          />
+        )
+      ) : null}
     </View>
   );
 }
