@@ -676,7 +676,7 @@ export function botsRoutes(ctx: RouterContext) {
           },
           { replace: true },
         );
-        if (!plaintext) throw new ORPCError("NOT_FOUND");
+        if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
           path: `/api/v1/bots/${bot.id}/webhook`,
