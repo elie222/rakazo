@@ -2153,20 +2153,15 @@ describe("a claimed send and its backup job", () => {
     vi.useFakeTimers();
     const t = setup();
     const [id] = await t.record(threadLane("t-a"), [post("t-a", "raced")]);
-    let land!: () => void;
-    t.sendToThread.mockImplementationOnce(
-      () =>
-        new Promise<MessagingSendResult>((resolve) => {
-          land = () => resolve({ handle: "first" });
-        }),
-    );
+    const land = deferred<MessagingSendResult>();
+    t.sendToThread.mockImplementationOnce(() => land.promise);
     const sending = t.delivery.send([threadLane("t-a")]);
     await vi.advanceTimersByTimeAsync(MESSAGING_SEND_STALE_MS);
     await sending;
     // The claim went stale; the backup job takes it over and sends.
     t.world.outbound[0]!.updatedAt = new Date(Date.now() - MESSAGING_SEND_STALE_MS - 1);
     await t.delivery.sendJob(id!, attempt(1));
-    land();
+    land.resolve({ handle: "first" });
     await vi.advanceTimersByTimeAsync(1_000);
 
     // The backup job's handle stands; the late "first" result changes nothing.

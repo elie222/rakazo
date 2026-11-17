@@ -9,6 +9,7 @@ import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { McpConnector } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
+import { retireToReconnectMarker } from "./model-credential-refresh.js";
 import { createRunSecretWriter } from "./run-secret.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
@@ -53,6 +54,7 @@ function database() {
     ["bot", []],
     ["mcpServer", []],
     ["mcpServerSpace", []],
+    ["userModelCredential", []],
   ]);
   const matches = (row: Row, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([key, value]) => {
@@ -511,6 +513,41 @@ describe("secret persistence cleanup with a queue", () => {
       await prisma.secret.deleteMany({ where: { id: "row" } });
       expect(fake.values.size).toBe(0);
       expect(queue.queued.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("removes the copy a retired model sign-in replaced, and the marker one that lost never saved", async () => {
+    const { fake, store, db, queue, prisma, worker } = await setup();
+    const signedIn = await store.put('{"kind":"api_key","key":"fake-key"}', context, {
+      recordId: "row",
+    });
+    db.tables.get("secret")!.push({ id: "row", userId: "user", ciphertext: signedIn.ref });
+    db.tables
+      .get("userModelCredential")!
+      .push({ id: "credential", userId: "user", secretId: "row" });
+    const retire = () =>
+      retireToReconnectMarker(
+        prisma,
+        store,
+        { userId: "user", spaceId: "space" },
+        { id: "credential", secretId: "row" },
+      )("refresh_rejected" as never, undefined);
+    try {
+      await expect(retire()).resolves.toBe(true);
+      const marker = db.tables.get("secret")![0]!.ciphertext!;
+      expect([...fake.values.keys()]).toEqual([marker.slice("infisical:v1:".length)]);
+      expect(queue.queued.size).toBe(0);
+
+      // The sign-in is gone before this retirement commits, so its marker is never saved.
+      db.tables.get("userModelCredential")!.length = 0;
+      vi.spyOn(store, "delete").mockRejectedValueOnce(new Error("store unavailable"));
+      await expect(retire()).resolves.toBe(false);
+      expect(fake.values.size).toBe(2);
+      expect(queue.cleanups()).toEqual([expect.objectContaining({ recordId: "row", due: true })]);
+      await queue.runQueued(worker);
+      expect([...fake.values.keys()]).toEqual([marker.slice("infisical:v1:".length)]);
     } finally {
       await store.close();
     }

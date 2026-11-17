@@ -4,6 +4,8 @@ import {
   BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import type { StripeFailure } from "../../../testing/stripe-emulator.js";
+import { StripeEmulator } from "../../../testing/stripe-emulator.js";
 import {
   encodeStripeForm,
   mapStripeSubscriptionStatus,
@@ -13,8 +15,6 @@ import {
   signStripeWebhook,
   stripeBillingConfigFromEnv,
 } from "./stripe-billing.js";
-import type { StripeFailure } from "./testing/stripe-emulator.js";
-import { StripeEmulator } from "./testing/stripe-emulator.js";
 
 function setup(wrapFetch?: (wire: StripeEmulator) => typeof fetch) {
   const wire = new StripeEmulator();

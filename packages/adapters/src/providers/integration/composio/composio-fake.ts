@@ -7,14 +7,14 @@ import type {
   ToolRouterCreateSessionConfig,
   ToolRouterToolkitsOptions,
 } from "@composio/core";
-import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
-import type { ComposioClient, ComposioSession } from "./composio-connector.js";
-import { collectPages } from "./connector-catalog.js";
-import type { EmulatedGithubRelease } from "./release-watch.js";
+import { collectPages } from "../../../connector-catalog.js";
+import type { EmulatedGithubRelease } from "../../../release-watch.js";
 import {
   DEFAULT_RAKAZO_EMULATED_RELEASES,
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
-} from "./release-watch.js";
+} from "../../../release-watch.js";
+import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
+import type { ComposioClient, ComposioSession } from "./composio-connector.js";
 
 type SessionTools = Awaited<ReturnType<ComposioSession["tools"]>>;
 type ToolkitPage = Awaited<ReturnType<ComposioSession["toolkits"]>>;
