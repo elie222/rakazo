@@ -45,11 +45,11 @@ restriction, but the operator must review the current full terms in its own acco
 
 ## Transport options
 
-| Path | Demonstrated benefit | What remains | Decision |
-| --- | --- | --- | --- |
-| Existing direct adapter | Already mounted by complete server credentials; linking, text/media transport, signed webhooks and status handling exist | Business/number onboarding, eligibility, billing, live acceptance; no product template delivery | Retain for eligible DM pilot |
-| Photon WhatsApp | Advertises managed Cloud API transport, templates and a unified API | Same Meta business/verification/policy; new integration and contract validation needed | No adapter now |
-| Twilio WhatsApp | Established gateway with documented console Self Sign-up | Same upstream requirements, additional fees and a new adapter | Contingency if a specific onboarding/operations failure justifies it |
+| Path                    | Demonstrated benefit                                                                                                     | What remains                                                                                    | Decision                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Existing direct adapter | Already mounted by complete server credentials; linking, text/media transport, signed webhooks and status handling exist | Business/number onboarding, eligibility, billing, live acceptance; no product template delivery | Retain for eligible DM pilot                                         |
+| Photon WhatsApp         | Advertises managed Cloud API transport, templates and a unified API                                                      | Same Meta business/verification/policy; new integration and contract validation needed          | No adapter now                                                       |
+| Twilio WhatsApp         | Established gateway with documented console Self Sign-up                                                                 | Same upstream requirements, additional fees and a new adapter                                   | Contingency if a specific onboarding/operations failure justifies it |
 
 [Photon's WhatsApp page](https://photon.codes/platform/whatsapp) says it is an official Meta Business
 Technology Provider using Cloud API, connects the business account and number, and leaves

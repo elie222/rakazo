@@ -31,15 +31,15 @@ uses bearer project keys under `/v1/projects/{projectId}`, explicitly recommends
 production, and warns of incomplete feature parity. Migrating requires a separate adapter change,
 event/credential translation and a plan for existing stored thread IDs, not a package rename.
 
-| Capability | Existing Photon connection | Existing Sendblue connection |
-| --- | --- | --- |
-| Direct text and typing | Enabled | Enabled |
-| Groups | Explicitly disabled, even on paid projects | Personal group linking enabled; actual plan must permit replies |
-| SMS/RCS | No separate adapter/channel or transport reporting; fallback unverified | Inbound iMessage/SMS/RCS allowed and transport reported; ordinary outbound sends let the service choose fallback |
-| Incoming photo/file/voice memo | SDK exposes metadata but no `url` or `fetchData`; bytes never reach the bot | Adapter exposes media URL and lazy download; still requires live media checks |
-| Outgoing files | Generic file posting delegated to SDK; not live verified | Generic file posting delegated to SDK; not live verified |
-| Native outgoing voice notes | SDK has `sendVoice`, wrapper does not expose it | Provider supports `.caf` voice memos; generic file send is not an audio conversion pipeline |
-| Delivery status | No `peekStatuses` mapping; accepted send is not delivery evidence | Callback status mapping present; validate callback authentication |
+| Capability                     | Existing Photon connection                                                  | Existing Sendblue connection                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Direct text and typing         | Enabled                                                                     | Enabled                                                                                                          |
+| Groups                         | Explicitly disabled, even on paid projects                                  | Personal group linking enabled; actual plan must permit replies                                                  |
+| SMS/RCS                        | No separate adapter/channel or transport reporting; fallback unverified     | Inbound iMessage/SMS/RCS allowed and transport reported; ordinary outbound sends let the service choose fallback |
+| Incoming photo/file/voice memo | SDK exposes metadata but no `url` or `fetchData`; bytes never reach the bot | Adapter exposes media URL and lazy download; still requires live media checks                                    |
+| Outgoing files                 | Generic file posting delegated to SDK; not live verified                    | Generic file posting delegated to SDK; not live verified                                                         |
+| Native outgoing voice notes    | SDK has `sendVoice`, wrapper does not expose it                             | Provider supports `.caf` voice memos; generic file send is not an audio conversion pipeline                      |
+| Delivery status                | No `peekStatuses` mapping; accepted send is not delivery evidence           | Callback status mapping present; validate callback authentication                                                |
 
 Photon [Stable webhook payloads](https://photon.codes/docs/webhooks/events) contain attachment IDs
 and metadata, not download URLs or bytes; out-of-band `getAttachment(id, space.phone)` retrieval is
