@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import { botMessageAllowsSilence, messageBlocksText, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -20,6 +21,7 @@ import {
   DELEGATED_EMPTY_NOTICE,
   runAllowsSilentEmpty,
   runNarratesLive,
+  runReplyMode,
 } from "./run-replies.prompt.js";
 import { startStatusLines } from "./run-status-lines.js";
 import { loadCurrentTurnImages } from "./run-turn-images.js";
@@ -302,8 +304,14 @@ function startRunStatusLines(
   const { deps, run, runId, secrets } = hold;
   const { bot, thread } = parts.records;
   // A group member a message named nobody may stay silent, so it shows nothing early.
-  // Messages mode keeps a bot's working private, so it shows no statuses either.
-  if (!runNarratesLive(run.trigger) || parts.groupReplyOptional || bot.replyMode === "messages") {
+  // Messages mode keeps a bot's working private, so it shows no statuses either. A bot set to
+  // messages mode that cannot message the person replies in chat, and narrates like one.
+  const replyMode = runReplyMode(
+    run.trigger,
+    bot.replyMode,
+    disabledBuiltinToolSet(bot.disabledBuiltinTools),
+  );
+  if (!runNarratesLive(run.trigger) || parts.groupReplyOptional || replyMode === "messages") {
     return;
   }
   // Set up in the background: the run never waits on the status model. Its statuses

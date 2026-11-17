@@ -47,18 +47,15 @@ describe("step status field", () => {
       );
     });
 
-    it("offers the status field to a free-form object tool too", () => {
+    it("leaves a free-form object tool's schema alone", () => {
       const host = {} as ToolHost;
       const [tool] = toAgentTools(
         [{ name: "crm_call", description: "Call the CRM.", inputSchema: { type: "object" } }],
         host,
       );
       const parameters = tool!.parameters as unknown as { properties?: Record<string, unknown> };
-      expect(parameters.properties).toHaveProperty("live_status");
-      expect(host.narratedTools?.has("crm_call")).toBe(true);
-      expect(tool!.prepareArguments?.({ id: 1, live_status: "Calling the CRM" })).toEqual({
-        id: 1,
-      });
+      expect(parameters.properties ?? {}).not.toHaveProperty("live_status");
+      expect(host.narratedTools?.has("crm_call") ?? false).toBe(false);
     });
 
     it("leaves a tool's own status argument alone", () => {
