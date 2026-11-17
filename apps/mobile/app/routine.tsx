@@ -20,13 +20,14 @@ import {
 import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
 import { rpc } from "../lib/api/api";
-import { rpcQuery } from "../lib/query/query";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
@@ -41,7 +42,6 @@ import {
   setRoutineActive,
   useBotRoutines,
 } from "../lib/routines/routine-store";
-import { useScreenQuery } from "../lib/query/screen-query";
 
 export default function RoutineDetail() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);

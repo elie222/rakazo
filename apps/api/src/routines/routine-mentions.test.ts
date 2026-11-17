@@ -21,6 +21,7 @@ const routine = (botId: string, id: string) => ({
   timezone: "UTC",
   active: false,
   notify: true,
+  sendToChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
