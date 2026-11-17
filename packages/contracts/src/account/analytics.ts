@@ -5,8 +5,8 @@ import {
   ByokTierSchema,
   PlanLayoutSchema,
 } from "../billing/billing.js";
-import { RUN_ERROR_KINDS, RunTriggerSchema } from "../conversations/runs.js";
-import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "../domain.js";
+import { RUN_ERROR_KINDS, RunTriggerSchema } from "../runs/runs.js";
+import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./me.js";
 import { SignupAttribution } from "./signup-attribution.js";
 
 // Explicitly validated fields only: this is also the final allowlist at the external boundary.

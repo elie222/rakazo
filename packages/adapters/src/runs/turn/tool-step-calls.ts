@@ -4,7 +4,7 @@ import { storedImageMimeType } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
-import { sanitizeConnectorError } from "../../connectors/connector-safety.js";
+import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";

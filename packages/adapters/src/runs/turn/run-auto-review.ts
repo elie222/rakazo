@@ -9,7 +9,7 @@ import {
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
-import { operatorReviewObserver } from "../../decisions/operator-review-usage.js";
+import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
 import {
   findConnectedModelCredential,
   hasHostedModelCredits,

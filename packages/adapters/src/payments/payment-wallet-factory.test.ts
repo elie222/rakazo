@@ -5,7 +5,7 @@ import {
 } from "./payment-wallet-factory.js";
 
 const linkModule = vi.hoisted(() => ({ loads: 0 }));
-vi.mock("./link-wallet.js", async (importOriginal) => {
+vi.mock("../providers/payment-wallet/link/link-wallet.js", async (importOriginal) => {
   linkModule.loads += 1;
   return importOriginal();
 });

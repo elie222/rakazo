@@ -2,15 +2,15 @@ import { InstaboxError } from "@insforge/instabox-sdk";
 import type { PageBrowserCommand } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
-import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
-import type { RemoteDesktopSdk } from "../../../sandboxes/remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../sandboxes/remote-desktop-sandbox.js";
-import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
+import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandboxes/sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
 

@@ -8,6 +8,8 @@ import { PaymentWalletDisconnected, SecretStoreUnavailableError } from "@rakazo/
 import type { PaymentWalletStatus } from "@rakazo/contracts";
 import type { PaymentWallet, Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "../locks/advisory-lock.js";
+import { withRefreshLock } from "../locks/refresh-lock.js";
 import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import {
   cleanUpUnsavedSecret,
@@ -17,8 +19,6 @@ import {
   savedSecretIn,
 } from "../secrets/secret-cleanup.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { withRefreshLock } from "../shared/refresh-lock.js";
 
 export interface PaymentWalletDeps {
   prisma: PrismaClient;

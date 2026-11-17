@@ -13,18 +13,18 @@ import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
 import { Agent, request as httpRequest } from "undici";
 import WebSocket from "ws";
-import type { RawExecEvent } from "../../../sandboxes/exec-computer.js";
+import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
 import {
   COMMAND_KILL_AFTER_MS,
   RawExecChannel,
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
-} from "../../../sandboxes/exec-computer.js";
-import { ImageComputerSandbox } from "../../../sandboxes/image-computer-sandbox.js";
+} from "../../../computers/sandbox/exec-computer.js";
+import { ImageComputerSandbox } from "../../../computers/sandbox/image-computer-sandbox.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
-} from "../../../sandboxes/sandbox-cleanup.js";
-import { sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
 
 const DEFAULT_PROJECT = "default";
 // Pin a release tag or digest with INCUS_SANDBOX_COMPUTER_IMAGE in production.

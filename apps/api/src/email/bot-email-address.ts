@@ -1,10 +1,10 @@
 import { ORPCError } from "@orpc/server";
+import { EMAIL_NOT_RECEIVED, emailTriggerError } from "@rakazo/adapters";
 import type { BotEmailAddress, BotEmailAddresses } from "@rakazo/contracts";
 import { BOT_EMAIL_NAME_TAKEN } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { claimBotEmailName } from "@rakazo/db";
-
-export const EMAIL_NOT_RECEIVED = "This server doesn't receive email.";
 
 /** The bot's address, once claimed; null when this server receives no email. */
 export async function botEmailAddress(
@@ -65,12 +65,6 @@ export async function assertEmailTrigger(
   domain: string | undefined,
   botId: string,
 ): Promise<void> {
-  if (!domain) throw new ORPCError("BAD_REQUEST", { message: EMAIL_NOT_RECEIVED });
-  const row = await prisma.botEmailAddress.findUnique({
-    where: { botId },
-    select: { botId: true },
-  });
-  if (!row) {
-    throw new ORPCError("BAD_REQUEST", { message: "Choose an email address for this bot first." });
-  }
+  const error = await emailTriggerError(prisma, domain, botId);
+  if (error) throw new ClientError("BAD_REQUEST", error);
 }

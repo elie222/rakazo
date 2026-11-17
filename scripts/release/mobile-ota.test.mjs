@@ -18,7 +18,7 @@ test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
     "apps/mobile/index.ts",
     "packages/chat-ui/src/theme.css",
     "packages/ui-tokens/src/tokens.ts",
-    "packages/contracts/src/rpc.ts",
+    "packages/contracts/src/rpc/app-contract.ts",
     "packages/core/src/time.ts",
     "packages/logging/src/index.ts",
   ];

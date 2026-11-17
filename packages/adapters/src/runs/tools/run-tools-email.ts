@@ -12,7 +12,7 @@ import {
   storedEmailAttachments,
 } from "@rakazo/db";
 import { z } from "zod";
-import { redactConnectorPayload } from "../../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTainted, refuseOwnerSettingsChange } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";

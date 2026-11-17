@@ -26,9 +26,9 @@
       "default": "./src/account/user-devices.ts"
     },
     "./test-timing": {
-      "types": "./src/timing.test-support.ts",
-      "development": "./src/timing.test-support.ts",
-      "default": "./src/timing.test-support.ts"
+      "types": "./src/testing/timing.test-support.ts",
+      "development": "./src/testing/timing.test-support.ts",
+      "default": "./src/testing/timing.test-support.ts"
     },
     "./content-security-policy": {
       "types": "./src/clients/content-security-policy.ts",

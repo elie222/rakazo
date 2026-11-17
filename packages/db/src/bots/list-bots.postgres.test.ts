@@ -4,7 +4,7 @@ import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsSystem, runAsTenant } from "../database/row-security.js";
 import { provisionMessagingIdentity } from "../messaging/messaging.js";
-import { createRepos } from "./repos.js";
+import { createRepos } from "./bot-repository.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;

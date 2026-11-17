@@ -13,13 +13,13 @@ import { ACTIVE_RUN_STATUSES, computerUsingRuns } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { draftRecordingsOfLeaseInTransaction, spaceTakesWork } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { announceUnsavedHome, scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
   replaceComputer,
 } from "./computer-lifecycle.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import { endTeachingWithLease, revokeScreenControl } from "./screens/computer-control.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
