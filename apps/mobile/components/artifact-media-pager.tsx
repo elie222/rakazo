@@ -31,6 +31,8 @@ export function ArtifactMediaPager({
   const latest = useRef({ gallery, activeId, onActiveIdChange });
   latest.current = { gallery, activeId, onActiveIdChange };
   const dragging = useRef(false);
+  const momentum = useRef(false);
+  const committedActiveId = useRef(activeId);
   // initialScrollIndex can report the first page before it jumps to the opened artifact.
   const ignoreFirstReport = useRef(true);
   const pendingIndex = useRef<number | null>(null);
@@ -40,16 +42,27 @@ export function ArtifactMediaPager({
   // Load the page the reader settles on, not every page a fling passes through.
   useTimeout(
     () => {
-      if (dragging.current) return;
+      if (dragging.current || momentum.current) return;
       const index = pendingIndex.current;
       pendingIndex.current = null;
       if (index === null) return;
       const item = latest.current.gallery[index];
-      if (item && item.id !== latest.current.activeId) latest.current.onActiveIdChange(item.id);
+      if (!item || item.id === latest.current.activeId) return;
+      committedActiveId.current = item.id;
+      latest.current.onActiveIdChange(item.id);
     },
     pendingIndex.current === null ? null : SETTLE_MS,
     settleKey,
   );
+
+  // A route change moves the active artifact without a swipe, so move the mounted list to it.
+  useEffect(() => {
+    if (width <= 0 || activeId === committedActiveId.current) return;
+    committedActiveId.current = activeId;
+    pendingIndex.current = null;
+    const index = Math.max(0, Math.min(gallery.length - 1, galleryIndex(gallery, activeId)));
+    listRef.current?.scrollToOffset({ offset: width * index, animated: false });
+  }, [activeId, gallery, width]);
 
   // Keep the open artifact under the finger when the window rotates.
   useEffect(() => {
@@ -70,7 +83,7 @@ export function ArtifactMediaPager({
       return;
     }
     pendingIndex.current = index;
-    if (!dragging.current) setSettleKey((key) => key + 1);
+    if (!dragging.current && !momentum.current) setSettleKey((key) => key + 1);
   }).current;
 
   return (
@@ -102,10 +115,18 @@ export function ArtifactMediaPager({
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
           onScrollBeginDrag={() => {
+            momentum.current = false;
             dragging.current = true;
           }}
           onScrollEndDrag={() => {
             dragging.current = false;
+            setSettleKey((key) => key + 1);
+          }}
+          onMomentumScrollBegin={() => {
+            momentum.current = true;
+          }}
+          onMomentumScrollEnd={() => {
+            momentum.current = false;
             setSettleKey((key) => key + 1);
           }}
           windowSize={3}

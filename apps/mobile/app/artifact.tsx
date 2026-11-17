@@ -159,11 +159,13 @@ export default function ArtifactDetailScreen() {
   const [versions, setVersions] = useState<ArtifactVersion[] | null>(null);
   const versionsRef = useRef<ArtifactVersion[] | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const selectedVersionRef = useRef<string | null>(null);
   const [content, setContent] = useState<ContentState>({ status: "loading" });
 
   const applyPage = useCallback((page: LoadedPage) => {
     versionsRef.current = page.versions;
     setVersions(page.versions);
+    selectedVersionRef.current = page.selectedVersionId;
     setSelectedVersionId(page.selectedVersionId);
     setContent(page.content);
   }, []);
@@ -172,6 +174,7 @@ export default function ArtifactDetailScreen() {
     activeIdRef.current = artifactId;
     setActiveId(artifactId);
     versionsRef.current = null;
+    selectedVersionRef.current = null;
     setVersions(null);
     setSelectedVersionId(null);
     setContent({ status: "loading" });
@@ -213,6 +216,7 @@ export default function ArtifactDetailScreen() {
     activeIdRef.current = id;
     setActiveId(id);
     versionsRef.current = null;
+    selectedVersionRef.current = null;
     setVersions(null);
     setSelectedVersionId(null);
     setContent({ status: "loading" });
@@ -222,19 +226,21 @@ export default function ArtifactDetailScreen() {
     (versionId: string) => {
       const familyId = activeIdRef.current;
       const pageVersions = versionsRef.current ?? [];
+      selectedVersionRef.current = versionId;
       setSelectedVersionId(versionId);
       setContent({ status: "loading" });
       void loadContent(versionId).then(
         (loaded) => {
+          if (activeIdRef.current !== familyId || selectedVersionRef.current !== versionId) return;
           pages.current.set(familyId, {
             versions: pageVersions,
             selectedVersionId: versionId,
             content: loaded,
           });
-          if (activeIdRef.current === familyId) setContent(loaded);
+          setContent(loaded);
         },
         (error: unknown) => {
-          if (activeIdRef.current === familyId) {
+          if (activeIdRef.current === familyId && selectedVersionRef.current === versionId) {
             setContent({
               status: "error",
               message: errorText(error, t`Could not load this artifact.`),
@@ -324,11 +330,12 @@ export default function ArtifactDetailScreen() {
     if (content.status !== "ready" || downloading.current) return;
     downloading.current = true;
     try {
-      await downloadArtifactToDevice(
+      const result = await downloadArtifactToDevice(
         content.file.uri,
         content.artifact.mimeType,
         content.artifact.name,
       );
+      if (result === "saved") Alert.alert(t`Saved to Photos`);
     } catch (error) {
       Alert.alert(t`Could not download this artifact`, errorText(error, t`Try again.`));
     } finally {

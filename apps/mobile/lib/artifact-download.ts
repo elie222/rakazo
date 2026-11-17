@@ -8,6 +8,8 @@ import { namedArtifactFile, shareLocalFile } from "./artifact-open";
 // when the build actually has it.
 const mediaLibraryAvailable = Boolean(requireOptionalNativeModule("ExpoMediaLibraryNext"));
 
+class PhotoLibraryPermissionError extends Error {}
+
 async function saveToPhotoLibrary(uri: string, mimeType: string, name: string): Promise<void> {
   const { Asset, getPermissionsAsync, requestPermissionsAsync } = await import(
     "expo-media-library"
@@ -17,9 +19,12 @@ async function saveToPhotoLibrary(uri: string, mimeType: string, name: string): 
   const granted =
     current.granted ||
     (current.canAskAgain && (await requestPermissionsAsync(true, [...permissions])).granted);
-  if (!granted) throw new Error("Photo library access was not granted");
+  if (!granted) throw new PhotoLibraryPermissionError("Photo library access was not granted");
   await Asset.create(namedArtifactFile(new File(uri), mimeType, name).uri);
 }
+
+/** Where the artifact went: the photo library, or the system share/save sheet. */
+export type ArtifactDownloadResult = "saved" | "shared";
 
 /**
  * Save an artifact to the device. Images and videos go to the photo library when the native
@@ -30,15 +35,19 @@ export async function downloadArtifactToDevice(
   uri: string,
   mimeType: string,
   name: string,
-): Promise<void> {
+): Promise<ArtifactDownloadResult> {
   const kind = artifactPreviewKind(mimeType);
   if (mediaLibraryAvailable && (kind === "image" || kind === "video")) {
     try {
       await saveToPhotoLibrary(uri, mimeType, name);
-      return;
-    } catch {
-      // An unsupported type or a denied permission still gets the system save sheet.
+      return "saved";
+    } catch (error) {
+      if (!(error instanceof PhotoLibraryPermissionError)) {
+        console.warn("Could not save artifact to the photo library", error);
+      }
+      // A denied permission or an unsupported file still gets the system save sheet.
     }
   }
   await shareLocalFile(uri, mimeType, name);
+  return "shared";
 }

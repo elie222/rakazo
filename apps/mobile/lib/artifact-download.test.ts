@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   moduleAvailable: true,
@@ -33,6 +33,10 @@ vi.mock("./artifact-open", () => ({
 
 const load = () => import("./artifact-download");
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 beforeEach(() => {
   vi.resetModules();
   state.moduleAvailable = true;
@@ -46,7 +50,12 @@ beforeEach(() => {
 describe("downloadArtifactToDevice", () => {
   it("creates a photo-library asset with the artifact's name without opening the share sheet", async () => {
     const api = await load();
-    await api.downloadArtifactToDevice("file:///cache/chart.png", "image/png", "chart.png");
+    const result = await api.downloadArtifactToDevice(
+      "file:///cache/chart.png",
+      "image/png",
+      "chart.png",
+    );
+    expect(result).toBe("saved");
     expect(state.named).toHaveBeenCalledWith(
       expect.objectContaining({ uri: "file:///cache/chart.png" }),
       "image/png",
@@ -59,7 +68,8 @@ describe("downloadArtifactToDevice", () => {
   it("asks for write access when the first check is inconclusive", async () => {
     state.permission = { granted: false, canAskAgain: true };
     const api = await load();
-    await api.downloadArtifactToDevice("file:///clip.mp4", "video/mp4", "clip.mp4");
+    const result = await api.downloadArtifactToDevice("file:///clip.mp4", "video/mp4", "clip.mp4");
+    expect(result).toBe("saved");
     expect(state.requestPermission).toHaveBeenCalledWith(true, ["photo", "video"]);
     expect(state.create).toHaveBeenCalledWith("file:///named/clip.mp4");
   });
@@ -67,29 +77,51 @@ describe("downloadArtifactToDevice", () => {
   it("falls back to the system sheet when permission is denied", async () => {
     state.permission = { granted: false, canAskAgain: false };
     const api = await load();
-    await api.downloadArtifactToDevice("file:///chart.png", "image/png", "chart.png");
+    const result = await api.downloadArtifactToDevice(
+      "file:///chart.png",
+      "image/png",
+      "chart.png",
+    );
+    expect(result).toBe("shared");
     expect(state.create).not.toHaveBeenCalled();
     expect(state.share).toHaveBeenCalledWith("file:///chart.png", "image/png", "chart.png");
   });
 
-  it("falls back when saving an unsupported image fails", async () => {
+  it("logs unexpected saves and falls back when saving an unsupported image fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     state.create.mockRejectedValue(new Error("unsupported"));
     const api = await load();
-    await api.downloadArtifactToDevice("file:///chart.webp", "image/webp", "chart.webp");
+    const result = await api.downloadArtifactToDevice(
+      "file:///chart.webp",
+      "image/webp",
+      "chart.webp",
+    );
+    expect(result).toBe("shared");
+    expect(warn).toHaveBeenCalled();
     expect(state.share).toHaveBeenCalledWith("file:///chart.webp", "image/webp", "chart.webp");
   });
 
   it("uses the share sheet for a build without the native module", async () => {
     state.moduleAvailable = false;
     const api = await load();
-    await api.downloadArtifactToDevice("file:///chart.png", "image/png", "chart.png");
+    const result = await api.downloadArtifactToDevice(
+      "file:///chart.png",
+      "image/png",
+      "chart.png",
+    );
+    expect(result).toBe("shared");
     expect(state.create).not.toHaveBeenCalled();
     expect(state.share).toHaveBeenCalled();
   });
 
   it("uses the share sheet for a non-media artifact", async () => {
     const api = await load();
-    await api.downloadArtifactToDevice("file:///brief.pdf", "application/pdf", "brief.pdf");
+    const result = await api.downloadArtifactToDevice(
+      "file:///brief.pdf",
+      "application/pdf",
+      "brief.pdf",
+    );
+    expect(result).toBe("shared");
     expect(state.create).not.toHaveBeenCalled();
     expect(state.share).toHaveBeenCalledWith("file:///brief.pdf", "application/pdf", "brief.pdf");
   });

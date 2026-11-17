@@ -180,13 +180,14 @@ it("ignores a failure after leaving the artifact", async () => {
 });
 it("offers Download for an image and saves its cached file", async () => {
   state.mimeType = "image/png";
-  state.download.mockResolvedValue(undefined);
+  state.download.mockResolvedValue("saved");
   await render();
   const node = document.createElement("div");
   const buttons = createRoot(node);
   act(() => buttons.render(state.options.headerRight?.()));
-  act(() => node.querySelector<HTMLElement>('[aria-label="Download"]')!.click());
+  await act(async () => node.querySelector<HTMLElement>('[aria-label="Download"]')!.click());
   expect(state.download).toHaveBeenCalledWith("file:///test", "image/png", "a");
+  expect(state.alert).toHaveBeenCalledWith("Saved to Photos");
   act(() => {
     buttons.unmount();
   });

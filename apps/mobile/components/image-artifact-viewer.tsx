@@ -288,7 +288,8 @@ export function ImageArtifactViewer({
     downloading.current = true;
     try {
       const uri = await imageArtifactUri(requestTarget(), target.artifactId, target.mimeType);
-      await downloadArtifactToDevice(uri, target.mimeType, target.name);
+      const result = await downloadArtifactToDevice(uri, target.mimeType, target.name);
+      if (result === "saved") Alert.alert(t`Saved to Photos`);
     } catch (error) {
       Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
     } finally {
