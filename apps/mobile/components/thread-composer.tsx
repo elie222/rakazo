@@ -29,7 +29,7 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { TextInputInstance, ViewStyle } from "react-native";
 import {
@@ -45,6 +45,7 @@ import {
 import { useComposerDictation } from "../lib/composer-dictation";
 import type { ComposerDraftScope } from "../lib/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import type { ComposerModel } from "../lib/composer-model";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { BotAvatar } from "./bot-avatar";
@@ -97,6 +98,8 @@ type ThreadComposerProps = {
   onSlashAction: (action: SlashActionId) => void;
   /** The composer holds no text: the last of it was deleted or sent. */
   onEmptied?: () => void;
+  /** The chat's model, shown in the box when the person turned the model picker on. */
+  model?: ComposerModel;
 };
 
 export function ThreadComposer({
@@ -119,6 +122,7 @@ export function ThreadComposer({
   startVoiceCall,
   onSlashAction,
   onEmptied,
+  model,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
   // A mention is plain text in the link blue; it turns bold while a backspace has it selected.
@@ -135,6 +139,9 @@ export function ThreadComposer({
   const [saved] = useState(() => readComposerDraft(draftScope));
   const [draft, setDraft] = useState(saved.text);
   const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
+  // Text past one line moves the model, dictation and send to a row under it until the box empties.
+  const [wrapped, setWrapped] = useState(false);
+  const stacked = Boolean(model) && wrapped;
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
@@ -233,6 +240,7 @@ export function ThreadComposer({
       inputRef.current?.clear();
       draftRef.current = "";
       setDraft("");
+      setWrapped(false);
       nativeSelection.current = { start: 0, end: 0 };
       completedSelection.current = null;
       setSelection({ start: 0, end: 0 });
@@ -590,8 +598,8 @@ export function ThreadComposer({
             flex: 1,
             minHeight: 44,
             borderRadius: 22,
-            flexDirection: "row",
-            alignItems: "flex-end",
+            flexDirection: stacked ? "column" : "row",
+            alignItems: stacked ? "stretch" : "flex-end",
             // Keeps text clear of the call/send pill even when it runs to the trailing edge (RTL).
             gap: 8,
             paddingStart: 16,
@@ -601,7 +609,7 @@ export function ThreadComposer({
         >
           <View
             style={{
-              flex: 1,
+              flex: stacked ? undefined : 1,
               flexDirection: "row",
               flexWrap: "wrap",
               alignItems: "center",
@@ -761,6 +769,17 @@ export function ThreadComposer({
                   }
                 }}
                 keyboardAppearance={colorScheme}
+                onContentSizeChange={
+                  model
+                    ? (event) => {
+                        // The stacked layout gives the text more width, so it stays until the box
+                        // empties; going back as soon as the text fits would flip between the two.
+                        if (event.nativeEvent.contentSize.height > 22 * textScale * 1.5)
+                          setWrapped(true);
+                        else if (!draftRef.current) setWrapped(false);
+                      }
+                    : undefined
+                }
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -791,83 +810,149 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
-          {onCall ? null : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
-              disabled={dictation.status === "transcribing"}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={toggleDictation}
-              style={{ marginBottom: pillInset }}
-            >
-              <GlassSurface
-                tint={dictation.status === "idle" ? undefined : tokens.foreground}
-                style={composerPillStyle}
-                fallbackStyle={{
-                  backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
-                }}
+          <TrailingControls stacked={stacked}>
+            {model ? (
+              <ModelChip model={model} style={{ marginBottom: stacked ? 0 : pillInset }} />
+            ) : null}
+            {onCall ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
+                disabled={dictation.status === "transcribing"}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={toggleDictation}
+                style={{ marginBottom: pillInset }}
               >
-                {dictation.status === "transcribing" ? (
-                  <ActivityIndicator size="small" color={tokens.background} />
-                ) : (
+                <GlassSurface
+                  tint={dictation.status === "idle" ? undefined : tokens.foreground}
+                  style={composerPillStyle}
+                  fallbackStyle={{
+                    backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
+                  }}
+                >
+                  {dictation.status === "transcribing" ? (
+                    <ActivityIndicator size="small" color={tokens.background} />
+                  ) : (
+                    <NativeSymbol
+                      ios={dictation.status === "listening" ? "mic.fill" : "mic"}
+                      android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                      size={15}
+                      color={
+                        dictation.status === "idle" ? tokens.mutedForeground : tokens.background
+                      }
+                    />
+                  )}
+                </GlassSurface>
+              </Pressable>
+            )}
+            {/* No call while dictation still owns the microphone or its words are on the way. */}
+            {!canSend && botId && !onCall && dictation.status === "idle" ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t`Call`}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => void startVoiceCall()}
+                style={{ marginBottom: pillInset }}
+              >
+                <GlassSurface
+                  tint={tokens.primary}
+                  style={composerPillStyle}
+                  fallbackStyle={{ backgroundColor: tokens.primary }}
+                >
                   <NativeSymbol
-                    ios={dictation.status === "listening" ? "mic.fill" : "mic"}
-                    android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                    ios="waveform"
+                    android="pulse-outline"
                     size={15}
-                    color={dictation.status === "idle" ? tokens.mutedForeground : tokens.background}
+                    color={tokens.primaryForeground}
                   />
-                )}
-              </GlassSurface>
-            </Pressable>
-          )}
-          {/* No call while dictation still owns the microphone or its words are on the way. */}
-          {!canSend && botId && !onCall && dictation.status === "idle" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t`Call`}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={() => void startVoiceCall()}
-              style={{ marginBottom: pillInset }}
-            >
-              <GlassSurface
-                tint={tokens.primary}
-                style={composerPillStyle}
-                fallbackStyle={{ backgroundColor: tokens.primary }}
+                </GlassSurface>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t`Send`}
+                disabled={sendBlocked}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                onPress={() => void send()}
+                style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
               >
-                <NativeSymbol
-                  ios="waveform"
-                  android="pulse-outline"
-                  size={15}
-                  color={tokens.primaryForeground}
-                />
-              </GlassSurface>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t`Send`}
-              disabled={sendBlocked}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              onPress={() => void send()}
-              style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
-            >
-              <GlassSurface
-                tint={tokens.primary}
-                style={composerPillStyle}
-                fallbackStyle={{ backgroundColor: tokens.primary }}
-              >
-                <NativeSymbol
-                  ios="arrow.up"
-                  android="arrow-up"
-                  size={15}
-                  color={tokens.primaryForeground}
-                />
-              </GlassSurface>
-            </Pressable>
-          )}
+                <GlassSurface
+                  tint={tokens.primary}
+                  style={composerPillStyle}
+                  fallbackStyle={{ backgroundColor: tokens.primary }}
+                >
+                  <NativeSymbol
+                    ios="arrow.up"
+                    android="arrow-up"
+                    size={15}
+                    color={tokens.primaryForeground}
+                  />
+                </GlassSurface>
+              </Pressable>
+            )}
+          </TrailingControls>
         </GlassSurface>
       </View>
     </>
+  );
+}
+
+/** Beside the text on one line; once it wraps, a row of its own under it. */
+function TrailingControls({ stacked, children }: { stacked: boolean; children: ReactNode }) {
+  if (!stacked) return <>{children}</>;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 8,
+        paddingBottom: 8,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+function ModelChip({ model, style }: { model: ComposerModel; style?: ViewStyle }) {
+  const { t } = useLingui();
+  const tokens = useMobileTokens();
+  const name = model.label;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t`Model: ${ph({ model: name })}`}
+      accessibilityValue={model.thinking ? { text: model.thinking } : undefined}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      onPress={model.onPress}
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          height: 28,
+          maxWidth: 180,
+          flexShrink: 1,
+        },
+        style,
+      ]}
+    >
+      <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 15, flexShrink: 1 }}>
+        {name}
+      </Text>
+      {model.thinking ? (
+        <Text numberOfLines={1} style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+          {model.thinking}
+        </Text>
+      ) : null}
+      <NativeSymbol
+        ios="chevron.down"
+        android="chevron-down"
+        size={11}
+        color={tokens.mutedForeground}
+      />
+    </Pressable>
   );
 }
 

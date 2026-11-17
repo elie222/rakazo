@@ -1,0 +1,85 @@
+import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import {
+  chatModelChoices,
+  connectedModelChoices,
+  credentialForModel,
+  modelOptionKey,
+  parseModelOptionKey,
+  resolveSelectableModelId,
+} from "./model-providers.js";
+import { modelThinkingLevels } from "./model-settings-form.js";
+
+type SpaceDefault = { defaultProvider: string | null; defaultModel: string | null };
+
+/**
+ * A bot's model as its pickers show it: the models it can switch to (the Space default first),
+ * its own model as the catalog names it today (`modelKey` is "" for the Space default), and the
+ * thinking levels the model in effect offers.
+ */
+export function botModelState({
+  credentials,
+  catalog,
+  me,
+  modelKey,
+  spaceDefaultLabel,
+}: {
+  credentials: readonly ModelCredential[];
+  catalog: readonly ModelCatalogEntry[];
+  me: SpaceDefault | null;
+  modelKey: string;
+  spaceDefaultLabel: string;
+}) {
+  const stored = modelKey ? parseModelOptionKey(modelKey) : null;
+  const selectedModel = stored
+    ? {
+        provider: stored.provider,
+        modelId: resolveSelectableModelId(catalog, stored.provider, stored.modelId),
+      }
+    : null;
+  const selectedModelKey = selectedModel
+    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
+    : "";
+  const defaultEntry = me?.defaultModel
+    ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
+    : undefined;
+  const choices = chatModelChoices(
+    connectedModelChoices(credentials, catalog),
+    selectedModelKey,
+    spaceDefaultLabel,
+    defaultEntry?.images,
+  );
+
+  const provider = selectedModel?.provider ?? me?.defaultProvider ?? null;
+  const modelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
+  const entry =
+    provider && modelId
+      ? catalog.find(
+          (item) =>
+            item.provider === provider &&
+            resolveSelectableModelId(catalog, item.provider, item.id) === modelId,
+        )
+      : undefined;
+  const credential = credentialForModel(credentials, provider, modelId);
+  const thinkingLevels = modelThinkingLevels(credential, entry, modelId).filter(
+    (level) => level !== "off",
+  );
+  const defaultThinkingLevel: ThinkingLevel = credential?.thinkingLevel ?? "medium";
+
+  return {
+    selectedModel,
+    selectedModelKey,
+    defaultEntry,
+    choices,
+    thinkingLevels,
+    defaultThinkingLevel,
+  };
+}
+
+function catalogEntry(
+  catalog: readonly ModelCatalogEntry[],
+  provider: string | null | undefined,
+  modelId: string,
+) {
+  if (!provider) return undefined;
+  return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
+}

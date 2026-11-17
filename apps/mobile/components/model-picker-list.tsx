@@ -4,6 +4,7 @@ import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText, newestModelsFirst } from "@rakazo/core";
 import { useNavigation } from "expo-router";
+import type { ReactElement } from "react";
 import {
   useCallback,
   useContext,
@@ -48,8 +49,11 @@ export function ModelPickerList({
   providerLabel,
   emptyMessage,
   connectChoices,
+  header,
 }: {
   choices: readonly ChatModelChoice[] | null;
+  /** Settings for the chosen model, above the list so they never need a scroll. */
+  header?: ReactElement;
   /** Providers that need a connection first, listed after the models. */
   connectChoices?: readonly ChatModelChoice[];
   selectedKey: string;
@@ -251,8 +255,13 @@ export function ModelPickerList({
       )}
       ListHeaderComponent={
         Platform.OS === "android" && showSearch ? (
-          <ListSearchInput query={query} setQuery={changeQuery} />
-        ) : undefined
+          <>
+            <ListSearchInput query={query} setQuery={changeQuery} />
+            {header}
+          </>
+        ) : (
+          header
+        )
       }
       ListEmptyComponent={
         error || noMatches ? (

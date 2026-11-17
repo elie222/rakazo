@@ -20,6 +20,7 @@ export * from "./bot-look.js";
 export * from "./bot-mentions.js";
 export * from "./bot-messages.js";
 export * from "./bot-messages.prompt.js";
+export * from "./bot-model.js";
 export * from "./bot-sections.js";
 export * from "./bot-sender-name.js";
 export * from "./bot-templates.js";
