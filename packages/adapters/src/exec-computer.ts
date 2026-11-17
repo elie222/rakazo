@@ -63,6 +63,101 @@ export type RawExec = (
   tty?: boolean,
 ) => AsyncIterable<RawExecEvent>;
 
+/** How long past its own timeout a command's transport waits before giving up on it. */
+const RAW_EXEC_TIMEOUT_GRACE_MS = 10_000;
+
+/**
+ * The events of one raw exec, in the order its transport produced them. Cancellation ends it
+ * with exit 130 and the timeout with 124, each after a line on stderr; `onStop` tears the
+ * transport down first. The transport calls `close` when the exec is done with.
+ */
+export class RawExecChannel {
+  private readonly queue: RawExecEvent[] = [];
+  private wake: (() => void) | undefined;
+  private ended = false;
+  private settle!: () => void;
+  /** Settles once the exec exits, fails or is stopped. */
+  readonly settled = new Promise<void>((resolve) => {
+    this.settle = resolve;
+  });
+  /** Why the transport failed, once it has. */
+  failure: unknown;
+  private readonly timer: NodeJS.Timeout;
+  private readonly abort = () => this.stop(130, "command aborted\n");
+
+  constructor(
+    private readonly signal: AbortSignal,
+    timeoutMs: number,
+    private readonly onStop: () => void = () => {},
+  ) {
+    this.timer = setTimeout(
+      () => this.stop(124, `command timed out after ${timeoutMs} ms\n`),
+      timeoutMs + RAW_EXEC_TIMEOUT_GRACE_MS,
+    );
+    signal.addEventListener("abort", this.abort, { once: true });
+    if (signal.aborted) this.abort();
+  }
+
+  get done(): boolean {
+    return this.ended;
+  }
+
+  push(event: RawExecEvent): void {
+    if (this.ended) return;
+    this.queue.push(event);
+    this.notify();
+  }
+
+  finish(code: number): void {
+    if (this.ended) return;
+    this.queue.push({ type: "exit", code });
+    this.end();
+  }
+
+  fail(error: unknown): void {
+    if (this.ended) return;
+    this.failure = error;
+    this.end();
+  }
+
+  /** Ends the exec with `code` after writing `message` to stderr. */
+  stop(code: number, message: string): void {
+    this.onStop();
+    this.push({ type: "stderr", data: Buffer.from(message) });
+    this.finish(code);
+  }
+
+  /** Yields every event until the exec ends; check `failure` afterwards. */
+  async *drain(): AsyncIterable<RawExecEvent> {
+    while (!this.ended || this.queue.length) {
+      if (!this.queue.length) {
+        await new Promise<void>((resolve) => {
+          this.wake = resolve;
+        });
+      }
+      while (this.queue.length) yield this.queue.shift()!;
+    }
+  }
+
+  close(): void {
+    this.ended = true;
+    clearTimeout(this.timer);
+    this.signal.removeEventListener("abort", this.abort);
+    this.notify();
+  }
+
+  private end() {
+    this.ended = true;
+    this.settle();
+    this.notify();
+  }
+
+  private notify() {
+    this.wake?.();
+    this.wake = undefined;
+  }
+}
+
 class CommandOutputTooLargeError extends Error {
   constructor(
     message: string,

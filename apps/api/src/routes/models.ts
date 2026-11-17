@@ -230,6 +230,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           input.role,
           await withDeploymentDefault(
+            context.actor,
             input.role,
             await getModelRole(
               deps.prisma,
@@ -251,6 +252,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           role,
           await withDeploymentDefault(
+            context.actor,
             role,
             await updateModelRole(
               deps.prisma,
