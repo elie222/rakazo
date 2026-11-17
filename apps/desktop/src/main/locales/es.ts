@@ -239,4 +239,6 @@ export const ES_MESSAGES: Record<string, string> = {
   "Starting {app}…": "Iniciando {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker está instalado pero no se está ejecutando. Inicia el servicio de Docker para continuar.",
+  "Rakazo stopped unexpectedly.": "Rakazo se detuvo de forma inesperada.",
+  Reload: "Recargar",
 };
