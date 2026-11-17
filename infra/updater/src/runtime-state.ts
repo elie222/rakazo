@@ -192,6 +192,16 @@ export async function pruneUpdateImages(
   env: string,
   run: UpdaterCommandRunner,
 ): Promise<void> {
+  const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
+  const inventory = await run(
+    "docker",
+    ["ps", "-a", "--format", '{{.Label "com.docker.compose.project"}}'],
+    options,
+  );
+  if (!inventory.ok) throw new Error("Could not inspect project ownership before image cleanup.");
+  const projects = inventory.stdout.replace(/\r?\n$/, "").split(/\r?\n/);
+  // Another stack's inactive rollback pins are not visible through container image usage.
+  if (projects.some((project) => project !== config.projectName)) return;
   await bestEffort(
     "prune obsolete application release images",
     pruneApplicationImages(config, env, run),

@@ -284,6 +284,9 @@ newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, a
 apply/health-check/recovery path. Prereleases and main builds are never scheduled. Scheduling is
 disabled for custom image repositories, with a startup warning and an `autoUpdateDisabledReason`
 in `/state`; manual controls remain available. When already current, nothing is recreated.
+The first check can reconcile `latest` selections to full release-commit tags even when their
+image bytes match. This pins the supervisor's future computers to that release; subsequent
+checks do not recreate services while those selections remain current.
 Each check revalidates the deployment's image repositories. A running update keeps that
 validated repository selection for its pulls, recreation, recovery and cleanup.
 Scheduled updates follow stable source commits, not registry digest changes. Rebuilding or
@@ -303,6 +306,9 @@ The computer stub uses `pull_policy: missing`, so ordinary pulls and installer r
 locally cached rollback images. After successful updates, cleanup removes obsolete application
 and computer release images and computer cache tags, retaining current/previous images, cache
 or operator tags, images used by containers, and images selected by running supervisors.
+Automatic image cleanup is skipped when another project's or unlabelled containers are present.
+Shared hosts require operator-managed image retention because other stacks' rollback pins
+cannot be inferred from running images.
 
 Before changing pins, the updater verifies the running application against the local source-commit
 image, pulling that baseline from the registry when it is not cached.

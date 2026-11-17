@@ -48,6 +48,7 @@ async function fixture(env: string, commit: string, computers = false) {
       [`sha-${newer}`]: `sha256:${"2".repeat(64)}`,
     } as Record<string, string>,
     otherComputerRefs: [] as string[],
+    otherProjects: [] as string[],
     computer: `${computerImage}:sha-${older}`,
     images: {
       [`sha-${older}`]: `sha256:${"1".repeat(64)}`,
@@ -73,6 +74,8 @@ async function fixture(env: string, commit: string, computers = false) {
     const failed = (output: string) => ({ ok: false, exitCode: 1, stdout: "", output });
     if (command === "git") return ok(`${older}\trefs/tags/v1.0.0\n${newer}\trefs/tags/v1.1.0\n`);
     if (args[0] === "ps") {
+      if (args.at(-1) === '{{.Label "com.docker.compose.project"}}')
+        return ok([config.projectName, ...state.otherProjects].join("\n"));
       const ancestor = args.find((arg) => arg.startsWith("ancestor="));
       if (ancestor) {
         const tag = ancestor.split(":").at(-1) ?? "";
@@ -566,6 +569,41 @@ describe("scheduled release state and recovery", () => {
         ({ args }) => args[1] === "rm" && args.includes(`${computerImage}:${selected}`),
       ),
     ).toBe(false);
+  });
+
+  it.each([false, true])(
+    "skips shared-host image cleanup (managed computer=%s)",
+    async (computers) => {
+      const subject = await fixture(`RAKAZO_IMAGE_TAG=sha-${older}\n`, older, computers);
+      const otherRollback = `sha-${"3".repeat(40)}`;
+      subject.state.appImages[otherRollback] = `sha256:${"3".repeat(64)}`;
+      const cache = `${cachePrefix}${"3".repeat(64)}`;
+      subject.state.images[cache] = `sha256:${"3".repeat(64)}`;
+      subject.state.otherProjects.push("other-stack");
+      expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+      expect(subject.state.appImages[otherRollback]).toBeDefined();
+      expect(subject.state.images[cache]).toBeDefined();
+      expect(subject.calls.some(({ args }) => args[1] === "rm")).toBe(false);
+    },
+  );
+
+  it("pins an already-current latest computer once so later latest pulls cannot move its selection", async () => {
+    const subject = await fixture(
+      "RAKAZO_IMAGE_TAG=latest\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n",
+      newer,
+      true,
+    );
+    subject.state.computer = `${computerImage}:latest`;
+    subject.state.images.latest = `sha256:${"2".repeat(64)}`;
+    expect(subject.state.images.latest).toBe(subject.state.images[`sha-${newer}`]);
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.computer).toBe(`${computerImage}:sha-${newer}`);
+    const recreations = subject.calls.filter(({ args }) => args.includes("up")).length;
+    expect(recreations).toBe(1);
+    subject.state.images.latest = `sha256:${"3".repeat(64)}`;
+    expect((await subject.app.applyScheduledUpdate()).restart).toBe("not-required");
+    expect(subject.state.computer).toBe(`${computerImage}:sha-${newer}`);
+    expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(recreations);
   });
 
   it("cleans app releases without a managed computer while preserving rollback and used images", async () => {
