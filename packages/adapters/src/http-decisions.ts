@@ -8,6 +8,7 @@ import type {
   DecisionResult,
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import { decisionModel } from "./decision-models.js";
@@ -173,8 +174,15 @@ export class HttpDecisionProvider implements DecisionProvider {
       }
       try {
         // A body ID is the billing identity; retain the header only when no body ID arrived.
-        if (providerRequestId && reservation)
-          await this.options.callObserver?.onRequestId?.(reservation, providerRequestId);
+        if (providerRequestId && reservation) {
+          const requestId = providerRequestId;
+          await bestEffort(
+            "record decision request identity",
+            Promise.resolve().then(() =>
+              this.options.callObserver?.onRequestId?.(reservation, requestId),
+            ),
+          );
+        }
       } finally {
         if (reservation) {
           const priced = await this.options.callObserver?.afterCall(reservation, usage);

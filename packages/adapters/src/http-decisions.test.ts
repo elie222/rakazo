@@ -92,7 +92,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
     );
     expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ costUsd: null }));
   });
-  it("reports the observer tariff rather than a provider bill", async () => {
+  it("reports the observer tariff even when request-ID persistence fails", async () => {
     const onUsage = vi.fn();
     const result = await new HttpDecisionProvider(provider, {
       apiKey: "fake-key",
@@ -100,6 +100,9 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       onUsage,
       callObserver: {
         beforeCall: () => "reservation",
+        onRequestId: async () => {
+          throw new Error("Request identity storage unavailable");
+        },
         afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
       },
     }).decide(request, context);
@@ -290,3 +293,31 @@ it("persists the body billing ID before a write-once observer sees a header ID",
   expect(result.usage?.providerRequestId).toBe("fake-request");
   expect(afterCall).toHaveBeenCalledWith("call", result.usage);
 });
+
+it.each([false, true])(
+  "records decision usage when request-ID persistence fails (synchronous=%s)",
+  async (synchronous) => {
+    const onUsage = vi.fn();
+    const afterCall = vi.fn();
+    const provider = new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () => response(),
+      onUsage,
+      callObserver: {
+        beforeCall: () => "hold",
+        afterCall,
+        onRequestId: () => {
+          const error = new Error("Request identity storage unavailable");
+          if (synchronous) throw error;
+          return Promise.reject(error);
+        },
+      },
+    });
+    const result = await provider.decide(request, context);
+    expect(result.answers.decision?.choice).toBe("pass");
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ costUsd: 0.0000042, providerRequestId: "fake-request" }),
+    );
+    expect(afterCall).toHaveBeenCalledWith("hold", result.usage);
+  },
+);
