@@ -595,10 +595,7 @@ async function closeMcpSession(session: ScopedMcpSession): Promise<void> {
   await session.safeFetch.close().catch(() => undefined);
 }
 
-/**
- * Where an MCP client connects and the fetch it uses: a tailnet host through the bot's device
- * when the caller has a tailnet route, otherwise a checked public (or allowed private) address.
- */
+/** Where an MCP client connects: a tailnet host through the bot's device, else a checked one. */
 async function remoteEndpoint(
   options: RemoteMcpOptions,
 ): Promise<{ endpoint: URL; safeFetch: SafeRemoteFetch }> {
