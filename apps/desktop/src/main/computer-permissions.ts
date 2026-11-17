@@ -6,13 +6,19 @@ import type { ScreenPermissionApi } from "./host-screen.js";
 type SetupAction = "settings" | "restart" | "later";
 
 /** Dock activation also returns to a Mac app that has no open browser window. */
-export async function waitForComputerSetupReturn(events: EventEmitter) {
+export async function waitForComputerSetupReturn(
+  events: EventEmitter,
+  openSettings: () => Promise<unknown>,
+) {
   const listeners = new AbortController();
   try {
-    await Promise.race([
+    const returned = Promise.race([
       once(events, "activate", { signal: listeners.signal }),
       once(events, "browser-window-focus", { signal: listeners.signal }),
     ]);
+    // Invoke after subscribing, and turn synchronous launch errors into rejections too.
+    const opening = async () => openSettings();
+    await Promise.all([returned, opening()]);
   } finally {
     listeners.abort();
   }

@@ -610,10 +610,10 @@ app.whenReady().then(async () => {
       if (readyForRestart) return response === 0 ? "restart" : "later";
       return response === 0 ? "settings" : response === 1 ? "restart" : "later";
     },
-    openSettings: async () => {
-      await shell.openExternal("x-apple.systempreferences:com.apple.preference.security");
-      await waitForComputerSetupReturn(app);
-    },
+    openSettings: () =>
+      waitForComputerSetupReturn(app, () =>
+        shell.openExternal("x-apple.systempreferences:com.apple.preference.security"),
+      ),
     restart: () => {
       desktop.quitting = true;
       app.relaunch();

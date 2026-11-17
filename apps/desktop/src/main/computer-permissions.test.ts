@@ -181,7 +181,7 @@ describe("returning to permission setup", () => {
     "continues on %s and removes both listeners",
     async (event) => {
       const events = new EventEmitter();
-      const returned = waitForComputerSetupReturn(events);
+      const returned = waitForComputerSetupReturn(events, async () => undefined);
       expect(events.listenerCount("activate")).toBe(1);
       expect(events.listenerCount("browser-window-focus")).toBe(1);
       events.emit(event);
@@ -190,4 +190,46 @@ describe("returning to permission setup", () => {
       expect(events.listenerCount("browser-window-focus")).toBe(0);
     },
   );
+});
+
+describe("opening Settings", () => {
+  it.each(["activate", "browser-window-focus"] as const)(
+    "remembers %s during the launch",
+    async (event) => {
+      const events = new EventEmitter();
+      const opened = deferred<void>();
+      const returned = waitForComputerSetupReturn(events, async () => {
+        events.emit(event);
+        await opened.promise;
+      });
+      opened.resolve();
+      await returned;
+      expect(events.listenerCount("activate")).toBe(0);
+      expect(events.listenerCount("browser-window-focus")).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    "removes listeners if Settings fails to open, synchronous=%s",
+    async (synchronous) => {
+      const events = new EventEmitter();
+      const failure = new Error("Could not open Settings");
+      const returned = waitForComputerSetupReturn(events, () => {
+        if (synchronous) throw failure;
+        return Promise.reject(failure);
+      });
+      await expect(returned).rejects.toBe(failure);
+      expect(events.listenerCount("activate")).toBe(0);
+      expect(events.listenerCount("browser-window-focus")).toBe(0);
+    },
+  );
+
+  it("ignores activation before the Settings launch", async () => {
+    const events = new EventEmitter();
+    events.emit("activate");
+    const returned = waitForComputerSetupReturn(events, async () => undefined);
+    expect(events.listenerCount("activate")).toBe(1);
+    events.emit("browser-window-focus");
+    await returned;
+  });
 });
