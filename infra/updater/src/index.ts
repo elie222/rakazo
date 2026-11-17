@@ -571,7 +571,7 @@ export function createUpdaterApp(
         recoveryAllowed =
           runtime.uniform &&
           runtime.baseline.tag !== target.imageTag &&
-          (computer ? computer.uniform && computer.tags.fromTag !== computer.tags.toTag : true);
+          (computer?.uniform ?? true);
         computerTags = computer?.tags;
         const current =
           runtime.uniform && runtime.services.every((service) => service.commit === target.commit);

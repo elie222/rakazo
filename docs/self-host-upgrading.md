@@ -283,7 +283,11 @@ intervals are 1–168 whole hours; `0` disables scheduling. Checks use the offic
 newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, and use the existing
 apply/health-check/recovery path. Prereleases and main builds are never scheduled. Scheduling is
 disabled for custom image repositories, with a startup warning and an `autoUpdateDisabledReason`
-in `/state`; manual controls remain available. When already current, nothing is recreated.
+in `/state`; manual controls remain available for deployments already using those repositories.
+Changing the computer repository is an operator-managed migration: recreate the supervisor with
+the new repository and verify its matching images before using updater controls. The updater
+refuses a mismatch between its configured repository and the running supervisor.
+When already current, nothing is recreated.
 The first check can reconcile `latest` selections to full release-commit tags even when their
 image bytes match. This pins the supervisor's future computers to that release; subsequent
 checks do not recreate services while those selections remain current.

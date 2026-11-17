@@ -313,20 +313,6 @@ describe("scheduled release state and recovery", () => {
     expect(await subject.env()).toContain(`RAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}`);
   });
 
-  it("does not treat an already-staged target computer as a previous release", async () => {
-    const subject = await fixture(
-      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\n`,
-      older,
-      true,
-    );
-    subject.state.computer = `${computerImage}:sha-${newer}`;
-    subject.state.failTarget = true;
-    const result = await subject.app.applyScheduledUpdate();
-    expect(result.restart).toBe("manual");
-    expect(result.steps.some((step) => step.id === "recover")).toBe(false);
-    expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(1);
-  });
-
   it("restores the verified running baseline rather than a stale .env tag", async () => {
     const subject = await fixture("RAKAZO_IMAGE_TAG=v0.9.0\n", older);
     subject.state.failTarget = true;
@@ -478,6 +464,37 @@ describe("scheduled release state and recovery", () => {
     });
     expect(response.status).toBe(400);
     expect(await response.text()).toContain("previous computer image is not cached locally");
+    expect(await subject.env()).toBe(env);
+    expect(subject.calls.some(({ args }) => args.includes("up") || args.includes("pull"))).toBe(
+      false,
+    );
+  });
+
+  it("recovers the prior app when its computer already selected the target release", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:sha-${newer}`;
+    subject.state.failTarget = true;
+    const result = await subject.app.applyScheduledUpdate();
+    expect(result.ok).toBe(false);
+    expect(result.steps.some((step) => step.id === "recover" && step.ok)).toBe(true);
+    expect(subject.state.versions.api).toBe(older);
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedNewer}`);
+  });
+
+  it("refuses a manual repository migration before changing deployment pins", async () => {
+    const env = `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/computer\n`;
+    const subject = await fixture(env, older, true);
+    const response = await subject.app.request("/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/elie222/rakazo", branch: "main" }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("Could not verify the supervisor's computer image");
     expect(await subject.env()).toBe(env);
     expect(subject.calls.some(({ args }) => args.includes("up") || args.includes("pull"))).toBe(
       false,
