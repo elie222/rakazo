@@ -411,7 +411,7 @@ export async function releaseRunHold(hold: RunHold, endRunConnectorState: (runId
     ready: Boolean(computerUse.screenRelease),
   });
   // A setup that fails before the turn starts must not leave statuses posting.
-  hold.statusLines.live?.close();
+  await hold.statusLines.live?.close();
   hold.detachShutdown?.();
   clearInterval(heartbeat);
   await finishRunAttempt(

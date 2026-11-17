@@ -119,6 +119,26 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("ends only once a status already being written has landed", async () => {
+    const landing = deferred();
+    const t = target(
+      { opening: async () => undefined, step: async () => "Listing files" },
+      () => landing.promise,
+    );
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await flush();
+    let ended = false;
+    const closing = live.close().then(() => {
+      ended = true;
+    });
+    await flush();
+    expect(ended).toBe(false);
+    landing.resolve();
+    await closing;
+    expect(t.shown).toEqual(["Listing files"]);
+  });
+
   it("cancels the opening request when the run ends", async () => {
     let openingSignal: AbortSignal | undefined;
     const t = target({

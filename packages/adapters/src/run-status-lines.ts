@@ -18,8 +18,12 @@ export type LiveStatusLines = {
   supersede(): void;
   /** Shows the current step's status again, after something else cleared the line. */
   restore(): void;
-  /** The turn ended: nothing more is shown and pending writes are cancelled. */
-  close(): void;
+  /**
+   * The turn ended: nothing more is shown and pending requests are cancelled. Settles once the
+   * status writes already under way have landed, or after a time limit, so none lands after
+   * the run's end.
+   */
+  close(): Promise<void>;
 };
 
 export type StatusLineTarget = {
@@ -48,7 +52,7 @@ export type StatusLineTarget = {
  */
 export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const abort = new AbortController();
-  const onRunAbort = () => close();
+  const onRunAbort = () => void close();
   let generation = 0;
   // The generation a supersede last ended; a later one with nothing new to end does nothing.
   let supersededAt = -1;
@@ -67,6 +71,8 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const cancelSteps = (keep: number) => {
     while (steps.length > keep) steps.shift()?.abort();
   };
+  // Status writes under way, which the run's end waits for.
+  const writes = new Set<Promise<boolean>>();
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
   /**
@@ -80,6 +86,11 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
       const shownAt = lastShown?.generation ?? 0;
       if (latestOnly ? mine !== generation : again ? mine < shownAt : mine <= shownAt) return;
       const write = target.show(text).then(() => true);
+      writes.add(write);
+      void write.then(
+        () => writes.delete(write),
+        () => writes.delete(write),
+      );
       // A stuck write must not hold back every later status.
       const shown = await bestEffort(
         "show status line",
@@ -107,12 +118,19 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     hasWriter = Boolean(found);
     writerKnown = true;
   });
-  function close() {
+  async function close() {
     closed = true;
     abort.abort();
     target.signal?.removeEventListener("abort", onRunAbort);
+    await bestEffort(
+      "finish status line writes",
+      withAbort(
+        Promise.allSettled([showing, ...writes]).then(() => undefined),
+        deadlineSignal(SHOW_TIMEOUT_MS),
+      ),
+    );
   }
-  if (target.signal?.aborted) close();
+  if (target.signal?.aborted) void close();
   else target.signal?.addEventListener("abort", onRunAbort, { once: true });
 
   const openingGeneration = ++generation;

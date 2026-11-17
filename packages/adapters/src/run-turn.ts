@@ -166,7 +166,8 @@ export async function consumeRunEvents(
   } finally {
     watching = false;
     clearInterval(watch);
-    ctx.statusLive?.close();
+    // Statuses already being written land before the run's end, never after it.
+    await ctx.statusLive?.close();
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
