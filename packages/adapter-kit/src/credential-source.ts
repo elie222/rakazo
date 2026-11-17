@@ -4,8 +4,8 @@ import type { AdapterDescriptor } from "./types.js";
 /** The source could not be reached or gave an answer that cannot be used. Asking again may work. */
 export class CredentialSourceUnavailableError extends Error {
   readonly code = "CREDENTIAL_SOURCE_UNAVAILABLE";
-  constructor(message = "The credential source is unavailable", options?: ErrorOptions) {
-    super(message, options);
+  constructor(message = "The credential source is unavailable") {
+    super(message);
     this.name = "CredentialSourceUnavailableError";
   }
 }

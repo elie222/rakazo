@@ -94,6 +94,40 @@ describe("1Password credential source", () => {
     });
   });
 
+  it("reads a login whose username is blank as a password-only login", async () => {
+    const { source } = setup({
+      [`/v1/vaults/${VAULT}/items/${ITEM}`]: json({
+        category: "LOGIN",
+        fields: [
+          { purpose: "USERNAME", value: "   " },
+          { purpose: "PASSWORD", value: "s3cret" },
+        ],
+      }),
+    });
+    expect(await source.resolve(`${VAULT}/${ITEM}`, signal())).toEqual({
+      fields: [{ label: "Password", value: "s3cret", hidden: true }],
+    });
+  });
+
+  it("names a site only when it is a web address", async () => {
+    const { source } = setup({
+      "/v1/vaults": json([{ id: VAULT }]),
+      [`/v1/vaults/${VAULT}/items`]: json([
+        { id: ITEM, title: "Script", category: "LOGIN", urls: [{ href: "javascript:alert(1)" }] },
+        {
+          id: "d".repeat(26),
+          title: "Plain",
+          category: "LOGIN",
+          urls: [{ href: "http://plain.example.com" }],
+        },
+      ]),
+    });
+    expect(await source.listItems(signal())).toEqual([
+      { ref: `${VAULT}/${ITEM}`, title: "Script" },
+      { ref: `${VAULT}/${"d".repeat(26)}`, title: "Plain", url: "http://plain.example.com" },
+    ]);
+  });
+
   it("reads a login that has only a password", async () => {
     const { source } = setup({
       [`/v1/vaults/${VAULT}/items/${ITEM}`]: json({
@@ -185,10 +219,23 @@ describe("1Password credential source", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the token out of every error", async () => {
-    const { source } = setup({ "/v1/vaults": new Error(`failed with ${TOKEN}`) });
-    const error = await source.listItems(signal()).catch((caught: Error) => caught);
-    expect((error as Error).message).not.toContain(TOKEN);
+  it("keeps the token out of every error, its cause included", async () => {
+    const secretBody = new Response(`{"password": "${TOKEN}"`);
+    const answers = [
+      new Error(`failed with ${TOKEN}`),
+      secretBody,
+      json([{ id: TOKEN }]),
+      json({}, 500),
+    ];
+    for (const answer of answers) {
+      const { source } = setup({ "/v1/vaults": answer });
+      const error = await source.listItems(signal()).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(CredentialSourceUnavailableError);
+      expect((error as Error).cause).toBeUndefined();
+      expect(
+        JSON.stringify(error, Object.getOwnPropertyNames(error)) + String((error as Error).stack),
+      ).not.toContain(TOKEN);
+    }
   });
 
   it("passes a refused private destination through without asking it", async () => {
@@ -239,6 +286,12 @@ describe("1Password connection settings", () => {
       onePasswordSourceSettings.connectionLabel({ endpoint: "https://connect.example.com/x" }),
     ).toBe("connect.example.com");
     expect(onePasswordSourceSettings.connectionLabel({})).toBe("");
+  });
+
+  it("makes a saved token follow the server it is sent to", () => {
+    const scoping = onePasswordSourceSettings.fields.filter((field) => field.scopesSecrets);
+    expect(scoping.map((field) => field.key)).toEqual(["endpoint"]);
+    expect(onePasswordSourceSettings.fields.some((field) => field.destination)).toBe(false);
   });
 
   it("accepts a plain https address and trims it", () => {

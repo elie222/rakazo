@@ -5,7 +5,7 @@ import {
   CredentialSourceUnavailableError,
 } from "@rakazo/adapter-kit";
 import type { ProviderSettingsField } from "@rakazo/contracts";
-import { DEFAULT_LOGIN_FIELD_LABELS, LoginSecretValue } from "@rakazo/contracts";
+import { DEFAULT_LOGIN_FIELD_LABELS, LoginSecretValue, trimEndChars } from "@rakazo/contracts";
 import * as z from "zod";
 import { isEgressRefused } from "../../../network-address.js";
 import type { SafeWebFetchOptions } from "../../../web-ssrf.js";
@@ -30,7 +30,8 @@ export const onePasswordSourceSettings: {
       kind: "url",
       required: true,
       validation: "public-https",
-      destination: "token",
+      // The token is sent to this address, so a saved one must be entered again when it changes.
+      scopesSecrets: true,
       placeholder: "https://connect.example.com",
       description: "The address of your 1Password Connect server. It must be reachable over HTTPS.",
     },
@@ -39,7 +40,6 @@ export const onePasswordSourceSettings: {
       label: "Access token",
       kind: "secret",
       required: true,
-      scopesSecrets: true,
       description: "A Connect token that can read the vaults you want to link logins from.",
     },
   ],
@@ -53,7 +53,7 @@ export function normalizeOnePasswordEndpoint(endpoint: string): string {
   if (url.username || url.password || url.search || url.hash) {
     throw new Error("endpoint must be a plain address");
   }
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  return `${url.origin}${trimEndChars(url.pathname, "/")}`;
 }
 
 // Connect names every vault and item with 26 lowercase letters and digits. Anything else is
@@ -72,6 +72,11 @@ const Item = z.object({
   category: z.string(),
   fields: z.array(z.object({ purpose: z.string().optional(), value: z.string().optional() })),
 });
+
+function isWebAddress(address: string): boolean {
+  const protocol = URL.parse(address)?.protocol;
+  return protocol === "http:" || protocol === "https:";
+}
 
 export type OnePasswordSourceDeps = Pick<SafeWebFetchOptions, "fetch" | "resolveHostname">;
 
@@ -100,9 +105,8 @@ export function createOnePasswordSource(
       signal.throwIfAborted();
       // A destination the egress guard refused is the caller's to report, not a source outage.
       if (isEgressRefused(error)) throw error;
-      throw new CredentialSourceUnavailableError("The credential source could not be reached", {
-        cause: error,
-      });
+      // The transport error is not kept as a cause: it may quote the request, token included.
+      throw new CredentialSourceUnavailableError("The credential source could not be reached");
     }
     if (response.status === 401 || response.status === 403) {
       throw new CredentialSourceRefusedError();
@@ -115,17 +119,14 @@ export function createOnePasswordSource(
     }
     try {
       return JSON.parse(new TextDecoder().decode(response.body));
-    } catch (error) {
-      throw new CredentialSourceUnavailableError("The credential source gave an unusable answer", {
-        cause: error,
-      });
+    } catch {
+      // A parse error quotes part of the body, which may hold a login's values.
+      return unusable();
     }
   }
 
-  function unusable(error: unknown): never {
-    throw new CredentialSourceUnavailableError("The credential source gave an unusable answer", {
-      cause: error,
-    });
+  function unusable(): never {
+    throw new CredentialSourceUnavailableError("The credential source gave an unusable answer");
   }
 
   return {
@@ -138,18 +139,18 @@ export function createOnePasswordSource(
 
     async listItems(signal) {
       const vaults = Vaults.safeParse(await get("/v1/vaults", signal));
-      if (!vaults.success) return unusable(vaults.error);
+      if (!vaults.success) return unusable();
       const listed: CredentialSourceItem[] = [];
       for (const vault of vaults.data) {
         const items = Items.safeParse(await get(`/v1/vaults/${vault.id}/items`, signal));
-        if (!items.success) return unusable(items.error);
+        if (!items.success) return unusable();
         for (const item of items.data) {
           if (item.category !== "LOGIN") continue;
           const site = (item.urls?.find((url) => url.primary) ?? item.urls?.[0])?.href;
           listed.push({
             ref: `${vault.id}/${item.id}`,
             title: item.title,
-            ...(site && URL.canParse(site) ? { url: site } : {}),
+            ...(site && isWebAddress(site) ? { url: site } : {}),
           });
         }
       }
@@ -169,12 +170,12 @@ export function createOnePasswordSource(
       const answer = Item.safeParse(
         await get(`/v1/vaults/${vaultId}/items/${itemId}`, signal, gone),
       );
-      if (!answer.success) return unusable(answer.error);
+      if (!answer.success) return unusable();
       if (answer.data.category !== "LOGIN") throw gone;
       const fieldValue = (purpose: string) =>
         answer.data.fields.find((field) => field.purpose === purpose)?.value ?? "";
       const [usernameLabel, passwordLabel] = DEFAULT_LOGIN_FIELD_LABELS;
-      const username = fieldValue("USERNAME");
+      const username = fieldValue("USERNAME").trim();
       const password = fieldValue("PASSWORD");
       if (!password) throw gone;
       const login = LoginSecretValue.safeParse({
