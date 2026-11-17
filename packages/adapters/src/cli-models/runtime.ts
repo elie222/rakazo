@@ -1,8 +1,8 @@
 import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { createRuntimeModels } from "../pi-runtime-models.js";
-import { withRuntimeModels } from "../pi-runtime-scope.js";
-import type { RunRuntimeEnv } from "../run-runtime.js";
+import type { RunRuntimeEnv } from "../runs/assembly/run-runtime.js";
+import { createRuntimeModels } from "../runtime/pi/pi-runtime-models.js";
+import { withRuntimeModels } from "../runtime/pi/pi-runtime-scope.js";
 import { CLAUDE_CODE_PROVIDER_ID, registerClaudeCodeProvider } from "./claude-code/provider.js";
 import { personalCliAccessCheck } from "./personal-access.js";
 

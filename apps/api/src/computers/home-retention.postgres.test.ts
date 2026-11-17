@@ -8,7 +8,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { asSystem, ContentKeyRing, createDb, LocalKeyProvider, withLease } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryObjectStorage } from "../../../../packages/adapters/src/object-storage.test-support.js";
+import { MemoryObjectStorage } from "../../../../packages/adapters/src/storage/object-storage.test-support.js";
 import { homeRetentionSweep } from "./home-retention.js";
 
 const databaseUrl = process.env.DATABASE_URL;

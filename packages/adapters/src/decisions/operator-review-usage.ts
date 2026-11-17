@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type { PrismaClient, UsageAttribution } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
-import { decisionInputCost, decisionModel } from "../decision-models.js";
+import { decisionInputCost, decisionModel } from "../approvals/decision-models.js";
 
 /** Record intent before dispatch, so a process loss leaves an explicitly unknown expense. */
 export function operatorReviewObserver(

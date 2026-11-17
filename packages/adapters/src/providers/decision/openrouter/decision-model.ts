@@ -1,5 +1,5 @@
+import { HttpDecisionProvider } from "../../../approvals/http-decisions.js";
 import type { DecisionModelDescriptor } from "../../../decisions/model-descriptor.js";
-import { HttpDecisionProvider } from "../../../http-decisions.js";
 
 export const openRouterDecisionModel: DecisionModelDescriptor = {
   create: (options) => new HttpDecisionProvider("openrouter", options),
