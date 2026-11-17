@@ -7,6 +7,7 @@ import { getLogger } from "@rakazo/logging";
 import { modelProviderDefinition } from "../models/model-provider-registry.js";
 import { parseModelSecret, secretValuesToRedact } from "../models/model-secret.js";
 import { connectionModelSettings } from "../models/model-settings.js";
+import { modelAcceptsImageInput } from "../models/model-vision.js";
 import type { CatalogReads } from "../runtime/pi/models/pi-live-catalog.js";
 import { liveCatalogEntry, readOnce } from "../runtime/pi/models/pi-live-catalog.js";
 import type { ModelCreditOffering } from "./offerings.js";
@@ -153,11 +154,12 @@ export async function approvedModelCreditMaterial(
   secrets: Pick<SecretStore, "load">,
   provider: string,
   modelId: string,
+  reads?: CatalogReads,
 ) {
   if (!modelCreditOfferings()) return undefined;
   const offering = approvedModelCreditOffering(provider, modelId);
   if (!offering) throw new Error("This model requires a personal connection");
-  const { connection, secret } = await loadCreditConnection(prisma, secrets, offering);
+  const { connection, secret } = await loadCreditConnection(prisma, secrets, offering, reads);
   const settings = connectionModelSettings(secret, provider, modelId, connection);
   return {
     apiKey: secret.key,
@@ -173,4 +175,16 @@ export async function approvedModelCreditMaterial(
     region: secret.region,
     redact: secretValuesToRedact(secret),
   };
+}
+
+/** Describe the connection used by a credit-funded run without returning its key to callers. */
+export async function approvedModelCreditSeesImages(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  provider: string,
+  modelId: string,
+  reads?: CatalogReads,
+): Promise<boolean> {
+  const material = await approvedModelCreditMaterial(prisma, secrets, provider, modelId, reads);
+  return Boolean(material) && modelAcceptsImageInput(provider, modelId, material?.acceptsImages);
 }

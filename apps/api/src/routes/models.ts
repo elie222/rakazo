@@ -4,7 +4,7 @@ import {
   isTransientModelError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { PiOAuthPersist } from "@rakazo/adapters";
+import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
   listPiCatalog,
@@ -244,10 +244,13 @@ export function modelsRoutes(ctx: RouterContext) {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
         const { role, primary, backups, scope } = input;
-        await validateRoleChoices(context.actor, role, [
-          ...(primary ? [primary] : []),
-          ...(backups ?? []),
-        ]);
+        const reads: CatalogReads = new Map();
+        await validateRoleChoices(
+          context.actor,
+          role,
+          [...(primary ? [primary] : []), ...(backups ?? [])],
+          reads,
+        );
         return withImageInput(
           context.actor,
           role,
@@ -261,6 +264,7 @@ export function modelsRoutes(ctx: RouterContext) {
               { primary, backups },
             ),
           ),
+          reads,
         );
       }),
       backups: authed.models.backups.handler(async ({ context }) =>

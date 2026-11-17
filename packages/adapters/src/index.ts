@@ -105,6 +105,7 @@ export * from "./messaging/team-chat/team-chat-messaging.js";
 export { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
 export {
   approvedModelCreditCatalogEntry,
+  approvedModelCreditSeesImages,
   availableModelCreditOfferings,
 } from "./model-credits/routing.js";
 export * from "./models/ai-consent.js";

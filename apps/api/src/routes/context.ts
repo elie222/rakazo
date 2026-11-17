@@ -5,6 +5,7 @@ import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
+  approvedModelCreditSeesImages,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
@@ -340,10 +341,35 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor,
     role: ModelRole,
     view: ModelRoleView,
+    reads: CatalogReads = new Map(),
   ): Promise<ModelRoleView> => {
     const choice = role === "main" ? (view.primary ?? view.deploymentPrimary) : null;
     if (!choice) return view;
     try {
+      if (choice.creditOfferingId || (!view.primary && modelCreditOfferings())) {
+        const offering = modelCreditOfferings()?.offerings.find(
+          (entry) =>
+            entry.provider === choice.provider &&
+            entry.modelId === choice.modelId &&
+            (!choice.creditOfferingId || entry.id === choice.creditOfferingId),
+        );
+        if (
+          !offering ||
+          !deps.billing?.modelCreditsEnabled ||
+          !(await hasHostedModelCredits(deps.prisma, actor, choice.provider, true))
+        )
+          return { ...view, seesImages: false };
+        return {
+          ...view,
+          seesImages: await approvedModelCreditSeesImages(
+            deps.prisma,
+            deps.secrets,
+            choice.provider,
+            choice.modelId,
+            reads,
+          ),
+        };
+      }
       const [credential, catalog] = await Promise.all([
         // The deployment's model runs on the deployment's key, never a member's connection.
         view.primary
@@ -441,9 +467,9 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor,
     role: ModelRole,
     choices: ModelRoleChoice[],
+    reads: CatalogReads = new Map(),
   ): Promise<void> => {
     if (choices.length === 0) return;
-    const reads: CatalogReads = new Map();
     const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
       const entry = catalog.find(

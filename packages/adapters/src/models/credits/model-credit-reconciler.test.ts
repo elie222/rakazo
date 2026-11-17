@@ -138,6 +138,62 @@ describe("model credit reconciler", () => {
       );
     },
   );
+  it.each([false, true])(
+    "keeps a live run's pending tariff hold out of manual review (partial lookup=%s)",
+    async (partialLookup) => {
+      const { prisma, updateMany } = harness(
+        {
+          ...baseCall,
+          usage: pendingTariff,
+          providerRequestId: "gen-fixture",
+          reconciliationAttempts: 5,
+        },
+        { status: "running", leaseExpiresAt: new Date(1000), error: null },
+      );
+      await createModelCreditReconciler({
+        prisma,
+        now: () => new Date(0),
+        lookupForOffering: partialLookup
+          ? async () =>
+              lookup(async () => ({ inputTokens: 100000, outputTokens: null, costUsd: 0 }))
+          : undefined,
+      })();
+      expect(prisma.run.findUnique).toHaveBeenCalled();
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reconciliationState: "pending",
+            nextReconcileAt: expect.any(Date),
+          }),
+        }),
+      );
+    },
+  );
+  it.each(["expired", "completed"])(
+    "flags a pending tariff only after its run is no longer active: %s",
+    async (state) => {
+      const { prisma, updateMany } = harness(
+        { ...baseCall, usage: pendingTariff, reconciliationAttempts: 5 },
+        {
+          status: state === "completed" ? "completed" : "running",
+          leaseExpiresAt: new Date(1000),
+          error: null,
+        },
+      );
+      await createModelCreditReconciler({
+        prisma,
+        now: () => new Date(state === "expired" ? 2000 : 0),
+      })();
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: { reconciliationState: "needs_review", nextReconcileAt: null },
+        }),
+      );
+    },
+  );
+
   it.each([
     "no-lookup",
     "missing-counts",

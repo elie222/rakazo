@@ -269,7 +269,12 @@ export function createModelCreditReconciler(deps: {
             // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run,
             // and a stuck-run cancel records why in `error`.
             let stoppedByUser = false;
-            if (call.runId && ((!usage && lastAttempt) || usage?.countedTokens?.ifStopped)) {
+            const awaitingReceipt =
+              !usage || (receipt.usage?.usageSource === "pending" && !hasFinalModelCost(usage));
+            if (
+              call.runId &&
+              ((awaitingReceipt && lastAttempt) || usage?.countedTokens?.ifStopped)
+            ) {
               const run = await prisma.run.findUnique({
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true, error: true },
@@ -278,7 +283,7 @@ export function createModelCreditReconciler(deps: {
               // Keep the conservative full-rate count until provider evidence replaces it.
               stoppedByUser = !run || (run.status === "cancelled" && run.error == null);
               running =
-                !usage &&
+                awaitingReceipt &&
                 (run?.status === "leased" || run?.status === "running") &&
                 !!run.leaseExpiresAt &&
                 run.leaseExpiresAt > now;
