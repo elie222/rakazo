@@ -9,7 +9,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 export const SCRIPTED_VOICE_ID = "alloy-test";
 export const SCRIPTED_TRANSCRIPT = "hello from the test microphone";

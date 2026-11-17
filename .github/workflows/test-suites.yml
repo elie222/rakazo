@@ -229,7 +229,7 @@ jobs:
           targets=("${packages[@]}" \
             .agents/skills/translate/catalog-gaps.test.ts \
             infra/updater/src/compose-env.test.ts \
-            packages/adapters/src/builtin-skills.test.ts \
+            packages/adapters/src/tools/builtin-skills.test.ts \
             packages/adapters/src/providers/messaging/lark/lark-lazy-loading.test.ts \
             packages/page-kit/src/kit/labels.test.tsx \
             packages/testkit/src/eas-pnpm-version.test.ts \
