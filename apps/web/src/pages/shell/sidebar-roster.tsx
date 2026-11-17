@@ -581,7 +581,7 @@ export function SidebarRoster({
                                 {item.chat.name}
                               </span>
                             </span>
-                            {rowError || previewLine ? (
+                            {compactStatusLabel || previewLine ? (
                               <span
                                 dir="auto"
                                 className={`line-clamp-2 text-body-sm ${
@@ -589,10 +589,12 @@ export function SidebarRoster({
                                     ? "text-destructive"
                                     : workStatusLabel
                                       ? "font-medium text-status-working"
-                                      : "text-muted-foreground"
+                                      : compactStatusLabel
+                                        ? "font-medium text-foreground"
+                                        : "text-muted-foreground"
                                 }`}
                               >
-                                {rowError ? t`Error` : previewLine}
+                                {compactStatusLabel ?? previewLine}
                               </span>
                             ) : null}
                           </TooltipContent>
