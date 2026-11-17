@@ -44,3 +44,28 @@ export function botVoiceChoices(input: {
       undefined,
   };
 }
+
+export type BotVoiceSelection = { voiceProvider?: string | null; voiceId?: string | null };
+
+/** Pin custom voices to a provider; clearing a voice keeps that provider's Settings voice. */
+export function botVoiceSelection(input: {
+  provider?: string | null;
+  currentProvider?: string | null;
+  defaultProvider?: string | null;
+  voiceId?: string | null;
+}): BotVoiceSelection {
+  const provider = input.provider !== undefined ? input.provider : (input.currentProvider ?? null);
+  if (input.voiceId !== undefined) {
+    return {
+      voiceProvider: input.voiceId ? provider || input.defaultProvider || null : provider,
+      voiceId: input.voiceId || null,
+    };
+  }
+  if (input.provider !== undefined) {
+    return {
+      voiceProvider: provider,
+      ...(provider !== (input.currentProvider ?? null) ? { voiceId: null } : {}),
+    };
+  }
+  return {};
+}

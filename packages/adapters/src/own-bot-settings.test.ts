@@ -53,6 +53,7 @@ const bot = {
   modelId: null,
   thinkingLevel: null,
   autoSpeak: false,
+  voiceProvider: null,
   voiceId: null,
 };
 
@@ -182,7 +183,12 @@ describe("prepareOwnBotSettings", () => {
     const result = await prepareOwnBotSettings(
       deps(),
       scope,
-      { modelProvider: "google", modelId: "gemini-3.7-flash", thinkingLevel: "high" },
+      {
+        modelProvider: "google",
+        modelId: "gemini-3.7-flash",
+        thinkingLevel: "high",
+        voiceProvider: null,
+      },
       { model: "Gemini Flash" },
     );
     expect(result).toEqual({
@@ -204,7 +210,7 @@ describe("prepareOwnBotSettings", () => {
     const result = await prepareOwnBotSettings(
       deps(),
       scope,
-      { modelProvider: null, modelId: null, thinkingLevel: "xhigh" },
+      { modelProvider: null, modelId: null, thinkingLevel: "xhigh", voiceProvider: null },
       { model: "gemini-3.8-flash" },
     );
     expect(result).toEqual({
@@ -306,6 +312,20 @@ describe("prepareOwnBotSettings voice", () => {
     expect(
       await prepareOwnBotSettings(deps(), scope, bot, { voice: "default" }, async () => null),
     ).toEqual({ data: { voiceProvider: null, voiceId: null } });
+  });
+
+  it("restores Settings inheritance from a pinned provider without listing voices", async () => {
+    const list = vi.fn(async () => ({ provider: "provider-b", voices }));
+    expect(
+      await prepareOwnBotSettings(
+        deps(),
+        scope,
+        { ...bot, voiceProvider: "provider-a" },
+        { voice: "default" },
+        list,
+      ),
+    ).toEqual({ data: { voiceProvider: null, voiceId: null } });
+    expect(list).not.toHaveBeenCalled();
   });
 
   it("lists voices only when a voice is asked for and stores the match", async () => {

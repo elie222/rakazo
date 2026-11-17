@@ -12,17 +12,6 @@ name: Bots
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-bot-profile
-- scrollUntilVisible:
-    element: "Hear a sample"
-    direction: DOWN
-    timeout: 15000
-- waitForAnimationToEnd:
-    timeout: 3000
-- takeScreenshot: 06-bot-voice
-- scrollUntilVisible:
-    element: ".*Routines.*"
-    direction: UP
-    timeout: 15000
 - tapOn: ".*Routines.*"
 - extendedWaitUntil:
     visible: ".*Weekly fixture review.*"

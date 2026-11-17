@@ -2,6 +2,7 @@ import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
+import { botVoiceSelection } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findDefaultVoiceCredential, findVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
@@ -23,6 +24,7 @@ export type OwnBotSettingsRow = {
   modelId: string | null;
   thinkingLevel: string | null;
   autoSpeak: boolean;
+  voiceProvider: string | null;
   voiceId: string | null;
 };
 
@@ -200,7 +202,7 @@ export function resolveVoiceChoice(
 export async function prepareOwnBotSettings(
   deps: FleetPrepareDeps,
   scope: Pick<Actor, "userId" | "spaceId">,
-  bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel">,
+  bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel" | "voiceProvider">,
   args: { model?: unknown; thinkingLevel?: unknown; readAloud?: unknown; voice?: unknown },
   listVoices: () => Promise<{ provider: string; voices: VoiceInfo[] } | null> = async () => null,
 ): Promise<{ data: BotSettingsValues } | { error: string }> {
@@ -221,9 +223,14 @@ export async function prepareOwnBotSettings(
     if (!useDefault && !selection) return { error: "Connect a voice provider first." };
     const voice = resolveVoiceChoice(selection?.voices ?? [], args.voice);
     if (!voice.ok) return { error: voice.error };
-    data.voiceId = voice.voiceId;
-    // A custom voice belongs to the connection whose catalog supplied it, even if Settings changes.
-    data.voiceProvider = selection?.provider ?? null;
+    Object.assign(
+      data,
+      botVoiceSelection({
+        currentProvider: bot.voiceProvider,
+        provider: selection?.provider ?? null,
+        voiceId: voice.voiceId,
+      }),
+    );
   }
   const model = typeof args.model === "string" ? args.model.trim() : "";
   const level = typeof args.thinkingLevel === "string" ? args.thinkingLevel.trim() : "";

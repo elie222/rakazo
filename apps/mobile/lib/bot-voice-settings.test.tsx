@@ -288,6 +288,35 @@ it("pins a custom voice chosen under Default and resumes inheritance when reset"
   expect(button("Default (Provider A)").getAttribute("aria-pressed")).toBe("true");
 });
 
+it("keeps a pinned provider when clearing only its voice", async () => {
+  state.bot.voiceProvider = "provider-b";
+  state.bot.voiceId = "custom";
+  await open();
+  await act(async () => button("Default (Settings voice)").click());
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(button("Default (Settings voice)").getAttribute("aria-pressed")).toBe("true"),
+    );
+  });
+  expect(state.bot.voiceProvider).toBe("provider-b");
+  expect(state.bot.voiceId).toBeNull();
+  expect(button("Provider B").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("does not pin Settings when clearing a legacy inherited voice", async () => {
+  state.bot.voiceId = "custom";
+  await open();
+  await act(async () => button("Default (Settings voice)").click());
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(button("Default (Settings voice)").getAttribute("aria-pressed")).toBe("true"),
+    );
+  });
+  expect(state.bot.voiceProvider).toBeNull();
+  expect(state.bot.voiceId).toBeNull();
+  expect(button("Default (Provider A)").getAttribute("aria-pressed")).toBe("true");
+});
+
 it("keeps the accepted provider and voice when a new selection fails to save", async () => {
   state.bot.voiceProvider = "provider-b";
   state.bot.voiceId = "custom";

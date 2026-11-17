@@ -44,6 +44,20 @@ describe("dropUnchangedOwnBotArgs", () => {
     ).toEqual({});
   });
 
+  it("keeps a repeated legacy voice so its provider can be pinned", () => {
+    const legacy = { ...current, voiceId: "legacy-voice", voiceProvider: null };
+    expect(dropUnchangedOwnBotArgs({ voice: "legacy-voice" }, legacy)).toEqual({
+      voice: "legacy-voice",
+    });
+    expect(
+      dropUnchangedOwnBotArgs(
+        { voice: "legacy-voice" },
+        { ...legacy, voiceProvider: "provider-a" },
+      ),
+    ).toEqual({});
+    expect(dropUnchangedOwnBotArgs({ voice: "default" }, legacy)).toEqual({ voice: "default" });
+  });
+
   it("treats every name of the current model and the run's thinking as no change", () => {
     const names = ["gpt-fixture", "openai-compatible/gpt-fixture", "gpt-fixture (Compatible)"];
     for (const model of [...names, "GPT-fixture (compatible)"])

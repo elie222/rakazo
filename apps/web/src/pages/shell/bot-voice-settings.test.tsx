@@ -57,7 +57,7 @@ beforeEach(() => {
   ] as VoiceCredential[];
   vi.mocked(rpc.bots.get).mockImplementation(async () => bot);
   vi.mocked(rpc.bots.update).mockImplementation(async (input) => {
-    bot = { ...bot, voiceProvider: input.voiceProvider!, voiceId: input.voiceId! };
+    bot = { ...bot, ...input };
     return bot;
   });
   vi.mocked(rpc.voice.credentials).mockImplementation(async () => credentials);
@@ -190,6 +190,25 @@ it("pins a custom voice chosen under Default until the provider is reset", async
   expect(bot.voiceProvider).toBeNull();
   expect(bot.voiceId).toBeNull();
   expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Default (Bright)");
+});
+
+it("keeps the pinned provider when only its voice is reset to Settings", async () => {
+  bot = { ...bot, voiceProvider: "speech-b", voiceId: "warm" };
+  await render();
+  await choose("voice", "Default (Bright)");
+  expect(bot.voiceProvider).toBe("speech-b");
+  expect(bot.voiceId).toBeNull();
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Speech B");
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Default (Bright)");
+});
+
+it("does not pin Settings when clearing a legacy inherited voice", async () => {
+  bot = { ...bot, voiceId: "calm" };
+  await render();
+  await choose("voice", "Default (Calm)");
+  expect(bot.voiceProvider).toBeNull();
+  expect(bot.voiceId).toBeNull();
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Default (Speech A)");
 });
 
 it("omits unavailable voice controls until a connection exists", async () => {

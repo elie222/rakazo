@@ -47,12 +47,19 @@ import {
   vaultImportLogin,
   vaultImportOrigin,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, displayName } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  botVoiceSelection,
+  ClientError,
+  computerUsingRuns,
+  displayName,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   botProfileLabelsChanged,
   commitBotUpdate,
   expireComputerExecutionLeases,
+  findDefaultVoiceCredential,
   IsolationError,
   isRecordNotFound,
   recordComputerRunEnd,
@@ -415,6 +422,34 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        const guardVoiceProvider =
+          (input.voiceProvider === undefined && input.voiceId !== undefined) ||
+          (input.voiceProvider !== undefined && input.voiceId === undefined);
+        if (
+          guardVoiceProvider &&
+          input.expectedSettings?.voiceProvider !== undefined &&
+          input.expectedSettings.voiceProvider !== existing.voiceProvider
+        ) {
+          throw new ClientError("CONFLICT", "Settings changed; review the current settings first.");
+        }
+        const expectedSettings = guardVoiceProvider
+          ? { voiceProvider: existing.voiceProvider, ...input.expectedSettings }
+          : input.expectedSettings;
+        const requestedVoiceProvider =
+          input.voiceProvider !== undefined ? input.voiceProvider : existing.voiceProvider;
+        const defaultVoiceProvider =
+          input.voiceId && !requestedVoiceProvider
+            ? (await findDefaultVoiceCredential(deps.prisma, context.actor))?.provider
+            : undefined;
+        const voiceSelection = botVoiceSelection({
+          provider: input.voiceProvider,
+          currentProvider: existing.voiceProvider,
+          voiceId: input.voiceId,
+          defaultProvider: defaultVoiceProvider,
+        });
+        if (voiceSelection.voiceId && !voiceSelection.voiceProvider) {
+          throw new ClientError("BAD_REQUEST", "Connect a voice provider first.");
+        }
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -462,7 +497,7 @@ export function botsRoutes(ctx: RouterContext) {
             input.autoSpeak !== undefined ||
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
-          expectedSettings: input.expectedSettings,
+          expectedSettings,
           data: {
             name: input.name,
             description: input.description,
@@ -474,14 +509,7 @@ export function botsRoutes(ctx: RouterContext) {
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
-            voiceProvider: input.voiceProvider,
-            voiceId:
-              input.voiceId !== undefined
-                ? input.voiceId
-                : input.voiceProvider !== undefined &&
-                    input.voiceProvider !== existing.voiceProvider
-                  ? null
-                  : undefined,
+            ...voiceSelection,
             autoSpeak: input.autoSpeak,
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
@@ -504,7 +532,7 @@ export function botsRoutes(ctx: RouterContext) {
               : {}),
           },
         }).catch((error) => {
-          if (input.expectedSettings && isRecordNotFound(error))
+          if (expectedSettings && isRecordNotFound(error))
             throw new ClientError(
               "CONFLICT",
               "Settings changed; review the current settings first.",

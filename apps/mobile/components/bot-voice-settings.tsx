@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { botVoiceChoices, botVoiceProviderChoices } from "@rakazo/core";
+import type { BotVoiceSelection } from "@rakazo/core";
+import { botVoiceChoices, botVoiceProviderChoices, botVoiceSelection } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -44,7 +45,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     enabled: Boolean(providers.connection),
   });
   const change = useSave({
-    save: async (patch: { voiceProvider?: string | null; voiceId?: string | null }, send) => {
+    save: async (patch: BotVoiceSelection, send) => {
       const updated = await send("bots/update", { botId, ...patch });
       await writeSaved(queryClient, botRead.queryKey, () => updated);
     },
@@ -114,7 +115,13 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
         onChange={(key) => {
           if (key !== (bot?.voiceProvider ?? "")) {
             sample.reset();
-            change.run({ voiceProvider: key || null, voiceId: null });
+            change.run(
+              botVoiceSelection({
+                provider: key || null,
+                currentProvider: bot?.voiceProvider,
+                ...(key ? {} : { voiceId: null }),
+              }),
+            );
           }
         }}
       />
@@ -135,11 +142,13 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
               onChange={(key) => {
                 if (key !== (bot?.voiceId ?? "")) {
                   sample.reset();
-                  change.run({
-                    voiceProvider:
-                      bot?.voiceProvider || (key ? providers.connection?.provider : null) || null,
-                    voiceId: key || null,
-                  });
+                  change.run(
+                    botVoiceSelection({
+                      currentProvider: bot?.voiceProvider,
+                      defaultProvider: providers.connection?.provider,
+                      voiceId: key || null,
+                    }),
+                  );
                 }
               }}
             />

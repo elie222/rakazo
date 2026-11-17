@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rpc } from "./api";
+import type { ApiRequestContext } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
 import type { CallState } from "./call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "./call-session";
 import { loadCallGreetingEnabled } from "./call-sounds";
@@ -16,9 +18,16 @@ import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "./threa
 import { speakQueue, speakText } from "./voice";
 import { takeShortcutVoiceChat } from "./voice-chat-intent";
 
+const apiScope = vi.hoisted(() => ({
+  apiBase: "https://api.example.test",
+  spaceId: "space-riley",
+  selectionGeneration: 0,
+}));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+
 vi.mock("expo-router", () => ({
   useNavigation: () => ({ isFocused: () => true }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => navigation,
 }));
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
@@ -37,11 +46,10 @@ vi.mock("./mobile-types", () => ({
   blockText: vi.fn(),
 }));
 vi.mock("./api", () => ({
-  captureApiRequestContext: vi.fn(async () => ({
-    apiBase: "https://api.example.test",
-    headers: { "x-rakazo-space-id": "space-riley" },
-    sessionGeneration: currentSessionGeneration(),
-  })),
+  currentApiBase: () => apiScope.apiBase,
+  selectedSpaceId: () => apiScope.spaceId,
+  currentSpaceSelectionGeneration: () => apiScope.selectionGeneration,
+  captureApiRequestContext: vi.fn(),
   rpc: vi.fn(async () => {
     throw new Error("Unauthorized");
   }),
@@ -102,6 +110,20 @@ describe("useThreadVoiceCall hand-over", () => {
     vi.mocked(loadCallGreetingEnabled).mockReset().mockResolvedValue(true);
     vi.mocked(loadDeviceVoiceEnabled).mockResolvedValue(true);
     vi.mocked(rpc).mockReset().mockRejectedValue(new Error("Unauthorized"));
+    navigation.push.mockClear();
+    navigation.replace.mockClear();
+    apiScope.apiBase = "https://api.example.test";
+    apiScope.spaceId = "space-riley";
+    apiScope.selectionGeneration = 0;
+    vi.mocked(captureApiRequestContext)
+      .mockReset()
+      .mockImplementation(
+        async (spaceId = apiScope.spaceId): Promise<ApiRequestContext> => ({
+          apiBase: apiScope.apiBase,
+          headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+          sessionGeneration: currentSessionGeneration(),
+        }),
+      );
     await saveSessionToken("fake-token-a");
     root = createRoot(document.createElement("div"));
   });
@@ -146,6 +168,15 @@ describe("useThreadVoiceCall hand-over", () => {
         }),
       }),
     );
+    const requestContext = await vi.mocked(captureApiRequestContext).mock.results[0]!.value;
+    expect(vi.mocked(startCall).mock.calls[0]![0].requestContext).toBe(requestContext);
+    expect(loadDeviceVoiceEnabled).toHaveBeenCalledWith(
+      "riley",
+      requestContext,
+      expect.any(Function),
+    );
+    expect(rpc).toHaveBeenCalledWith("me", undefined, { requestContext });
+    expect(rpc).toHaveBeenCalledWith("voice/status", { botId: "riley" }, { requestContext });
   });
 
   it("shares inferred readiness with the post-start transcription probe", async () => {
@@ -166,6 +197,58 @@ describe("useThreadVoiceCall hand-over", () => {
     expect(
       vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/status"),
     ).toHaveLength(1);
+  });
+
+  describe.each(["Space", "session", "server"] as const)("%s switches during planning", (scope) => {
+    it.each(["ready", "setup", "error"] as const)("drops a stale %s answer", async (answer) => {
+      const status = deferred<{ ready: boolean; transcribe: boolean }>();
+      const statusRequested = deferred<void>();
+      vi.mocked(loadDeviceVoiceEnabled).mockResolvedValue(false);
+      vi.mocked(rpc).mockImplementation(async (procedure) => {
+        if (procedure === "voice/status") {
+          statusRequested.resolve();
+          return status.promise as never;
+        }
+        return { name: "Morgan" } as never;
+      });
+      render("riley");
+      let pending: Promise<void> | undefined;
+      await act(async () => {
+        pending = startVoiceCall?.();
+        await statusRequested.promise;
+      });
+      const requestContext = await vi.mocked(captureApiRequestContext).mock.results[0]!.value;
+      expect(requestContext).toEqual({
+        apiBase: "https://api.example.test",
+        headers: { "x-rakazo-space-id": "space-riley" },
+        sessionGeneration: currentSessionGeneration(),
+      });
+      expect(captureApiRequestContext).toHaveBeenCalledWith("space-riley");
+      expect(rpc).toHaveBeenCalledWith("voice/status", { botId: "riley" }, { requestContext });
+      expect(rpc).toHaveBeenCalledWith("me", undefined, { requestContext });
+      expect(loadDeviceVoiceEnabled).toHaveBeenCalledWith(
+        "riley",
+        requestContext,
+        expect.any(Function),
+      );
+
+      if (scope === "Space") {
+        apiScope.spaceId = "space-max";
+        apiScope.selectionGeneration += 1;
+      } else if (scope === "server") {
+        apiScope.apiBase = "https://other.example.test";
+      } else {
+        await saveSessionToken("fake-token-b");
+      }
+      await act(async () => {
+        if (answer === "error") status.reject(new Error("Unavailable"));
+        else status.resolve({ ready: answer === "ready", transcribe: true });
+        await pending;
+      });
+      expect(captureApiRequestContext).toHaveBeenCalledOnce();
+      expect(startCall).not.toHaveBeenCalled();
+      expect(navigation.push).not.toHaveBeenCalled();
+    });
   });
 
   it("starts fresh and put-through calls straight to listening with the greeting off", async () => {

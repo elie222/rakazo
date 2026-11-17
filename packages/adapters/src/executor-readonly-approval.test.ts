@@ -2301,6 +2301,14 @@ describe("own settings through update_bot", () => {
     );
   });
 
+  it("pins an existing legacy voice even when the requested ID has not changed", async () => {
+    const f = voiceFixture(null, "voice-rachel");
+    f.setCalls([{ args: { voice: "voice-rachel" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, voice: "voice-rachel" }]);
+    expect(f.voiceState).toMatchObject({ voiceProvider: "provider-a", voiceId: "voice-rachel" });
+  });
+
   it.each(["voice-rachel", null])(
     "returns a pinned provider to Settings when resetting voice %s",
     async (voiceId) => {

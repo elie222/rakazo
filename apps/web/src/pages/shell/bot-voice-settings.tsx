@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { botVoiceChoices, botVoiceProviderChoices } from "@rakazo/core";
+import type { BotVoiceSelection } from "@rakazo/core";
+import { botVoiceChoices, botVoiceProviderChoices, botVoiceSelection } from "@rakazo/core";
 import { Button, Field, FieldGroup, FieldLabel, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
@@ -9,8 +10,6 @@ import { useCallSession } from "../../lib/call-session";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { speaker } from "../../lib/tts";
 import { errorText } from "../../lib/user-error";
-
-type VoiceChoice = { voiceProvider: string | null; voiceId: string | null };
 
 /** Voice choices save independently, so an unrelated profile draft cannot overwrite them. */
 export function BotVoiceSettings({ bot }: { bot: Bot }) {
@@ -37,7 +36,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     }),
     enabled: Boolean(connection),
   });
-  const save = useSave<VoiceChoice, Bot>({
+  const save = useSave<BotVoiceSelection, Bot>({
     save: (choice, rpc) => rpc.bots.update({ botId: bot.id, ...choice }),
     stale: [
       queries.bots.get.queryKey({ input: { botId: bot.id } }),
@@ -97,7 +96,13 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
           options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
           onValueChange={(provider) => {
             stopPreview();
-            save.run({ voiceProvider: provider || null, voiceId: null });
+            save.run(
+              botVoiceSelection({
+                provider: provider || null,
+                currentProvider: current.voiceProvider,
+                ...(provider ? {} : { voiceId: null }),
+              }),
+            );
           }}
         />
       </Field>
@@ -114,10 +119,13 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
             options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
             onValueChange={(voiceId) => {
               stopPreview();
-              save.run({
-                voiceProvider: selectedProvider || (voiceId ? connection?.provider : null) || null,
-                voiceId: voiceId || null,
-              });
+              save.run(
+                botVoiceSelection({
+                  currentProvider: current.voiceProvider,
+                  defaultProvider: connection?.provider,
+                  voiceId: voiceId || null,
+                }),
+              );
             }}
           />
           <Button
