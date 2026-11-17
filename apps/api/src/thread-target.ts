@@ -406,7 +406,13 @@ async function verifiedExtraQuotes(
     // Read entry by entry, so a block from an earlier release beside the text does not lose the excerpt.
     const blocks = storedMessageBlocks(parent);
     const role = MessageRole.safeParse(parent.role);
-    if (!role.success) continue;
+    if (!role.success) {
+      getLogger().warn("thread send quote skipped: unreadable message role", {
+        messageId: parent.id,
+        issues: role.error.issues,
+      });
+      continue;
+    }
     let text: string | undefined;
     try {
       text = deriveMessageQuote(

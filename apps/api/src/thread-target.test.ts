@@ -4570,13 +4570,19 @@ describe("sendThreadMessage", () => {
       expect(tx.event.create.mock.calls[0]![0].data.payload.extraReplyQuotes).toBeUndefined();
     });
 
-    it("drops a further excerpt whose message has a role a reply cannot read back", async () => {
+    it("drops a further excerpt whose message has a role a reply cannot read back, and warns about that row", async () => {
+      const warn = vi.spyOn(getLogger(), "warn");
       const tx = await sendStacked({
         extraReplyQuotes: [{ messageId: "odd", text: "ship on friday" }],
         others: [{ id: "odd", role: "tool", blocks: [{ kind: "text", text: "ship on friday" }] }],
       });
 
       expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ messageId: "odd" }),
+      );
+      warn.mockRestore();
     });
 
     it("keeps no further excerpts beside a page card, which has no text to quote", async () => {
