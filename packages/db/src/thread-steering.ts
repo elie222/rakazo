@@ -9,6 +9,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
+import { HOLDS_CHAT } from "./chat-holding-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
 import { mayBeChannelMessage, readMessageBlocks, storedMessageBlocks } from "./message-blocks.js";
@@ -281,6 +282,7 @@ export async function createPendingSteeringRun(
       threadId: input.threadId,
       botId: input.botId,
       status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+      ...HOLDS_CHAT,
     },
     select: { id: true },
   });

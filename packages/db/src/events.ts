@@ -21,6 +21,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction, conversationRunsWhere } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
+import { HOLDS_CHAT } from "./chat-holding-runs.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -487,6 +488,7 @@ export async function sendUserMessage(
                 status: {
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
+                ...HOLDS_CHAT,
               },
               select: {
                 id: true,

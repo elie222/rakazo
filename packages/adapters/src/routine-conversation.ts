@@ -1,6 +1,6 @@
 import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { handQueuedRunToWorkingRun } from "@rakazo/db";
+import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { dueRoutineHandoverPrompt } from "./routine-conversation.prompt.js";
@@ -51,6 +51,7 @@ function busyRunWhere(
     id: { not: run.id },
     botId: run.botId,
     status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+    ...HOLDS_CHAT,
     OR: [
       { startedAt: { not: null } },
       { status: { not: "queued" } },

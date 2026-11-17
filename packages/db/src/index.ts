@@ -15,6 +15,7 @@ export * from "./bot-instructions.js";
 export * from "./bot-update.js";
 export * from "./cancel-runs.js";
 export * from "./chat-alerts.js";
+export * from "./chat-holding-runs.js";
 export * from "./client.js";
 export * from "./computer-runs.js";
 export * from "./computers.js";
