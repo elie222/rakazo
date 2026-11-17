@@ -419,3 +419,32 @@ it.each([undefined, "personal", "credits"])(
       );
   },
 );
+
+it("uses the approved default when owner settings name an unapproved model", () => {
+  const entry = {
+    id: "default-offering",
+    connectionId: "operator-connection",
+    provider: "approved-provider",
+    modelId: "approved-model",
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  };
+  const env = {
+    MODEL_CREDIT_OFFERINGS: JSON.stringify({ defaultOfferingId: entry.id, offerings: [entry] }),
+  };
+  expect(deploymentModelRole("main", { ...deploymentDefaults, env }).primary).toEqual({
+    provider: entry.provider,
+    modelId: entry.modelId,
+  });
+  expect(
+    deploymentModelRole("main", {
+      ...deploymentDefaults,
+      env: { MODEL_CREDIT_OFFERINGS: JSON.stringify({ defaultOfferingId: null, offerings: [] }) },
+    }).primary,
+  ).toBeNull();
+  expect(
+    deploymentModelRole("main", {
+      settings: { defaultModelProvider: entry.provider, defaultModelId: entry.modelId },
+      env,
+    }).primary,
+  ).toEqual({ provider: entry.provider, modelId: entry.modelId });
+});

@@ -132,3 +132,9 @@ checker estimates. Speech uses its own deployment connection and allowance accou
 
 Apply the approval usage and speech migrations before the credit-offering migration. Enable the
 catalog only after all API and worker processes enforce the new funding contract.
+
+Legacy backup clients may submit provider/model-only rows: an unambiguous existing funding pin
+is preserved. If the same model already has several funding routes, the update is refused until
+one is selected explicitly. Owner-saved deployment defaults remain valid only when approved;
+otherwise the configured default offering applies. Catalog reads isolate unavailable operator
+secrets from personal models and share each operator connection read within that request.

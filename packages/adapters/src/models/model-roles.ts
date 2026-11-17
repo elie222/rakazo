@@ -40,6 +40,17 @@ export function deploymentModelRole(
   const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
   const modelId =
     usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+  const offerings = modelCreditOfferings(defaults.env);
+  if (
+    offerings &&
+    !offerings.offerings.some((entry) => entry.provider === provider && entry.modelId === modelId)
+  ) {
+    const fallback = offerings.offerings.find((entry) => entry.id === offerings.defaultOfferingId);
+    return {
+      primary: fallback ? { provider: fallback.provider, modelId: fallback.modelId } : null,
+      backups: [],
+    };
+  }
   return { primary: provider && modelId ? { provider, modelId } : null, backups: [] };
 }
 

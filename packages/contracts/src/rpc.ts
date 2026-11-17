@@ -212,8 +212,6 @@ import { VaultImportInput, VaultImportResult } from "./integrations/vault-import
 import { LabFeatureSchema } from "./labs.js";
 import {
   ModelApiProtocolSchema,
-  ModelBackupChoiceSchema,
-  ModelBackupListSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
   ModelConnectionLabelSchema,
@@ -221,10 +219,12 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
+  modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./models/model-connections.js";
 import { ModelHeadersSchema } from "./models/model-headers.js";
 import {
+  ModelRoleChoiceSchema,
   ModelRoleSchema,
   ModelRoleUpdateSchema,
   ModelRoleViewSchema,
@@ -594,8 +594,10 @@ export const appContract = {
       .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
-    backups: oc.output(z.array(ModelBackupChoiceSchema)),
-    setBackups: oc.input(ModelBackupListSchema).output(z.object({ ok: z.literal(true) })),
+    backups: oc.output(z.array(ModelRoleChoiceSchema)),
+    setBackups: oc
+      .input(modelChoiceListSchema(ModelRoleChoiceSchema))
+      .output(z.object({ ok: z.literal(true) })),
     connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(

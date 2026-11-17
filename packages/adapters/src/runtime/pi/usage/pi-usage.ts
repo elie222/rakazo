@@ -15,6 +15,7 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { openRouterInferenceFetch } from "../../../models/credits/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
 import { fetchForRequest } from "../../../web/undici-fetch.js";
@@ -620,7 +621,18 @@ export function observedPiStream(
             terminalError instanceof Error ? terminalError.message : String(terminalError),
           timestamp: Date.now(),
         };
-        if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
+        if (providerThrew) {
+          if (terminalError !== providerError)
+            getLogger().warn("Model usage accounting failed while handling a provider failure", {
+              provider: model.provider,
+              model: model.id,
+            });
+          hooks?.onProviderError?.({
+            ...message,
+            errorMessage:
+              providerError instanceof Error ? providerError.message : String(providerError),
+          });
+        }
         stream.push({ type: "error", reason: "error", error: message });
         stream.end(message);
       }

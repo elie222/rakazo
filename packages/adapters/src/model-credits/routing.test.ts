@@ -1,6 +1,8 @@
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  approvedModelCreditCatalogEntry,
   approvedModelCreditMaterial,
   availableModelCreditOfferings,
   modelCreditUsageLookup,
@@ -131,13 +133,54 @@ it("shares a connection read across approved models and checks it again on the n
   deps.findUnique.mockResolvedValue(null as never);
   expect(await availableModelCreditOfferings(deps.prisma as never, deps.secrets)).toEqual([]);
 });
-it("propagates secret-store outages rather than reporting healthy configuration", async () => {
+it.each([
+  new Error("fake-decrypt-failure"),
+  new SecretStoreUnavailableError(503, "fake-store-outage"),
+])("hides an unavailable operator secret without failing catalog reads", async (error) => {
   const deps = setup();
-  const outage = new Error("Secret store unavailable");
-  deps.load.mockRejectedValue(outage);
-  await expect(availableModelCreditOfferings(deps.prisma as never, deps.secrets)).rejects.toBe(
-    outage,
+  deps.load.mockRejectedValue(error);
+  expect(await availableModelCreditOfferings(deps.prisma as never, deps.secrets)).toEqual([]);
+  await expect(
+    approvedModelCreditMaterial(
+      deps.prisma as never,
+      deps.secrets,
+      offering.provider,
+      offering.modelId,
+    ),
+  ).rejects.toThrow(
+    error instanceof SecretStoreUnavailableError ? "fake-store-outage" : "unavailable",
   );
+});
+it("shares operator reads across listing and live metadata within one request only", async () => {
+  const deps = setup("openai");
+  const live = { ...offering, provider: "openai", modelId: "gpt-future-credit-test" };
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({ defaultOfferingId: live.id, offerings: [live] }),
+  );
+  const reads = new Map();
+  await availableModelCreditOfferings(deps.prisma as never, deps.secrets, { reads });
+  expect(
+    await approvedModelCreditCatalogEntry(
+      deps.prisma as never,
+      deps.secrets,
+      live.provider,
+      live.modelId,
+      reads,
+    ),
+  ).toMatchObject({ id: live.modelId });
+  expect(deps.load).toHaveBeenCalledOnce();
+  await availableModelCreditOfferings(deps.prisma as never, deps.secrets);
+  expect(deps.load).toHaveBeenCalledTimes(2);
+});
+it("does not load offerings for providers outside the member's funding", async () => {
+  const deps = setup();
+  expect(
+    await availableModelCreditOfferings(deps.prisma as never, deps.secrets, {
+      providers: new Set(),
+    }),
+  ).toEqual([]);
+  expect(deps.findUnique).not.toHaveBeenCalled();
 });
 
 it("reports invalid operator secrets without logging credential values", async () => {

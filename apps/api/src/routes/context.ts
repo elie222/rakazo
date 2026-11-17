@@ -1,5 +1,6 @@
 import { implement, ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { CatalogReads } from "@rakazo/adapters";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
@@ -153,29 +154,39 @@ export function createRouterContext(deps: RouterDeps) {
   });
   // The scripted fixture only exists to drive the scripted runtime; a real runtime
   // cannot execute it, so it stays out of the user-facing catalog otherwise.
-  const chatCatalog = async (actor: Actor, role: ModelRole = "main") => {
-    const catalog = await catalogForSpace(actor, role);
+  const chatCatalog = async (actor: Actor, role: ModelRole = "main", reads?: CatalogReads) => {
+    const catalog = await catalogForSpace(actor, role, reads);
     return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
   };
-  const catalogForSpace = async (actor: Actor, role: ModelRole = "main") => {
+  const catalogForSpace = async (
+    actor: Actor,
+    role: ModelRole = "main",
+    reads: CatalogReads = new Map(),
+  ) => {
     const auth = await modelCredentialAuthKindsForSpace(
       deps.prisma,
       deps.secrets,
       actor,
       deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
     );
-    const approved = deps.billing?.modelCreditsEnabled
-      ? await availableModelCreditOfferings(deps.prisma, deps.secrets)
+    const configured = deps.billing?.modelCreditsEnabled
+      ? (modelCreditOfferings()?.offerings ?? [])
       : [];
     const fundedProviders = new Set(
       (
         await Promise.all(
-          [...new Set(approved.map((entry) => entry.provider))].map(async (provider) =>
+          [...new Set(configured.map((entry) => entry.provider))].map(async (provider) =>
             (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
           ),
         )
-      ).filter(Boolean),
+      ).filter((provider): provider is string => provider !== null),
     );
+    const approved = fundedProviders.size
+      ? await availableModelCreditOfferings(deps.prisma, deps.secrets, {
+          providers: fundedProviders,
+          reads,
+        })
+      : [];
     const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
     const [live, providerLive] = await Promise.all([
       codexLiveCatalogsForSpace(deps.prisma, deps.secrets, actor, auth, codexCatalog, {
@@ -220,6 +231,7 @@ export function createRouterContext(deps: RouterDeps) {
           deps.secrets,
           offering.provider,
           offering.modelId,
+          reads,
         ));
       if (entry) merged.push(entry);
     }
@@ -364,8 +376,12 @@ export function createRouterContext(deps: RouterDeps) {
       return view;
     }
   };
-  const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
-    const catalog = await chatCatalog(actor, role);
+  const modelRoleCatalog = async (
+    actor: Actor,
+    role: ModelRole,
+    reads?: CatalogReads,
+  ): Promise<ModelCatalogEntry[]> => {
+    const catalog = await chatCatalog(actor, role, reads);
     return withServingConnections(
       actor,
       catalog.filter((entry) => modelSupportsRole(entry, role)),
@@ -427,7 +443,8 @@ export function createRouterContext(deps: RouterDeps) {
     choices: ModelRoleChoice[],
   ): Promise<void> => {
     if (choices.length === 0) return;
-    const catalog = await modelRoleCatalog(actor, role);
+    const reads: CatalogReads = new Map();
+    const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
       const entry = catalog.find(
         (entry) =>
@@ -443,6 +460,7 @@ export function createRouterContext(deps: RouterDeps) {
             choice.provider,
             choice.modelId,
             choice.creditOfferingId,
+            reads,
           )) ||
           !entry ||
           entry.creditOfferingId !== choice.creditOfferingId ||

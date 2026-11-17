@@ -1375,3 +1375,115 @@ it("keeps the legacy hosted decision checker selectable without a personal key",
     vi.unstubAllEnvs();
   }
 });
+
+describe("legacy backup funding compatibility", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const offering = {
+    id: "legacy-offering",
+    connectionId: "operator-example",
+    provider: availableModel.provider,
+    modelId: availableModel.id,
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  };
+  function configure(f: ReturnType<typeof setup>) {
+    f.deps.billing = { modelCreditsEnabled: true } as never;
+    Object.assign(f.prisma.userModelCredential, {
+      findUnique: vi.fn(async () => ({
+        id: offering.connectionId,
+        userId: "operator-example",
+        provider: offering.provider,
+        secretId: "operator-secret",
+      })),
+    });
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({ defaultOfferingId: offering.id, offerings: [offering] }),
+    );
+  }
+  it.each([false, true])(
+    "preserves a credit route through a legacy backup round-trip (explicit=%s)",
+    async (explicit) => {
+      const f = setup({
+        credits: true,
+        existing: [
+          {
+            userId: owner.userId,
+            provider: offering.provider,
+            modelId: offering.modelId,
+            creditOfferingId: offering.id,
+            position: 0,
+          },
+        ],
+      });
+      configure(f);
+      const response = await f.call("models/backups", null);
+      expect((await response.response.json()).json).toEqual([
+        { provider: offering.provider, modelId: offering.modelId, creditOfferingId: offering.id },
+      ]);
+      const input = [
+        {
+          provider: offering.provider,
+          modelId: offering.modelId,
+          ...(explicit ? { creditOfferingId: offering.id } : {}),
+        },
+      ];
+      expect((await f.call("models/setBackups", input)).response.status).toBe(200);
+      expect(f.roles()).toEqual([
+        expect.objectContaining({ creditOfferingId: offering.id, credentialId: null }),
+      ]);
+      expect(f.deps.secrets.load).toHaveBeenCalledOnce();
+    },
+  );
+  it("rejects an ambiguous funding-free update before changing saved rows", async () => {
+    const f = setup({
+      existing: [
+        {
+          userId: owner.userId,
+          provider: offering.provider,
+          modelId: offering.modelId,
+          creditOfferingId: offering.id,
+          position: 0,
+        },
+        {
+          userId: owner.userId,
+          provider: offering.provider,
+          modelId: offering.modelId,
+          credentialId: "credential-one",
+          position: 1,
+        },
+      ],
+    });
+    configure(f);
+    const response = await f.call("models/setBackups", [
+      { provider: offering.provider, modelId: offering.modelId },
+    ]);
+    expect(response.response.status).toBe(409);
+    expect(f.userModelRoleChoice.createMany).not.toHaveBeenCalled();
+  });
+  it.each([new Error("fake-decryption-failure"), new SecretStoreUnavailableError(503)])(
+    "keeps personal models available when the operator secret is unavailable",
+    async (error) => {
+      const f = setup();
+      configure(f);
+      Object.assign(f.prisma.secret, {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id === "operator-secret" ? "broken-operator" : "personal-fixture",
+        })),
+      });
+      vi.mocked(f.deps.secrets.load).mockImplementation(async (ciphertext) => {
+        if (ciphertext === "broken-operator") throw error;
+        return JSON.stringify({ kind: "api_key", key: "fake-personal-key" });
+      });
+      const response = await f.call("models/forRole", { role: "main" });
+      expect(response.response.status).toBe(200);
+      const catalog = (await response.response.json()).json;
+      expect(catalog).toContainEqual(
+        expect.objectContaining({ provider: offering.provider, id: offering.modelId }),
+      );
+      expect(catalog.some((entry: { creditOfferingId?: string }) => entry.creditOfferingId)).toBe(
+        false,
+      );
+    },
+  );
+});

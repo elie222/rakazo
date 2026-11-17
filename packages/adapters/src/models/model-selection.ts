@@ -1180,10 +1180,11 @@ export async function validateCreditOfferingChoice(
   provider: string,
   modelId: string,
   offeringId: string,
+  reads?: CatalogReads,
 ) {
   return (
     approvedModelCreditOffering(provider, modelId)?.id === offeringId &&
     (await hasHostedModelCredits(prisma, scope, provider, true)) &&
-    (await availableModelCreditOfferings(prisma, secrets, offeringId)).length > 0
+    (await availableModelCreditOfferings(prisma, secrets, { offeringId, reads })).length > 0
   );
 }

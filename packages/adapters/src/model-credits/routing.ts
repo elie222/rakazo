@@ -1,4 +1,5 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
@@ -6,7 +7,8 @@ import { getLogger } from "@rakazo/logging";
 import { modelProviderDefinition } from "../models/model-provider-registry.js";
 import { parseModelSecret, secretValuesToRedact } from "../models/model-secret.js";
 import { connectionModelSettings } from "../models/model-settings.js";
-import { liveCatalogEntry } from "../runtime/pi/models/pi-live-catalog.js";
+import type { CatalogReads } from "../runtime/pi/models/pi-live-catalog.js";
+import { liveCatalogEntry, readOnce } from "../runtime/pi/models/pi-live-catalog.js";
 import type { ModelCreditOffering } from "./offerings.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "./offerings.js";
 
@@ -20,64 +22,81 @@ async function loadCreditConnection(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
   offering: ModelCreditOffering,
+  reads?: CatalogReads,
 ) {
-  if (!modelProviderDefinition(offering.provider))
-    throw new ModelCreditConnectionUnavailableError("Unknown approved model provider");
-  return runAsSystem("load approved model credit connection", async () => {
-    const connection = await prisma.userModelCredential.findUnique({
-      where: { id: offering.connectionId },
-    });
-    if (!connection || connection.provider !== offering.provider)
-      throw new ModelCreditConnectionUnavailableError();
-    const stored = await prisma.secret.findFirst({
-      where: { id: connection.secretId, userId: connection.userId, spaceId: null },
-    });
-    if (!stored) throw new ModelCreditConnectionUnavailableError();
-    const plaintext = await secrets.load(stored.ciphertext, stored.id);
-    let secret: ReturnType<typeof parseModelSecret>;
-    try {
-      secret = parseModelSecret(plaintext);
-    } catch {
-      // Parser diagnostics can contain credential values; identify the offering only.
-      getLogger().warn("approved model credit connection has an invalid stored secret", {
-        offeringId: offering.id,
-        provider: offering.provider,
+  return readOnce(
+    reads,
+    `credit-connection:${JSON.stringify([offering.provider, offering.connectionId])}`,
+    async () => {
+      if (!modelProviderDefinition(offering.provider))
+        throw new ModelCreditConnectionUnavailableError("Unknown approved model provider");
+      return runAsSystem("load approved model credit connection", async () => {
+        const connection = await prisma.userModelCredential.findUnique({
+          where: { id: offering.connectionId },
+        });
+        if (!connection || connection.provider !== offering.provider)
+          throw new ModelCreditConnectionUnavailableError();
+        const stored = await prisma.secret.findFirst({
+          where: { id: connection.secretId, userId: connection.userId, spaceId: null },
+        });
+        if (!stored) throw new ModelCreditConnectionUnavailableError();
+        let plaintext: string;
+        try {
+          plaintext = await secrets.load(stored.ciphertext, stored.id);
+        } catch (error) {
+          getLogger().warn("approved model credit connection secret is unavailable", {
+            offeringId: offering.id,
+            provider: offering.provider,
+          });
+          if (error instanceof SecretStoreUnavailableError) throw error;
+          throw new ModelCreditConnectionUnavailableError();
+        }
+        let secret: ReturnType<typeof parseModelSecret>;
+        try {
+          secret = parseModelSecret(plaintext);
+        } catch {
+          // Parser diagnostics can contain credential values; identify the offering only.
+          getLogger().warn("approved model credit connection has an invalid stored secret", {
+            offeringId: offering.id,
+            provider: offering.provider,
+          });
+          throw new ModelCreditConnectionUnavailableError();
+        }
+        if (secret.kind !== "api_key" || !secret.key.trim())
+          throw new ModelCreditConnectionUnavailableError(
+            "Approved model connection requires an API key",
+          );
+        return { connection, secret };
       });
-      throw new ModelCreditConnectionUnavailableError();
-    }
-    if (secret.kind !== "api_key" || !secret.key.trim())
-      throw new ModelCreditConnectionUnavailableError(
-        "Approved model connection requires an API key",
-      );
-    return { connection, secret };
-  });
+    },
+  );
 }
 
 /** Ready approved entries only; shared connections are read once per catalog request. */
 export async function availableModelCreditOfferings(
   prisma: PrismaClient,
   secrets: Pick<SecretStore, "load">,
-  offeringId?: string,
+  options: { offeringId?: string; providers?: ReadonlySet<string>; reads?: CatalogReads } = {},
 ) {
   const entries = (modelCreditOfferings()?.offerings ?? []).filter(
-    (entry) => !offeringId || entry.id === offeringId,
+    (entry) =>
+      (!options.offeringId || entry.id === options.offeringId) &&
+      (!options.providers || options.providers.has(entry.provider)),
   );
-  const ready = new Map<string, Promise<boolean>>();
+  const reads = options.reads ?? new Map();
   const result = await Promise.all(
     entries.map(async (entry) => {
-      const key = JSON.stringify([entry.provider, entry.connectionId]);
-      let check = ready.get(key);
-      if (!check) {
-        check = loadCreditConnection(prisma, secrets, entry).then(
-          () => true,
-          (error: unknown) => {
-            if (error instanceof ModelCreditConnectionUnavailableError) return false;
-            throw error;
-          },
-        );
-        ready.set(key, check);
+      try {
+        await loadCreditConnection(prisma, secrets, entry, reads);
+        return [entry];
+      } catch (error) {
+        if (
+          error instanceof ModelCreditConnectionUnavailableError ||
+          error instanceof SecretStoreUnavailableError
+        )
+          return [];
+        throw error;
       }
-      return (await check) ? [entry] : [];
     }),
   );
   return result.flat();
@@ -112,10 +131,11 @@ export async function approvedModelCreditCatalogEntry(
   secrets: Pick<SecretStore, "load">,
   provider: string,
   modelId: string,
+  reads?: CatalogReads,
 ) {
   const offering = approvedModelCreditOffering(provider, modelId);
   if (!offering) return undefined;
-  const { connection, secret } = await loadCreditConnection(prisma, secrets, offering);
+  const { connection, secret } = await loadCreditConnection(prisma, secrets, offering, reads);
   const settings = connectionModelSettings(secret, provider, modelId, connection);
   const entry = liveCatalogEntry(provider, modelId, settings);
   return entry

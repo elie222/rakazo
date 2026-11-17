@@ -746,6 +746,7 @@ describe("Pi usage accounting", () => {
       const recordUsage = vi.fn(() => {
         order.push("usage");
       });
+      const onProviderError = vi.fn();
       const afterCall = vi.fn((_id: string, usage: AgentUsage | null) => {
         order.push("receipt");
         expect(usage?.costUsd).toBe(9);
@@ -802,7 +803,7 @@ describe("Pi usage accounting", () => {
         (event) => events.push(event),
         { beforeCall: () => "reservation", afterCall },
         undefined,
-        { recordUsage },
+        { recordUsage, onProviderError },
       );
       for await (const _event of stream) {
       }
@@ -821,7 +822,16 @@ describe("Pi usage accounting", () => {
           }),
         ]);
       }
-      expect((await stream.result()).stopReason).toBe("error");
+      expect(onProviderError).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ errorMessage: "Stream response interrupted" }),
+      );
+      const result = await stream.result();
+      expect(result.stopReason).toBe("error");
+      expect(result.errorMessage).toBe(
+        outcome === "receipt-failed"
+          ? "Receipt storage unavailable"
+          : "Stream response interrupted",
+      );
     },
   );
   it("context policy rejection terminates without reserving or spending", async () => {
