@@ -28,6 +28,8 @@ export async function afterSpaceDeparture(
   );
   // Their routines pass to the owner, paused.
   await deps.events.publishSpaceChange?.(actor.spaceId, "routines");
+  // Their shared pages leave the Space with them.
+  await deps.events.publishSpaceChange?.(actor.spaceId, "pages");
   await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {
     getLogger().error("space departure run teardown", error);
   });

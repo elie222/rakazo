@@ -7,7 +7,7 @@ import { PagesList } from "./PagesList";
 
 const rename = vi.hoisted(() => vi.fn());
 const pageItems = vi.hoisted(() => ({
-  current: [] as { id: string; title: string; updatedAt: string }[],
+  current: [] as { id: string; title: string; updatedAt: string; visibility?: string }[],
 }));
 const page = (index: number) => ({
   id: `page-${index}`,
@@ -125,5 +125,20 @@ it("keeps a plain heading when the preview shows every page", async () => {
   const { host, root } = await renderPreview();
   expect(host.querySelectorAll("li")).toHaveLength(2);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Pages")).toBe(false);
+  await act(async () => root.unmount());
+});
+
+it("marks a page shared with the Space as shared, and a private one not", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  pageItems.current = [
+    { ...page(1), visibility: "space" },
+    { ...page(2), visibility: "private" },
+  ];
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () => root.render(<PagesList />));
+  const rows = [...document.querySelectorAll("button")].filter((b) =>
+    /Plan \d/.test(b.textContent ?? ""),
+  );
+  expect(rows.map((row) => row.textContent?.includes("Shared"))).toEqual([true, false]);
   await act(async () => root.unmount());
 });

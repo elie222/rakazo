@@ -44,7 +44,7 @@ it("names an unnamed owner You, and starts an initial at a letter rather than an
 it("says under a choice only what its title does not", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
-  const show = (visibility: "private" | "link") =>
+  const show = (visibility: "private" | "space" | "link" | null) =>
     act(async () =>
       root.render(
         <SharePopover
@@ -61,12 +61,54 @@ it("says under a choice only what its title does not", async () => {
   const choices = () =>
     [...document.querySelectorAll('[role="radiogroup"] label')].map((label) => label.textContent);
   await show("private");
-  expect(choices()).toEqual(["Only you", "Anyone with the linkCan view without signing in"]);
-  // Turning the link off warns what that does to everyone holding it.
-  await show("link");
   expect(choices()).toEqual([
-    "Only youThe shared link stops working",
+    "Only you",
+    "Your Space",
     "Anyone with the linkCan view without signing in",
   ]);
+  // Sharing with the Space leaves no link to warn about.
+  await show("space");
+  expect(choices()).toEqual([
+    "Only you",
+    "Your Space",
+    "Anyone with the linkCan view without signing in",
+  ]);
+  // Turning the link off, or narrowing it to the Space, warns what that does to its holders.
+  const warned = [
+    "Only youThe shared link stops working",
+    "Your SpaceThe shared link stops working",
+    "Anyone with the linkCan view without signing in",
+  ];
+  await show("link");
+  expect(choices()).toEqual(warned);
+  // After a lost answer the link may be live, so either choice warns.
+  await show(null);
+  expect(choices()).toEqual(warned);
+  await act(async () => root.unmount());
+});
+
+it("shows a page shared with the Space as shared, apart from a link", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const show = (visibility: "private" | "space" | "link") =>
+    act(async () =>
+      root.render(
+        <SharePopover
+          compact
+          title="Plan"
+          owner={{ name: "RJ", image: null }}
+          visibility={visibility}
+          shareUrl={null}
+          onVisibilityChange={() => {}}
+        />,
+      ),
+    );
+  const trigger = () => document.querySelector("[data-shared]");
+  await show("private");
+  expect(trigger()).toBeNull();
+  await show("space");
+  expect(trigger()?.getAttribute("aria-label")).toBe("Share, shared with your Space");
+  await show("link");
+  expect(trigger()?.getAttribute("aria-label")).toBe("Share, anyone with the link can view");
   await act(async () => root.unmount());
 });

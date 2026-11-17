@@ -55,10 +55,12 @@ function OpenPage({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId } }),
     enabled: pageId !== null,
   });
+  // Another member's page is read-only, and a reply would go to a bot that cannot reach it.
+  const owned = page.data?.mine !== false;
   const viewer = usePageDocument(
     page.data?.code,
     sheet ? "background" : "card",
-    true,
+    owned,
     DOCK_CLEARANCE,
   );
   const [shareOpen, setShareOpen] = useState(false);
@@ -103,7 +105,7 @@ function OpenPage({
   );
   const data = page.data;
   const open = pageId !== null && (data !== undefined || failed || page.isPending);
-  const dockPage = pageId !== null && data ? { id: data.id, title: data.title } : null;
+  const dockPage = pageId !== null && data && owned ? { id: data.id, title: data.title } : null;
   useEffect(() => {
     session.dock.set({ page: dockPage });
     return () => session.dock.set({ page: null });
@@ -139,16 +141,16 @@ function OpenPage({
       }
       renameError={rename.isError ? t`Could not rename this page. Try again.` : null}
       onRename={
-        rename.isPending || !data
+        rename.isPending || !data || !owned
           ? undefined
           : (title) => {
               if (pageId) rename.mutate({ pageId, title });
             }
       }
-      composer={<div ref={setDockNode} />}
-      onReply={session.offerReply}
+      composer={owned ? <div ref={setDockNode} /> : undefined}
+      onReply={owned ? session.offerReply : undefined}
       share={
-        data ? (
+        data && owned ? (
           <SharePopover
             compact={compact}
             title={data.title}

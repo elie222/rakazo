@@ -14,9 +14,10 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number; visibility?: "private" | "link" },
+  existing?: { currentVersion: number; visibility?: "private" | "space" | "link" },
   secrets: string[] = [],
   skipApprovals = false,
+  publishSpaceChange?: (...args: unknown[]) => unknown,
 ) {
   const prisma = {
     page: {
@@ -35,7 +36,7 @@ function context(
     $transaction: vi.fn(async (work: (client: unknown) => unknown) => work(tx)),
   };
   return {
-    deps: { prisma },
+    deps: { prisma, events: publishSpaceChange ? { publishSpaceChange } : undefined },
     run: { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "bot-1" },
     bot: { id: "bot-1" },
     thread: { groupId: null },
@@ -164,7 +165,7 @@ describe("save_page", () => {
     const tx = {
       page: {
         updateMany: vi.fn(async () => ({ count: 1 })),
-        findUniqueOrThrow: vi.fn(async () => ({ title: `Keys ${secret}` })),
+        findUniqueOrThrow: vi.fn(async () => ({ title: `Keys ${secret}`, visibility: "private" })),
         update: vi.fn(),
       },
       pageVersion: { create: vi.fn() },
@@ -316,7 +317,10 @@ describe("saving a page shared by link", () => {
   it("tells the bot a page is shared when it saves an approved change", async () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const tx = {
-      page: { updateMany, findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })) },
+      page: {
+        updateMany,
+        findUniqueOrThrow: vi.fn(async () => ({ title: "Plan", visibility: "private" })),
+      },
       pageVersion: { create: vi.fn() },
     };
     const result = (await pageTools.save_page!(
@@ -327,5 +331,97 @@ describe("saving a page shared by link", () => {
       expect.objectContaining({ where: { id: "page-1", currentVersion: 1 } }),
     );
     expect(result).toMatchObject({ version: 2, sharedByLink: true });
+  });
+});
+
+describe("saving a page shared with the Space", () => {
+  const edit = { find: "Hi", replace: "Hello" };
+
+  it("holds a change for approval as it does for a page shared by link", async () => {
+    const held = request({ pageId: "page-1", edits: [edit] });
+    await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "space" }),
+      held as never,
+    );
+    expect(held.heldForApproval).toBe(true);
+    expect(held.fleetSummary?.title).toBe("Update shared page “Plan”?");
+    expect(held.args).toMatchObject({ approvedVersion: 1 });
+  });
+
+  it("does not hold a change to a private page", async () => {
+    const held = request({ pageId: "page-1", edits: [edit] });
+    expect(
+      await holdSharedPageSave(
+        context({}, { currentVersion: 1, visibility: "private" }),
+        held as never,
+      ),
+    ).toBeUndefined();
+    expect(held.heldForApproval).toBe(false);
+  });
+
+  it("tells the Space after a save only when the page is shared as the save commits", async () => {
+    // Sharing can change while a save commits, so the signal follows the visibility read inside
+    // the save, never the earlier read: a private or link page has no reader in the Space.
+    const cases = [
+      { before: "private", atSave: "space", signals: true },
+      { before: "space", atSave: "link", signals: false },
+      { before: "space", atSave: "private", signals: false },
+      { before: "private", atSave: "private", signals: false },
+    ] as const;
+    for (const { before, atSave, signals } of cases) {
+      const publishSpaceChange = vi.fn();
+      const tx = {
+        page: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ title: "Plan", visibility: atSave })),
+        },
+        pageVersion: { create: vi.fn() },
+      };
+      const result = await pageTools.save_page!(
+        context(tx, { currentVersion: 1, visibility: before }, [], true, publishSpaceChange),
+        call({ pageId: "page-1", edits: [edit] }),
+      );
+      expect(result).toMatchObject({ pageId: "page-1", version: 2 });
+      expect(publishSpaceChange.mock.calls).toEqual(signals ? [["space-1", "pages"]] : []);
+    }
+  });
+
+  it("signals no one for a page created by this save", async () => {
+    const publishSpaceChange = vi.fn();
+    const tx = {
+      page: { create: vi.fn(async () => ({ id: "page-2", title: "New" })) },
+    };
+    await pageTools.save_page!(
+      context(tx, undefined, [], true, publishSpaceChange),
+      call({ title: "New", source: source("New") }),
+    );
+    expect(publishSpaceChange).not.toHaveBeenCalled();
+  });
+
+  it("tells the bot who sees a shared page's saves, and does not call a Space page a link", async () => {
+    for (const [visibility, mark] of [
+      ["space", { sharedWithSpace: true }],
+      ["link", { sharedByLink: true }],
+    ] as const) {
+      const read = (await pageTools.save_page!(
+        context({}, { currentVersion: 1, visibility }),
+        call({ pageId: "page-1" }),
+      )) as Record<string, unknown>;
+      expect(read).toMatchObject(mark);
+    }
+    const privateRead = (await pageTools.save_page!(
+      context({}, { currentVersion: 1, visibility: "private" }),
+      call({ pageId: "page-1" }),
+    )) as Record<string, unknown>;
+    expect(privateRead).not.toHaveProperty("sharedByLink");
+    expect(privateRead).not.toHaveProperty("sharedWithSpace");
+
+    const long = Array.from({ length: 400 }, (_, index) => `<Text>Row ${index}</Text>`).join("\n");
+    const held = request({ pageId: "page-1", edits: [{ find: "<Text>Hi</Text>", replace: long }] });
+    const refused = await holdSharedPageSave(
+      context({}, { currentVersion: 1, visibility: "space" }),
+      held as never,
+    );
+    expect(refused?.error).not.toMatch(/by link/);
   });
 });

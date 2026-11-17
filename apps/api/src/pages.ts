@@ -1,7 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
-import type { Actor, PageDetail, PageSummary, PageVisibility, SharedPage } from "@rakazo/contracts";
+import type {
+  Actor,
+  PageDetail,
+  PageListItem,
+  PageSummary,
+  PageVisibility,
+  SharedPage,
+} from "@rakazo/contracts";
 import { pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
 import { ClientError, escapeSearchWildcards } from "@rakazo/core";
 import type { PageShareSecret, Prisma, PrismaClient } from "@rakazo/db";
@@ -27,13 +34,30 @@ const summarySelect = {
 
 type SummaryRow = Prisma.PageGetPayload<{ select: typeof summarySelect }>;
 
+function pageVisibility(value: string): PageVisibility {
+  return value === "link" || value === "space" ? value : "private";
+}
+
+/**
+ * Pages a member other than the owner may read. A page shared by link stays out: its owner gave
+ * the link to chosen people, not to the Space.
+ */
+const SHARED_WITH_SPACE = ["space"];
+
+/** Another member's page stays visible only while its owner still belongs to the Space. */
+function ownerInSpace(spaceId: string): Prisma.PageWhereInput {
+  return {
+    user: { members: { some: { spaceMemberships: { some: { spaceId } } } } },
+  };
+}
+
 function pageSummary(row: SummaryRow): PageSummary {
   return {
     id: row.id,
     title: row.title,
     botId: row.botId,
     groupId: row.groupId,
-    visibility: row.visibility === "link" ? "link" : "private",
+    visibility: pageVisibility(row.visibility),
     currentVersion: row.currentVersion,
     pinned: row.pinnedAt !== null,
     createdAt: row.createdAt.toISOString(),
@@ -61,6 +85,23 @@ async function requirePage(prisma: PrismaClient, actor: Actor, pageId: string) {
   const row = await prisma.page.findFirst({
     where: { id: pageId, spaceId: actor.spaceId, userId: actor.userId },
     select: { ...summarySelect, shareSecretId: true },
+  });
+  if (!row) throw new IsolationError();
+  return row;
+}
+
+/** The page for reading: the caller's own, or another member's shared with the Space. */
+async function readablePage(prisma: PrismaClient, actor: Actor, pageId: string) {
+  const row = await prisma.page.findFirst({
+    where: {
+      id: pageId,
+      spaceId: actor.spaceId,
+      OR: [
+        { userId: actor.userId },
+        { visibility: { in: SHARED_WITH_SPACE }, ...ownerInSpace(actor.spaceId) },
+      ],
+    },
+    select: { ...summarySelect, userId: true, shareSecretId: true },
   });
   if (!row) throw new IsolationError();
   return row;
@@ -108,33 +149,69 @@ function afterCursor(cursor: ListCursor): Prisma.PageWhereInput {
   };
 }
 
+/** Rows after the cursor in (newest update, then id) order: a pin is its owner's own. */
+function afterSpaceCursor(cursor: ListCursor): Prisma.PageWhereInput {
+  const updatedAt = new Date(cursor.updatedAt);
+  return { OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: cursor.id } }] };
+}
+
 export async function listPages(
   prisma: PrismaClient,
   actor: Actor,
-  input: { botId?: string; groupId?: string; cursor?: string; limit?: number; query?: string },
-) {
+  input: {
+    scope?: "mine" | "space";
+    botId?: string;
+    groupId?: string;
+    cursor?: string;
+    limit?: number;
+    query?: string;
+  },
+): Promise<{ items: PageListItem[]; nextCursor: string | null }> {
   const limit = input.limit ?? DEFAULT_LIST_LIMIT;
+  const inSpace = input.scope === "space";
+  if (inSpace && (input.botId || input.groupId)) {
+    throw new ClientError("BAD_REQUEST", "The Space's pages are not listed by bot or group");
+  }
   const where: Prisma.PageWhereInput = {
     spaceId: actor.spaceId,
-    userId: actor.userId,
+    ...(inSpace
+      ? { visibility: { in: SHARED_WITH_SPACE }, ...ownerInSpace(actor.spaceId) }
+      : { userId: actor.userId }),
     ...(input.groupId ? { groupId: input.groupId } : {}),
     ...(input.botId ? { botId: input.botId, ...(input.groupId ? {} : { groupId: null }) } : {}),
-    ...(input.cursor ? { AND: [afterCursor(decodeCursor(input.cursor))] } : {}),
+    ...(input.cursor
+      ? {
+          AND: [(inSpace ? afterSpaceCursor : afterCursor)(decodeCursor(input.cursor))],
+        }
+      : {}),
     ...(input.query
       ? { title: { contains: escapeSearchWildcards(input.query), mode: "insensitive" } }
       : {}),
   };
   const rows = await prisma.page.findMany({
     where,
-    select: summarySelect,
-    orderBy: [{ pinnedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],
+    select: { ...summarySelect, userId: true, user: { select: { name: true } } },
+    orderBy: inSpace
+      ? [{ updatedAt: "desc" }, { id: "desc" }]
+      : [{ pinnedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],
     take: limit + 1,
   });
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
-    items: page.map(pageSummary),
-    nextCursor: rows.length > limit && last ? encodeCursor(last) : null,
+    items: page.map((row) => {
+      const mine = row.userId === actor.userId;
+      // Another member's pin is theirs: it neither pins nor orders the page here.
+      return {
+        ...pageSummary(mine ? row : { ...row, pinnedAt: null }),
+        mine,
+        ownerName: mine ? null : row.user.name,
+      };
+    }),
+    nextCursor:
+      rows.length > limit && last
+        ? encodeCursor(inSpace ? { ...last, pinnedAt: null } : last)
+        : null,
   };
 }
 
@@ -157,31 +234,37 @@ export async function getPage(
   actor: Actor,
   input: { pageId: string; version?: number; link?: boolean },
 ): Promise<PageDetail> {
-  const row = await requirePage(deps.prisma, actor, input.pageId);
+  const row = await readablePage(deps.prisma, actor, input.pageId);
+  const mine = row.userId === actor.userId;
   const version = input.version ?? row.currentVersion;
+  // Like a link, another member's read shows only the current version.
+  if (!mine && version !== row.currentVersion) throw new IsolationError();
   const [stored, owner] = await Promise.all([
     deps.prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: row.id, version } },
       select: { code: true },
     }),
     deps.prisma.user.findUnique({
-      where: { id: actor.userId },
+      where: { id: row.userId },
       select: { name: true, image: true },
     }),
   ]);
   if (!stored) throw new IsolationError();
   return {
-    ...pageSummary(row),
+    // The owner's bot, chat and pin are theirs: another member sees only the page.
+    ...pageSummary(mine ? row : { ...row, botId: null, groupId: null, pinnedAt: null }),
+    mine,
     version,
     code: stored.code,
     owner: { name: owner?.name ?? "", image: owner?.image ?? null },
     // Cards skip the secret store; a token it cannot read hides only the link.
-    shareUrl: input.link
-      ? await shareUrlFor(deps, row).catch((error: unknown) => {
-          getLogger().error("page link token load", error);
-          return null;
-        })
-      : null,
+    shareUrl:
+      mine && input.link
+        ? await shareUrlFor(deps, row).catch((error: unknown) => {
+            getLogger().error("page link token load", error);
+            return null;
+          })
+        : null,
   };
 }
 
@@ -225,6 +308,7 @@ export class PageShareConflictError extends ClientError {
 
 /**
  * Compare-and-swap on the link, so concurrent changes never both win or orphan a sealed token.
+ * With no `next` the link ends and the page becomes `without` it: private, or shared with the Space.
  * Turning on a page that already has a link keeps that link (`kept`), so two turn-ons at once
  * both hand out the one URL that works, unless that link is `next.unreadable`: its token can't
  * be loaded, so it is replaced. `replaced` is the secret a swap deleted, for the caller to remove
@@ -238,6 +322,7 @@ async function swapPageShare(
     secret: { id: string; data: Prisma.SecretUncheckedCreateInput };
     unreadable: string | null;
   } | null,
+  without: "private" | "space" = "private",
 ): Promise<{ kept: boolean; replaced: PageShareSecret | null }> {
   for (let attempt = 0; ; attempt++) {
     const outcome = await prisma
@@ -255,7 +340,7 @@ async function swapPageShare(
           where: { id: pageId, shareSecretId: current.shareSecretId },
           data: next
             ? { visibility: "link", shareTokenHash: next.tokenHash, shareSecretId: next.secret.id }
-            : { visibility: "private", shareTokenHash: null, shareSecretId: null },
+            : { visibility: without, shareTokenHash: null, shareSecretId: null },
         });
         // Rolling back drops the new secret with the failed swap.
         if (moved.count === 0) throw new PageShareConflictError();
@@ -287,10 +372,10 @@ export async function setPageVisibility(
   signal: AbortSignal,
 ): Promise<{ visibility: PageVisibility; shareUrl: string | null }> {
   const row = await requirePage(deps.prisma, actor, input.pageId);
-  if (input.visibility === "private") {
-    const { replaced } = await swapPageShare(deps.prisma, row.id, null);
+  if (input.visibility !== "link") {
+    const { replaced } = await swapPageShare(deps.prisma, row.id, null, input.visibility);
     if (replaced) await forgetPageShareSecrets(deps.secrets, [replaced]);
-    return { visibility: "private", shareUrl: null };
+    return { visibility: input.visibility, shareUrl: null };
   }
   let unreadable: string | null = null;
   const existing = await shareUrlFor(deps, row).catch((error: unknown) => {

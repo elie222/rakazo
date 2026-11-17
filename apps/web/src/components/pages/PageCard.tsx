@@ -140,7 +140,7 @@ export function PageCard({
   title: string;
   /** When the page last changed, said under its title. */
   updatedAt?: string;
-  /** Anyone with the link can open it. */
+  /** Anyone with the link, or everyone in the Space, can open it. */
   shared?: boolean;
   document: string | null;
   /** The page could not be read, so its preview stops looking like it is loading. */

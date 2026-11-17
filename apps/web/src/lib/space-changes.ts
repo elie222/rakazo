@@ -15,16 +15,28 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["usage", "breakdown"],
   ],
   routines: [["routines", "list"]],
+  pages: [
+    ["pages", "list"],
+    ["pages", "get"],
+  ],
 };
 
 export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
   Object.hasOwn(READS, kind);
 
+/** A read of one saved version of a page: its code never changes, so a page change leaves it be. */
+function isPinnedVersionRead(options: unknown): boolean {
+  const input = (options as { input?: { version?: unknown } } | undefined)?.input;
+  return input?.version !== undefined;
+}
+
 /** Reads again what the server says may have changed; only screens showing it refetch. */
 export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promise<void> {
   const procedures = READS[kind].map((procedure) => procedure.join("."));
   return client.invalidateQueries({
-    predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) && procedures.includes(path.slice(-2).join(".")),
+    predicate: ({ queryKey: [path, options] }) =>
+      Array.isArray(path) &&
+      procedures.includes(path.slice(-2).join(".")) &&
+      !(kind === "pages" && isPinnedVersionRead(options)),
   });
 }

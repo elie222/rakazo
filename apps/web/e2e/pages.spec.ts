@@ -496,7 +496,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
 
   // Turning the link off breaks it at once.
   await view.getByRole("button", { name: "Share" }).click();
-  await expect(share.getByText("The shared link stops working")).toBeVisible();
+  await expect(share.getByText("The shared link stops working")).toHaveCount(2);
   await share.getByRole("radio", { name: /Only you/ }).click();
   await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
   await outside.reload();
@@ -1068,4 +1068,46 @@ test("a page acts for its reader only after a click in it, never on load or from
   await page.keyboard.up("a");
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
+});
+
+test("a page shared with the Space is listed under Shared pages, and Only you takes it back", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-space-${Date.now()}@rakazo.test`, "password12", "Page Owner");
+  await completeOnboarding(page);
+
+  const title = "Trip plan";
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source: dashboard("2.1%") })}\nthen say I made a ${title}.`,
+  );
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  // A private page is in no one's Shared pages.
+  const shelf = page.getByRole("button", { name: /^Shared pages/ });
+  await expect(shelf).toBeHidden();
+
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const view = page.getByTestId("page-view");
+  await view.getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Your Space/ }).click();
+  await expect(share.getByRole("radio", { name: /Your Space/ })).toBeChecked();
+  // Sharing with the Space makes no link.
+  await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "page-share-space");
+  await closePage(page);
+
+  await expect(shelf).toContainText("1");
+  await shelf.click();
+  const shared = page.getByRole("button", { name: title, exact: true });
+  await expect(shared).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-shared-pages-shelf");
+  await shared.click();
+  await expect(view).toBeVisible();
+  await view.getByRole("button", { name: "Share" }).click();
+  await share.getByRole("radio", { name: /Only you/ }).click();
+  await closePage(page);
+  await expect(shelf).toBeHidden();
 });

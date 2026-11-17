@@ -128,10 +128,11 @@ function changedLines(before: string, after: string): string[] {
 }
 
 /**
- * Anyone with a shared page's link sees each save at once, so a save to one is held for approval,
- * except under Never ask. The card shows every line that changes, and the approval holds the
- * version it was shown against. A save that would fail anyway is not held: it fails as it would.
- * An approved replay stays held so it claims the approval it was given.
+ * Anyone a page is shared with (its Space's members, or whoever holds its link) sees each save at
+ * once, so a save to one is held for approval, except under Never ask. The card shows every line
+ * that changes, and the approval holds the version it was shown against. A save that would fail
+ * anyway is not held: it fails as it would. An approved replay stays held so it claims the
+ * approval it was given.
  */
 export async function holdSharedPageSave(
   ctx: RunContext,
@@ -159,7 +160,7 @@ export async function holdSharedPageSave(
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
   });
-  if (page?.visibility !== "link") return undefined;
+  if (!page || page.visibility === "private") return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
@@ -178,7 +179,7 @@ export async function holdSharedPageSave(
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
-        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+        "This page is shared, and this change is too long to show the user for approval. Save it as several smaller edits.",
     };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
   request.args = { ...args, approvedVersion: page.currentVersion };
@@ -186,6 +187,13 @@ export async function holdSharedPageSave(
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
   return undefined;
+}
+
+/** Tells the bot who sees each save of a shared page. */
+function sharedMarks(visibility: string | undefined) {
+  if (visibility === "link") return { sharedByLink: true };
+  if (visibility === "space") return { sharedWithSpace: true };
+  return {};
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -226,7 +234,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
-      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      ...sharedMarks(page.visibility),
       source: current,
     };
   }
@@ -258,6 +266,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     call.nextApprovedTool !== "save_page" &&
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
+  // Whether other members of the Space can read the page, as read inside the save while its row is held.
+  let sharedAtSave = false;
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
@@ -300,6 +310,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       await tx.pageVersion.create({
         data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
       });
+      // Read last, while the update above still holds the page's row, so sharing cannot change
+      // before this commits. Nothing written depends on it.
+      const { visibility } = await tx.page.findUniqueOrThrow({
+        where: { id: page.id },
+        select: { visibility: true },
+      });
+      sharedAtSave = visibility === "space";
       return { pageId: page.id, version, title: nextTitle };
     });
   } catch (error) {
@@ -307,6 +324,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       return { error: "The page changed while saving; read it again and retry.", unchanged: true };
     }
     throw error;
+  }
+  // Members the page is shared with see the new version, so their open page and list read again.
+  // A page private or shared by link has no reader in the Space to tell; sharing it later signals itself.
+  if (page && sharedAtSave) {
+    await deps.events?.publishSpaceChange?.(run.spaceId, "pages");
   }
   const block: MessageBlock = { kind: "page", ...saved };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
@@ -325,7 +347,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...sharedMarks(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
