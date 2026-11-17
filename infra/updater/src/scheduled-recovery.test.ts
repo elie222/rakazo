@@ -49,6 +49,7 @@ async function fixture(env: string, commit: string, computers = false) {
     } as Record<string, string>,
     otherComputerRefs: [] as string[],
     otherProjects: [] as string[],
+    botContainers: false,
     computer: `${computerImage}:sha-${older}`,
     images: {
       [`sha-${older}`]: `sha256:${"1".repeat(64)}`,
@@ -74,8 +75,14 @@ async function fixture(env: string, commit: string, computers = false) {
     const failed = (output: string) => ({ ok: false, exitCode: 1, stdout: "", output });
     if (command === "git") return ok(`${older}\trefs/tags/v1.0.0\n${newer}\trefs/tags/v1.1.0\n`);
     if (args[0] === "ps") {
-      if (args.at(-1) === '{{.Label "com.docker.compose.project"}}')
-        return ok([config.projectName, ...state.otherProjects].join("\n"));
+      if (args.at(-1) === '{{.Label "com.docker.compose.project"}}\t{{.Label "rakazo.managed"}}')
+        return ok(
+          `${[
+            `${config.projectName}\t`,
+            ...state.otherProjects.map((project) => `${project}\t`),
+            ...(state.botContainers ? ["\ttrue"] : []),
+          ].join("\n")}\n`,
+        );
       const ancestor = args.find((arg) => arg.startsWith("ancestor="));
       if (ancestor) {
         const tag = ancestor.split(":").at(-1) ?? "";
@@ -462,6 +469,21 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls).toHaveLength(0);
   });
 
+  it("refuses rollback before changing pins when the previous computer cache was deleted", async () => {
+    const env = `RAKAZO_IMAGE_TAG=sha-${newer}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`;
+    const subject = await fixture(env, newer, true);
+    const response = await subject.app.request("/rollback", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("previous computer image is not cached locally");
+    expect(await subject.env()).toBe(env);
+    expect(subject.calls.some(({ args }) => args.includes("up") || args.includes("pull"))).toBe(
+      false,
+    );
+  });
+
   it("captures the complete prior pairing when only the application image changes", async () => {
     const subject = await fixture(
       `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=sha-${newer}\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=${cachedOlder}\n`,
@@ -532,6 +554,7 @@ describe("scheduled release state and recovery", () => {
       older,
       true,
     );
+    subject.state.botContainers = true;
     const obsolete = `${cachePrefix}${"3".repeat(64)}`;
     subject.state.images[obsolete] = `sha256:${"3".repeat(64)}`;
     subject.state.images[`cached-other-project-${"5".repeat(64)}`] = `sha256:${"5".repeat(64)}`;
@@ -571,15 +594,20 @@ describe("scheduled release state and recovery", () => {
     ).toBe(false);
   });
 
-  it.each([false, true])(
-    "skips shared-host image cleanup (managed computer=%s)",
-    async (computers) => {
+  it.each([
+    [false, "other-stack"],
+    [true, "other-stack"],
+    [true, ""],
+  ] as const)(
+    "skips shared-host image cleanup (managed computer=%s, foreign project=%s)",
+    async (computers, project) => {
       const subject = await fixture(`RAKAZO_IMAGE_TAG=sha-${older}\n`, older, computers);
       const otherRollback = `sha-${"3".repeat(40)}`;
       subject.state.appImages[otherRollback] = `sha256:${"3".repeat(64)}`;
       const cache = `${cachePrefix}${"3".repeat(64)}`;
       subject.state.images[cache] = `sha256:${"3".repeat(64)}`;
-      subject.state.otherProjects.push("other-stack");
+      subject.state.botContainers = true;
+      subject.state.otherProjects.push(project);
       expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
       expect(subject.state.appImages[otherRollback]).toBeDefined();
       expect(subject.state.images[cache]).toBeDefined();

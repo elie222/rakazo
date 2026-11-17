@@ -306,7 +306,8 @@ The computer stub uses `pull_policy: missing`, so ordinary pulls and installer r
 locally cached rollback images. After successful updates, cleanup removes obsolete application
 and computer release images and computer cache tags, retaining current/previous images, cache
 or operator tags, images used by containers, and images selected by running supervisors.
-Automatic image cleanup is skipped when another project's or unlabelled containers are present.
+Automatic image cleanup is skipped when another project's or unlabelled stack containers are present.
+Managed bot computers do not disable cleanup; Docker retains every image used by a running or stopped container.
 Shared hosts require operator-managed image retention because other stacks' rollback pins
 cannot be inferred from running images.
 

@@ -57,6 +57,16 @@ export async function readRollbackComputer(
     throw new UpdateRefused(
       "Rollback requires a valid previous computer image pin. Restore the matching cached computer pin or repair the application and computer images manually before retrying. Nothing was recreated.",
     );
+  const image = readEnvAssignment(env, COMPUTER_IMAGE_ENV) || OFFICIAL_COMPUTER_IMAGE;
+  const previous = await run(
+    "docker",
+    ["image", "inspect", imageRef(image, previousTag), "--format", "{{.Id}}"],
+    { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS },
+  );
+  if (!previous.ok || !/^sha256:[0-9a-f]{64}$/.test(previous.stdout.trim()))
+    throw new UpdateRefused(
+      "The previous computer image is not cached locally. Restore it before retrying rollback. Nothing was recreated.",
+    );
   return (await readManualComputer(config, env, previousTag, run))?.tags;
 }
 
@@ -195,13 +205,25 @@ export async function pruneUpdateImages(
   const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
   const inventory = await run(
     "docker",
-    ["ps", "-a", "--format", '{{.Label "com.docker.compose.project"}}'],
+    [
+      "ps",
+      "-a",
+      "--format",
+      '{{.Label "com.docker.compose.project"}}\t{{.Label "rakazo.managed"}}',
+    ],
     options,
   );
   if (!inventory.ok) throw new Error("Could not inspect project ownership before image cleanup.");
-  const projects = inventory.stdout.replace(/\r?\n$/, "").split(/\r?\n/);
-  // Another stack's inactive rollback pins are not visible through container image usage.
-  if (projects.some((project) => project !== config.projectName)) return;
+  const containers = inventory.stdout.replace(/\r?\n$/, "").split(/\r?\n/);
+  // Managed bot computers are workloads, not stack infrastructure; ancestor checks retain
+  // their images. Another stack's inactive rollback pins are not visible through usage.
+  if (
+    containers.some((line) => {
+      const [project, managed] = line.split("\t");
+      return project !== config.projectName && !(project === "" && managed === "true");
+    })
+  )
+    return;
   await bestEffort(
     "prune obsolete application release images",
     pruneApplicationImages(config, env, run),
