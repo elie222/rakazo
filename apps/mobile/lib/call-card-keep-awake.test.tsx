@@ -94,11 +94,16 @@ vi.mock("../components/glass-icon-button", () => ({
   }) =>
     createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
 }));
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
-  captureApiRequestContext: vi.fn(),
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: sessionChange.generation,
+    headers: {},
+  })),
 }));
 vi.mock("./mobile-types", () => ({
   blockText: vi.fn(),
@@ -279,7 +284,7 @@ describe("CallCard background lifetime", () => {
       startCall({ botId: "bot-1", botName: "Rex" }, deps);
     });
     await vi.waitFor(() => expect(container.textContent).toContain("A"));
-    expect(me).toHaveBeenCalledWith("me");
+    expect(me).toHaveBeenCalledWith("me", undefined, expect.anything());
     expect(me).toHaveBeenCalledTimes(1);
 
     await act(async () => endCall());

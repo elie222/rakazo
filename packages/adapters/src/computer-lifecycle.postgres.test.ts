@@ -24,8 +24,8 @@ import {
   reconcileComputerUpdates,
 } from "./computer-update.js";
 import { checkpointAndStopComputer, checkpointRunComputerWorkspace } from "./computer-workspace.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { takeoverContinuePlan } from "./takeover-resume.js";
 
 const databaseUrl = process.env.DATABASE_URL;

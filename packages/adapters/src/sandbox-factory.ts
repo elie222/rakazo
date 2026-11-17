@@ -2,7 +2,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { SandboxProviderOptions } from "./computer-provider-descriptor.js";
 import { envBindings } from "./computer-provider-descriptor.js";
 import { computerProviders, isKnownSandboxKind, knownSandboxKinds } from "./computer-providers.js";
-import { NoneSandboxProvider } from "./none-sandbox.js";
+import { NoneSandboxProvider } from "./providers/computer/none/none-sandbox.js";
 
 export type { SandboxProviderOptions } from "./computer-provider-descriptor.js";
 

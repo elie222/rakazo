@@ -116,6 +116,7 @@ export function projectMessages(
       continue;
     }
     if (event.type === "agent.tool.called") {
+      if (!showsAsLiveStep(payload.name)) continue;
       const live = liveProjection(event, createdAt);
       live.blocks = reduceLiveMessageBlocks(live.blocks, {
         type: "tool",
@@ -151,13 +152,8 @@ export function projectMessages(
       });
       continue;
     }
-    if (
-      event.type === "run.completed" ||
-      event.type === "run.failed" ||
-      event.type === "run.cancelled"
-    ) {
-      clearLive(event);
-    }
+    // A run that ends or pauses for input or takeover is no longer working, as in the live reducer.
+    if (stopsRunHelpers(event)) clearLive(event);
   }
   let helpers = [...liveSubagents.values()];
   if (runs) {
@@ -185,6 +181,14 @@ export function projectMessages(
 }
 
 /** A pause ends the current helper execution, even when the run later resumes. */
+/**
+ * A question shows as its own card, and its call can be recorded after the run has already
+ * paused for the answer, so it never adds to the live "working" line.
+ */
+export function showsAsLiveStep(toolName: unknown): boolean {
+  return toolName !== "ask_user";
+}
+
 export function stopsRunHelpers(event: { type: string }): boolean {
   return (
     isRunTerminalEvent(event) ||

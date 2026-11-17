@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { createMessagingLinkGuard, isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import {
+  abortableDelay,
+  createMessagingLinkGuard,
+  isRetryableError,
+  messagingConnectOptions,
+} from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -105,51 +111,45 @@ export function MessagingSettingsPanel() {
     ]);
   }
 
+  const untilLinkExpiry = useMemo(
+    () => (linkRequest ? Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()) : null),
+    [linkRequest],
+  );
+  useTimeout(() => setLinkRequest(null), untilLinkExpiry, linkRequest);
   // Linking completes in the chat app: watch for a new or reassigned identity.
   useEffect(() => {
     if (!linkRequest) return;
     const known = new Map(status?.identities.map((identity) => [identity.id, identity.botId]));
-    let active = true;
-    let poll: number;
-    const expire = window.setTimeout(
-      () => {
-        active = false;
-        window.clearTimeout(poll);
-        setLinkRequest(null);
-      },
-      Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()),
-    );
-    async function pollStatus() {
-      try {
-        const next = await rpc.messaging.status();
-        if (!active) return;
-        if (
-          next.identities.some(
-            (identity) =>
-              identity.provider === linkRequest?.provider &&
-              identity.botId === linkRequest?.botId &&
-              known.get(identity.id) !== identity.botId,
-          )
-        ) {
-          active = false;
-          window.clearTimeout(expire);
-          await writeSaved(queryClient, statusOptions.queryKey, () => next);
-          setLinkRequest(null);
-          await refresh();
+    const stopped = new AbortController();
+    void (async () => {
+      while (true) {
+        await abortableDelay(LINK_POLL_MS, stopped.signal);
+        if (stopped.signal.aborted) return;
+        try {
+          const next = await rpc.messaging.status();
+          if (stopped.signal.aborted) return;
+          if (
+            next.identities.some(
+              (identity) =>
+                identity.provider === linkRequest.provider &&
+                identity.botId === linkRequest.botId &&
+                known.get(identity.id) !== identity.botId,
+            )
+          ) {
+            stopped.abort();
+            // Cleared before waiting, and only if still this code: a newer one may follow.
+            setLinkRequest((current) => (current === linkRequest ? null : current));
+            await writeSaved(queryClient, statusOptions.queryKey, () => next);
+            await refresh();
+            return;
+          }
+        } catch (error) {
+          // A transient failure can be retried while the code is valid.
+          if (!isRetryableError(error)) return;
         }
-      } catch (error) {
-        // A transient failure can be retried while the code is valid.
-        if (!isRetryableError(error)) active = false;
-      } finally {
-        if (active) poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
       }
-    }
-    poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
-    return () => {
-      active = false;
-      window.clearTimeout(poll);
-      window.clearTimeout(expire);
-    };
+    })();
+    return () => stopped.abort();
   }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
@@ -563,8 +563,8 @@ export function MessagingSettingsPanel() {
                       <ExternalConversationSettings
                         conversation={conversation}
                         bot={bot}
-                        onSave={async (policy) => {
-                          await rpc.externalConversations.updatePolicy({
+                        onSave={async (policy, client) => {
+                          await client.externalConversations.updatePolicy({
                             externalConversationId: conversation.id,
                             ...policy,
                           });

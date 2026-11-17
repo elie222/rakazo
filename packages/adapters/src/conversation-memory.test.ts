@@ -13,7 +13,7 @@ import {
   retainsConversationTurn,
   settleRetainedConversation,
 } from "./conversation-memory.js";
-import { createHindsightProvider } from "./hindsight-memory-provider.js";
+import { createHindsightProvider } from "./providers/memory/hindsight/hindsight-memory-provider.js";
 
 function memoryProvider(connectionIdentity = "connection-1") {
   const retain = vi.fn(

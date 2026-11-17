@@ -5,9 +5,8 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values);
@@ -16,6 +15,14 @@ vi.mock("@lingui/react/macro", () => {
     Trans: ({ children }: { children?: ReactNode }) => children,
   };
 });
+
+const client = vi.hoisted(() => ({}));
+vi.mock("../lib/rpc", () => ({
+  rpc: client,
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => null,
+}));
 
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
@@ -37,7 +44,7 @@ const conversation = {
 } as unknown as ExternalConversation;
 
 let host: HTMLDivElement;
-let root: Root;
+let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -102,11 +109,14 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
     rules.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => button("Save").click());
-  expect(onSave).toHaveBeenLastCalledWith({
-    teamChatAmbientEnabled: false,
-    teamChatRules: "Only launch questions.",
-    automatedSenderPolicies: {},
-  });
+  expect(onSave).toHaveBeenLastCalledWith(
+    {
+      teamChatAmbientEnabled: false,
+      teamChatRules: "Only launch questions.",
+      automatedSenderPolicies: {},
+    },
+    client,
+  );
 
   // Emptying the field follows the bot again rather than saving no rules.
   await act(async () => {
@@ -115,7 +125,7 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
   });
   expect(host.textContent).not.toContain("Reset");
   await act(async () => button("Save").click());
-  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ teamChatRules: null }));
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ teamChatRules: null }), client);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
       rules,
@@ -129,6 +139,7 @@ it("shows the bot's reply mode and rules when inheriting, and saves a room overr
   await act(async () => button("Save").click());
   expect(onSave).toHaveBeenLastCalledWith(
     expect.objectContaining({ teamChatAmbientEnabled: false, teamChatRules: null }),
+    client,
   );
 });
 
@@ -166,6 +177,7 @@ it("does not claim Saved for a draft edited while the save is in flight", async 
   await act(async () => {});
   expect(onSave).toHaveBeenLastCalledWith(
     expect.objectContaining({ teamChatRules: "Second take." }),
+    client,
   );
   expect(host.textContent).toContain("Saved");
 });

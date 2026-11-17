@@ -25,7 +25,6 @@ vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn
 const platform = vi.hoisted(() => ({ OS: "ios" }));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() }, Platform: platform }));
 vi.mock("react-native-passkeys", () => ({ isSupported: vi.fn(), get: vi.fn(), create: vi.fn() }));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(async () => ({ authorization: "Bearer current-session" })),
   currentApiBase: vi.fn(() => "https://rakazo.example.test"),

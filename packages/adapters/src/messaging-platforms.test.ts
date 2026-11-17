@@ -4,20 +4,20 @@ import { getLogger } from "@rakazo/logging";
 import { SendblueAdapter } from "chat-adapter-sendblue";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { Domain } from "./lark/thread-id.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
-  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatuses,
-  parseWhatsAppStatuses,
-  photonProjectsFromEnv,
   splitOutboundBody,
-  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
+import { Domain } from "./providers/messaging/lark/thread-id.js";
+import { photonProjectsFromEnv } from "./providers/messaging/photon/photon-messaging.js";
+import { parseSendblueStatuses } from "./providers/messaging/sendblue/sendblue-messaging.js";
+import { enrichSlackTeamRoom } from "./providers/messaging/slack/slack-messaging.js";
+import { telegramBotsFromEnv } from "./providers/messaging/telegram/telegram-messaging.js";
+import { parseWhatsAppStatuses } from "./providers/messaging/whatsapp/whatsapp-messaging.js";
 
 // Fake credentials: adapters are constructed offline, never called.
 const fullEnv: MessagingEnvironmentValues = {

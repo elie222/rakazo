@@ -10,7 +10,6 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { describeDesktopSandbox } from "./desktop-sandbox.js";
 import type {
   HostComputerEnvironment,
   HostComputerFrame,
@@ -22,6 +21,7 @@ import {
   hostComputerDeadlineMs,
   hostComputerFileTooLargeLimit,
 } from "./host-computer-protocol.js";
+import { describeDesktopSandbox } from "./providers/computer/desktop/desktop-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 /** Authenticated native host transport. Commands are never retried after a lost response. */

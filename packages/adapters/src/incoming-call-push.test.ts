@@ -21,7 +21,7 @@ function fixture() {
   const tokens = {
     devices: vi.fn(async () => [device]),
     removeDevice: vi.fn(async () => {}),
-    load: vi.fn(async () => undefined),
+    list: vi.fn(async () => []),
   } as unknown as PushTokenStore;
   const voip = { send: vi.fn(async (): Promise<"sent" | "invalid" | "unavailable"> => "sent") };
   const fetch = vi.fn<typeof globalThis.fetch>(
@@ -130,7 +130,7 @@ describe("incoming call delivery", () => {
   it("uses the same visible payload for legacy registrations without a native channel override", async () => {
     const { provider, tokens, fetch } = fixture();
     vi.mocked(tokens.devices!).mockResolvedValue([]);
-    vi.mocked(tokens.load).mockResolvedValue({ token: "ExponentPushToken[legacy]" });
+    vi.mocked(tokens.list).mockResolvedValue([{ token: "ExponentPushToken[legacy]" }]);
     await provider.incomingCall("user-1", call);
     const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
     expect(body).toMatchObject({ title: call.botName, data: { kind: "incoming_call", ...call } });

@@ -5,6 +5,7 @@ import {
   currentBotMessageHop,
   loadBotMessageContext,
   messageBot,
+  reportBotMessageWait,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -268,6 +269,15 @@ describe("messaging another bot", () => {
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
+  it("looks for the target only among active bots of the run's own Space", async () => {
+    const harness = deps();
+    await messageBot(harness.deps, run, sender, { bot_id: "bot-target", message: "hello" });
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { spaceId: run.spaceId, archivedAt: null } }),
+    );
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses an empty message", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
@@ -356,7 +366,7 @@ describe("messaging another bot", () => {
       { ...run, sourceMessageId: "message-source" },
       sender,
       { bot_id: "bot-target", message: "finished", intent: "result" },
-      { allowTerminalSource: true },
+      { returnFrom: "ended" },
     );
     expect(sent.ok).toBe(true);
     // The Space's lock, then both thread rows.
@@ -449,7 +459,7 @@ describe("messaging another bot", () => {
       { ...run, sourceMessageId: "message-source" },
       sender,
       { bot_id: "bot-target", message: "acknowledged", intent: "result" },
-      { allowTerminalSource: true },
+      { returnFrom: "ended" },
     );
     expect(sent.ok).toBe(false);
     expect(harness.tx.run.create).not.toHaveBeenCalled();
@@ -879,5 +889,64 @@ describe("automatic outcome return", () => {
       },
       data: { botOutcomeReturnedAt: expect.any(Date) },
     });
+  });
+});
+
+describe("waiting on the user", () => {
+  const delegated = {
+    ...run,
+    sourceMessageId: "message-source",
+    trigger: "bot_message",
+  };
+  const request = {
+    kind: "bot_message_received",
+    fromBotId: "bot-target",
+    fromBotName: "Coordinator",
+    text: "research this",
+    hop: 6,
+    intent: "request",
+    returnToMessageId: "message-request",
+  };
+
+  it("tells the requesting bot right away, even at the hop limit", async () => {
+    const harness = deps({ hopBlocks: [request] });
+
+    await reportBotMessageWait(harness.deps, delegated, sender, "Which city?", "attempt-1");
+
+    expect(harness.tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: "waiting_input" }),
+      }),
+    );
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          threadId: "thread-target",
+          clientNonce: "bot-message:waiting:attempt-1",
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              intent: "status",
+              text: expect.stringContaining("Which city?"),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing when no bot is waiting on the run", async () => {
+    const harness = deps({ hopBlocks: [{ ...request, intent: "fyi" }] });
+
+    await reportBotMessageWait(
+      harness.deps,
+      { ...delegated, trigger: "user" },
+      sender,
+      "Which city?",
+      "attempt-1",
+    );
+    await reportBotMessageWait(harness.deps, delegated, sender, "Which city?", "attempt-2");
+
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 });

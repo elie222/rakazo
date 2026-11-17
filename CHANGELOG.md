@@ -6,6 +6,97 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
+### Security
+
+- Cloud-agent tools enforce the bot's current integration assignments and allowed tools before using a connected account.
+- Inbound email needs signed recipients before it can be treated as the owner's instructions; an SPF pass reported by a relay is no longer enough. Email routines can still accept signed mail as outside data ([inbound email](docs/self-host-inbound-email.md#who-can-start-work)).
+- Saving memory after reading outside content follows the run's approval mode and **Always allow** list, including after a run resumes ([approvals](docs/approvals.md)).
+- Spoken answers containing both yes and no cannot approve an action. A texted YES or NO applies only to a group invite or agent connection request delivered before the reply.
+- Ambiguous checkout totals require manual payment, including when an approved action is checked again. Amounts such as `$.99` are read as cents, and payment-method controls are excluded from purchase approval.
+- Model connection errors and logs hide more credential formats, including quoted and encoded values, custom headers, URL passwords, cookies and nested JSON. Card redaction also covers grouped American Express and Diners Club numbers.
+- Team-chat sender and channel names cannot escape their prompt labels. Malformed stored approval, plugin and billing configuration is rejected, and unexpected internal errors are no longer shown as client error details.
+- Removing connections and replaced secrets retries external cleanup after temporary failures. Desktop tool servers keep sign-in cookies separate from each other and the app, and disconnecting clears that server's browser.
+- Native clipboard writes require HTTPS or a loopback origin. App sign-in links reject malformed addresses and non-web schemes before reaching native handlers.
+- Private memory endpoints, including loopback addresses, require operator consent at the adapter boundary as well as the API.
+- Billing database triggers resist temporary-object shadowing, and organization deletion keeps Spaces inaccessible when a replacement deletion attempt fails.
+- Sign-up domain restrictions reject malformed addresses containing more than one `@`. The computer supervisor requires authentication on unknown routes as well as registered ones.
+- Crafted text no longer causes excessive parsing work in chat Markdown, voice reading, page validation, imported agent settings, provider errors and model replies. Cloud-agent schemas and expanded OpenAPI server addresses also have bounded processing.
+- Error reporting refuses plaintext HTTP collectors instead of sending diagnostic context without encryption.
+- Updated vulnerable build and release dependencies and container tooling. Some container advisories still lack upstream fixes; these updates do not resolve every reported vulnerability.
+- Source-checkout integration and browser tests always use the local encrypted secret store, preventing test credentials from being written to a configured external store.
+
+### Added
+
+- Organization owners and admins can invite people, change member roles and remove members from Settings > Organization > Members. Each new member gets a private Space; joining does not reveal anyone else's Spaces. Paid organization seats follow membership, and removing a member keeps their work in the organization.
+- Optional conversation memory can learn from direct and group chats, recall facts and answer questions from a bot's own memory. Memory is isolated by default; choosing **Shared** pools learned conversations, including direct chats, within the Space. Connected memory providers can be edited without disconnecting ([memory](docs/memory.md)).
+- Vault items can limit which bots use them, ask before each use, hold additional login sites and authenticator keys, and show usage history. Import saved logins from CSV ([reusable credentials](docs/bot-secrets.md)).
+- Each connected model has its own context and output limits, image support and thinking settings, with a searchable model list and individual settings pages. Connections can also supply project and region routing where required ([models](docs/models.md)).
+- Connect your own T3 Code environment and hand it coding work through the cloud-agent card, including follow-ups and cancellation ([integrations](docs/self-host-integrations.md)).
+- Import Agent Skills catalogs or individual skill folders from GitHub, including supported referenced text resources; imported scripts are not executed ([skills](docs/skills.md)). Agent imports also accept a Grok Bot's self-export ([import an agent](docs/import-an-agent.md)).
+- Custom MCP servers offer browser OAuth sign-in when being added, and each server gets its own sign-in browser session.
+- Optional Google and Apple account sign-in, with passkeys available alongside the other methods and the last-used method marked ([account sign-in](docs/self-host-accounts.md)).
+- Large composer pastes can be attached as a file or kept inline. Cmd/Ctrl+L on desktop, or Cmd/Ctrl+Shift+L in a browser, quotes selected transcript text. Slash commands work anywhere in a message with Enter choosing the highlighted command.
+- Settings > Labs enables the ticket board and its bot tools for an account.
+- Usage can be broken down by bot and model over a local-calendar date range.
+- Self-hosted speech and transcription can use separate servers and keys ([voice and calls](docs/voice-and-calls.md)).
+- Object storage supports Azure Blob Storage through the existing storage connection settings ([storage](docs/self-host-storage.md)).
+- Docker computers can optionally expose host GPUs to bot programs. Railway computer browsers can optionally use an upstream proxy; shell programs still connect directly ([Docker computers](docs/self-host-docker-computers.md#gpus-for-programs), [computer providers](docs/self-host-sandbox-providers.md)).
+- Mobile has a Computers settings screen for paired computers and revocation, a full-screen computer trackpad with zoom and scroll controls, and section renaming by long-pressing a heading.
+- Forks can publish signed macOS-only desktop releases with updates from their own repository ([fork distribution](docs/fork-desktop-distribution.md)).
+
+### Changed
+
+- Bot settings share one panel with advanced controls folded away. Computer maintenance lives in bot settings, and the computer screen uses one control model for viewing, taking control and returning control.
+- Switch and create organizations from one menu. Integration pages list the app's own actions, and account Vault settings point to the Space's vault when it keeps separate items.
+- One-to-one messaging apps show a bot's pending question or computer takeover request as text, with a link back to the app. Group conversations keep these requests private.
+- Unanswered bot questions stay open until someone answers, except when the run holds a single-use login or code that must expire.
+- Bot email sending uses a separate SMTP connection and a per-account recipient allowance; by default bots can send only to their verified owner. Mailbox-rule forwards and signed Microsoft 365 mail can start email routines as outside data ([bot email](docs/self-host-inbound-email.md)).
+- Activity, routines, chat rosters and computer updates refresh through live change signals instead of polling.
+- Runs recover from brief database outages, and deploys let in-flight turns finish or hand work back between steps instead of cutting them off.
+- Bots retain earlier tool calls, results and the latest kept screenshot for later turns, and stop unproductive loops when one tool keeps returning the same result.
+- Delegated bots keep their own instructions and capabilities and run independently while the parent remains available, returning results and attachments to the originating chat.
+- Connector audit entries identify the linked account used for an action ([audit log](docs/self-host-audit-log.md)).
+- Mobile bot deletion warns about groups that will also be removed. Android voice calls finish recognizing speech sooner and avoid transcribing the bot's playback; speaking over a reply no longer interrupts it.
+
+### Fixed
+
+- Desktop Copy buttons work reliably and text fields have a native right-click menu. Chat search reveals matches inside horizontally scrolling code.
+- Desktop cancellation avoids putting a stopped local stack to sleep, local stack stop remains available after server switches, and offline update checks report cached results accurately.
+- Renewed sessions send the refreshed cookie, keeping people signed in. Email sign-in works with browser Back, and model subscription sign-in works across multiple API instances.
+- Model calls retry empty, thinking-only, interrupted and unfinished replies, including failures during tool calls. Tool results retain unique call identities, and incompatible encrypted reasoning can be retried without it.
+- Tool-server connections recover when credentials rotate, keep refreshed sign-ins after an uncertain save, allow longer tool calls and retain healthy sessions after tool errors.
+- Tool-server connections also retry when credentials are replaced before connecting; editing a server mid-run makes it unavailable for that turn instead of failing the run with an internal error. Servers needing sign-in report **Reconnect** even when their suggested sign-in address is unusable; settings still validates the address before opening it.
+- Speech playback retries with a supported voice when a server rejects the chosen one. Delayed chat-app connection codes cannot link the wrong bot after switching bots.
+- OpenAPI tools preserve integer types, numeric bounds, minimum string lengths, nested parameter definitions, server-variable defaults and form query encoding. GraphQL headers are merged without case-related duplicates.
+- Long messaging-app replies preserve formatting and link destinations when split. Group mentions accept `@all` and `@所有人`, rich-text mentions retain names, and inserted bot mentions preserve code source.
+- Linked chats open in the correct Space and organization without an older read cancelling navigation. Repeated live events cannot make a finished chat appear active again, and Open work drafts survive the last saved item being removed.
+- Old uploads stop being listed and copied to the computer after several text-only turns; files from older history remain available on demand.
+- Failed computer starts clean up machines they leave behind, retry failed deletion and preserve recovery instructions. Remote computer deletion cleans saved bot files, and taking or releasing control avoids a duplicate screen read.
+- Runs waiting for their bot's computer start when it becomes free, and finished runs stop leaving computers shown as busy. Backup jobs run at the intended instant regardless of the database timezone, and setup failures retry promptly.
+- Routine next-run times stay correct across daylight-saving changes. Archived bots keep finished runs, and duplicate exact bot names are rejected.
+- Pages handle nested table text, numeric sorting, date-only calendar values, wide Japanese and Chinese diagram labels, right-to-left galleries and table hints, and links with paired punctuation. Animated PNG attachments retain animation, fetched text honors its charset, and failed audio previews can be retried.
+- Mobile keeps successful settings saves when the following refresh fails, asks before deleting unsent messages after sign-out, and keeps live notifications on the selected Space. Android chat scrolling retains the keyboard, landscape keyboards no longer cover the computer screen, and call audio resources are released.
+- Payment history uses the currency's decimal precision, and declined credit upgrades make clear that the card was not charged.
+- Credits from a disputed purchase are withheld during the dispute, removed if it is lost and restored if it is won.
+- Backups work with multiple API containers, use the container's database settings and fail when the data directory is missing.
+- Computers explain when an update cannot save oversized files and keep running. Interrupted workspace downloads use the normal provider-recovery path instead of failing as unexpected server errors.
+- Database sessions use UTC, fixing incorrect session expiry, stale-work detection and chat counts on servers whose default timezone differs.
+
+### Self-host upgrade notes
+
+- Finish upgrading API and worker processes before relying on per-model settings; an older process refreshing a connection can discard them. Update the server before this desktop client when using single-use computer-screen sign-in links.
+- Set `BOT_EMAIL_SMTP_URL` on API and worker to keep bot sending enabled; it no longer falls back to account email settings. Drain previous-release workers before enabling sending under the new recipient policy. Check DKIM signing if owner email stops starting chats ([sending](docs/self-host-inbound-email.md#sending), [inbound verification](docs/self-host-inbound-email.md#who-can-start-work)).
+- Vault items can move under rotatable content-encryption keys. Stop previous-release API and workers before running `content-encryption migrate`; earlier releases cannot read migrated vault items. Follow the documented decrypt procedure before rolling back. Vault access restrictions require the restricted runtime database role ([content encryption](docs/content-encryption.md), [database roles](docs/self-host-configuration.md#database-roles)).
+- Reimport existing OpenAPI connectors to pick up corrected server-variable defaults and query encoding. Update computer images for corrected browser-side checkout amount parsing.
+- Plain HTTP `SENTRY_DSN` collectors are disabled; use trusted HTTPS to keep error reporting enabled.
+- The migration sets the database's default timezone to UTC. Reconnect existing sessions; if the migration login cannot change that setting, follow its warning and run the command as the database owner. Remove conflicting runtime-role timezone settings.
+- Optional `RUN_DRAIN_ENABLED=true` lets stopping workers finish turns before handing work over. Custom deploys should start replacements before stopping old workers ([run execution](docs/run-execution.md)).
+- Optional `RAKAZO_API_REPLICAS` and `RAKAZO_WORKER_REPLICAS` scale the production Compose stack. Multiple API replicas require webhook delivery for Telegram and iMessage and sufficient database connections during deploy overlap ([configuration](docs/self-host-configuration.md#more-api-and-worker-containers)).
+- Optional `RAKAZO_LOCAL_TOKENS_PER_MINUTE` paces local model calls, `RAKAZO_LOCAL_PROMPT_CACHE=off` tunes context trimming for servers without prompt caching, and `STUCK_WORK_NOTIFY_AFTER_MS` / `STUCK_WORK_EXPIRE_AFTER_MS` control stalled-run reminders and expiry ([local models](docs/self-host-models.md), [configuration](docs/self-host-configuration.md)).
+- `COMPUTER_DEFAULT_MODE=dedicated` gives new bots a Private computer. GPU access through `SANDBOX_COMPUTER_COMPUTE_GPUS` and browser proxying through `RAKAZO_COMPUTER_PROXY` are opt-in: GPUs expose the host driver to bots, and proxy credentials are readable inside the computer. Enable them only for trusted users ([computer providers](docs/self-host-sandbox-providers.md)).
+
 ## [0.11.0] - 2026-11-12
 
 ### Security

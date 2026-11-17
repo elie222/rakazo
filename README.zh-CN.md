@@ -255,7 +255,7 @@ pnpm --filter @rakazo/desktop dev
 公共服务器必须使用 HTTPS；只有回环地址和局域网私有地址允许 HTTP，不包括链路本地地址。
 应用会在保存地址前检查 Rakazo 的健康检查端点，之后启动时直接连接该实例。
 退出应用后，Docker 服务栈仍会继续运行；不使用 Docker 的服务器则随应用停止。
-可通过应用菜单中的 **Stop Local Stack**（停止本地服务栈）停止受管服务栈，而无需退出应用。
+应用菜单中的 **Quit and Stop Bots**（退出并停止 Bot）会停止受管服务栈并退出应用；切换到其他服务器时也会停止该服务栈。
 
 在 Linux 上，桌面应用以 AppImage 形式发布，需要 FUSE 2（`libfuse.so.2`）。只包含 FUSE 3 的发行版（例如 Fedora Silverblue 或 Ubuntu 24.04）会报错
 `dlopen(): error loading libfuse.so.2`。请安装 FUSE 2 库（Fedora 上为 `fuse-libs`，Ubuntu 24.04 上为 `libfuse2t64`，较早的 Ubuntu 和 Debian 上为 `libfuse2`），或者不借助 FUSE 运行 AppImage：

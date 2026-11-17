@@ -35,7 +35,7 @@ const outDir = path.resolve(outArg);
 const ENTRYPOINTS = {
   api: ["apps/api/src/index.ts", "apps/api/dist/index.js"],
   worker: ["apps/worker/src/index.ts", "apps/worker/dist/index.js"],
-  web: ["apps/web/src/standalone-server.ts", "apps/web/dist-server/index.js"],
+  web: ["apps/web/server/standalone-server.ts", "apps/web/dist-server/index.js"],
   migrate: ["apps/api/src/cli/migrate-database.ts", "apps/api/dist/cli/migrate-database.js"],
 };
 // Their production dependencies are what the bundled code may load at runtime, for example the

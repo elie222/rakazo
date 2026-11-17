@@ -638,6 +638,84 @@ describe("projectMessages", () => {
     ]);
     expect(messages).toHaveLength(0);
   });
+
+  it("stops showing the run as working while it waits for input, and again once it resumes", () => {
+    const at = "2026-01-01T00:00:00.000Z";
+    const paused: Parameters<typeof projectMessages>[0] = [
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Where should it ship?" }],
+        },
+        createdAt: at,
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e4",
+        threadId: "t1",
+        seq: 3,
+        type: "run.waiting_input",
+        runId: "r1",
+        payload: {},
+        createdAt: at,
+      },
+    ];
+    expect(projectMessages(paused).map((message) => message.id)).toEqual(["m1"]);
+
+    const resumed = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+    ]);
+    expect(resumed.map((message) => message.id)).toEqual([
+      "m1",
+      expect.stringMatching(/^progress:/),
+    ]);
+
+    const asked = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "ask_user" },
+        createdAt: at,
+      },
+    ]);
+    expect(asked.map((message) => message.id)).toEqual(["m1"]);
+  });
 });
 
 describe("toolNameFromLabel", () => {

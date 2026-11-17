@@ -10,19 +10,19 @@ import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
-import { wuyingScreenAssets } from "../../packages/adapters/src/wuying-screen-assets.ts";
-import { wuyingScreenPolicy } from "../../packages/adapters/src/wuying-screen-policy.ts";
+import { wuyingScreenAssets } from "../../packages/adapters/src/providers/computer/wuying/wuying-screen-assets.ts";
+import { wuyingScreenPolicy } from "../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
-import { apiProxy } from "./src/api-proxy.js";
-import { withInstanceThemeLink } from "./src/instance-theme.js";
+import { apiProxy } from "./server/api-proxy.js";
+import { withInstanceThemeLink } from "./server/instance-theme.js";
 import {
   attachDesktopStackProbe,
   attachNovncProxy,
   attachPreviewMiddleware,
   sharedPageHeaders,
   webServerSettings,
-} from "./src/preview-middleware.js";
-import { rakazoPwa } from "./src/pwa/plugin.js";
+} from "./server/preview-middleware.js";
+import { rakazoPwa } from "./server/pwa-plugin.js";
 
 export default defineConfig(({ command, mode }) => {
   // Names this build in every API request; the dev server has none, so the handshake stays off.

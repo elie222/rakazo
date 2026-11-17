@@ -12,7 +12,7 @@ import { releasePendingSpacePayments } from "./spending.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
-const MAX_SPACES_PER_MEMBER = 32;
+export const MAX_SPACES_PER_MEMBER = 32;
 
 export class SpaceLimitError extends ClientError {
   constructor() {
@@ -127,6 +127,26 @@ async function createSpaceDefaults(
       userId: input.userId,
     },
   });
+}
+
+/** A new Space only `userId` belongs to, in an organization they are a member of. */
+export async function createOwnSpace(
+  tx: Prisma.TransactionClient,
+  input: { organizationId: string; userId: string; name: string },
+): Promise<string> {
+  const spaceId = randomUUID();
+  await createSpace(tx, {
+    ...input,
+    spaceId,
+    spaceMembershipId: randomUUID(),
+    createdAt: new Date(),
+  });
+  await createSpaceDefaults(tx, {
+    spaceId,
+    userId: input.userId,
+    memoryContent: "# Space memory\n\n",
+  });
+  return spaceId;
 }
 
 export function normalizeSpaceName(name: string): string {

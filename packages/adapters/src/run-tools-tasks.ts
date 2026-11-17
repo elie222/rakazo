@@ -2,7 +2,7 @@ import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
-} from "./desktop-command-guard.js";
+} from "./providers/computer/desktop/desktop-command-guard.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 import {

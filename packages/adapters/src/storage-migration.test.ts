@@ -130,14 +130,14 @@ it("imports only session-bound registrations and never resurrects archived files
     skipped: 0,
     pending: 4,
   });
-  expect(await tokens.load("a")).toBeUndefined();
+  expect(await tokens.list("a")).toEqual([]);
   expect(await migrateLocalPushTokens(dir, tokens)).toEqual({
     migrated: 1,
     skipped: 3,
     pending: 0,
   });
-  expect((await tokens.load("a"))?.sessionId).toBe("session-a");
-  expect((await tokens.load("d"))?.token).toBe("ExponentPushToken[current]");
+  expect((await tokens.list("a"))[0]?.sessionId).toBe("session-a");
+  expect((await tokens.list("d"))[0]?.token).toBe("ExponentPushToken[current]");
   expect(await readFile(outside, "utf8")).toBe("untouched");
   expect((await readdir(tokensDir)).filter((name) => name.endsWith(".migrated"))).toHaveLength(4);
   await tokens.remove("a");
@@ -146,7 +146,7 @@ it("imports only session-bound registrations and never resurrects archived files
     skipped: 0,
     pending: 0,
   });
-  expect(await tokens.load("a")).toBeUndefined();
+  expect(await tokens.list("a")).toEqual([]);
 });
 
 it("does not let legacy files reclaim a device already owned by another account", async () => {
@@ -163,11 +163,13 @@ it("does not let legacy files reclaim a device already owned by another account"
     skipped: 1,
     pending: 0,
   });
-  expect(await tokens.load("old-account")).toBeUndefined();
-  expect(await tokens.load("current-account")).toEqual({
-    token: "ExponentPushToken[device]",
-    sessionId: "session-current",
-  });
+  expect(await tokens.list("old-account")).toEqual([]);
+  expect(await tokens.list("current-account")).toEqual([
+    {
+      token: "ExponentPushToken[device]",
+      sessionId: "session-current",
+    },
+  ]);
 });
 
 it("continues past files on another original volume and reports unfinished rows", async () => {

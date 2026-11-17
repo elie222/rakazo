@@ -99,6 +99,9 @@ describe("model credit checkout", () => {
         upsert: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
         update: vi.fn().mockResolvedValue({}),
       },
+      // The checkout lease's take, check and release, and the claim's lock.
+      $queryRaw: vi.fn().mockResolvedValue([{ fence: 1n }]),
+      $executeRaw: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => {
         openTransactions++;
         try {

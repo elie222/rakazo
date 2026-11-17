@@ -227,6 +227,25 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setPending(true);
   }
 
+  async function signInAsDemo(account: { email: string; password: string }) {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await authClient.signIn.email(account);
+      if (result.error) {
+        setError(authErrorText(result.error, t`Could not continue`));
+        return;
+      }
+      // Sign-up sends a signed-in user to new-account onboarding; the demo account already exists.
+      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
+      enterApp();
+    } catch {
+      setError(t`Could not reach the server`);
+    } finally {
+      if (!entering.current) setPending(false);
+    }
+  }
+
   function leaveCodeStep() {
     setCodeSent(false);
     setCode("");
@@ -494,6 +513,18 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   onSignedIn={enterApp}
                   onError={setError}
                 />
+              ) : null}
+              {reset?.demoAccount && mode !== "forgot" && !codeStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  disabled={pending}
+                  className={submitClass}
+                  onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
+                >
+                  <Trans>Sign in with demo account</Trans>
+                </Button>
               ) : null}
               {codeStep ? (
                 <Button

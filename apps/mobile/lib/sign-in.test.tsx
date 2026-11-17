@@ -142,10 +142,14 @@ vi.mock("react-native-svg", () => ({
   default: () => null,
   Path: () => null,
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => server.base,
+  selectedSpaceId: () => null,
+  captureApiRequestContext: async () => ({
+    apiBase: server.base,
+    sessionGeneration: 1,
+    headers: {},
+  }),
   rpc: vi.fn(),
 }));
 vi.mock("./endpoint", async (importOriginal) => ({
@@ -154,6 +158,7 @@ vi.mock("./endpoint", async (importOriginal) => ({
   usesCustomApiBase: () => false,
 }));
 vi.mock("./session", () => ({
+  currentSessionGeneration: () => 1,
   loadSessionToken: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("./api-auth", () => ({
@@ -504,7 +509,7 @@ it("asks the signup survey before opening the app", async () => {
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
   await type(input("Code")!, "123456");
-  expect(rpc).toHaveBeenCalledWith("me");
+  expect(rpc).toHaveBeenCalledWith("me", undefined, expect.anything());
   expect(router.replace).toHaveBeenCalledWith("/signup-survey");
 });
 

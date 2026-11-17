@@ -6,10 +6,13 @@ import { ORGANIZATION_SPACES_STORAGE_KEY, rpc, selectedSpaceId, selectSpace } fr
 
 export type Organization = OrganizationList["organizations"][number];
 
+/** Every organization read is keyed under this, after the user. */
+const ORGANIZATIONS_KEY = "organizations";
+
 /** Organizations belong to the user, not to a Space, so their list is cached once per user. */
 export function organizationsQuery(userId: string | null) {
   return queryOptions({
-    queryKey: [`user:${userId ?? ""}`, "organizations"],
+    queryKey: [`user:${userId ?? ""}`, ORGANIZATIONS_KEY],
     queryFn: () => rpc.organizations.list(),
   });
 }
@@ -114,4 +117,22 @@ export function switchOrganization(
     openSpaceChat ? "/app" : "/",
     openSpaceChat,
   );
+}
+
+/** An organization's members and, for its owner and admins, pending invitations. */
+export function organizationMembersQuery(userId: string | null, organizationId: string) {
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, ORGANIZATIONS_KEY, organizationId, "members"],
+    queryFn: () => rpc.organizations.members.list({ organizationId }),
+  });
+}
+
+/**
+ * Reads again the organization list and members the server says may have changed; only screens
+ * showing them refetch.
+ */
+export function organizationsChanged(client = queryClient): Promise<void> {
+  return client.invalidateQueries({
+    predicate: ({ queryKey }) => queryKey[1] === ORGANIZATIONS_KEY,
+  });
 }

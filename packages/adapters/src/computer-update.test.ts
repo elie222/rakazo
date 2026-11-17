@@ -4,10 +4,13 @@ import {
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as ComputerIdleModule from "./computer-idle.js";
+import { announceUnsavedHome } from "./computer-idle.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { replaceComputer } from "./computer-lifecycle.js";
 import {
@@ -19,6 +22,10 @@ import {
 vi.mock("./computer-lifecycle.js", async (original) => ({
   ...(await original<typeof ComputerLifecycleModule>()),
   replaceComputer: vi.fn(),
+}));
+vi.mock("./computer-idle.js", async (original) => ({
+  ...(await original<typeof ComputerIdleModule>()),
+  announceUnsavedHome: vi.fn(async () => {}),
 }));
 const replacement = vi.mocked(replaceComputer);
 afterEach(() => {
@@ -43,6 +50,7 @@ function fixture(status = "queued") {
       scope: "team",
       spaceId: "space",
       userId: "user",
+      providerRef: "provider-1",
       bots: [{ id: "bot-1", name: "Writer" }],
     },
   };
@@ -180,6 +188,57 @@ describe("background computer maintenance", () => {
     expect(row.status).toBe("failed");
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
+  });
+  it("tells the bots of a computer left running because its files are too large to save", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
+    const error = new WorkspaceTooLargeError("files");
+    replacement.mockRejectedValueOnce(error);
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(computer.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: row.computerId, state: "running", providerRef: "provider-1" },
+      }),
+    );
+    expect(announceUnsavedHome).toHaveBeenCalledExactlyOnceWith(deps, row.computer, error);
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["warn"]);
+  });
+  it("reports a too-large home as a failure once the computer is no longer running", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+    const logged = sink.events.filter((event) => event.message === "computer update failed");
+    expect(logged.map((event) => event.level)).toEqual(["error"]);
+  });
+  it("still records the failure when it cannot tell whether the computer runs", async () => {
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockRejectedValueOnce(new Error("database unavailable"));
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
+  });
+  it("still records the failure when the too-large note cannot be posted", async () => {
+    const { row, deps, computer } = fixture();
+    computer.findFirst.mockResolvedValueOnce({ id: row.computerId } as never);
+    vi.mocked(announceUnsavedHome).mockRejectedValueOnce(new Error("database unavailable"));
+    replacement.mockRejectedValueOnce(new WorkspaceTooLargeError("bytes"));
+    await performComputerUpdate(deps, row.id);
+    expect(row.status).toBe("failed");
+  });
+  it("posts no note for other failures", async () => {
+    const { row, deps } = fixture();
+    replacement.mockRejectedValueOnce(new SandboxUnresponsiveError("provider down"));
+    await performComputerUpdate(deps, row.id);
+    expect(announceUnsavedHome).not.toHaveBeenCalled();
   });
   it("checks the computer for idle sleep again after a failed update", async () => {
     const { row, deps, jobs } = fixture();

@@ -1,4 +1,4 @@
-import { fetch as undiciFetch } from "undici";
+import { Dispatcher, fetch as undiciFetch } from "undici";
 
 /** The fetch that must drive any `Agent` built from the `undici` package.
  *
@@ -101,6 +101,17 @@ export function fetchPairedWithDispatcher(
     return dispatcherFetch;
   }
   return baseFetch;
+}
+
+/** The fetch a wrapper should call for this request: wrapping hides the default fetch's
+ * identity, so pair it here when the guard attached a package dispatcher. */
+export function fetchForRequest(
+  fetcher: typeof globalThis.fetch,
+  init: Parameters<typeof globalThis.fetch>[1],
+): typeof globalThis.fetch {
+  return init && "dispatcher" in init && init.dispatcher instanceof Dispatcher
+    ? fetchPairedWithDispatcher(fetcher)
+    : fetcher;
 }
 
 /** Snapshot a global FormData body before this package's fetch sees it.

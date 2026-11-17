@@ -268,6 +268,14 @@ async function rowMenu(item: string) {
   );
 }
 
+/** Opens a connection's name field from its Rename button. */
+async function renameField(container: HTMLElement) {
+  await click(buttons(container, "Rename")[0]);
+  const input = container.querySelector<HTMLInputElement>("input[maxlength]");
+  if (!input) throw new Error("Missing name field");
+  return input;
+}
+
 /** Opens the connection dialog for the main model's first row. */
 const manage = () => rowMenu("Manage provider");
 
@@ -451,32 +459,25 @@ function labeled(container: HTMLElement, text: string) {
   return (field ?? label?.querySelector('[role="checkbox"]') ?? null) as HTMLInputElement | null;
 }
 
-it("saves a model's own limits from its row, leaving the catalog's capabilities alone", async () => {
+it("offers no model settings for a model the catalog describes", async () => {
   models.list.mockResolvedValue([{ ...deepseekEntry, contextWindow: 128_000, maxTokens: 8_000 }]);
   models.credentials.mockResolvedValue([deepseekCredential]);
-  models.saveModelSettings.mockResolvedValue({ ok: true });
 
   const view = await renderSettings();
   try {
-    await rowMenu("Manage model");
-    expect(titles(view.container)).toEqual(["DeepSeek Chat"]);
-    const limit = labeled(view.container, "Maximum output tokens");
-    expect(limit?.placeholder).toBe("8000");
-    expect(labeled(view.container, "Context limit")?.placeholder).toBe("128000");
-    expect(labeled(view.container, "Supports images")).toBeNull();
-    // Nothing to save until a field changes.
-    expect(
-      [...view.container.querySelectorAll("button")].some((entry) => entry.textContent === "Save"),
-    ).toBe(false);
-    if (!limit) throw new Error("Missing output limit field");
-    await typeInto(limit, "4096");
-    await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
-    expect(models.saveModelSettings).toHaveBeenCalledWith({
-      credentialId: "cred-deepseek",
-      modelId: "deepseek-chat",
-      settings: { maxTokens: 4096 },
-    });
-    expect(models.connect).not.toHaveBeenCalled();
+    await rowMenu("Manage provider");
+    expect(view.container.querySelector('[data-testid="model-provider-models"]')).toBeNull();
+    await click(view.container.querySelector('button[aria-label="Back"]'));
+    await click(
+      section("main").querySelector(
+        '[data-testid="model-role-row-1"] button[aria-label$=" options"]',
+      ),
+    );
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+      (entry) => entry.textContent,
+    );
+    expect(items).toContain("Manage provider");
+    expect(items).not.toContain("Manage model");
   } finally {
     await view.unmount();
   }
@@ -572,13 +573,7 @@ it("renaming a connection keeps unsaved form fields", async () => {
   try {
     await manage();
     await typeInto(keyField(view.container), "sk-half-typed");
-    const nameLabel = [...view.container.querySelectorAll("label")].find(
-      (entry) => entry.textContent === "Name",
-    );
-    const nameInput = nameLabel?.htmlFor
-      ? view.container.querySelector<HTMLInputElement>(`#${CSS.escape(nameLabel.htmlFor)}`)
-      : null;
-    if (!nameInput) throw new Error("Missing connection name field");
+    const nameInput = await renameField(view.container);
     await typeInto(nameInput, "Renamed");
     models.credentials.mockResolvedValue([{ ...deepseekCredential, label: "Renamed" }]);
     const nameForm = nameInput.closest("form");
@@ -1491,9 +1486,13 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
   },
 );
 
-it.each([undefined, "api_key", "oauth"])(
-  "only enables subscription connection checks for saved OAuth credentials (%s)",
-  async (authKind) => {
+it.each([
+  [undefined, false],
+  ["oauth", false],
+  ["oauth", true],
+] as const)(
+  "offers sign-in only until a subscription is signed in, or after it expires (%s, %s)",
+  async (authKind, reconnectRequired) => {
     vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
     models.list.mockResolvedValue([
       {
@@ -1516,6 +1515,7 @@ it.each([undefined, "api_key", "oauth"])(
               provider: "openai-codex",
               modelId: "fixture-model",
               authKind,
+              reconnectRequired,
             },
           ]
         : [],
@@ -1524,58 +1524,16 @@ it.each([undefined, "api_key", "oauth"])(
     try {
       if (authKind) await manage();
       else await pick("Change Main model", "ChatGPT");
-      expect(buttons(view.container, "Test connection")[0]?.disabled).toBe(authKind !== "oauth");
-      expect(view.container.textContent).not.toContain("Test sign-in");
+      const signIn = [...view.container.querySelectorAll("button")].filter((entry) =>
+        ["Sign in with ChatGPT", "Sign in again"].includes(entry.textContent ?? ""),
+      );
+      expect(signIn.length > 0).toBe(!authKind || reconnectRequired);
+      expect(view.container.textContent).not.toContain("Test connection");
     } finally {
       await view.unmount();
     }
   },
 );
-
-it("tests the selected subscription connection when another connection has the same model", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
-  models.list.mockResolvedValue([
-    {
-      provider: "anthropic",
-      providerName: "Anthropic",
-      id: "claude-fixture",
-      label: "Claude fixture",
-      billing: "",
-      signIn: "auth-url",
-    },
-  ]);
-  models.credentials.mockResolvedValue([
-    {
-      id: "api",
-      label: "API",
-      provider: "anthropic",
-      modelId: "claude-fixture",
-      authKind: "api_key",
-    },
-    {
-      id: "oauth",
-      label: "Subscription",
-      provider: "anthropic",
-      modelId: "claude-fixture",
-      authKind: "oauth",
-    },
-  ]);
-  models.role.mockImplementation(async ({ role }: { role: string }) => ({
-    primary:
-      role === "main"
-        ? { provider: "anthropic", modelId: "claude-fixture", credentialId: "oauth" }
-        : null,
-    backups: [],
-  }));
-  const view = await renderSettings();
-  try {
-    await manage();
-    await click(buttons(view.container, "Test connection")[0]);
-    expect(view.container.textContent).toContain("A subscription credential is stored securely.");
-  } finally {
-    await view.unmount();
-  }
-});
 
 it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
@@ -1678,14 +1636,14 @@ it("opens a connection's page with its models, then a model's page, and goes bac
   ]);
   const view = await renderSettings();
   try {
-    expect(providersSection().textContent).toContain("2 models");
+    expect(providersSection().textContent).not.toContain("models");
     await openProvider("DeepSeek");
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     const rows = [
       ...view.container.querySelectorAll('[data-testid="model-provider-models"] button'),
     ].map((entry) => entry.textContent);
-    // Models with their own settings stay first without adding status labels.
-    expect(rows).toEqual(["DeepSeek Reasoner", "DeepSeek Chat"]);
+    // A catalog model is listed only once it has settings of its own, so they can be reset.
+    expect(rows).toEqual(["DeepSeek Reasoner"]);
     await click(buttons(view.container, "DeepSeek Reasoner")[0]);
     expect(titles(view.container)).toEqual(["DeepSeek Reasoner"]);
     expect(labeled(view.container, "Maximum output tokens")?.value).toBe("2048");
@@ -1759,8 +1717,7 @@ it("renames a connection", async () => {
   const view = await renderSettings();
   try {
     await openProvider("DeepSeek (Work)");
-    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
-    if (!input) throw new Error("Missing name field");
+    const input = await renameField(view.container);
     expect(input.value).toBe("Work");
     await typeInto(input, "Client work");
     await act(async () => {
@@ -1782,8 +1739,7 @@ it("renames once, holds Save meanwhile, then reads the connections again", async
   const view = await renderSettings();
   try {
     await openProvider("DeepSeek (Work)");
-    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
-    if (!input) throw new Error("Missing name field");
+    const input = await renameField(view.container);
     await typeInto(input, "Client work");
     const save = () => input.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
     await act(async () => {
@@ -1800,7 +1756,8 @@ it("renames once, holds Save meanwhile, then reads the connections again", async
       { ...workCredential, label: "Client work" },
     ]);
     await act(async () => renaming.resolve({ ok: true }));
-    await vi.waitFor(() => expect(save()).toBeNull());
+    // A saved name closes its field.
+    await vi.waitFor(() => expect(input.isConnected).toBe(false));
     expect(models.credentials.mock.calls.length).toBeGreaterThan(reads);
   } finally {
     await view.unmount();
@@ -1813,8 +1770,7 @@ it("says why a rename failed and offers Save again", async () => {
   const view = await renderSettings();
   try {
     await openProvider("DeepSeek (Work)");
-    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
-    if (!input) throw new Error("Missing name field");
+    const input = await renameField(view.container);
     await typeInto(input, "Client work");
     await act(async () => {
       input.form?.requestSubmit();

@@ -12,22 +12,32 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
 import { useListSearch } from "../../lib/use-list-search";
 
-/** A bot's model as one settings row: the row names the model in use and opens the list. */
+/**
+ * A bot's model as one settings row, or as a small button in the message box (`compact`): either
+ * names the model in use and opens the list.
+ */
 export function ChatModelPicker({
   id,
   choices,
   value,
   onChange,
+  compact = false,
+  selectedLabel,
+  disabled,
 }: {
-  id: string;
+  id?: string;
   choices: readonly ChatModelChoice[];
   value: string;
   onChange: (key: string) => void;
+  compact?: boolean;
+  /** What the button calls the selected choice, when that differs from its row in the list. */
+  selectedLabel?: string;
+  disabled?: boolean;
 }) {
   const { t } = useLingui();
   const imagesHintId = useId();
@@ -38,6 +48,7 @@ export function ChatModelPicker({
   const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
+  const model = selectedLabel ?? selected?.label ?? "";
 
   function openChange(next: boolean) {
     setOpen(next);
@@ -47,24 +58,39 @@ export function ChatModelPicker({
   return (
     <Popover open={open} onOpenChange={openChange}>
       <span id={imagesHintId} hidden>{t`Can't read images`}</span>
-      <PopoverTrigger
-        id={id}
-        aria-describedby={textOnly ? imagesHintId : undefined}
-        className="flex min-h-12 w-full items-center justify-between gap-3 text-start text-body text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <Trans>Model</Trans>
-        <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <span className="min-w-0 truncate">{selected?.label}</span>
+      {compact ? (
+        <PopoverTrigger
+          id={id}
+          disabled={disabled}
+          aria-label={t`Model: ${model}`}
+          aria-describedby={textOnly ? imagesHintId : undefined}
+          className="flex h-8 min-w-0 max-w-48 items-center gap-1 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+        >
+          <span className="min-w-0 truncate">{model}</span>
           {textOnly ? <TextOnlyMark /> : null}
-          <ChevronRightIcon className="size-4 shrink-0 rtl:rotate-180" aria-hidden="true" />
-        </span>
-      </PopoverTrigger>
+          <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
+        </PopoverTrigger>
+      ) : (
+        <PopoverTrigger
+          id={id}
+          disabled={disabled}
+          aria-describedby={textOnly ? imagesHintId : undefined}
+          className="flex min-h-12 w-full items-center justify-between gap-3 text-start text-body text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Trans>Model</Trans>
+          <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            <span className="min-w-0 truncate">{selected?.label}</span>
+            {textOnly ? <TextOnlyMark /> : null}
+            <ChevronRightIcon className="size-4 shrink-0 rtl:rotate-180" aria-hidden="true" />
+          </span>
+        </PopoverTrigger>
+      )}
       {open ? (
         <PopoverContent
-          align="start"
-          side="bottom"
+          align={compact ? "end" : "start"}
+          side={compact ? "top" : "bottom"}
           collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
-          className="w-(--anchor-width) max-h-(--available-height) gap-0 overflow-hidden bg-popover p-0 opacity-100 animate-none! backdrop-filter-none"
+          className={`${compact ? "w-72" : "w-(--anchor-width)"} max-h-(--available-height) gap-0 overflow-hidden bg-popover p-0 opacity-100 animate-none! backdrop-filter-none`}
         >
           <Command
             shouldFilter={false}

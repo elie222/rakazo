@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -40,6 +41,10 @@ describe("speakable", () => {
 
   it("says the file, not the path to it", () => {
     expect(speakable("I changed server/drivers/acp/core.ts today")).toBe("I changed core.ts today");
+    expect(speakable("open @scope/pkg/src/index.ts, ok")).toBe("open index.ts, ok");
+    const run = "a/".repeat(100_000);
+    expectLinearTime(() => expect(speakable(run)).toBe(run));
+    expect(speakable(`see ${"a/".repeat(300)}file.ts now`)).toBe("see file.ts now");
   });
 
   it("keeps short inline code but not long snippets", () => {
@@ -121,6 +126,20 @@ describe("speakable", () => {
         { kind: "ask", text: "Ship it?", status: "pending" },
       ]),
     ).toContain("Ship it?");
+  });
+
+  it("leaves tool activity out of what a voice reads, keeping the bot's own narration", () => {
+    expect(
+      speechFromBlocks([
+        { kind: "steps", steps: [{ label: "Shell", count: 2 }] },
+        { kind: "progress", text: "Using shell", activity: true },
+        { kind: "progress", text: "Let me check the build." },
+        { kind: "text", text: "It passes." },
+      ]),
+    ).toBe("Let me check the build.\nIt passes.");
+    expect(
+      speechFromBlocks([{ kind: "progress", text: "Searching the web: weather", activity: true }]),
+    ).toBe("");
   });
 });
 

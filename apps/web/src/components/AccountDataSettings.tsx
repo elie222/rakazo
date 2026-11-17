@@ -2,7 +2,8 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
-import { recheckSessionOnUnauthorized, rpc } from "../lib/rpc";
+import { useSave } from "../lib/query";
+import { recheckSessionOnUnauthorized } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
@@ -18,56 +19,53 @@ export function AccountDataSettings({
   const { t } = useLingui();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<"export" | "import" | null>(null);
   const [imported, setImported] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function exportData() {
-    if (pending) return;
-    setPending("export");
-    setImported(false);
-    setError(null);
-    try {
-      const { token } = await withIdentityConfirmation(() => rpc.export.accountToken());
-      // A download link, not a fetch, so the browser or Electron saves the stream natively.
-      const link = document.createElement("a");
-      link.href = `/api/account/export?token=${encodeURIComponent(token)}`;
-      link.download = "";
-      link.click();
-    } catch (cause) {
-      if (!isIdentityConfirmationRequired(cause)) setError(errorText(cause, t`Could not continue`));
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function importData(file: File) {
-    if (pending) return;
-    setPending("import");
-    setImported(false);
-    setError(null);
-    try {
-      const response = await fetch("/api/account/import", {
-        method: "POST",
-        headers: { "content-type": "application/zip" },
-        credentials: "include",
-        body: file,
-      });
+  const transfer = useSave({
+    save: async (action: "export" | File, rpc) => {
+      if (action === "export") {
+        const { token } = await withIdentityConfirmation(() => rpc.export.accountToken());
+        // A download link, not a fetch, so the browser or Electron saves the stream natively.
+        const link = document.createElement("a");
+        link.href = `/api/account/export?token=${encodeURIComponent(token)}`;
+        link.download = "";
+        link.click();
+        return false;
+      }
+      let response: Response;
+      try {
+        response = await fetch("/api/account/import", {
+          method: "POST",
+          headers: { "content-type": "application/zip" },
+          credentials: "include",
+          body: action,
+        });
+      } catch {
+        throw new Error(t`Could not reach the server`);
+      }
       recheckSessionOnUnauthorized(response.status);
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
           error?: unknown;
         } | null;
-        setError(typeof body?.error === "string" ? body.error : t`Could not continue`);
-        return;
+        throw new Error(typeof body?.error === "string" ? body.error : t`Could not continue`);
       }
       await onImported?.().catch(() => undefined);
-      setImported(true);
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      setPending(null);
-    }
+      return true;
+    },
+    onSaved: setImported,
+  });
+  const pending = transfer.pending ? (transfer.input === "export" ? "export" : "import") : null;
+  const error =
+    !transfer.error || isIdentityConfirmationRequired(transfer.error)
+      ? null
+      : transfer.input === "export"
+        ? errorText(transfer.error, t`Could not continue`)
+        : transfer.error.message;
+
+  function start(action: "export" | File) {
+    if (pending) return;
+    setImported(false);
+    transfer.run(action);
   }
 
   return (
@@ -84,7 +82,7 @@ export function AccountDataSettings({
               data-testid="account-export"
               disabled={pending !== null}
               aria-busy={pending === "export"}
-              onClick={() => void exportData()}
+              onClick={() => start("export")}
             >
               {pending === "export" ? <Spinner aria-hidden /> : null}
               <Trans>Export</Trans>
@@ -110,7 +108,7 @@ export function AccountDataSettings({
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
-                if (file) void importData(file);
+                if (file) start(file);
               }}
             />
           </>

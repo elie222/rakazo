@@ -19,9 +19,6 @@ const state = vi.hoisted(() => ({
   dismissAll: vi.fn(),
 }));
 
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api-server", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "http://api.test",
@@ -94,7 +91,13 @@ vi.mock("../components/native-action-button", () => ({
 }));
 
 const created = { id: "org-2", name: "Second", defaultSpaceId: "space-2" };
-const opened = { ...created, spaceIds: ["space-2"], canManage: true };
+const opened = {
+  ...created,
+  spaceIds: ["space-2"],
+  canManage: true,
+  role: "owner",
+  memberCount: 1,
+};
 
 let root: Root;
 let container: HTMLDivElement;

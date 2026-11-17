@@ -19,7 +19,6 @@ import {
   prepareManagedConnectorForTransaction,
   providerLockTransaction,
   providerScopeKey,
-  sanitizeIntegrationError,
   tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -226,9 +225,8 @@ export async function beginConnection(
         provider: input.provider,
         reason: String(error.cause),
       });
-      throw new ORPCError(error.code, { status: 400, message: error.message });
     }
-    throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
+    throw error;
   }
   const leftover = leftoverAuthorization(
     connector,
@@ -281,9 +279,7 @@ export async function beginConnection(
     // a connection still in flight.
     await markFailed();
     if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
-    if (error instanceof ProviderTransactionBusyError || error instanceof IsolationError)
-      throw error;
-    throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
+    throw error;
   }
   if (!applied) {
     if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
@@ -403,7 +399,7 @@ export async function completeConnection(
                 unrecorded,
                 { ...where, ...(cleanup.ref ? { providerRef: cleanup.ref } : {}) },
               );
-              throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
+              throw unrecorded;
             }
           }
           // A newer attempt or a removal superseded this one. Report it so the
@@ -418,11 +414,7 @@ export async function completeConnection(
         );
         if (input.code && current.status !== "connected") {
           const state = current.providerRef ?? current.provider;
-          try {
-            await transactionConnector.complete({ state, code: input.code }, adapterContext);
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
-          }
+          await transactionConnector.complete({ state, code: input.code }, adapterContext);
         }
         const ready = await transactionConnector.connectionReady(adapterContext, current.provider);
         if (!ready) return current;
@@ -695,10 +687,7 @@ export async function revokeConnection(
       } catch (error) {
         // The row stays as it was when DELETE clearly did not run (including pre-delete list
         // timeouts), and after any failed provider-wide delete: the caller can remove it again.
-        if (!accountSpecific || shouldRestoreLocalAfterRemoteRevokeFailure(error)) {
-          if (error instanceof ORPCError) throw error;
-          throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
-        }
+        if (!accountSpecific || shouldRestoreLocalAfterRemoteRevokeFailure(error)) throw error;
         // A post-delete timeout is ambiguous: the row stays revoked, and because the account
         // may still be active at the provider, its removal commits with the row as a job.
         await deps.jobs.enqueueIn(tx, connectionCleanupJob({ ...scope, ref: connectionRef }));
@@ -714,10 +703,6 @@ export async function revokeConnection(
     },
   );
 
-  if ("uncertain" in outcome) {
-    const error = outcome.uncertain;
-    if (error instanceof ORPCError) throw error;
-    throw new ORPCError("BAD_REQUEST", { message: sanitizeIntegrationError(error) });
-  }
+  if ("uncertain" in outcome) throw outcome.uncertain;
   return { ok: true as const };
 }

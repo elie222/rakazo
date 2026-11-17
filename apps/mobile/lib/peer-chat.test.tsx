@@ -2,11 +2,12 @@
 
 import { flush } from "@rakazo/core/test-async";
 import type { ReactNode, Ref } from "react";
-import { act, createElement, useImperativeHandle } from "react";
+import { act, createElement, useEffect, useImperativeHandle } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import PeerChat from "../app/peer-chat";
+import { queryClient } from "./query";
 
 const { rpc, back, scrollToEnd, scrollProps } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -48,10 +49,18 @@ vi.mock("../components/native-action-button", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({ rpc }));
+vi.mock("./api", () => ({
+  rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
@@ -80,6 +89,9 @@ vi.mock("expo-router", () => ({
         options.headerTitle(),
         options.headerLeft(),
       ),
+  },
+  useFocusEffect: (effect: () => (() => void) | undefined) => {
+    useEffect(effect, [effect]);
   },
   useRouter: () => ({ back }),
   useLocalSearchParams: () => ({ botId: "chief", botName: "Chief", peerBotId: "peer" }),
@@ -133,6 +145,7 @@ let root: Root | undefined;
 
 afterEach(() => {
   act(() => root?.unmount());
+  queryClient.clear();
   document.body.innerHTML = "";
   rpc.mockReset();
   back.mockReset();
@@ -245,4 +258,42 @@ it("keeps rich replies visible using native pages and the chart text fallback", 
     ["Old page", "true"],
     ["New page", "false"],
   ]);
+});
+
+it("cancels the page request once the history read is given up", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const signals: AbortSignal[] = [];
+  rpc.mockImplementation(
+    (_proc: string, _input: unknown, options: { signal: AbortSignal }) =>
+      new Promise(() => {
+        signals.push(options.signal);
+      }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(createElement(PeerChat)));
+  await act(flush);
+  expect(signals).toHaveLength(1);
+  expect(signals[0]?.aborted).toBe(false);
+
+  act(() => root?.unmount());
+  root = undefined;
+  await act(flush);
+
+  expect(signals[0]?.aborted).toBe(true);
+});
+
+it("keeps the chat on screen when a later re-read fails", async () => {
+  const screen = await open();
+  expect(screen.textContent).toContain("note 39");
+
+  rpc.mockRejectedValue(new Error("offline"));
+  await act(async () => {
+    await queryClient.refetchQueries();
+  });
+  await act(flush);
+
+  expect(screen.textContent).toContain("note 39");
+  expect(screen.textContent).not.toContain("Could not load this chat");
 });
