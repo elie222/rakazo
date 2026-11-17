@@ -61,6 +61,11 @@ their notes. In **Settings → Memory**, choose **Connect memory provider**:
   their own bot memory to answer a question by combining what it knows; reflection does not query
   the Space's shared bank. Shared facts remain available through recall. Summaries of long chats stay in
   Rakazo: Hindsight learns from the conversation itself, not from summaries of it.
+- **Mnemoverse**: its cloud service only; enter an API key. Rakazo saves explicit facts in a
+  domain per bot, or one per Space with the Shared scope, which bots recall together with their
+  own. Bots can forget a memory by id, but only one in a domain they can recall from, not the rest
+  of your Mnemoverse account; forgetting removes that one memory, so a fact saved twice in
+  different domains needs forgetting twice. Summaries of long chats stay in Rakazo.
 
 To change a connected provider's settings, choose **Edit**. You only need to enter the key again
 when you change where it connects or what it can read.

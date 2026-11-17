@@ -211,6 +211,7 @@ export * from "./providers/integration/pipedream/pipedream-connector.js";
 export * from "./providers/key/aws-kms/aws-kms-key-provider.js";
 export { HindsightMemoryProvider } from "./providers/memory/hindsight/hindsight-memory-provider.js";
 export { HonchoMemoryProvider } from "./providers/memory/honcho/honcho-memory-provider.js";
+export { MnemoverseMemoryProvider } from "./providers/memory/mnemoverse/mnemoverse-memory-provider.js";
 export { SerenityMemoryProvider } from "./providers/memory/serenity/serenity-memory-provider.js";
 export { SupermemoryMemoryProvider } from "./providers/memory/supermemory/supermemory-memory-provider.js";
 export * from "./providers/messaging/sendblue/sendblue-emulator.js";
