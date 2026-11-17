@@ -25,7 +25,8 @@ import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
-import { MCP_TOOL_TIMEOUT_MS, McpSession } from "./mcp-transport.js";
+import { McpSession } from "./mcp-transport.js";
+import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 
 // No server is shared with every agent, so only assignments reach a bot.
 const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };

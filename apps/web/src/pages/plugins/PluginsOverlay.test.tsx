@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PluginsOverlay } from "./PluginsOverlay";
+import { SourceFormView, useSourceForm } from "./plugins/source-form";
 
 const api = vi.hoisted(() => ({
   connections: {
@@ -290,4 +291,35 @@ it("opens both Unicode fallback screenshot targets through browse and manage", a
   expect(
     host.querySelector('[data-testid="connection-detail"] .place-items-center')?.textContent,
   ).toBe("𠮷");
+});
+
+it("opens a sign-in preset with its address filled in and no token to paste", async () => {
+  const preset = {
+    id: "gateway",
+    name: "Gateway",
+    defaultUrl: "https://gateway.example.test/mcp",
+    signIn: true,
+  };
+  let form: ReturnType<typeof useSourceForm> | null = null;
+  function Harness() {
+    form = useSourceForm();
+    return (
+      <SourceFormView
+        form={form}
+        installing={false}
+        sourceError={null}
+        onBack={() => {}}
+        onSubmit={() => {}}
+      />
+    );
+  }
+  await act(async () => root.render(<Harness />));
+  await act(async () => form?.start("mcp", preset));
+
+  // Name and address only: a token preset would add a third field for the token.
+  expect([...host.querySelectorAll("input")].map((input) => input.value)).toEqual([
+    "Gateway",
+    "https://gateway.example.test/mcp",
+  ]);
+  expect(host.textContent).toContain("Save and sign in");
 });
