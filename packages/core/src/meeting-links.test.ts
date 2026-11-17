@@ -10,7 +10,10 @@ const calls: MeetingLinkRecognizer = {
     const [first, id] = segments;
     if (host !== "calls.example" || first !== "j" || segments.length !== 2) return undefined;
     if (!/^\d{9}$/.test(id ?? "")) return undefined;
-    return { id: id!, params: { pwd: meetingTokenParam(query, "pwd") } };
+    return {
+      id: id!,
+      params: { pwd: meetingTokenParam(query, "pwd"), room: meetingTokenParam(query, "room") },
+    };
   },
 };
 const parse = (input: unknown) => parseMeetingLink(input, [calls]);
@@ -206,6 +209,27 @@ describe("findMeetingLinks", () => {
     expect(find(`${secret} ${plain}`).map((found) => found.url)).toEqual([secret]);
   });
 
+  it("keeps what two copies of one meeting each carry, whichever comes first", () => {
+    const withRoom = link(1, "?room=a1");
+    const withPasscode = link(1, "?pwd=secret");
+    for (const text of [`${withRoom} ${withPasscode}`, `${withPasscode} ${withRoom}`]) {
+      const urls = find(text).map((found) => found.url);
+      expect(urls).toHaveLength(1);
+      const kept = new URL(urls[0] ?? "");
+      expect(kept.origin + kept.pathname).toBe(link(1));
+      expect(Object.fromEntries(kept.searchParams)).toEqual({ pwd: "secret", room: "a1" });
+    }
+    expect(find(`${link(1, "?pwd=first")} ${link(1, "?pwd=second")}`)[0]?.url).toBe(
+      link(1, "?pwd=first"),
+    );
+  });
+
+  it("reads a meeting whose code is percent-encoded, and rejects an encoding that is not valid", () => {
+    expect(parse("https://calls.example/j/10000000%31")?.id).toBe("100000001");
+    expect(parse("https://calls.example/j/%E0%A4%A")).toBeNull();
+    expect(parse("https://calls.example/j%2F100000001")).toBeNull();
+  });
+
   it("reads a passcode after any spelling of an ampersand", () => {
     for (const amp of ["&amp;", "&#38;", "&#x26;"]) {
       expect(find(link(1, `?from=x${amp}pwd=abc`))[0]?.url).toBe(link(1, "?pwd=abc"));
@@ -251,6 +275,37 @@ describe("the text limit", () => {
     expect(find(`${FILLER(999_960)}${link(1, `?pwd=${"a".repeat(20_000)}`)} ${link(2)}`)).toEqual(
       [],
     );
+  });
+
+  it("does not read a link that starts after the limit because punctuation joins it to the text", () => {
+    expect(find(`${FILLER(999_990)}${"x".repeat(9)}.${link(1)}`)).toEqual([]);
+    expect(find(`${FILLER(999_990)}${"x".repeat(9)}.${link(1)} ${link(2)}`)).toEqual([]);
+  });
+
+  it("applies the limit to a link that an escaped quote joins to earlier text", () => {
+    const before = `${FILLER(999_980)}https://a.example/`;
+    expect(find(`${before}&quot;${link(1)}`)).toEqual([]);
+    expect(find(`${before}"${link(1)}`)).toEqual([]);
+  });
+
+  it("counts the limit in decoded characters, so entities do not hide a link inside it", () => {
+    const meeting = ` ${link(1)} `;
+    expect(find(`${"&amp;".repeat(250_000)}${meeting}`).map((found) => found.id)).toEqual([
+      "100000001",
+    ]);
+    expect(
+      find([FILLER(1_000_000 - 2_100), `${"&amp;".repeat(2_060)}${meeting}`]).map(
+        (found) => found.id,
+      ),
+    ).toEqual(["100000001"]);
+    const long = `${link(1)}?x=${"&amp;".repeat(2_100)}`;
+    expect(find(`${FILLER(999_989)}${long} tail`).map((found) => found.id)).toEqual(["100000001"]);
+  });
+
+  it("spends the whole budget on a string the limit cuts, so many of them stay linear", () => {
+    const huge = `https://a${"b".repeat(1_100_000)}`;
+    expect(find([huge, link(2)])).toEqual([]);
+    expectLinearTime(() => find([...Array.from({ length: 300 }, () => huge), link(2)]));
   });
 
   it("reads links before the limit and ignores text after it", () => {

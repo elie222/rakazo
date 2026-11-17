@@ -1,4 +1,4 @@
-import { parseMeetingLink } from "@rakazo/core";
+import { findMeetingLinks, parseMeetingLink } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { teamsLinks } from "./teams-link.js";
 
@@ -45,6 +45,19 @@ describe("Microsoft Teams links", () => {
     ["a subdomain of a host that has none", "https://x.teams.live.com/meet/9876543210123"],
   ])("rejects %s", (_name, link) => {
     expect(parse(link)).toBeNull();
+  });
+
+  it("keeps the passcode of a copy whichever of two copies of a meeting comes first", () => {
+    const context = encodeURIComponent('{"Tid":"t","Oid":"o"}');
+    const withContext = `${join}/0?context=${context}`;
+    const withPasscode = `${join}/0?p=abc`;
+    for (const text of [`${withContext} ${withPasscode}`, `${withPasscode} ${withContext}`]) {
+      const urls = findMeetingLinks(text, [teamsLinks]).map((found) => found.url);
+      expect(urls).toHaveLength(1);
+      const kept = new URL(urls[0] ?? "").searchParams;
+      expect(kept.get("p")).toBe("abc");
+      expect(kept.get("context")).toBe('{"Tid":"t","Oid":"o"}');
+    }
   });
 
   it("keeps a whole context and drops one that was cut off", () => {

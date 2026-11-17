@@ -7,7 +7,11 @@ import { trimEndChars } from "@rakazo/contracts";
 export interface MeetingLinkParts {
   /** Lower case, without a trailing dot. */
   host: string;
-  /** The path segments, without the empty one before the first slash or a trailing slash. */
+  /**
+   * The path segments, each percent-decoded once so `%39` and `9` read alike (an encoded slash
+   * stays inside its segment), without the empty one before the first slash or a trailing slash.
+   * A link with a segment that does not decode is not a meeting.
+   */
   segments: readonly string[];
   query: URLSearchParams;
 }
@@ -64,11 +68,16 @@ export function parseMeetingLink(
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   const host = trimEndChars(url.hostname.toLowerCase(), ".");
   const path = trimEndChars(url.pathname, "/");
-  const parts: MeetingLinkParts = {
-    host,
-    segments: path.split("/").slice(1),
-    query: url.searchParams,
-  };
+  let segments: string[];
+  try {
+    segments = path
+      .split("/")
+      .slice(1)
+      .map((segment) => decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
+  const parts: MeetingLinkParts = { host, segments, query: url.searchParams };
   for (const recognizer of recognizers) {
     const meeting = recognizer.recognize(parts);
     if (!meeting) continue;
@@ -86,7 +95,7 @@ export function parseMeetingLink(
 
 const LINK_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 const LINK_END = /[\s<>"'`]/;
-const ENTITY = /&(amp|lt|gt|quot|#0*38|#x0*26);/gi;
+const ENTITY = /&(amp|lt|gt|quot|#0{0,4}38|#x0{0,4}26);/gi;
 const ENTITY_TEXT: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"' };
 const MAX_DEPTH = 8;
 const MAX_VALUES = 5_000;
@@ -94,14 +103,17 @@ const MAX_TEXT = 1_000_000;
 /** How far past the text limit a link that straddles it is read, before it is left out. */
 const MAX_LINK = 8_192;
 const MAX_LINKS = 20;
+/** The most raw characters an entity takes (`&#x000026;`, 10, is the longest ENTITY reads), so a raw window can be sized from a decoded one. */
+const MAX_ENTITY = 12;
 
 /**
  * The meetings linked anywhere in a value such as a calendar event's text, location or nested
- * fields, in the order found and once per meeting (the copy that carries a passcode wins, even
- * one found after the limit on meetings is reached). It reads every string and no particular
+ * fields, in the order found and once per meeting (copies of one meeting are combined, keeping
+ * each value the earlier copy carries and adding what a later one does, even one found after the
+ * limit on meetings is reached). It reads every string and no particular
  * field, so it works on whatever a calendar connector returns. Values are read level by level, so
  * an event's own fields come before long lists inside it. It stops at a fixed depth, number of
- * values and amount of text; a link that straddles the text limit is read to its end, or left out
+ * values and amount of text (a string cut by the limit uses up all of it); a link that straddles the text limit is read to its end, or left out
  * when it has none within MAX_LINK characters, never read short. It reads plain objects and arrays
  * by their own data properties, never running a getter, skips a value that throws when inspected,
  * and ignores everything else. Never throws.
@@ -120,17 +132,15 @@ export function findMeetingLinks(
     const { value: current, depth } = queue[head]!;
     values += 1;
     if (typeof current === "string") {
-      const part = readThroughLink(current, MAX_TEXT - text);
-      text += part.length;
-      for (const match of part
-        .replace(ENTITY, (_, name: string) => ENTITY_TEXT[name.toLowerCase()] ?? "&")
-        .match(LINK_IN_TEXT) ?? []) {
+      const part = readableText(current, MAX_TEXT - text);
+      text = part.cut ? MAX_TEXT : text + part.text.length;
+      for (const match of part.text.match(LINK_IN_TEXT) ?? []) {
         const link = parseMeetingLink(trimEndChars(match, ".,;:!?)]}*~"), recognizers);
         if (!link) continue;
         const key = `${link.provider}:${link.id}`;
         const earlier = found.get(key);
         if (earlier) {
-          if (keptParameters(link) > keptParameters(earlier)) found.set(key, link);
+          found.set(key, withParametersOf(earlier, link));
         } else if (found.size < MAX_LINKS) {
           found.set(key, link);
         }
@@ -158,26 +168,56 @@ export function findMeetingLinks(
   return [...found.values()];
 }
 
-/** How much of the way in a link carries, so the copy with the passcode replaces one without. */
-function keptParameters(link: MeetingLink): number {
-  return [...new URL(link.url).searchParams.keys()].length;
+/**
+ * Two links to one meeting, with what each carries to get in combined, so a copy with a passcode
+ * and a copy with another value both survive. On a value both carry, the earlier one is kept.
+ */
+function withParametersOf(base: MeetingLink, other: MeetingLink): MeetingLink {
+  const url = new URL(base.url);
+  let added = false;
+  for (const [key, value] of new URL(other.url).searchParams) {
+    if (url.searchParams.has(key)) continue;
+    url.searchParams.set(key, value);
+    added = true;
+  }
+  return added ? { ...base, url: url.toString() } : base;
 }
 
 /**
- * The first `limit` characters, extended to the end of the link they stop in so it is never read
- * short. A link with no end within MAX_LINK characters is left out with the rest of its token.
+ * The text of a string as it is read: entities decoded, then the first `limit` characters,
+ * extended to the end of a link that starts before the limit and runs past it so it is never read
+ * short. A link that starts at or after the limit is not read, and a straddling link with no end
+ * within MAX_LINK characters is left out with the rest of its token. `cut` says that part of the
+ * string was left unread, so the text budget is spent.
  */
-function readThroughLink(text: string, limit: number): string {
-  if (limit >= text.length) return text;
+function readableText(raw: string, limit: number): { text: string; cut: boolean } {
+  const reach = limit + MAX_LINK;
+  const window = raw.length > reach * MAX_ENTITY ? raw.slice(0, reach * MAX_ENTITY) : raw;
+  let text = window.replace(ENTITY, (_, name: string) => ENTITY_TEXT[name.toLowerCase()] ?? "&");
+  let complete = window.length === raw.length;
+  if (text.length > reach) {
+    text = text.slice(0, reach);
+    complete = false;
+  }
+  if (complete && limit >= text.length) return { text, cut: false };
+  const at = Math.min(limit, text.length);
+  let start = at;
+  while (start > 0 && !LINK_END.test(text[start - 1]!)) start -= 1;
   const stop = Math.min(text.length, limit + MAX_LINK);
-  for (let at = limit; at < stop; at += 1) {
-    if (LINK_END.test(text[at]!)) return text.slice(0, at);
+  let end = at;
+  while (end < stop && !LINK_END.test(text[end]!)) end += 1;
+  const open = !complete && end === text.length;
+  const cut = at - start;
+  for (const match of text.slice(start, end).matchAll(LINK_IN_TEXT)) {
+    const from = match.index ?? 0;
+    if (from >= cut) break;
+    const last = from + match[0].length;
+    if (last > cut || (open && last === cut)) {
+      const ended = end < stop || (end === text.length && complete);
+      return { text: text.slice(0, ended ? end : start + from), cut: true };
+    }
   }
-  if (stop === text.length) return text;
-  for (let at = limit - 1; at >= 0; at -= 1) {
-    if (LINK_END.test(text[at]!)) return text.slice(0, at);
-  }
-  return "";
+  return { text: text.slice(0, at), cut: true };
 }
 
 function ownValue(object: object, key: string): unknown {

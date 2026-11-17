@@ -6,16 +6,11 @@ const HOSTS = ["teams.microsoft.com", "teams.microsoft.us", "teams.live.com"];
 const meetCode = (text: string | undefined): text is string =>
   text !== undefined && text.length >= 9 && text.length <= 15 && /^\d+$/.test(text);
 
-/** A meetup-join thread id, decoded so that `%3a` and `%3A` name one meeting. */
+/** A meetup-join thread id, already decoded so that `%3a` and `%3A` name one meeting. */
 function threadId(segment: string | undefined): string | undefined {
-  if (!segment) return undefined;
-  let id: string;
-  try {
-    id = decodeURIComponent(segment);
-  } catch {
-    return undefined;
-  }
-  return /^19:meeting_[^/\s]+@thread\.(?:v2|skype)$/i.test(id) ? id : undefined;
+  return segment !== undefined && /^19:meeting_[^/\s]+@thread\.(?:v2|skype)$/i.test(segment)
+    ? segment
+    : undefined;
 }
 
 /** Whether a `context` value is the JSON object it should be, and not a cut-off copy. */

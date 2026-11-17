@@ -22,6 +22,10 @@ describe("Zoom links", () => {
     );
   });
 
+  it("reads an id with an encoded digit", () => {
+    expect(parse("https://zoom.us/j/8123456789%30")?.id).toBe("81234567890");
+  });
+
   it("drops a passcode that is not a bare token", () => {
     expect(parse("https://zoom.us/j/81234567890?pwd=a!b")?.url).toBe(
       "https://zoom.us/j/81234567890",
