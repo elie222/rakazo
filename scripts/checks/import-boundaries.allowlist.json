@@ -30,7 +30,7 @@
     "apps/web/e2e/page-gallery.spec.ts -> ../../../packages/page-kit/src/runtime-build",
     "apps/web/e2e/readable-names.spec.ts -> ../../../packages/db/src/index",
     "apps/web/e2e/social-sign-in.spec.ts -> ../../../packages/auth/src/social-presentation",
-    "apps/web/e2e/social-sign-in.spec.ts -> ../../../packages/contracts/src/auth",
+    "apps/web/e2e/social-sign-in.spec.ts -> ../../../packages/contracts/src/account/auth",
     "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-assets.ts",
     "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts",
     "apps/web/vite.config.ts -> ../../packages/logging/src/env.ts",
