@@ -19,8 +19,8 @@ import {
   voiceLanguageHint,
   voiceRequestError,
   voiceUnreachable,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 export const XAI_VOICE_PROVIDER_ID = "xai";
 const API = "https://api.x.ai/v1";

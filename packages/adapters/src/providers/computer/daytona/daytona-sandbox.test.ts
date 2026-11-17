@@ -19,14 +19,14 @@ import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComputerBrowserProvider } from "../../../computer-browser.js";
-import { installPageBrowserCommand } from "../../../page-browser-install.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
+import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
 import {
   assertSandboxReadLimit,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandbox-test-support.js";
+} from "../../../sandboxes/sandbox-test-support.js";
 import type { DaytonaSandbox } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { daytonaFixture } from "./daytona-sandbox.test-support.js";

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { simpleCommand } from "../../../linux-desktop.test-support.js";
+import { simpleCommand } from "../../../computers/screens/linux-desktop.test-support.js";
 
 /**
  * An in-memory computer supervisor on a local port: computers that run until deleted, and a shell

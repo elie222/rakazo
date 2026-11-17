@@ -1,12 +1,12 @@
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
-import { lazyChatAdapter } from "../../../lazy-chat-adapter.js";
+import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
 import {
   asRecord,
   defineMessagingPlatform,
   MESSAGING_SEND_TIMEOUT_MS,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 export const sendblueMessaging = defineMessagingPlatform({
   env: {

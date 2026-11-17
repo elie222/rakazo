@@ -244,9 +244,9 @@ demonstrates a missing capability; do not replace the runtime speculatively.
 
 Relevant implementation locations:
 
-- `packages/adapters/src/executor.ts`
-- `packages/adapters/src/history-compaction.ts`
-- `packages/adapters/src/pi-runtime.ts`
+- `packages/adapters/src/runs/executor/executor.ts`
+- `packages/adapters/src/runtime/context/history-compaction.ts`
+- `packages/adapters/src/runtime/pi/pi-runtime.ts`
 - `packages/adapter-kit/src/types.ts`
 - `packages/db/src/threads/messages.ts` and `packages/db/prisma/schema.prisma`
 - `apps/api/src/content/search.ts`
