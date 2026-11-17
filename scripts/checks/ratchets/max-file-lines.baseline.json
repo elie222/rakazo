@@ -7,7 +7,7 @@
   "apps/api/src/thread-target.test.ts": 1,
   "apps/api/src/thread-target.ts": 1,
   "apps/desktop/src/main/main.ts": 1,
-  "apps/desktop/src/main/native-stack.ts": 1,
+  "apps/desktop/src/main/this-computer/native-stack.ts": 1,
   "apps/mobile/app/(settings)/integrations.tsx": 1,
   "apps/mobile/lib/api-auth.test.ts": 1,
   "apps/mobile/lib/api-server.test.ts": 1,
