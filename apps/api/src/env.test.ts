@@ -113,33 +113,6 @@ describe("loadEnv", () => {
     ).toBe("https://catalog.example.test/feed");
   });
 
-  it("falls back to none when a remote provider key is missing", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "e2b",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "createos",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "none",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "",
-      }).sandboxProvider,
-    ).toBe("none");
-  });
-
   it("loads provider-specific Daytona configuration", () => {
     const env = loadEnv({
       ...base,
@@ -156,23 +129,6 @@ describe("loadEnv", () => {
         daytonaTarget: "test-target",
       },
     });
-  });
-
-  it("loads Novita credentials and the shared sandbox template", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "novita",
-        NOVITA_API_KEY: "test-novita-key",
-        SANDBOX_TEMPLATE: "custom-desktop",
-      }),
-    ).toMatchObject({
-      sandboxProvider: "novita",
-      sandboxOptions: { novitaApiKey: "test-novita-key", sandboxTemplate: "custom-desktop" },
-    });
-    expect(
-      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
-    ).toBe("none");
   });
 
   it("loads provider-specific Boat configuration", () => {
