@@ -684,8 +684,10 @@ export class ComposioConnector implements ComposioProvider {
           const logIds = collectLogIds(executed);
           yield {
             type: "error",
-            message: sanitizeIntegrationError(
-              composioResultError(result.error || `${item.tool} failed`, result.data),
+            message: withSharedAccessHint(
+              sanitizeIntegrationError(
+                composioResultError(result.error || `${item.tool} failed`, result.data),
+              ),
             ),
             ...(logIds.length > 0 ? { logIds } : {}),
           };
@@ -711,7 +713,7 @@ export class ComposioConnector implements ComposioProvider {
       const logIds = collectLogIds(executed);
       yield {
         type: "error",
-        message: sanitizeIntegrationError(error),
+        message: withSharedAccessHint(sanitizeIntegrationError(error)),
         ...(logIds.length > 0 ? { logIds } : {}),
       };
     }
@@ -1018,6 +1020,21 @@ export function composioResultError(summary: string, data: unknown): string {
   const shown = details.slice(0, 5);
   const more = details.length - shown.length;
   return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
+}
+
+const SHARED_ACCESS_SCOPE =
+  /\b(?:Mail|Calendars|Contacts|Tasks)\.(?:Read|ReadBasic|ReadWrite|Send)\.Shared(?![A-Za-z0-9_]|\.[A-Za-z0-9])/;
+
+/**
+ * A connection made without a delegated "shared" scope is refused for any mailbox or
+ * calendar but the user's own, and only a new connection carries the scope.
+ */
+export function withSharedAccessHint(message: string): string {
+  const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
+  if (!scope) return message;
+  let end = message.length;
+  while (end > 0 && (message[end - 1] === "." || message[end - 1]?.trim() === "")) end--;
+  return `${message.slice(0, end)}. This call needs the ${scope} permission; reconnect if the connection was made before it was added.`;
 }
 
 export function sanitizeIntegrationError(error: unknown): string {
