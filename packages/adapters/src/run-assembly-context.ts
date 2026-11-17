@@ -8,6 +8,7 @@ import {
   renderBotDirectory,
 } from "@rakazo/core";
 import { mayBeChannelMessage } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import type { FleetRun } from "./fleet-tools.js";
@@ -15,6 +16,7 @@ import { loadBotGroupDirectory } from "./group-handoff.js";
 import { formatCompactedSummary } from "./history-compaction.prompt.js";
 import { loadReplyContext } from "./reply-context.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
+import { routineRunInstruction } from "./routine-run.prompt.js";
 import type {
   ComputerInstructions,
   PreparedRunComputer,
@@ -348,29 +350,28 @@ export async function buildTurnPrompt(
   } catch {
     // Timezone is optional context; a lookup failure must not prevent a run.
   }
+  let routineNote: string | undefined;
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
-  if (lateSince && run.routineId) {
-    try {
-      const routine = await deps.prisma.routine.findUnique({
+  // Daily check-ins share the routine trigger but belong to no routine.
+  if (run.trigger === "routine" && run.routineId) {
+    const routine = await bestEffort(
+      "load the routine for its run's prompt",
+      deps.prisma.routine.findUnique({
         where: { id: run.routineId },
-        select: { timezone: true },
-      });
-      if (routine)
-        lateRoutineNote = lateRoutineRunInstruction(
-          lateSince,
-          executionStartedAt,
-          routine.timezone,
-        );
-    } catch {
-      // Lateness is optional context; a lookup failure must not prevent a run.
-    }
+        select: { name: true, timezone: true },
+      }),
+    );
+    routineNote = routineRunInstruction(routine?.name);
+    if (routine && lateSince)
+      lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
   const sharedSpaceNote = people
     ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
     : undefined;
   const prompt = [
     replyContext,
+    routineNote,
     run.trigger === "reaction" && replyContext ? undefined : basePrompt,
     takeoverResume?.promptNote,
     approvalContinuation,
