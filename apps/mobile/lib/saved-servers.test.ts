@@ -1,3 +1,4 @@
+import { deferred, flush } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultApiBase } from "./endpoint";
@@ -132,6 +133,29 @@ describe("saved servers", () => {
     expect(savedServers().map((entry) => entry.apiBase)).toEqual([TWO, ONE]);
     await loadSavedServers();
     expect(savedServers().map((entry) => entry.apiBase)).toEqual([TWO, ONE]);
+  });
+
+  it("does not let a read that started before a write replace the list that write saved", async () => {
+    const stale = deferred<string | null>();
+    vi.mocked(SecureStore.getItemAsync).mockReturnValueOnce(stale.promise);
+    const reading = loadSavedServers();
+    const recording = recordSavedServer(ONE, ACCESS);
+    await flush();
+    stale.resolve(null);
+    await Promise.all([reading, recording]);
+    expect(savedServers()).toEqual([{ apiBase: ONE, headers: ACCESS }]);
+    await recordSavedServer(TWO, {});
+    expect(savedServers().map((entry) => entry.apiBase)).toEqual([TWO, ONE]);
+    expect(store.get(KEY)).toContain(ONE);
+  });
+
+  it("reads the stored list before its first change, so a change before any load keeps it", async () => {
+    store.set(KEY, JSON.stringify([{ apiBase: ONE, headers: {} }]));
+    vi.resetModules();
+    const fresh = await import("./saved-servers");
+    expect(await fresh.recordSavedServer(TWO, {})).toBe(true);
+    expect(fresh.savedServers().map((entry) => entry.apiBase)).toEqual([TWO, ONE]);
+    expect(store.get(KEY)).toContain(ONE);
   });
 
   it("writes nothing over a list it could not read, and recovers once it can", async () => {

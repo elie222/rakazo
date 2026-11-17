@@ -348,3 +348,28 @@ it("keeps a saved server listed and says so when it cannot be removed", async ()
   expect(container?.textContent).toContain("Could not remove the server");
   expect(container?.textContent).toContain("two.example.test");
 });
+
+it("clears the failure message once a retried removal works", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockResolvedValueOnce(false);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).toContain("Could not remove the server");
+  saved.remove.mockImplementationOnce(async () => {
+    saved.list = [];
+    return true;
+  });
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).not.toContain("Could not remove the server");
+});
+
+it("tells an http server from an https one on the same host", async () => {
+  saved.list = [
+    { apiBase: "http://10.0.0.8", headers: {} },
+    { apiBase: "https://10.0.0.8", headers: {} },
+  ];
+  await renderServer();
+  const labels = Array.from(container!.querySelectorAll("button")).map((node) => node.textContent);
+  expect(labels).toContain("http://10.0.0.8");
+  expect(labels).toContain("10.0.0.8");
+});

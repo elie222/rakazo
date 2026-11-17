@@ -9,8 +9,8 @@ export const MAX_SAVED_SERVERS = 5;
 export type SavedServer = { apiBase: string; headers: Record<string, string> };
 
 let saved: SavedServer[] = [];
-/** False while the stored list could not be read: an unread list is not an empty one. */
-let readable = true;
+/** False until the stored list has been read, and while it could not be: an unread list is not an empty one. */
+let readable = false;
 let writes: Promise<unknown> = Promise.resolve();
 
 /** Servers used before, most recent first; empty until `loadSavedServers` has read the device. */
@@ -45,7 +45,7 @@ function parseSavedServers(stored: string | null): SavedServer[] {
   return entries.slice(0, MAX_SAVED_SERVERS);
 }
 
-export async function loadSavedServers(): Promise<void> {
+async function readSavedServers(): Promise<void> {
   let stored: string | null = null;
   try {
     stored = await SecureStore.getItemAsync(SAVED_SERVERS_KEY);
@@ -68,21 +68,30 @@ async function persist(next: SavedServer[]): Promise<boolean> {
   }
 }
 
+/** Runs one task at a time, so a read never publishes a list older than a write that landed. */
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const result = writes.then(task);
+  writes = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+export function loadSavedServers(): Promise<void> {
+  return enqueue(readSavedServers);
+}
+
 /** Runs one change at a time against the latest list; the list only changes when the write lands. */
 function change(update: (current: SavedServer[]) => SavedServer[]): Promise<boolean> {
-  const result = writes.then(async () => {
-    if (!readable) await loadSavedServers();
+  return enqueue(async () => {
+    if (!readable) await readSavedServers();
     if (!readable) return false;
     const next = update(saved);
     if (!(await persist(next))) return false;
     saved = next;
     return true;
   });
-  writes = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
 }
 
 /**

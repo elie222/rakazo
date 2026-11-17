@@ -16,7 +16,7 @@ import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import {
   apiBaseWarning,
   defaultApiBase,
-  displayApiHost,
+  displaySavedServer,
   normalizeApiBase,
   probeApiBase,
   usesCustomApiBase,
@@ -107,7 +107,10 @@ export default function ServerScreen() {
       if (active.current) setError(t`Could not remove the server`);
       return;
     }
-    if (active.current) setSaved(savedServers());
+    if (active.current) {
+      setError(null);
+      setSaved(savedServers());
+    }
   }
 
   async function restoreDefault() {
@@ -197,14 +200,14 @@ export default function ServerScreen() {
                 <LongPressMenu
                   key={entry.apiBase}
                   colorScheme={colorScheme}
-                  title={displayApiHost(entry.apiBase)}
+                  title={displaySavedServer(entry.apiBase)}
                   actions={[{ id: "remove", title: t`Remove`, attributes: { destructive: true } }]}
                   onPressAction={() => void forget(entry.apiBase)}
                 >
                   {(onLongPress) => (
                     <SettingsRow
                       accessibilityRole="button"
-                      title={displayApiHost(entry.apiBase)}
+                      title={displaySavedServer(entry.apiBase)}
                       disabled={pending}
                       dimmed={pending}
                       onPress={() => void save(entry)}
