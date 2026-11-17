@@ -887,8 +887,6 @@ describe("BotSettings cached data", () => {
 
   it("shows a managed voice as fixed while leaving read-aloud editable", async () => {
     vi.mocked(rpc.voice.profile).mockResolvedValueOnce({
-      provider: "fish-audio",
-      connectionId: "connection-1",
       connectionName: "Private voice connection",
       voiceId: "fish-audio::voice-1",
       voiceLabel: "Managed voice profile",
