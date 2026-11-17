@@ -378,7 +378,11 @@ export async function buildTurnPrompt(
     // A hang-up turn is read, not heard: no spoken-reply constraint.
     voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
     // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-    formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
+    formatCurrentTimeInstruction(
+      deps.now?.() ?? new Date(),
+      userTimeZone,
+      previousMessageAt(historyMessages, currentTurnMessage?.id),
+    ),
     lateRoutineNote,
     sharedSpaceNote,
   ]
@@ -450,3 +454,16 @@ export async function buildTurnPrompt(
 }
 
 export type TurnPrompt = Awaited<ReturnType<typeof buildTurnPrompt>>;
+
+/** When the newest message other than this turn's was sent, read before compaction drops it. */
+export function previousMessageAt(
+  messages: ReadonlyArray<{ id: string; createdAt?: Date | null }>,
+  currentId: string | undefined,
+): Date | undefined {
+  let latest: Date | undefined;
+  for (const message of messages) {
+    if (message.id === currentId || !message.createdAt) continue;
+    if (!latest || message.createdAt > latest) latest = message.createdAt;
+  }
+  return latest;
+}
