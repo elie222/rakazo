@@ -34,14 +34,14 @@ opaque origin.
 
 If the stack is exposed through a tunnel fronted by an interstitial consent page (for
 example zrok), subresource requests fired from the opaque sandbox origin are classified
-as cross-site for cookie-sending purposes. A `SameSite=Lax` consent cookie is therefore
-not attached to them, so the interstitial can answer those requests directly (a
-header-less HTML 200) before they ever reach the screen proxy, and the module loads fail
-again. In that topology, have the user load the share's top-level page once (the
-interstitial sets its own cookie with `SameSite=None` on that navigation) and retry the
-panel; the cookie then applies to the iframe's subresources too. If this recurs for a
-deployment, prefer an embedding path that keeps the screen assets same-site with the
-panel rather than relaxing the interstitial.
+as third-party, and modern browsers do not attach cookies to third-party requests (the
+interstitial's own cookie-writing script also malforms its `SameSite` attribute, so the
+cookie degrades to the default). The interstitial then answers every asset request and
+websocket upgrade from the sandboxed screen directly (a header-less HTML 200) before it
+ever reaches the screen proxy, and neither the CORS fix nor a top-level visit can make
+the sandbox request carry the consent cookie. Exposing the deployment on a tunnel
+without an interstitial page (for example a named `cloudflared tunnel` hostname) keeps
+the sandbox isolation intact and makes the screen work in every browser.
 
 ## Verifying a deployment
 
