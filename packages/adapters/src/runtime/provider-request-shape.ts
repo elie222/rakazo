@@ -1,5 +1,5 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { fetchForRequest } from "../web/undici-fetch.js";
+import { fetchForRequest } from "../network/undici-fetch.js";
 
 /**
  * The shape of a model request a provider rejected, safe to log: key names, counts, part types,

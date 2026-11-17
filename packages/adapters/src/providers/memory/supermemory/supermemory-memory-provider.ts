@@ -15,8 +15,8 @@ import {
   localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
-} from "../../../web/local-service-endpoint.js";
-import type { ResolveHostname } from "../../../web/network-address.js";
+} from "../../../network/local-service-endpoint.js";
+import type { ResolveHostname } from "../../../network/network-address.js";
 import type { SupermemoryConnectionConfig } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,

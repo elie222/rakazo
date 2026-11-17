@@ -10,7 +10,7 @@ import { MAX_BROWSER_UPLOAD_FILES } from "@rakazo/adapter-kit";
 import type { PurchaseCardField } from "@rakazo/contracts";
 import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
-import { redactConnectorPayload } from "../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../integrations/connector-safety.js";
 import type { PurchaseApproval } from "../payments/purchase-gate.js";
 import { MAX_ACTIONS_PER_CALL } from "../runs/turn/tool-loop.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";

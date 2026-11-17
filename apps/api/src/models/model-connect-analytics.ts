@@ -33,12 +33,8 @@ type ModelConnectRecorder = (provider: string | undefined, outcome: ModelConnect
 
 /** Whether the member has no model chat can run; undefined when that could not be read. */
 async function needsFirstModel(deps: RouterDeps, actor: Actor): Promise<boolean | undefined> {
-  try {
-    return (await modelSetup(deps, actor)).needsModel;
-  } catch {
-    // Measurement must never fail a connection.
-    return undefined;
-  }
+  // Measurement must never fail a connection.
+  return (await bestEffort("model connect measurement", modelSetup(deps, actor)))?.needsModel;
 }
 
 function recorder(

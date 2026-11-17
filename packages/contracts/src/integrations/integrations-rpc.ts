@@ -21,10 +21,12 @@ import {
 } from "./integration-settings.js";
 import {
   BotMcpServerSchema,
+  McpRemoteEndpointSchema,
   McpServerConfigInput,
   McpServerSchema,
   McpSourcePresetSchema,
 } from "./mcp.js";
+import { McpOAuthClientKindSchema } from "./mcp-oauth-return.js";
 import {
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
@@ -41,6 +43,15 @@ import {
   PluginSubmissionSchema,
   PluginSubmissionStatusSchema,
 } from "./plugins.js";
+
+const McpOAuthBeginSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("authorization_required"),
+    sessionId: Id,
+    authorizationUrl: z.string().url(),
+  }),
+  z.object({ status: z.enum(["already_connected", "authorization_not_requested"]) }),
+]);
 
 export const integrationsRpc = {
   marketplace: {
@@ -103,6 +114,19 @@ export const integrationsRpc = {
     servers: {
       list: oc.output(z.array(McpServerSchema)),
       create: oc.input(McpServerConfigInput).output(McpServerSchema),
+      /** Adds a remote server by URL, or reuses the one already added, and starts its sign-in.
+       * The bot gets the server once the sign-in finishes, or at once when none is needed. */
+      connect: oc
+        .input(
+          z.object({
+            name: z.string().trim().min(1).max(120),
+            endpoint: McpRemoteEndpointSchema,
+            botId: Id.optional(),
+            redirectUri: z.string().url().optional(),
+            client: McpOAuthClientKindSchema,
+          }),
+        )
+        .output(z.object({ server: McpServerSchema, signIn: McpOAuthBeginSchema })),
       update: oc
         .input(
           z.union([
@@ -144,18 +168,15 @@ export const integrationsRpc = {
         .output(z.array(BotMcpServerSchema)),
     },
     oauth: {
-      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url().optional() })).output(
-        z.discriminatedUnion("status", [
+      begin: oc
+        .input(
           z.object({
-            status: z.literal("authorization_required"),
-            sessionId: Id,
-            authorizationUrl: z.string().url(),
+            serverId: Id,
+            redirectUri: z.string().url().optional(),
+            client: McpOAuthClientKindSchema,
           }),
-          z.object({
-            status: z.enum(["already_connected", "authorization_not_requested"]),
-          }),
-        ]),
-      ),
+        )
+        .output(McpOAuthBeginSchema),
       complete: oc
         .input(z.object({ sessionId: Id, code: z.string().min(1), state: z.string().min(1) }))
         .output(z.object({ ok: z.literal(true) })),

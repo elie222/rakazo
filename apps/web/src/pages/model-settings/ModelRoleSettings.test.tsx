@@ -531,3 +531,45 @@ it("reads and saves a Space's own list without mixing it with the account's", as
   await render({ scope: "account" });
   await vi.waitFor(() => expect(rows()).toEqual(["ChatOpenRouter"]));
 });
+
+it("saves credit and personal routes to the same model without mixing their identities", async () => {
+  api.forRole.mockResolvedValue(
+    catalog.map((entry) =>
+      entry.id === chat.modelId ? { ...entry, creditOfferingId: "offering-example" } : entry,
+    ),
+  );
+  saved = { primary: pin(chat), backups: [] };
+  await render();
+  await click(trigger("Add fallback"));
+  const credit = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (entry) =>
+      optionName(entry) === "Chat" &&
+      entry.closest("[cmdk-group]")?.textContent?.startsWith("Rakazo credits"),
+  );
+  await click(credit);
+  expect(saved).toEqual({
+    primary: pin(chat),
+    backups: [{ ...chat, creditOfferingId: "offering-example" }],
+  });
+  expect(rows()).toEqual(["ChatOpenRouter", "ChatRakazo credits"]);
+  await click(
+    container.querySelectorAll<HTMLButtonElement>('button[aria-label="Chat options"]')[1],
+  );
+  await click(
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "Move up",
+    ),
+  );
+  expect(saved.primary).toEqual({ ...chat, creditOfferingId: "offering-example" });
+  expect(saved.backups).toEqual([pin(chat)]);
+  await click(trigger("Change Chat"));
+  await click(
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (entry) =>
+        optionName(entry) === "Chat" &&
+        entry.closest("[cmdk-group]")?.textContent?.startsWith("OpenRouter"),
+    ),
+  );
+  expect(saved.primary).toEqual(pin(chat));
+  expect(saved.primary?.creditOfferingId).toBeUndefined();
+});

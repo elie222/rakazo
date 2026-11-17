@@ -14,7 +14,7 @@ import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "./credential-digest.js";
 import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 
 export type SecretCleanup = BackgroundJobPayloads["secret.cleanup"];

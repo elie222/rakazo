@@ -10,8 +10,8 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { credentialDigest } from "../../secrets/credential-digest.js";
 import { EncryptedSecretStore } from "../../secrets/secrets.js";
-import { credentialDigest } from "../../shared/credential-digest.js";
 
 /** One bot at work, as a row on the card. Opens its chat when tapped. */
 export type WorkActivityRow = {

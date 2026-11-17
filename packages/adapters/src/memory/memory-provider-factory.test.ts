@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { revalidateLocalServiceSettings } from "../web/local-service-endpoint.js";
+import { revalidateLocalServiceSettings } from "../network/local-service-endpoint.js";
 import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
