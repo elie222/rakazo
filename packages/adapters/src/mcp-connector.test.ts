@@ -7,7 +7,7 @@ import {
   ServerError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectorRegistry } from "./connector-registry.js";
@@ -2851,7 +2851,7 @@ describe("MCP connector tool list cache", () => {
       // Past the health rewrite window, a cached listing still writes nothing.
       now.mockReturnValue(10_000 + 120_000);
       await connector.discoverTools(context);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       expect(state.lists).toBe(1);
       expect(updateMany).toHaveBeenCalledTimes(1);
     } finally {

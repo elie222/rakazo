@@ -21,7 +21,7 @@ import {
 } from "./mcp-package-installer.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
-import { createSafeRemoteFetch, listMcpToolPages } from "./remote-mcp.js";
+import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -494,7 +494,7 @@ export class McpSession {
     if (cached && this.open && !options?.refresh && Date.now() < cached.freshUntil)
       return { ...cached.result, cached: true };
     const version = this.toolListVersion;
-    const { tools, ttlMs } = await listMcpToolPages(this.client, { signal: options?.signal });
+    const { tools, ttlMs } = await listMcpTools(this.client, { signal: options?.signal });
     const result = { tools };
     if (version === this.toolListVersion)
       this.toolList = {

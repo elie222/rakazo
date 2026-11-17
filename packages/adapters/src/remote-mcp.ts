@@ -124,7 +124,7 @@ export function mcpToolFields(
 
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
   const list = async (client: Client, signal: AbortSignal | undefined): Promise<ConnectorTool[]> =>
-    (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).map((tool) => ({
+    (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).tools.map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
       ...mcpToolFields(tool),
@@ -145,15 +145,9 @@ function positiveIntegerOrDefault(value: string | undefined, fallback: number): 
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Follow `tools/list` cursors, bounded by the shared page and tool caps. Tools only a
- * server's own app may call are left out: the model never sees them. */
-export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
-  return (await listMcpToolPages(client, options)).tools;
-}
-
-/** {@link listMcpTools} plus the shortest `ttlMs` freshness hint any page carried (MCP
- * caching utility); `undefined` when no page sent one. */
-export async function listMcpToolPages(
+/** Follow `tools/list` cursors within the shared caps, with the shortest `ttlMs` any page sent.
+ * Tools only a server's own app may call are left out: the model never sees them. */
+export async function listMcpTools(
   client: Client,
   options: RequestOptions,
 ): Promise<{ tools: Tool[]; ttlMs?: number }> {
