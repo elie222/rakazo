@@ -125,6 +125,19 @@ test("a fingerprint written by the model is not taken for ours", () => {
   assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
 });
 
+test("an issue edited below its fingerprint is still recognized", () => {
+  const body = `${issueBody(bug, links)}\n\nSeen again on mobile.`;
+  assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
+});
+
+test("keys that differ only past the shown length are different bugs", () => {
+  const long = "x".repeat(60);
+  assert.notEqual(
+    fingerprint({ ...bug, key: `${long}-sidebar` }),
+    fingerprint({ ...bug, key: `${long}-composer` }),
+  );
+});
+
 test("one issue per bug: open issues and repeats are skipped, and the run is capped", () => {
   const open = [{ title: "x", body: issueBody(bug, links) }];
   const other = { ...bug, key: "pinned-chats-hidden" };
