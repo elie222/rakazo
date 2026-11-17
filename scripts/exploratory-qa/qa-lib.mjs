@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 
 export const ISSUE_LABEL = "exploratory-qa";
 // Anchored to the end of the body, where only our own comment sits, so model text above it cannot pose as one.
-export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->\s*$/;
+export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->/g;
+// Model text only ever sits in code, so a fingerprint there is not ours.
+const CODE_IN_BODY = /^(`{3,})[^\n`]*\n[\s\S]*?\n\1[ \t]*$|`[^`\n]*`/gm;
 export const SCREENSHOT_NAME = /^[0-9]+-[0-9]+\.png$/;
 export const LIMITS = { workers: 6, minutesPerWorker: 30, budgetUsd: 25, issuesPerRun: 10 };
 
@@ -68,17 +70,25 @@ export function normalizePath(path) {
   );
 }
 
-function slug(text) {
+function normalized(text) {
   return String(text ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .replace(/^-+|-+$/g, "");
+}
+
+/** The bug key as shown, read back and hashed: one value, so a key read from an issue matches it. */
+function bugKey(text) {
+  return normalized(text).slice(0, 120);
 }
 
 /** Stable across runs for the same bug: feature, screen and the agent's short bug key, never its prose. */
 export function fingerprint(finding) {
-  const input = [slug(finding.feature), normalizePath(finding.path), slug(finding.key)].join("|");
+  const input = [
+    normalized(finding.feature),
+    normalizePath(finding.path),
+    bugKey(finding.key),
+  ].join("|");
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
@@ -126,7 +136,7 @@ export function issueBody(finding, { runUrl, artifactUrl }) {
     "",
     `**Feature:** ${plainText(finding.feature, 80)}`,
     `**Screen:** \`${normalizePath(finding.path)}\``,
-    `**Bug key:** \`${slug(finding.key)}\``,
+    `**Bug key:** \`${bugKey(finding.key)}\``,
     "",
     "### Steps",
     codeBlock(steps, 7000),
@@ -147,8 +157,9 @@ export function issueBody(finding, { runUrl, artifactUrl }) {
 export function fingerprintsIn(issues) {
   const found = new Set();
   for (const issue of issues) {
-    const match = FINGERPRINT_PATTERN.exec(issue.body ?? "");
-    if (match) found.add(match[1]);
+    // Matched anywhere outside code, so a person editing or appending to the issue keeps it found.
+    const prose = (issue.body ?? "").replace(CODE_IN_BODY, "");
+    for (const match of prose.matchAll(FINGERPRINT_PATTERN)) found.add(match[1]);
   }
   return found;
 }
