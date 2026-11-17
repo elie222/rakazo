@@ -869,31 +869,39 @@ export function createBillingService(deps: {
           throw new OrganizationBeingDeletedError();
         const held = await billingAccountForOrganization(prisma, organizationId);
         if (!held) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-        return withLiveCustomer(actor, held, async (customerId) => {
-          // Decide from the provider's own read, not a snapshot a missed webhook may have left
-          // stale, and not from a full sync: credit-purchase reconciliation and own-key cleanup
-          // can fail without the subscription being unreadable. The read is stored as it is made,
-          // so a refusal leaves the status the client reads next up to date. Inside the wrapper,
-          // so a customer the provider deleted is replaced and then has no plan.
-          // Assigned in the callback, which control-flow narrowing does not follow.
-          let read = null as BillingSubscriptionSnapshot | null;
-          await syncBillingSnapshot(prisma, customerId, async () => {
-            read = await provider.getCustomerSubscription(customerId);
-            return read;
-          });
-          const live = read as BillingSubscriptionSnapshot | null;
-          if (
-            !live?.subscriptionId ||
-            !(hasBillingAccess(live.status) || needsBillingPortal(live.status)) ||
-            live.cancelAtPeriodEnd
-          )
-            throw new NoPlanToCancelError();
-          return provider.createPortal({
+        const { customerId } = held;
+        // Decide from the provider's own read, not a snapshot a missed webhook may have left
+        // stale, and not from a full sync: credit-purchase reconciliation and own-key cleanup
+        // can fail without the subscription being unreadable. The read is stored as it is made,
+        // so a refusal leaves the status the client reads next up to date. A customer the
+        // provider deleted reads as having no subscription, so it is refused here like any
+        // other account with no plan; the next plain portal or checkout replaces the customer.
+        // Assigned in the callback, which control-flow narrowing does not follow.
+        let read = null as BillingSubscriptionSnapshot | null;
+        await syncBillingSnapshot(prisma, customerId, async () => {
+          read = await provider.getCustomerSubscription(customerId);
+          return read;
+        });
+        const live = read as BillingSubscriptionSnapshot | null;
+        if (
+          !live?.subscriptionId ||
+          !(hasBillingAccess(live.status) || needsBillingPortal(live.status)) ||
+          live.cancelAtPeriodEnd
+        )
+          throw new NoPlanToCancelError();
+        try {
+          return await provider.createPortal({
             customerId,
             returnUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
             cancelSubscriptionId: live.subscriptionId,
           });
-        });
+        } catch (error) {
+          if (!(error instanceof BillingCustomerNotFoundError)) throw error;
+          // Deleted since the read: deleting a customer ends its subscriptions, so none is left.
+          // Stored as such, so the status the client reads next shows no plan either.
+          await syncBillingSnapshot(prisma, customerId, async () => null);
+          throw new NoPlanToCancelError();
+        }
       });
     },
 

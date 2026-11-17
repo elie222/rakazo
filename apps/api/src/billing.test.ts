@@ -279,20 +279,43 @@ describe("opening the portal on cancelling", () => {
     }
   });
 
-  it("replaces a customer the provider deleted and then finds no plan to cancel", async () => {
-    const { billing, provider } = portalService(stored, liveSubscription);
-    vi.mocked(provider.getCustomerSubscription).mockImplementation(async (customerId) => {
-      if (customerId === "cus-1") throw new BillingCustomerNotFoundError();
-      return null;
-    });
-    Object.assign(provider, {
-      createCustomer: vi.fn(async () => ({ customerId: "cus-2" })),
-    });
+  it("refuses when the customer is deleted between the read and opening the session", async () => {
+    const { billing, provider, prisma } = portalService(stored, liveSubscription);
+    vi.mocked(provider.createPortal).mockRejectedValue(new BillingCustomerNotFoundError());
     await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      kind: "CONFLICT",
       code: "NO_PLAN_TO_CANCEL",
     });
-    expect(provider.createCustomer).toHaveBeenCalledTimes(1);
+    // The earlier live read is replaced by the none the customer's deletion left.
+    const snapshots = vi
+      .mocked(prisma.billingAccount.updateMany)
+      .mock.calls.map(([a]) => a.data as Stored)
+      .filter((data) => "subscriptionId" in data);
+    expect(snapshots.map((data) => data.subscriptionId)).toEqual(["sub-live", null]);
+  });
+
+  it("passes any other failure of opening the session through", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    vi.mocked(provider.createPortal).mockRejectedValue(new Error("provider unavailable"));
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
+      "provider unavailable",
+    );
+  });
+
+  it("refuses a customer the provider deleted, which reads as having no subscription, and stores that", async () => {
+    // A deleted customer reads as having no live subscription (the conformance suite accepts
+    // null or a canceled snapshot); either way the cancel is refused.
+    const { billing, provider, prisma } = portalService(stored, null);
+    Object.assign(provider, { createCustomer: vi.fn() });
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      kind: "CONFLICT",
+      code: "NO_PLAN_TO_CANCEL",
+    });
+    expect(provider.createCustomer).not.toHaveBeenCalled();
     expect(provider.createPortal).not.toHaveBeenCalled();
+    expect(prisma.billingAccount.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subscriptionId: null }) }),
+    );
   });
 });
 
