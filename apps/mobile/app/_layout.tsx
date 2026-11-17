@@ -55,6 +55,7 @@ import { AvatarScreenFocus } from "../lib/avatar-life";
 import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import { useCallActive } from "../lib/call-session";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
+import { loadComposerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { loadHapticsPreference } from "../lib/haptics";
 import { bootstrapI18n } from "../lib/i18n";
 import { startIncomingCalls } from "../lib/incoming-calls";
@@ -375,6 +376,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
@@ -571,6 +573,15 @@ function LayoutContent() {
                         options={glassHeaderOptions(t`Chat settings`)}
                       />
                       <Stack.Screen name="bot-model" options={glassHeaderOptions(t`Model`)} />
+                      <Stack.Screen
+                        name="chat-model"
+                        options={{
+                          ...glassHeaderOptions(t`Model`),
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                        }}
+                      />
                       <Stack.Screen
                         name="thread"
                         options={({ route }) => ({

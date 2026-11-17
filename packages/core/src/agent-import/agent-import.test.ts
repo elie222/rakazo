@@ -2,7 +2,7 @@ import type { AgentImportFile } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { parseSkillMd } from "../agent-skill.js";
+import { parseSkillMd } from "../skills/agent-skill.js";
 import {
   AGENT_IMPORT_PROMPT,
   agentImportFolder,

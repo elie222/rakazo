@@ -1197,6 +1197,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
                         current.map((bot) => (bot.id === updated.id ? updated : bot)),
