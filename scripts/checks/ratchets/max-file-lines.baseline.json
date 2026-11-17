@@ -37,7 +37,6 @@
   "packages/adapters/src/bot-secrets.test.ts": 1,
   "packages/adapters/src/bot-secrets.ts": 1,
   "packages/adapters/src/browser-tools.test.ts": 1,
-  "packages/adapters/src/builtin.tool-definition.ts": 1,
   "packages/adapters/src/child-bots.test.ts": 1,
   "packages/adapters/src/child-bots.ts": 1,
   "packages/adapters/src/composio-connector.test.ts": 1,
