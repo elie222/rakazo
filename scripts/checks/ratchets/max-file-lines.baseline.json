@@ -92,9 +92,9 @@
   "packages/core/src/threads/thread-snapshot-events.test.ts": 1,
   "packages/db/src/threads/events.test.ts": 1,
   "packages/db/src/threads/events.ts": 1,
-  "packages/testkit/src/authorization.test.ts": 1,
-  "packages/testkit/src/evals/recall.ts": 1,
   "packages/testkit/src/evals/runner.ts": 1,
-  "packages/testkit/src/executor-lifecycle.test.ts": 1,
-  "packages/testkit/src/journeys.test.ts": 1
+  "packages/testkit/src/evals/suites/recall.ts": 1,
+  "packages/testkit/src/product/authorization.test.ts": 1,
+  "packages/testkit/src/product/executor-lifecycle.test.ts": 1,
+  "packages/testkit/src/product/journeys.test.ts": 1
 }

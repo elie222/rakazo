@@ -24,8 +24,8 @@
   "packages/db/src/encryption/content-encryption.postgres.test.ts": 1,
   "packages/logging/src/hono.test.ts": 1,
   "packages/logging/src/logger.test.ts": 1,
-  "packages/testkit/src/computer-use.e2e.test.ts": 2,
-  "packages/testkit/src/eval-group.postgres.test.ts": 1,
-  "packages/testkit/src/providers.canary.test.ts": 1,
-  "packages/testkit/src/release-watch.canary.test.ts": 1
+  "packages/testkit/src/computers/computer-use.e2e.test.ts": 2,
+  "packages/testkit/src/evals/suites/eval-group.postgres.test.ts": 1,
+  "packages/testkit/src/infra/providers.canary.test.ts": 1,
+  "packages/testkit/src/infra/release-watch.canary.test.ts": 1
 }
