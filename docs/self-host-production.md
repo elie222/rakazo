@@ -238,6 +238,6 @@ non-persistent directory, unless you run Docker computers: they mount their cach
 host. The [data directory](./self-host-storage.md#data-directory) lists what each path holds.
 
 Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
-proxy routes. Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
+proxy routes. Behind a cookie login gate, exempt only `/novnc/session/*` ([why](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer)). Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
 service's trust boundary. `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` apply from the environment on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
