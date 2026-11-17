@@ -5,12 +5,12 @@ import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ScriptedVoiceProvider } from "./providers/voice/scripted/scripted-voice.js";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
-import type { DefaultVoiceDeps } from "./voice-model-connection.js";
 import {
   hasVoiceForMessages,
   speakVoiceMessage,
   voiceMessageRequestedByOwner,
 } from "./voice-message.js";
+import type { DefaultVoiceDeps } from "./voice-model-connection.js";
 
 const db = vi.hoisted(() => ({ findDefaultVoiceCredential: vi.fn() }));
 const connection = vi.hoisted(() => ({ loadDefaultVoice: vi.fn() }));
@@ -134,7 +134,10 @@ describe("voice messages", () => {
     expect(voiceMessageRequestedByOwner("user", own)).toBe(true);
     expect(voiceMessageRequestedByOwner("messaging", other)).toBe(true);
     expect(
-      voiceMessageRequestedByOwner("messaging", { ownerStartedRun: false, messagingChannelRun: true }),
+      voiceMessageRequestedByOwner("messaging", {
+        ownerStartedRun: false,
+        messagingChannelRun: true,
+      }),
     ).toBe(false);
     for (const trigger of ["bot_message", "routine", "webhook", "email", "tickets"])
       expect(voiceMessageRequestedByOwner(trigger, other)).toBe(false);

@@ -221,7 +221,8 @@ export const fileTools: ToolHandlers = {
         reason: error instanceof Error ? error.name : "unknown",
       });
       return call.finish({
-        error: "The recording could not be attached. It was already made, so do not retry automatically.",
+        error:
+          "The recording could not be attached. It was already made, so do not retry automatically.",
       });
     }
   },
