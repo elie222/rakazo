@@ -1,7 +1,7 @@
 import type { Criterion, EvalCase, Evidence, Step } from "./cases.js";
 import type { JudgeInput } from "./judge.js";
 
-export const ROUTINE_MODE_FIXTURE_VERSION = "routine-mode-v1";
+export const ROUTINE_MODE_FIXTURE_VERSION = "routine-mode-v2";
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 
@@ -85,7 +85,7 @@ const ALONGSIDE: Array<{ id: string; steps: Step[]; request: string; earlier?: s
   },
   {
     id: "routine-mode-reminder",
-    request: "Remind me to call the dentist at 3pm today.",
+    request: "Remind me to call the dentist at 3pm New York time today.",
     steps: [],
   },
   {
@@ -99,7 +99,7 @@ const ALONGSIDE: Array<{ id: string; steps: Step[]; request: string; earlier?: s
 const LAUNCH_PLAN =
   "Let's write the launch plan for our v2 release here. The work is: update the docs, rebuild the pricing page, and send the announcement email. Write it out as a checklist with an owner placeholder for each item.";
 const BLOG_DRAFT =
-  "Draft a three-paragraph intro for a blog post announcing our v2 release. Keep it plain and friendly.";
+  "Draft a three-paragraph intro for a blog post announcing our v2 release, which adds offline mode, a faster search and a new dashboard. Keep it plain and friendly.";
 
 /** Follow-ups that continue work the conversation is doing. */
 const IN_CHAT: Array<{ id: string; steps: Step[]; request: string }> = [
@@ -112,7 +112,7 @@ const IN_CHAT: Array<{ id: string; steps: Step[]; request: string }> = [
   {
     id: "routine-mode-draft-revision",
     request:
-      "Tomorrow at 9am, revise that draft using whatever feedback I've left in this chat by then.",
+      "Tomorrow at 9am New York time, revise that draft using whatever feedback I've left in this chat by then.",
     steps: [{ ask: BLOG_DRAFT }],
   },
 ];
