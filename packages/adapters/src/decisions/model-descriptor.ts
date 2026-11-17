@@ -1,3 +1,4 @@
+import type { DecisionProvider, DecisionProviderOptions } from "@rakazo/adapter-kit";
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 
 /** Provider-owned decision protocol identifiers and pricing provenance. */
@@ -9,4 +10,7 @@ export interface DecisionModelDescriptor {
   pricingVersion: string;
   pricingUrl: string;
   catalog?: ModelCatalogEntry;
+  create: (options: DecisionProviderOptions) => DecisionProvider;
+  deploymentApiKey: (env: NodeJS.ProcessEnv) => string | undefined;
+  includedByDefault?: boolean;
 }

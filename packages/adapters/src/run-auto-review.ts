@@ -11,7 +11,6 @@ import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
 import { operatorReviewObserver } from "./decisions/operator-review-usage.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
@@ -91,58 +90,64 @@ export async function autoReviewCheckerProvider(
   ) {
     throw new Error("Selected checker connection is unavailable");
   }
-  const judgeKey = await resolveModelKey(
-    operatorFunded ? { ...deps, billingEnabled: false } : deps,
-    userId,
-    spaceId,
-    reviewCredential,
-    checker.provider,
-    checker.model,
-    registerSecrets,
-  );
-  const callObserver = operatorObserver ?? judgeKey.callObserver;
-  return decisionModel(checker.provider, checker.model)
-    ? new DecisionAutoReviewProvider({
-        provider: new HttpDecisionProvider("openrouter", {
-          apiKey: judgeKey.apiKey ?? "",
-          callObserver,
-          onUsage: operatorFunded ? undefined : onUsage,
-        }),
-        providerId: checker.provider,
-        model: checker.model,
-      })
-    : createAutoReviewProvider("llm", {
-        llm: {
-          onUsage,
-          runtime: deps.runtime,
-          checker,
-          apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
-          callObserver,
-          accountId: judgeKey.accountId,
-          gatewayId: judgeKey.gatewayId,
-          projectId: judgeKey.projectId,
-          region: judgeKey.region,
-          baseUrl: judgeKey.baseUrl,
-          headers: judgeKey.headers,
-          allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
-          cacheCapabilities: judgeKey.cacheCapabilities,
-          contextWindow: judgeKey.contextWindow,
-          maxTokens: judgeKey.maxTokens,
-          reasoning: judgeKey.reasoning,
-          oauth: judgeKey.oauth
-            ? {
-                credential: judgeKey.oauth,
-                persist: judgeKey.persistOAuth,
-                refresh: judgeKey.refreshOAuth,
-                retire: judgeKey.retireOAuth,
-              }
-            : undefined,
-          runId,
-          spaceId,
-          userId,
-          botId,
-          threadId,
-          timeoutMs: autoReviewTimeoutMs(),
-        },
-      });
+  const decision = decisionModel(checker.provider, checker.model);
+  const includedKey = included ? decision?.deploymentApiKey(process.env) : undefined;
+  if (includedKey) registerSecrets([includedKey]);
+  const judgeKey = includedKey
+    ? null
+    : await resolveModelKey(
+        operatorFunded ? { ...deps, billingEnabled: false } : deps,
+        userId,
+        spaceId,
+        reviewCredential,
+        checker.provider,
+        checker.model,
+        registerSecrets,
+      );
+  const callObserver = operatorObserver ?? judgeKey?.callObserver;
+  if (decision)
+    return new DecisionAutoReviewProvider({
+      provider: decision.create({
+        apiKey: includedKey ?? judgeKey?.apiKey ?? "",
+        callObserver,
+        onUsage: operatorFunded ? undefined : onUsage,
+      }),
+      providerId: checker.provider,
+      model: checker.model,
+    });
+  if (!judgeKey) throw new Error("Selected checker connection is unavailable");
+  return createAutoReviewProvider("llm", {
+    llm: {
+      onUsage,
+      runtime: deps.runtime,
+      checker,
+      apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
+      callObserver,
+      accountId: judgeKey.accountId,
+      gatewayId: judgeKey.gatewayId,
+      projectId: judgeKey.projectId,
+      region: judgeKey.region,
+      baseUrl: judgeKey.baseUrl,
+      headers: judgeKey.headers,
+      allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
+      cacheCapabilities: judgeKey.cacheCapabilities,
+      contextWindow: judgeKey.contextWindow,
+      maxTokens: judgeKey.maxTokens,
+      reasoning: judgeKey.reasoning,
+      oauth: judgeKey.oauth
+        ? {
+            credential: judgeKey.oauth,
+            persist: judgeKey.persistOAuth,
+            refresh: judgeKey.refreshOAuth,
+            retire: judgeKey.retireOAuth,
+          }
+        : undefined,
+      runId,
+      spaceId,
+      userId,
+      botId,
+      threadId,
+      timeoutMs: autoReviewTimeoutMs(),
+    },
+  });
 }

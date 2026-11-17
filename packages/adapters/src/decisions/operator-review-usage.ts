@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type { PrismaClient, UsageAttribution } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
-import { decisionModel } from "../decision-models.js";
+import { decisionInputCost, decisionModel } from "../decision-models.js";
 
 /** Record intent before dispatch, so a process loss leaves an explicitly unknown expense. */
 export function operatorReviewObserver(
@@ -58,7 +58,7 @@ export function operatorReviewObserver(
       const estimate =
         usage && usage.costUsd == null && pricing && typeof input === "number"
           ? {
-              costUsd: (input * pricing.inputUsdPerMillion) / 1_000_000,
+              costUsd: decisionInputCost(pricing, input),
               costSource: usage.inputTokens == null ? "request-token-estimate" : "catalog-estimate",
             }
           : {};

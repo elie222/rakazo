@@ -175,7 +175,7 @@ describe("decision provider failures", () => {
     );
   });
 
-  it("does not count a request that never connected", async () => {
+  it("retains unknown billing when a dispatched request loses its response", async () => {
     const afterCall = vi.fn();
     await expect(
       new HttpDecisionProvider("typesafe", {
@@ -186,7 +186,10 @@ describe("decision provider failures", () => {
         callObserver: { beforeCall: () => "reservation", afterCall },
       }).decide(request, context),
     ).rejects.toMatchObject({ kind: "unavailable" });
-    expect(afterCall).toHaveBeenCalledWith("reservation", null);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null, usageSource: "unavailable" }),
+    );
   });
 
   it("refuses a blank API key before any request", () => {
@@ -285,3 +288,24 @@ it.each([false, true])(
     expect(afterCall).toHaveBeenCalledWith("hold", result.usage);
   },
 );
+
+it("releases an observer intent when cancellation happens before dispatch", async () => {
+  const controller = new AbortController();
+  const afterCall = vi.fn();
+  const fetchMock = vi.fn();
+  await expect(
+    new HttpDecisionProvider("typesafe", {
+      apiKey: "fake-key",
+      fetch: fetchMock,
+      callObserver: {
+        beforeCall: () => {
+          controller.abort();
+          return "intent";
+        },
+        afterCall,
+      },
+    }).decide(request, { ...context, signal: controller.signal }),
+  ).rejects.toMatchObject({ kind: "unavailable" });
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(afterCall).toHaveBeenCalledWith("intent", null);
+});

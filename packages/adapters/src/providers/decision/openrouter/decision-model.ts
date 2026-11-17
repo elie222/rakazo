@@ -1,6 +1,10 @@
 import type { DecisionModelDescriptor } from "../../../decisions/model-descriptor.js";
+import { HttpDecisionProvider } from "../../../http-decisions.js";
 
 export const openRouterDecisionModel: DecisionModelDescriptor = {
+  create: (options) => new HttpDecisionProvider("openrouter", options),
+  deploymentApiKey: (env) => env.OPENROUTER_API_KEY?.trim() || undefined,
+  includedByDefault: true,
   provider: "openrouter",
   id: "typesafe/jev-1.14",
   inputUsdPerMillion: 0.042,
