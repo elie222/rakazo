@@ -64,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -241,12 +242,13 @@ describe("BoatSandboxProvider", () => {
       api.setState(computer.id, "archived");
       api.rateLimit();
       await expect(reconnect(provider, computer)).rejects.toBeInstanceOf(SandboxRateLimitError);
-      expect(sink.events.map(({ operation, outcome }) => ({ operation, outcome }))).toEqual([
+      const starts = sink.events.filter((event) => event.message === "sandbox.start");
+      expect(starts.map(({ operation, outcome }) => ({ operation, outcome }))).toEqual([
         { operation: "create", outcome: "accepted" },
         { operation: "resume", outcome: "accepted" },
         { operation: "resume", outcome: "rate_limited" },
       ]);
-      for (const event of sink.events) {
+      for (const event of starts) {
         const failed = event.outcome !== "accepted";
         expect(Object.keys(event).sort()).toEqual([
           "durationMs",
@@ -684,7 +686,7 @@ describe("BoatSandboxProvider", () => {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
     expect(resume).toHaveBeenCalledOnce();
-    expect(sink.events).toEqual([
+    expect(sink.events.filter((event) => event.message === "sandbox.start")).toEqual([
       expect.objectContaining({
         level: "info",
         message: "sandbox.start",
@@ -1036,11 +1038,96 @@ describe("BoatSandboxProvider", () => {
     }
   });
 
+  describe("wait diagnostics", () => {
+    it("reports a stuck start once with safe provider state and keeps the same failure", async () => {
+      const api = new FakeBoatApi();
+      const read = api.get.bind(api);
+      const snapshotAt = new Date(Date.now() - 60_000);
+      const get = vi.spyOn(api, "get").mockImplementation(async (request) => {
+        const response = await read(request);
+        Object.assign(response.sandbox, {
+          state: "archiving",
+          name: "private sandbox name",
+          setupError: "private command output",
+          hydrated: false,
+          lastSnapshotStatus: "in_progress",
+          snapshotCompletedAt: snapshotAt,
+          stop: {
+            id: "stop-1",
+            status: "pending",
+            requestedAt: snapshotAt,
+            lastAttemptAt: null,
+            endedAt: null,
+            error: "private stop error",
+          },
+        });
+        return response;
+      });
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+      const sink = createTestSink();
+      const log = createLogger({ service: "test", sinks: [sink] });
+      installLogger(log);
+      await expect(
+        log.withContext({ "computer.id": "computer-1" }, () => reconnect(provider, computer)),
+      ).rejects.toBeInstanceOf(SandboxUnavailableError);
+
+      expect(get.mock.calls.length).toBeGreaterThan(20);
+      const events = sink.events.filter((event) => event.message === "sandbox.wait");
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({ level: "info", outcome: "waiting" });
+      expect(events[1]).toMatchObject({
+        level: "error",
+        "computer.id": "computer-1",
+        "sandbox.id": computer.id,
+        operation: "start",
+        outcome: "failed",
+        state: "archiving",
+        hydrated: false,
+        lastSnapshotStatus: "in_progress",
+        stopStatus: "pending",
+        error: { name: "SandboxUnavailableError" },
+      });
+      expect(events[1]?.durationMs).toBeGreaterThanOrEqual(5 * 60_000);
+      expect(JSON.parse(String(events[1]?.["error.details"]))).toMatchObject({
+        state: "archiving",
+        snapshotCompletedAt: snapshotAt.toISOString(),
+        stopRequestedAt: snapshotAt.toISOString(),
+      });
+      expect(JSON.stringify(events)).not.toContain("private");
+      expect(api.state(computer.id)).toBe("ready");
+      expect(api.creates).toHaveLength(1);
+    });
+
+    it("records changing states and eventual readiness without reporting an error", async () => {
+      const api = new FakeBoatApi();
+      const read = api.get.bind(api);
+      const states: SandboxStateEnum[] = ["archiving", "archiving", "provisioning", "ready"];
+      vi.spyOn(api, "get").mockImplementation(async (request) => {
+        const response = await read(request);
+        response.sandbox.state = states.shift() ?? "ready";
+        return response;
+      });
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
+      expect(sink.events.map(({ state, outcome, level }) => ({ state, outcome, level }))).toEqual([
+        { state: "archiving", outcome: "waiting", level: "info" },
+        { state: "provisioning", outcome: "waiting", level: "info" },
+        { state: "ready", outcome: "completed", level: "info" },
+      ]);
+    });
+  });
+
   describe("a stop Boat refuses because its saves fail", () => {
     it("waits on Boat's retries without forcing it unless asked", async () => {
       const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
       const { api, provider, computer } = await boat();
       api.damage(computer.id);
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
 
       const stopped = provider.stop(computer, context);
       await expect(stopped).rejects.toBeInstanceOf(SandboxUnresponsiveError);
@@ -1051,6 +1138,24 @@ describe("BoatSandboxProvider", () => {
         { signal: context.signal },
       );
       expect(api.state(computer.id)).toBe("ready");
+      expect(sink.events.filter((event) => event.message === "sandbox.wait")).toEqual([
+        expect.objectContaining({ outcome: "waiting", stopStatus: "failing" }),
+        expect.objectContaining({
+          level: "error",
+          operation: "stop",
+          outcome: "failed",
+          "sandbox.id": computer.id,
+          state: "ready",
+          hydrated: false,
+          lastSnapshotStatus: "failed",
+          stopStatus: "failing",
+          error: {
+            name: "SandboxUnresponsiveError",
+            message: expect.any(String),
+            stack: expect.any(String),
+          },
+        }),
+      ]);
     });
 
     it("forces it to Boat's last good snapshot when the caller may discard unsaved work", async () => {

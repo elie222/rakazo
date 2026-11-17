@@ -67,11 +67,25 @@ export async function queueComputerUpdate(
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
+    const busy = (reason: string) => {
+      getLogger().warn("computer.maintenance_refused", {
+        "computer.id": computerId,
+        "bot.id": botId,
+        action,
+        reason,
+        "computer.observed_state": computer.state,
+        maintenanceReserved: Boolean(computer.maintenanceId),
+        controlHolder: computer.controlHolder,
+        controlLeasePresent: Boolean(computer.controlLeaseId),
+        controlLeaseExpiresAt: computer.controlLeaseExpiresAt,
+      });
+      return new ComputerBusyError();
+    };
     if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
     const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
-    if (computer.controlLeaseId && !idleTakeover) throw new ComputerBusyError();
+    if (computer.controlLeaseId && !idleTakeover) throw busy("screen_control");
 
     let handback: IdleTakeoverHandback | null = null;
     if (idleTakeover) {
@@ -91,7 +105,7 @@ export async function queueComputerUpdate(
             },
       });
       // The waiting-run check is this CAS: a run that attached loses the claim with it.
-      if (cleared.count !== 1) throw new ComputerBusyError();
+      if (cleared.count !== 1) throw busy("handback_claim_lost");
       handback = {
         leaseId: computer.controlLeaseId,
         expiresAt: computer.controlLeaseExpiresAt,
@@ -140,7 +154,7 @@ export async function queueComputerUpdate(
       },
       data: { maintenanceId: update.id },
     });
-    if (claimed.count !== 1) throw new ComputerBusyError();
+    if (claimed.count !== 1) throw busy("maintenance_claim_refused");
     await tx.computerUpdate.updateMany({
       where: { computerId, status: "failed" },
       data: { status: "dismissed" },
@@ -190,7 +204,12 @@ export async function queueComputerUpdate(
           prepared.handback.leaseId,
         );
       } catch (error) {
-        getLogger().error("release own takeover before maintenance", error);
+        getLogger().error("release own takeover before maintenance", error, {
+          "computer.id": computerId,
+          "bot.id": botId,
+          updateId: prepared.row.id,
+          action,
+        });
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
         throw new ComputerBusyError();
       }

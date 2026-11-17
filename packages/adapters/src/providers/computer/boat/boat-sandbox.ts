@@ -856,6 +856,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
     reconnect?: { savedAt?: Date; type?: SandboxTypeEnum },
   ): Promise<boolean> {
+    const logWait = sandboxWaitLog(id, "start");
     let deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let started = false;
     let recovering = false;
@@ -867,9 +868,11 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       const { sandbox } = await this.client.get({ sandboxId: id }, { signal });
       if (RUNNABLE_STATES.has(sandbox.state)) {
+        logWait(sandbox, "completed");
         if (recovering) logRecovery(forced ? "resumed" : "answered");
         return started;
       }
+      logWait(sandbox);
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
       if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
       if (sandbox.state === "archived" && !started) {
@@ -889,9 +892,11 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (Date.now() >= deadline) {
         if (sandbox.state !== "error") {
-          throw new SandboxUnavailableError({
+          const error = new SandboxUnavailableError({
             cause: new Error(`Boat ${id} did not become ready`),
           });
+          logWait(sandbox, "failed", error);
+          throw error;
         }
         const snapshotAt = sandbox.snapshotCompletedAt;
         if (forced || !snapshotAt) {
@@ -900,7 +905,11 @@ export class BoatSandboxProvider implements SandboxProvider {
         }
         if (!reconnect) {
           logRecovery("deferred");
-          throw new SandboxUnavailableError({ cause: new Error(`Boat ${id} is not answering`) });
+          const error = new SandboxUnavailableError({
+            cause: new Error(`Boat ${id} is not answering`),
+          });
+          logWait(sandbox, "failed", error);
+          throw error;
         }
         if (reconnect.savedAt && reconnect.savedAt >= snapshotAt) {
           logRecovery("gone", "checkpoint_newer");
@@ -991,16 +1000,30 @@ export class BoatSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     onWait?: (sandbox: BoatMachine) => Promise<void>,
   ): Promise<BoatMachine> {
+    const logWait = sandboxWaitLog(id, "stop");
     const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     for (let pause = 1_000; ; pause = nextPoll(pause)) {
       if (context.signal.aborted) throw context.signal.reason ?? new Error("Boat wait aborted");
       const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
-      if (states.has(response.sandbox.state)) return response.sandbox;
-      if (response.sandbox.state === "error") throw new Error(`Boat ${id} entered the error state`);
+      if (states.has(response.sandbox.state)) {
+        logWait(response.sandbox, "completed");
+        return response.sandbox;
+      }
+      logWait(response.sandbox);
+      if (response.sandbox.state === "error") {
+        const error = new Error(`Boat ${id} entered the error state`);
+        logWait(response.sandbox, "failed", error);
+        throw error;
+      }
       await onWait?.(response.sandbox);
       // A transition Boat has not finished in time is a delay on its side; the caller retries.
-      if (Date.now() >= deadline)
-        throw new SandboxUnresponsiveError(`Boat ${id} did not reach ${[...states].join("/")}`);
+      if (Date.now() >= deadline) {
+        const error = new SandboxUnresponsiveError(
+          `Boat ${id} did not reach ${[...states].join("/")}`,
+        );
+        logWait(response.sandbox, "failed", error);
+        throw error;
+      }
       await delay(pause, undefined, { signal: context.signal });
     }
   }
@@ -1514,6 +1537,52 @@ function logRecovery(
   reason?: string,
 ): void {
   getLogger().warn("sandbox.recover", { provider: "boat", step, ...(reason ? { reason } : {}) });
+}
+
+/** State changes only, never each poll. Keep provider responses and stop errors out of logs. */
+function sandboxWaitLog(id: string, operation: "start" | "stop") {
+  const startedAt = Date.now();
+  let previous: string | undefined;
+  return (
+    sandbox: BoatMachine,
+    outcome: "waiting" | "completed" | "failed" = "waiting",
+    error?: Error,
+  ) => {
+    if (outcome === "completed" && previous === undefined) return;
+    const state = {
+      state: sandbox.state,
+      hydrated: sandbox.hydrated ?? null,
+      lastSnapshotStatus: sandbox.lastSnapshotStatus ?? null,
+      stopStatus: sandbox.stop?.status ?? null,
+    };
+    const signature = JSON.stringify(state);
+    if (outcome === "waiting" && signature === previous) return;
+    previous = signature;
+    const details = {
+      ...state,
+      snapshotCompletedAt: sandbox.snapshotCompletedAt ?? null,
+      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt ?? null,
+      stopRequestedAt: sandbox.stop?.requestedAt ?? null,
+      stopLastAttemptAt: sandbox.stop?.lastAttemptAt ?? null,
+    };
+    const bindings = {
+      provider: "boat",
+      "sandbox.id": id,
+      operation,
+      outcome,
+      durationMs: Date.now() - startedAt,
+      ...details,
+    };
+    if (error) {
+      getLogger().error("sandbox.wait", error, {
+        ...bindings,
+        "error.details": JSON.stringify(bindings),
+        "error.fingerprint": ["sandbox.wait", operation],
+      });
+    } else {
+      getLogger().info("sandbox.wait", bindings);
+    }
+  };
 }
 
 /** A signed transfer Boat failed on its side is an outage there, like any other Boat call. */

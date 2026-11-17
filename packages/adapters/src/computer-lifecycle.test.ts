@@ -4172,6 +4172,7 @@ describe("computer replacement", () => {
       controlLeaseId: null,
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       homeRevision: null,
+      homeRevisionAt: new Date("2024-01-01T00:00:00.000Z"),
     };
     const findUniqueOrThrow = vi
       .fn()
@@ -4199,6 +4200,8 @@ describe("computer replacement", () => {
     } as unknown as PrismaClient;
     const destroy = vi.spyOn(sandbox, "destroy");
 
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
       const ref = await replaceComputer(
         {
@@ -4219,7 +4222,18 @@ describe("computer replacement", () => {
         destroy.mock.invocationCallOrder[0]!,
       );
       expect(ref.fresh).toBe(true);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          message: "computer.recovery_checkpoint_skipped",
+          "computer.id": "computer-1",
+          "bot.id": "bot-1",
+          "error.type": "Error",
+          reason: "export_failed",
+          homeRevisionAt: computerRecord.homeRevisionAt,
+        }),
+      );
     } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await rm(dataDir, { recursive: true, force: true });
       await rm(homeRoot, { recursive: true, force: true });
     }

@@ -31,6 +31,15 @@ Computer usage is recorded at several boundaries:
   separate outcomes. Count accepted creates/resumes for start usage; recoveries are shown separately
   because their quota treatment depends on the provider.
 - `computer.suspended`: successful idle or active-limit suspension, with the active duration.
+- `sandbox.wait`: Boat readiness and stop waits, with the sandbox id, state, hydration, snapshot
+  status and timestamps, stop status and timestamps, and elapsed time. Unchanged polls produce no
+  extra lines; an immediate success produces none. Terminal timeouts are errors, so an optional
+  error collector receives them with the safe state fields in `error.details`.
+- `computer.maintenance_refused`: a recovery or update refused as busy, with its guard reason and
+  the computer state and control reservation as last read. A refused conditional claim means
+  the state may have changed, or an active run or execution lease prevented maintenance.
+- `computer.recovery_checkpoint_skipped`: recovery continuing from the last saved workspace after
+  an export failed or the old sandbox disappeared, with the last workspace save time.
 
 These records use fixed metadata, opaque correlation IDs, durations, and booleans. They do not add
 prompts, responses, filenames, file contents, command arguments, or credentials. Request/job trace

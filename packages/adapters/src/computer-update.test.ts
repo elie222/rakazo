@@ -347,11 +347,22 @@ describe("background computer maintenance", () => {
 
   it("rejects a busy computer before publishing an operation", async () => {
     const { row, deps, computer, jobs } = fixture();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
     computer.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(queueComputerUpdate(deps, row.computerId, row.botId)).rejects.toThrow(
       "Computer is busy",
     );
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.maintenance_refused",
+        "computer.id": row.computerId,
+        "bot.id": row.botId,
+        action: "update",
+        reason: "maintenance_claim_refused",
+      }),
+    );
   });
 
   it("claims maintenance and an idle takeover together, then revokes before publishing", async () => {
