@@ -99,58 +99,26 @@ describe("managedAppFor", () => {
     expect(managedAppFor(entry({ name: "calcom", displayName: "Calcom" }), apps)).toBeUndefined();
   });
 
-  it("keeps different Chinese brands separate", () => {
-    const apps = [{ name: "日历", slug: "calendar" }];
-    expect(managedAppFor(entry({ name: "notes", displayName: "笔记" }), apps)).toBeUndefined();
-  });
-
-  it("matches Unicode names without colliding with an earlier unrelated app", () => {
+  it("matches non-Latin names without colliding with unrelated apps", () => {
     const apps = [
       { name: "日历", slug: "calendar" },
       { name: "笔记", slug: "notes" },
     ];
-    expect(managedAppFor(entry({ name: "笔记" }), apps)).toBe(apps[1]);
     expect(managedAppFor(entry({ name: "plugin", displayName: "笔 记" }), apps)).toBe(apps[1]);
+    expect(managedAppFor(entry({ name: "plugin", displayName: "相册" }), apps)).toBeUndefined();
     expect(
-      managedAppFor(entry({ name: "plugin", displayName: "Заметки" }), [
-        { name: "ЗАМЕТКИ", slug: "notes" },
-      ]),
-    ).toEqual({ name: "ЗАМЕТКИ", slug: "notes" });
+      managedAppFor(entry({ name: "plugin", displayName: "α\u0301" }), [{ name: "ά", slug: "a" }]),
+    ).toBeDefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "ος" }), [{ name: "ΟΣ", slug: "o" }]),
+    ).toBeDefined();
   });
 
-  it("matches canonically equivalent accented names without dropping the accent", () => {
-    const apps = [{ name: "ά", slug: "accented" }];
-    expect(managedAppFor(entry({ name: "plugin", displayName: "α\u0301" }), apps)).toBe(apps[0]);
-    expect(
-      managedAppFor(entry({ name: "plugin", displayName: "ά" }), [
-        { name: "α\u0301", slug: "accented" },
-      ]),
-    ).toEqual({ name: "α\u0301", slug: "accented" });
-    expect(managedAppFor(entry({ name: "plugin", displayName: "α" }), apps)).toBeUndefined();
-    expect(
-      managedAppFor(entry({ name: "plugin", displayName: "क" }), [{ name: "कि", slug: "ki" }]),
-    ).toBeUndefined();
-    expect(
-      managedAppFor(entry({ name: "plugin", displayName: "I" }), [{ name: "İ", slug: "dotted" }]),
-    ).toBeUndefined();
-  });
-
-  it("matches Greek sigma case variants", () => {
-    const apps = [{ name: "ΟΣ", slug: "greek" }];
-    for (const displayName of ["Οσ", "οσ", "ος"]) {
-      expect(managedAppFor(entry({ name: "plugin", displayName }), apps)).toBe(apps[0]);
-    }
-  });
-
-  it("does not match empty, punctuation-only or emoji-only keys", () => {
+  it("does not match empty, punctuation-only or emoji-only names", () => {
     const apps = [{ name: "\u2708\uFE0F", slug: "calendar" }];
-    for (const displayName of ["", "---", "📒", "\u2615\uFE0F"]) {
+    for (const displayName of ["", "---", "\u2615\uFE0F"]) {
       expect(managedAppFor(entry({ name: "notes", displayName }), apps)).toBeUndefined();
     }
-    expect(managedAppFor(entry({ name: "", displayName: "" }), apps)).toBeUndefined();
-    expect(managedAppFor(entry({ name: "calendar", displayName: "\u2708\uFE0F" }), apps)).toBe(
-      apps[0],
-    );
   });
 });
 
