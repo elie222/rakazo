@@ -212,6 +212,30 @@ describe("Telegram authenticated linking destination", () => {
     },
   );
 
+  it("keeps a destination hidden when an older lookup succeeds after a newer failure", async () => {
+    const { surface } = createSurface();
+    const startup = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => startup.promise)
+      .mockRejectedValueOnce(new TypeError("newer verification failed"));
+    vi.stubGlobal("fetch", fetchMock);
+    const initializing = surface.initialize();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(await surface.resolveAddresses()).toEqual({});
+    startup.resolve(
+      Response.json({
+        ok: true,
+        result: { id: 999, is_bot: true, username: "previous_testbot" },
+      }),
+    );
+    await initializing;
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await surface.shutdown();
+  });
+
   it("discovers default and named bot destinations independently from their own tokens", async () => {
     vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
     vi.stubGlobal(

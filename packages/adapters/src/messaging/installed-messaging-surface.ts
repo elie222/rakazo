@@ -9,7 +9,7 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { credentialDigest } from "../shared/credential-digest.js";
-import { MessagingSendError } from "./chat-sdk-surface.js";
+import { MessagingSendError, messagingAddresses } from "./chat-sdk-surface.js";
 
 type CachedSurface = {
   workspaceId: string;
@@ -50,11 +50,7 @@ export class InstalledMessagingSurface implements MessagingSurface {
   async resolveAddresses(signal?: AbortSignal): Promise<Record<string, string>> {
     const addresses =
       (await this.fallback?.resolveAddresses?.(signal)) ??
-      Object.fromEntries(
-        (this.fallback?.platforms() ?? []).flatMap((platform) =>
-          platform.address ? [[platform.provider, platform.address]] : [],
-        ),
-      );
+      messagingAddresses(this.fallback?.platforms() ?? []);
     return Object.fromEntries(
       Object.entries(addresses).filter(([provider]) => provider !== this.provider.provider),
     );

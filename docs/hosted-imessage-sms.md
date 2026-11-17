@@ -124,6 +124,9 @@ Each registered URL receives all project events: never mirror production events 
 For another independent project, use `PHOTON_PROJECT_ID_EXAMPLE`,
 `PHOTON_PROJECT_SECRET_EXAMPLE`, `PHOTON_WEBHOOK_SECRET_EXAMPLE` and route
 `/api/v1/messaging/webhook/photon-example`. Keep provider names stable: they key stored identities.
+When using Compose, forward all three suffixed variables to both `api` and `worker` in an
+override file, following [settings with names you choose](self-host-configuration.md#settings-with-names-you-choose).
+The base Compose files forward only the unsuffixed names.
 Duplicate project mounts are skipped. A dedicated line suffix is retained in reply threads.
 Shared assignments need an operator-supplied way for the user to discover their number; Rakazo
 does not provision or display a per-user shared assignment automatically. Do not hardcode one

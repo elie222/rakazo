@@ -21,6 +21,15 @@ import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "../providers/messaging/lark/text-parts.js";
 
+/** Link destinations, omitting platforms that cannot currently verify one. */
+export function messagingAddresses(
+  platforms: readonly Pick<MessagingPlatformDescriptor, "provider" | "address">[],
+): Record<string, string> {
+  return Object.fromEntries(
+    platforms.flatMap(({ provider, address }) => (address ? [[provider, address]] : [])),
+  );
+}
+
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
  * messages the inbound sink failed on.
@@ -260,15 +269,15 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   }
 
   async resolveAddresses(signal?: AbortSignal): Promise<Record<string, string>> {
-    const entries = await Promise.all(
+    const platforms = await Promise.all(
       [...this.byProvider.values()].map(async ({ platform }) => {
         const address = platform.resolveAddress
           ? await bestEffort("resolve messaging link address", platform.resolveAddress(signal))
           : platform.address;
-        return address ? [[platform.provider, address] as const] : [];
+        return { provider: platform.provider, address };
       }),
     );
-    return Object.fromEntries(entries.flat());
+    return messagingAddresses(platforms);
   }
 
   onInbound(sink: (event: MessagingInboundEvent) => Promise<void>): void {
