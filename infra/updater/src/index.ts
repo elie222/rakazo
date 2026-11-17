@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import type { ServerUpdateRun } from "@rakazo/contracts";
-import type { ComposeUpdateStep, RemoteRelease } from "@rakazo/core";
+import type { ComposeUpdateStep } from "@rakazo/core";
 import {
   chooseUpdateStrategy,
   commitImageTag,
@@ -42,10 +42,22 @@ import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { startUpdateSchedule } from "./schedule.js";
+import type { ComputerTagChange } from "./runtime-state.js";
+import {
+  COMPUTER_TAG_ENV,
+  cacheRuntimeBaseline,
+  PREVIOUS_COMPUTER_TAG_ENV,
+  readScheduledComputer,
+  readScheduledRuntime,
+} from "./runtime-state.js";
+import { applyStableUpdate, startUpdateSchedule } from "./schedule.js";
+
+export { applyStableUpdate } from "./schedule.js";
+
 import type { UpdaterConfig } from "./updater-logic.js";
 import {
   missingSecretAssignments,
+  readEnvAssignment,
   readTagState,
   resolveUpdaterConfig,
   truncateOutput,
@@ -470,59 +482,6 @@ export function createUpdaterApp(
     };
   }
 
-  /** Check all application processes; computer is a completed pull/build stub, not a runtime. */
-  async function requireStableRunningImages(releases: readonly RemoteRelease[]) {
-    const commits: Array<string | null> = [];
-    for (const service of config.updateServices.filter((service) => service !== "computer")) {
-      const containers = await run(
-        "docker",
-        [
-          "ps",
-          "--filter",
-          `label=com.docker.compose.project=${config.projectName}`,
-          "--filter",
-          `label=com.docker.compose.service=${service}`,
-          "--format",
-          "{{.ID}}",
-        ],
-        { cwd: config.deployDir, timeoutMs: DEFAULT_TIMEOUT_MS },
-      );
-      const ids = containers.stdout.trim() === "" ? [] : containers.stdout.trim().split(/\s+/);
-      if (!containers.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id))) {
-        throw new UpdateRefused(
-          `Could not identify the running ${service}; scheduled updates were refused.`,
-        );
-      }
-      if (ids.length === 0) {
-        if (service === "api") {
-          throw new UpdateRefused(
-            "Could not identify the running API; scheduled updates were refused.",
-          );
-        }
-        // A stable API establishes the source baseline; missing peer services need reconciliation.
-        commits.push(null);
-      }
-      for (const id of ids) {
-        const source = await run("docker", ["exec", id, "node", "-p", "process.env.GIT_SHA"], {
-          cwd: config.deployDir,
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-        });
-        const commit = source.stdout.trim();
-        if (
-          !source.ok ||
-          !isGitCommit(commit) ||
-          selectLatestRelease(releases.filter((release) => release.commit === commit)) === null
-        ) {
-          throw new UpdateRefused(
-            `The running ${service} could not be verified as a published stable release. Scheduled updates were refused to avoid downgrading an edge or unknown build. Review release notes and migrate to stable manually first.`,
-          );
-        }
-        commits.push(commit);
-      }
-    }
-    return commits;
-  }
-
   /** The branch head on the remote, read without fetching, so a plan does not mutate the checkout. */
   async function resolveRemoteHead(request: { repoUrl: string; branch: string }) {
     const listed = await run(
@@ -555,8 +514,12 @@ export function createUpdaterApp(
     scheduled = false,
   ) {
     const decision = chooseUpdateStrategy(request);
-    const tags = readTagState(await readEnvFile());
+    const envContents = await readEnvFile();
+    const tags = readTagState(envContents);
     const checkout = await readCheckout();
+    let recoveryAllowed = true;
+    let fromCommit = checkout.commit;
+    let computerTags: ComputerTagChange | undefined;
 
     if (decision.strategy === "build") {
       if (!checkout.present) {
@@ -587,15 +550,49 @@ export function createUpdaterApp(
     if (decision.strategy === "pull") {
       const target = await resolveRelease(request.repoUrl);
       if (scheduled) {
-        const running = await requireStableRunningImages(target.releases);
-        if (running.every((commit) => commit === target.commit)) {
-          return rememberRun(upToDateRecord(request, tags.currentTag, "pull", target.commit));
+        const runtime = await readScheduledRuntime(config, target.releases, run);
+        const computer = await readScheduledComputer(
+          config,
+          runtime,
+          envContents,
+          target.imageTag,
+          run,
+        );
+        await cacheRuntimeBaseline(config, runtime, run);
+        recoveryAllowed =
+          runtime.uniform &&
+          runtime.baseline.tag !== target.imageTag &&
+          (computer ? computer.uniform && computer.tags.fromTag !== computer.tags.toTag : true);
+        computerTags = computer?.tags;
+        const current =
+          runtime.missing.length === 0 &&
+          runtime.services.every((service) => service.commit === target.commit);
+        if (current && (computer?.current ?? true)) {
+          const pins: Record<string, string> = {};
+          if (tags.currentTag !== target.imageTag) pins[IMAGE_TAG_ENV] = target.imageTag;
+          if (computer && computer.envTag !== target.imageTag)
+            pins[COMPUTER_TAG_ENV] = target.imageTag;
+          if (Object.keys(pins).length > 0) await writeEnvAssignments(pins);
+          return rememberRun(upToDateRecord(request, target.imageTag, "pull", target.commit));
         }
+        // Recovery pins must describe the observed runtime rather than a stale environment file.
+        tags.currentTag = runtime.baseline.tag;
+        fromCommit = runtime.baseline.commit;
+      } else if (config.updateServices.includes("computer")) {
+        computerTags = {
+          fromTag: readEnvAssignment(envContents, COMPUTER_TAG_ENV) || "latest",
+          previousTag: readEnvAssignment(envContents, PREVIOUS_COMPUTER_TAG_ENV),
+          toTag: target.imageTag,
+        };
       }
       targetTag = target.imageTag;
       targetCommit = target.commit;
       releaseTag = target.releaseTag;
-      if (!scheduled && targetTag === tags.currentTag) {
+      if (
+        !scheduled &&
+        targetTag === tags.currentTag &&
+        (!computerTags || computerTags.fromTag === computerTags.toTag)
+      ) {
         return rememberRun(upToDateRecord(request, targetTag, "pull", targetCommit));
       }
     } else {
@@ -621,11 +618,13 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request,
+        recoveryAllowed: recoveryAllowed && targetTag !== tags.currentTag,
+        computerTags,
         strategy: decision.strategy,
         fromTag: tags.currentTag,
         originalPreviousTag: tags.previousTag,
         toTag: targetTag,
-        fromCommit: checkout.commit,
+        fromCommit,
         fromBranch: checkout.branch,
         toCommit: targetCommit,
         restoreRemoteUrl:
@@ -644,7 +643,10 @@ export function createUpdaterApp(
   }
 
   async function rollback(): Promise<ServerUpdateRun> {
-    const tags = readTagState(await readEnvFile());
+    const env = await readEnvFile();
+    const tags = readTagState(env);
+    const previousComputerTag = readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV);
+    const currentComputerTag = readEnvAssignment(env, COMPUTER_TAG_ENV) || "latest";
     const decision = rollbackTarget(tags);
     if ("error" in decision) throw new UpdateRefused(decision.error);
     const checkout = await readCheckout();
@@ -655,6 +657,14 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request: { repoUrl: "", branch: "" },
+        computerTags:
+          config.updateServices.includes("computer") && previousComputerTag
+            ? {
+                fromTag: currentComputerTag,
+                previousTag: previousComputerTag,
+                toTag: previousComputerTag,
+              }
+            : undefined,
         strategy: "pull",
         fromTag: tags.currentTag,
         originalPreviousTag: tags.previousTag,
@@ -681,6 +691,8 @@ export function createUpdaterApp(
   async function execute(input: {
     request: { repoUrl: string; branch: string };
     strategy: "pull" | "build";
+    recoveryAllowed?: boolean;
+    computerTags?: ComputerTagChange;
     fromTag: string;
     originalPreviousTag: string | null;
     toTag: string | null;
@@ -710,6 +722,13 @@ export function createUpdaterApp(
     const revertAssignments = {
       [IMAGE_TAG_ENV]: input.fromTag,
       [PREVIOUS_IMAGE_TAG_ENV]: input.originalPreviousTag ?? input.fromTag,
+      ...(input.computerTags
+        ? {
+            [COMPUTER_TAG_ENV]: input.computerTags.fromTag,
+            [PREVIOUS_COMPUTER_TAG_ENV]:
+              input.computerTags.previousTag ?? input.computerTags.fromTag,
+          }
+        : {}),
     };
     // A failed Git command can still change files. Restore once before Compose recovery, or in
     // finally for failures that never reached Compose.
@@ -763,13 +782,25 @@ export function createUpdaterApp(
           [IMAGE_TAG_ENV]: toTag,
           [PREVIOUS_IMAGE_TAG_ENV]:
             input.fromTag === toTag ? (input.originalPreviousTag ?? input.fromTag) : input.fromTag,
+          ...(input.computerTags
+            ? {
+                [COMPUTER_TAG_ENV]: input.computerTags.toTag,
+                [PREVIOUS_COMPUTER_TAG_ENV]:
+                  input.fromTag === toTag
+                    ? (input.computerTags.previousTag ?? input.computerTags.fromTag)
+                    : input.computerTags.fromTag,
+              }
+            : {}),
         });
       } catch {
         record.error = "Could not persist the target image tag in the deployment environment.";
         record.restartAdvice = `${record.error} Nothing was recreated.`;
         return record;
       }
-      const composeEnv: Record<string, string> = { [IMAGE_TAG_ENV]: toTag };
+      const composeEnv: Record<string, string> = {
+        [IMAGE_TAG_ENV]: toTag,
+        ...(input.computerTags ? { [COMPUTER_TAG_ENV]: input.computerTags.toTag } : {}),
+      };
       if (record.toCommit !== null) composeEnv.GIT_SHA = record.toCommit;
 
       for (const step of composeSteps) {
@@ -782,7 +813,10 @@ export function createUpdaterApp(
             () => true,
             () => false,
           );
-          if (step.id === "recreate") {
+          if (step.id === "recreate" && input.recoveryAllowed === false) {
+            record.restart = "manual";
+            record.restartAdvice = `${primaryError} Reconciliation failed without a distinct, uniform previous release to restore. The failed target was not retried as recovery. Manual intervention is required${envRestored ? "" : "; environment pins also need repair"}.`;
+          } else if (step.id === "recreate") {
             const previous = composeUpArgv(composeTarget);
             const recovered =
               checkoutRestored &&
@@ -794,7 +828,10 @@ export function createUpdaterApp(
                   command: previous.command,
                   args: previous.args,
                 },
-                { [IMAGE_TAG_ENV]: input.fromTag },
+                {
+                  [IMAGE_TAG_ENV]: input.fromTag,
+                  ...(input.computerTags ? { [COMPUTER_TAG_ENV]: input.computerTags.fromTag } : {}),
+                },
                 false,
               ));
             record.restart = recovered ? "not-required" : "manual";
@@ -880,27 +917,6 @@ export function createUpdaterApp(
       error: null,
       steps: [],
     };
-  }
-}
-
-/** Scheduled checks have no branch or channel input: only official stable releases. */
-export async function applyStableUpdate(app: ReturnType<typeof createUpdaterApp>) {
-  const result = await app.applyScheduledUpdate();
-  if (!result.ok) {
-    const diagnostics = result.steps
-      ?.filter((step) => !step.ok)
-      .map((step) => `${step.label}: ${step.output}`)
-      .join("\n");
-    throw new Error(
-      [
-        result.error || "Scheduled update failed.",
-        result.restart ? `Recovery status: ${result.restart}.` : "",
-        result.restartAdvice,
-        diagnostics ? truncateOutput(diagnostics) : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
   }
 }
 

@@ -47,8 +47,10 @@ for name in BETTER_AUTH_SECRET ENCRYPTION_KEY SCREEN_PROXY_SECRET SANDBOX_SUPERV
 done
 ! grep -q '^COMPOSE_PROFILES=' "$tmp/cwd/.env" || fail "updater profile enabled without consent"
 
+printf '\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-1111111111111111111111111111111111111111\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=sha-1111111111111111111111111111111111111111\n' >> "$tmp/cwd/.env"
 again="$(run_install)" || fail "second run failed: $again"
 [[ "$again" == *"Keeping existing .env."* ]] || fail "second run did not keep .env: $again"
+[[ "$again" != *"RAKAZO_IMAGE_TAG_PREVIOUS"* && "$again" != *"RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS"* ]] || fail "updater metadata was reported as unused"
 [[ "$again" != *"Back up ENCRYPTION_KEY"* ]] || fail "notice repeated for an existing key: $again"
 [[ "$again" != *"$key"* ]] || fail "the installer printed the key on rerun"
 [[ "$(sed -n 's/^RAKAZO_UPDATER_TOKEN=//p' "$tmp/cwd/.env")" == "$updater_token" ]] || fail "existing updater token changed"

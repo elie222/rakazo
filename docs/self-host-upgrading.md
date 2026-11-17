@@ -300,6 +300,20 @@ A failed check logs its recovery status, recovery advice and failed-step diagnos
 again after the configured interval; there is no tight retry loop.
 The updater waits for an in-flight scheduled update during graceful shutdown.
 
+For the published-image stack, application and computer images are pinned to the same release's
+full `sha-<commit>` tag. The updater pulls both before recreating services, so a release whose
+computer image has not finished publishing leaves the running services alone. New bot computers
+use that pinned image rather than a moving `computer:latest` cache. Existing bot computers keep
+running. The current and previous computer pins are recorded alongside the application pins and
+restored together by rollback, without contacting the registry.
+
+The updater caches a reference to the verified running application image before changing pins.
+If the app runtimes and managed computer references already match the release, stale Compose
+pins are aligned without a deployment. Scheduled image recovery is attempted only from a distinct,
+uniform previous release. A failed repair of the current release or a mixed runtime requires
+manual intervention; retrying the failed target is not described as restoring a previous release. Database migrations are never
+reversed by image recovery.
+
 To pause scheduling, set `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=0` in `.env`, then run the same
 `up -d updater` command. Set it back to `6` and recreate the updater to resume. Pause before a
 manual rollback, or the next scheduled check will apply the newer release again. `/state` reports

@@ -46,6 +46,12 @@ function ok(output = "") {
   return { ok: true, exitCode: 0, stdout: output, output };
 }
 
+function cachedImage(args: string[]) {
+  if (args[0] === "inspect") return ok(`sha256:${"a".repeat(64)}`);
+  if (args[0] === "image" && args[1] === "tag") return ok();
+  return null;
+}
+
 function failed(output: string) {
   return { ok: false, exitCode: 1, stdout: "", output };
 }
@@ -132,6 +138,7 @@ describe("updater HTTP surface", () => {
     fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
     fixture.config.updateServices = ["api", "worker", "web", "supervisor", "computer"];
     let runningCommit = currentCommit;
+    let computerRef = "ghcr.io/elie222/rakazo/computer:latest";
     const calls: Array<{ command: string; args: string[] }> = [];
     const run: UpdaterCommandRunner = async (command, args) => {
       calls.push({ command, args });
@@ -145,9 +152,17 @@ describe("updater HTTP surface", () => {
           ].join("\n"),
         );
       }
+      const cached = cachedImage(args);
+      if (cached) return cached;
       if (command === "docker" && args[0] === "ps") return ok("a".repeat(12));
-      if (command === "docker" && args[0] === "exec") return ok(runningCommit);
-      if (args.includes("up")) runningCommit = targetCommit;
+      if (command === "docker" && args[0] === "exec")
+        return ok(
+          args.at(-1) === "process.env.RAKAZO_COMPUTER_IMAGE" ? computerRef : runningCommit,
+        );
+      if (args.includes("up")) {
+        runningCommit = targetCommit;
+        computerRef = `ghcr.io/elie222/rakazo/computer:sha-${targetCommit}`;
+      }
       return ok();
     };
     const subject = createUpdaterApp(fixture.config, { run });
@@ -170,7 +185,7 @@ describe("updater HTTP surface", () => {
     async (outdated) => {
       const env = `RAKAZO_IMAGE_TAG=sha-${targetCommit}\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-${currentCommit}\n`;
       const fixture = await deployment(env);
-      fixture.config.updateServices = ["api", "worker", "web", "supervisor", "computer"];
+      fixture.config.updateServices = ["api", "worker", "web", "supervisor"];
       const ids = {
         api: "a".repeat(12),
         worker: "b".repeat(12),
@@ -183,6 +198,8 @@ describe("updater HTTP surface", () => {
         calls.push(args);
         if (command === "git")
           return ok(`${currentCommit}\trefs/tags/v1.0.0\n${targetCommit}\trefs/tags/v1.1.0\n`);
+        const cached = cachedImage(args);
+        if (cached) return cached;
         if (args[0] === "ps") {
           const service = Object.keys(ids).find((name) =>
             args.includes(`label=com.docker.compose.service=${name}`),
@@ -217,12 +234,16 @@ describe("updater HTTP surface", () => {
     fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
     const run: UpdaterCommandRunner = async (command, args) => {
       if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+      const cached = cachedImage(args);
+      if (cached) return cached;
       if (args[0] === "ps") return ok("a".repeat(12));
       if (args[0] === "exec") return ok(targetCommit);
       throw new Error("A current image must not be pulled or recreated");
     };
     await applyStableUpdate(createUpdaterApp(fixture.config, { run }));
-    expect(await readFile(fixture.config.envFile, "utf8")).toBe(`RAKAZO_IMAGE_TAG=${tag}\n`);
+    expect(await readFile(fixture.config.envFile, "utf8")).toBe(
+      `RAKAZO_IMAGE_TAG=sha-${targetCommit}\n`,
+    );
   });
 
   it.each([
@@ -238,6 +259,8 @@ describe("updater HTTP surface", () => {
       fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
       const run: UpdaterCommandRunner = async (command, args) => {
         if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+        const cached = cachedImage(args);
+        if (cached) return cached;
         if (args[0] === "ps") return ok("a".repeat(12));
         if (args[0] === "exec") return ok(runningCommit);
         throw new Error("An unverified source must not pull or recreate containers");
@@ -254,6 +277,8 @@ describe("updater HTTP surface", () => {
     fixture.config.autoUpdateIntervalMs = 6 * 3_600_000;
     const run: UpdaterCommandRunner = async (command, args) => {
       if (command === "git") return ok(`${targetCommit}\trefs/tags/v1.1.0\n`);
+      const cached = cachedImage(args);
+      if (cached) return cached;
       if (args[0] === "ps") return ok("a".repeat(12));
       if (args[0] === "exec") return ok("3".repeat(40));
       return ok();
@@ -300,10 +325,12 @@ describe("updater HTTP surface", () => {
     const run: UpdaterCommandRunner = async (command, args, options) => {
       if (command === "git")
         return ok(`${currentCommit}\trefs/tags/v1.0.0\n${targetCommit}\trefs/tags/v1.1.0\n`);
+      const cached = cachedImage(args);
+      if (cached) return cached;
       if (args[0] === "ps") return ok("a".repeat(12));
       if (args[0] === "exec") return ok(currentCommit);
       if (args.includes("up")) {
-        if (options.env?.RAKAZO_IMAGE_TAG === "v1.0.0" && recovered) return ok();
+        if (options.env?.RAKAZO_IMAGE_TAG === `sha-${currentCommit}` && recovered) return ok();
         return failed("container health check failed");
       }
       return ok();

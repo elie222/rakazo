@@ -334,7 +334,11 @@ YAML
 warn_unpassed_settings() {
   local key unpassed=""
   while IFS= read -r key; do
-    [[ "$key" == COMPOSE_* ]] || grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
+    # Deployment tooling consumes these; they are deliberately absent from container environments.
+    case "$key" in
+      COMPOSE_*|RAKAZO_IMAGE_TAG_PREVIOUS|RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS) continue ;;
+    esac
+    grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
   done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
   [[ -n "$unpassed" ]] || return 0
   echo "Warning: no container receives these .env settings:${unpassed}." >&2
