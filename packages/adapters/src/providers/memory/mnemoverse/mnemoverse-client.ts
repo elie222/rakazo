@@ -1,4 +1,4 @@
-import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
+import { deadlineSignal, ResponseTooLargeError, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
@@ -31,10 +31,18 @@ export interface MnemoverseItem {
   domain: string;
 }
 
-export type MnemoverseResponse<T = void> = { ok: true; value: T } | { ok: false; error: string };
+export type MnemoverseResponse<T = void> =
+  | { ok: true; value: T }
+  | { ok: false; error: string; refused?: boolean };
 
 /** A write also says when the novelty check refused it, which a shared save treats differently. */
 type Reply = { ok: true; data: unknown } | { ok: false; status?: number; error: string };
+
+/** Drops an unread body, but never waits past the request deadline for the stream to close. */
+async function discardBody(response: Response, signal: AbortSignal): Promise<void> {
+  const cancelled = response.body?.cancel();
+  if (cancelled) await bestEffort("cancel unread response body", withAbort(cancelled, signal));
+}
 
 function failure(action: string, error: unknown): string {
   return `Mnemoverse ${action} failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -61,7 +69,7 @@ async function request(
       signal,
     });
     if (!response.ok) {
-      await bestEffort("cancel unread response body", response.body?.cancel());
+      await discardBody(response, signal);
       return {
         ok: false,
         status: response.status,
@@ -70,7 +78,7 @@ async function request(
     }
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (Number.isFinite(declared) && declared > MAX_MNEMOVERSE_RESPONSE_BYTES) {
-      await bestEffort("cancel unread response body", response.body?.cancel());
+      await discardBody(response, signal);
       throw new ResponseTooLargeError("Mnemoverse response is too large.");
     }
     const bytes = await readBodyCapped(response, MAX_MNEMOVERSE_RESPONSE_BYTES, signal);
@@ -175,7 +183,8 @@ export async function writeMnemoverse(
     if (written.reason === "exact_duplicate") return { ok: true, value: undefined };
     const reason =
       typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
-    return { ok: false, error: `Mnemoverse did not store this memory${reason}.` };
+    // The service answered and declined, so asking again gets the same answer.
+    return { ok: false, error: `Mnemoverse did not store this memory${reason}.`, refused: true };
   }
   // Only an explicit confirmation counts as saved.
   if (written?.stored !== true) {
@@ -201,7 +210,11 @@ export async function getMnemoverseAtomDomain(
     return reply.status === 404 ? { ok: true, value: null } : { ok: false, error: reply.error };
   }
   const domain = (reply.data as { domain?: unknown } | null)?.domain;
-  return { ok: true, value: typeof domain === "string" ? domain : null };
+  // A found atom with no domain is not an answer: only a 404 says the atom is gone.
+  if (typeof domain !== "string") {
+    return { ok: false, error: "Mnemoverse lookup failed: unexpected response." };
+  }
+  return { ok: true, value: domain };
 }
 
 /** An atom that is already gone counts as deleted, so a retry or a race is safe. */

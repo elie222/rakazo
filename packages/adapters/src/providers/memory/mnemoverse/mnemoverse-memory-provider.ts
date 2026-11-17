@@ -174,9 +174,12 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
     const failed = writes.flatMap((write) => (write.ok ? [] : [write.error]));
     if (failed.length === 0) return { ok: true, value: undefined };
     const error = [...new Set(failed)].join("; ");
+    if (written === 0) return { ok: false, error };
+    // A copy the service declined stays declined, so only a failure that may pass is worth a retry.
+    const refused = writes.some((write) => !write.ok && write.refused);
     return {
       ok: false,
-      error: written > 0 ? `Saved to one domain but not all: ${error}. Retrying is safe.` : error,
+      error: `Saved to one domain but not all: ${error}.${refused ? "" : " Retrying is safe."}`,
     };
   }
 
@@ -203,7 +206,11 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
     // namespace this bot can recall, and fail closed when that cannot be shown.
     const found = await getMnemoverseAtomDomain(this.connection, id, context.signal);
     if (!found.ok) return found;
-    if (found.value === null || !allowed.includes(found.value)) {
+    // Nothing there to delete: a shared fact forgotten once per copy, or a retry, ends here as done.
+    if (found.value === null) {
+      return { ok: true, value: { id, expired: true, reason: request.reason ?? null } };
+    }
+    if (!allowed.includes(found.value)) {
       return { ok: false, error: "No memory with that id was found in this bot's memory." };
     }
     const removed = await deleteMnemoverseAtom(this.connection, id, context.signal);

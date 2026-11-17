@@ -391,6 +391,37 @@ describe("Mnemoverse save", () => {
     expect(!result.ok && result.error).toContain("below importance threshold");
   });
 
+  it("does not call a declined copy safe to retry", async () => {
+    mnemoverse([], {});
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (
+        String(url).endsWith("/memory/write") &&
+        JSON.parse(String(init?.body)).domain === SPACE
+      ) {
+        return Response.json({ stored: false, reason: "below importance threshold" });
+      }
+      return base(url, init);
+    });
+    const result = await provider().save(sharedSave, context);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain("below importance threshold");
+    expect(!result.ok && result.error).not.toContain("Retrying is safe");
+  });
+
+  it("does not wait on a response body that will not close", async () => {
+    const stuck = new ReadableStream({ cancel: () => new Promise<void>(() => {}) });
+    mnemoverse([], { "POST /memory/read": () => new Response(stuck, { status: 500 }) });
+    const controller = new AbortController();
+    const pending = provider().recall(
+      { query: "coffee", scope: "isolated", botId: "bot-1", limit: 5 },
+      { ...context, signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 10);
+    const result = await pending;
+    expect(result.ok).toBe(false);
+  });
+
   it("does not count a successful answer that never says the fact was stored", async () => {
     const request = {
       content: "Likes tea",
@@ -456,7 +487,6 @@ const ATOM_A = "00000000-0000-4000-8000-00000000000a";
 const ATOM_B = "00000000-0000-4000-8000-00000000000b";
 const ATOM_OTHER = "00000000-0000-4000-8000-0000000000c1";
 const ATOM_FOREIGN = "00000000-0000-4000-8000-0000000000c2";
-const ATOM_MISSING = "00000000-0000-4000-8000-0000000000c3";
 
 describe("Mnemoverse forget", () => {
   const forget = (
@@ -505,9 +535,17 @@ describe("Mnemoverse forget", () => {
 
   it("reports an unknown id and a blank id as failures", async () => {
     const { calls } = mnemoverse();
-    expect((await forget(ATOM_MISSING)).ok).toBe(false);
     expect((await forget("  ")).ok).toBe(false);
-    expect(calls.map((call) => call.method)).toEqual(["GET"]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("counts a forget as done when the memory is already gone, so a retry succeeds", async () => {
+    const { calls, atoms } = mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }]);
+    expect((await forget(ATOM_A)).ok).toBe(true);
+    expect(atoms).toHaveLength(0);
+    const retried = await forget(ATOM_A);
+    expect(retried).toEqual({ ok: true, value: { id: ATOM_A, expired: true, reason: "asked" } });
+    expect(calls.map((call) => call.method)).toEqual(["GET", "DELETE", "GET"]);
   });
 
   it("fails closed when the lookup cannot be completed", async () => {
