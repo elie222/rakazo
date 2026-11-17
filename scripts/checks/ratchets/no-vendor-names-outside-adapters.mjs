@@ -26,7 +26,7 @@ export const exclude = [
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
-  "{apps/desktop/src/main,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
+  "{apps/desktop/src/main/system,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
 ];
 
