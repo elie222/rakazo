@@ -8,7 +8,8 @@ import type { Panel } from "../../lib/right-panel-state";
 import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
 
-const ICON = 18;
+// A size class, since the Button sizes any svg without one to 16px.
+const ICON = "size-4.5";
 const STROKE = 1.75;
 
 export function SidebarHeader({
@@ -60,9 +61,9 @@ export function SidebarHeader({
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
       >
         {mini ? (
-          <PanelLeftOpen size={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
         ) : (
-          <PanelLeftClose size={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
         )}
       </Button>
     </IconTooltip>
@@ -87,7 +88,7 @@ export function SidebarHeader({
               onClick={onSearch}
               className="app-no-drag text-muted-foreground"
             >
-              <Search size={ICON} strokeWidth={STROKE} aria-hidden="true" />
+              <Search className={ICON} strokeWidth={STROKE} aria-hidden="true" />
             </Button>
           </IconTooltip>
         ) : null}
@@ -104,7 +105,7 @@ export function SidebarHeader({
             >
               {/* A filled bell marks Activity on, so on and hovered never look alike. */}
               <Bell
-                size={ICON}
+                className={ICON}
                 strokeWidth={STROKE}
                 fill={activityMode ? "currentColor" : "none"}
                 aria-hidden="true"
@@ -125,7 +126,7 @@ export function SidebarHeader({
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
             >
-              <Plus size={ICON} strokeWidth={STROKE} aria-hidden="true" />
+              <Plus className={ICON} strokeWidth={STROKE} aria-hidden="true" />
             </PopoverTrigger>
           </IconTooltip>
           {/* Unmount with the state change so the panel it opens never coexists with the menu. */}
