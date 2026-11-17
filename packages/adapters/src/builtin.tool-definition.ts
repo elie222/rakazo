@@ -1685,7 +1685,7 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
           description:
-            "Your private operating instructions, replaced as a whole: include what should stay. Read every page before replacing them.",
+            "Your private operating instructions, replaced as a whole: include what should stay. Read every page before replacing them. Send in a call of its own, with no other fields.",
         },
         instructions_offset: {
           type: "integer",
