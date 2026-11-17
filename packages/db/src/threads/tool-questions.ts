@@ -171,7 +171,9 @@ export async function expireRunToolQuestions(
     select: { id: true, threadId: true, blocks: true },
   });
   for (const message of candidates) {
-    if (questionBlock(storedMessageBlocks(message))?.status !== "pending") continue;
+    const block = questionBlock(storedMessageBlocks(message));
+    // An open card, or an answer its call never took: either way no call will read it now.
+    if (block?.status !== "pending" && !block?.sealedValues) continue;
     const { seq } = await takeToolQuestionAnswer(
       prisma,
       { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id },

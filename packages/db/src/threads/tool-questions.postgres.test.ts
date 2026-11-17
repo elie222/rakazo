@@ -193,6 +193,13 @@ describePostgres("tool questions (PostgreSQL)", () => {
     ).rejects.toThrow("no longer open");
   });
 
+  it("drops an answer its call never took when a new attempt starts", async () => {
+    await answer({ action: "accept", values: { approve: true } });
+    await asOwner(() => expireRunToolQuestions(prisma, { id: runId, spaceId }, async () => {}));
+    expect(await card()).toMatchObject({ status: "accepted" });
+    expect((await card()).sealedValues).toBeUndefined();
+  });
+
   it("expires a run's open questions when a new attempt starts after a restart", async () => {
     const notified: number[] = [];
     await asOwner(() =>

@@ -369,6 +369,15 @@ describe("toolQuestionFromElicitation", () => {
     ).toBeUndefined();
   });
 
+  it("skips a form that requires a field it does not define", () => {
+    expect(
+      toolQuestionFromElicitation("G", {
+        message: "m",
+        requestedSchema: { properties: {}, required: ["approve"] },
+      }),
+    ).toBeUndefined();
+  });
+
   it("skips URL mode, nested objects and multi-select", () => {
     expect(toolQuestionFromElicitation("G", { mode: "url", message: "Go" })).toBeUndefined();
     for (const property of [

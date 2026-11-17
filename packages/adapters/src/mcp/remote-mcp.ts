@@ -38,7 +38,12 @@ import { createCheckedProxyDispatcher } from "../web/proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "../web/undici-fetch.js";
 import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
-import { callMcpToolAsking, McpElicitationRouter, newRemoteMcpClient } from "./mcp-elicitation.js";
+import {
+  callMcpToolAsking,
+  MCP_ANSWER_ALLOWANCE_MS,
+  McpElicitationRouter,
+  newRemoteMcpClient,
+} from "./mcp-elicitation.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 
@@ -52,11 +57,12 @@ export const MCP_TOOL_TIMEOUT_MS = 6 * 60_000;
 /** Progress restarts the wait, but never past this. The run's own cancellation still
  * ends a call at any time. */
 export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
-/** The HTTP client's own waits (five minutes by default) sit past every MCP wait above, so
- * those decide when a call ends and the client only catches a connection nobody closes. */
+/** The HTTP client's own waits (five minutes by default) sit past every MCP wait above, the
+ * time a person may spend answering the server's questions included, so those decide when a call
+ * ends and the client only catches a connection nobody closes. */
 export const MCP_HTTP_TIMEOUTS = {
-  headersTimeout: MCP_TOOL_MAX_TOTAL_MS + 60_000,
-  bodyTimeout: MCP_TOOL_MAX_TOTAL_MS + 60_000,
+  headersTimeout: MCP_TOOL_MAX_TOTAL_MS + MCP_ANSWER_ALLOWANCE_MS + 60_000,
+  bodyTimeout: MCP_TOOL_MAX_TOTAL_MS + MCP_ANSWER_ALLOWANCE_MS + 60_000,
 } as const;
 const MAX_RESULT_BYTES = 1_000_000;
 

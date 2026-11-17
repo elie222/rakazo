@@ -161,16 +161,10 @@ export function ToolQuestionCard({
             </p>
           ) : null}
         </form>
-      ) : (
+      ) : status === "pending" ? null : (
         <div className="mt-3.5 flex items-center gap-1.5 text-body font-medium text-muted-foreground">
           {status === "accepted" ? <Check aria-hidden className="size-4" /> : null}
-          {status === "accepted"
-            ? t`Sent`
-            : status === "declined"
-              ? t`Declined`
-              : status === "expired"
-                ? t`Expired`
-                : t`No longer active`}
+          {status === "accepted" ? t`Sent` : status === "declined" ? t`Declined` : t`Expired`}
         </div>
       )}
     </BuiCard>

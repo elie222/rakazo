@@ -51,6 +51,8 @@ export function toolQuestionFromElicitation(
   const required = new Set(
     Array.isArray(params.requestedSchema?.required) ? params.requestedSchema.required : [],
   );
+  // A required answer the form gives no field for cannot be given.
+  for (const name of required) if (!Object.hasOwn(properties, name)) return undefined;
   const fields: ToolQuestionField[] = [];
   for (const [name, schema] of entries) {
     if (name.length === 0 || name.length > 64) return undefined;

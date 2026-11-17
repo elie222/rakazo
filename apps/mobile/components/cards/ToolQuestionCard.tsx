@@ -182,7 +182,7 @@ export function ToolQuestionCard({
             </Text>
           ) : null}
         </>
-      ) : (
+      ) : status === "pending" ? null : (
         <Text
           style={[
             typeScale.secondary,
@@ -192,13 +192,7 @@ export function ToolQuestionCard({
             },
           ]}
         >
-          {status === "accepted"
-            ? t`Sent`
-            : status === "declined"
-              ? t`Declined`
-              : status === "expired"
-                ? t`Expired`
-                : t`No longer active`}
+          {status === "accepted" ? t`Sent` : status === "declined" ? t`Declined` : t`Expired`}
         </Text>
       )}
     </View>
