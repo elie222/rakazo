@@ -38,9 +38,10 @@ export function createComputerPermissionSetup(deps: {
     if (!screen)
       await bestEffort("request Mac screen permission", deps.permissions.requestScreenCapture());
 
-    let readyForRestart = false;
     while (valid()) {
-      const action = await deps.showSetup(readyForRestart);
+      const accessibility = deps.permissions.isTrustedAccessibilityClient(false);
+      const screen = deps.permissions.getMediaAccessStatus("screen") === "granted";
+      const action = await deps.showSetup(accessibility && screen);
       if (!valid()) return;
       if (action === "later") return;
       if (action === "restart") {
@@ -49,10 +50,6 @@ export function createComputerPermissionSetup(deps: {
       }
       // Resolves only when the person returns to Rakazo.
       await deps.openSettings();
-      if (!valid()) return;
-      const accessibility = deps.permissions.isTrustedAccessibilityClient(false);
-      const screen = deps.permissions.getMediaAccessStatus("screen") === "granted";
-      readyForRestart = accessibility && screen;
     }
   }
 

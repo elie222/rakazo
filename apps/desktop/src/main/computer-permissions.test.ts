@@ -51,17 +51,25 @@ describe("computer permission setup", () => {
     const showSetup = vi.fn(async () => actions[showSetup.mock.calls.length - 1]!);
     const { deps, prepare } = setup({ showSetup });
     await prepare();
-    expect(deps.permissions.isTrustedAccessibilityClient.mock.calls).toEqual([
-      [false],
-      [true],
-      [false],
-    ]);
+    expect(deps.permissions.isTrustedAccessibilityClient).toHaveBeenCalledWith(true);
     expect(deps.permissions.requestScreenCapture).toHaveBeenCalledOnce();
     expect(deps.permissions.requestScreenCapture.mock.invocationCallOrder[0]).toBeLessThan(
       showSetup.mock.invocationCallOrder[0]!,
     );
     expect(deps.openSettings).toHaveBeenCalledOnce();
     expect(deps.restart).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks grants from the initial OS prompt before showing the first guide", async () => {
+    const { deps, prepare } = setup();
+    deps.permissions.isTrustedAccessibilityClient.mockReturnValue(true);
+    deps.permissions.requestScreenCapture.mockImplementation(async () => {
+      deps.permissions.getMediaAccessStatus.mockReturnValue("granted");
+      return [];
+    });
+    await prepare();
+    expect(deps.showSetup).toHaveBeenCalledExactlyOnceWith(true);
+    expect(deps.openSettings).not.toHaveBeenCalled();
   });
 
   it("waits for a return from Settings, then offers only the remaining restart step", async () => {
