@@ -23,7 +23,7 @@ test("Android's recent-runs page size matches the API's", () => {
       "apps/mobile/modules/rakazo-notifications/android/src/main/java/com/rakazo/notifications/RakazoNotificationService.kt",
       /const val RECENT_LIMIT = (\d+)/,
     ),
-    capture("apps/api/src/runs.ts", /const RECENT_LIMIT = (\d+);/),
+    capture("apps/api/src/threads/runs.ts", /const RECENT_LIMIT = (\d+);/),
   );
 });
 
