@@ -56,7 +56,6 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { PluginIcon } from "../../components/plugin-icon";
 import { Chevron } from "../../components/row-accessories";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import type { IntegrationsCacheScope, IntegrationsSnapshot } from "../../lib/integrations-cache";
 import {
@@ -66,6 +65,24 @@ import {
   readIntegrationsCache,
   writeIntegrationsCache,
 } from "../../lib/integrations-cache";
+import {
+  beginConnection,
+  beginMcpOAuth,
+  completeConnection,
+  createMcpServer,
+  installCapability,
+  listCapabilities,
+  listCapabilitySourcePresets,
+  listConnectionTools,
+  listMarketplaceCatalog,
+  listMcpServers,
+  loadIntegrationsCatalogSnapshot,
+  notifyOnboardingAppConnected,
+  removeCapability,
+  renameConnection,
+  revokeConnection,
+  setConnectionVerbatimResults,
+} from "../../lib/integrations-screen-rpc";
 import { loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
 import { iosAtLeast } from "../../lib/native-controls";
@@ -320,7 +337,7 @@ export default function Integrations() {
     }
     const generation = ++refreshGeneration.current;
     const sourceGeneration = ++sourcesGeneration.current;
-    void rpc("mcp/servers/list")
+    void listMcpServers()
       .then((servers) => {
         if (
           mounted.current &&
@@ -341,7 +358,7 @@ export default function Integrations() {
         )
           setMcpError(errorText(reason, t`Could not load MCP servers`));
       });
-    void rpc("capabilities/list")
+    void listCapabilities()
       .then((installs) => {
         if (
           mounted.current &&
@@ -366,10 +383,10 @@ export default function Integrations() {
       )
         setSourcePresets(presets);
     };
-    void rpc("capabilities/sourcePresets")
+    void listCapabilitySourcePresets()
       .then(applyPresets)
       .catch(() => applyPresets([]));
-    void rpc("marketplace/catalog", { query: "" })
+    void listMarketplaceCatalog()
       .then((result) => {
         if (
           mounted.current &&
@@ -388,9 +405,7 @@ export default function Integrations() {
     let next: IntegrationsSnapshot;
     try {
       // The catalog call reconciles connection rows, so list them after it.
-      const catalog = await rpc("connections/catalog");
-      const connections = await rpc("connections/list");
-      next = { catalog, connections };
+      next = await loadIntegrationsCatalogSnapshot();
     } catch (reason) {
       if (!mounted.current || focus !== focusGeneration.current) return;
       if (!isIntegrationsScopeCurrent(scope)) return refresh();
@@ -469,7 +484,7 @@ export default function Integrations() {
     }
     let cancelled = false;
     setToolsLoading(true);
-    void rpc("connections/tools", {
+    void listConnectionTools({
       connectorId: detailKey.connectorId,
       provider: detailKey.slug,
     })
@@ -699,7 +714,7 @@ export default function Integrations() {
     const botId = lastBotId || (await loadLastBotId());
     if (!botId || !isCurrent()) return;
     if (botId !== lastBotId) setLastBotId(botId);
-    void rpc("onboarding/appConnected", {
+    void notifyOnboardingAppConnected({
       botId,
       provider: item.slug,
       connectorId: item.connectorId,
@@ -717,8 +732,8 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       const result = await connectCatalogItem(item, connections, {
-        begin: (input) => rpc("connections/begin", input),
-        complete: (input) => rpc("connections/complete", input),
+        begin: beginConnection,
+        complete: completeConnection,
         openUrl: (url) => Linking.openURL(url),
         signal: controller.signal,
         isCurrent,
@@ -752,7 +767,7 @@ export default function Integrations() {
     setPending(row.id);
     setCatalogError(null);
     try {
-      await rpc("connections/revoke", { connectionId: row.id });
+      await revokeConnection({ connectionId: row.id });
       if (!isCurrent()) return;
       updateAccount({ ...row, status: "revoked" });
       await retryRefresh(isCurrent);
@@ -773,7 +788,7 @@ export default function Integrations() {
     setPending(`rename:${row.id}`);
     setCatalogError(null);
     try {
-      const updated = await rpc("connections/rename", {
+      const updated = await renameConnection({
         connectionId: row.id,
         displayName,
       });
@@ -797,7 +812,7 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       for (const row of matches) {
-        const updated = await rpc("connections/setVerbatimResults", {
+        const updated = await setConnectionVerbatimResults({
           connectionId: row.id,
           verbatimResults,
         });
@@ -825,7 +840,7 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       for (const row of matches) {
-        await rpc("connections/revoke", { connectionId: row.id });
+        await revokeConnection({ connectionId: row.id });
         if (!isCurrent()) return;
         updateAccount({ ...row, status: "revoked" });
       }
@@ -859,7 +874,7 @@ export default function Integrations() {
     setMcpError(null);
     try {
       // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
+      const result = await beginMcpOAuth({ serverId });
       if (!isCurrent()) return;
       if (result.status === "authorization_required") {
         oauthBrowserOpen.current = true;
@@ -890,11 +905,11 @@ export default function Integrations() {
     let created: McpServer | null = null;
     try {
       if (sourceAuth === "oauth") {
-        created = await rpc("mcp/servers/create", customMcpServerInput(displayName, url));
+        created = await createMcpServer(customMcpServerInput(displayName, url));
         if (!isCurrent()) return;
         setOauthServerId(created.id);
       } else {
-        await rpc("capabilities/install", {
+        await installCapability({
           kind: sourceKind,
           name: displayName,
           source: url.trim(),
@@ -925,7 +940,7 @@ export default function Integrations() {
     setPending(source.id);
     setSourceError(null);
     try {
-      await rpc("capabilities/remove", { id: source.id });
+      await removeCapability({ id: source.id });
       setSources((current) => current.filter((item) => item.id !== source.id));
     } catch (reason) {
       setSourceError(errorText(reason, t`Could not remove source`));

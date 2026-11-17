@@ -41,6 +41,28 @@ vi.mock("./api", () => ({
   rpc: (proc: string, ...args: unknown[]) =>
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
 }));
+vi.mock("./integrations-screen-rpc", () => ({
+  listMcpServers: () => state.rpc("mcp/servers/list"),
+  listCapabilities: () => state.rpc("capabilities/list"),
+  listCapabilitySourcePresets: () => state.rpc("capabilities/sourcePresets"),
+  listMarketplaceCatalog: () => state.marketplace(),
+  loadIntegrationsCatalogSnapshot: async () => ({
+    catalog: await state.rpc("connections/catalog"),
+    connections: await state.rpc("connections/list"),
+  }),
+  listConnectionTools: (input: unknown) => state.rpc("connections/tools", input),
+  notifyOnboardingAppConnected: (input: unknown) => state.rpc("onboarding/appConnected", input),
+  beginConnection: (input: unknown) => state.rpc("connections/begin", input),
+  completeConnection: (input: unknown) => state.rpc("connections/complete", input),
+  revokeConnection: (input: unknown) => state.rpc("connections/revoke", input),
+  renameConnection: (input: unknown) => state.rpc("connections/rename", input),
+  setConnectionVerbatimResults: (input: unknown) =>
+    state.rpc("connections/setVerbatimResults", input),
+  beginMcpOAuth: (input: unknown) => state.rpc("mcp/oauth/begin", input),
+  createMcpServer: (input: unknown) => state.rpc("mcp/servers/create", input),
+  installCapability: (input: unknown) => state.rpc("capabilities/install", input),
+  removeCapability: (input: unknown) => state.rpc("capabilities/remove", input),
+}));
 vi.mock("../components/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
 }));
