@@ -299,18 +299,28 @@ export function connectorReadRequiresApproval(input: {
 }
 
 const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+const SKILL_WRITE_TOOLS = new Set(["skill_create", "skill_update"]);
+
+/** A memory save, which the approval reviewer judges by its own rules. */
+export function isMemoryWriteTool(toolName: string): boolean {
+  return MEMORY_WRITE_TOOLS.has(toolName);
+}
 
 /**
- * A memory save goes through the run's approval mode like any consequential action whenever the
- * run's current action permissions are reduced: fresh outside input entered it, or someone other
- * than the owner started it. Saved notes, summaries and recall are derived data and add no prompt
- * by themselves. The predicate is only checked for a memory write.
+ * A memory or skill save goes through the run's approval mode like any consequential action
+ * whenever the run's current action permissions are reduced: fresh outside input entered it, or
+ * someone other than the owner started it (another bot, a spawn, a routine). Saved text outlives
+ * the run, so outside text written there would steer every later run. Saved notes, summaries and
+ * recall are derived data and add no prompt by themselves. The predicate is only checked for
+ * these writes.
  */
-export async function memoryWriteNeedsApproval(
+export async function savedContextWriteNeedsApproval(
   toolName: string,
   actionTainted: () => Promise<boolean>,
 ): Promise<boolean> {
-  return MEMORY_WRITE_TOOLS.has(toolName) && (await actionTainted());
+  return (
+    (MEMORY_WRITE_TOOLS.has(toolName) || SKILL_WRITE_TOOLS.has(toolName)) && (await actionTainted())
+  );
 }
 
 /**

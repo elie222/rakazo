@@ -17,7 +17,7 @@ import {
   displayName,
   HELPER_RESULT_TRIGGER,
   humanizeToolName,
-  memoryWriteNeedsApproval,
+  isMemoryWriteTool,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -26,6 +26,7 @@ import {
   repeatsDeniedAction,
   resolveActionApprovalForTools,
   SITE_SENDING_TOOLS,
+  savedContextWriteNeedsApproval,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
@@ -263,7 +264,9 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
+  const savedContextWriteGated = await savedContextWriteNeedsApproval(name, () =>
+    isRunTainted(ctx),
+  );
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
   const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);
@@ -272,7 +275,7 @@ export async function gateToolCall(
     paying ||
     unattendedWatch ||
     siteGate === "new" ||
-    memoryWriteGated ||
+    savedContextWriteGated ||
     unidentifiedAction ||
     (!catalogControlRead &&
       approvalToolNames.some(
@@ -495,7 +498,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
-      memoryWrite: memoryWriteGated,
+      memoryWrite: savedContextWriteGated && isMemoryWriteTool(name),
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
