@@ -1,5 +1,6 @@
 import { parse as parseShellCommand } from "shell-quote";
 import { sandboxKindCapabilities } from "../../../sandbox-kind-capabilities.js";
+import { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 import {
   braceExpansionHazard,
   executesWrittenHeredoc,
@@ -647,11 +648,19 @@ const SYNTAX_REFUSALS = new Set([
   "unsupported shell syntax",
 ]);
 
-export function desktopProtectionGuardMessage(reason: string): string {
-  // Only ordinary scripting is pointed at a script file, never a refused protected target.
-  const recovery =
-    SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable")
-      ? " Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error."
-      : "";
-  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
+/** Whether the raw text names anything the guard protects, wherever it sits. */
+function namesProtectedTarget(command: string): boolean {
+  if (/\.browser-profiles|--user-data-dir|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock/i.test(command)) {
+    return true;
+  }
+  return command
+    .split(/[^\w./-]+/)
+    .some((word) =>
+      /^(?:kill|pkill|killall|xkill|systemctl|service)$/i.test(word.split("/").at(-1) ?? ""),
+    );
+}
+
+export function desktopProtectionGuardMessage(reason: string, command: string): string {
+  const syntax = SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable");
+  return desktopGuardRefusalMessage(reason, syntax && !namesProtectedTarget(command));
 }

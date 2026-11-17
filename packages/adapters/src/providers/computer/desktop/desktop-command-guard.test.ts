@@ -113,14 +113,26 @@ describe("computer lifecycle command guard", () => {
     expect(protectedComputerLifecycleRefusal("source /tmp/kill-chrome.sh")).toBe("source");
     expect(protectedComputerLifecycleRefusal("eval 'ls'")).toBe("eval");
     expect(protectedComputerLifecycleRefusal('bash <<< "pkill chromium"')).toBe("herestring");
-    expect(desktopProtectionGuardMessage("unresolved variable $f")).toBe(
+    expect(
+      desktopProtectionGuardMessage("unresolved variable $f", "for f in *; do wc -l $f; done"),
+    ).toBe(
       "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error. Do not stop or restart browser or desktop processes.",
     );
     for (const reason of ["heredoc", "command substitution", "backtick", "subshell"]) {
-      expect(desktopProtectionGuardMessage(reason), reason).toContain("script file");
+      expect(desktopProtectionGuardMessage(reason, "ls"), reason).toContain("script file");
     }
     for (const reason of ["protected command pkill", "systemctl stop", "activate script"]) {
-      expect(desktopProtectionGuardMessage(reason), reason).not.toContain("script file");
+      expect(desktopProtectionGuardMessage(reason, "ls"), reason).not.toContain("script file");
+    }
+    for (const command of [
+      "kill $(pgrep chromium)",
+      "for p in $PIDS; do /bin/kill $p; done",
+      'systemctl "$action" display',
+      'rm -rf "$HOME/.browser-profiles"',
+    ]) {
+      const reason = protectedComputerLifecycleRefusal(command);
+      expect(reason, command).toBeDefined();
+      expect(desktopProtectionGuardMessage(reason!, command), command).not.toContain("script file");
     }
   });
 
@@ -162,7 +174,9 @@ os.replace(temporary, state)
 with Path("reports/history.jsonl").open("a") as log:
     log.write(json.dumps({"count": 3}) + "\\n")`;
     expect(protectedComputerLifecycleRefusal(`python <<'EOF'\n${script}\nEOF`)).toBe("heredoc");
-    expect(desktopProtectionGuardMessage("heredoc")).toContain("not a permission");
+    expect(desktopProtectionGuardMessage("heredoc", `python <<'EOF'\n${script}\nEOF`)).toContain(
+      "not a permission",
+    );
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'; pkill chromium`)).toBe(
