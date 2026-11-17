@@ -1134,6 +1134,43 @@ describe("createMessagingInboundHandler DM routing", () => {
     ).toEqual(["messaging:sendblue:handle-1", "messaging:sendblue:handle-2"]);
   });
 
+  it("downloads a queued message's files while the one ahead of it is still downloading", async () => {
+    const slow = deferred();
+    const storeAttachment = vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(
+      async ({ attachment, clientNonce }) => {
+        if (clientNonce.includes(":handle-1:")) await slow.promise;
+        return { id: attachment.name, name: attachment.name, mimeType: "image/jpeg", size: 42 };
+      },
+    );
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({
+      ...photoEvent,
+      handle: "handle-2",
+      attachments: [{ ...photoEvent.attachments[0]!, name: "clip-2.jpg" }],
+    });
+    // The second file is fetched at once, not when the first message has posted.
+    await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledTimes(2));
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    slow.resolve();
+    await settled(deps, 2);
+    expect(
+      deps.sendUserMessage.mock.calls.map(
+        ([input]) => (input as { clientNonce: string }).clientNonce,
+      ),
+    ).toEqual(["messaging:sendblue:handle-1", "messaging:sendblue:handle-2"]);
+    // Its time was its own, so it arrived rather than being marked as failed.
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        blocks: [
+          { kind: "image", artifactId: "clip-2.jpg", mimeType: "image/jpeg", name: "clip-2.jpg" },
+        ],
+      }),
+    );
+  });
+
   it("records and then cancels the settle job", async () => {
     const storeAttachment = vi.fn(async () => ({
       id: "artifact-1",
@@ -2122,6 +2159,47 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.prisma.messagingChannelMember.update).not.toHaveBeenCalled();
     expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("lets a stop act at once and keeps the file message sent before it from starting a turn", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({
+      storeAttachment,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    Object.assign(deps.prisma.thread, {
+      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
+    });
+    const cancelRuns = vi.fn(async () => []);
+    Object.assign(deps.txMock.run, { updateManyAndReturn: cancelRuns });
+    Object.assign(deps.txMock, {
+      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-1", runId: null, seq: 3 });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({ ...dmEvent, handle: "handle-2", content: "stop" });
+    // The stop does not wait for the file to finish downloading.
+    expect(cancelRuns).toHaveBeenCalledOnce();
+
+    download.resolve();
+    await settled(deps);
+    // The file reaches the chat, as plain history: no turn, no routine.
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-1", createRun: false }),
+    );
+    expect(deps.enqueue).not.toHaveBeenCalled();
+
+    // What the owner sends after the stop starts a turn as usual.
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-3", runId: "run-1", seq: 4 });
+    await handle({ ...dmEvent, handle: "handle-3" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    expect(deps.sendUserMessage.mock.lastCall![0]).toMatchObject({ trigger: "webhook" });
+    expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
   });
 
   it("answers a stop once, even when the provider redelivers it", async () => {

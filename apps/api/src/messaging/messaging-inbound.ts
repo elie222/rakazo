@@ -118,6 +118,7 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
     senders: createSenderQueue(),
     settling: new Set(),
     handedOff: new Set(),
+    pending: new Map(),
   };
   return async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
@@ -140,7 +141,15 @@ type DirectIntake = {
    * until the sender has nothing pending here.
    */
   handedOff: Set<string>;
+  /** Each sender's messages here, from arrival until their turn in the queue is over. */
+  pending: Map<string, Arrival[]>;
 };
+
+/**
+ * One direct message from its arrival here. An owner's "stop" makes the messages that arrived
+ * before it `quiet`: they still reach the chat, but start no turn the stop was meant to prevent.
+ */
+type Arrival = { quiet: boolean };
 
 /**
  * What is left of a direct message once its webhook can be answered. `inline` work is part of
@@ -156,10 +165,10 @@ function droppedWhileDeleting(error: unknown): void {
 }
 
 /**
- * Answers a direct message's webhook once the message is safe, then settles it in its sender's
- * order. The sender's place is taken on arrival, before any lookup, so a quick text never
- * overtakes the file message sent before it. Plain text from a sender with nothing pending is
- * still delivered within the webhook.
+ * Answers a direct message's webhook once the message is safe; its files start downloading then,
+ * and it reaches the bot in its sender's order. The sender's place is taken on arrival, before any
+ * lookup, so a quick text never overtakes the file message sent before it. Plain text from a
+ * sender with nothing pending is still delivered within the webhook.
  */
 async function handleDirectEvent(
   deps: MessagingInboundDeps,
@@ -169,11 +178,22 @@ async function handleDirectEvent(
   const sender = JSON.stringify([event.provider, event.from]);
   const behind = intake.senders.busy(sender);
   if (!behind) intake.handedOff.delete(sender);
-  const prepared = prepareDirectEvent(deps, intake, event, sender, behind);
+  const arrival: Arrival = { quiet: false };
+  const pending = intake.pending.get(sender) ?? [];
+  pending.push(arrival);
+  intake.pending.set(sender, pending);
+  const prepared = prepareDirectEvent(deps, intake, event, sender, behind, arrival);
   const settled = intake.senders.run(sender, async () => {
-    // A failed preparation is the webhook's failure, and the provider delivers it again.
-    const [outcome] = await Promise.allSettled([prepared]);
-    if (outcome.status === "fulfilled") await outcome.value?.run();
+    try {
+      // A failed preparation is the webhook's failure, and the provider delivers it again.
+      const [outcome] = await Promise.allSettled([prepared]);
+      if (outcome.status === "fulfilled") await outcome.value?.run();
+    } finally {
+      pending.splice(pending.indexOf(arrival), 1);
+      if (pending.length === 0 && intake.pending.get(sender) === pending) {
+        intake.pending.delete(sender);
+      }
+    }
   });
   const settle = await prepared;
   if (settle?.inline) await settled;
@@ -190,6 +210,7 @@ async function prepareDirectEvent(
   event: MessagingInboundMessage,
   sender: string,
   behind: boolean,
+  arrival: Arrival,
 ): Promise<DirectSettle | null> {
   // Media that only the provider can download (Telegram file_id fetches) rides
   // along in event.attachments; CDN media keeps riding along as text.
@@ -231,6 +252,10 @@ async function prepareDirectEvent(
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
+        // It acts at once. What the owner sent before it still reaches the chat, but starts
+        // nothing.
+        const pending = intake.pending.get(sender) ?? [];
+        for (const earlier of pending.slice(0, pending.indexOf(arrival))) earlier.quiet = true;
         await stopOwnerWork(deps, existing, event);
         return null;
       }
@@ -276,7 +301,7 @@ async function prepareDirectEvent(
     return {
       inline: true,
       run: async () => {
-        await deliverDirectMessage(deps, ids, event, text, deadline);
+        await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, arrival);
       },
     };
   }
@@ -299,12 +324,15 @@ async function prepareDirectEvent(
         .map(({ name, mimeType }) => ({ name, mimeType })),
     };
     await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, receivedAt));
+    // The files download from now on, whatever is ahead of the message in its sender's queue;
+    // only handing the message to the bot waits its turn there.
+    const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
     return {
       inline: false,
       run: () =>
         (intake.handedOff.has(sender)
-          ? handOffToJob(deps, payload)
-          : settleDirectMessage(deps, intake, ids, event, sender, payload, text, deadline)
+          ? media.then(() => handOffToJob(deps, payload))
+          : settleDirectMessage(deps, intake, ids, event, sender, payload, text, media, arrival)
         ).finally(() => intake.settling.delete(message)),
     };
   } catch (error) {
@@ -314,10 +342,10 @@ async function prepareDirectEvent(
 }
 
 /**
- * Settles a message whose webhook was answered: its files, the bot's turn, and one notice to
- * the sender when files did not arrive, which commits with the end of its backup job. Never
- * rejects: a failure hands the message, and the sender's messages queued behind it, to their
- * backup jobs at once.
+ * Settles a message whose webhook was answered, in its sender's turn: once its files are in, the
+ * bot's turn, and one notice to the sender when files did not arrive, which commits with the end
+ * of its backup job. Never rejects: a failure hands the message, and the sender's messages queued
+ * behind it, to their backup jobs at once.
  */
 async function settleDirectMessage(
   deps: MessagingInboundDeps,
@@ -327,10 +355,13 @@ async function settleDirectMessage(
   sender: string,
   payload: SettlePayload,
   text: string,
-  deadline: number,
+  media: Promise<MediaOutcome>,
+  arrival: Arrival,
 ): Promise<void> {
   try {
-    const unavailable = await deliverDirectMessage(deps, ids, event, text, deadline);
+    const outcome = await media;
+    if ("error" in outcome) throw outcome.error;
+    const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, arrival);
     const lane = { identityId: payload.identityId };
     await deps.prisma.$transaction(async (tx) => {
       if (unavailable.length > 0) {
@@ -359,26 +390,41 @@ function handOffToJob(deps: MessagingInboundDeps, payload: SettlePayload): Promi
   ).then(() => undefined);
 }
 
+/** A message's stored files and the lines of those that did not arrive. */
+type StoredMedia = Awaited<ReturnType<typeof storeInboundMedia>>;
+
+const NO_MEDIA: StoredMedia = { artifacts: [], unavailable: [] };
+
+/** How a message's downloads ended, kept until its turn in the queue comes to post it. */
+type MediaOutcome = { stored: StoredMedia } | { error: unknown };
+
+function settledMedia(media: Promise<StoredMedia>): Promise<MediaOutcome> {
+  return media.then(
+    (stored) => ({ stored }),
+    (error: unknown) => ({ error }),
+  );
+}
+
 /**
- * Stores the message's files and hands the message to the bot, or to the message routines
- * that take it. Returns the lines of the files that did not arrive.
+ * Hands the message, with its stored files, to the bot or to the message routines that take
+ * it; a quiet one only joins the chat. Returns the lines of the files that did not arrive.
  */
 async function deliverDirectMessage(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
   text: string,
-  downloadDeadline: number,
+  stored: StoredMedia,
+  { quiet }: Arrival,
 ): Promise<string[]> {
-  const stored = await storeInboundMedia(deps, ids, event, downloadDeadline);
-
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
   if (
-    await wakeMessageRoutines(deps, ids, event, {
+    !quiet &&
+    (await wakeMessageRoutines(deps, ids, event, {
       artifacts: stored.artifacts,
       unavailable: stored.unavailable,
-    })
+    }))
   )
     return stored.unavailable;
   const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
@@ -396,6 +442,7 @@ async function deliverDirectMessage(
     prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
     clientNonce: messagingMessageClientNonce(event.provider, event.handle),
+    ...(quiet ? { createRun: false } : {}),
   });
   if (sent.runId) {
     const runId = sent.runId;
