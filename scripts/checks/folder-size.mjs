@@ -6,11 +6,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const LIMIT = 40;
-export const BASELINE = path.join(path.dirname(fileURLToPath(import.meta.url)), "folder-size.baseline.json");
+export const BASELINE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "folder-size.baseline.json",
+);
 
 const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt)$/;
 // Generated output, migrations and vendored registry components are not organised by hand.
-const IGNORED = [/\/generated\//, /\/migrations\//, /^packages\/ui-web\/src\/components\/ui\//, /\.d\.ts$/];
+const IGNORED = [
+  /\/generated\//,
+  /\/migrations\//,
+  /^packages\/ui-web\/src\/components\/ui\//,
+  /\.d\.ts$/,
+];
 
 /** Code files per folder (direct children only), for every tracked folder that has any. */
 export function folderCounts(files) {
