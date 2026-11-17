@@ -66,6 +66,7 @@ export * from "./spaces/space-changes.js";
 export * from "./spaces/space-members.js";
 export * from "./spaces/space-settings.js";
 export * from "./spaces/spaces.js";
+export * from "./speech/costs.js";
 export * from "./threads/chat-alerts.js";
 export {
   eventsAfter,

@@ -91,6 +91,7 @@ import type {
   VoiceInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
   WebFetchCapabilities,
   WebFetchRequest,
@@ -641,7 +642,10 @@ export interface VoiceProvider {
     options?: { language?: string },
   ): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
-  transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+  transcribe?(
+    request: VoiceTranscribeRequest,
+    context: AdapterContext,
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }>;
 }
 
 /**

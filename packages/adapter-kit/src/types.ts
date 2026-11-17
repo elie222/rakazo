@@ -888,7 +888,20 @@ export interface VoiceInfo {
   description?: string;
 }
 
+/** Provider evidence only; no transcript, audio or credentials. */
+export interface VoiceUsage {
+  model: string;
+  unit: "characters" | "seconds" | "tokens";
+  units: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  inputAudioTokens?: number;
+  inputTextTokens?: number;
+}
+
 export interface SpeechClip {
+  providerRequestId?: string;
+  usage?: VoiceUsage;
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
   /** The voice actually used, when the provider substituted one for the requested voice. */
@@ -923,6 +936,7 @@ export interface VoiceSynthesizeRequest {
 }
 
 export interface VoiceTranscribeRequest {
+  model?: string;
   audio: Uint8Array;
   mimeType: string;
   apiKey: string;
@@ -1641,10 +1655,11 @@ export interface AutoReviewRequest {
    */
   newSite?: boolean;
   /**
-   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
-   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   * A save to the bot's memory or skills after the run took in outside content. The bot reads
+   * both as trusted context in every later run, so the saved text is judged as a standing
+   * instruction.
    */
-  memoryWrite?: boolean;
+  savedContextWrite?: boolean;
 }
 
 export interface AutoReviewResult {

@@ -4,7 +4,8 @@ Talk to your bots instead of typing, have them read replies aloud, or call them.
 
 ## Set up a voice provider
 
-Open **Settings → Voice**, pick a **Provider** and add its **API key**:
+Your server may supply a default voice connection. To use your own, open **Settings → Voice**,
+pick a **Provider** and add its **API key**:
 
 - **ElevenLabs**, **OpenAI**, **Fish Audio** and **xAI** can speak and transcribe. If xAI is
   connected in **Models**, with a SuperGrok or X Premium sign-in or a key, leave the **API key**

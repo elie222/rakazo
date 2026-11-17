@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import { AudioModule } from "expo-audio";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ensureVoiceConsent } from "../voice/voice";
 
 const app = vi.hoisted(() => ({
   appState: new Set<(state: string) => void>(),
@@ -173,3 +175,26 @@ it("drops a transcription when the composer unmounts", async () => {
   await finishTranscription(pending, "the latest report");
   expect(words).toEqual([]);
 });
+
+it.each(["blur", "unmount"])(
+  "does not request microphone permission after %s during consent",
+  async (cancel) => {
+    const consent = deferred<void>();
+    vi.mocked(ensureVoiceConsent).mockReturnValueOnce(consent.promise);
+    await act(async () => toggle());
+    await vi.waitFor(() => expect(ensureVoiceConsent).toHaveBeenCalled());
+    act(() => {
+      if (cancel === "blur") app.blur?.();
+      else {
+        root.unmount();
+        mounted = false;
+      }
+    });
+    await act(async () => {
+      consent.resolve();
+      await consent.promise;
+    });
+    expect(AudioModule.requestRecordingPermissionsAsync).not.toHaveBeenCalled();
+    expect(voice.recordClip).not.toHaveBeenCalled();
+  },
+);

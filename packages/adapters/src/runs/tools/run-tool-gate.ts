@@ -17,7 +17,6 @@ import {
   displayName,
   HELPER_RESULT_TRIGGER,
   humanizeToolName,
-  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -26,6 +25,7 @@ import {
   repeatsDeniedAction,
   resolveActionApprovalForTools,
   SITE_SENDING_TOOLS,
+  savedContextWriteNeedsApproval,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
@@ -135,7 +135,7 @@ type ToolReview = {
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
   newSite: boolean;
-  memoryWrite: boolean;
+  savedContextWrite: boolean;
   fetchUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
@@ -263,7 +263,9 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
+  const savedContextWriteGated = await savedContextWriteNeedsApproval(name, () =>
+    isRunTainted(ctx),
+  );
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
   const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);
@@ -272,7 +274,7 @@ export async function gateToolCall(
     paying ||
     unattendedWatch ||
     siteGate === "new" ||
-    memoryWriteGated ||
+    savedContextWriteGated ||
     unidentifiedAction ||
     (!catalogControlRead &&
       approvalToolNames.some(
@@ -495,7 +497,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
-      memoryWrite: memoryWriteGated,
+      savedContextWrite: savedContextWriteGated,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -831,9 +833,9 @@ async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site or a memory save after outside content is judged on the owner's own words only:
+    // A new site, or a memory or skill save after outside content, is judged on the owner's own words only:
     // the task prompt of a webhook or bot-started run carries text someone else wrote.
-    const ownerWordsOnly = (review.newSite && fetchUrl) || review.memoryWrite;
+    const ownerWordsOnly = (review.newSite && fetchUrl) || review.savedContextWrite;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -848,7 +850,7 @@ async function reviewToolCall(
       botDescription,
       matchingRules: review.matchingRules,
       ...(review.newSite && fetchUrl ? { newSite: true } : {}),
-      ...(review.memoryWrite ? { memoryWrite: true } : {}),
+      ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
     };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,

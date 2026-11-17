@@ -81,7 +81,7 @@ export const ATTACHMENT_ALLOWED_MIME_TYPES = [
 
 export type AttachmentMimeType = (typeof ATTACHMENT_ALLOWED_MIME_TYPES)[number];
 
-export function isAttachmentImageMimeType(mimeType: string): boolean {
+export function isAttachmentImageMimeType(mimeType: string): mimeType is AttachmentImageMimeType {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
