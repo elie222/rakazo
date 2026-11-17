@@ -20,8 +20,8 @@ import {
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
-import { availableModelCreditOfferings } from "./model-credit-routing.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
+import { availableModelCreditOfferings } from "./model-credits/routing.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";

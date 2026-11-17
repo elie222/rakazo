@@ -2,11 +2,11 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
-import type { ModelCreditOffering } from "./model-credit-offerings.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
-import { modelProviderDefinition } from "./model-provider-registry.js";
-import { parseModelSecret, secretValuesToRedact } from "./model-secret.js";
-import { connectionModelSettings } from "./model-settings.js";
+import { modelProviderDefinition } from "../model-provider-registry.js";
+import { parseModelSecret, secretValuesToRedact } from "../model-secret.js";
+import { connectionModelSettings } from "../model-settings.js";
+import type { ModelCreditOffering } from "./offerings.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./offerings.js";
 
 class ModelCreditConnectionUnavailableError extends ClientError {
   constructor(message = "Approved model connection is unavailable") {

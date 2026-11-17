@@ -1,4 +1,4 @@
-import type { DecisionModelDescriptor } from "../../../decision-model-descriptor.js";
+import type { DecisionModelDescriptor } from "../../../decisions/model-descriptor.js";
 
 export const typesafeDecisionModel: DecisionModelDescriptor = {
   provider: "typesafe",

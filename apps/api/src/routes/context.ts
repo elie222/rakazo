@@ -55,16 +55,16 @@ import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
 import { createMcpServers } from "../mcp-servers.js";
 import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
-import {
-  ModelCreditOfferingUnavailableError,
-  UnsupportedThinkingLevelError,
-} from "../model-role-errors.js";
 import { rosterChangeFor } from "../roster-procedures.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
 import { procedureSecurityEvent } from "../security-audit.js";
 import { spaceChangesFor } from "../space-change-procedures.js";
 import { createTaughtSkillsService } from "../taught-skills.js";
+import {
+  ModelCreditOfferingUnavailableError,
+  UnsupportedThinkingLevelError,
+} from "./model-role-errors.js";
 import { meDto } from "./shared.js";
 
 /**

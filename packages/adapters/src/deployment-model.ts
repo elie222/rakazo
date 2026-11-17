@@ -1,6 +1,6 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
-import { modelCreditOfferings } from "./model-credit-offerings.js";
+import { modelCreditOfferings } from "./model-credits/offerings.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";

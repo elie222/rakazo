@@ -8,7 +8,7 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 
-import { modelCreditOfferings, offeringUsage } from "./model-credit-offerings.js";
+import { modelCreditOfferings, offeringUsage } from "./model-credits/offerings.js";
 import { maximumModelCallCost } from "./pi-usage.js";
 
 export class HostedModelCreditsRequiredError extends Error {}

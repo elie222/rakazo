@@ -11,8 +11,8 @@ import {
   retireToReconnectMarker,
 } from "./model-credential-refresh.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
-import { modelCreditOfferings } from "./model-credit-offerings.js";
-import { approvedModelCreditMaterial } from "./model-credit-routing.js";
+import { modelCreditOfferings } from "./model-credits/offerings.js";
+import { approvedModelCreditMaterial } from "./model-credits/routing.js";
 import { outermostJsonObject } from "./model-json.js";
 import { deploymentModelRole, resolveMemberMainModel } from "./model-roles.js";
 import { secretValuesToRedact } from "./model-secret.js";

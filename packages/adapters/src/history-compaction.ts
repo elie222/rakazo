@@ -20,7 +20,7 @@ import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
 } from "./memory-provider-factory.js";
-import { modelCreditOfferings } from "./model-credit-offerings.js";
+import { modelCreditOfferings } from "./model-credits/offerings.js";
 
 export { MAX_COMPACTED_SUMMARY_CHARS } from "./history-compaction.prompt.js";
 

@@ -32,8 +32,8 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
-import { approvedModelCreditMaterial } from "./model-credit-routing.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
+import { approvedModelCreditMaterial } from "./model-credits/routing.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, secretValuesToRedact } from "./model-secret.js";

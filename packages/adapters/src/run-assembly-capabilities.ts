@@ -29,7 +29,7 @@ import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { loadGroupContext } from "./group-handoff.js";
-import { approvedModelCreditOffering } from "./model-credit-offerings.js";
+import { approvedModelCreditOffering } from "./model-credits/offerings.js";
 import { selectConfiguredModel } from "./model-roles.js";
 import {
   findConnectedModelCredential,

@@ -10,8 +10,8 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { offeringUsage } from "./model-credit-offerings.js";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
+import { offeringUsage } from "./model-credits/offerings.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("durable model credit audit", () => {

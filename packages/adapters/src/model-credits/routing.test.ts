@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  approvedModelCreditMaterial,
-  availableModelCreditOfferings,
-} from "./model-credit-routing.js";
+import { approvedModelCreditMaterial, availableModelCreditOfferings } from "./routing.js";
 
 vi.mock("@rakazo/db", () => ({ runAsSystem: (_label: string, work: () => unknown) => work() }));
 const offering = {

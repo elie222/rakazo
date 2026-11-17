@@ -9,7 +9,7 @@ import { backupChoiceKey, modelRoleConnectionId, usableModelId } from "@rakazo/c
 import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "./auto-review.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 

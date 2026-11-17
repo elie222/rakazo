@@ -15,7 +15,7 @@ import {
   trimEndChars,
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
 import { modelProviderDefinition } from "./model-provider-registry.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
