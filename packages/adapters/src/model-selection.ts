@@ -24,7 +24,10 @@ import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
 import { catalogKnowsModel, modelAcceptsImageInput } from "./model-vision.js";
-import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
+import {
+  assertAllowedOpenAiCompatibleUrl,
+  assertHttpsForKeyedOpenAiCompatibleUrl,
+} from "./openai-compatible-url.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -682,9 +685,14 @@ export async function hasReadyModelCredential(
   if (!secret || (secret.kind === "oauth" && secret.reconnectRequired)) return false;
   if (secret.kind === "openai_compatible") {
     try {
-      assertAllowedOpenAiCompatibleUrl(secret.baseUrl, {
+      const url = assertAllowedOpenAiCompatibleUrl(secret.baseUrl, {
         allowPrivate: resolution.allowPrivateEndpoint === true,
       });
+      assertHttpsForKeyedOpenAiCompatibleUrl(
+        url,
+        secret.apiKey,
+        Boolean(secret.headers && Object.keys(secret.headers).length),
+      );
     } catch (error) {
       if (!(error instanceof ConnectionSetupError)) throw error;
       return false;

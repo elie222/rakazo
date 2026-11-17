@@ -655,6 +655,38 @@ describe("role-based model settings API", () => {
       },
     );
 
+    it.each([
+      { name: "no authentication", apiKey: undefined, headers: undefined },
+      { name: "an API key", apiKey: "fake-model-key", headers: undefined },
+      { name: "custom headers", apiKey: undefined, headers: { "X-Auth": "fake-model-header" } },
+    ])("checks public transport security with $name", async ({ apiKey, headers }) => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openai-compatible");
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "judge");
+      vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+      for (const secure of [true, false]) {
+        const { call, deps } = setup({
+          compatible: { enabledModelIds: ["judge"], defaultModel: "judge" },
+        });
+        vi.mocked(deps.secrets.load).mockResolvedValue(
+          serializeModelSecret({
+            kind: "openai_compatible",
+            baseUrl: `${secure ? "https" : "http"}://models.example.test/v1`,
+            enabledModelIds: ["judge"],
+            apiKey,
+            headers,
+          }),
+        );
+        const { response } = await call("models/role", { role: "approval" });
+        expect(response.status).toBe(200);
+        expect((await response.json()).json.deploymentPrimary).toEqual(
+          secure || (!apiKey && !headers)
+            ? { provider: "openai-compatible", modelId: "judge" }
+            : null,
+        );
+      }
+    });
+
     it.each([true, false])(
       "checks subscription access to an approval model against the live catalog: %s",
       async (listed) => {
