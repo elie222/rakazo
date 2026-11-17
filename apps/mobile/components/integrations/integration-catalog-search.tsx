@@ -16,12 +16,12 @@ import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
 /** Looks the search up in the public app catalog when asked, and connects a server by signing in. */
 export function IntegrationCatalogSearch({
   query,
-  noMatchShown,
+  noLocalMatch,
   onChanged,
 }: {
   query: string;
-  /** The screen already says nothing matched, so an empty answer adds nothing. */
-  noMatchShown: boolean;
+  /** Nothing on the screen matched, so say so unless the catalog finds something. */
+  noLocalMatch: boolean;
   /** A server was added or signed in to, whether or not its sign-in finished. */
   onChanged: (serverId?: string) => unknown;
 }) {
@@ -56,6 +56,9 @@ export function IntegrationCatalogSearch({
   const failure = connect.error ?? (searching ? search.error : null);
   return (
     <View testID="integration-catalog-search" style={styles.catalogStack}>
+      {noLocalMatch && !servers?.length ? (
+        <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
+      ) : null}
       {servers === null ? (
         <NativeActionButton
           fill={false}
@@ -64,10 +67,6 @@ export function IntegrationCatalogSearch({
           onPress={() => (searching ? void search.refetch() : setAsked(trimmed))}
           prominence="secondary"
         />
-      ) : servers.length === 0 ? (
-        noMatchShown ? null : (
-          <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
-        )
       ) : (
         servers.map((server) => (
           <View key={server.endpoint} style={styles.row}>

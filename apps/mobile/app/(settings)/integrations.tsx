@@ -1199,13 +1199,13 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {noMatch ? (
+                {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
                 ) : null}
                 {catalogsReady && !category ? (
                   <IntegrationCatalogSearch
                     query={query}
-                    noMatchShown={noMatch}
+                    noLocalMatch={noMatch}
                     onChanged={(serverId) => {
                       if (serverId) setOauthServerId(serverId);
                       void retryRefresh();

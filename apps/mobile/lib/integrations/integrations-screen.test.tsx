@@ -1360,6 +1360,7 @@ it("looks a search up in the public catalog only when asked, and signs in from t
   );
   const rows = () => container.querySelector('[data-testid="integration-catalog-search"]');
   expect(rows()?.textContent).toBe("TTrackerConnect");
+  expect(container.textContent).not.toContain("No apps match your search.");
 
   await press("Connect");
   expect(state.rpc).toHaveBeenCalledWith(
@@ -1389,7 +1390,23 @@ it("does not offer a catalog server that needs a key", async () => {
   await press("Search more apps");
 
   expect(container.querySelector('[data-testid="integration-catalog-search"]')?.textContent).toBe(
-    "",
+    "No apps match your search.",
   );
   expect(container.textContent?.match(/No apps match your search\./g)).toHaveLength(1);
+});
+
+it("does not say nothing matched when the screen lists a match but the catalog finds none", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/catalogSearch"
+      ? Promise.resolve({ enabled: true, results: [] })
+      : fallback?.(proc, args),
+  );
+  await render();
+  await act(async () => catalog.resolve([item]));
+  await searchFor("example");
+  await press("Search more apps");
+
+  expect(container.textContent).toContain("Example app");
+  expect(container.textContent).not.toContain("No apps match your search.");
 });

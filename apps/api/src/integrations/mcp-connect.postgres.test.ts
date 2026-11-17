@@ -125,7 +125,7 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
       const { server } = await rpc.mcp.servers.connect({ name: "Tracker", endpoint });
       await prisma.mcpServer.update({ where: { id: server.id }, data: { enabled: false } });
 
-      const again = await rpc.mcp.servers.connect({ name: "Tracker again", endpoint });
+      const again = await rpc.mcp.servers.connect({ name: "Tracker", endpoint });
 
       expect(again.server.id).not.toBe(server.id);
     }),
