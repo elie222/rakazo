@@ -1,8 +1,8 @@
 name: Dependency security
 
 on:
-  # The audit reads only the lockfile and its config, so a pull request that leaves them alone cannot change the
-  # result; main and the nightly run catch newly published advisories.
+  # The audit reads only the lockfile and its config, so a pull request that leaves them alone
+  # cannot change the result; main and the nightly run catch newly published advisories.
   pull_request:
     paths:
       - ".github/workflows/dependency-security.yml"
