@@ -25,22 +25,36 @@ import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { abortableDelay } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
-import { screenSessionKey } from "../../../computer-screens.js";
+import {
+  installPageBrowserCommand,
+  privatePageInput,
+} from "../../../browser/page-browser-install.js";
+import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
-} from "../../../computer-support.js";
-import { PortableFileBatcher } from "../../../computer-workspace.js";
-import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "../../../linux-desktop.js";
-import { installPageBrowserCommand, privatePageInput } from "../../../page-browser-install.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents, timedOutCommandEvents } from "../../../sandbox-command-events.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { withAbort } from "../../../web-ssrf.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../workspace-save-policy.js";
+} from "../../../computers/screens/computer-support.js";
+import {
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+} from "../../../computers/screens/linux-desktop.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../sandboxes/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../sandboxes/sandbox-command-events.js";
+import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { withAbort } from "../../../web/web-ssrf.js";
+import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
 
 const DISPLAY_START = 20;
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
@@ -944,57 +958,4 @@ async function isFailedDaytonaTransition(error: unknown): Promise<boolean> {
     error.statusCode === undefined &&
     !(error instanceof DaytonaTimeoutError)
   );
-}
-
-function isDaytonaExecutable(mode: string, permissions: string): boolean {
-  return /x/.test(permissions) || (Number.parseInt(mode, 8) & 0o100) !== 0;
-}
-
-async function* walkDaytonaWorkspace(
-  sandbox: DaytonaSandbox,
-  root: string,
-  directory: string,
-  context: AdapterContext,
-): AsyncIterable<PortableFile> {
-  if (context.signal.aborted) throw context.signal.reason ?? new Error("export aborted");
-  const entries = await sandbox.fs.listFiles(workspacePath(root, directory));
-  const files = entries
-    .filter((entry) => !entry.isDir)
-    .map((entry) => ({
-      entry,
-      relative: normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name),
-    }))
-    .filter(({ relative }) => !shouldSkipPortableWorkspaceFile(relative));
-  const directories = entries.filter((entry) => entry.isDir);
-  for (const entries of daytonaExportBatches(files)) {
-    const batch = await Promise.all(
-      entries.map(async ({ entry, relative }) => {
-        const content = await sandbox.fs.downloadFile(workspacePath(root, relative));
-        return {
-          path: relative,
-          content: new Uint8Array(content.buffer, content.byteOffset, content.byteLength),
-          executable: isDaytonaExecutable(entry.mode, entry.permissions),
-        };
-      }),
-    );
-    for (const file of batch) yield file;
-  }
-  for (const entry of directories) {
-    const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
-    if (!shouldSkipPortableWorkspaceFile(relative, true)) {
-      yield* walkDaytonaWorkspace(sandbox, root, relative, context);
-    }
-  }
-}
-
-function daytonaExportBatches<T extends { entry: { size: number } }>(files: readonly T[]): T[][] {
-  const batches: T[][] = [];
-  const batcher = new PortableFileBatcher<T>(8, (file) => file.entry.size);
-  for (const file of files) {
-    const full = batcher.add(file);
-    if (full?.length) batches.push(full);
-  }
-  const last = batcher.take();
-  if (last.length) batches.push(last);
-  return batches;
 }

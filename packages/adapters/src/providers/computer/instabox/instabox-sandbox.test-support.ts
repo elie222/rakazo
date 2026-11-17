@@ -1,7 +1,10 @@
 import { CommandExitError, InstaboxError, InstaboxQuotaError } from "@insforge/instabox-sdk";
 import type { UnreferencedMachineRecords } from "@rakazo/adapter-kit";
 import { parse } from "shell-quote";
-import { desktopCommandResponder, simpleCommand } from "../../../linux-desktop.test-support.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
 import type {
   InstaboxApi,
   InstaboxCommandResult,

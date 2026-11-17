@@ -3,13 +3,13 @@ import type { Actor } from "@rakazo/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
-import { reactToThreadMessage } from "../thread-reactions.js";
+import { reactToThreadMessage } from "../threads/thread-reactions.js";
 
-vi.mock("../thread-target.js", async (original) => ({
-  ...(await original<typeof import("../thread-target.js")>()),
+vi.mock("../threads/thread-target.js", async (original) => ({
+  ...(await original<typeof import("../threads/thread-target.js")>()),
   resolveThreadTarget: vi.fn(async () => ({ kind: "bot", botId: "bot-1", threadId: "thread-1" })),
 }));
-vi.mock("../thread-reactions.js", () => ({
+vi.mock("../threads/thread-reactions.js", () => ({
   reactToThreadMessage: vi.fn(async () => ({ eventSeq: null, runIds: [] })),
 }));
 vi.mock("./shared.js", async (original) => ({
