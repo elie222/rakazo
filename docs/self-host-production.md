@@ -132,14 +132,6 @@ header: `Caddyfile.cloudflare.example` does this with Cloudflare's ranges and `C
 For another CDN, copy that file and change the ranges and the header. If you copied the Cloudflare
 example before this change, copy it again.
 
-## Behind a login gate
-
-If an access proxy such as Cloudflare Access or oauth2-proxy guards the whole origin with a
-cookie, the computer screen stays blank: its sandboxed frame cannot send that cookie. Keep the
-gate on every other path and route only `/novnc/session/*` straight to Rakazo, which checks each
-screen URL itself. [Add a login gate without breaking the computer](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer)
-explains why this is safe and has a Caddy example; it applies to any layout.
-
 ## Firewall changes
 
 Host hardening preserves existing firewall rules and installs `firewall-change.sh` as
@@ -246,6 +238,6 @@ non-persistent directory, unless you run Docker computers: they mount their cach
 host. The [data directory](./self-host-storage.md#data-directory) lists what each path holds.
 
 Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
-proxy routes. Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
+proxy routes. Behind a cookie login gate, exempt only `/novnc/session/*` ([why](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer)). Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
 service's trust boundary. `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` apply from the environment on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
