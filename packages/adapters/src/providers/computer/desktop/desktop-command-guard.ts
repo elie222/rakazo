@@ -648,7 +648,7 @@ const SYNTAX_REFUSALS = new Set([
 ]);
 
 export function desktopProtectionGuardMessage(reason: string): string {
-  // A refused protected target gets no workaround; only ordinary scripting is pointed at a script file.
+  // Only ordinary scripting is pointed at a script file, never a refused protected target.
   const recovery =
     SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable")
       ? " Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error."
