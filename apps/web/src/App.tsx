@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
+import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -233,7 +234,8 @@ function SessionApp() {
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
-                  user ? (
+                  // A sign-in the mobile app started goes back to the app, signed in here or not.
+                  user || mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ? (
                     <McpOAuthCallbackPage />
                   ) : (
                     <Navigate

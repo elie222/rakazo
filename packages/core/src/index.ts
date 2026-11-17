@@ -61,6 +61,7 @@ export * from "./integrations/app-connect.js";
 export * from "./integrations/cloud-agent.js";
 export * from "./integrations/connection-catalog.js";
 export * from "./integrations/featured-connectors.js";
+export * from "./integrations/integration-catalog.js";
 export * from "./integrations/mcp.js";
 export * from "./integrations/mcp-app.js";
 export * from "./integrations/plugin-catalog.js";
