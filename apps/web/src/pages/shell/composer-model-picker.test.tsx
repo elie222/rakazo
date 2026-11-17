@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { Bot } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -14,7 +15,7 @@ vi.mock("../../lib/rpc", () => {
     models: {
       credentials: vi.fn(async () => [{ provider: "acme", label: "Acme" }]),
       list: vi.fn(async () => [
-        { provider: "acme", id: "fast", label: "Fast" },
+        { provider: "acme", id: "fast", label: "Fast", thinkingLevels: ["low", "high"] },
         { provider: "acme", id: "smart", label: "Smart" },
       ]),
     },
@@ -36,13 +37,20 @@ vi.mock("@lingui/react/macro", () => {
 const { rpc } = await import("../../lib/rpc");
 const { ComposerModelPicker } = await import("./composer-model-picker");
 
-const bot = { id: "bot-1", modelProvider: null, modelId: null } as unknown as Bot;
+const bot = {
+  id: "bot-1",
+  modelProvider: null,
+  modelId: null,
+  thinkingLevel: null,
+} as unknown as Bot;
 
 describe("ComposerModelPicker", () => {
   let root: Root;
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    i18n.load("en", {});
+    i18n.activate("en");
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "ResizeObserver",
@@ -82,6 +90,8 @@ describe("ComposerModelPicker", () => {
       return button;
     });
     expect(trigger.textContent).toContain("Fast");
+    // The Space default's model offers thinking levels, so its default level shows too.
+    expect(trigger.textContent).toContain("Medium");
 
     act(() => trigger.click());
     const smart = await vi.waitFor(() => {
@@ -100,5 +110,41 @@ describe("ComposerModelPicker", () => {
       modelId: "smart",
       thinkingLevel: null,
     });
+  });
+
+  it("saves a thinking level from beside the model list", async () => {
+    const onSaved = vi.fn();
+    const updated = { ...bot, thinkingLevel: "high" };
+    vi.mocked(rpc.bots.update).mockResolvedValue(updated as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker bot={bot} onSaved={onSaved} />
+        </QueryClientProvider>,
+      ),
+    );
+    const trigger = await vi.waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Model"]');
+      if (!button) throw new Error("not rendered yet");
+      return button;
+    });
+    act(() => trigger.click());
+    const high = await vi.waitFor(() => {
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (row) => row.textContent === "High",
+      );
+      if (!option) throw new Error("thinking levels not shown");
+      return option;
+    });
+    expect(
+      [...document.querySelectorAll('[role="option"]')].some(
+        (row) => row.textContent === "Default (Medium)",
+      ),
+    ).toBe(true);
+    act(() => high.click());
+
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated, "high"));
+    expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: "high" });
   });
 });

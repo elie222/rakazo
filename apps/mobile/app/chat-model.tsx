@@ -1,0 +1,102 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { ThinkingLevel } from "@rakazo/contracts";
+import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { useLocalSearchParams } from "expo-router";
+import { Alert, View } from "react-native";
+import { MenuPicker } from "../components/menu-picker";
+import { ModelPickerList } from "../components/model-picker-list";
+import { SettingsGroup } from "../components/settings-group";
+import { chatModelPickerChoices } from "../lib/chat-model";
+import { rpcQuery, useSave } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
+import { thinkingLevelLabel } from "../lib/thinking-level";
+import { errorText } from "../lib/user-error";
+
+/** A chat's model and thinking, opened from the composer; each change saves at once. */
+export default function ChatModelScreen() {
+  const { t } = useLingui();
+  const { botId } = useLocalSearchParams<{ botId: string }>();
+  const botRead = rpcQuery("bots/get", { botId });
+  const bot = useScreenQuery(botRead);
+  const me = useScreenQuery(rpcQuery("me"));
+  const catalog = useScreenQuery(rpcQuery("models/list"));
+  const credentials = useScreenQuery(rpcQuery("models/credentials"));
+  const save = useSave({
+    // A model pick also resets thinking; a thinking pick sends only the level.
+    save: (patch: { modelKey?: string; thinkingLevel: ThinkingLevel | null }, send) =>
+      send("bots/update", {
+        botId,
+        ...(patch.modelKey === undefined
+          ? { thinkingLevel: patch.thinkingLevel }
+          : botModelPick(patch.modelKey)),
+      }),
+    // The chat's chip and the bot's settings read the bot again.
+    stale: [botRead.queryKey],
+    onFailed: (error) => Alert.alert(errorText(error, t`Could not change the model`)),
+  });
+
+  const ready = bot.data && me.data && catalog.data && credentials.data;
+  const savedKey =
+    bot.data?.modelProvider && bot.data.modelId
+      ? modelOptionKey(bot.data.modelProvider, bot.data.modelId)
+      : "";
+  const pendingKey = save.pending ? save.input?.modelKey : undefined;
+  const state = ready
+    ? botModelState({
+        credentials: credentials.data,
+        catalog: catalog.data,
+        me: me.data,
+        modelKey: pendingKey ?? savedKey,
+        spaceDefaultLabel: t`Space default`,
+      })
+    : null;
+  const choices =
+    state && me.data && catalog.data && credentials.data
+      ? chatModelPickerChoices(me.data, catalog.data, credentials.data, state.selectedModelKey)
+      : null;
+  const thinking = save.pending
+    ? (save.input?.thinkingLevel ?? "")
+    : (bot.data?.thinkingLevel ?? "");
+  const failure = bot.error ?? me.error ?? catalog.error ?? credentials.error;
+
+  return (
+    <ModelPickerList
+      choices={choices}
+      selectedKey={state?.selectedModelKey ?? ""}
+      error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
+      onSelect={(choice) => {
+        if (!state || choice.key === state.selectedModelKey) return;
+        // A new model starts on its own default thinking, as it does from the bot's settings.
+        save.run({ modelKey: choice.key, thinkingLevel: null });
+      }}
+      header={
+        state?.thinkingLevels.length ? (
+          <View style={{ marginBottom: 20 }}>
+            <SettingsGroup label={t`Thinking`}>
+              <MenuPicker
+                label={t`Thinking`}
+                showLabel={false}
+                disabled={save.pending}
+                choices={[
+                  {
+                    key: "",
+                    label: t`Default (${ph({ level: thinkingLevelLabel(state.defaultThinkingLevel) })})`,
+                  },
+                  ...state.thinkingLevels.map((level) => ({
+                    key: level,
+                    label: thinkingLevelLabel(level),
+                  })),
+                ]}
+                value={thinking}
+                onChange={(level) =>
+                  save.run({ thinkingLevel: (level || null) as ThinkingLevel | null })
+                }
+              />
+            </SettingsGroup>
+          </View>
+        ) : undefined
+      }
+    />
+  );
+}
