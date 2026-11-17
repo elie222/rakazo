@@ -308,11 +308,9 @@ it("returns completed audio when settlement storage fails", async () => {
     units: 12,
     providerRequestId: "fake-provider-request",
   };
-  const provider = vi
-    .spyOn(adapters, "createVoiceProvider")
-    .mockReturnValue({
-      synthesize: async () => ({ mimeType: "audio/mpeg", bytes: new Uint8Array([1]), usage }),
-    } as never);
+  const provider = vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({
+    synthesize: async () => ({ mimeType: "audio/mpeg", bytes: new Uint8Array([1]), usage }),
+  } as never);
   vi.mocked(settleSpeech).mockRejectedValueOnce(new Error("temporary database outage"));
   const clip = await synthesizeVoice(deps(), actor, { text: "Synthetic speech sample" });
   expect(clip.mimeType).toBe("audio/mpeg");
