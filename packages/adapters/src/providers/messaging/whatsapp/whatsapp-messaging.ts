@@ -27,8 +27,7 @@ export const whatsappMessaging = defineMessagingPlatform({
       }),
       peekStatuses: parseWhatsAppStatuses,
       isPermanentSendError: (error) =>
-        (error instanceof WhatsAppApiError &&
-          error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED) ||
+        (error instanceof WhatsAppApiError && error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED) ||
         isRejectedUpload(error),
     };
   },
