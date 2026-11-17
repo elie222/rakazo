@@ -8,7 +8,7 @@ import {
 import type { PrismaClient } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
 
-const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active", "past_due"]);
+const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active"]);
 
 /**
  * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever

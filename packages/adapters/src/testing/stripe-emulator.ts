@@ -102,7 +102,7 @@ export class StripeEmulator {
       latestInvoice: {
         id: `in_fake_${n}`,
         status: "paid",
-        amount_paid: trialEnd || status ? 0 : 1000,
+        total: trialEnd || status ? 0 : 1000,
         status_transitions: { paid_at: nowSeconds },
       },
       items: {
@@ -145,13 +145,13 @@ export class StripeEmulator {
         ? {
             id: `in_fake_${++this.sequence}`,
             status: "paid",
-            amount_paid: 1000,
+            total: 1000,
             status_transitions: { paid_at: nowSeconds },
           }
         : {
             id: `in_fake_${++this.sequence}`,
             status: "open",
-            amount_paid: 0,
+            total: 1000,
             status_transitions: { paid_at: null },
           };
   }
@@ -327,7 +327,7 @@ export class StripeEmulator {
       found.latestInvoice = {
         id: `in_fake_${++this.sequence}`,
         status: "paid",
-        amount_paid: 1000,
+        total: 1000,
         status_transitions: { paid_at: nowSeconds },
       };
       for (const entry of found.items.data) {
@@ -379,7 +379,7 @@ export interface StripeSubscriptionRecord {
   latestInvoice: {
     id: string;
     status: string;
-    amount_paid: number;
+    total: number;
     status_transitions: { paid_at: number | null };
   };
   items: {

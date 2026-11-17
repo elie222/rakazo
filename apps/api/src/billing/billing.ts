@@ -153,16 +153,16 @@ function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
 /**
  * How a trial ended, once that is known: true when its first charge was paid, false when the
  * subscription stopped without one, null while the trial runs or the charge is still pending
- * (a subscription turns active before its first charge is collected).
+ * (a subscription turns active before its first charge is collected). A failed first charge
+ * that is settled later ends it a second time, as true.
  */
 export function trialOutcome(
   previous: Pick<BillingAccount, "status" | "trialEndsAt" | "paidAt">,
   live: Pick<BillingSubscriptionSnapshot, "status" | "paidAt">,
 ): boolean | null {
-  const awaitingFirstPayment =
-    previous.status === "trialing" ||
-    (previous.status === "active" && previous.trialEndsAt !== null && !previous.paidAt);
-  if (!awaitingFirstPayment) return null;
+  const unpaidTrial = previous.trialEndsAt !== null && !previous.paidAt;
+  if (unpaidTrial && needsBillingPortal(previous.status)) return live.paidAt ? true : null;
+  if (previous.status !== "trialing" && !(unpaidTrial && previous.status === "active")) return null;
   if (live.paidAt) return true;
   return live.status === "trialing" || live.status === "active" ? null : false;
 }
@@ -381,7 +381,10 @@ export function createBillingService(deps: {
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
-    const at = (started ? live.currentPeriodStartsAt : live.trialEndsAt) ?? new Date();
+    // A payment's own time, so one that settles an earlier failed charge is not deduplicated away.
+    const at =
+      (started ? live.currentPeriodStartsAt : converted ? live.paidAt : live.trialEndsAt) ??
+      new Date();
     analytics.capture(
       owner,
       started

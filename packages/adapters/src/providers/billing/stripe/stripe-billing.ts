@@ -81,7 +81,7 @@ const subscriptionSchema = z.object({
       z.string(),
       z.object({
         status: z.string().nullish(),
-        amount_paid: z.number().nullish(),
+        total: z.number().nullish(),
         status_transitions: z.object({ paid_at: z.number().nullish() }).nullish(),
       }),
     ])
@@ -1026,7 +1026,8 @@ function toSnapshot(
   const comment = subscription.cancellation_details?.comment?.trim();
   const invoice = subscription.latest_invoice;
   const paidAt =
-    typeof invoice === "object" && invoice?.status === "paid" && (invoice.amount_paid ?? 0) > 0
+    // By its total, so an invoice settled from the customer's balance counts and a free one does not.
+    typeof invoice === "object" && invoice?.status === "paid" && (invoice.total ?? 0) > 0
       ? fromSeconds(invoice.status_transitions?.paid_at)
       : null;
   return {

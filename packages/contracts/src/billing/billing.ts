@@ -199,7 +199,6 @@ export function modelCreditsUsd(status: BillingStatus | null | undefined): numbe
   return status.funding === "credits" || balance > 0 ? balance : null;
 }
 
-/** A trial set to cancel, which gets no computer hours until it is renewed. */
 /** A subscription that stopped for want of a payment: it resumes from the billing portal. */
 export function paymentOverdue(status: BillingStatus): boolean {
   return (
@@ -209,6 +208,7 @@ export function paymentOverdue(status: BillingStatus): boolean {
   );
 }
 
+/** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
 }

@@ -152,12 +152,19 @@ describe("trial outcome", () => {
     expect(trialOutcome(trialing, { status: "canceled" })).toBe(false);
   });
 
+  it("converts when a failed first charge is settled later", () => {
+    const overdue = { status: "past_due", trialEndsAt, paidAt: null };
+    expect(trialOutcome(overdue, { status: "past_due" })).toBeNull();
+    expect(trialOutcome(overdue, { status: "canceled" })).toBeNull();
+    expect(trialOutcome(overdue, { status: "active", paidAt })).toBe(true);
+  });
+
   it("reports nothing once the trial's end is recorded", () => {
     expect(
       trialOutcome({ status: "active", trialEndsAt, paidAt }, { status: "past_due" }),
     ).toBeNull();
     expect(
-      trialOutcome({ status: "past_due", trialEndsAt, paidAt: null }, { status: "active", paidAt }),
+      trialOutcome({ status: "past_due", trialEndsAt, paidAt }, { status: "active", paidAt }),
     ).toBeNull();
     expect(
       trialOutcome({ status: "active", trialEndsAt: null, paidAt: null }, { status: "canceled" }),
