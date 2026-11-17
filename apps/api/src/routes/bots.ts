@@ -415,6 +415,11 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        if (input.voiceId !== undefined && deps.managedVoiceProfiles?.forBot(input.botId)) {
+          throw new ORPCError("CONFLICT", {
+            message: "This bot's voice is managed by the deployment.",
+          });
+        }
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {

@@ -919,6 +919,8 @@ export interface VoiceSynthesizeRequest {
    * one, each adapter uses its own default.
    */
   model?: string;
+  /** Deployment-managed tuning, validated and translated by the selected adapter. */
+  settings?: Readonly<Record<string, unknown>>;
   signal?: AbortSignal;
 }
 

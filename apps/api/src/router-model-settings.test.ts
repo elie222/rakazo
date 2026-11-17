@@ -979,6 +979,7 @@ describe("bot model auth on save", () => {
 
   function saveDeps(options: {
     modelId: string;
+    managedVoice?: boolean;
     preferences: (args: { where: { modelId?: string; credential?: { provider?: string } } }) => {
       credential: ReturnType<typeof credentialRow>;
       modelId: string;
@@ -1025,6 +1026,16 @@ describe("bot model auth on save", () => {
         load: (ciphertext: string) => (ciphertext === "cipher-oauth" ? oauth : apiKey),
       },
       events: { notify: vi.fn().mockResolvedValue(undefined) },
+      managedVoiceProfiles: {
+        forBot: (botId: string) =>
+          options.managedVoice && botId === bot.id
+            ? {
+                botId,
+                voiceId: "fish-audio::managed-voice",
+                voiceLabel: "Managed voice",
+              }
+            : undefined,
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -1047,6 +1058,32 @@ describe("bot model auth on save", () => {
     expect(response.status).toBe(200);
     expect(botUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ dailyCheckIns: false }) }),
+    );
+  });
+
+  it("rejects changing a managed bot voice but keeps unrelated settings writable", async () => {
+    const managed = saveDeps({ modelId: spark, preferences: () => null, managedVoice: true });
+
+    const voice = await call(managed.handler, "bots/update", {
+      botId: "bot-1",
+      voiceId: "fish-audio::other-voice",
+    });
+    expect(voice.status).toBe(409);
+    await expect(voice.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "This bot's voice is managed by the deployment.",
+      }),
+    });
+    expect(managed.botUpdate).not.toHaveBeenCalled();
+
+    const autoSpeak = await call(managed.handler, "bots/update", {
+      botId: "bot-1",
+      autoSpeak: true,
+    });
+    expect(autoSpeak.status).toBe(200);
+    expect(managed.botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ autoSpeak: true }) }),
     );
   });
 

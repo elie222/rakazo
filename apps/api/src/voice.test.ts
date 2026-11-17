@@ -693,6 +693,63 @@ describe("synthesizeVoice", () => {
     );
   });
 
+  it("uses a managed profile instead of the voice saved on the bot", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array(), mimeType: "audio/mpeg" });
+    const create = vi
+      .spyOn(adapters, "createVoiceProvider")
+      .mockReturnValue({ synthesize } as never);
+    const prisma = {
+      bot: { findFirst: vi.fn().mockResolvedValue({ voiceId: "elevenlabs::saved-voice" }) },
+      spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
+      userVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: false,
+          voiceId: "connection-default",
+          speechModel: "connection-model",
+          credential: {
+            id: "managed-credential",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "managed-secret",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "managed-secret", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("managed-key"), put: vi.fn() },
+      managedVoiceProfiles: {
+        forBot: () => ({
+          botId: "bot-1",
+          voiceId: "fish-audio::managed-voice",
+          voiceLabel: "Managed voice",
+          model: "managed-model",
+          settings: { speed: 0.94 },
+        }),
+      },
+    } as unknown as VoiceDeps;
+
+    await synthesizeVoice(deps, actor, { text: "Hello", botId: "bot-1" });
+
+    expect(create).toHaveBeenCalledWith("fish-audio", expect.anything());
+    expect(synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voiceId: "managed-voice",
+        apiKey: "managed-key",
+        model: "managed-model",
+        settings: { speed: 0.94 },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("omits the model when the connection has no override", async () => {
     const synthesize = vi
       .fn()

@@ -404,6 +404,7 @@ export async function resolveVoiceTarget(
   input: { botId?: string; voiceId?: string; scope?: SettingsScope; signal?: AbortSignal },
 ) {
   let botVoiceId: string | null = null;
+  const managed = input.botId ? deps.managedVoiceProfiles?.forBot(input.botId) : undefined;
   if (input.botId) {
     const bot = await deps.prisma.bot.findFirst({
       where: { id: input.botId, spaceId: actor.spaceId },
@@ -412,7 +413,7 @@ export async function resolveVoiceTarget(
     if (!bot) throw new IsolationError();
     botVoiceId = bot.voiceId;
   }
-  const selectedVoiceId = input.voiceId || botVoiceId;
+  const selectedVoiceId = managed?.voiceId || input.voiceId || botVoiceId;
   let qualified = selectedVoiceId ? parseQualifiedVoiceId(selectedVoiceId) : null;
   if (!qualified && selectedVoiceId) {
     const matches = (
@@ -435,7 +436,7 @@ export async function resolveVoiceTarget(
   if (!loaded) throw new NoVoiceConfigured("key");
   const voiceId = qualified?.voiceId || selectedVoiceId || loaded.cred.voiceId;
   if (!voiceId) throw new NoVoiceConfigured("voice");
-  return { ...loaded, voiceId };
+  return { ...loaded, voiceId, model: managed?.model, settings: managed?.settings };
 }
 
 export async function persistVoiceCredential(
@@ -760,7 +761,8 @@ export async function synthesizeVoice(
         text,
         voiceId: target.voiceId,
         apiKey: target.apiKey,
-        model: target.cred.speechModel || undefined,
+        model: target.model || target.cred.speechModel || undefined,
+        settings: target.settings,
         signal: input.signal,
       },
       voiceContext(actor, input.signal),
