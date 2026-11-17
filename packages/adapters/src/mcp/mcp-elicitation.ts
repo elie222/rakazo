@@ -320,20 +320,21 @@ export class McpElicitationRouter {
     if (!question || this.asking.has(asker.owner)) return DECLINE;
     this.asking.add(asker.owner);
     const resumes = calls.map((call) => call.clock?.pause() ?? (() => undefined));
+    // Which of the run's calls asked is unknown, so the question closes once none of them runs.
+    const callsEnded = whenAllEnd(calls.flatMap((call) => (call.signal ? [call.signal] : [])));
     try {
       // A failed ask is a question nobody answered: the server hears a cancel and decides
       // what its call does next.
-      // Which of the run's calls asked is unknown, so the question closes once none of them runs.
-      const callsEnded = whenAllEnd(calls.flatMap((call) => (call.signal ? [call.signal] : [])));
       const answer = (await bestEffort(
         "mcp.elicitation",
-        ask(question, AbortSignal.any([signal, callsEnded])),
+        ask(question, AbortSignal.any([signal, callsEnded.signal])),
       )) ?? {
         action: "cancel",
       };
       if (answer.action === "accept") return { action: "accept", content: answer.values };
       return { action: answer.action };
     } finally {
+      callsEnded.stop();
       this.asking.delete(asker.owner);
       for (const resume of resumes) resume();
     }
@@ -405,14 +406,19 @@ export function newRemoteMcpClient(router?: McpElicitationRouter): Client {
   return client;
 }
 
-/** Aborts once every one of `signals` has; never, when there are none. */
-function whenAllEnd(signals: readonly AbortSignal[]): AbortSignal {
+/** Aborts once every one of `signals` has; never, when there are none. `stop` drops its
+ * listeners once the question is over. */
+function whenAllEnd(signals: readonly AbortSignal[]): { signal: AbortSignal; stop: () => void } {
   const ended = new AbortController();
-  if (signals.length === 0) return ended.signal;
   const check = () => {
     if (signals.every((signal) => signal.aborted)) ended.abort();
   };
   for (const signal of signals) signal.addEventListener("abort", check, { once: true });
-  check();
-  return ended.signal;
+  if (signals.length > 0) check();
+  return {
+    signal: ended.signal,
+    stop: () => {
+      for (const signal of signals) signal.removeEventListener("abort", check);
+    },
+  };
 }
