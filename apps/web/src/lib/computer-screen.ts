@@ -95,6 +95,17 @@ export function proxiedScreenCapability(
 }
 
 /**
+ * Whether a screen address lets its viewer type and click. A proxied screen says so in its
+ * capability path; any other address says so in its `view_only` setting, and one that says
+ * nothing is taken as one that drives, so a watch-only frame never draws it.
+ */
+export function screenUrlDrives(url: string): boolean {
+  const capability = proxiedScreenCapability(url);
+  if (capability) return capability.policy === "control";
+  return !/[?&#]view_only=true(?:&|$)/.test(url);
+}
+
+/**
  * The frames a screen draws. A held predecessor comes first, so React keeps its element in place
  * (a moved iframe reloads), then the live frame.
  */

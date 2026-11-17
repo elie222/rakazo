@@ -12,6 +12,7 @@ import {
   screenFrameMessage,
   screenFrameStarted,
   screenIframeSandbox,
+  screenUrlDrives,
 } from "./computer-screen";
 
 describe("computer screen requests", () => {
@@ -152,6 +153,24 @@ describe("embeddableScreenUrl", () => {
     expect(embeddableScreenUrl("https://screen.example:6080/vnc.html")).toBe(
       "https://screen.example:6080/vnc.html",
     );
+  });
+});
+
+describe("screenUrlDrives", () => {
+  it.each([
+    ["a view proxy capability", "https://app.test/novnc/session/view/9.tok/vnc.html", false],
+    ["a control proxy capability", "https://app.test/novnc/session/control/9.tok/vnc.html", true],
+    ["a view-only query", "https://screen.test/vnc.html?a=1&view_only=true", false],
+    [
+      "an embedded desktop's view-only fragment",
+      "http://app.test/s.html#id=1&view_only=true",
+      false,
+    ],
+    ["a view-only setting of false", "https://screen.test/vnc.html?view_only=false", true],
+    ["no view-only setting", "https://screen.test/vnc.html", true],
+    ["a look-alike parameter", "https://screen.test/vnc.html?not_view_only=true", true],
+  ])("reads %s", (_name, url, drives) => {
+    expect(screenUrlDrives(url)).toBe(drives);
   });
 });
 

@@ -6,7 +6,7 @@ import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
-import { screenFrames, screenIframeSandbox } from "../../lib/computer-screen";
+import { screenFrames, screenIframeSandbox, screenUrlDrives } from "../../lib/computer-screen";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
@@ -103,16 +103,20 @@ function ComputerPreview({
     !runsOnUserMachine(computer) &&
     (!computer || computer.state === "stopped" || computer.state === "suspended");
   const rowClass = "flex min-h-14 items-center gap-3 rounded-xl bg-muted/50 px-4 text-body";
+  // Only a view-only address is drawn here: the frame never types, and the address another
+  // viewer's control lease signed (just after the full window closes) is not shown until a read replaces it, and neither is a control frame kept over from the full window.
+  const watchOnlyUrl =
+    embeddedScreenUrl && !screenUrlDrives(embeddedScreenUrl) ? embeddedScreenUrl : null;
   // The bot's screen shows here only while its own run keeps the computer up; an idle one sleeps.
   const live =
     !computerOpen &&
     !runsOnUserMachine(computer) &&
     livePreview &&
     computer?.state === "running" &&
-    Boolean(embeddedScreenUrl) &&
+    watchOnlyUrl !== null &&
     !computerScreenError &&
     !showingRecoveryHint;
-  const liveUrl = live ? embeddedScreenUrl : null;
+  const liveUrl = live ? watchOnlyUrl : null;
   // The bot stands in for its screen whenever it is not being watched here.
   const tile = (asleep: boolean) => (
     <span aria-hidden className="relative shrink-0">
@@ -201,7 +205,11 @@ function ComputerPreview({
             className={`grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80 ${hideOnHover}`}
           />
         ) : liveUrl ? (
-          screenFrames(screenFrameKey, liveUrl, heldScreen).map((frame) => (
+          screenFrames(
+            screenFrameKey,
+            liveUrl,
+            heldScreen && !screenUrlDrives(heldScreen.url) ? heldScreen : null,
+          ).map((frame) => (
             <iframe
               key={frame.key}
               title={frame.held ? undefined : t`Bot screen`}

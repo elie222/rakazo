@@ -51,11 +51,17 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
   };
 }
 
+type Live = {
+  livePreview: boolean;
+  embeddedScreenUrl: string | null;
+  heldScreen?: { url: string; key: string };
+};
+
 async function render(
   status: ComputerStatus | null,
   onOpen = vi.fn(),
   disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
-  live: { livePreview: boolean; embeddedScreenUrl: string | null } = {
+  live: Live = {
     livePreview: false,
     embeddedScreenUrl: null,
   },
@@ -67,6 +73,7 @@ async function render(
         computer={status}
         computerOpen={false}
         embeddedScreenUrl={live.embeddedScreenUrl}
+        heldScreen={live.heldScreen}
         screenFrameRef={() => undefined}
         livePreview={live.livePreview}
         computerScreenError={null}
@@ -122,7 +129,7 @@ it("shows a running computer awake with an Open button and no live screen", asyn
   expect(onOpen).toHaveBeenCalledOnce();
 });
 
-const screenUrl = "https://screen.test/bot-1";
+const screenUrl = "https://screen.test/bot-1?view_only=true";
 
 it("shows a running computer's screen inline while the bot's own run holds it up", async () => {
   await render(computer("running"), vi.fn(), undefined, {
@@ -137,6 +144,53 @@ it("shows a running computer's screen inline while the bot's own run holds it up
   expect(
     container.querySelector('[data-testid="computer-preview"]')?.getAttribute("data-state"),
   ).toBe("live");
+});
+
+it.each([
+  "https://app.test/novnc/session/control/1900000000.token/vnc.html?view_only=false",
+  "https://screen.test/vnc.html?view_only=false",
+  "https://screen.test/vnc.html",
+])("draws no inline screen from an address that can drive it: %s", async (url) => {
+  await render(computer("running"), vi.fn(), undefined, {
+    livePreview: true,
+    embeddedScreenUrl: url,
+  });
+  expect(container.querySelector("iframe")).toBeNull();
+});
+
+it("draws a view-only proxied screen inline", async () => {
+  const url = "https://app.test/novnc/session/view/1900000000.token/vnc.html?view_only=true";
+  await render(computer("running"), vi.fn(), undefined, {
+    livePreview: true,
+    embeddedScreenUrl: url,
+  });
+  expect(container.querySelector("iframe")?.getAttribute("src")).toBe(url);
+});
+
+it("keeps no control frame over from the full window under the preview", async () => {
+  const held = {
+    url: "https://app.test/novnc/session/control/1900000000.token/vnc.html?view_only=false",
+    key: "0:0",
+  };
+  await render(computer("running"), vi.fn(), undefined, {
+    livePreview: true,
+    embeddedScreenUrl: screenUrl,
+    heldScreen: held,
+  });
+  const frames = [...container.querySelectorAll("iframe")];
+  expect(frames.map((frame) => frame.getAttribute("src"))).toEqual([screenUrl]);
+});
+
+it("keeps a view-only frame over under the preview", async () => {
+  const held = { url: "https://screen.test/old?view_only=true", key: "0:0" };
+  await render(computer("running"), vi.fn(), undefined, {
+    livePreview: true,
+    embeddedScreenUrl: screenUrl,
+    heldScreen: held,
+  });
+  const frames = [...container.querySelectorAll("iframe")];
+  expect(frames.map((frame) => frame.getAttribute("src"))).toEqual([held.url, screenUrl]);
+  expect(frames.every((frame) => frame.tabIndex === -1)).toBe(true);
 });
 
 it.each([
