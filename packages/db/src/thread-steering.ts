@@ -1,6 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
+  BACKGROUND_RUN_TRIGGERS,
   blocksToAgentHistoryText,
   HELPER_RESULT_TRIGGER,
   isConversationalRun,
@@ -11,6 +12,7 @@ import {
 import type { Prisma, PrismaClient } from "./client.js";
 import { appendEventInTransaction } from "./events.js";
 import { mayBeChannelMessage, readMessageBlocks, storedMessageBlocks } from "./message-blocks.js";
+import { createThreadMessageInTransaction } from "./messages.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export interface ClaimSteeringInput {
@@ -385,4 +387,92 @@ function steeringOrigin(item: {
   if (channelId) return `channel:${channelId}`;
   // Answered apart from the private conversation, by a run that starts as a group one.
   return intact ? "private" : "channel:unknown";
+}
+
+/** Runs that cannot take a handed-over turn: the creation intro, helpers, and work kept out of the chat. */
+const NO_HANDOVER_TRIGGERS = [
+  "created",
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
+  ...BACKGROUND_RUN_TRIGGERS,
+];
+
+/**
+ * Hands a queued run that never started to the run already working in its conversation: its
+ * prompt becomes a hidden message that run reads before its next step, and the queued run ends
+ * there. Only a run of the same person takes it, since a run acts with its own person's accounts.
+ * Returns null when no run can take it or the queued run started meanwhile.
+ */
+export async function handQueuedRunToWorkingRun(
+  prisma: PrismaClient,
+  input: { runId: string; text: string },
+): Promise<{ threadId: string; seq: number; workingRunId: string } | null> {
+  return withTransactionRetry(() =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const queued = await tx.run.findUnique({
+        where: { id: input.runId },
+        select: {
+          id: true,
+          spaceId: true,
+          botId: true,
+          threadId: true,
+          taskId: true,
+          userId: true,
+        },
+      });
+      if (!queued) return null;
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${queued.threadId} FOR UPDATE`;
+      const working = await tx.run.findFirst({
+        where: {
+          id: { not: queued.id },
+          threadId: queued.threadId,
+          botId: queued.botId,
+          userId: queued.userId,
+          startedAt: { not: null },
+          status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+          trigger: { notIn: NO_HANDOVER_TRIGGERS },
+        },
+        orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+        select: { id: true },
+      });
+      if (!working) return null;
+      const now = new Date();
+      const ended = await tx.run.updateMany({
+        where: { id: queued.id, status: "queued", startedAt: null, leaseOwner: null },
+        data: { status: "completed", startedAt: now, completedAt: now, wakeAt: null },
+      });
+      if (ended.count !== 1) return null;
+      await tx.task.update({ where: { id: queued.taskId }, data: { status: "completed" } });
+      const blocks: MessageBlock[] = [{ kind: "delivery" }, { kind: "text", text: input.text }];
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: queued.threadId,
+        role: "user",
+        blocks,
+        runId: working.id,
+      });
+      await tx.run.update({ where: { id: queued.id }, data: { sourceMessageId: message.id } });
+      await tx.steeringMessage.create({
+        data: {
+          messageId: message.id,
+          botId: queued.botId,
+          userId: queued.userId,
+          runId: working.id,
+        },
+      });
+      const event = { spaceId: queued.spaceId, threadId: queued.threadId, botId: queued.botId };
+      await appendEventInTransaction(tx, {
+        ...event,
+        type: "thread.message.created",
+        runId: working.id,
+        payload: { messageId: message.id, role: "user", blocks },
+      });
+      const completed = await appendEventInTransaction(tx, {
+        ...event,
+        type: "run.completed",
+        runId: queued.id,
+        payload: {},
+      });
+      return { threadId: queued.threadId, seq: completed.seq, workingRunId: working.id };
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
 }

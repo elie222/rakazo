@@ -79,6 +79,7 @@ export {
   claimSteering,
   createPendingSteeringRun,
   discardAnsweredSteering,
+  handQueuedRunToWorkingRun,
 } from "./thread-steering.js";
 export * from "./thread-takeover.js";
 export * from "./transaction-retry.js";

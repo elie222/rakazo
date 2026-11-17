@@ -22,6 +22,10 @@ import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import { ComputerBusyError, releaseComputerExecutionLease } from "./computer-lifecycle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import {
+  routineClaimWaitsForConversation,
+  startRoutineRunsWaitingOn,
+} from "./routine-conversation.js";
 import type { RunComputerUseState, RunLeaseState } from "./run-context.js";
 import { notifyRun } from "./run-notifications.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
@@ -376,9 +380,13 @@ export async function claimRun(
   run: {
     id: string;
     spaceId: string;
+    botId: string;
+    trigger: string;
     status: string;
     checkpoint: string | null;
     leaseFence: number;
+    startedAt: Date | null;
+    createdAt: Date;
   },
   workerId: string,
 ) {
@@ -393,7 +401,10 @@ export async function claimRun(
           where: {
             id: run.id,
             ...continueRunClaimFence(run),
-            AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+            AND: [
+              { OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
+              routineClaimWaitsForConversation(run, now),
+            ],
             OR: [
               { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
               {
@@ -553,7 +564,7 @@ export async function retryRunSetup(
 /** Releases what an attempt held, however it ended, and lets the next waiting run start. */
 export async function finishRunAttempt(
   deps: ExecutorDeps,
-  run: { id: string; botId: string },
+  run: { id: string; botId: string; threadId: string },
   attempt: { id: string; workerId: string; fence: number },
   state: {
     lease: RunLeaseState;
@@ -596,6 +607,12 @@ export async function finishRunAttempt(
         getLogger().error("start next waiting run", error),
       );
     }
+  }
+  if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
+    await bestEffort(
+      "start routine runs waiting on the chat",
+      startRoutineRunsWaitingOn(deps, run),
+    );
   }
   if (deps.shutdownSignal?.aborted) {
     // A renewal still in flight must not treat this release as a lost lease.
