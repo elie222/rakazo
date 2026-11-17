@@ -597,7 +597,13 @@ export async function prepareToolRequest(
       request.effectRequest = args;
   }
   request.args = args;
-  if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
+  if (
+    name === "respond_agent_connection" ||
+    name === "update_bot" ||
+    name === "schedule_create" ||
+    name === "schedule_update" ||
+    isFleetApprovalTool(name)
+  )
     request.effectRequest = args;
   return undefined;
 }

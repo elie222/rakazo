@@ -2900,6 +2900,9 @@ describe("routine event approval", () => {
     await f.run();
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
     expect(askDetail(f)).toContain('on: {"webhook":true}');
+    // The approval is recorded for the same short form the card shows.
+    const recorded = f.effects.find((effect) => effect.kind === "schedule_create")?.request;
+    expect((recorded as { on?: unknown } | undefined)?.on).toEqual({ webhook: true });
   });
 
   it("refuses a chat app name too long to be one, before any card", async () => {
