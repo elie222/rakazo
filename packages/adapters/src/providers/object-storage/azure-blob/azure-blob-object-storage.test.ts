@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
+import type { TLSSocket } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { objectStorageConformance } from "../../../storage/object-storage.test-support.js";
 import { AzureBlobObjectStorage, azureBlobConfigFromEnv } from "./azure-blob-object-storage.js";
@@ -17,10 +19,7 @@ function fakeBlobService(tls?: { key: string; cert: string }) {
   const requests: string[] = [];
   const xml = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const serve = async (
-    req: import("node:http").IncomingMessage,
-    res: import("node:http").ServerResponse,
-  ) => {
+  const serve = async (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const body = Buffer.concat(chunks);
@@ -39,9 +38,10 @@ function fakeBlobService(tls?: { key: string; cert: string }) {
     const comp = query.get("comp");
     const stalled = name.endsWith("/stalled") || name === "stalled";
     requests.push(`${req.method} ${name ? "blob" : "container"}${comp ? `?${comp}` : ""}`);
-    // Shared-key signatures are not checked; a bearer token must be exactly the test token.
+    // Shared-key signatures are not checked. The TLS fake serves the Entra path, where every
+    // request must carry the credential's exact token — wrong or missing are both refused.
     const authorization = req.headers.authorization;
-    if (authorization?.startsWith("Bearer ") && authorization !== `Bearer ${TEST_TOKEN}`)
+    if ((req.socket as TLSSocket).encrypted && authorization !== `Bearer ${TEST_TOKEN}`)
       return send(401, "<Error><Code>AuthenticationFailed</Code></Error>", {
         "x-ms-error-code": "AuthenticationFailed",
       });

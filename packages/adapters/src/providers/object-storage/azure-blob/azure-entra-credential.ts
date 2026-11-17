@@ -29,6 +29,30 @@ const KINDS =
   '"account-key", "client-secret", "client-certificate", "federated-identity" or "managed-identity"';
 
 /**
+ * Reads and checks the certificate here, while the settings are parsed, so a missing file or a
+ * malformed bundle fails at startup instead of on the first upload: the SDK parses it lazily.
+ * Accepts the PEM bundle inline, or a path to one.
+ */
+function certificateBundle(value: string): string {
+  // A PEM bundle inline, or a path to one; read and check here, at startup.
+  const certificate = (
+    value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")
+  ).trim();
+  const begins = certificate.match(/^-----BEGIN [^-]+-----$/gm) ?? [];
+  const ends = certificate.match(/^-----END [^-]+-----$/gm) ?? [];
+  if (
+    begins.length !== ends.length ||
+    begins.length < 2 ||
+    !certificate.includes("-----BEGIN CERTIFICATE-----") ||
+    !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(certificate)
+  )
+    throw new Error(
+      "OBJECT_STORAGE_CERTIFICATE must hold a PEM bundle with a certificate and its private key",
+    );
+  return certificate;
+}
+
+/**
  * `OBJECT_STORAGE_AUTH` picks how the Azure Blob backend authenticates: unset (or `account-key`)
  * keeps the storage account key, and every other value is an Entra ID kind whose required
  * settings it validates here. Returns undefined for the account-key default.
@@ -71,7 +95,7 @@ export function entraAuthFromEnv(env: NodeJS.ProcessEnv): EntraAuthConfig | unde
         kind: "client-certificate",
         tenant: tenant!,
         clientId: clientId!,
-        certificate: certificate!,
+        certificate: certificateBundle(certificate!),
       };
     }
     case "federated-identity": {
@@ -109,21 +133,12 @@ export async function entraCredential(config: EntraAuthConfig): Promise<EntraTok
         config.clientId,
         config.clientSecret,
       );
-    case "client-certificate": {
-      // A PEM bundle inline, or a path to one: anything else is read from the file. The SDK
-      // parses the certificate lazily, so the bundle is checked here, where a mistake in the
-      // settings fails at startup instead of on the first upload.
-      const certificate = (
-        config.certificate.startsWith("-----BEGIN")
-          ? config.certificate
-          : readFileSync(config.certificate, "utf8")
-      ).trim();
-      if (!/^-----BEGIN [^-]+-----$/m.test(certificate))
-        throw new Error("OBJECT_STORAGE_CERTIFICATE must hold a PEM bundle");
+    case "client-certificate":
+      // The bundle was read and checked when the settings were parsed; the SDK parses it
+      // lazily, on the first token request.
       return new identity.ClientCertificateCredential(config.tenant, config.clientId, {
-        certificate,
+        certificate: config.certificate,
       });
-    }
     case "federated-identity":
       return new identity.WorkloadIdentityCredential({
         tenantId: config.tenant,

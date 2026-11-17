@@ -82,23 +82,28 @@ export class AzureBlobObjectStorage implements ObjectStorage {
 
   /** The SDK loads on first use, so deployments without object storage never load it. */
   private connect() {
-    this.container ??= (async () => {
-      const { sdk, client } = await import("@azure/storage-blob").then(async (sdk) => {
-        const { account, accountKey, entra, endpoint, container } = this.config;
-        const url = endpoint ?? `https://${account}.blob.core.windows.net`;
-        const options = { retryOptions: { tryTimeoutInMs: TRY_TIMEOUT_MS } };
-        const service = entra
-          ? new sdk.BlobServiceClient(url, await entraCredential(entra), options)
-          : new sdk.BlobServiceClient(
-              url,
-              new sdk.StorageSharedKeyCredential(account, accountKey!),
-              options,
-            );
-        return { sdk, client: service.getContainerClient(container) };
-      });
-      return { sdk, client };
-    })();
+    this.container ??= this.open().catch((error) => {
+      // A failed open is not cached: the next operation retries, so one bad moment (or one
+      // fixed setting) does not brick every later use of this storage.
+      this.container = undefined;
+      throw error;
+    });
     return this.container;
+  }
+
+  private async open() {
+    const sdk = await import("@azure/storage-blob");
+    const { account, accountKey, entra, endpoint, container } = this.config;
+    const url = endpoint ?? `https://${account}.blob.core.windows.net`;
+    const options = { retryOptions: { tryTimeoutInMs: TRY_TIMEOUT_MS } };
+    const service = entra
+      ? new sdk.BlobServiceClient(url, await entraCredential(entra), options)
+      : new sdk.BlobServiceClient(
+          url,
+          new sdk.StorageSharedKeyCredential(account, accountKey!),
+          options,
+        );
+    return { sdk, client: service.getContainerClient(container) };
   }
 
   private key(key: string) {

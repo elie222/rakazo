@@ -146,7 +146,9 @@ OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
 Whatever the identity is, give it the **Storage Blob Data Contributor** role on the storage
 account (or a narrower custom role with the same data actions). Entra ID tokens travel over TLS
 only, so these kinds need an `https` endpoint or the default account URL; a plain-`http`
-emulator endpoint keeps working with the account key.
+emulator endpoint keeps working with the account key. A certificate or federated-token file is
+read when the server starts, so under Compose it must be mounted into the containers and named
+by its in-container path.
 
 Only the API and worker read these settings. Bot computers never receive the credentials or
 links to stored objects; files still reach them through the server, as before. The settings

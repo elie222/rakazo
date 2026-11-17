@@ -1,8 +1,15 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { entraAuthFromEnv, entraCredential } from "./azure-entra-credential.js";
+
+/** The bundle the certificate kind must read and check while the settings are parsed. */
+const certificate = readFileSync(
+  new URL("./azure-entra-test-certificate.pem", import.meta.url),
+  "utf8",
+);
 
 describe("entraAuthFromEnv", () => {
   const principal = {
@@ -30,19 +37,68 @@ describe("entraAuthFromEnv", () => {
     });
   });
 
-  it("reads a service principal with a certificate", () => {
+  it("reads a service principal with a certificate, inline and from a file", () => {
     expect(
       entraAuthFromEnv({
         OBJECT_STORAGE_AUTH: "client-certificate",
         ...principal,
-        OBJECT_STORAGE_CERTIFICATE: "/certs/principal.pem",
+        OBJECT_STORAGE_CERTIFICATE: certificate,
       }),
     ).toEqual({
       kind: "client-certificate",
       tenant: "directory",
       clientId: "principal",
-      certificate: "/certs/principal.pem",
+      certificate: certificate.trim(),
     });
+    expect(
+      entraAuthFromEnv({
+        OBJECT_STORAGE_AUTH: "client-certificate",
+        ...principal,
+        OBJECT_STORAGE_CERTIFICATE: new URL("./azure-entra-test-certificate.pem", import.meta.url)
+          .pathname,
+      }),
+    ).toEqual({
+      kind: "client-certificate",
+      tenant: "directory",
+      clientId: "principal",
+      certificate: certificate.trim(),
+    });
+  });
+
+  it("fails at startup when the certificate is missing or malformed", () => {
+    expect(() =>
+      entraAuthFromEnv({
+        OBJECT_STORAGE_AUTH: "client-certificate",
+        ...principal,
+        OBJECT_STORAGE_CERTIFICATE: "/certs/not-there.pem",
+      }),
+    ).toThrow(/ENOENT|not-there\.pem/);
+    const directory = mkdtempSync(join(tmpdir(), "entra-"));
+    try {
+      const cases: [string, string][] = [
+        ["no PEM at all", "not a certificate"],
+        ["headers without bodies", "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"],
+        [
+          "a certificate without its private key",
+          certificate.split("-----BEGIN PRIVATE KEY-----")[0]!,
+        ],
+      ];
+      for (const [name, contents] of cases) {
+        const path = join(directory, `${name.replace(/\W+/g, "-")}.pem`);
+        writeFileSync(path, contents);
+        expect(
+          () =>
+            entraAuthFromEnv({
+              OBJECT_STORAGE_AUTH: "client-certificate",
+              ...principal,
+              OBJECT_STORAGE_CERTIFICATE: path,
+            }),
+          name,
+        ).toThrow(/PEM bundle/);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("reads a federated workload identity", () => {
@@ -92,11 +148,6 @@ describe("entraAuthFromEnv", () => {
 });
 
 describe("entraCredential", () => {
-  const certificate = readFileSync(
-    new URL("./azure-entra-test-certificate.pem", import.meta.url),
-    "utf8",
-  );
-
   it("builds the SDK credential for a client secret", async () => {
     const identity = await import("@azure/identity");
     const credential = await entraCredential({
@@ -108,40 +159,18 @@ describe("entraCredential", () => {
     expect(credential).toBeInstanceOf(identity.ClientSecretCredential);
   });
 
-  it("builds the SDK credential for a certificate, inline and from a file", async () => {
+  it("builds the SDK credential for a certificate", async () => {
+    // A throwaway key minted for this test: construction stores the material, and nothing
+    // reaches the network, so its shape — not its identity — is what matters here.
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     const identity = await import("@azure/identity");
-    const inline = await entraCredential({
+    const credential = await entraCredential({
       kind: "client-certificate",
       tenant: "directory",
       clientId: "principal",
-      certificate,
+      certificate: privateKey.export({ type: "sec1", format: "pem" }) as string,
     });
-    expect(inline).toBeInstanceOf(identity.ClientCertificateCredential);
-    const fromFile = await entraCredential({
-      kind: "client-certificate",
-      tenant: "directory",
-      clientId: "principal",
-      certificate: new URL("./azure-entra-test-certificate.pem", import.meta.url).pathname,
-    });
-    expect(fromFile).toBeInstanceOf(identity.ClientCertificateCredential);
-  });
-
-  it("fails clearly when the certificate holds no PEM bundle", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "entra-"));
-    try {
-      const path = join(directory, "empty.pem");
-      writeFileSync(path, "not a certificate");
-      await expect(
-        entraCredential({
-          kind: "client-certificate",
-          tenant: "directory",
-          clientId: "principal",
-          certificate: path,
-        }),
-      ).rejects.toThrow(/PEM bundle/);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+    expect(credential).toBeInstanceOf(identity.ClientCertificateCredential);
   });
 
   it("builds the SDK credential for a federated workload identity and managed identities", async () => {
