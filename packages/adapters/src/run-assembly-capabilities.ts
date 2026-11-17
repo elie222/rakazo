@@ -88,7 +88,7 @@ import {
   recentThreadFilesInstruction,
 } from "./thread-artifacts.prompt.js";
 import { historyReplaysOutsideContent } from "./tool-step-calls.js";
-import { hasVoiceForMessages } from "./voice-message.js";
+import { hasVoiceForMessages, voiceMessageRequestedByOwner } from "./voice-message.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
 async function verbatimMcpServersForRun(
@@ -693,7 +693,10 @@ export async function selectRunTools(
       voiceMessagesEnabled:
         Boolean(deps.artifacts) &&
         !isBackgroundRunTrigger(run.trigger) &&
-        !nonOwnerChatRun &&
+        voiceMessageRequestedByOwner(run.trigger, {
+          ownerStartedRun,
+          messagingChannelRun: nonOwnerChatRun,
+        }) &&
         (await hasVoiceForMessages(
           deps.prisma,
           { userId: run.userId, spaceId: run.spaceId },

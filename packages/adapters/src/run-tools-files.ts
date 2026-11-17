@@ -1,4 +1,3 @@
-import type { SpeechClip } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
@@ -25,7 +24,7 @@ import { recordComputerAction } from "./run-tools-computer.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 import { textContentArg } from "./tool-text.js";
 import { MAX_SPEAK_CHARS } from "./voice-http.js";
-import { speakVoiceMessage } from "./voice-message.js";
+import { speakVoiceMessage, voiceMessageRequestedByOwner } from "./voice-message.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
 import { listFilesFromTool, readFileFromTool, renderPlotFromTool } from "./workspace-file-tools.js";
 
@@ -169,11 +168,16 @@ export const fileTools: ToolHandlers = {
     const text = typeof call.args.text === "string" ? call.args.text.trim() : "";
     if (!text || text.length > MAX_SPEAK_CHARS)
       return call.finish({ error: `Text of 1–${MAX_SPEAK_CHARS} characters is required.` });
-    if (isBackgroundRunTrigger(run.trigger) || !deps.artifacts)
+    // Selection offers it only on these runs, but dispatch runs any built-in name the model emits.
+    if (
+      isBackgroundRunTrigger(run.trigger) ||
+      !deps.artifacts ||
+      !voiceMessageRequestedByOwner(run.trigger, ctx.source)
+    )
       return call.finish({ error: "Voice messages are unavailable." });
-    let clip: SpeechClip | null;
+    let spoken: Awaited<ReturnType<typeof speakVoiceMessage>>;
     try {
-      clip = await speakVoiceMessage(
+      spoken = await speakVoiceMessage(
         deps,
         { userId: run.userId, spaceId: run.spaceId },
         { text, botVoiceId: bot.voiceId },
@@ -181,8 +185,10 @@ export const fileTools: ToolHandlers = {
       );
     } catch (error) {
       context.signal.throwIfAborted();
+      // Never the text or the key: only what kind of failure it was.
       getLogger().warn("voice message synthesis failed", {
         reason: error instanceof Error ? error.name : "unknown",
+        code: error instanceof VoiceAccountError ? error.code : undefined,
       });
       return call.finish({
         error:
@@ -191,10 +197,33 @@ export const fileTools: ToolHandlers = {
             : "The voice provider could not speak this. Do not retry automatically.",
       });
     }
-    if (!clip) return call.finish({ error: "No voice is chosen. Settings → Voice sets one." });
+    if ("missing" in spoken)
+      return call.finish({
+        error:
+          spoken.missing === "voice"
+            ? "No voice is chosen. Settings → Voice sets one."
+            : "No voice provider is connected. Settings → Voice connects one.",
+      });
+    const { clip } = spoken;
+    const limit = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
+    if (clip.bytes.byteLength > limit)
+      return call.finish({
+        error: "That recording is too large to attach. Speak a shorter text, or split it in parts.",
+      });
     const fileName = `voice-message${attachmentExtensionForMimeType(clip.mimeType) || ".mp3"}`;
-    const saved = await postAttachment(ctx, call, fileName, clip.bytes);
-    return call.finish({ ok: true, artifactId: saved.artifactId });
+    try {
+      const saved = await postAttachment(ctx, call, fileName, clip.bytes);
+      return call.finish({ ok: true, artifactId: saved.artifactId });
+    } catch (error) {
+      context.signal.throwIfAborted();
+      getLogger().warn("voice message attachment failed", {
+        provider: spoken.provider,
+        reason: error instanceof Error ? error.name : "unknown",
+      });
+      return call.finish({
+        error: "The recording could not be attached. It was already made, so do not retry automatically.",
+      });
+    }
   },
 };
 
