@@ -5,7 +5,7 @@ import {
   removePage,
   renamePage,
   setPageVisibility,
-} from "../pages.js";
+} from "../content/pages.js";
 import type { RouterContext } from "./context.js";
 
 export function pagesRoutes(ctx: RouterContext) {

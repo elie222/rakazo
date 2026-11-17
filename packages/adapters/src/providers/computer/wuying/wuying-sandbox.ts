@@ -26,15 +26,16 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { abortableDelay, boundedSandboxCommandTimeoutMs, isRetryableError } from "@rakazo/core";
+import { abortableDelay, isRetryableError } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import {
   boundedComputerActions,
   computerObservation,
   WorkspacePathError,
-} from "../../../computer-support.js";
-import { McpSession } from "../../../mcp-transport.js";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../workspace-save-policy.js";
+} from "../../../computers/screens/computer-support.js";
+import { McpSession } from "../../../mcp/mcp-transport.js";
+import { sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { normalizeDesktopWorkspacePath } from "../desktop/desktop-sandbox-paths.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";
 import { WuyingOpenApi } from "./wuying-openapi.js";

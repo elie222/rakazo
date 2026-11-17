@@ -207,4 +207,14 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Starting {app}…": "正在啟動 {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker 已安裝但未執行。請啟動 Docker 服務以繼續。",
+  "Rakazo stopped unexpectedly.": "Rakazo 意外停止。",
+  Reload: "重新載入",
+  "Mac app control": "Mac App 控制",
+  "Set up Mac app control": "設定 Mac App 控制",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "指令已可使用。若要操作 App，請在系統設定中允許 Rakazo 使用輔助使用和螢幕錄製，然後重新啟動 Rakazo。",
+  "Open System Settings": "打開系統設定",
+  "Restart Rakazo": "重新啟動 Rakazo",
+  "Not Now": "稍後再說",
+  "Restart Rakazo to finish setup": "重新啟動 Rakazo 以完成設定",
 };

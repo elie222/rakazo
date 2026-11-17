@@ -238,7 +238,6 @@ describe("lingui catalogs", () => {
       "zh-TW",
     ];
     const messages = [
-      "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
       "Models list OK. {modelCount, plural, one {# model} other {# models}} available. " +
         "Chat was not tested.",

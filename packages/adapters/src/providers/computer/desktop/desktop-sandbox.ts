@@ -30,20 +30,20 @@ import type {
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
   WorkspacePathError,
-} from "../../../computer-support.js";
-import { hostCommandEnvironment } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents } from "../../../sandbox-command-events.js";
+} from "../../../computers/screens/computer-support.js";
+import { hostCommandEnvironment } from "../../../sandboxes/sandbox-command-environment.js";
+import { abortedCommandEvents } from "../../../sandboxes/sandbox-command-events.js";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
-} from "../../../workspace-save-policy.js";
+} from "../../../storage/workspace-save-policy.js";
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";

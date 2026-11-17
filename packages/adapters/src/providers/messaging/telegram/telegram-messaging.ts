@@ -10,13 +10,13 @@ import {
   toPlainText,
   walkAst,
 } from "chat";
-import type { MessagingPlatform } from "../../../chat-sdk-surface.js";
-import type { MessagingMountContext } from "../../../messaging-platform-descriptor.js";
+import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingMountContext } from "../../../messaging/messaging-platform-descriptor.js";
 import {
   asRecord,
   defineMessagingPlatform,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 /**
  * Both the token and the secret are required: without the secret token the adapter accepts

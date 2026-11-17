@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,9 +8,9 @@ import {
   clampOffset,
   MAX_WEB_FETCH_OFFSET,
   pageWindow,
-} from "../../../web-limits.js";
-import { createWebProvider, resolveWebProviderKind } from "../../../web-provider-factory.js";
-import { webFetchFromTool, webSearchFromTool } from "../../../web-tools.js";
+} from "../../../web/web-limits.js";
+import { createWebProvider, resolveWebProviderKind } from "../../../web/web-provider-factory.js";
+import { webFetchFromTool, webSearchFromTool } from "../../../web/web-tools.js";
 import { FakeWebProvider } from "../fake/fake-web.js";
 import {
   extractReadableText,
@@ -333,9 +334,7 @@ describe("keyless HTTP web provider", () => {
       '<div><div><span><i></i></span><a href="/">x</a></div></div>'.repeat(5_000),
     ],
   ])("extracts a page full of %s in linear time", (_name, html) => {
-    const started = performance.now();
-    extractReadableText(html, "https://example.test/");
-    expect(performance.now() - started).toBeLessThan(1_500);
+    expectLinearTime(() => extractReadableText(html, "https://example.test/"));
   });
 
   it("keeps the text of a page too large for article extraction", () => {

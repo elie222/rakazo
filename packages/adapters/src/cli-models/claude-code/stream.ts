@@ -27,8 +27,8 @@ import {
   splitErrorToolResultImages,
   transformMessages,
 } from "@earendil-works/pi-ai/api/transform-messages";
-import { sanitizeSensitiveText } from "../../pi-runtime-errors.js";
-import { modelStreamIdleTimeoutMs } from "../../pi-runtime-limits.js";
+import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
+import { modelStreamIdleTimeoutMs } from "../../runtime/pi/pi-runtime-limits.js";
 import type { ClaudeCodeProcess } from "./cli.js";
 import {
   CLAUDE_CODE_NOT_INSTALLED_ERROR,

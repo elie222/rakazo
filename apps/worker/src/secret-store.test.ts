@@ -1,6 +1,6 @@
 import { InMemoryRealtimeFanout } from "@rakazo/adapters";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { infisicalFake } from "../../../packages/adapters/src/secret-store-fake.js";
+import { infisicalFake } from "../../../packages/adapters/src/secrets/secret-store-fake.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 afterEach(() => vi.unstubAllGlobals());

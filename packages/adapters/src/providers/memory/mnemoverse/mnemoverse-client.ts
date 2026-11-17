@@ -1,6 +1,6 @@
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
-import { readBodyCapped } from "../../../web-ssrf.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 export const MNEMOVERSE_BASE_URL = "https://core.mnemoverse.com/api/v1";
 
