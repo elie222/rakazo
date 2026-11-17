@@ -61,6 +61,7 @@ function createSurface(sendErrors: string[] = []) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -89,10 +90,16 @@ describe("Telegram authenticated linking destination", () => {
     await surface.shutdown();
   });
 
-  it("hides a previously verified address after a failed refresh and recovers on demand", async () => {
+  it("caches verified identities, throttles failures and recovers after expiry", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { surface } = createSurface();
     await surface.initialize();
     expect(surface.platforms()[0]?.address).toBe("@testbot");
+    for (let i = 0; i < 3; i++) {
+      expect(await surface.resolveAddresses()).toEqual({ telegram: "@testbot" });
+    }
+    expect(fetch).toHaveBeenCalledOnce();
+    vi.setSystemTime(Date.now() + 300_000);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -107,11 +114,15 @@ describe("Telegram authenticated linking destination", () => {
         Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
       ),
     );
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(fetch).not.toHaveBeenCalled();
+    vi.setSystemTime(Date.now() + 30_000);
     expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
     await surface.shutdown();
   });
 
   it("recovers a startup identity outage when concurrent settings reads request the destination", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { surface } = createSurface();
     vi.stubGlobal(
       "fetch",
@@ -121,6 +132,7 @@ describe("Telegram authenticated linking destination", () => {
     );
     await surface.initialize();
     expect(surface.platforms()[0]?.address).toBeUndefined();
+    vi.setSystemTime(Date.now() + 30_000);
     const lookup = deferred<Response>();
     const fetchMock = vi.fn(async () => lookup.promise);
     vi.stubGlobal("fetch", fetchMock);
@@ -133,6 +145,31 @@ describe("Telegram authenticated linking destination", () => {
       { telegram: "@testbot" },
       { telegram: "@testbot" },
     ]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await surface.shutdown();
+  });
+
+  it("cancels only the caller's wait while other readers refresh the shared identity", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { surface } = createSurface();
+    await surface.initialize();
+    vi.setSystemTime(Date.now() + 300_000);
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn(async (_input: string, _init: RequestInit) => lookup.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const cancelled = new AbortController();
+    const first = surface.resolveAddresses(cancelled.signal);
+    const second = surface.resolveAddresses();
+    cancelled.abort();
+    expect(await first).toEqual({});
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1].signal?.aborted).toBe(false);
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    lookup.resolve(
+      Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+    );
+    expect(await second).toEqual({ telegram: "@renamed_testbot" });
+    expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
     expect(fetchMock).toHaveBeenCalledOnce();
     await surface.shutdown();
   });

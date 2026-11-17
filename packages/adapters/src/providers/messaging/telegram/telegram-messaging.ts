@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { AdapterPostableMessage, CardElement, Root } from "chat";
 import {
@@ -177,10 +177,13 @@ export function telegramFallbackText(
 class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
   verifiedLinkAddress: string | undefined;
   private addressLookup: Promise<string | undefined> | undefined;
+  private nextAddressLookupAt = 0;
 
-  resolveLinkAddress(signal?: AbortSignal): Promise<string | undefined> {
+  async resolveLinkAddress(signal?: AbortSignal): Promise<string | undefined> {
+    signal?.throwIfAborted();
+    if (Date.now() < this.nextAddressLookupAt) return this.verifiedLinkAddress;
     this.addressLookup ??= this.telegramFetch("getMe", undefined, {
-      signal: deadlineSignal(10_000, signal),
+      signal: deadlineSignal(10_000),
     })
       .then(
         () => this.verifiedLinkAddress,
@@ -192,7 +195,7 @@ class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
       .finally(() => {
         this.addressLookup = undefined;
       });
-    return this.addressLookup;
+    return signal ? withAbort(this.addressLookup, signal) : this.addressLookup;
   }
 
   protected override async telegramFetch<TResult>(
@@ -200,17 +203,23 @@ class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
     payload?: Record<string, unknown> | FormData,
     request?: { signal?: AbortSignal },
   ): Promise<TResult> {
-    if (method === "getMe") this.verifiedLinkAddress = undefined;
-    const result = await super.telegramFetch<TResult>(method, payload, request);
-    if (method === "getMe") {
+    if (method !== "getMe") return super.telegramFetch<TResult>(method, payload, request);
+    try {
+      const result = await super.telegramFetch<TResult>(method, payload, request);
       const identity = asRecord(result);
       this.verifiedLinkAddress = telegramLinkAddress(
         identity ? stringField(identity, "username") : undefined,
       );
+      // Reuse authenticated identity briefly; failures never retain a destination.
+      this.nextAddressLookupAt = Date.now() + (this.verifiedLinkAddress ? 300_000 : 30_000);
       // The SDK may read a legacy username override from the environment.
       if (this.verifiedLinkAddress) this._userName = this.verifiedLinkAddress.slice(1);
+      return result;
+    } catch (error) {
+      this.verifiedLinkAddress = undefined;
+      this.nextAddressLookupAt = Date.now() + 30_000;
+      throw error;
     }
-    return result;
   }
 
   protected override renderPlainTextMessage(
