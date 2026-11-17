@@ -9,6 +9,7 @@ import {
   IsolationError,
   loadMessageAuthor,
   readMessageBlocks,
+  runHoldsChat,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -159,10 +160,18 @@ async function startReactionTurn(
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
-    select: { id: true, taskId: true, status: true, userId: true },
+    select: {
+      id: true,
+      taskId: true,
+      status: true,
+      userId: true,
+      trigger: true,
+      routine: { select: { inChat: true } },
+    },
   });
-  const holdingRuns = activeRuns.filter((run) =>
-    QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+  const holdingRuns = activeRuns.filter(
+    (run) =>
+      QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) && runHoldsChat(run),
   );
   const active = activeRuns.find((run) => run.id === parent.runId) ?? holdingRuns[0];
   const others = holdingRuns.filter((run) => run.id !== active?.id);
