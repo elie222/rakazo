@@ -117,8 +117,11 @@ function questionField(
   if (s.type !== "string") return undefined;
   const options = choiceOptions(s);
   if (options === null) return undefined;
+  // A default longer than this client takes is left out rather than cut short.
   const fallback =
-    typeof s.default === "string" ? s.default.slice(0, TOOL_QUESTION_TEXT_MAX) : undefined;
+    typeof s.default === "string" && s.default.length <= TOOL_QUESTION_TEXT_MAX
+      ? s.default
+      : undefined;
   if (options) {
     return {
       ...base,

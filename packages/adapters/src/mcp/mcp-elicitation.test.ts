@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { ElicitRequest } from "@modelcontextprotocol/sdk/types.js";
 import { ElicitResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolAsk } from "@rakazo/adapter-kit";
-import type { ToolQuestion } from "@rakazo/contracts";
+import type { ToolQuestion, ToolQuestionAnswer } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -211,9 +211,9 @@ describe("MCP elicitation", () => {
       signal: call.signal,
       ask: (_question, signal) => {
         seen.resolve(signal);
-        return new Promise((_, reject) =>
-          signal.addEventListener("abort", () => reject(signal.reason)),
-        );
+        const ended = deferred<ToolQuestionAnswer>();
+        signal.addEventListener("abort", () => ended.reject(signal.reason));
+        return ended.promise;
       },
     });
     const answered = handler!({ params: APPROVAL }, { signal: new AbortController().signal });
