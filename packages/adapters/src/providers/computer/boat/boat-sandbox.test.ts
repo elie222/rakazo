@@ -1077,7 +1077,7 @@ describe("BoatSandboxProvider", () => {
       expect(events).toHaveLength(2);
       expect(events[0]).toMatchObject({ level: "info", outcome: "waiting" });
       expect(events[1]).toMatchObject({
-        level: "error",
+        level: "warn",
         "computer.id": "computer-1",
         "sandbox.id": computer.id,
         operation: "start",
@@ -1089,7 +1089,7 @@ describe("BoatSandboxProvider", () => {
         error: { name: "SandboxUnavailableError" },
       });
       expect(events[1]?.durationMs).toBeGreaterThanOrEqual(5 * 60_000);
-      expect(JSON.parse(String(events[1]?.["error.details"]))).toMatchObject({
+      expect(events[1]).toMatchObject({
         state: "archiving",
         snapshotCompletedAt: snapshotAt.toISOString(),
         stopRequestedAt: snapshotAt.toISOString(),
@@ -1141,7 +1141,7 @@ describe("BoatSandboxProvider", () => {
       expect(sink.events.filter((event) => event.message === "sandbox.wait")).toEqual([
         expect.objectContaining({ outcome: "waiting", stopStatus: "failing" }),
         expect.objectContaining({
-          level: "error",
+          level: "warn",
           operation: "stop",
           outcome: "failed",
           "sandbox.id": computer.id,

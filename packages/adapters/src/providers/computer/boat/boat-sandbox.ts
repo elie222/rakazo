@@ -1567,26 +1567,23 @@ function sandboxWaitLog(id: string, operation: "start" | "stop") {
     const signature = JSON.stringify(state);
     if (outcome === "waiting" && signature === previous) return;
     previous = signature;
-    const details = {
-      ...state,
-      snapshotCompletedAt: sandbox.snapshotCompletedAt ?? null,
-      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt ?? null,
-      stopRequestedAt: sandbox.stop?.requestedAt ?? null,
-      stopLastAttemptAt: sandbox.stop?.lastAttemptAt ?? null,
-    };
     const bindings = {
       provider: "boat",
       "sandbox.id": id,
       operation,
       outcome,
       durationMs: Date.now() - startedAt,
-      ...details,
+      ...state,
+      snapshotCompletedAt: sandbox.snapshotCompletedAt?.toISOString() ?? null,
+      lastSnapshotAttemptAt: sandbox.lastSnapshotAttemptAt?.toISOString() ?? null,
+      stopRequestedAt: sandbox.stop?.requestedAt?.toISOString() ?? null,
+      stopLastAttemptAt: sandbox.stop?.lastAttemptAt?.toISOString() ?? null,
     };
     if (error) {
-      getLogger().error("sandbox.wait", error, {
+      // A background caller may retry this wait; only its operation boundary knows it failed.
+      getLogger().warn("sandbox.wait", {
         ...bindings,
-        "error.details": JSON.stringify(bindings),
-        "error.fingerprint": ["sandbox.wait", operation],
+        error,
       });
     } else {
       getLogger().info("sandbox.wait", bindings);

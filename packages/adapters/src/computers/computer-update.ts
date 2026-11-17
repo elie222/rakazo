@@ -3,6 +3,8 @@ import {
   computerControlExpireJobKey,
   isSandboxProviderOutage,
   SandboxAllowanceUsedError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
@@ -600,7 +602,10 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)
           ? error
           : keptUnsaved;
-      if (expected) {
+      // Background waits retry, but this requested maintenance ends as failed below.
+      const failedWait =
+        error instanceof SandboxUnavailableError || error instanceof SandboxUnresponsiveError;
+      if (expected && !failedWait) {
         getLogger().warn("computer update failed", {
           updateId,
           computerId: update.computerId,
@@ -614,7 +619,9 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
       } else {
         getLogger().error("computer update failed", error, {
           updateId,
-          computerId: update.computerId,
+          "computer.id": update.computerId,
+          "bot.id": update.botId,
+          action: update.action,
         });
       }
       // Provider errors may contain credentials or private URLs. Expose only the failed stage.

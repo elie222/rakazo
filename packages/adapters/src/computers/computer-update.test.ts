@@ -175,9 +175,9 @@ describe("background computer maintenance", () => {
   });
   it.each([
     ["a spent computer allowance", new SandboxAllowanceUsedError(), "warn"],
-    ["a provider outage", new SandboxUnresponsiveError("provider down"), "warn"],
+    ["a provider outage", new SandboxUnresponsiveError("provider down"), "error"],
     ["a provider rate limit", new SandboxRateLimitError(), "warn"],
-    ["a computer that did not start", new SandboxUnavailableError(), "warn"],
+    ["a computer that did not start", new SandboxUnavailableError(), "error"],
     ["an unpaid provider account", new SandboxProviderAccountError(), "error"],
   ])("records %s as a %s", async (_, error, level) => {
     const sink = createTestSink();
@@ -189,6 +189,27 @@ describe("background computer maintenance", () => {
     const logged = sink.events.filter((event) => event.message === "computer update failed");
     expect(logged.map((event) => event.level)).toEqual([level]);
   });
+  it.each(["update", "recover"])(
+    "reports a final %s wait failure once with correlation ids",
+    async (action) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const { row, deps } = fixture();
+      row.action = action;
+      replacement.mockRejectedValueOnce(new SandboxUnavailableError());
+      await performComputerUpdate(deps, row.id);
+      await performComputerUpdate(deps, row.id);
+      expect(row.status).toBe("failed");
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([
+        expect.objectContaining({
+          message: "computer update failed",
+          "computer.id": row.computerId,
+          "bot.id": row.botId,
+          action,
+        }),
+      ]);
+    },
+  );
   it("tells the bots of a computer left running because its files are too large to save", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
