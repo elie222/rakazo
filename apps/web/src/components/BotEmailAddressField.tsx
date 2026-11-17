@@ -5,9 +5,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { useCopyText } from "../lib/copy-text";
-import { useSpaceQueries } from "../lib/query";
-import { useSpaceRpc } from "../lib/space-rpc";
-import { errorText } from "../lib/user-error";
+import { useSpaceQueries } from "../lib/query/query";
+import { useSpaceRpc } from "../lib/query/space-rpc";
+import { errorText } from "../lib/query/user-error";
 
 /** A bot's email address with a copy button, or the form that claims it for good. */
 export function BotEmailAddressField(props: {

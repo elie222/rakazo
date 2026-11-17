@@ -30,9 +30,9 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { cronLabels } from "../../lib/cron";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorDetails } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorDetails } from "../../lib/query/user-error";
+import { cronLabels } from "../../lib/routines/cron";
 import { ErrorNotice } from "../ErrorNotice";
 import { PluginLogo, ROW_HOVER } from "../integrations/plugin-marketplace";
 import { useBotTemplateCopy } from "./bot-template-copy";

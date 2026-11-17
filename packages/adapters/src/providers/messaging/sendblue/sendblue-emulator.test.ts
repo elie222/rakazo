@@ -23,6 +23,25 @@ function createHarness() {
 }
 
 describe("emulated sendblue platform inbound", () => {
+  it.each(["iMessage", "SMS", "RCS"] as const)(
+    "routes a %s direct message with its actual transport",
+    async (service) => {
+      const { emulator, surface, events } = createHarness();
+      const response = await surface.handleWebhook(
+        "sendblue",
+        emulator.buildInboundRequest({
+          fromNumber: "+15551234567",
+          content: "hello",
+          service,
+        }),
+      );
+      expect(response?.status).toBe(200);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ isDirect: true, transport: service });
+      await surface.shutdown();
+    },
+  );
+
   it("normalizes a DM webhook into a direct inbound message", async () => {
     const { emulator, surface, events } = createHarness();
     const response = await surface.handleWebhook(

@@ -31,9 +31,9 @@ export function useSourceForm() {
     setSourcePreset(preset);
     setSourceHint(null);
     setSourceName(preset?.name ?? "");
-    setSourceUrl(preset?.url ?? "");
+    setSourceUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setAuthType(preset ? "bearer" : "none");
+    setAuthType(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthName("x-api-key");
   }
 
