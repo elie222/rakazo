@@ -263,13 +263,11 @@ interface Account {
   userId: string;
   homeBotName: string;
   threads: BenchThread[];
-  /** A short chat in the same Space, never opened before the switch is timed. */
-  unopened: BenchThread;
-  /** A short chat in a second Space. */
-  elsewhere: BenchThread;
+  /** Per thread size, a chat of that size in the same Space, never opened before it is timed. */
+  unopened: Record<number, BenchThread>;
+  /** Per thread size, a chat of that size in a second Space. */
+  elsewhere: Record<number, BenchThread>;
 }
-
-const SHORT_CHAT_SIZE = 20;
 
 /** Signs up through the auth API like the e2e helpers, then seeds one chat per thread size. */
 async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
@@ -294,24 +292,31 @@ async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
     const user = await runAsSystem("benchmark seed", () =>
       bench.prisma.user.findFirstOrThrow({ where: { email }, select: { id: true } }),
     );
-    const threads: BenchThread[] = [];
-    for (const size of sizes) {
-      const name = `Bench ${size}`;
-      const created = await rpc<{ id: string }>(page, "bots/create", newBot(name));
-      threads.push(await seedThread(bench.prisma, created.id, name, size));
-    }
-    const unopened = await rpc<{ id: string }>(page, "bots/create", newBot("Bench unopened"));
     const space = await rpc<{ id: string }>(page, "spaces/create", { name: "Second space" });
-    const elsewhere = await rpc<{ id: string }>(page, "bots/create", newBot("Bench elsewhere"), {
-      "x-rakazo-space-id": space.id,
-    });
+    const seed = async (name: string, size: number, spaceId?: string) => {
+      const created = await rpc<{ id: string }>(
+        page,
+        "bots/create",
+        newBot(name),
+        spaceId ? { "x-rakazo-space-id": spaceId } : undefined,
+      );
+      return seedThread(bench.prisma, created.id, name, size);
+    };
+    const threads: BenchThread[] = [];
+    const unopened: Account["unopened"] = {};
+    const elsewhere: Account["elsewhere"] = {};
+    for (const size of sizes) {
+      threads.push(await seed(`Bench ${size}`, size));
+      unopened[size] = await seed(`Bench unopened ${size}`, size);
+      elsewhere[size] = await seed(`Bench elsewhere ${size}`, size, space.id);
+    }
     return {
       storageState: await context.storageState(),
       userId: user.id,
       homeBotName: "Chief",
       threads,
-      unopened: await seedThread(bench.prisma, unopened.id, "Bench unopened", SHORT_CHAT_SIZE),
-      elsewhere: await seedThread(bench.prisma, elsewhere.id, "Bench elsewhere", SHORT_CHAT_SIZE),
+      unopened,
+      elsewhere,
     };
   } finally {
     await context.close();
@@ -690,12 +695,12 @@ async function measureSwitches(bench: Bench, account: Account, thread: BenchThre
     await page.goto(`/app/${thread.botId}`, { waitUntil: "commit" });
     await waitForPaint(page);
     await settle(page);
-    const openChatMs = await timedSidebarOpen(page, account.unopened);
+    const openChatMs = await timedSidebarOpen(page, account.unopened[thread.size]!);
     await sidebarRow(page, account.homeBotName).click();
     await page.getByRole("combobox", { name: `Message ${account.homeBotName}` }).waitFor();
     await settle(page);
     const cachedSwitchMs = await timedSidebarOpen(page, thread);
-    const spaceSwitchMs = await timedSidebarOpen(page, account.elsewhere);
+    const spaceSwitchMs = await timedSidebarOpen(page, account.elsewhere[thread.size]!);
     return { openChatMs, cachedSwitchMs, spaceSwitchMs };
   } finally {
     await context.close();
