@@ -61,6 +61,7 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { runModelBackups, startRunModel } from "./run-model-start.js";
+import { runStartedByMember } from "./run-origin.js";
 import { runReplyMode } from "./run-replies.prompt.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -436,7 +437,7 @@ export async function resolveRunCapabilities(
   const { people } = parts.thread;
   const { credential, resolved, runModelId, runModelProvider, scripted, thinkingLevel } =
     parts.model;
-  const { graphical, modelSeesImages, computerKind } = parts.computer;
+  const { graphical, modelSeesImages } = parts.computer;
   const groupContext = conversationThread.groupId
     ? await loadGroupContext(
         deps.prisma,
@@ -623,8 +624,6 @@ export async function resolveRunCapabilities(
     userComputer,
     userComputerShell,
     userComputerScreen,
-    // rakazo-net runs through the launcher every computer but a native shell uses.
-    tailnetCommands: !sandboxKindCapabilities(computerKind).nativeShell,
     cloudAgent,
     cloudAgentCleanupEnabled,
   };
@@ -672,12 +671,11 @@ export async function selectRunTools(
     userComputerScreen,
     userComputerShell,
     voiceCall,
-    tailnetCommands,
   } = parts.capabilities;
-  // Only the run's own member's connection counts, and only for bots they allowed.
+  // Only a run this member started, and only for a bot they allowed onto their tailnet.
   const tailnetOffered = Boolean(
-    deps.tailnet &&
-      tailnetCommands &&
+    runStartedByMember(run.trigger, { ownerStartedRun, nonOwnerChat: nonOwnerChatRun }) &&
+      deps.tailnet &&
       !disabledBuiltinTools.has(TAILNET_CONNECT_TOOL) &&
       (await bestEffort(
         "check whether a run may reach its member's tailnet",

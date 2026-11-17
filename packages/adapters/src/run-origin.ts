@@ -1,4 +1,4 @@
-import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
+import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER, isOwnerStartedRun } from "@rakazo/core";
 import type { PrismaClient, Run } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
 
@@ -9,6 +9,18 @@ type RunOrigin = Pick<
 
 export function isDelegatedRun(trigger: string): boolean {
   return trigger === BACKGROUND_HELPER_TRIGGER || trigger === HELPER_RESULT_TRIGGER;
+}
+
+/**
+ * The member started this run itself. `ownerStartedRun` follows the conversation a spawn came
+ * from, so a channel, routine, webhook, bot message, or spawn stays out even when that
+ * conversation was theirs.
+ */
+export function runStartedByMember(
+  trigger: string,
+  source: { ownerStartedRun: boolean; nonOwnerChat: boolean },
+): boolean {
+  return isOwnerStartedRun(trigger, source.ownerStartedRun) && !source.nonOwnerChat;
 }
 
 /** Resolve the conversation that authorized delegation, including after restart or a result wake. */

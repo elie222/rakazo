@@ -156,6 +156,35 @@ describe("TailnetService", () => {
     expect(emulator.devices.size).toBe(0);
   });
 
+  it("drops another process's node on the next dial once access is turned off", async () => {
+    const { db, emulator, nodes, service } = await setup();
+    const worker = new TailnetService({
+      prisma: db.prisma,
+      secretStore,
+      nodeHost: nodes,
+      fetch: emulator.fetch,
+      sweepMs: 0,
+    });
+    const open = await worker.dial(RUN, NAS, context());
+    await setTailnetBotAccess({ prisma: db.prisma, scope: ALICE, botId: "helper", enabled: false });
+    await service.tidy();
+    expect(open.destroyed).toBe(false);
+    const refused = await rejection(worker.dial(RUN, NAS, context()));
+    expect(refused.message).toBe(TAILNET_NOT_CONNECTED_MESSAGE);
+    expect(open.destroyed).toBe(true);
+    expect(emulator.devices.size).toBe(0);
+    await worker.close();
+  });
+
+  it("drops its node when a tunnel recheck finds access turned off", async () => {
+    const { db, emulator, service } = await setup();
+    const open = await service.dial(RUN, NAS, context());
+    await setTailnetBotAccess({ prisma: db.prisma, scope: ALICE, botId: "helper", enabled: false });
+    expect(await service.allows(RUN)).toBe(false);
+    expect(open.destroyed).toBe(true);
+    expect(emulator.devices.size).toBe(0);
+  });
+
   it("takes a node off in every process once its bot is turned off", async () => {
     const { db, emulator, nodes, service } = await setup();
     // Another process (a worker) with its own node for the same bot.

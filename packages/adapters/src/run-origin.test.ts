@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
-import { expect, it, vi } from "vitest";
-import { loadRunOrigin } from "./run-origin.js";
+import { describe, expect, it, vi } from "vitest";
+import { loadRunOrigin, runStartedByMember } from "./run-origin.js";
 
 it.each([false, true])(
   "only retains cancelled parent provenance for a typed answer (%s)",
@@ -40,3 +40,25 @@ it.each([false, true])(
     expect(result).toEqual(typedAnswer ? origin : null);
   },
 );
+
+describe("runStartedByMember", () => {
+  const theirs = { ownerStartedRun: true, nonOwnerChat: false };
+  it.each(["user", "call_end"])("includes a %s run", (trigger) => {
+    expect(runStartedByMember(trigger, theirs)).toBe(true);
+  });
+  it("includes a follow-up the member wrote", () => {
+    expect(runStartedByMember("follow_up", theirs)).toBe(true);
+    expect(runStartedByMember("follow_up", { ownerStartedRun: false, nonOwnerChat: false })).toBe(
+      false,
+    );
+  });
+  it.each(["routine", "webhook", "bot_message", "messaging", "helper"])(
+    "excludes a %s run even when the conversation was theirs",
+    (trigger) => {
+      expect(runStartedByMember(trigger, theirs)).toBe(false);
+    },
+  );
+  it("excludes another member's chat", () => {
+    expect(runStartedByMember("user", { ownerStartedRun: true, nonOwnerChat: true })).toBe(false);
+  });
+});

@@ -15,6 +15,7 @@ import { TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
+import { nativeShellCommandArgv, nativeTailnetCommand } from "./native-shell.js";
 import { tailnetHelper } from "./page-browser-install.js";
 import type { TailnetTunnelDeps } from "./tailnet-tunnel.js";
 import {
@@ -448,6 +449,21 @@ describe("the shell launcher", () => {
       // A command without tunnel settings neither gets nor needs it.
       const plain = await launch("echo plain", { PATH: process.env.PATH });
       expect(plain.stdout).toBe("plain\n");
+      // A native shell has no background launcher; the command installs rakazo-net itself.
+      const [shell, ...shellArgs] = nativeShellCommandArgv(
+        nativeTailnetCommand("printf hello | rakazo-net nc nas.tail1234.ts.net 7", "linux"),
+        { platform: "linux", shell: "bash" },
+      );
+      const native = await run(shell!, shellArgs, {
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          RAKAZO_NET_HOME: home,
+          ...settings,
+        },
+      });
+      expect(native.stdout).toBe("hello");
+      expect(native.stderr).not.toContain("could not be installed");
     } finally {
       await rm(home, { recursive: true, force: true });
     }

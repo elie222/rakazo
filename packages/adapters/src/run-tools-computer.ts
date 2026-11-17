@@ -40,7 +40,7 @@ import {
   unchangedVisualLoopToolResult,
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, nativeTailnetCommand } from "./native-shell.js";
 import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
@@ -52,6 +52,7 @@ import type { RunContext } from "./run-context.js";
 import { addRunSecrets, recordVaultUse } from "./run-context.js";
 import { builtinOffered } from "./run-instructions.prompt.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
+import { runStartedByMember } from "./run-origin.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { auditToolCall } from "./run-tool-gate.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
@@ -559,15 +560,22 @@ export const computerTools: ToolHandlers = {
       // The run hid the values it loaded at its start, which refused to start without them.
       keyOutage: "unset",
     });
-    // Tunnel settings for rakazo-net, when this run's member let the bot onto their tailnet.
-    const tailnetEnvironment = await deps.tailnet
-      ?.environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
-      .catch((error: unknown) => {
-        getLogger().warn("tailnet command settings unavailable", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      });
+    // Tunnel settings for rakazo-net, only when this member started the run and let the bot on.
+    const tailnetEnvironment =
+      ctx.source &&
+      runStartedByMember(run.trigger, {
+        ownerStartedRun: ctx.source.ownerStartedRun,
+        nonOwnerChat: ctx.source.messagingChannelRun,
+      })
+        ? await deps.tailnet
+            ?.environment({ runId, userId: run.userId, spaceId: run.spaceId, botId: bot.id })
+            .catch((error: unknown) => {
+              getLogger().warn("tailnet command settings unavailable", {
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return undefined;
+            })
+        : undefined;
     if (tailnetEnvironment) addRunSecrets(ctx, [tailnetEnvironment.RAKAZO_NET_TOKEN]);
     const withTailnet = { ...commandEnvironment.env, ...tailnetEnvironment };
     ctx.computer.checkpoint.markDirty();
@@ -622,8 +630,17 @@ export const computerTools: ToolHandlers = {
         (sandboxKindCapabilities(computer.kind).nativeShell
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
-      // rakazo-net is installed by the launcher a native shell skips, so its settings stay out.
-      const env = shellEnvironment ? commandEnvironment.env : withTailnet;
+      // A native shell skips the background launcher, so the command itself installs rakazo-net.
+      const commandText =
+        shellEnvironment && tailnetEnvironment
+          ? nativeTailnetCommand(command, shellEnvironment.platform)
+          : command;
+      const env = {
+        ...(shellEnvironment && !tailnetEnvironment ? commandEnvironment.env : withTailnet),
+        ...(shellEnvironment?.home && tailnetEnvironment
+          ? { RAKAZO_NET_HOME: shellEnvironment.home }
+          : {}),
+      };
       // The computer is sent the command with its variables here, so each is a use from then on,
       // recorded once the command answers, fails or runs on. One stopped before this got none.
       const observed = await observeShellCommand(
@@ -631,7 +648,7 @@ export const computerTools: ToolHandlers = {
           computer,
           {
             argv: shellEnvironment
-              ? nativeShellCommandArgv(command, shellEnvironment)
+              ? nativeShellCommandArgv(commandText, shellEnvironment)
               : [
                   "bash",
                   "-c",

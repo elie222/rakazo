@@ -42,7 +42,8 @@ Then turn on **Reach machines on your tailnet** for each bot that should. It is 
 until you turn it on.
 
 Your connection is yours alone. In a shared [space](./spaces.md), a bot uses your tailnet only in
-chats and routines you started; when someone else messages the same bot, it has no access unless
+a chat you started yourself. A routine, webhook, channel, another bot's message, or a spawned
+task does not, even when the run is attributed to you; someone else's chat has no access unless
 they connect their own. Leaving a space removes your connection there.
 
 On iOS and Android you can turn a bot's tailnet access on or off. Connect your tailnet on the web or

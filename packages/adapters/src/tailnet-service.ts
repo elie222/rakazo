@@ -100,9 +100,14 @@ export class TailnetService {
   ): Promise<Duplex> {
     const nodeHost = this.deps.nodeHost;
     if (!nodeHost) throw new PrivateNetworkError("unavailable", TAILNET_UNAVAILABLE_MESSAGE);
-    const config = await this.access(run);
-    if (!config) throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
     const nodeId = tailnetNodeId(run);
+    const config = await this.access(run);
+    if (!config) {
+      // Another process may have turned the bot off while this one still holds the node.
+      const stale = this.nodes.get(nodeId);
+      if (stale) await this.leave(stale);
+      throw new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE);
+    }
     const key = clientKey(config);
     let node: Node | undefined;
     // Re-read after every wait: another dial may have replaced or joined the node meanwhile.
@@ -161,11 +166,16 @@ export class TailnetService {
     }
   }
 
-  /** Whether the member still lets this bot onto their tailnet, for open connections to recheck. */
-  allows(run: { userId: string; spaceId: string; botId: string }): Promise<boolean> {
-    return runAsTenant({ spaceId: run.spaceId, userId: run.userId }, () =>
+  /** Whether the member still lets this bot onto their tailnet. A no drops this process's node. */
+  async allows(run: { userId: string; spaceId: string; botId: string }): Promise<boolean> {
+    const allowed = await runAsTenant({ spaceId: run.spaceId, userId: run.userId }, () =>
       tailnetBotAllowed(this.deps.prisma, run),
     );
+    if (!allowed) {
+      const node = this.nodes.get(tailnetNodeId(run));
+      if (node) await this.leave(node);
+    }
+    return allowed;
   }
 
   /**
@@ -243,6 +253,10 @@ export class TailnetService {
   }
 
   private async leave(node: Node): Promise<void> {
+    if (node.stopped.signal.aborted) {
+      await this.leaving.get(node.nodeId);
+      return;
+    }
     if (this.nodes.get(node.nodeId) === node) this.nodes.delete(node.nodeId);
     node.stopped.abort(new PrivateNetworkError("permission", TAILNET_NOT_CONNECTED_MESSAGE));
     const stopping = this.stop(node);
