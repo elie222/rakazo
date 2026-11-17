@@ -1461,6 +1461,13 @@ export const ManagedVoiceProfilesFileSchema = z
   })
   .strict();
 
+export const ManagedVoiceProfileViewSchema = ManagedVoiceProfileSchema.omit({ botId: true }).extend(
+  {
+    connectionName: z.string().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+  },
+);
+export type ManagedVoiceProfileView = z.infer<typeof ManagedVoiceProfileViewSchema>;
+
 export const VoiceCredentialSchema = z.object({
   id: Id,
   provider: z.string(),

@@ -13,6 +13,7 @@ import {
   isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
+  managedVoiceProfile,
   mountVoiceHttpRoutes,
   persistVoiceCredential,
   prepareVoice,
@@ -28,6 +29,42 @@ import {
   voiceCredentialServer,
   withVoiceConnection,
 } from "./voice.js";
+
+describe("managedVoiceProfile", () => {
+  const profile = {
+    botId: "bot-1",
+    voiceId: "fish-audio::managed-voice",
+    voiceLabel: "Managed voice",
+    model: "managed-model",
+    settings: { speed: 0.94 },
+  };
+
+  it("returns safe profile details for a bot in the actor's Space", async () => {
+    const deps = {
+      prisma: { bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1" }) } },
+      managedVoiceProfiles: { forBot: () => profile },
+    } as unknown as VoiceDeps;
+
+    await expect(managedVoiceProfile(deps, actor, "bot-1")).resolves.toEqual({
+      voiceId: profile.voiceId,
+      voiceLabel: profile.voiceLabel,
+      connectionName: adapters.voiceCatalogEntry("fish-audio")?.name,
+      model: profile.model,
+      settings: profile.settings,
+    });
+  });
+
+  it("does not reveal a profile for a bot outside the actor's Space", async () => {
+    const deps = {
+      prisma: { bot: { findFirst: vi.fn().mockResolvedValue(null) } },
+      managedVoiceProfiles: { forBot: () => profile },
+    } as unknown as VoiceDeps;
+
+    await expect(managedVoiceProfile(deps, actor, "bot-1")).rejects.toBeInstanceOf(
+      db.IsolationError,
+    );
+  });
+});
 
 describe("toVoiceStatus", () => {
   it("treats a saved key without a voice as configured but not ready", () => {

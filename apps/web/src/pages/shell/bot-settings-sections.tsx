@@ -1,12 +1,20 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { ComputerMode, ManagedVoiceProfileView, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
   BUILTIN_TOOL_NAMES,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { Button, OptionSelect, SectionHeading, Switch, Textarea, Toggle } from "@rakazo/ui-web";
+import {
+  Button,
+  Disclosure,
+  OptionSelect,
+  SectionHeading,
+  Switch,
+  Textarea,
+  Toggle,
+} from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
@@ -157,35 +165,82 @@ export function VoiceRow({
   voices,
   voiceId,
   onVoiceIdChange,
+  managedProfile,
 }: {
   ids: string;
   voices: ReadonlyArray<{ id: string; label: string }>;
   voiceId: string;
   onVoiceIdChange: (voiceId: string) => void;
+  managedProfile: ManagedVoiceProfileView | null | undefined;
 }) {
   const { t } = useLingui();
-  const selectedVoiceId =
-    voices?.find((voice) => voice.id === voiceId)?.id ??
-    voices?.find((voice) => voice.id.endsWith(`::${voiceId}`))?.id ??
-    voiceId;
+  const choices = [...voices];
+  if (managedProfile && !choices.some((voice) => voice.id === managedProfile.voiceId)) {
+    choices.unshift({ id: managedProfile.voiceId, label: managedProfile.voiceLabel });
+  }
+  const selectedVoiceId = managedProfile
+    ? managedProfile.voiceId
+    : (choices.find((voice) => voice.id === voiceId)?.id ??
+      choices.find((voice) => voice.id.endsWith(`::${voiceId}`))?.id ??
+      voiceId);
   return (
-    <label
-      htmlFor={`${ids}-voice`}
-      className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
-    >
-      <Trans>Voice</Trans>
-      <OptionSelect
-        id={`${ids}-voice`}
-        className="w-fit max-w-2/3"
-        value={selectedVoiceId}
-        onValueChange={onVoiceIdChange}
-        options={[
-          { value: "", label: t`Account default` },
-          ...voices.map((voice) => ({ value: voice.id, label: voice.label })),
-        ]}
-      />
-    </label>
+    <div className="py-1">
+      <label
+        htmlFor={`${ids}-voice`}
+        className="flex min-h-11 items-center justify-between gap-3 text-body text-foreground"
+      >
+        <span>{managedProfile ? <Trans>Managed voice</Trans> : <Trans>Voice</Trans>}</span>
+        <OptionSelect
+          id={`${ids}-voice`}
+          className="w-fit max-w-2/3"
+          value={selectedVoiceId}
+          disabled={Boolean(managedProfile)}
+          onValueChange={onVoiceIdChange}
+          options={[
+            { value: "", label: t`Account default` },
+            ...choices.map((voice) => ({ value: voice.id, label: voice.label })),
+          ]}
+        />
+      </label>
+      {managedProfile ? (
+        <Disclosure summary={t`Details`} className="pb-2 text-body text-muted-foreground">
+          <dl className="mt-2 space-y-2">
+            <VoiceDetail label={t`Connection`} value={managedProfile.connectionName} />
+            {managedProfile.model ? (
+              <VoiceDetail label={t`Model`} value={managedProfile.model} />
+            ) : null}
+            {managedProfile.settings
+              ? flattenVoiceSettings(managedProfile.settings).map(([label, value]) => (
+                  <VoiceDetail key={label} label={label} value={value} />
+                ))
+              : null}
+          </dl>
+        </Disclosure>
+      ) : null}
+    </div>
   );
+}
+
+function VoiceDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt>{label}</dt>
+      <dd className="text-end text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function flattenVoiceSettings(
+  settings: Readonly<Record<string, unknown>>,
+  prefix = "",
+): Array<[string, string]> {
+  return Object.entries(settings).flatMap(([key, value]) => {
+    const label = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return flattenVoiceSettings(value as Readonly<Record<string, unknown>>, label);
+    }
+    return [[label, typeof value === "string" ? value : JSON.stringify(value)]];
+  });
 }
 
 export function DescriptionGroup({

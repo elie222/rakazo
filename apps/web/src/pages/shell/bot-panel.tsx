@@ -210,6 +210,10 @@ export function BotSettings({
   const queries = useSpaceQueries();
   const refresh = { refetchOnMount: "always" } as const;
   const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
+  const managedVoiceProfile = useQuery({
+    ...queries.voice.profile.queryOptions({ input: { botId: bot.id } }),
+    ...refresh,
+  }).data;
   const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
   const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
   const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
@@ -714,7 +718,7 @@ export function BotSettings({
                 disabled={saving}
                 onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
-              {changed.readAloud ? (
+              {changed.readAloud || managedVoiceProfile ? (
                 <SwitchRow
                   id={`${ids}-auto-speak`}
                   label={<Trans>Read replies aloud</Trans>}
@@ -722,12 +726,13 @@ export function BotSettings({
                   onChange={setAutoSpeak}
                 />
               ) : null}
-              {changed.readAloud && voices?.length ? (
+              {managedVoiceProfile || (changed.readAloud && voices?.length) ? (
                 <VoiceRow
                   ids={ids}
-                  voices={voices}
+                  voices={voices ?? []}
                   voiceId={voiceId}
                   onVoiceIdChange={setVoiceId}
+                  managedProfile={managedVoiceProfile}
                 />
               ) : null}
               {changed.dailyCheckIns ? (

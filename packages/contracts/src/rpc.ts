@@ -107,6 +107,7 @@ import {
   GroupSchema,
   IncomingBotCallSchema,
   IntegrationCatalogResultSchema,
+  ManagedVoiceProfileViewSchema,
   MemoryDocumentSchema,
   MemoryPromptBudgetSchema,
   MemoryScopeSchema,
@@ -1671,6 +1672,7 @@ export const appContract = {
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
+    profile: oc.input(z.object({ botId: Id })).output(ManagedVoiceProfileViewSchema.nullable()),
     status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
     credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc

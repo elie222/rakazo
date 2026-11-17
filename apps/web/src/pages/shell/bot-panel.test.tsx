@@ -23,7 +23,10 @@ vi.mock("../../lib/rpc", () => {
       // This server receives no email, so the panel offers no address.
       emailAddress: vi.fn(async () => null),
     },
-    voice: { voices: vi.fn().mockResolvedValue([]) },
+    voice: {
+      voices: vi.fn().mockResolvedValue([]),
+      profile: vi.fn().mockResolvedValue(null),
+    },
     models: {
       credentials: vi.fn().mockResolvedValue([]),
       list: vi.fn().mockResolvedValue([]),
@@ -62,6 +65,12 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     OptionSelect,
+    Disclosure: ({ summary, children }: { summary: ReactNode; children: ReactNode }) => (
+      <details open>
+        <summary>{summary}</summary>
+        {children}
+      </details>
+    ),
     Switch: ({
       onCheckedChange,
       checked,
@@ -280,6 +289,7 @@ beforeEach(() => {
   onExport.mockReset().mockResolvedValue(undefined);
   vi.mocked(rpc.bots.update).mockReset();
   vi.mocked(rpc.bots.get).mockReset();
+  vi.mocked(rpc.voice.profile).mockReset().mockResolvedValue(null);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -869,10 +879,36 @@ describe("BotSettings cached data", () => {
     ]);
     await render("Billing", { voiceId: "voice-1" });
     await vi.waitFor(() =>
-      expect(container.querySelector<HTMLSelectElement>('[id$="-voice"]')?.value).toBe(
-        "elevenlabs::voice-1",
+      expect(container.querySelector<HTMLElement>('[role="combobox"][id$="-voice"]')?.textContent).toContain(
+        "Original voice",
       ),
     );
+  });
+
+  it("shows a managed voice as fixed while leaving read-aloud editable", async () => {
+    vi.mocked(rpc.voice.profile).mockResolvedValueOnce({
+      provider: "fish-audio",
+      connectionId: "connection-1",
+      connectionName: "Private voice connection",
+      voiceId: "fish-audio::voice-1",
+      voiceLabel: "Managed voice profile",
+      model: "speech-model",
+      settings: { speed: 0.94 },
+    });
+
+    await render("Billing");
+
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector<HTMLButtonElement>('[role="combobox"][id$="-voice"]')?.disabled,
+      ).toBe(true),
+    );
+    expect(container.textContent).toContain("Managed voice");
+    expect(container.textContent).toContain("Private voice connection");
+    expect(container.textContent).toContain("speech-model");
+    expect(container.textContent).toContain("speed");
+    expect(container.textContent).toContain("0.94");
+    expect(container.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled).toBe(false);
   });
 
   it("shows cached voices at once and refreshes them in the background", async () => {

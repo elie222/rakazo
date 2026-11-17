@@ -121,6 +121,25 @@ export function parseQualifiedVoiceId(value: string) {
   return voiceId && isVoiceProviderId(provider) ? { provider, voiceId } : null;
 }
 
+export async function managedVoiceProfile(deps: VoiceDeps, actor: Actor, botId: string) {
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: botId, spaceId: actor.spaceId },
+    select: { id: true },
+  });
+  if (!bot) throw new IsolationError();
+  const profile = deps.managedVoiceProfiles?.forBot(botId);
+  if (!profile) return null;
+  const qualified = parseQualifiedVoiceId(profile.voiceId);
+  if (!qualified) throw new Error("Managed voice profile uses an unavailable connection.");
+  return {
+    voiceId: profile.voiceId,
+    voiceLabel: profile.voiceLabel,
+    connectionName: catalogEntry(qualified.provider)?.name ?? qualified.provider,
+    model: profile.model,
+    settings: profile.settings,
+  };
+}
+
 type ConnectedVoice = { provider: VoiceProviderId; voice: VoiceInfo };
 
 async function connectedVoices(
@@ -415,6 +434,7 @@ export async function resolveVoiceTarget(
   }
   const selectedVoiceId = managed?.voiceId || input.voiceId || botVoiceId;
   let qualified = selectedVoiceId ? parseQualifiedVoiceId(selectedVoiceId) : null;
+  if (managed && !qualified) throw new NoVoiceConfigured("key");
   if (!qualified && selectedVoiceId) {
     const matches = (
       await connectedVoices(deps, actor, input.scope, undefined, input.signal)

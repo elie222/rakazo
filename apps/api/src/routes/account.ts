@@ -59,6 +59,7 @@ import {
   disconnectVoiceCredential,
   listConnectedVoices,
   loadVoiceCredential,
+  managedVoiceProfile,
   persistVoiceCredential,
   prepareVoice,
   toVoiceCredential,
@@ -546,6 +547,9 @@ export function accountRoutes(ctx: RouterContext) {
     voice: {
       catalog: authed.voice.catalog.handler(async ({ context }) =>
         accountVoiceCatalog(deps, context.actor),
+      ),
+      profile: authed.voice.profile.handler(async ({ context, input }) =>
+        managedVoiceProfile(deps, context.actor, input.botId),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
