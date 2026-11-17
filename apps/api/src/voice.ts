@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import type { AdapterContext, SecretStore, VoiceUsage } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError, VoiceAccountError } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
@@ -28,6 +28,7 @@ import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  admitSpeech,
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -42,6 +43,7 @@ import {
   runAsTenant,
   saveVoicePreference,
   selectVoicePreference,
+  settleSpeech,
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -49,6 +51,7 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { clientErrorStatus } from "./client-error-status.js";
+import type { DeploymentVoice } from "./deployment-voice.js";
 import { readBoundedBody } from "./http-body.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
@@ -56,7 +59,7 @@ export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: SecretStore;
   /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
-  env?: { mcpAllowPrivateEndpoint?: boolean };
+  env?: { mcpAllowPrivateEndpoint?: boolean; deploymentVoice?: DeploymentVoice };
   /** Set only when `VOICE_SUMMARY_MIN_CHARS` turns spoken summaries on. */
   speechSummary?: { summarize: SpeechSummarizer; minChars: number };
 }
@@ -258,6 +261,17 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
+/** Status must not decrypt a user's saved connection just to advertise capabilities. */
+export async function effectiveVoiceStatus(deps: VoiceDeps, actor: Actor, scope?: SettingsScope) {
+  const cred = await findDefaultVoiceCredential(deps.prisma, actor, scope);
+  if (cred) return toVoiceStatus(cred);
+  const target = await voicePreferenceTarget(deps.prisma, actor, scope);
+  const deployment = target.scope === "account" ? deps.env?.deploymentVoice : undefined;
+  return toVoiceStatus(
+    deployment ? { provider: deployment.provider, voiceId: deployment.voiceId } : null,
+  );
+}
+
 export async function loadDefaultVoiceCredential(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId" | "spaceId">,
@@ -309,7 +323,29 @@ export async function loadVoiceCredential(
   const cred = provider
     ? await findVoiceCredential(deps.prisma, actor, provider, scope)
     : await findDefaultVoiceCredential(deps.prisma, actor, scope);
-  if (!cred) return null;
+  if (!cred) {
+    const deployment = deps.env?.deploymentVoice;
+    const target = await voicePreferenceTarget(deps.prisma, actor, scope);
+    // An explicit Space copy can intentionally have no voice. Named connections never fall back.
+    if (provider || !deployment || target.scope === "space") return null;
+    const apiKey = voiceCredentialPlaintext({
+      provider: deployment.provider,
+      ...deployment.connection,
+      allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint,
+    });
+    if (isModelConnectionVoiceSecret(apiKey))
+      throw new Error("Deployment voice requires a server-owned connection");
+    return {
+      cred: {
+        provider: deployment.provider,
+        voiceId: deployment.voiceId,
+        speechModel: deployment.pricing.synthesize.model,
+      },
+      apiKey,
+      linked: false,
+      deployment: true,
+    };
+  }
   const secret = await deps.prisma.secret.findFirst({
     where: { id: cred.secretId, userId: actor.userId, spaceId: null },
   });
@@ -327,7 +363,7 @@ export async function loadVoiceCredential(
       signal,
     ),
   );
-  return { cred, apiKey, linked };
+  return { cred, apiKey, linked, deployment: false };
 }
 
 export async function resolveVoiceTarget(
@@ -657,9 +693,11 @@ export async function synthesizeVoice(
     voiceId?: string;
     botId?: string;
     scope?: SettingsScope;
+    callId?: string;
     signal?: AbortSignal;
   },
 ) {
+  input.signal?.throwIfAborted();
   const target = await resolveVoiceTarget(deps, actor, input);
   const text = input.text.trim();
   if (!text) throw new ORPCError("BAD_REQUEST", { message: "Nothing to speak." });
@@ -667,16 +705,18 @@ export async function synthesizeVoice(
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
   const provider = await voiceProviderFor(deps, target.cred.provider);
-  return withVoiceConnection(target.cred.provider, target.linked, () =>
-    provider.synthesize(
-      {
-        text,
-        voiceId: target.voiceId,
-        apiKey: target.apiKey,
-        model: target.cred.speechModel || undefined,
-        signal: input.signal,
-      },
-      voiceContext(actor, input.signal),
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, "synthesize", () =>
+    withVoiceConnection(target.cred.provider, target.linked, () =>
+      provider.synthesize(
+        {
+          text,
+          voiceId: target.voiceId,
+          apiKey: target.apiKey,
+          model: target.cred.speechModel || undefined,
+          signal: input.signal,
+        },
+        voiceContext(actor, input.signal),
+      ),
     ),
   );
 }
@@ -684,8 +724,15 @@ export async function synthesizeVoice(
 export async function transcribeVoice(
   deps: VoiceDeps,
   actor: Actor,
-  input: { audio: Uint8Array; mimeType: string; language?: string; signal?: AbortSignal },
+  input: {
+    audio: Uint8Array;
+    mimeType: string;
+    language?: string;
+    callId?: string;
+    signal?: AbortSignal;
+  },
 ) {
+  input.signal?.throwIfAborted();
   const loaded = await loadDefaultVoiceCredential(deps, actor, undefined, input.signal);
   if (!loaded) throw new NoVoiceConfigured("key");
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
@@ -697,16 +744,21 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
-    provider.transcribe!(
-      {
-        audio: input.audio,
-        mimeType: input.mimeType || "audio/webm",
-        language: input.language,
-        apiKey: loaded.apiKey,
-        signal: input.signal,
-      },
-      voiceContext(actor, input.signal),
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, "transcribe", () =>
+    withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
+      provider.transcribe!(
+        {
+          audio: input.audio,
+          model: loaded.deployment
+            ? deps.env?.deploymentVoice?.pricing.transcribe.model
+            : undefined,
+          mimeType: input.mimeType || "audio/webm",
+          language: input.language,
+          apiKey: loaded.apiKey,
+          signal: input.signal,
+        },
+        voiceContext(actor, input.signal),
+      ),
     ),
   );
 }
@@ -727,13 +779,46 @@ export async function transcribeInboundVoice(
   if (!loaded) return null;
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
-    provider.transcribe!(
-      { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
-      voiceContext(owner, input.signal),
+  const { text } = await withSpeechCost(deps, owner, loaded, "transcribe", () =>
+    withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
+      provider.transcribe!(
+        {
+          audio: input.audio,
+          model: loaded.deployment
+            ? deps.env?.deploymentVoice?.pricing.transcribe.model
+            : undefined,
+          mimeType: input.mimeType,
+          apiKey: loaded.apiKey,
+          signal: input.signal,
+        },
+        voiceContext(owner, input.signal),
+      ),
     ),
   );
   return text;
+}
+
+async function withSpeechCost<T extends { usage?: VoiceUsage; providerRequestId?: string }>(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId"> & { callId?: string },
+  target: { deployment: boolean; cred: { provider: string } },
+  operation: "synthesize" | "transcribe",
+  work: () => Promise<T>,
+): Promise<T> {
+  const policy = target.deployment ? deps.env?.deploymentVoice : undefined;
+  if (!policy) return work();
+  const id = await admitSpeech(
+    deps.prisma,
+    actor,
+    target.cred.provider,
+    operation,
+    policy.pricing[operation],
+  );
+  // If the request fails or is interrupted, pending evidence and its reservation survive.
+  // Retrying audio automatically could charge twice, so recovery requires provider evidence.
+  const result = await work();
+  await settleSpeech(deps.prisma, id, result.usage, result.providerRequestId);
+  return result;
 }
 
 export function mountVoiceHttpRoutes(
@@ -751,6 +836,7 @@ export function mountVoiceHttpRoutes(
       const clip = await runAsTenant(actor, () =>
         synthesizeVoice(deps, actor, {
           text: String((body as { text?: unknown }).text ?? ""),
+          callId: optionalString(body.callId)?.slice(0, 200),
           voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
           botId: optionalString((body as { botId?: unknown }).botId),
           scope: SettingsScopeSchema.safeParse((body as { scope?: unknown }).scope).data,
@@ -791,6 +877,7 @@ export function mountVoiceHttpRoutes(
           audio,
           mimeType: String((body as { mimeType?: unknown }).mimeType ?? "audio/webm"),
           language,
+          callId: optionalString(body.callId)?.slice(0, 200),
           signal: c.req.raw.signal,
         }),
       );

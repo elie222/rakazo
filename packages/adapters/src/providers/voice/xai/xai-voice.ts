@@ -7,6 +7,7 @@ import type {
   VoiceProvider,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
@@ -93,14 +94,25 @@ export class XaiVoiceProvider implements VoiceProvider {
       signal,
     });
     if (!res.ok) throw xaiRequestError(res.status, "speaking", await readVoiceJson(res));
-    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
+    return {
+      bytes: await readVoiceAudio(res, signal),
+      mimeType: "audio/mpeg",
+      usage: {
+        model: "tts",
+        unit: "characters",
+        units: Array.from(request.text).length,
+        providerRequestId: res.headers.get("x-request-id") ?? undefined,
+      },
+    };
   }
 
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }> {
     const form = new FormData();
+    const model = request.model || "grok-voice-transcribe-2.0";
+    form.set("model", model);
     const language = voiceLanguageHint(request.language);
     if (language) {
       form.set("language", language);
@@ -122,7 +134,18 @@ export class XaiVoiceProvider implements VoiceProvider {
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw xaiRequestError(res.status, "transcribing", body);
     const text = body && typeof body === "object" && "text" in body ? body.text : undefined;
-    return { text: typeof text === "string" ? text.trim() : "" };
+    const duration =
+      body && typeof body === "object" && "duration" in body ? body.duration : undefined;
+    const providerRequestId = res.headers.get("x-request-id") ?? undefined;
+    return {
+      text: typeof text === "string" ? text.trim() : "",
+      ...(providerRequestId ? { providerRequestId } : {}),
+      ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+        ? {
+            usage: { model, unit: "seconds" as const, units: duration, providerRequestId },
+          }
+        : {}),
+    };
   }
 }
 

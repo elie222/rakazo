@@ -213,10 +213,7 @@ describe("OpenAIVoiceProvider", () => {
   });
 
   it("posts speech to /audio/speech", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([9]).buffer,
-    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([9])));
     vi.stubGlobal("fetch", fetchMock);
     const clip = await new OpenAIVoiceProvider().synthesize(
       { text: "Hi", voiceId: "alloy", apiKey: "sk-test" },

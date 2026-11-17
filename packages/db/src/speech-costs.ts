@@ -1,0 +1,125 @@
+import { randomUUID } from "node:crypto";
+import type { VoiceUsage } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
+import type { PrismaClient } from "./client.js";
+import { currentDbContext } from "./row-security.js";
+
+export interface SpeechPrice {
+  model: string;
+  unit: "characters" | "seconds" | "tokens";
+  microsPerUnit: number;
+  maxRequestMicros: number;
+  source: string;
+  version: string;
+}
+
+/** A reservation survives a crash/cancel: only evidence of no charge may release it. */
+export async function admitSpeech(
+  prisma: Pick<PrismaClient, "$transaction">,
+  scope: { userId: string; spaceId: string; callId?: string },
+  provider: string,
+  operation: "synthesize" | "transcribe",
+  price: SpeechPrice,
+) {
+  const id = randomUUID();
+  await prisma.$transaction(async (tx) => {
+    const count = await tx.$executeRaw`
+      UPDATE speech_allowances SET "usedMicros" = "usedMicros" + ${BigInt(price.maxRequestMicros)}
+      WHERE "userId" = ${scope.userId} AND "expiresAt" > now()
+        AND "usedMicros" + ${BigInt(price.maxRequestMicros)} <= "limitMicros"`;
+    if (count !== 1) throw new ClientError("TOO_MANY_REQUESTS", "Speech allowance unavailable.");
+    await tx.$executeRaw`
+      INSERT INTO speech_costs
+        (id, "userId", "spaceId", "callId", provider, operation, model, unit,
+         "reservedMicros", "accountedMicros", "pricingSource", "pricingVersion", "microsPerUnit")
+      VALUES (${id}, ${scope.userId}, ${scope.spaceId}, ${scope.callId ?? null}, ${provider},
+        ${operation}, ${price.model}, ${price.unit}, ${BigInt(price.maxRequestMicros)},
+        ${BigInt(price.maxRequestMicros)}, ${price.source}, ${price.version}, ${price.microsPerUnit})`;
+  });
+  return id;
+}
+
+/** Computed list-price costs are estimates, never a claim of an invoice-confirmed charge. */
+export async function settleSpeech(
+  prisma: Pick<PrismaClient, "$transaction">,
+  id: string,
+  usage: VoiceUsage | undefined,
+  providerRequestId?: string,
+) {
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        userId: string;
+        model: string;
+        unit: string;
+        microsPerUnit: number;
+        reservedMicros: bigint;
+      }>
+    >`SELECT "userId", model, unit, "microsPerUnit", "reservedMicros" FROM speech_costs
+      WHERE id = ${id} AND state = 'pending' FOR UPDATE`;
+    if (!row) return;
+    const matches =
+      usage &&
+      usage.model === row.model &&
+      usage.unit === row.unit &&
+      // Token totals do not encode the distinct prices of text/audio input and output.
+      usage.unit !== "tokens" &&
+      Number.isFinite(usage.units) &&
+      usage.units >= 0;
+    const calculated = matches ? Math.ceil(usage.units * row.microsPerUnit) : null;
+    const micros = calculated !== null && Number.isSafeInteger(calculated) ? calculated : null;
+    // Unknown costs keep the reservation. Observed overages also count against future admission.
+    const refund = micros !== null ? row.reservedMicros - BigInt(micros) : 0n;
+    await tx.$executeRaw`UPDATE speech_costs SET
+      state = ${micros !== null ? "estimated" : "unresolved"},
+      units = ${usage?.units ?? null}, "observedModel" = ${usage?.model ?? null},
+      "observedUnit" = ${usage?.unit ?? null}, "costMicros" = ${micros},
+      "accountedMicros" = ${micros !== null ? BigInt(micros) : row.reservedMicros},
+      "billableUnits" = ${usage ? JSON.stringify(usage) : null}::jsonb,
+      "providerRequestId" = ${providerRequestId ?? usage?.providerRequestId ?? null}, "updatedAt" = now()
+      WHERE id = ${id}`;
+    if (refund !== 0n)
+      await tx.$executeRaw`UPDATE speech_allowances
+      SET "usedMicros" = "usedMicros" - ${refund} WHERE "userId" = ${row.userId}`;
+  });
+}
+
+/** Operator reconciliation only. Zero is valid solely with evidence that no charge occurred. */
+export async function confirmSpeechCost(
+  prisma: Pick<PrismaClient, "$transaction">,
+  id: string,
+  evidence: { costMicros: bigint; source: string; reference: string },
+) {
+  if (currentDbContext()?.kind !== "system")
+    throw new Error("Speech reconciliation requires system context");
+  if (evidence.costMicros < 0n || !evidence.source || !evidence.reference)
+    throw new Error("Invalid speech cost evidence");
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<
+      Array<{
+        userId: string;
+        accountedMicros: bigint;
+        state: string;
+        costMicros: bigint | null;
+        confirmationReference: string | null;
+      }>
+    >`
+      SELECT "userId", "accountedMicros", state, "costMicros", "confirmationReference"
+      FROM speech_costs WHERE id = ${id} FOR UPDATE`;
+    if (!row) throw new Error("Speech cost not found");
+    if (row.state === "confirmed") {
+      if (
+        row.costMicros !== evidence.costMicros ||
+        row.confirmationReference !== evidence.reference
+      )
+        throw new Error("Speech cost already confirmed with different evidence");
+      return;
+    }
+    await tx.$executeRaw`UPDATE speech_allowances SET "usedMicros" = "usedMicros" +
+      ${evidence.costMicros - row.accountedMicros} WHERE "userId" = ${row.userId}`;
+    await tx.$executeRaw`UPDATE speech_costs SET state = 'confirmed',
+      "costMicros" = ${evidence.costMicros}, "accountedMicros" = ${evidence.costMicros},
+      "confirmationSource" = ${evidence.source}, "confirmationReference" = ${evidence.reference},
+      "updatedAt" = now() WHERE id = ${id}`;
+  });
+}

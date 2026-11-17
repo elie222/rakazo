@@ -185,6 +185,7 @@ export class Dictation {
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  private requestCallId: string | undefined;
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
@@ -257,11 +258,13 @@ export class Dictation {
 
   async listen(opts: {
     mode: DictationMode;
+    callId?: string;
     transcribe?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
     this.stop("replace");
+    this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
     this.onFinal = opts.onFinal;
@@ -586,6 +589,7 @@ export class Dictation {
   }
 
   private async transcribeChunks(mine: number, spaceId: string | null) {
+    const requestCallId = this.requestCallId;
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
     // the speech threshold is not sent. Require multiple running-context readings so
@@ -628,6 +632,7 @@ export class Dictation {
             audioBase64,
             mimeType: blob.type,
             language: transcriptionLanguage(),
+            callId: requestCallId,
           }),
           signal: abort.signal,
         }),

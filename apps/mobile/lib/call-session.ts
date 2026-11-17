@@ -902,7 +902,10 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
       await ensureVoiceConsent(await callContext());
       return recordClip(signal);
     },
-    transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
+    transcribe: async (clip, signal) => {
+      const currentCallId = callId;
+      return transcribeClip(clip, signal, await callContext(), currentCallId);
+    },
     send: (botId, text, clientNonce) =>
       endOnUnauthorized(
         callContext().then(async (requestContext) => {
@@ -1045,6 +1048,7 @@ export async function transcribeClip(
   clip: CallClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
+  currentCallId?: string,
 ): Promise<string> {
   await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
@@ -1053,7 +1057,11 @@ export async function transcribeClip(
     {
       method: "POST",
       headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-      body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
+      body: JSON.stringify({
+        audioBase64: clip.base64,
+        mimeType: clip.mimeType,
+        callId: currentCallId,
+      }),
       signal,
     },
     apiBase,

@@ -58,3 +58,46 @@ it.each([
   expect(file.type).toBe("audio/webm");
   expect(new Uint8Array(await file.arrayBuffer())).toEqual(audio);
 });
+
+it("returns billable character evidence and the provider request id", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(new Uint8Array([1]), { headers: { "x-request-id": "fake-speech-request" } }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const clip = await new OpenAIVoiceProvider().synthesize(
+    { apiKey: "fake-key", model: "tts-1", voiceId: "alloy", text: "A😀" },
+    context,
+  );
+  expect(clip.usage).toEqual({
+    model: "tts-1",
+    unit: "characters",
+    units: 2,
+    providerRequestId: "fake-speech-request",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body).model).toBe("tts-1");
+});
+
+it("uses measured transcription duration rather than upload bytes or guessed duration", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json(
+        { text: "Hello", duration: 12.5 },
+        { headers: { "x-request-id": "fake-transcription-request" } },
+      ),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await new OpenAIVoiceProvider().transcribe(
+    { apiKey: "fake-key", model: "whisper-1", audio: new Uint8Array([1]), mimeType: "audio/wav" },
+    context,
+  );
+  expect(result.usage).toEqual({
+    model: "whisper-1",
+    unit: "seconds",
+    units: 12.5,
+    providerRequestId: "fake-transcription-request",
+  });
+  expect(fetchMock.mock.calls[0]![1].body.get("response_format")).toBe("verbose_json");
+});

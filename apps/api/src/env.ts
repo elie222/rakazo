@@ -29,6 +29,8 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
+import type { DeploymentVoice } from "./deployment-voice.js";
+import { deploymentVoiceFromEnv } from "./deployment-voice.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
@@ -36,6 +38,7 @@ export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapt
 const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
 
 export interface AppEnv extends MessagingEnvironmentValues {
+  deploymentVoice?: DeploymentVoice;
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -275,6 +278,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
+    deploymentVoice: deploymentVoiceFromEnv(source.DEPLOYMENT_VOICE),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:

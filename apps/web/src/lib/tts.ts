@@ -21,6 +21,7 @@ export interface SpeechSnapshot {
 }
 
 interface SpeakOptions {
+  callId?: string;
   spaceId?: string | null;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
@@ -213,6 +214,7 @@ export class Speaker {
             voiceId: opts.voiceId,
             botId: opts.botId,
             scope: opts.scope,
+            callId: opts.callId,
           }),
           signal: deadline.signal,
         }),

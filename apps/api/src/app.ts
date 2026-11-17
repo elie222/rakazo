@@ -823,6 +823,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
       deploymentLabs: env.deploymentLabs,
+      deploymentVoice: env.deploymentVoice,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       navLinks: env.navLinks,
