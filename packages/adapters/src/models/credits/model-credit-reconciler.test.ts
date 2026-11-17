@@ -145,6 +145,8 @@ describe("model credit reconciler", () => {
     "bad-snapshot",
     "receipt-write-failed",
   ])("keeps a tariff hold without complete recovery evidence: %s", async (reason) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
     const usage =
       reason === "bad-snapshot"
         ? { ...pendingTariff, pricingSnapshot: { connectionId: "original-connection" } }
@@ -169,7 +171,17 @@ describe("model credit reconciler", () => {
         : { provider: reason === "wrong-provider" ? "other" : "fake", lookupUsage: find },
     );
     const legacy = lookup(vi.fn());
-    await createModelCreditReconciler({ prisma, lookup: legacy, lookupForOffering: resolve })();
+    await createModelCreditReconciler({
+      prisma,
+      lookup: reason === "missing-counts" ? undefined : legacy,
+      lookupForOffering: resolve,
+    })();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "Model credit hold requires review",
+        canLookUpUsage: ["missing-counts", "receipt-write-failed"].includes(reason),
+      }),
+    );
     expect(recordUsage).not.toHaveBeenCalled();
     expect(legacy.lookupUsage).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenLastCalledWith(

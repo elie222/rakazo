@@ -223,6 +223,7 @@ export function createModelCreditReconciler(deps: {
           });
           if (!claimed.count) return;
           let complete = false;
+          let canLookUp = false;
           // Why this attempt could not settle the hold, for whoever reviews it.
           let reason = "usage unavailable";
           const lastAttempt = call.reconciliationAttempts >= 5;
@@ -240,8 +241,7 @@ export function createModelCreditReconciler(deps: {
                 ? await deps.lookupForOffering?.(tariff)
                 : undefined
               : lookup;
-            const canLookUp =
-              recoveryLookup?.provider === call.provider && !!call.providerRequestId;
+            canLookUp = recoveryLookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {
               try {
                 const recovered = await recoveryLookup!.lookupUsage(call.providerRequestId!);
@@ -369,7 +369,7 @@ export function createModelCreditReconciler(deps: {
               pending: call.pending,
               attempts: call.reconciliationAttempts + 1,
               hasProviderRequestId: Boolean(call.providerRequestId),
-              canLookUpUsage: lookup?.provider === call.provider,
+              canLookUpUsage: canLookUp,
             });
         }),
       );
