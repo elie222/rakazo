@@ -4,8 +4,6 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import {
   ModelApiProtocolSchema,
-  ModelBackupChoiceSchema,
-  ModelBackupListSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
   ModelConnectionLabelSchema,
@@ -13,10 +11,16 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
+  modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
-import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
+import {
+  ModelRoleChoiceSchema,
+  ModelRoleSchema,
+  ModelRoleUpdateSchema,
+  ModelRoleViewSchema,
+} from "./model-roles.js";
 import {
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
@@ -49,8 +53,10 @@ export const modelsRpc = {
       .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
-    backups: oc.output(z.array(ModelBackupChoiceSchema)),
-    setBackups: oc.input(ModelBackupListSchema).output(z.object({ ok: z.literal(true) })),
+    backups: oc.output(z.array(ModelRoleChoiceSchema)),
+    setBackups: oc
+      .input(modelChoiceListSchema(ModelRoleChoiceSchema))
+      .output(z.object({ ok: z.literal(true) })),
     connect: oc.input(ModelConnectInputSchema).output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(

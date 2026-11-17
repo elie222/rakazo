@@ -124,7 +124,7 @@ describe("performance comparison table", () => {
           [
             "--import",
             "tsx",
-            fileURLToPath(new URL("../cli/compare-performance.ts", import.meta.url)),
+            fileURLToPath(new URL("./compare-performance.ts", import.meta.url)),
             beforePath,
             afterPath,
           ],

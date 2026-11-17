@@ -203,7 +203,7 @@ export async function runApprovalSuite(
   try {
     if (isJev) {
       const { JevAutoReviewProvider } = await import(
-        "../../../adapters/src/approvals/jev-auto-review.ts"
+        "../../../adapters/src/providers/decision/typesafe/jev-auto-review.ts"
       );
       reviewer = new JevAutoReviewProvider({
         apiKey,

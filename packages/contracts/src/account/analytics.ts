@@ -116,7 +116,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
     .strict(),
   z.object({ name: z.literal("checkout_opened"), ...planTerms }).strict(),
   z.object({ name: z.literal("subscription_started"), ...planTerms, trial: z.boolean() }).strict(),
-  // A trial's end: its first payment, or access lost without one.
+  // A trial's end: its first payment, or access lost without one. A failed first charge that is
+  // settled later reports again as converted, so a subscription converted if any report says so.
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
   // Only the fixed reason; the comment stays in the database.
   z

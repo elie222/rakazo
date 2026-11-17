@@ -10,8 +10,8 @@ import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/typ
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { dispatcherFetch, isNodeFetch } from "../web/undici-fetch.js";
+import { combineSignals } from "../integrations/connector-safety.js";
+import { dispatcherFetch, isNodeFetch } from "../network/undici-fetch.js";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import { createMcpClient } from "./mcp-output-schema.js";

@@ -28,13 +28,13 @@ import {
 } from "@rakazo/adapter-kit";
 import { abortableDelay, isRetryableError } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   boundedComputerActions,
   computerObservation,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import { McpSession } from "../../../mcp/mcp-transport.js";
-import { sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { normalizeDesktopWorkspacePath } from "../desktop/desktop-sandbox-paths.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";

@@ -7,7 +7,7 @@ import { argumentGiven } from "../../../bots/update-bot-patch.js";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
-} from "../../openai-tool-parameters.js";
+} from "../../../models/endpoints/openai-tool-parameters.js";
 
 export function parametersFor(tool: ConnectorTool) {
   const builtin = builtinParameters(tool);

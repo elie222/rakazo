@@ -26,6 +26,12 @@ import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
 import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
 import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import { abortedCommandEvents } from "../../../computers/sandbox/sandbox-command-events.js";
+import {
   computerProxyPrepareEnv,
   PREPARE_COMPUTER_PROXY,
 } from "../../../computers/screens/computer-proxy.js";
@@ -41,12 +47,6 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
-import {
-  deleteUnreferencedMachine,
-  recordUnreferencedMachine,
-} from "../../../sandboxes/sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
-import { abortedCommandEvents } from "../../../sandboxes/sandbox-command-events.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,

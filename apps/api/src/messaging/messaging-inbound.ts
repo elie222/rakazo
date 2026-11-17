@@ -36,11 +36,11 @@ import {
   finishThreadStop,
   STOPPED_BY_MESSAGE_NOTE,
 } from "../threads/thread-stop.js";
+import { deliverWebhookEvent } from "../webhooks/webhook-inbound.js";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
 import { formatMessagingEventPrompt } from "./inbound-delivery.prompt.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
-import { deliverWebhookEvent } from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;

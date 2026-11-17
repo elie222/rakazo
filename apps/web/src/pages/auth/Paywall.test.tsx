@@ -146,8 +146,11 @@ it.each([
 it.each([
   { name: "checkout", state: "canceled", hasCustomer: false, call: pinned.checkout },
   { name: "portal", state: "unpaid", hasCustomer: true, call: pinned.portal },
+  // A failed charge offers the portal instead of a second plan, on the plan choice too.
+  { name: "portal", state: "past_due", hasCustomer: true, funding: "byok", call: pinned.portal },
 ])("sends the required paywall's $name to the space whose status it shows", async (variant) => {
   const page = await renderPaywall({
+    ...("funding" in variant ? { funding: variant.funding } : {}),
     canManage: true,
     hasCustomer: variant.hasCustomer,
     state: variant.state,
