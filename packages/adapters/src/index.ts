@@ -102,6 +102,7 @@ export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";
 export * from "./messaging/installed-messaging-surface.js";
+export * from "./messaging/intake/settle-inbound.js";
 export * from "./messaging/messaging-composition.js";
 export * from "./messaging/messaging-context.js";
 export * from "./messaging/messaging-delivery.js";

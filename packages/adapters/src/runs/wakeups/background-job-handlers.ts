@@ -49,6 +49,7 @@ import {
 } from "../../memory/conversation-memory.js";
 import { retryConversationMemoryPurge } from "../../memory/conversation-memory-cleanup.js";
 import type { MemoryProviderResolver } from "../../memory/memory-provider-factory.js";
+import { settleInboundMessage } from "../../messaging/intake/settle-inbound.js";
 import type { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import type { TeamChat } from "../../messaging/team-chat/team-chat.js";
 import type { ExpoPushProvider } from "../../notifications/expo-push.js";
@@ -134,6 +135,8 @@ export function createBackgroundJobHandlers(deps: {
     deps.prisma.cloudAgent.findUnique({ where: { id: agentId }, select: OWNER });
   const purchase = ({ purchaseId }: { purchaseId: string }) =>
     deps.prisma.purchase.findUnique({ where: { id: purchaseId }, select: OWNER });
+  const messagingIdentity = ({ identityId }: { identityId: string }) =>
+    deps.prisma.messagingIdentity.findUnique({ where: { id: identityId }, select: OWNER });
   const mediaJob = async ({ jobId }: { jobId: string }) =>
     (
       await deps.prisma.externalEffect.findUnique({
@@ -171,6 +174,11 @@ export function createBackgroundJobHandlers(deps: {
     "messaging.reply": async ({ runId }) => {
       await delivery?.deliverRun(runId);
     },
+    "messaging.inbound_settle": asOwner(messagingIdentity, async (payload) => {
+      // Fail rather than finish, so the queue keeps the job for a process that can reply.
+      if (!delivery) throw new Error("inbound message settling has no messaging delivery");
+      await settleInboundMessage({ ...deps, delivery }, payload);
+    }),
     "secret.cleanup": async (cleanup) => {
       await retrySecretCleanup(cleanupDeps, cleanup);
     },

@@ -285,9 +285,12 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
         { name: "photo.jpg", mimeType: "image/jpeg", fetch: async () => new Uint8Array() },
       ],
     });
+    // Its file is settled after the webhook; this line stores none, so the sender hears so.
+    await vi.waitFor(async () =>
+      expect(await replies()).toEqual(["Some files didn't arrive. Please send them again."]),
+    );
     expect(await status(running.id)).toBe("running");
     expect(await userMessages()).toBe(1);
-    expect(await replies()).toEqual([]);
   });
 
   it("treats a stop in a group chat as an ordinary message", async () => {

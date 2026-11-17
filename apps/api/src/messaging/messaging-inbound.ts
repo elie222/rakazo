@@ -1,7 +1,14 @@
 import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
 import { teamChatEngageJobKey } from "@rakazo/adapter-kit";
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
-import { MESSAGING_DM_OUTBOUND_CAP, messagingWakeIdempotencyKey, wakeRun } from "@rakazo/adapters";
+import {
+  filesNotReceivedReply,
+  MESSAGING_DM_OUTBOUND_CAP,
+  messagingAttachmentClientNonce,
+  messagingMessageClientNonce,
+  messagingWakeIdempotencyKey,
+  wakeRun,
+} from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
@@ -30,7 +37,7 @@ import {
   SpaceDeletionInProgressError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import {
   cancelThreadRuns,
   finishThreadStop,
@@ -40,12 +47,21 @@ import { deliverWebhookEvent } from "../webhooks/webhook-inbound.js";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
 import { formatMessagingEventPrompt } from "./inbound-delivery.prompt.js";
+import {
+  DIRECT_ATTACHMENT_ATTEMPTS,
+  DIRECT_ATTACHMENT_TIMEOUT_MS,
+  DIRECT_MESSAGE_SETTLE_BUDGET_MS,
+} from "./intake/limits.js";
+import type { SenderQueue } from "./intake/sender-queue.js";
+import { createSenderQueue } from "./intake/sender-queue.js";
+import type { SettlePayload } from "./intake/settle-job.js";
+import { cancelSettleJob, recordSettleJob, settleByJobNow } from "./intake/settle-job.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
-  jobs: Pick<JobPublisher, "enqueue" | "cancelIn">;
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn">;
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
@@ -97,14 +113,40 @@ type IdentityRow = {
  * fan out to every approved member bot's own thread.
  */
 export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
+  const intake: DirectIntake = {
+    senders: createSenderQueue(),
+    settling: new Set(),
+    handedOff: new Set(),
+  };
   return async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
       await handleChannelEvent(deps, event);
       return;
     }
-    await handleDirectEvent(deps, event).catch(droppedWhileDeleting);
+    await handleDirectEvent(deps, intake, event).catch(droppedWhileDeleting);
   };
 }
+
+/** The direct messages this process is still settling. */
+type DirectIntake = {
+  /** One sender's messages reach the bot in the order they arrived here. */
+  senders: SenderQueue;
+  /** Messages whose files are downloading here, so a redelivery meanwhile adds nothing. */
+  settling: Set<string>;
+  /**
+   * Senders one of whose messages failed here and went to its backup job. Their messages
+   * queued behind it follow it to their own jobs, which the sender's job queue keeps in order,
+   * until the sender has nothing pending here.
+   */
+  handedOff: Set<string>;
+};
+
+/**
+ * What is left of a direct message once its webhook can be answered. `inline` work is part of
+ * the answer, so a failure makes the provider deliver it again; any other is the message's
+ * files and turn, after the answer, with its backup job recorded.
+ */
+type DirectSettle = { inline: boolean; run: () => Promise<void> };
 
 /** A Space being deleted takes no messages; failing would only make the provider redeliver. */
 function droppedWhileDeleting(error: unknown): void {
@@ -112,10 +154,42 @@ function droppedWhileDeleting(error: unknown): void {
   getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
 }
 
+/**
+ * Answers a direct message's webhook once the message is safe, then settles it in its sender's
+ * order. The sender's place is taken on arrival, before any lookup, so a quick text never
+ * overtakes the file message sent before it. Plain text from a sender with nothing pending is
+ * still delivered within the webhook.
+ */
 async function handleDirectEvent(
   deps: MessagingInboundDeps,
+  intake: DirectIntake,
   event: MessagingInboundMessage,
 ): Promise<void> {
+  const sender = JSON.stringify([event.provider, event.from]);
+  const behind = intake.senders.busy(sender);
+  if (!behind) intake.handedOff.delete(sender);
+  const prepared = prepareDirectEvent(deps, intake, event, sender, behind);
+  const settled = intake.senders.run(sender, async () => {
+    // A failed preparation is the webhook's failure, and the provider delivers it again.
+    const [outcome] = await Promise.allSettled([prepared]);
+    if (outcome.status === "fulfilled") await outcome.value?.run();
+  });
+  const settle = await prepared;
+  if (settle?.inline) await settled;
+}
+
+/**
+ * Everything a direct message needs before its webhook is answered: the identity, owner
+ * commands and link codes, and for a message that settles later, its backup job. Returns null
+ * when nothing is left to deliver.
+ */
+async function prepareDirectEvent(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  event: MessagingInboundMessage,
+  sender: string,
+  behind: boolean,
+): Promise<DirectSettle | null> {
   // Media that only the provider can download (Telegram file_id fetches) rides
   // along in event.attachments; CDN media keeps riding along as text.
   const attachments = event.attachments ?? [];
@@ -124,9 +198,9 @@ async function handleDirectEvent(
   const where = { provider_address: { provider: event.provider, address: event.from } } as const;
   const existing = await deps.prisma.messagingIdentity.findUnique({ where });
   if (existing && event.installationSpaceId && existing.spaceId !== event.installationSpaceId)
-    return;
+    return null;
   // A deactivated person's chat apps act for nobody: no commands, messages or links.
-  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
+  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return null;
   if (existing) {
     const command = parseMessagingCommand(event.content);
     const releasesHeld = existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP;
@@ -151,26 +225,26 @@ async function handleDirectEvent(
     });
     // Replies held behind the consecutive-outbound cap can go now.
     if (releasesHeld) await deps.delivery.send([{ identityId: existing.id }]);
-    if (!text && attachments.length === 0) return;
+    if (!text && attachments.length === 0) return null;
     // Owner commands are only parsed in the verified 1:1 conversation.
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
         await stopOwnerWork(deps, existing, event);
-        return;
+        return null;
       }
-    } else if (command && (await applyOwnerCommand(deps, existing, command, prompt))) return;
+    } else if (command && (await applyOwnerCommand(deps, existing, command, prompt))) return null;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
-    if (await tryRedeemLinkCode(deps, event)) return;
+    if (await tryRedeemLinkCode(deps, event)) return null;
   } else {
     // Unlinked senders: a valid link code binds this address to its issuer's
     // account and bot; otherwise the line is silent unless the deployment
     // explicitly runs as an open Poke-style signup line.
-    if (await tryRedeemLinkCode(deps, event)) return;
-    if (!deps.openSignup || event.installationSpaceId) return;
+    if (await tryRedeemLinkCode(deps, event)) return null;
+    if (!deps.openSignup || event.installationSpaceId) return null;
     // Media-only delivery is for linked identities; retain text-based signup.
-    if (!text) return;
+    if (!text) return null;
   }
 
   let ids: ProvisionedMessagingIdentity;
@@ -195,7 +269,103 @@ async function handleDirectEvent(
     });
   }
 
-  const stored = await storeInboundMedia(deps, ids, event);
+  const receivedAt = Date.now();
+  const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
+  if (attachments.length === 0 && !behind) {
+    return {
+      inline: true,
+      run: async () => {
+        await deliverDirectMessage(deps, ids, event, text, deadline);
+      },
+    };
+  }
+  const message = JSON.stringify([event.provider, event.handle]);
+  // The provider delivered it again while its files are still downloading here.
+  if (intake.settling.has(message)) return null;
+  intake.settling.add(message);
+  try {
+    const identityId =
+      existing?.id ??
+      (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
+    const payload: SettlePayload = {
+      provider: event.provider,
+      handle: event.handle,
+      identityId,
+      text,
+      attachments: attachments.map(({ name, mimeType }) => ({ name, mimeType })),
+    };
+    await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, receivedAt));
+    return {
+      inline: false,
+      run: () =>
+        (intake.handedOff.has(sender)
+          ? handOffToJob(deps, payload)
+          : settleDirectMessage(deps, intake, ids, event, sender, payload, deadline)
+        ).finally(() => intake.settling.delete(message)),
+    };
+  } catch (error) {
+    intake.settling.delete(message);
+    throw error;
+  }
+}
+
+/**
+ * Settles a message whose webhook was answered: its files, the bot's turn, and one notice to
+ * the sender when files did not arrive, which commits with the end of its backup job. Never
+ * rejects: a failure hands the message, and the sender's messages queued behind it, to their
+ * backup jobs at once.
+ */
+async function settleDirectMessage(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+  sender: string,
+  payload: SettlePayload,
+  deadline: number,
+): Promise<void> {
+  try {
+    const unavailable = await deliverDirectMessage(deps, ids, event, payload.text, deadline);
+    const lane = { identityId: payload.identityId };
+    await deps.prisma.$transaction(async (tx) => {
+      if (unavailable.length > 0) {
+        await deps.delivery.recordIn(tx, lane, [
+          filesNotReceivedReply(payload.identityId, event.provider, event.handle),
+        ]);
+      }
+      await cancelSettleJob(deps.jobs, tx, payload);
+    });
+    if (unavailable.length > 0) await deps.delivery.send([lane]);
+  } catch (error) {
+    // The job drops a message for a Space being deleted, as this path would.
+    if (!(error instanceof SpaceDeletionInProgressError)) {
+      getLogger().error("messaging inbound settle failed; its backup job takes over", error);
+    }
+    intake.handedOff.add(sender);
+    await handOffToJob(deps, payload);
+  }
+}
+
+/** The message's backup job, already recorded, settles it now instead of this process. */
+function handOffToJob(deps: MessagingInboundDeps, payload: SettlePayload): Promise<void> {
+  return bestEffort(
+    "hand an inbound message to its backup job",
+    settleByJobNow(deps.jobs, payload),
+  ).then(() => undefined);
+}
+
+/**
+ * Stores the message's files and hands the message to the bot, or to the message routines
+ * that take it. Returns the lines of the files that did not arrive.
+ */
+async function deliverDirectMessage(
+  deps: MessagingInboundDeps,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+  text: string,
+  downloadDeadline: number,
+): Promise<string[]> {
+  const stored = await storeInboundMedia(deps, ids, event, downloadDeadline);
 
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
@@ -205,7 +375,7 @@ async function handleDirectEvent(
       unavailable: stored.unavailable,
     })
   )
-    return;
+    return stored.unavailable;
   const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
@@ -220,7 +390,7 @@ async function handleDirectEvent(
     ],
     prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
-    clientNonce: `messaging:${event.provider}:${event.handle}`,
+    clientNonce: messagingMessageClientNonce(event.provider, event.handle),
   });
   if (sent.runId) {
     const runId = sent.runId;
@@ -251,6 +421,7 @@ async function handleDirectEvent(
     });
     await wakeRun(deps.jobs, sent.runId);
   }
+  return stored.unavailable;
 }
 
 /** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
@@ -267,20 +438,24 @@ async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
+  downloadDeadline: number,
 ) {
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
     event.attachments ?? [],
     {
-      clientNonce: (index) => `messaging-attachment:${event.provider}:${event.handle}:${index}`,
+      clientNonce: (index) => messagingAttachmentClientNonce(event.provider, event.handle, index),
       limit: ATTACHMENT_MAX_COUNT,
-      downloadDeadline: Date.now() + 2_000,
+      downloadDeadline,
+      downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
+      attempts: DIRECT_ATTACHMENT_ATTEMPTS,
+      reasons: true,
     },
   );
   // Transcribe only after every download, so a slow transcription cannot use up the
   // download deadline of the attachments that follow it. One short budget covers all
-  // transcripts, so the webhook is answered before the provider retries it.
+  // transcripts, which the message's backup job leaves time for.
   const transcribeDeadline = Date.now() + VOICE_TRANSCRIBE_BUDGET_MS;
   const artifacts: StoredAttachment[] = [];
   for (const { artifact, bytes } of stored) {

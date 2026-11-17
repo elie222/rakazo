@@ -59,6 +59,13 @@ const payloadSchemas = {
       .optional(),
   }),
   "messaging.send": z.object({ outboundId: z.string().min(1) }),
+  "messaging.inbound_settle": z.object({
+    provider: z.string().min(1),
+    handle: z.string().min(1),
+    identityId: z.string().min(1),
+    text: z.string(),
+    attachments: z.array(z.object({ name: z.string(), mimeType: z.string() })),
+  }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
@@ -281,6 +288,27 @@ export function messagingSendJob(outboundId: string, availableAt: Date): Backgro
     availableAt,
     replaceKey: messagingSendJobKey(outboundId),
     maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
+  };
+}
+
+export function messagingInboundSettleJobKey(provider: string, handle: string): string {
+  return `messaging.inbound_settle:${JSON.stringify([provider, handle])}`;
+}
+
+/**
+ * Backup for settling one direct message whose files download after its webhook was answered.
+ * One sender's jobs share a queue, so after a restart they still settle in the order they came.
+ */
+export function messagingInboundSettleJob(
+  payload: BackgroundJobPayloads["messaging.inbound_settle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "messaging.inbound_settle",
+    payload,
+    availableAt,
+    replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
+    queueName: `messaging.inbound:${payload.identityId}`,
   };
 }
 

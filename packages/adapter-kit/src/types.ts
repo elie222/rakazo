@@ -1008,6 +1008,18 @@ export interface BackgroundJobPayloads {
   };
   /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
   "messaging.send": { outboundId: string };
+  /**
+   * Backup for one direct message answered before its files were in: posts it with what was
+   * stored and the rest marked, and tells the sender. It carries what the person wrote and the
+   * file names, never a download link or token.
+   */
+  "messaging.inbound_settle": {
+    provider: string;
+    handle: string;
+    identityId: string;
+    text: string;
+    attachments: { name: string; mimeType: string }[];
+  };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
   /**

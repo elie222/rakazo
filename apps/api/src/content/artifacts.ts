@@ -7,6 +7,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   attachmentMaxCount,
   attachmentSizeLabel,
+  isAllowedAttachmentMimeType,
   isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
   isStepScreenshotMimeType,
@@ -30,6 +31,7 @@ import {
   Prisma,
   withResolvedArtifactVersion,
 } from "@rakazo/db";
+import { InboundAttachmentRefusedError } from "../messaging/inbound-attachments.js";
 
 export async function createOwnedArtifact(
   deps: {
@@ -99,9 +101,15 @@ export async function storeInboundAttachment(
   const reportedType =
     attachment.mimeType.split(";")[0]?.trim().toLowerCase() || attachment.mimeType;
   const mimeType = inferAttachmentMimeType(name, reportedType) ?? reportedType;
-  validateAttachmentMimeType(mimeType);
+  if (!isAllowedAttachmentMimeType(mimeType)) {
+    throw new InboundAttachmentRefusedError(
+      "unsupported type",
+      `Unsupported attachment type: ${mimeType}`,
+    );
+  }
   const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
-  const tooLarge = new AttachmentValidationError(
+  const tooLarge = new InboundAttachmentRefusedError(
+    "too large",
     `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
   );
   if ((attachment.size ?? 0) > maxBytes) throw tooLarge;

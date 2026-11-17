@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
-import { MessagingDelivery } from "@rakazo/adapters";
+import { MessagingDelivery, settleInboundMessage } from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -9,6 +9,7 @@ import {
   createThreadEvents,
   provisionMessagingIdentity,
   runAsSystem,
+  runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
@@ -453,5 +454,100 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
       trusted: await statusOf(trustedConnection.id),
     }).toEqual({ attacker: "pending", trusted: "pending" });
     expect(yes).toEqual({ threadId: target.threadId, blocks: [{ kind: "text", text: "YES" }] });
+  });
+});
+
+/**
+ * The API stopped while a direct message's files were still downloading: the message's backup
+ * job settles it with what was stored, marks the rest, and tells the sender once.
+ */
+describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL)", () => {
+  let db: ReturnType<typeof createDb>;
+  let system: PrismaClient;
+  let identity: Awaited<ReturnType<typeof provisionMessagingIdentity>> & { id: string };
+  const jobs = {
+    enqueue: vi.fn(async () => undefined),
+    enqueueIn: vi.fn(async () => undefined),
+    cancel: vi.fn(async () => undefined),
+    cancelIn: vi.fn(async () => undefined),
+  };
+
+  beforeAll(async () => {
+    db = createDb(databaseUrl!);
+    system = asSystem(db.prisma);
+    const address = `settle-${randomUUID()}`;
+    const provisioned = await runAsSystem("settle fixture", () =>
+      provisionMessagingIdentity(db.prisma, { provider: "test", address }),
+    );
+    const row = await system.messagingIdentity.update({
+      where: { botId: provisioned.botId },
+      data: { dmThreadId: `test:${address}` },
+      select: { id: true },
+    });
+    identity = { ...provisioned, id: row.id };
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    if (identity) {
+      await system.messagingIdentity.deleteMany({ where: { userId: identity.userId } });
+      await system.organization.deleteMany({ where: { id: identity.spaceId } });
+      await system.user.deleteMany({ where: { id: identity.userId } });
+    }
+    await db.prisma.$disconnect();
+    await db.pool.end();
+  });
+
+  it("settle job posts the message with unfinished files marked and replies to the sender", async () => {
+    const sendToThread = vi.fn(async () => ({ handle: `h-${randomUUID()}` }));
+    const delivery = new MessagingDelivery({
+      prisma: db.prisma,
+      messaging: { platforms: () => [], sendToThread } as unknown as MessagingSurface,
+      events: createThreadEvents(db.prisma),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
+    const handle = `in-${randomUUID()}`;
+    const payload = {
+      provider: "test",
+      handle,
+      identityId: identity.id,
+      text: "make a short of these",
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+    };
+    const settle = () =>
+      runAsTenant(identity, () =>
+        settleInboundMessage(
+          { prisma: db.prisma, events: createThreadEvents(db.prisma), jobs, delivery },
+          payload,
+        ),
+      );
+    await settle();
+    // A second run of the job, as after a retry, changes nothing.
+    await settle();
+
+    expect(
+      await system.message.findMany({
+        where: { threadId: identity.threadId, role: "user" },
+        select: { clientNonce: true, blocks: true },
+      }),
+    ).toEqual([
+      {
+        clientNonce: `messaging:test:${handle}`,
+        blocks: [
+          {
+            kind: "text",
+            text: "make a short of these\n[file: clip.mov (not received — please send it again)]",
+          },
+        ],
+      },
+    ]);
+    expect(
+      await system.messagingOutbound.findMany({
+        where: { identityId: identity.id },
+        select: { kind: true, body: true },
+      }),
+    ).toEqual([{ kind: "dm", body: "Some files didn't arrive. Please send them again." }]);
+    expect(sendToThread).toHaveBeenCalledOnce();
   });
 });
