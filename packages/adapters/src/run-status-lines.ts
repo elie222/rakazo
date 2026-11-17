@@ -81,12 +81,24 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
       if (closed || target.held() || mine <= supersededAt) return;
       const shownAt = lastShown?.generation ?? 0;
       if (latestOnly ? mine !== generation : again ? mine < shownAt : mine <= shownAt) return;
+      const write = target.show(text).then(() => true);
       // A stuck write must not hold back every later status.
-      await bestEffort(
+      const shown = await bestEffort(
         "show status line",
-        withAbort(target.show(text), deadlineSignal(SHOW_TIMEOUT_MS)),
+        withAbort(write, deadlineSignal(SHOW_TIMEOUT_MS)),
       );
-      lastShown = { text, generation: mine };
+      if (shown) {
+        lastShown = { text, generation: mine };
+        return;
+      }
+      // A write that finishes after the queue moved on may land over a newer status: the newer
+      // one then shows again, so the line never goes back.
+      void bestEffort("show late status line", write).then((landed) => {
+        if (!landed) return;
+        const latest = lastShown;
+        if (!latest || latest.generation < mine) lastShown = { text, generation: mine };
+        else void show(latest.text, latest.generation, { again: true });
+      });
     });
     return showing;
   };

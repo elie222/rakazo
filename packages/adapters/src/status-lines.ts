@@ -7,22 +7,15 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { resolveModelKey } from "./run-model.js";
+import {
+  openingStatusPrompt,
+  STATUS_LINE_INSTRUCTIONS,
+  stepStatusPrompt,
+} from "./status-lines.prompt.js";
 import { narrationStatusLine } from "./user-progress.js";
 
 /** How long a status line may take before the working line moves on without it. */
 const STATUS_LINE_TIMEOUT_MS = 15_000;
-/** The person's message is cut to this length before it reaches the status model. */
-const MAX_REQUEST_CHARS = 1_200;
-/** A tool's technical description is cut to this length. */
-const MAX_STEP_CHARS = 300;
-
-const STATUS_LINE_INSTRUCTIONS = [
-  "You write the live status line a chat assistant shows while it works on the person's request.",
-  "Write in the language of the person's message inside <request>, whatever language these instructions or the examples use.",
-  "Each status is two to five words, in the present continuous (for example “Checking availability”), says what is being done for the person, never technical details, file paths or commands.",
-  "No final period, no quotes, no emoji, no markdown. Output only the status lines.",
-].join(" ");
-
 export type StatusLineScope = {
   runId: string;
   spaceId: string;
@@ -223,16 +216,14 @@ export async function createStatusLineWriter(
     return {
       async opening(request, signal) {
         const lines = await write(
-          () =>
-            `${requestPrompt(request, secrets)}\n\nNothing has been done for this request yet. Write one status that says you are taking in what it asks about (for example “Looking into the plan pricing”). Never claim a search, check or comparison that has not happened.`,
+          () => openingStatusPrompt(redactSecrets(request, secrets)),
           signal,
         );
         return lines[0];
       },
       async step(request, step, signal) {
         const lines = await write(
-          () =>
-            `${requestPrompt(request, secrets)}\n\n<step>\n${clip(redactSecrets(step, secrets), MAX_STEP_CHARS)}\n</step>\n\nWrite one status for this step.`,
+          () => stepStatusPrompt(redactSecrets(request, secrets), redactSecrets(step, secrets)),
           signal,
         );
         return lines[0];
@@ -261,14 +252,6 @@ function isModelFailureText(text: string) {
  */
 function isCancelled(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
-}
-
-function requestPrompt(request: string, secrets: string[]) {
-  return `<request>\n${clip(redactSecrets(request, secrets), MAX_REQUEST_CHARS)}\n</request>`;
-}
-
-function clip(text: string, max: number) {
-  return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
 /** The status lines in a reply, cleaned: list marks, quotes and a final period removed. */

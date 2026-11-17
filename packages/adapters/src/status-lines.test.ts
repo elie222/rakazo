@@ -240,6 +240,10 @@ describe("startStatusLines", () => {
       limits[0]!.abort(new DOMException("The operation timed out.", "TimeoutError"));
       await flush();
       expect(shown).toEqual(["Reading the ledger"]);
+      // The stuck write lands late, over the newer status, which then shows again.
+      stuck.resolve();
+      await flush();
+      expect(shown).toEqual(["Reading the ledger", "Listing files", "Reading the ledger"]);
       live.close();
     } finally {
       timeout.mockRestore();

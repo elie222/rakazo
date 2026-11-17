@@ -39,13 +39,13 @@ import type { useShellNavigation } from "./use-shell-navigation";
 
 type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
 
+/** How many recent sends the transcript can match to arriving messages. */
+const RECENT_SENDS = 20;
+
 /**
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
  * answers, reactions, and the errors they leave.
  */
-
-/** How many recent sends the transcript can match to arriving messages. */
-const RECENT_SENDS = 20;
 export function useComposerActions({
   rpc,
   pageSession,
