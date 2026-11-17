@@ -859,7 +859,7 @@ async function reviewToolCall(
       runId,
       signal: context.signal,
     };
-    const checkerProvider = (checker: AutoReviewChecker) =>
+    const checkerProvider = (candidate: AutoReviewChecker) =>
       autoReviewCheckerProvider(
         deps,
         {
@@ -871,11 +871,10 @@ async function reviewToolCall(
         },
         {
           injectedReview,
-          memberChecker,
-          backups: reviewSettings?.backups,
+          memberChecker: memberChecker || candidate !== checker,
           registerSecrets: (values) => ctx.secrets.push(...values),
         },
-        checker,
+        candidate,
       );
     const judge = await reviewWithBackups(
       [

@@ -3673,19 +3673,15 @@ it("uses the OpenRouter environment key for a decision checker on another deploy
     expect(f.prisma.usageRecord.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [
-          expect.objectContaining({ fundingSource: "operator", usageSource: "dispatch-pending" }),
+          expect.objectContaining({
+            fundingSource: "customer",
+            usageSource: "response",
+            pricingVersion: "decision-pricing-2026-11-17",
+          }),
         ],
       }),
     );
-    expect(f.prisma.usageRecord.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          costSource: "request-token-estimate",
-          pricingVersion: "decision-pricing-2026-11-17",
-        }),
-      }),
-    );
-    expect(f.prisma.modelCreditEntry.findUnique).not.toHaveBeenCalled();
+    expect(f.prisma.usageRecord.updateMany).not.toHaveBeenCalled();
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

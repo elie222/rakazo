@@ -21,32 +21,31 @@ export async function autoReviewCheckerProvider(
   options: {
     injectedReview?: AutoReviewProvider;
     memberChecker: boolean;
-    backups?: readonly { provider: string; modelId: string }[];
     registerSecrets: (values: string[]) => void;
   },
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
   const { runId, spaceId, userId, botId, threadId } = scope;
-  const { injectedReview, memberChecker, backups, registerSecrets } = options;
+  const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
-  const deploymentChoice =
-    !memberChecker &&
-    !checker.credentialId &&
-    !backups?.some(
-      (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
-    );
+  const deploymentChoice = !memberChecker && !checker.credentialId;
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
       : resolveAutoReviewProviderKind();
+  const hosted =
+    deploymentChoice &&
+    (Boolean(decisionModel(checker.provider, checker.model)) ||
+      kind === "jev" ||
+      kind === "scripted") &&
+    (await modelCreditBillingEnabled(deps));
   // Only the included decision checker uses operator auth without a personal connection.
   const included =
-    deploymentChoice &&
+    hosted &&
     Boolean(decisionModel(checker.provider, checker.model)) &&
     isAutoReviewCheckerConfigured({ checker }) &&
     !process.env.RAKAZO_AUTO_REVIEW_PROVIDER?.trim() &&
-    !process.env.RAKAZO_AUTO_REVIEW_MODEL?.trim() &&
-    (await modelCreditBillingEnabled(deps));
+    !process.env.RAKAZO_AUTO_REVIEW_MODEL?.trim();
   const reviewCredential =
     included || kind === "jev" || kind === "scripted"
       ? null
@@ -58,12 +57,7 @@ export async function autoReviewCheckerProvider(
           checker.model,
           { credentialId: checker.credentialId },
         );
-  const operatorFunded =
-    deploymentChoice &&
-    !reviewCredential &&
-    (Boolean(decisionModel(checker.provider, checker.model)) ||
-      kind === "jev" ||
-      kind === "scripted");
+  const operatorFunded = hosted && !reviewCredential;
   const operatorObserver = operatorFunded
     ? operatorReviewObserver(deps.prisma, {
         spaceId,
@@ -75,15 +69,25 @@ export async function autoReviewCheckerProvider(
         operationKind: "setup",
       })
     : undefined;
+  const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
+    recordUsage(deps.prisma, event, {
+      spaceId,
+      userId,
+      botId,
+      parentRunId: runId,
+      runId,
+      operationId: `auto-review:${runId}`,
+      operationKind: "setup",
+      fundingSource: operatorFunded ? "operator" : "customer",
+    });
   if (kind === "jev" || kind === "scripted") {
-    return createAutoReviewProvider(kind, { callObserver: operatorObserver });
+    return createAutoReviewProvider(kind, {
+      callObserver: operatorObserver,
+      onUsage: operatorFunded ? undefined : onUsage,
+    });
   }
   if (
-    (memberChecker ||
-      checker.credentialId ||
-      backups?.some(
-        (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
-      )) &&
+    (memberChecker || checker.credentialId) &&
     !reviewCredential &&
     !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
   ) {
@@ -99,17 +103,6 @@ export async function autoReviewCheckerProvider(
     registerSecrets,
   );
   const callObserver = operatorObserver ?? judgeKey.callObserver;
-  const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
-    recordUsage(deps.prisma, event, {
-      spaceId,
-      userId,
-      botId,
-      parentRunId: runId,
-      runId,
-      operationId: `auto-review:${runId}`,
-      operationKind: "setup",
-      fundingSource: operatorFunded ? "operator" : "customer",
-    });
   return decisionModel(checker.provider, checker.model)
     ? new DecisionAutoReviewProvider({
         provider: new HttpDecisionProvider("openrouter", {
