@@ -208,7 +208,7 @@ class ChangedAreasTests(unittest.TestCase):
 
     def test_marketing_screenshots_follow_the_packages_the_site_imports(self):
         cases = [
-            ("packages/contracts/src/client-build.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/contracts/src/clients/client-build.ts", expect(*EVERY_BROWSER_AREA)),
             ("packages/db/src/client.ts", expect(*PRODUCT)),
             ("apps/api/src/server.ts", expect(*PRODUCT)),
         ]
