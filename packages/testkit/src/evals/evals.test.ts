@@ -24,7 +24,7 @@ import {
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
 import { EvalServices } from "./services.js";
-import { TOOL_CHOICE_CASES } from "./tool-choice-cases.js";
+import { TOOL_CHOICE_CASES } from "./suites/tool-choice-cases.js";
 
 const context: AdapterContext = {
   operationId: "synthetic",

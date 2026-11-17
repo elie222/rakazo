@@ -10,15 +10,15 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Settings, Trash2 } from "lucide-react";
 import type { ComponentProps, RefObject } from "react";
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
-import { PAGE_PARAM } from "../../lib/pages";
-import { useSpaceQueries } from "../../lib/query";
+import { PAGE_PARAM } from "../../lib/pages/pages";
+import { useSpaceQueries } from "../../lib/query/query";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { selectSpace } from "../../lib/query/rpc";
 import type { Panel } from "../../lib/right-panel-state";
-import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
-import { selectSpace } from "../../lib/rpc";
+import type { CreateBotDialogInput } from "./bots/create-bot-dialog";
+import { CreateBotDialog } from "./bots/create-bot-dialog";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
-import type { CreateBotDialogInput } from "./create-bot-dialog";
-import { CreateBotDialog } from "./create-bot-dialog";
 import {
   ClearConversationDialog,
   DeleteBotDialog,

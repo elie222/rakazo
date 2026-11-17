@@ -15,7 +15,7 @@ import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
 import { useVaultBots } from "./VaultItemAccess";

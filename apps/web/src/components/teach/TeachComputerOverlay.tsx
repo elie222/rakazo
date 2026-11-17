@@ -2,9 +2,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
-import { runsOnUserMachine } from "../../lib/computer-sandbox";
-import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { runsOnUserMachine } from "../../lib/computers/computer-sandbox";
+import { rpc } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 /**
  * Mount with key={botId} so a bot switch remounts clean state. Async completions still check

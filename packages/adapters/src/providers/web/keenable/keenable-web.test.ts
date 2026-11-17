@@ -1,8 +1,8 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createWebProvider, resolveWebProviderKind } from "../../../web-provider-factory.js";
-import { webFetchFromTool, webSearchFromTool } from "../../../web-tools.js";
+import { createWebProvider, resolveWebProviderKind } from "../../../web/web-provider-factory.js";
+import { webFetchFromTool, webSearchFromTool } from "../../../web/web-tools.js";
 import { KeenableWebProvider } from "./keenable-web.js";
 import { keenableMcpFixture } from "./keenable-web.test-support.js";
 
