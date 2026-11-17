@@ -45,6 +45,7 @@ import { Hono } from "hono";
 import type { ComputerTagChange } from "./runtime-state.js";
 import {
   COMPUTER_TAG_ENV,
+  cacheComputerImage,
   cacheRuntimeBaseline,
   PREVIOUS_COMPUTER_TAG_ENV,
   readScheduledComputer,
@@ -703,6 +704,14 @@ export function createUpdaterApp(
     steps: ComposeUpdateStep[];
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
+    if (input.computerTags) {
+      input.computerTags.fromTag = await cacheComputerImage(
+        config,
+        await readEnvFile(),
+        input.computerTags.fromTag,
+        run,
+      );
+    }
     const record: ServerUpdateRun = {
       startedAt: new Date().toISOString(),
       finishedAt: null,

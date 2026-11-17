@@ -47,7 +47,8 @@ function ok(output = "") {
 }
 
 function cachedImage(args: string[]) {
-  if (args[0] === "inspect") return ok(`sha256:${"a".repeat(64)}`);
+  if (args[0] === "inspect" || (args[0] === "image" && args[1] === "inspect"))
+    return ok(`sha256:${"a".repeat(64)}`);
   if (args[0] === "image" && args[1] === "tag") return ok();
   return null;
 }

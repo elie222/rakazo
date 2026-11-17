@@ -127,6 +127,30 @@ export async function cacheRuntimeBaseline(
   if (!tagged.ok) throw new UpdateRefused("Could not cache the verified running image.");
 }
 
+/** Preserve local image bytes independently of mutable source tags and later pulls. */
+export async function cacheComputerImage(
+  config: UpdaterConfig,
+  env: string,
+  tag: string,
+  run: UpdaterCommandRunner,
+): Promise<string> {
+  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
+  const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
+  const inspected = await run(
+    "docker",
+    ["image", "inspect", imageRef(image, tag), "--format", "{{.Id}}"],
+    options,
+  );
+  const id = inspected.stdout.trim();
+  if (!inspected.ok || !/^sha256:[0-9a-f]{64}$/.test(id))
+    throw new UpdateRefused("Could not cache the previous computer image. Nothing was recreated.");
+  const cachedTag = `cached-${id.slice(7)}`;
+  const tagged = await run("docker", ["image", "tag", id, imageRef(image, cachedTag)], options);
+  if (!tagged.ok)
+    throw new UpdateRefused("Could not cache the previous computer image. Nothing was recreated.");
+  return cachedTag;
+}
+
 export async function readScheduledComputer(
   config: UpdaterConfig,
   state: RuntimeState,
