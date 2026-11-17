@@ -10,6 +10,7 @@ import {
   decodeAttachmentBase64,
   inferAttachmentMimeType,
   isStaticPng,
+  messageBlockForArtifact,
   normalizeVoiceTranscript,
   PNG_ANIMATION_HEADER_BYTES,
   promptTextForAttachments,
@@ -494,6 +495,32 @@ describe("artifactTypeLabel", () => {
 
   it("falls back to the subtype for a type without a known extension", () => {
     expect(artifactTypeLabel("application/x-custom")).toBe("X-CUST");
+  });
+});
+
+describe("messageBlockForArtifact", () => {
+  const artifact = { id: "artifact-1", name: "image001.png", mimeType: "image/png", size: 4_096 };
+
+  it("shows a picture as an image the model is sent, unless the delivery hands it over", () => {
+    expect(messageBlockForArtifact(artifact)).toEqual({
+      kind: "image",
+      artifactId: "artifact-1",
+      mimeType: "image/png",
+      name: "image001.png",
+    });
+    expect(messageBlockForArtifact(artifact, { asFile: true })).toEqual({
+      kind: "file",
+      artifactId: "artifact-1",
+      mimeType: "image/png",
+      name: "image001.png",
+      size: 4_096,
+    });
+  });
+
+  it("keeps a document a file either way", () => {
+    const pdf = { ...artifact, name: "report.pdf", mimeType: "application/pdf" };
+    expect(messageBlockForArtifact(pdf)).toEqual(messageBlockForArtifact(pdf, { asFile: true }));
+    expect(messageBlockForArtifact(pdf)).toMatchObject({ kind: "file", size: 4_096 });
   });
 });
 

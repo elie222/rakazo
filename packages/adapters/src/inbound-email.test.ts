@@ -394,6 +394,90 @@ describe("readInboundEmail", () => {
     await expect(readInboundEmail(bytes(raw), { resolver })).rejects.toThrow(/part count/i);
   });
 
+  it("tells a signature picture from a file the sender attached", async () => {
+    const boundary = "b4";
+    const part = (headers: string[], content: string) =>
+      [`--${boundary}`, ...headers, "", content].join("\r\n");
+    const raw = message(
+      [
+        ...plain.filter((line) => !line.startsWith("Content-Type")),
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ],
+      [
+        part(
+          ["Content-Type: text/html; charset=utf-8"],
+          '<p>Hello</p><img src="cid:logo%40example.test"><img src="cid:header@example.test">',
+        ),
+        // A logo the body names by a percent-encoded Content-ID, and one it marks inline.
+        part(
+          [
+            "Content-Type: image/png",
+            'Content-Disposition: attachment; filename="logo.png"',
+            "Content-ID: <logo@example.test>",
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("inline-logo").toString("base64"),
+        ),
+        part(
+          [
+            "Content-Type: image/png",
+            'Content-Disposition: inline; filename="signature.png"',
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("inline-signature").toString("base64"),
+        ),
+        part(
+          [
+            "Content-Type: image/png",
+            'Content-Disposition: attachment; filename="header.png"',
+            "Content-ID: <header@example.test>",
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("header").toString("base64"),
+        ),
+        // Outlook sends its signature picture as an ordinary attachment under this name.
+        part(
+          [
+            "Content-Type: image/png",
+            'Content-Disposition: attachment; filename="image001.png"',
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("signature").toString("base64"),
+        ),
+        // A picture the sender picked, and a document, are attachments like any other.
+        part(
+          [
+            "Content-Type: image/png",
+            'Content-Disposition: attachment; filename="diagram.png"',
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("diagram").toString("base64"),
+        ),
+        part(
+          [
+            "Content-Type: application/pdf",
+            'Content-Disposition: attachment; filename="report.pdf"',
+            "Content-Transfer-Encoding: base64",
+          ],
+          Buffer.from("%PDF-1.7").toString("base64"),
+        ),
+        `--${boundary}--`,
+        "",
+      ].join("\r\n"),
+    );
+
+    const email = await readInboundEmail(bytes(raw), { resolver });
+
+    expect(email.attachments.map((file) => [file.name, file.inline === true])).toEqual([
+      ["logo.png", true],
+      ["signature.png", true],
+      ["header.png", true],
+      ["image001.png", true],
+      ["diagram.png", false],
+      ["report.pdf", false],
+    ]);
+  });
+
   it("reads HTML-only bodies, attachments and long text", async () => {
     const boundary = "b1";
     const raw = message(

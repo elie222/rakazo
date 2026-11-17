@@ -312,6 +312,48 @@ describe("inbound email route", () => {
     expect(saveEmail.mock.calls[0]?.[0].data).toMatchObject({ verified: false });
   });
 
+  it("hands a signature picture over as a file the bot may open, never as an image it is sent", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({
+        id: `artifact-${attachment.name}`,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: attachment.size ?? 0,
+      }),
+    );
+    const { post, sendUserMessage } = setup({
+      storeAttachment,
+      message: email({
+        attachments: [
+          // The Outlook signature picture, and a real picture the sender picked.
+          { name: "image001.png", mimeType: "image/png", bytes: new Uint8Array(4), inline: true },
+          { name: "diagram.png", mimeType: "image/png", bytes: new Uint8Array(6) },
+        ],
+      }),
+    });
+
+    await post();
+
+    const sent = sendUserMessage.mock.calls[0]?.[0] as unknown as { blocks: unknown[] };
+    expect(sent.blocks).toEqual([
+      { kind: "delivery" },
+      { kind: "text", text: expect.any(String) },
+      {
+        kind: "file",
+        artifactId: "artifact-image001.png",
+        mimeType: "image/png",
+        name: "image001.png",
+        size: 4,
+      },
+      {
+        kind: "image",
+        artifactId: "artifact-diagram.png",
+        mimeType: "image/png",
+        name: "diagram.png",
+      },
+    ]);
+  });
+
   it("keeps the files of a copy that names the bot after one that did not", async () => {
     const storeAttachment = vi.fn(async () => ({
       id: "artifact-1",

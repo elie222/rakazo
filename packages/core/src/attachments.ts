@@ -104,13 +104,21 @@ export function attachmentKindForMimeType(mimeType: string): "image" | "file" {
   return isAttachmentImageMimeType(mimeType) ? "image" : "file";
 }
 
-export function messageBlockForArtifact(artifact: {
-  id: string;
-  name: string;
-  mimeType: string;
-  size: number;
-}): Extract<MessageBlock, { kind: "image" | "file" }> {
-  if (attachmentKindForMimeType(artifact.mimeType) === "image") {
+/**
+ * The block that shows an artifact on a message. `asFile` hands a picture over as a file the bot
+ * opens when it needs to, instead of an image it is sent: a delivery can carry pictures that are
+ * not its point (a mail signature), and one the model rejects would fail every later turn.
+ */
+export function messageBlockForArtifact(
+  artifact: {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+  },
+  options: { asFile?: boolean } = {},
+): Extract<MessageBlock, { kind: "image" | "file" }> {
+  if (!options.asFile && attachmentKindForMimeType(artifact.mimeType) === "image") {
     return {
       kind: "image",
       artifactId: artifact.id,

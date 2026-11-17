@@ -208,7 +208,16 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
 
   const artifacts = saved.files.flatMap((file) =>
     file.artifactId
-      ? [{ id: file.artifactId, name: file.name, mimeType: file.mimeType, size: file.size }]
+      ? [
+          {
+            id: file.artifactId,
+            name: file.name,
+            mimeType: file.mimeType,
+            size: file.size,
+            // A signature or banner picture is a file the bot may open, not one it is sent.
+            asFile: file.inline === true,
+          },
+        ]
       : [],
   );
   const unavailable = saved.files
@@ -347,6 +356,8 @@ async function storeAttachments(
         name: stored.name,
         mimeType: stored.mimeType,
         size: stored.size,
+        // Remembered with the file, so a delivery found again still hands it over as a file.
+        ...(file.inline ? { inline: true } : {}),
       });
     } catch (error) {
       // A storage or database failure is temporary: fail the request so the relay retries.

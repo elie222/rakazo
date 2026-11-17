@@ -241,4 +241,6 @@ A routine's mail reaches the bot as outside data, never as instructions. In the 
 the bot follows what the owner asks but treats anything forwarded or quoted as data. Runs started
 by mail follow the stricter [approval](./approvals.md) rules for outside events. Up to four
 attachments of verified mail are kept, within the usual upload type and size limits; the bot sees
-the names of any it could not keep, and of every file in unverified mail.
+the names of any it could not keep, and of every file in unverified mail. A picture the mail shows
+in its body, such as a signature logo, is kept too, but as a file the bot opens when it needs it
+rather than as an image it is sent.

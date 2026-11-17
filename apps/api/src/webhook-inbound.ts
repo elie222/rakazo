@@ -247,7 +247,14 @@ export async function deliverWebhookEvent(
   target: InboundTarget,
   input: {
     prompt: string;
-    artifacts?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+    artifacts?: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      size: number;
+      /** A picture the delivery carries but does not point at: attached as a file, not an image. */
+      asFile?: boolean;
+    }>;
     routines: Array<{
       name: string;
       prompt: string;
@@ -292,7 +299,9 @@ export async function deliverWebhookEvent(
     blocks: [
       { kind: "delivery" },
       { kind: "text", text: promptText },
-      ...(input.artifacts ?? []).map(messageBlockForArtifact),
+      ...(input.artifacts ?? []).map((artifact) =>
+        messageBlockForArtifact(artifact, { asFile: artifact.asFile }),
+      ),
     ],
     prompt: promptText,
     trigger: "webhook",

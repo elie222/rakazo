@@ -8,6 +8,8 @@ const EmailAttachments = z.array(
       artifactId: z.string(),
       mimeType: z.string(),
       size: z.number(),
+      /** An image the mail showed in its body, handed to the bot as a file rather than an image. */
+      inline: z.boolean().optional(),
     }),
     // Named only. A kept file in another shape must not read as this one: the inbox would store
     // the files again and write them over the row.
@@ -15,7 +17,7 @@ const EmailAttachments = z.array(
   ]),
 );
 /** A file an email carried: its name, and the kept artifact when the sender earned one. */
-export type EmailAttachment = { name: string } & (
+export type EmailAttachment = { name: string; inline?: boolean } & (
   | { artifactId: string; mimeType: string; size: number }
   | { artifactId?: undefined; mimeType?: undefined; size?: undefined }
 );
