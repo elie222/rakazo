@@ -73,7 +73,7 @@ msgstr "{0, plural, one {ממתין להתחברות — הקישור יפוג �
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{0} (deleted)"
-msgstr ""
+msgstr "{0} (נמחק)"
 
 #. placeholder {0}: file.name
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -328,7 +328,7 @@ msgstr "לפני {count} דק׳"
 #. placeholder {1}: cost(point.costUsd)
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{day}: {0} tokens, {1}"
-msgstr ""
+msgstr "{day}: {0} טוקנים, {1}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
@@ -873,11 +873,11 @@ msgstr "3 שעות"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "30 days"
-msgstr ""
+msgstr "30 ימים"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "7 days"
-msgstr ""
+msgstr "7 ימים"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "A {times}× more powerful computer for your bot"
@@ -981,7 +981,7 @@ msgstr "פעולות עבור {0}"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Actions for {label}"
-msgstr ""
+msgstr "פעולות עבור {label}"
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
@@ -1249,7 +1249,7 @@ msgstr "מה יתווסף"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Admin"
-msgstr ""
+msgstr "מנהל"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1320,7 +1320,7 @@ msgstr "כל הקבצים"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "All models"
-msgstr ""
+msgstr "כל המודלים"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -2209,7 +2209,7 @@ msgstr "ביטול"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
-msgstr ""
+msgstr "ביטול ההזמנה"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Cancel new bot"
@@ -3138,7 +3138,7 @@ msgstr "לא ניתן להוסיף את שרת ה-MCP"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not add member"
-msgstr ""
+msgstr "לא ניתן להוסיף את החבר"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3174,7 +3174,7 @@ msgstr "לא ניתן להעניק הרשאה לאפליקציה הזו"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not cancel invitation"
-msgstr ""
+msgstr "לא ניתן לבטל את ההזמנה"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3197,11 +3197,11 @@ msgstr "לא ניתן לשנות את הסיסמה"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not change role"
-msgstr ""
+msgstr "לא ניתן לשנות את התפקיד"
 
 #: apps/web/src/pages/shell/composer-model-picker.tsx
 msgid "Could not change the model"
-msgstr ""
+msgstr "לא ניתן לשנות את המודל"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -3491,7 +3491,7 @@ msgstr "לא ניתן להתקין את התוסף"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not invite"
-msgstr ""
+msgstr "לא ניתן להזמין"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3677,7 +3677,7 @@ msgstr "לא ניתן לטעון את הדף הזה."
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Could not load usage."
-msgstr ""
+msgstr "לא ניתן לטעון את נתוני השימוש."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -4038,7 +4038,7 @@ msgstr "לא ניתן לשתף את התמונה"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not share invite link"
-msgstr ""
+msgstr "לא ניתן לשתף את קישור ההזמנה"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
@@ -4452,7 +4452,7 @@ msgstr "נתונים"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Date range"
-msgstr ""
+msgstr "טווח תאריכים"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/billing.ts
@@ -5293,7 +5293,7 @@ msgstr "לייצא את הרשימה של השבוע מה-CRM ולשים אות�
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "External"
-msgstr ""
+msgstr "חיצוני"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -6039,7 +6039,7 @@ msgstr "קוד לא תקין"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invitation sent"
-msgstr ""
+msgstr "ההזמנה נשלחה"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -6056,7 +6056,7 @@ msgstr "הזמנת חבר"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invite by email"
-msgstr ""
+msgstr "הזמנה באימייל"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/SidebarFooter.tsx
@@ -6077,12 +6077,12 @@ msgstr "קישור ההזמנה הועתק"
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Invite people"
-msgstr ""
+msgstr "הזמנת אנשים"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Invited"
-msgstr ""
+msgstr "הוזמן"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Isolated"
@@ -6128,7 +6128,7 @@ msgstr "הצטרפות"
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "Join {organizationName}"
-msgstr ""
+msgstr "הצטרפות ל-{organizationName}"
 
 #: apps/web/src/pages/Invite.tsx
 msgid "Join {spaceName}"
@@ -6372,7 +6372,7 @@ msgstr "טוען כלים…"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Loading usage…"
-msgstr ""
+msgstr "טוען נתוני שימוש…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6476,12 +6476,12 @@ msgstr "מודל ראשי"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make admin"
-msgstr ""
+msgstr "הפיכה למנהל"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make member"
-msgstr ""
+msgstr "הפיכה לחבר"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
@@ -6805,7 +6805,7 @@ msgstr "אפשרויות מודל"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Model picker in chat"
-msgstr ""
+msgstr "בחירת מודל בצ׳אט"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
@@ -6813,7 +6813,7 @@ msgstr "ספק המודל"
 
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model: {model}"
-msgstr ""
+msgstr "מודל: {model}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7112,7 +7112,7 @@ msgstr "פריט עבודה פתוחה חדש"
 #: apps/mobile/components/organization-menu.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "New organization"
-msgstr ""
+msgstr "ארגון חדש"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -7382,7 +7382,7 @@ msgstr "ללא טריגר"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
-msgstr ""
+msgstr "אין נתוני שימוש לבחירה הזו."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7430,11 +7430,11 @@ msgstr "לא יובא"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Not in {organization}. They'll only see this Space."
-msgstr ""
+msgstr "לא חלק מ-{organization}. יוכלו לראות רק את המרחב הזה."
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Not in {organizationName}. They'll only see this Space."
-msgstr ""
+msgstr "לא חלק מ-{organizationName}. יוכלו לראות רק את המרחב הזה."
 
 #: apps/web/src/pages/shell/import-status.ts
 msgid "Not in Rakazo's catalog"
@@ -7793,7 +7793,7 @@ msgstr "מפתח API של הארגון"
 
 #: apps/mobile/components/organization-menu.tsx
 msgid "Organization settings"
-msgstr ""
+msgstr "הגדרות הארגון"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -8594,7 +8594,7 @@ msgstr "להסיר את {name}?"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Remove {removingName}?"
-msgstr ""
+msgstr "להסיר את {removingName}?"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8759,7 +8759,7 @@ msgstr "התשובה בוטלה"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {replyName}"
-msgstr ""
+msgstr "תשובה ל-{replyName}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
@@ -9582,7 +9582,7 @@ msgstr "לשתף נתונים עם {name}?"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Share invite link"
-msgstr ""
+msgstr "שיתוף קישור ההזמנה"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
@@ -9609,7 +9609,7 @@ msgstr "זיכרון משותף"
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
 msgid "Shared with guests"
-msgstr ""
+msgstr "משותף עם אורחים"
 
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -9736,7 +9736,7 @@ msgstr "יש להתחבר לחשבון שלך ואז לקשר את הספק הז
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in with demo account"
-msgstr ""
+msgstr "כניסה עם חשבון הדגמה"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9998,7 +9998,7 @@ msgstr "מרחבים"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Spaces only they use pass to you."
-msgstr ""
+msgstr "מרחבים שרק הם משתמשים בהם יעברו אליך."
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -10712,7 +10712,7 @@ msgstr "הייבוא הזה כבר נוצל. יש לבחור את הקבצים �
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "This invitation is no longer valid."
-msgstr ""
+msgstr "ההזמנה הזו כבר לא בתוקף."
 
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
@@ -10857,7 +10857,7 @@ msgstr "למרחב הזה יש כספת משלו, ולכן הבוטים שלו �
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault."
-msgstr ""
+msgstr "למרחב הזה יש כספת משלו. הבוטים שלו שומרים ומשתמשים בפריטים שם, לא כאן: יש לפתוח את הגדרות המרחב ואז את כספת."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -11319,7 +11319,7 @@ msgstr "שימוש"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Usage over time"
-msgstr ""
+msgstr "שימוש לאורך זמן"
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

@@ -73,7 +73,7 @@ msgstr "{0, plural, one {ログインを待っています。リンクの有効�
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{0} (deleted)"
-msgstr ""
+msgstr "{0}（削除済み）"
 
 #. placeholder {0}: file.name
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -328,7 +328,7 @@ msgstr "{count}分前"
 #. placeholder {1}: cost(point.costUsd)
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{day}: {0} tokens, {1}"
-msgstr ""
+msgstr "{day}: {0}トークン、{1}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
@@ -873,11 +873,11 @@ msgstr "3時間"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "30 days"
-msgstr ""
+msgstr "30日"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "7 days"
-msgstr ""
+msgstr "7日"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "A {times}× more powerful computer for your bot"
@@ -981,7 +981,7 @@ msgstr "{0}の操作"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Actions for {label}"
-msgstr ""
+msgstr "{label}の操作"
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
@@ -1249,7 +1249,7 @@ msgstr "追加されるもの"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Admin"
-msgstr ""
+msgstr "管理者"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1320,7 +1320,7 @@ msgstr "すべてのファイル"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "All models"
-msgstr ""
+msgstr "すべてのモデル"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -2209,7 +2209,7 @@ msgstr "キャンセル"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
-msgstr ""
+msgstr "招待を取り消す"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Cancel new bot"
@@ -3138,7 +3138,7 @@ msgstr "MCPサーバーを追加できませんでした"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not add member"
-msgstr ""
+msgstr "メンバーを追加できませんでした"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3174,7 +3174,7 @@ msgstr "このアプリを承認できませんでした"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not cancel invitation"
-msgstr ""
+msgstr "招待を取り消せませんでした"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3197,11 +3197,11 @@ msgstr "パスワードを変更できませんでした"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not change role"
-msgstr ""
+msgstr "役割を変更できませんでした"
 
 #: apps/web/src/pages/shell/composer-model-picker.tsx
 msgid "Could not change the model"
-msgstr ""
+msgstr "モデルを変更できませんでした"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -3491,7 +3491,7 @@ msgstr "プラグインをインストールできませんでした"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not invite"
-msgstr ""
+msgstr "招待できませんでした"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3677,7 +3677,7 @@ msgstr "このページを読み込めませんでした。"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Could not load usage."
-msgstr ""
+msgstr "使用量を読み込めませんでした。"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -4038,7 +4038,7 @@ msgstr "画像を共有できませんでした"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not share invite link"
-msgstr ""
+msgstr "招待リンクを共有できませんでした"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
@@ -4452,7 +4452,7 @@ msgstr "データ"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Date range"
-msgstr ""
+msgstr "期間"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/billing.ts
@@ -5293,7 +5293,7 @@ msgstr "今週のリストをCRMからエクスポートして共有フォルダ
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "External"
-msgstr ""
+msgstr "外部"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -6039,7 +6039,7 @@ msgstr "無効なコード"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invitation sent"
-msgstr ""
+msgstr "招待を送信しました"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -6056,7 +6056,7 @@ msgstr "友だちを招待"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invite by email"
-msgstr ""
+msgstr "メールで招待"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/SidebarFooter.tsx
@@ -6077,12 +6077,12 @@ msgstr "招待リンクをコピーしました"
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Invite people"
-msgstr ""
+msgstr "メンバーを招待"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Invited"
-msgstr ""
+msgstr "招待済み"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Isolated"
@@ -6128,7 +6128,7 @@ msgstr "参加"
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "Join {organizationName}"
-msgstr ""
+msgstr "{organizationName}に参加"
 
 #: apps/web/src/pages/Invite.tsx
 msgid "Join {spaceName}"
@@ -6372,7 +6372,7 @@ msgstr "ツールを読み込み中…"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Loading usage…"
-msgstr ""
+msgstr "使用量を読み込み中…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6476,12 +6476,12 @@ msgstr "メインモデル"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make admin"
-msgstr ""
+msgstr "管理者にする"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make member"
-msgstr ""
+msgstr "メンバーにする"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
@@ -6805,7 +6805,7 @@ msgstr "モデルのオプション"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Model picker in chat"
-msgstr ""
+msgstr "チャットでのモデル選択"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
@@ -6813,7 +6813,7 @@ msgstr "モデルプロバイダー"
 
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model: {model}"
-msgstr ""
+msgstr "モデル: {model}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7112,7 +7112,7 @@ msgstr "新しい未完了の作業"
 #: apps/mobile/components/organization-menu.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "New organization"
-msgstr ""
+msgstr "新しい組織"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -7382,7 +7382,7 @@ msgstr "トリガーなし"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
-msgstr ""
+msgstr "この条件での使用量はありません。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7430,11 +7430,11 @@ msgstr "インポートされていません"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Not in {organization}. They'll only see this Space."
-msgstr ""
+msgstr "{organization}のメンバーではありません。このスペースのみ表示されます。"
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Not in {organizationName}. They'll only see this Space."
-msgstr ""
+msgstr "{organizationName}のメンバーではありません。このスペースのみ表示されます。"
 
 #: apps/web/src/pages/shell/import-status.ts
 msgid "Not in Rakazo's catalog"
@@ -7793,7 +7793,7 @@ msgstr "組織のAPIキー"
 
 #: apps/mobile/components/organization-menu.tsx
 msgid "Organization settings"
-msgstr ""
+msgstr "組織の設定"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -8594,7 +8594,7 @@ msgstr "{name}を削除しますか？"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Remove {removingName}?"
-msgstr ""
+msgstr "{removingName}を削除しますか？"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8759,7 +8759,7 @@ msgstr "返信をキャンセルしました"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {replyName}"
-msgstr ""
+msgstr "{replyName}に返信中"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
@@ -9582,7 +9582,7 @@ msgstr "{name}とデータを共有しますか？"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Share invite link"
-msgstr ""
+msgstr "招待リンクを共有"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
@@ -9609,7 +9609,7 @@ msgstr "共有メモリ"
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
 msgid "Shared with guests"
-msgstr ""
+msgstr "ゲストと共有中"
 
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -9736,7 +9736,7 @@ msgstr "アカウントにログインしてから、設定でこのプロバイ
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in with demo account"
-msgstr ""
+msgstr "デモアカウントでログイン"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9998,7 +9998,7 @@ msgstr "スペース"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Spaces only they use pass to you."
-msgstr ""
+msgstr "このメンバーだけが使っているスペースはあなたに引き継がれます。"
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -10712,7 +10712,7 @@ msgstr "このインポートはすでに使用されています。もう一度
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "This invitation is no longer valid."
-msgstr ""
+msgstr "この招待は無効になりました。"
 
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
@@ -10857,7 +10857,7 @@ msgstr "このスペースには独自の保管庫があるため、そのボッ
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault."
-msgstr ""
+msgstr "このスペースには専用の保管庫があります。ボットはここではなくそちらに項目を保存・使用します。スペースの設定を開き、「保管庫」を選んでください。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -11319,7 +11319,7 @@ msgstr "使用量"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Usage over time"
-msgstr ""
+msgstr "使用量の推移"
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

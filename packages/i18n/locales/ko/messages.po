@@ -73,7 +73,7 @@ msgstr "{0, plural, other {로그인 대기 중 — 링크는 약 #분 후 만�
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{0} (deleted)"
-msgstr ""
+msgstr "{0}(삭제됨)"
 
 #. placeholder {0}: file.name
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -328,7 +328,7 @@ msgstr "{count}분 전"
 #. placeholder {1}: cost(point.costUsd)
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{day}: {0} tokens, {1}"
-msgstr ""
+msgstr "{day}: 토큰 {0}개, {1}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
@@ -873,11 +873,11 @@ msgstr "3시간"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "30 days"
-msgstr ""
+msgstr "30일"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "7 days"
-msgstr ""
+msgstr "7일"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "A {times}× more powerful computer for your bot"
@@ -981,7 +981,7 @@ msgstr "{0} 작업 메뉴"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Actions for {label}"
-msgstr ""
+msgstr "{label} 작업"
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
@@ -1249,7 +1249,7 @@ msgstr "추가 항목"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Admin"
-msgstr ""
+msgstr "관리자"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1320,7 +1320,7 @@ msgstr "모든 파일"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "All models"
-msgstr ""
+msgstr "모든 모델"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -2209,7 +2209,7 @@ msgstr "취소"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
-msgstr ""
+msgstr "초대 취소"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Cancel new bot"
@@ -3138,7 +3138,7 @@ msgstr "MCP 서버를 추가하지 못했습니다."
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not add member"
-msgstr ""
+msgstr "멤버를 추가하지 못했습니다"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3174,7 +3174,7 @@ msgstr "앱 인증을 완료하지 못했습니다."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not cancel invitation"
-msgstr ""
+msgstr "초대를 취소하지 못했습니다"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3197,11 +3197,11 @@ msgstr "비밀번호를 변경할 수 없습니다"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not change role"
-msgstr ""
+msgstr "역할을 변경하지 못했습니다"
 
 #: apps/web/src/pages/shell/composer-model-picker.tsx
 msgid "Could not change the model"
-msgstr ""
+msgstr "모델을 변경하지 못했습니다"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -3491,7 +3491,7 @@ msgstr "플러그인을 설치하지 못했습니다"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not invite"
-msgstr ""
+msgstr "초대하지 못했습니다"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3677,7 +3677,7 @@ msgstr "이 페이지를 불러오지 못했습니다."
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Could not load usage."
-msgstr ""
+msgstr "사용량을 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -4038,7 +4038,7 @@ msgstr "이미지를 공유하지 못했습니다"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not share invite link"
-msgstr ""
+msgstr "초대 링크를 공유하지 못했습니다"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
@@ -4452,7 +4452,7 @@ msgstr "데이터"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Date range"
-msgstr ""
+msgstr "기간"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/billing.ts
@@ -5293,7 +5293,7 @@ msgstr "CRM에서 이번 주 목록을 내려받아 공유 폴더에 넣기"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "External"
-msgstr ""
+msgstr "외부"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -6039,7 +6039,7 @@ msgstr "잘못된 코드"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invitation sent"
-msgstr ""
+msgstr "초대를 보냈습니다"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -6056,7 +6056,7 @@ msgstr "친구 초대"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invite by email"
-msgstr ""
+msgstr "이메일로 초대"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/SidebarFooter.tsx
@@ -6077,12 +6077,12 @@ msgstr "초대 링크를 복사했습니다"
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Invite people"
-msgstr ""
+msgstr "멤버 초대"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Invited"
-msgstr ""
+msgstr "초대됨"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Isolated"
@@ -6128,7 +6128,7 @@ msgstr "참여"
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "Join {organizationName}"
-msgstr ""
+msgstr "{organizationName}에 참여"
 
 #: apps/web/src/pages/Invite.tsx
 msgid "Join {spaceName}"
@@ -6372,7 +6372,7 @@ msgstr "도구 불러오는 중…"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Loading usage…"
-msgstr ""
+msgstr "사용량을 불러오는 중…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6476,12 +6476,12 @@ msgstr "기본 모델"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make admin"
-msgstr ""
+msgstr "관리자로 지정"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make member"
-msgstr ""
+msgstr "멤버로 지정"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
@@ -6805,7 +6805,7 @@ msgstr "모델 선택지"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Model picker in chat"
-msgstr ""
+msgstr "채팅에서 모델 선택"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
@@ -6813,7 +6813,7 @@ msgstr "모델 제공업체"
 
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model: {model}"
-msgstr ""
+msgstr "모델: {model}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7112,7 +7112,7 @@ msgstr "새 진행 작업"
 #: apps/mobile/components/organization-menu.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "New organization"
-msgstr ""
+msgstr "새 조직"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -7382,7 +7382,7 @@ msgstr "트리거 없음"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
-msgstr ""
+msgstr "선택한 조건의 사용량이 없습니다."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7430,11 +7430,11 @@ msgstr "가져오지 않음"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Not in {organization}. They'll only see this Space."
-msgstr ""
+msgstr "{organization} 소속이 아닙니다. 이 스페이스만 볼 수 있습니다."
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Not in {organizationName}. They'll only see this Space."
-msgstr ""
+msgstr "{organizationName} 소속이 아닙니다. 이 스페이스만 볼 수 있습니다."
 
 #: apps/web/src/pages/shell/import-status.ts
 msgid "Not in Rakazo's catalog"
@@ -7793,7 +7793,7 @@ msgstr "조직 API 키"
 
 #: apps/mobile/components/organization-menu.tsx
 msgid "Organization settings"
-msgstr ""
+msgstr "조직 설정"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -8594,7 +8594,7 @@ msgstr "{name}을(를) 제거할까요?"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Remove {removingName}?"
-msgstr ""
+msgstr "{removingName}을(를) 삭제할까요?"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8759,7 +8759,7 @@ msgstr "답장이 취소되었습니다"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {replyName}"
-msgstr ""
+msgstr "{replyName}에게 답장 중"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
@@ -9582,7 +9582,7 @@ msgstr "{name}와(과) 데이터를 공유할까요?"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Share invite link"
-msgstr ""
+msgstr "초대 링크 공유"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
@@ -9609,7 +9609,7 @@ msgstr "공유 기억"
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
 msgid "Shared with guests"
-msgstr ""
+msgstr "게스트와 공유됨"
 
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -9736,7 +9736,7 @@ msgstr "계정에 로그인한 다음 설정에서 이 서비스를 연결하세
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in with demo account"
-msgstr ""
+msgstr "데모 계정으로 로그인"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9998,7 +9998,7 @@ msgstr "스페이스"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Spaces only they use pass to you."
-msgstr ""
+msgstr "이 멤버만 사용하는 스페이스는 나에게 넘어옵니다."
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -10712,7 +10712,7 @@ msgstr "이미 사용된 가져오기입니다. 파일을 다시 선택하세요
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "This invitation is no longer valid."
-msgstr ""
+msgstr "이 초대는 더 이상 유효하지 않습니다."
 
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
@@ -10857,7 +10857,7 @@ msgstr "이 스페이스는 자체 보관함을 사용하므로 이 스페이스
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault."
-msgstr ""
+msgstr "이 스페이스에는 별도의 보관함이 있습니다. 이 스페이스의 봇은 여기가 아닌 그곳에 항목을 저장하고 사용합니다. 스페이스 설정을 열고 보관함으로 이동하세요."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -11319,7 +11319,7 @@ msgstr "사용량"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Usage over time"
-msgstr ""
+msgstr "기간별 사용량"
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")

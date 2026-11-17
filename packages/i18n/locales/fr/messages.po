@@ -73,7 +73,7 @@ msgstr "{0, plural, one {En attente de connexion — le lien expire dans environ
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{0} (deleted)"
-msgstr ""
+msgstr "{0} (supprimé)"
 
 #. placeholder {0}: file.name
 #: apps/web/src/pages/shell/use-composer-actions.ts
@@ -328,7 +328,7 @@ msgstr "il y a {count} min"
 #. placeholder {1}: cost(point.costUsd)
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "{day}: {0} tokens, {1}"
-msgstr ""
+msgstr "{day} : {0} jetons, {1}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
@@ -873,11 +873,11 @@ msgstr "3 heures"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "30 days"
-msgstr ""
+msgstr "30 jours"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "7 days"
-msgstr ""
+msgstr "7 jours"
 
 #: apps/web/src/components/ModelCredits.tsx
 msgid "A {times}× more powerful computer for your bot"
@@ -981,7 +981,7 @@ msgstr "Actions pour {0}"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Actions for {label}"
-msgstr ""
+msgstr "Actions pour {label}"
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 #: apps/web/src/pages/shell/archived-chats.tsx
@@ -1249,7 +1249,7 @@ msgstr "Inclut"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Admin"
-msgstr ""
+msgstr "Administrateur"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/compatible-endpoint-form.tsx
@@ -1320,7 +1320,7 @@ msgstr "Tous les fichiers"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "All models"
-msgstr ""
+msgstr "Tous les modèles"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -2209,7 +2209,7 @@ msgstr "Annuler"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
-msgstr ""
+msgstr "Annuler l'invitation"
 
 #: apps/web/src/pages/shell/agent-import.tsx
 msgid "Cancel new bot"
@@ -3138,7 +3138,7 @@ msgstr "Impossible d'ajouter le serveur MCP"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not add member"
-msgstr ""
+msgstr "Impossible d'ajouter le membre"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3174,7 +3174,7 @@ msgstr "Impossible d'autoriser cette application"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not cancel invitation"
-msgstr ""
+msgstr "Impossible d'annuler l'invitation"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3197,11 +3197,11 @@ msgstr "Impossible de changer le mot de passe"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not change role"
-msgstr ""
+msgstr "Impossible de changer le rôle"
 
 #: apps/web/src/pages/shell/composer-model-picker.tsx
 msgid "Could not change the model"
-msgstr ""
+msgstr "Impossible de changer de modèle"
 
 #: apps/mobile/components/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
@@ -3491,7 +3491,7 @@ msgstr "Impossible d'installer le plugin"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Could not invite"
-msgstr ""
+msgstr "Impossible d'inviter"
 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
@@ -3677,7 +3677,7 @@ msgstr "Impossible de charger cette page."
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Could not load usage."
-msgstr ""
+msgstr "Impossible de charger l'utilisation."
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
@@ -4038,7 +4038,7 @@ msgstr "Impossible de partager l'image"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 msgid "Could not share invite link"
-msgstr ""
+msgstr "Impossible de partager le lien d'invitation"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not share this artifact"
@@ -4452,7 +4452,7 @@ msgstr "Données"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Date range"
-msgstr ""
+msgstr "Période"
 
 #: apps/mobile/lib/cron.ts
 #: apps/web/src/lib/billing.ts
@@ -5293,7 +5293,7 @@ msgstr "Exportez la liste de cette semaine depuis le CRM et déposez-la dans le 
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "External"
-msgstr ""
+msgstr "Externe"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
@@ -6039,7 +6039,7 @@ msgstr "Code non valide"
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invitation sent"
-msgstr ""
+msgstr "Invitation envoyée"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -6056,7 +6056,7 @@ msgstr "Inviter un ami"
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Invite by email"
-msgstr ""
+msgstr "Inviter par e-mail"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/SidebarFooter.tsx
@@ -6077,12 +6077,12 @@ msgstr "Lien d'invitation copié"
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/web/src/pages/OrganizationSettingsPanel.tsx
 msgid "Invite people"
-msgstr ""
+msgstr "Inviter des personnes"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Invited"
-msgstr ""
+msgstr "Invité"
 
 #: apps/web/src/pages/MemorySettingsOverlay.tsx
 msgid "Isolated"
@@ -6128,7 +6128,7 @@ msgstr "Rejoindre"
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "Join {organizationName}"
-msgstr ""
+msgstr "Rejoindre {organizationName}"
 
 #: apps/web/src/pages/Invite.tsx
 msgid "Join {spaceName}"
@@ -6372,7 +6372,7 @@ msgstr "Chargement des outils…"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Loading usage…"
-msgstr ""
+msgstr "Chargement de l'utilisation…"
 
 #: apps/web/src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
@@ -6476,12 +6476,12 @@ msgstr "Modèle principal"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make admin"
-msgstr ""
+msgstr "Nommer administrateur"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Make member"
-msgstr ""
+msgstr "Rétrograder en membre"
 
 #: apps/web/src/pages/BillingSettingsPanel.tsx
 #: apps/web/src/pages/SettingsOverlay.tsx
@@ -6805,7 +6805,7 @@ msgstr "Options du modèle"
 
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
 msgid "Model picker in chat"
-msgstr ""
+msgstr "Sélecteur de modèle dans le chat"
 
 #: apps/mobile/components/run-error-sheet.tsx
 msgid "Model provider"
@@ -6813,7 +6813,7 @@ msgstr "Fournisseur de modèles"
 
 #: apps/web/src/pages/shell/chat-model-picker.tsx
 msgid "Model: {model}"
-msgstr ""
+msgstr "Modèle : {model}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7112,7 +7112,7 @@ msgstr "Nouvel élément de travaux en cours"
 #: apps/mobile/components/organization-menu.tsx
 #: apps/web/src/components/SidebarFooter.tsx
 msgid "New organization"
-msgstr ""
+msgstr "Nouvelle organisation"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/web/src/pages/AccountSettingsOverlay.tsx
@@ -7382,7 +7382,7 @@ msgstr "Aucun déclencheur"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
-msgstr ""
+msgstr "Aucune utilisation pour cette sélection."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -7430,11 +7430,11 @@ msgstr "Non importé"
 
 #: apps/mobile/app/space-members.tsx
 msgid "Not in {organization}. They'll only see this Space."
-msgstr ""
+msgstr "Hors de {organization}. Cette personne ne verra que cet espace."
 
 #: apps/web/src/components/SpaceMembersSettings.tsx
 msgid "Not in {organizationName}. They'll only see this Space."
-msgstr ""
+msgstr "Hors de {organizationName}. Cette personne ne verra que cet espace."
 
 #: apps/web/src/pages/shell/import-status.ts
 msgid "Not in Rakazo's catalog"
@@ -7793,7 +7793,7 @@ msgstr "Clé API de l'organisation"
 
 #: apps/mobile/components/organization-menu.tsx
 msgid "Organization settings"
-msgstr ""
+msgstr "Paramètres de l'organisation"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -8594,7 +8594,7 @@ msgstr "Retirer {name} ?"
 
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Remove {removingName}?"
-msgstr ""
+msgstr "Retirer {removingName} ?"
 
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -8759,7 +8759,7 @@ msgstr "Réponse annulée"
 
 #: apps/web/src/pages/shell/composer.tsx
 msgid "Replying to {replyName}"
-msgstr ""
+msgstr "En réponse à {replyName}"
 
 #: apps/web/src/pages/routine-editor/trigger-cards.tsx
 msgid "Report unchanged checks"
@@ -9582,7 +9582,7 @@ msgstr "Partager des données avec {name} ?"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Share invite link"
-msgstr ""
+msgstr "Partager le lien d'invitation"
 
 #: apps/mobile/app/invite.tsx
 msgid "Share link"
@@ -9609,7 +9609,7 @@ msgstr "Mémoire partagée"
 #: apps/mobile/components/inbox-render-item.tsx
 #: apps/web/src/pages/shell/sidebar-roster.tsx
 msgid "Shared with guests"
-msgstr ""
+msgstr "Partagé avec des invités"
 
 #: apps/mobile/components/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -9736,7 +9736,7 @@ msgstr "Connectez-vous à votre compte, puis liez ce fournisseur dans les param�
 
 #: apps/web/src/pages/Auth.tsx
 msgid "Sign in with demo account"
-msgstr ""
+msgstr "Se connecter avec le compte de démo"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/PasskeySignIn.tsx
@@ -9998,7 +9998,7 @@ msgstr "Espaces"
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/OrganizationMembersSettings.tsx
 msgid "Spaces only they use pass to you."
-msgstr ""
+msgstr "Les espaces que cette personne est seule à utiliser vous seront transférés."
 
 #: apps/web/src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -10712,7 +10712,7 @@ msgstr "Cet import a déjà été utilisé. Choisissez à nouveau les fichiers."
 
 #: apps/web/src/pages/JoinOrganization.tsx
 msgid "This invitation is no longer valid."
-msgstr ""
+msgstr "Cette invitation n'est plus valide."
 
 #: apps/web/src/pages/Invite.tsx
 msgid "This invite link is no longer valid."
@@ -10857,7 +10857,7 @@ msgstr "Cet espace a son propre coffre, ses bots ne peuvent donc pas utiliser le
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault."
-msgstr ""
+msgstr "Cet espace a son propre coffre. Ses bots y enregistrent et y utilisent les éléments, pas ici : ouvrez les paramètres de l'espace, puis Coffre."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -11319,7 +11319,7 @@ msgstr "Utilisation"
 
 #: apps/web/src/pages/UsageSettingsPanel.tsx
 msgid "Usage over time"
-msgstr ""
+msgstr "Utilisation dans le temps"
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
