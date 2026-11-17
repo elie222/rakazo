@@ -10,19 +10,19 @@ import {
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { native, useThemedStyles } from "../../lib/native";
-import type { SaveSend } from "../../lib/query";
-import { formRead, rpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/session";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPicker, MenuPickerMenu } from "../../components/ui/menu-picker";
+import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api/api";
+import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/api/session";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { native, useThemedStyles } from "../../lib/native/native";
+import type { SaveSend } from "../../lib/query/query";
+import { formRead, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 // One link code is issued at a time per session, across visits to this screen.
 const linkScope = {};

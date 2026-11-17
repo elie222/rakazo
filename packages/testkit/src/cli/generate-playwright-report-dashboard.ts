@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PlaywrightScreenshot } from "../playwright-report-dashboard.js";
+import type { PlaywrightScreenshot } from "../screenshots/playwright-report-dashboard.js";
 import {
   classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
@@ -13,8 +13,8 @@ import {
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
   validatePlaywrightScreenshotBudget,
-} from "../playwright-report-dashboard.js";
-import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../png-validation.js";
+} from "../screenshots/playwright-report-dashboard.js";
+import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "../screenshots/png-validation.js";
 
 const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
   process.argv.slice(2);

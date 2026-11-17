@@ -9,7 +9,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
 const computerInput = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: { computer: { input: computerInput } },
 }));
 vi.mock("@lingui/react/macro", () => {

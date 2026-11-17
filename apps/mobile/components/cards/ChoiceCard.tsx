@@ -1,0 +1,178 @@
+import { useLingui } from "@lingui/react/macro";
+import type { MessageBlock } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
+import { useState } from "react";
+import type { ViewProps } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { errorText } from "../../lib/api/user-error";
+import {
+  choiceCardOptions,
+  DISMISSED_CHOICE_ANSWER_ID,
+  threadCardWidth,
+} from "../../lib/messages/message-presentation";
+import { native, useMobileTokens } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
+import { GlassIconButton } from "../native/glass-icon-button";
+import { NativeSymbol } from "../native/native-symbol";
+
+const styles = StyleSheet.create({
+  card: {
+    borderRadius: 18,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  header: { alignItems: "flex-start", flexDirection: "row", gap: 8 },
+  heading: { flex: 1, gap: 2 },
+  letter: {
+    alignItems: "center",
+    borderRadius: 7,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  letterText: { fontSize: 12.5, fontWeight: "500" },
+  option: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  optionLabel: { flex: 1, fontSize: 15 },
+  options: { gap: 8 },
+  question: typeScale.cardTitle,
+  subtitle: typeScale.secondary,
+});
+
+export function ChoiceCard({
+  botId,
+  block,
+  onDismissed,
+  accessibilityActions,
+  onAccessibilityAction,
+}: {
+  botId: string;
+  block: Extract<MessageBlock, { kind: "choice" }>;
+  onDismissed?: () => void;
+  accessibilityActions?: ViewProps["accessibilityActions"];
+  onAccessibilityAction?: ViewProps["onAccessibilityAction"];
+}) {
+  const { t } = useLingui();
+  const readOnly = useThreadReadOnly();
+  const tokens = useMobileTokens();
+  const { width: windowWidth } = useWindowDimensions();
+  // Shows the outcome before the thread stream delivers the updated block.
+  const [localAnswerId, setLocalAnswerId] = useState<string>();
+  const answerId = block.answerId ?? localAnswerId;
+  // Dismissing records the server's dismissed answer id, so both outcomes share this path.
+  const choice = useSave({
+    save: async (optionId: string, send) => {
+      if (optionId === DISMISSED_CHOICE_ANSWER_ID) await send("onboarding/dismissFocus", { botId });
+      else await send("onboarding/choose", { botId, optionId });
+    },
+    onSaved: (_, optionId) => {
+      setLocalAnswerId(optionId);
+      if (optionId === DISMISSED_CHOICE_ANSWER_ID) onDismissed?.();
+    },
+    onFailed: (reason) =>
+      Alert.alert(t`Could not complete action`, errorText(reason, t`Please try again.`)),
+  });
+  const busy = choice.pending;
+  if (answerId === DISMISSED_CHOICE_ANSWER_ID) return null;
+
+  function submit(optionId: string) {
+    if (!readOnly && !answerId) choice.run(optionId);
+  }
+
+  return (
+    <View
+      testID="choice-card"
+      style={[
+        styles.card,
+        {
+          width: threadCardWidth(windowWidth),
+          backgroundColor: native.fill,
+        },
+      ]}
+    >
+      <View style={styles.header}>
+        <View style={styles.heading}>
+          <Text
+            accessibilityRole="header"
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
+            style={[styles.question, { color: tokens.foreground }]}
+          >
+            {block.question}
+          </Text>
+          {block.subtitle ? (
+            <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
+              {block.subtitle}
+            </Text>
+          ) : null}
+        </View>
+        {!readOnly && !answerId ? (
+          <GlassIconButton
+            testID="choice-card-dismiss"
+            accessibilityLabel={t`Dismiss`}
+            ios="xmark"
+            android="close"
+            size={30}
+            iconSize={13}
+            fallbackStyle={{ backgroundColor: native.fillPressed }}
+            disabled={busy}
+            onPress={() => submit(DISMISSED_CHOICE_ANSWER_ID)}
+          />
+        ) : null}
+      </View>
+      <View style={styles.options}>
+        {choiceCardOptions({ ...block, answerId }).map((option) => {
+          const chosen = option.id === answerId;
+          return (
+            <Pressable
+              key={option.id}
+              accessibilityRole="button"
+              accessibilityLabel={option.label}
+              accessibilityState={{ disabled: readOnly || busy || chosen, selected: chosen }}
+              disabled={readOnly || busy || chosen}
+              onPress={() => submit(option.id)}
+              style={({ pressed }) => [
+                styles.option,
+                {
+                  backgroundColor: pressed || chosen ? native.fillPressed : native.page,
+                  opacity: busy ? 0.6 : 1,
+                },
+              ]}
+            >
+              <View style={[styles.letter, { backgroundColor: native.fill }]}>
+                <Text style={[styles.letterText, { color: tokens.mutedForeground }]}>
+                  {option.letter}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.optionLabel,
+                  { color: chosen ? tokens.mutedForeground : tokens.foreground },
+                ]}
+              >
+                {option.label}
+              </Text>
+              {chosen ? (
+                <NativeSymbol
+                  ios="checkmark"
+                  android="checkmark"
+                  size={15}
+                  color={tokens.mutedForeground}
+                />
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}

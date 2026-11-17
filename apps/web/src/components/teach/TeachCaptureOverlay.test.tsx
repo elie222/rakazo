@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./TeachCaptureOverlay";
 
 const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
 
 const skill = {
   id: "skill-1",

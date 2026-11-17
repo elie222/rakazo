@@ -9,8 +9,8 @@ import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
-import { assertSandboxReadLimit } from "../../../sandbox-test-support.js";
+import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
+import { assertSandboxReadLimit } from "../../../sandboxes/sandbox-test-support.js";
 import {
   DockerSandboxProvider,
   HEALTH_CHECK_TIMEOUT_MS,

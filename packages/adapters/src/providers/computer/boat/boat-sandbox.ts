@@ -47,38 +47,47 @@ import { deadlineSignal } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
+  installAgentBrowserCommand,
+  installPageBrowserCommand,
+} from "../../../browser/page-browser-install.js";
+import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,
   computerSnapshotName,
-} from "../../../computer-base-snapshot.js";
+} from "../../../computers/computer-base-snapshot.js";
+import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
-} from "../../../computer-support.js";
-import { PortableFileBatcher } from "../../../computer-workspace.js";
+} from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
-} from "../../../linux-desktop.js";
+} from "../../../computers/screens/linux-desktop.js";
 import {
-  installAgentBrowserCommand,
-  installPageBrowserCommand,
-} from "../../../page-browser-install.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents, timedOutCommandEvents } from "../../../sandbox-command-events.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { shellExportScript, sourceEnvironmentCommand } from "../../../sandbox-shell-environment.js";
-import { withAbort } from "../../../web-ssrf.js";
-import { readWorkspaceArchive } from "../../../workspace-archive.js";
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../sandboxes/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../sandboxes/sandbox-command-events.js";
+import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
+import {
+  shellExportScript,
+  sourceEnvironmentCommand,
+} from "../../../sandboxes/sandbox-shell-environment.js";
+import { readWorkspaceArchive } from "../../../storage/workspace-archive.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
-} from "../../../workspace-save-policy.js";
+} from "../../../storage/workspace-save-policy.js";
+import { withAbort } from "../../../web/web-ssrf.js";
 import {
   BoatApiError,
   BoatRequestGate,

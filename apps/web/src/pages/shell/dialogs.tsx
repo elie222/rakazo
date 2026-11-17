@@ -18,9 +18,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { useId, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import type { RpcClient } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
  * parent unmounts it from `onCancel`. Escape and backdrop presses are ignored

@@ -8,7 +8,7 @@ import {
   linuxUpdateSignatureMessage,
   sha512File,
   verifyLinuxUpdate,
-} from "../src/main/linux-update-signature.js";
+} from "../src/main/updates/linux-update-signature.js";
 
 const [keyFile = "", version = "", ...images] = process.argv.slice(2);
 const key = createPrivateKey(readFileSync(keyFile));
