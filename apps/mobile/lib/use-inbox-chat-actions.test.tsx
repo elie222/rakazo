@@ -34,9 +34,6 @@ vi.mock("expo-router", () => ({
     useEffect(() => (session.focused ? effect() : undefined), [effect]),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: session.alert } }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(async (spaceId = session.space) => ({
     apiBase: "",

@@ -20,9 +20,6 @@ vi.mock("react-native", () => ({
   Alert: { alert: state.alert },
   AppState: { currentState: "active" },
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({ rpc: state.rpc }));
 vi.mock("./live-notifications", () => ({ dismissThreadNotifications: vi.fn(async () => {}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));

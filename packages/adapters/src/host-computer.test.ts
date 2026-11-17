@@ -19,12 +19,12 @@ import {
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
 } from "./computer-workspace.js";
-import { win32NtRelativeAvailable } from "./desktop-sandbox-win32-path.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
+import { win32NtRelativeAvailable } from "./providers/computer/desktop/desktop-sandbox-win32-path.js";
 import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {

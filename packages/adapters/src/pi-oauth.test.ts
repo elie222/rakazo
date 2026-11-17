@@ -1074,6 +1074,7 @@ describe("refreshExpiredModelCredential", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return {
@@ -1367,6 +1368,7 @@ describe("refreshExpiredModelCredential", () => {
       load: vi.fn(async (ciphertext: string) => ciphertext),
       put: vi.fn(async (next: string) => ({ id: "secret-1", ref: next, ciphertext: next })),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
     };
     // The provider rotates refresh tokens and rejects a spent one.
     const sent: string[] = [];
@@ -1444,6 +1446,7 @@ describe("kickModelCredentialRefresh", () => {
     const secretStore = {
       load: vi.fn(async () => current),
       delete: vi.fn(async () => {}),
+      isRemote: () => false,
       put: vi.fn(async (next: string) => {
         current = next;
         return { id: "secret-1", ref: "next", ciphertext: "next" };
@@ -1744,7 +1747,7 @@ describe("PiOAuthLogins", () => {
   });
 
   it("saves the credential when the provider sign-in finishes", async () => {
-    let finish!: (credential: OAuthCredential) => void;
+    const signIn = deferred<Credential>();
     const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
       await interaction.prompt({
         type: "select",
@@ -1757,9 +1760,7 @@ describe("PiOAuthLogins", () => {
         verificationUri: "https://auth.openai.com/codex/device",
         expiresInSeconds: 60,
       });
-      return new Promise<Credential>((resolve) => {
-        finish = (credential) => resolve(credential);
-      });
+      return signIn.promise;
     });
     const saved: PiOAuthConnected[] = [];
     const actor = { userId: "u", spaceId: "w" };
@@ -1773,7 +1774,7 @@ describe("PiOAuthLogins", () => {
       },
     });
     expect(await logins.finish(started.loginId, actor)).toEqual({ status: "pending" });
-    finish(oauthCred({ access: "live-access" }));
+    signIn.resolve(oauthCred({ access: "live-access" }));
     await flushMicrotasks();
     expect(saved).toEqual([
       expect.objectContaining({

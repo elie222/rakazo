@@ -88,6 +88,7 @@ import {
   WorkActivities,
   withHostComputerScreen,
   withSecretPersistence,
+  withSecretWriteAhead,
 } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
@@ -104,7 +105,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning } from "@rakazo/core";
+import { encryptionKeyWarning } from "@rakazo/core/node/secrets-guard";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -337,12 +338,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         : new InMemoryRealtimeFanout()),
     (threadId) => workActivities?.threadChanged(threadId),
   );
-  const secrets = createSecretStore(env.encryptionKey, process.env, realtime);
+  // The queue is built from this client below; a secret written or dropped before then gets no
+  // backup.
+  let secretCleanupJobs: JobPublisher | undefined;
+  const secrets = withSecretWriteAhead(
+    createSecretStore(env.encryptionKey, process.env, realtime),
+    () => secretCleanupJobs,
+  );
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  // The queue is built from this client below; a secret dropped before then gets no retry.
-  let secretCleanupJobs: JobPublisher | undefined;
   prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   // Bot nodes on members' tailnets run in this process; without tailscaled the feature says why.
   const tailnet = new TailnetService({
@@ -828,7 +833,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     integrationSettings,
     mcpOAuth,
     mcp,
-    composio: stack.composio,
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,

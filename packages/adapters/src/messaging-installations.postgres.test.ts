@@ -15,11 +15,11 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { MessagingInstallations } from "./messaging-installations.js";
+import { SlackInstallProvider } from "./providers/messaging/slack/slack-install-provider.js";
 import type { SecretCleanup } from "./secret-cleanup.js";
 import { secretCleanupJobKey } from "./secret-cleanup.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { SlackInstallProvider } from "./slack-install-provider.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 
 const describePostgres =
@@ -342,6 +342,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       // The direct attempt cannot hand over, as when the process stops right after the commit.
       enqueue: async () => undefined,
       cancel: (jobKey) => queue.cancel(jobKey),
+      cancelIn: (tx, jobKey) => queue.cancelIn(tx, jobKey),
     });
     try {
       const installation = await asSystem(prisma).messagingInstallation.create({

@@ -7,15 +7,19 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
-import { phoneCallSettings, resolveEncryptionKey, uploadSizeFromEnv } from "@rakazo/core";
+import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
+import {
+  chatHistoryRetentionDays,
+  createChatHistoryPruner,
+  createSecurityEventPruner,
+  securityEventRetentionDays,
+} from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { cliModelRuntime } from "./cli-models/runtime.js";
 import { reconcileCloudAgents } from "./cloud-agent-service.js";
-import type { ComposioProvider } from "./composio-connector.js";
-import { ComposioConnector, isComposioEnabled } from "./composio-connector.js";
 import { createIdleComputerSweeper } from "./computer-idle.js";
 import { reconcileComputerUpdates } from "./computer-update.js";
 import { createConnectorStack } from "./connector-registry.js";
@@ -35,16 +39,21 @@ import { createMessagingContextLoader } from "./messaging-context.js";
 import { MessagingDelivery } from "./messaging-delivery.js";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
 import { localModelsApiKey } from "./pi-local-provider-id.js";
-import type { PipedreamEnvironmentValues } from "./pipedream-connector.js";
+import { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";
+import type { ComposioProvider } from "./providers/integration/composio/composio-connector.js";
+import {
+  ComposioConnector,
+  isComposioEnabled,
+} from "./providers/integration/composio/composio-connector.js";
+import type { PipedreamEnvironmentValues } from "./providers/integration/pipedream/pipedream-connector.js";
 import {
   isPipedreamEnabled,
   PipedreamConnector,
   pipedreamConfigFromEnv,
-} from "./pipedream-connector.js";
+} from "./providers/integration/pipedream/pipedream-connector.js";
 import { reconcilePurchases } from "./purchase-poll.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { createStrategicInitiativeReconciler } from "./strategic-initiative.js";
-import { T3CodeConnections } from "./t3code-connections.js";
 import type { TailnetService } from "./tailnet-service.js";
 import { tailscaledInstalled } from "./tailnet-service.js";
 import { createTailnetCommandAccess, tailnetServerOrigin } from "./tailnet-tunnel.js";
@@ -348,6 +357,7 @@ export function createRunReconciler(
 ) {
   const { prisma, jobs, cloudAgent, paymentWallet, mediaGeneration } = deps;
   const { messagingDelivery, teamChat } = chat;
+  const chatHistoryDays = chatHistoryRetentionDays();
   return createJobReconciler({
     prisma,
     jobs,
@@ -380,6 +390,8 @@ export function createRunReconciler(
       securityEventRetentionDays(),
     ),
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
+    reconcileChatHistoryRetention:
+      chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
   });
 }

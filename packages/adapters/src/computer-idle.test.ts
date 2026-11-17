@@ -14,7 +14,6 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { boatError, FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   ABANDONED_SUSPEND_CLAIM_MS,
   BACKGROUND_WORK_LAUNCH,
@@ -34,8 +33,13 @@ import {
   unbilledComputerMaxActiveMs,
 } from "./computer-idle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
-import { e2bCreateOptions } from "./e2b-sandbox.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
+import {
+  boatError,
+  FakeBoatApi,
+  fakeBoatProvider,
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { e2bCreateOptions } from "./providers/computer/e2b/e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   beforeEach(() => {

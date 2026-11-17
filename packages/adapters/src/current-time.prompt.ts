@@ -8,10 +8,14 @@
  * With the user's IANA timezone the user's local wall-clock time leads, so "tomorrow
  * morning" and "tonight" mean what the user means; the exact UTC instant stays alongside.
  * An unknown or invalid timezone falls back to UTC only.
+ *
+ * Replayed history carries no times, so after a pause a model reads its own earlier "it's
+ * Wednesday night" as a mistake and corrects it unasked; the anchor says when the chat paused.
  */
 export function formatCurrentTimeInstruction(
   now: Date = new Date(),
   timeZone?: string | null,
+  previousMessageAt?: Date,
 ): string {
   const iso = now.toISOString().replace(/\.\d{3}Z$/, "Z");
   const local = timeZone ? localDateTime(now, timeZone) : undefined;
@@ -20,12 +24,28 @@ export function formatCurrentTimeInstruction(
     : `Current date and time: ${weekdayIn(now, "UTC")}, ${iso} (UTC).`;
   return [
     anchor,
-    "Treat this as the present moment for everything you say and do.",
+    previousMessageAt && previousMessageNote(now, previousMessageAt, local ? timeZone : undefined),
     local
       ? "Use the user's time zone for times you mention unless they ask otherwise, judge what is past, upcoming, or overdue from it, and write absolute dates rather than relative ones."
       : "Use it to judge what is past, upcoming, or overdue, convert it to the user's time zone when one is known, and write absolute dates rather than relative ones.",
     "Never infer today's date from your training data or from timestamps quoted in the conversation.",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+const HOUR_MS = 3_600_000;
+
+function previousMessageNote(now: Date, sentAt: Date, timeZone?: string | null) {
+  const gap = now.getTime() - sentAt.getTime();
+  if (gap < HOUR_MS) return undefined;
+  const hours = Math.round(gap / HOUR_MS);
+  const when =
+    (timeZone && localDateTime(sentAt, timeZone)) ??
+    `${weekdayIn(sentAt, "UTC")}, ${sentAt.toISOString().slice(0, 16).replace("T", " ")} (UTC)`;
+  const ago =
+    hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.round(hours / 24)} days`;
+  return `The previous message in this chat was sent ${when}, ${ago} earlier. Time passing is not an error in what you said earlier.`;
 }
 
 function weekdayIn(now: Date, timeZone: string) {

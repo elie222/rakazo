@@ -20,16 +20,14 @@ import { socialAuthFromFields } from "@rakazo/auth";
 import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
+import { attachmentCountFromEnv, phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
 import {
-  attachmentCountFromEnv,
-  phoneCallSettings,
   resolveAuthSecret,
   resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
-  uploadSizeFromEnv,
-} from "@rakazo/core";
+} from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";

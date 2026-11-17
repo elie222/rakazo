@@ -7,10 +7,13 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { InstalledConnectorProvider, verifyMcpInstall } from "./installed-connectors.js";
 import { MCP_TAILNET_NO_BOT_MESSAGE, McpConnector } from "./mcp-connector.js";
+import {
+  FakeTailnetNodeHost,
+  TailscaleApiEmulator,
+} from "./providers/private-network/tailscale/tailnet-emulator.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { saveTailnetConnection, setTailnetBotAccess } from "./tailnet-connections.js";
 import { tailnetDatabase } from "./tailnet-connections.test-support.js";
-import { FakeTailnetNodeHost, TailscaleApiEmulator } from "./tailnet-emulator.js";
 import { botTailnetRoute, TailnetService } from "./tailnet-service.js";
 
 const SECRET = "tskey-client-kTEST-secretvalue";

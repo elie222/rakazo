@@ -9,10 +9,13 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import type { DbContext } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import {
+  FakeTailnetNodeHost,
+  TailscaleApiEmulator,
+} from "./providers/private-network/tailscale/tailnet-emulator.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { saveTailnetConnection, setTailnetBotAccess } from "./tailnet-connections.js";
 import { tailnetDatabase } from "./tailnet-connections.test-support.js";
-import { FakeTailnetNodeHost, TailscaleApiEmulator } from "./tailnet-emulator.js";
 import {
   createTailscaledNodeHost,
   TAILNET_NOT_CONNECTED_MESSAGE,

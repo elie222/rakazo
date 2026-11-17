@@ -449,6 +449,8 @@ export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
   /** Adds the job, or replaces the one with its key, as part of the caller's transaction. */
   enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void>;
+  /** `enqueueIn` for many jobs in one statement; a key given twice keeps its last job. */
+  enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void>;
   /** Removes the keyed job as part of the caller's transaction. */
   cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;

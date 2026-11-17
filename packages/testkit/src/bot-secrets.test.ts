@@ -16,7 +16,7 @@ import {
   storeBotSecret,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
 import { answerRunInput, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";

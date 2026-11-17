@@ -15,6 +15,9 @@ account is recreated on the next cold boot.
 Idle machines incur storage charges, including the root filesystem and the data volume; compute
 is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricing/).
 
+The weekly exploratory QA run starts the same image on its runner with `PREVIEW_HOST=localhost:8080`
+and `PREVIEW_SCHEME=http`; see [agent verification](../../docs/agent-verification.md#weekly-exploratory-qa).
+
 ## How it stays safe for forks
 
 - `preview-build.yml` runs the pull request's code to build the image, with a read-only token and

@@ -196,6 +196,10 @@ export class RunJobPublisher implements JobPublisher {
     await this.background.enqueueIn(tx, job);
   }
 
+  async enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void> {
+    await this.background.enqueueManyIn(tx, jobs);
+  }
+
   async cancelIn(tx: JobTransaction, key: string): Promise<void> {
     await this.background.cancelIn(tx, key);
   }

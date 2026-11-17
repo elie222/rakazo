@@ -5,10 +5,10 @@ import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { HostAwareSandbox } from "./host-aware-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { InMemoryJobQueue } from "./wakeup.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.

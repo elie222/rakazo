@@ -398,6 +398,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
           data: {
             spaceId: t.spaceId,
             userId: t.userId,
+            connectorId: "composio",
             provider: "p",
             displayName: "d",
             status: "connected",

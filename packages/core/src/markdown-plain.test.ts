@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -207,10 +208,11 @@ describe("plainTextFromMarkdown", () => {
   });
 
   it("bounds work on a long run of unclosed fences", () => {
-    const source = `${"```x\n".repeat(20_000)}TAIL_MARKER`;
-    const started = Date.now();
+    const source = `${"```x\n".repeat(100_000)}TAIL_MARKER`;
+    expectLinearTime(() =>
+      expect(plainTextFromMarkdown(source, { maxSource: source.length })).toContain("TAIL_MARKER"),
+    );
     const preview = plainTextFromMarkdown(source);
-    expect(Date.now() - started).toBeLessThan(1_000);
     expect(preview).not.toContain("TAIL_MARKER");
     expect(preview.length).toBeLessThan(4_096);
     expect(preview.startsWith("```x")).toBe(true);

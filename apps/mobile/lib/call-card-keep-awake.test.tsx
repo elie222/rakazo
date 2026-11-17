@@ -94,7 +94,6 @@ vi.mock("../components/glass-icon-button", () => ({
   }) =>
     createElement("button", { type: "button", "aria-label": accessibilityLabel, onClick: onPress }),
 }));
-vi.mock("./api-auth", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),

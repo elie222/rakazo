@@ -38,6 +38,7 @@ import {
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
+import { desktopGuardApplies } from "./providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
@@ -46,6 +47,7 @@ import { lazyRunComputer } from "./run-computer.js";
 import { APPROVED_EFFECT_REPLAY_ORDER } from "./run-effects.js";
 import {
   COMPUTER_USE_INSTRUCTION,
+  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
   PRIVATE_WORKSPACE_INSTRUCTION,
@@ -812,7 +814,7 @@ export async function loadComputerInstructions(
   const { heldForTakeover } = hold.takeover;
   const { bot } = parts.records;
   const { context } = parts.connected;
-  const { computerKind, computerMode, graphical, storedComputer } = parts.computer;
+  const { computerKind, computerMode, graphical, runComputer, storedComputer } = parts.computer;
   const { disabledBuiltinTools, graphicalToolsAllowed } = parts.capabilities;
   const { tools } = parts.tools;
   const baseComputerInstruction = persistentComputerInstruction({
@@ -821,11 +823,20 @@ export async function loadComputerInstructions(
     graphical,
     disabled: disabledBuiltinTools,
   });
+  const offeredToolNames = new Set(tools.map((tool) => tool.name));
   const dockerToolInstruction = dockerComputerToolInstruction(
     computerKind,
     disabledBuiltinTools,
-    new Set(tools.map((tool) => tool.name)),
+    offeredToolNames,
   );
+  const guardInstruction = desktopGuardApplies({
+    graphical,
+    stored: storedComputer,
+    kind: computerKind,
+    lazy: runComputer,
+  })
+    ? desktopGuardShellInstruction(offeredToolNames)
+    : undefined;
   const hostEnvironment = sandboxKindCapabilities(computerKind).nativeShell
     ? await deps.sandbox
         .environment?.(
@@ -852,6 +863,7 @@ export async function loadComputerInstructions(
       : dockerToolInstruction
         ? `${baseComputerInstruction} ${dockerToolInstruction}`
         : baseComputerInstruction,
+    guardInstruction,
     diskNoteInstruction(storedComputer),
   ]
     .filter(Boolean)

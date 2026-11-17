@@ -11,12 +11,15 @@ import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { TailnetNodeHost } from "./providers/private-network/tailscale/tailscale-network.js";
+import {
+  TailscaleApi,
+  TailscaleNetwork,
+} from "./providers/private-network/tailscale/tailscale-network.js";
+import { TailscaledNodeHost } from "./providers/private-network/tailscale/tailscaled-node-host.js";
 import type { TailnetScope } from "./tailnet-connections.js";
 import { resolveRunTailnet, tailnetBotAllowed } from "./tailnet-connections.js";
 import type { TailnetRoute } from "./tailnet-fetch.js";
-import type { TailnetNodeHost } from "./tailscale-network.js";
-import { TailscaleApi, TailscaleNetwork } from "./tailscale-network.js";
-import { TailscaledNodeHost } from "./tailscaled-node-host.js";
 
 /** A node with no open connection for this long leaves the tailnet; the next dial rejoins. */
 const DEFAULT_IDLE_MS = 10 * 60_000;

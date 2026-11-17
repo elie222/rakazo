@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   ComputerScreenUnavailableError,
   SingleScreenClaimTracker,
   withComputerScreenAvailability,
 } from "./computer-screens.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { fakeBoatProvider } from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const writer = {
   operationId: "1",

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
+import { NO_SANDBOX_MESSAGE } from "./providers/computer/none/none-sandbox.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
 

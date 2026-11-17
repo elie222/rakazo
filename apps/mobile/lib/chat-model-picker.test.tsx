@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   savedGatewayId: "gateway-fixture",
   vendorLabels: false,
   subscriptionSignIn: false,
+  reconnectRequired: false,
   secondConnection: false,
   alert: vi.fn(),
   prompt: vi.fn(),
@@ -85,6 +86,8 @@ const catalog = Array.from({ length: 11 }, (_, index) => ({
   billing: "",
   auth: "api-key",
   thinkingLevels: ["low", "medium", "high"],
+  // Only a model the provider lists live has settings of its own to manage.
+  ...(index === 1 ? { live: true } : {}),
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -104,9 +107,6 @@ vi.mock("./session", () => ({
 }));
 // Cache updates reach the screen inside act instead of on a later timer.
 notifyManager.setScheduler((callback) => callback());
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
@@ -247,6 +247,8 @@ vi.mock("./api", () => ({
               modelId: "vendor/model-1",
               isDefault: true,
               thinkingLevel: "high",
+              reconnectRequired: mocks.reconnectRequired,
+              ...(mocks.subscriptionSignIn ? { authKind: "oauth" } : {}),
             },
             ...(mocks.secondConnection
               ? [
@@ -611,6 +613,7 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.reconnectRequired = false;
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
@@ -699,9 +702,9 @@ describe("chat model list", () => {
     search("MODEL 1");
     expect(rows().map((row) => row.textContent)).toEqual([
       "Space defaultModel 1",
-      "Model 1",
-      "Model 10",
       "Model 11",
+      "Model 10",
+      "Model 1",
     ]);
     search("vendor/model-7");
     expect(rows().map((row) => row.textContent)).toEqual(["Model 7"]);
@@ -846,7 +849,10 @@ describe("provider connection screen", () => {
     const disconnect = buttonWithText("Disconnect")!;
     expect(disconnect.dataset.prominence).toBe("destructive");
     expect(disconnect.dataset.variant).toBe("text");
-    expect(disconnect.parentElement!.textContent).toBe("ConnectedDisconnect");
+    expect([...container.querySelectorAll("button")].at(-1)).toBe(disconnect);
+    expect(container.querySelector(`section[aria-label="Models"]`)?.textContent).toBe(
+      "ModelsModel 2",
+    );
     const keySection = buttonWithText("Replace API key")!.parentElement!;
     expect(keySection.firstElementChild?.textContent).toBe("API key");
     expect(buttonWithText("Replace API key")?.dataset.prominence).toBe("secondary");
@@ -901,6 +907,16 @@ describe("provider connection screen", () => {
     await act(async () => buttonWithText("Connect API key")!.click());
     expect(mocks.replace).not.toHaveBeenCalled();
     expect(mocks.back).toHaveBeenCalledOnce();
+  });
+
+  it("offers signing in again only once a subscription needs it", async () => {
+    mocks.subscriptionSignIn = true;
+    await renderConnection();
+    expect(buttonWithText("Sign in again")).toBeUndefined();
+    act(() => root.render(null));
+    mocks.reconnectRequired = true;
+    await renderConnection();
+    expect(buttonWithText("Sign in again")).toBeDefined();
   });
 
   it("aborts pending subscription sign-in when the screen unmounts", async () => {
@@ -1084,11 +1100,11 @@ describe("model role lists", () => {
     mocks.backups = [model(2), model(3)];
     await renderModels();
     const ids = (title: string) => mocks.menus.get(title)!.actions.map((action) => action.id);
-    expect(ids("Model 1")).toEqual(["thinking", "moveDown", "manageModel", "manage", "remove"]);
+    expect(ids("Model 1")).toEqual(["thinking", "moveDown", "manage", "remove"]);
     expect(ids("Model 2")).toEqual(["moveUp", "moveDown", "manageModel", "manage", "remove"]);
-    expect(ids("Model 3")).toEqual(["moveUp", "manageModel", "manage", "remove"]);
+    expect(ids("Model 3")).toEqual(["moveUp", "manage", "remove"]);
     expect(rowButton("Main model", "Model 1").getAttribute("data-accessibility-actions")).toBe(
-      "Thinking: Default,Thinking: Low,Thinking: Medium,Thinking: High,Move down,Manage model,Manage provider,Remove",
+      "Thinking: Default,Thinking: Low,Thinking: Medium,Thinking: High,Move down,Manage provider,Remove",
     );
     await menuAction("Model 3", "moveUp");
     expect(rowTitles()).toEqual(["Model 1", "Model 3", "Model 2"]);
@@ -1671,7 +1687,7 @@ describe("several connections for one provider", () => {
     await renderModels();
     expect(
       [...section("Providers").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["OpenRouter11 models", "OpenRouter (Work)11 models", "Add provider"]);
+    ).toEqual(["OpenRouter", "OpenRouter (Work)", "Add provider"]);
     expect(mocks.menus.get("OpenRouter (Work)")!.actions.map((action) => action.title)).toEqual([
       "Rename",
       "Replace API key",

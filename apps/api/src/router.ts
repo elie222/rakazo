@@ -13,7 +13,6 @@ import type {
 import type {
   CloudAgentConnection,
   CodexLiveCatalog,
-  ComposioProvider,
   ConnectorRegistry,
   FaviconResolver,
   IntegrationProviderSettings,
@@ -113,7 +112,6 @@ export interface RouterDeps {
     provider: string,
   ) => void;
   integrationSettings?: IntegrationProviderSettings;
-  composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
   /** Probes MCP server health; without it servers are never probed from here. */
   mcp?: Pick<McpConnector, "probe">;
