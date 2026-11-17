@@ -388,13 +388,15 @@ function fixture(runId = "run-1") {
   };
 }
 
-function respond(target: Model<"openai-completions">, calls: ToolCall[] = []) {
+function respond(target: Model<"openai-completions">, calls: ToolCall[] = [], said?: string) {
   const message: AssistantMessage = {
     role: "assistant",
     api: target.api,
     provider: target.provider,
     model: target.id,
-    content: calls.length ? calls : [{ type: "text", text: "Done" }],
+    content: calls.length
+      ? [...(said ? [{ type: "text" as const, text: said }] : []), ...calls]
+      : [{ type: "text", text: "Done" }],
     stopReason: calls.length ? "toolUse" : "stop",
     timestamp: 1,
     usage: {
@@ -471,6 +473,51 @@ it("resumes an approved browser action followed by leave in the same assistant b
   expect(f.effect).toMatchObject({ status: "completed", idempotencyKey: key });
   expect(f.effects.filter((entry) => entry.kind === "browser_act")).toHaveLength(1);
   expect(fake.stream.mock.calls.map((call) => call[0].id)).toEqual(["main-a"]);
+});
+it("finishes the reply it had written before an approval, showing the approved step once", async () => {
+  const f = fixture();
+  const enter = {
+    type: "toolCall" as const,
+    id: "enter",
+    name: "enter_computer_mode",
+    arguments: { goal: "Click" },
+  };
+  const steps: Array<[ToolCall[], string?]> = [[[enter], "Opening the settings page."], [[click]]];
+  fake.stream.mockImplementation((target: Model<"openai-completions">) =>
+    respond(target, ...(steps.shift() ?? [[]])),
+  );
+  await f.run();
+  const checkpoint = f.effects.find((entry) => entry.kind === "runtime_checkpoint");
+  expect(JSON.parse(checkpoint!.result as string).reply).toMatchObject({
+    narrationSoFar: "Opening the settings page.",
+    toolCalls: [expect.objectContaining({ tool: "browser_act" })],
+  });
+  f.effects.find((entry) => entry.kind === "browser_act")!.status = "approved";
+  const resumed: ToolCall[][] = [[leave]];
+  fake.stream.mockImplementation((target: Model<"openai-completions">) =>
+    respond(target, resumed.shift()),
+  );
+  await f.run();
+  expect(f.browserAct).toHaveBeenCalledTimes(1);
+  expect(f.finalizeRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      outcome: "completed",
+      blocks: [
+        {
+          kind: "steps",
+          steps: [
+            expect.objectContaining({
+              label: "Browser act",
+              count: 1,
+              note: "Opening the settings page.",
+              outcomes: { succeeded: 1 },
+            }),
+          ],
+        },
+        { kind: "text", text: "Done" },
+      ],
+    }),
+  );
 });
 it("resolves saved A/C before unavailable current B and executes the pending effect once", async () => {
   const f = await paused();
