@@ -7,7 +7,6 @@
   "apps/web/src/pages/shell": 122,
   "packages/adapters/src": 868,
   "packages/contracts/src": 113,
-  "packages/db/src": 187,
   "packages/testkit/src": 103,
   "packages/testkit/src/evals": 61
 }
