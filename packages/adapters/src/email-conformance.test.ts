@@ -1,8 +1,8 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { EmailEmulator } from "./email-emulator.js";
-import { ResendEmailProvider } from "./resend-email.js";
-import { SmtpEmailProvider } from "./smtp-email.js";
+import { ResendEmailProvider } from "./providers/email/resend/resend-email.js";
+import { SmtpEmailProvider } from "./providers/email/smtp/smtp-email.js";
 
 const factories: Record<
   string,
