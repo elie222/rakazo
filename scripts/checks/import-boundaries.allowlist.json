@@ -33,7 +33,6 @@
     "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-policy.ts",
     "apps/web/vite.config.ts -> ../../packages/logging/src/env.ts",
     "apps/worker/src/secret-store.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
-    "apps/www/src/agent-content.ts -> ../../../packages/contracts/src/client-build.js",
     "apps/www/src/github.ts -> ../../../packages/core/src/http-response.js",
     "infra/sandboxes/supervisor/src/clipboard-bridge.test.ts -> ../../computer/clipboard-bridge.js",
     "infra/sandboxes/supervisor/src/mobile-keyboard.test.ts -> ../../computer/mobile-keyboard.js",
