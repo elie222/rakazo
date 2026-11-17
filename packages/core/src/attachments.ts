@@ -329,6 +329,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".htm": "text/html",
   ".json": "application/json",
   ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed",
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
@@ -350,6 +352,8 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
+  "application/vnd.rar": ".rar",
+  "application/x-7z-compressed": ".7z",
 };
 
 /** Short file-type badge, as a file's extension reads ("TXT", "MD", "PDF"). */
@@ -364,12 +368,17 @@ export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
 ): AttachmentMimeType | null {
-  if (
-    reportedType === "application/x-zip-compressed" ||
-    reportedType === "application/x-zip" ||
-    reportedType === "multipart/x-zip"
-  ) {
-    return "application/zip";
+  const archiveAliases: Record<string, AttachmentMimeType> = {
+    "application/x-zip-compressed": "application/zip",
+    "application/x-zip": "application/zip",
+    "multipart/x-zip": "application/zip",
+    "application/x-rar-compressed": "application/vnd.rar",
+    "application/x-rar": "application/vnd.rar",
+    "application/rar": "application/vnd.rar",
+    "application/x-7z": "application/x-7z-compressed",
+  };
+  if (reportedType && Object.hasOwn(archiveAliases, reportedType)) {
+    return archiveAliases[reportedType]!;
   }
   const audioAliases: Record<string, AttachmentMimeType> = {
     "audio/mp3": "audio/mpeg",
