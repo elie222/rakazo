@@ -387,20 +387,22 @@ export function createBillingService(deps: {
    */
   async function reportCreditsConnected(organizationId: string) {
     const { analytics } = deps;
-    const owner = analytics && (await ownerUserId(organizationId));
-    if (!owner) return;
-    const waiting = await prisma.user.findUnique({
-      where: { id: owner },
-      select: { pendingCreditsConnect: true },
+    if (!analytics) return;
+    const waiting = await prisma.user.findFirst({
+      where: {
+        pendingCreditsConnect: { not: null },
+        members: { some: { organizationId, role: { contains: "owner" } } },
+      },
+      select: { id: true, pendingCreditsConnect: true },
     });
     const attempt = waiting?.pendingCreditsConnect;
-    if (!attempt) return;
+    if (!waiting || !attempt) return;
     const taken = await prisma.user.updateMany({
-      where: { id: owner, pendingCreditsConnect: attempt },
+      where: { id: waiting.id, pendingCreditsConnect: attempt },
       data: { pendingCreditsConnect: null },
     });
     if (taken.count === 1)
-      analytics.capture(owner, { name: "model_connected", method: "credits", attempt });
+      analytics.capture(waiting.id, { name: "model_connected", method: "credits", attempt });
   }
 
   async function ownerUserId(organizationId: string) {

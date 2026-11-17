@@ -587,7 +587,8 @@ export class PiOAuthLogins<T = unknown> {
     input: BeginInput<T>,
     loginId: string,
     verifier: string | undefined,
-    startedAt = new Date(),
+    /** When the link was issued, for a sign-in another process began. */
+    issuedAt?: Date,
   ): Promise<PiOAuthBegin> {
     if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
       throw new Error(
@@ -618,7 +619,7 @@ export class PiOAuthLogins<T = unknown> {
         makeDefault: input.makeDefault,
         settingsScope: input.settingsScope,
         label: input.label,
-        startedAt,
+        startedAt: issuedAt ?? new Date(),
         measure: input.measure,
         persist: input.persist,
         abort,
@@ -678,6 +679,7 @@ export class PiOAuthLogins<T = unknown> {
           notify(event) {
             if (event.type === "device_code") {
               session.mode = "device-code";
+              session.startedAt = issuedAt ?? new Date();
               signInStarted.resolve({
                 mode: "device-code",
                 userCode: event.userCode,
@@ -687,6 +689,7 @@ export class PiOAuthLogins<T = unknown> {
             }
             if (event.type === "auth_url") {
               session.mode = "auth-url";
+              session.startedAt = issuedAt ?? new Date();
               signInStarted.resolve({
                 mode: "auth-url",
                 verificationUri: httpsAuthorizationUrl(event.url),
