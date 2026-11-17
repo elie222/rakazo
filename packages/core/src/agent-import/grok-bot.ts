@@ -437,13 +437,18 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   )
     throw new GrokBotExportError("too_large");
   const parsed = raw.map(readBot).filter((bot) => bot.name);
-  const bots = mergeBots(parsed);
+  // Repeats are dropped here, so the chosen Bot's re-sent export carries each entry once.
+  const bots = mergeBots(parsed).map((bot) => ({
+    ...bot,
+    memories: distinct(bot.memories),
+    userFacts: distinct(bot.userFacts),
+  }));
   if (bots.length === 0) throw new GrokBotExportError("not_export");
   // Bounded like any imported file, measured on the documents the preview will show.
   if (
     bots.some((bot) =>
       [bot.memories, bot.userFacts].some(
-        (items) => bullets(distinct(items)).length > AGENT_IMPORT_MAX_FILE_LENGTH,
+        (items) => bullets(items).length > AGENT_IMPORT_MAX_FILE_LENGTH,
       ),
     )
   )

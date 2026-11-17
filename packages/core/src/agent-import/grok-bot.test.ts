@@ -1,4 +1,4 @@
-import { GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { GrokBot } from "./index.js";
 import {
@@ -349,6 +349,15 @@ it("bounds memories by the size of the document they become, not by count", () =
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ bots: [{ name: "Example", memories: oversized }] })),
   ).toThrow(GrokBotExportError);
+  // A pasted reply full of repeats is re-sent with each entry once, within the upload limit.
+  const longRepeats = Array.from({ length: 300 }, () => "y".repeat(4_000));
+  const [pasted] = parseGrokBotExport(
+    JSON.stringify({ bots: [{ name: "Example", memories: longRepeats }] }),
+  );
+  const resent = grokBotExportJson(pasted!);
+  expect(pasted!.memories).toHaveLength(1);
+  expect(resent.length).toBeLessThan(GROK_BOT_EXPORT_MAX_LENGTH);
+  expect(readGrokBotExportJson(resent)[0]!.memories).toHaveLength(1);
   // Too many entries to fit are refused before any document is built.
   const many = Array.from({ length: 25_001 }, (_, index) => String(index));
   expect(() =>
