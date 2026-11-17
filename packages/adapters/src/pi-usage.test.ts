@@ -738,6 +738,92 @@ describe("Pi usage accounting", () => {
       expect.objectContaining({ type: "usage", costUsd: 0.25, costSource: "deployment-tariff" }),
     );
   });
+  it.each(["priced", "unknown", "receipt-failed"])(
+    "settles a thrown stream before exposing customer usage (%s)",
+    async (outcome) => {
+      const order: string[] = [];
+      const events: AgentRuntimeEvent[] = [];
+      const recordUsage = vi.fn(() => {
+        order.push("usage");
+      });
+      const afterCall = vi.fn((_id: string, usage: AgentUsage | null) => {
+        order.push("receipt");
+        expect(usage?.costUsd).toBe(9);
+        if (outcome === "receipt-failed") throw new Error("Receipt storage unavailable");
+        return {
+          ...usage!,
+          costUsd: outcome === "unknown" ? null : 0.25,
+          costSource: "deployment-tariff",
+        };
+      });
+      const models = {
+        streamSimple: (_model: Model<Api>, _context: Context, options?: SimpleStreamOptions) => ({
+          async *[Symbol.asyncIterator]() {
+            await options?.onProviderStreamEvent?.(
+              {
+                id: "partial-request",
+                usage: { prompt_tokens: 10, completion_tokens: 2, cost: 9 },
+              },
+              model,
+            );
+            yield {
+              type: "text_delta",
+              delta: "Partial",
+              partial: {
+                role: "assistant",
+                content: [{ type: "text", text: "Partial" }],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: {
+                  input: 10,
+                  output: 2,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 12,
+                  cost: { input: 9, output: 0, cacheRead: 0, cacheWrite: 0, total: 9 },
+                },
+                stopReason: "stop",
+                timestamp: 1,
+              },
+            };
+            throw new Error("Stream response interrupted");
+          },
+          result: async () => {
+            throw new Error("No terminal response");
+          },
+        }),
+      } as unknown as Models;
+      const stream = observedPiStream(
+        models,
+        model,
+        { messages: [] },
+        {},
+        (event) => events.push(event),
+        { beforeCall: () => "reservation", afterCall },
+        undefined,
+        { recordUsage },
+      );
+      for await (const _event of stream) {
+      }
+      expect(afterCall).toHaveBeenCalledOnce();
+      if (outcome === "receipt-failed") {
+        expect(order).toEqual(["receipt"]);
+        expect(recordUsage).not.toHaveBeenCalled();
+        expect(events).toEqual([]);
+      } else {
+        expect(order).toEqual(["receipt", "usage"]);
+        expect(events).toEqual([
+          expect.objectContaining({
+            type: "usage",
+            costUsd: outcome === "unknown" ? null : 0.25,
+            costSource: "deployment-tariff",
+          }),
+        ]);
+      }
+      expect((await stream.result()).stopReason).toBe("error");
+    },
+  );
   it("context policy rejection terminates without reserving or spending", async () => {
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
     const fetcher = vi.fn();

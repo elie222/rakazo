@@ -2,6 +2,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { modelProviderDefinition } from "../model-provider-registry.js";
 import { parseModelSecret, secretValuesToRedact } from "../model-secret.js";
 import { connectionModelSettings } from "../model-settings.js";
@@ -36,6 +37,11 @@ async function loadCreditConnection(
     try {
       secret = parseModelSecret(plaintext);
     } catch {
+      // Parser diagnostics can contain credential values; identify the offering only.
+      getLogger().warn("approved model credit connection has an invalid stored secret", {
+        offeringId: offering.id,
+        provider: offering.provider,
+      });
       throw new ModelCreditConnectionUnavailableError();
     }
     if (secret.kind !== "api_key" || !secret.key.trim())

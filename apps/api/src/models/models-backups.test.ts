@@ -1287,3 +1287,30 @@ it("offers a ready decision credit route independently of the reasoning catalog"
     vi.unstubAllEnvs();
   }
 });
+
+it("keeps the legacy hosted decision checker selectable without a personal key", async () => {
+  const { call } = setup({ credits: true });
+  vi.stubEnv("MODEL_CREDIT_OFFERINGS", undefined);
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+  try {
+    const response = await call("models/forRole", { role: "approval" });
+    expect(response.response.status).toBe(200);
+    const catalog = (await response.response.json()).json;
+    const decision = adapters.decisionModelCatalog()[0]!;
+    expect(catalog).toContainEqual(
+      expect.objectContaining({
+        provider: decision.provider,
+        id: decision.id,
+        protocol: "decisions",
+        managed: true,
+      }),
+    );
+    const saved = await call("models/setRole", {
+      role: "approval",
+      primary: { provider: decision.provider, modelId: decision.id },
+    });
+    expect(saved.response.status).toBe(200);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

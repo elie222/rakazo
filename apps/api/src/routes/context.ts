@@ -215,6 +215,10 @@ export function createRouterContext(deps: RouterDeps) {
       ),
       ...(role === "approval" ? decisionModelCatalog() : []),
     ];
+    // Legacy decision protocols have their own prices, outside the bundled chat catalog.
+    const canRun = (entry: ModelCatalogEntry) =>
+      (entry.protocol === "decisions" && !modelCreditOfferings()) ||
+      spaceCanRunCatalogModel(auth, entry);
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -224,7 +228,7 @@ export function createRouterContext(deps: RouterDeps) {
             auth.byModel[entry.provider] ||
             entry.provider === auth.managedProvider ||
             auth.managedProviders?.includes(entry.provider)) &&
-          (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
+          (hiddenCatalogModel(entry) || !canRun(entry)),
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
@@ -232,7 +236,7 @@ export function createRouterContext(deps: RouterDeps) {
     return offeredCatalog(merged, selected)
       .filter(
         (entry) =>
-          (spaceCanRunCatalogModel(auth, entry) &&
+          (canRun(entry) &&
             (!modelCreditOfferings() ||
               !runsOnHostedCredits(auth, entry) ||
               approved.some(

@@ -571,18 +571,13 @@ export function observedPiStream(
       } catch (error) {
         span?.setStatus({ status: "error" });
         let terminalError = error;
-        if (started && normalized === null) {
-          try {
-            await emitUsage(normalizePiUsage(undefined, model, reported));
-          } catch (accountingError) {
-            terminalError = accountingError;
-          }
-        }
+        let emitFailureUsage = started && normalized === null;
+        if (emitFailureUsage) normalized = normalizePiUsage(undefined, model, reported);
         if (observer && reservation !== undefined && !settled) {
           // Keep the reservation alive until settlement finishes, before exposing termination.
           settled = true;
           try {
-            await observer.afterCall(
+            const priced = await observer.afterCall(
               reservation,
               started
                 ? receipt(
@@ -591,8 +586,18 @@ export function observedPiStream(
                   )
                 : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
             );
-          } catch {
-            /* Already failing. */
+            if (priced) normalized = priced;
+          } catch (accountingError) {
+            // Never publish unpriced upstream spend after a tariff receipt failed.
+            emitFailureUsage = false;
+            terminalError = accountingError;
+          }
+        }
+        if (emitFailureUsage && normalized) {
+          try {
+            await emitUsage(normalized);
+          } catch (accountingError) {
+            terminalError = accountingError;
           }
         }
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.

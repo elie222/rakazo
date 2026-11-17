@@ -123,7 +123,8 @@ checker; its observer records operator expenses rather than purchased-credit cha
 selected credit-funded member checker retains its approved offering and customer tariff. Personal
 checker connections retain their own credentials. These funding sources cannot be combined.
 
-The decision transport settles durable receipts before publishing priced customer usage, while
+Model transports settle durable receipts before publishing priced customer usage, including
+when a response stream fails, while
 unknown provider costs remain unknown. Only the operator expense observer records inferred
 checker estimates. Speech uses its own deployment connection and allowance accounting.
 

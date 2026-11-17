@@ -1,3 +1,4 @@
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { approvedModelCreditMaterial, availableModelCreditOfferings } from "./routing.js";
 
@@ -130,4 +131,27 @@ it("propagates secret-store outages rather than reporting healthy configuration"
   await expect(availableModelCreditOfferings(deps.prisma as never, deps.secrets)).rejects.toBe(
     outage,
   );
+});
+
+it("reports invalid operator secrets without logging credential values", async () => {
+  const deps = setup();
+  deps.load.mockResolvedValue(
+    JSON.stringify({ kind: "oauth", credential: null, key: "fake-sensitive-key" }),
+  );
+  const sink = createTestSink();
+  const previous = getLogger();
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
+  try {
+    expect(await availableModelCreditOfferings(deps.prisma as never, deps.secrets)).toEqual([]);
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      level: "warn",
+      message: "approved model credit connection has an invalid stored secret",
+    });
+    expect(JSON.stringify(sink.events)).toContain(offering.id);
+    expect(JSON.stringify(sink.events)).not.toContain("fake-sensitive-key");
+    expect(JSON.stringify(sink.events)).not.toContain('"credential":null');
+  } finally {
+    installLogger(previous);
+  }
 });
