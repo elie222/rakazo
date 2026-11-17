@@ -63,9 +63,15 @@ describe("voice messages", () => {
     );
     await speakVoiceMessage(deps, scope, { text: "Hello", botVoiceId: null }, context);
     expect(synthesize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ voiceId: "account-voice", model: undefined }),
+      expect.objectContaining({ voiceId: "account-voice" }),
       context,
     );
+  });
+
+  it("leaves the model to the provider when the connection sets none", async () => {
+    const synthesize = connected("account-voice");
+    await speakVoiceMessage(deps, scope, { text: "Hello", botVoiceId: null }, context);
+    expect(synthesize.mock.calls[0]?.[0].model).toBeUndefined();
   });
 
   it("speaks nothing without a connection or a chosen voice", async () => {

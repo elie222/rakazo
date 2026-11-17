@@ -75,7 +75,6 @@ import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { filterStrategicInitiativeTools } from "./strategic-initiative.js";
 import { refreshTakeoverContinuePlan } from "./takeover-resume.js";
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
-import { hasVoiceForMessages } from "./voice-message.js";
 import {
   createEarlierFileQueue,
   listCurrentTurnFiles,
@@ -89,6 +88,7 @@ import {
   recentThreadFilesInstruction,
 } from "./thread-artifacts.prompt.js";
 import { historyReplaysOutsideContent } from "./tool-step-calls.js";
+import { hasVoiceForMessages } from "./voice-message.js";
 
 /** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
 async function verbatimMcpServersForRun(
