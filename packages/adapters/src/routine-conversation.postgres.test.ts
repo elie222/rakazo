@@ -5,6 +5,7 @@ import {
   asSystem,
   claimSteering,
   createDb,
+  createPendingSteeringRun,
   provisionMessagingIdentity,
   runAsSystem,
 } from "@rakazo/db";
@@ -180,6 +181,34 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     expect(steering).toHaveLength(1);
     expect(steering[0]?.text).toContain('"Digest"');
     expect(steering[0]?.text).toContain("Send the digest");
+    // Its task may quote what a watch read, so it never counts as the person's own words.
+    expect(steering[0]?.origin).toBe("routine");
+  });
+
+  it("runs as a scheduled task of its own when the working run ends before reading it", async () => {
+    const working = await createRun({ trigger: "user", status: "running", startedAt: new Date() });
+    const scheduled = await createRun({
+      trigger: "routine",
+      status: "queued",
+      prompt: "Send the digest",
+      createdAt: new Date(Date.now() - ROUTINE_CONVERSATION_WAIT_MS - 1_000),
+    });
+    await holdRoutineRunForConversation(deps, scheduled);
+
+    // What finishing a run does with steering it never read.
+    await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
+    await system.steeringMessage.updateMany({
+      where: { runId: working.id },
+      data: { runId: null },
+    });
+    const followUpId = await system.$transaction((tx) => createPendingSteeringRun(tx, identity));
+
+    const followUp = await system.run.findUniqueOrThrow({
+      where: { id: followUpId! },
+      include: { task: true },
+    });
+    expect(followUp.trigger).toBe("routine");
+    expect(followUp.task.prompt).toContain("Send the digest");
   });
 
   it("never hands one person's task to another person's run", async () => {

@@ -31,9 +31,9 @@ export interface ClaimedSteeringMessage {
   blocks: MessageBlock[];
   /**
    * Who sent it: the run's own person (in the app or a connected chat), another member of the
-   * chat, someone else in a connected chat, or a webhook.
+   * chat, someone else in a connected chat, a webhook, or a scheduled task handed over mid-run.
    */
-  origin: "user" | "member" | "messaging" | "webhook";
+  origin: "user" | "member" | "messaging" | "webhook" | "routine";
 }
 
 export async function claimSteering(
@@ -215,11 +215,13 @@ async function claimSteeringOnce(
         origin:
           item.originTrigger === "webhook"
             ? ("webhook" as const)
-            : sentByRunPerson(item)
-              ? ("user" as const)
-              : item.originTrigger === "messaging"
-                ? ("messaging" as const)
-                : ("member" as const),
+            : item.originTrigger === "routine"
+              ? ("routine" as const)
+              : sentByRunPerson(item)
+                ? ("user" as const)
+                : item.originTrigger === "messaging"
+                  ? ("messaging" as const)
+                  : ("member" as const),
       };
     });
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
@@ -311,7 +313,7 @@ export async function createPendingSteeringRun(
       threadId: input.threadId,
       userId,
       prompt:
-        origin === "webhook"
+        origin === "webhook" || origin === "routine"
           ? blocksToAgentHistoryText(storedMessageBlocks(source.message))
           : STEERING_CONTINUATION_PROMPT,
       status: "queued",
@@ -329,8 +331,8 @@ export async function createPendingSteeringRun(
       // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.
       // Rows queued before origins were recorded are recognized by their channel message.
       trigger:
-        origin === "webhook"
-          ? "webhook"
+        origin === "webhook" || origin === "routine"
+          ? origin
           : origin === "private" &&
               batch.every(
                 (item) => item.originTrigger === null && !mayBeChannelMessage(item.message),
@@ -380,7 +382,8 @@ function steeringOrigin(item: {
   originTrigger: string | null;
   message: { id: string; blocks: unknown };
 }): string {
-  if (item.originTrigger === "webhook") return "webhook";
+  if (item.originTrigger === "webhook" || item.originTrigger === "routine")
+    return item.originTrigger;
   if (item.originTrigger !== "messaging") return "private";
   const { blocks, intact } = readMessageBlocks(item.message);
   const channelId = messagingChannelId(blocks);
@@ -457,6 +460,8 @@ export async function handQueuedRunToWorkingRun(
           botId: queued.botId,
           userId: queued.userId,
           runId: working.id,
+          // Its task may quote what a watch read, so it is never taken as the person's own words.
+          originTrigger: "routine",
         },
       });
       const event = { spaceId: queued.spaceId, threadId: queued.threadId, botId: queued.botId };
