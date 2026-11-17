@@ -23,7 +23,7 @@ import {
 } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../../components/account/AccountAccess";
-import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
+import { PasskeySettings } from "../../components/account/PasskeySettings";
 import { SuccessPop } from "../../components/ai/primitives";
 import { ComputerDeviceSettings } from "../../components/computers/ComputerDeviceSettings";
 import { ComputerProviderSettings } from "../../components/computers/ComputerProviderSettings";
@@ -32,28 +32,28 @@ import {
   computersAreUnavailable,
 } from "../../components/computers/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../../components/DesktopUpdates";
-import { PasskeySettings } from "../../components/account/PasskeySettings";
+import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkSitesSettings";
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
-import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
-import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
-import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
-import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
-import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
-import { keepTimezone } from "../../lib/kept-timezone";
-import { timezoneOptions } from "../../lib/locale/local-timezone";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
-import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
 import { remoteImagesPreference } from "../../lib/chat/remote-images-preference";
-import { responseStreamingPreference } from "../../lib/query/response-streaming";
-import type { RpcClient } from "../../lib/query/rpc";
 import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
-import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
-import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
+import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
+import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
+import { keepTimezone } from "../../lib/locale/kept-timezone";
+import { timezoneOptions } from "../../lib/locale/local-timezone";
 import type { UiLocale } from "../../lib/locale/ui-locale";
 import { UI_LOCALES } from "../../lib/locale/ui-locale";
+import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
+import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
+import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
+import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
+import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
+import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
+import { responseStreamingPreference } from "../../lib/query/response-streaming";
+import type { RpcClient } from "../../lib/query/rpc";
 import { authErrorText } from "../../lib/query/user-error";
 
 export type SettingsGeneralProps = {

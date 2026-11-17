@@ -1,6 +1,6 @@
 import type { KeptTimezone } from "@rakazo/core";
 import { parseKeptTimezone } from "@rakazo/core";
-import { createStoredPreference } from "./preferences/stored-preference";
+import { createStoredPreference } from "../preferences/stored-preference";
 
 function parseKept(raw: string | null): Record<string, KeptTimezone> {
   try {

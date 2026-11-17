@@ -24,14 +24,14 @@ import { markOnce } from "../../../lib/platform/performance";
 import type { ChatTarget } from "../../../lib/query/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
-import { useEventListener } from "../../../lib/use-event-listener";
 import { errorText } from "../../../lib/query/user-error";
+import { useEventListener } from "../../../lib/use-event-listener";
+import type { ThreadState } from "../chat/use-thread-state";
+import type { useShellNavigation } from "../use-shell-navigation";
+import { firstThreadRoute } from "../use-shell-navigation";
 import type { RosterDropTarget } from "./roster-drop";
 import { resolveRosterDrop } from "./roster-drop";
 import { createRosterSignals } from "./roster-signals";
-import type { useShellNavigation } from "../use-shell-navigation";
-import { firstThreadRoute } from "../use-shell-navigation";
-import type { ThreadState } from "../chat/use-thread-state";
 
 type Navigation = ReturnType<typeof useShellNavigation>;
 type ChatRoute = NonNullable<ReturnType<typeof initialBootstrapTarget>>;

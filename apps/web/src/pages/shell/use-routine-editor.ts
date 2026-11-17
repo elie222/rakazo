@@ -7,6 +7,9 @@ import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react"
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
 import { parseModelOptionKey } from "../../lib/models/model-catalog";
+import type { createSpaceRpc } from "../../lib/query/rpc";
+import { sharedInflight } from "../../lib/query/shared-inflight";
+import { errorCode, errorText } from "../../lib/query/user-error";
 import type { Panel } from "../../lib/right-panel-state";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
@@ -15,9 +18,6 @@ import {
   routineNeedsOneShotArm,
   watchFromDraft,
 } from "../../lib/routines/routine-draft";
-import type { createSpaceRpc } from "../../lib/query/rpc";
-import { sharedInflight } from "../../lib/query/shared-inflight";
-import { errorCode, errorText } from "../../lib/query/user-error";
 import type { RoutineEditor } from "../routines/RoutineEditor";
 
 export function useRoutineEditor({

@@ -4,7 +4,7 @@ import type { Me } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { keptTimezones } from "../lib/kept-timezone";
+import { keptTimezones } from "../lib/locale/kept-timezone";
 import { createQueryRoot } from "../lib/query/query-root.test-support";
 import { TimezonePrompt } from "./TimezonePrompt";
 

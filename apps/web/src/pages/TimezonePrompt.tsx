@@ -11,8 +11,8 @@ import {
   AlertDialogTitle,
 } from "@rakazo/ui-web";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { keepTimezone, keptTimezones } from "../lib/kept-timezone";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { keepTimezone, keptTimezones } from "../lib/locale/kept-timezone";
+import { useSave, useSpaceQueries } from "../lib/query/query";
 import { rpc } from "../lib/query/rpc";
 import { useEventListener } from "../lib/use-event-listener";
 
