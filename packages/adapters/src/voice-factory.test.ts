@@ -542,7 +542,7 @@ describe("FishAudioVoiceProvider", () => {
     expect(headers(1).model).toBe("s1");
   });
 
-  it("ignores a connection speech model that is not a model id", async () => {
+  it("rejects a connection speech model that is not a model id", async () => {
     vi.stubEnv("FISH_TTS_MODEL", "s1");
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -550,13 +550,13 @@ describe("FishAudioVoiceProvider", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await new FishAudioVoiceProvider().synthesize(
-      { text: "Hi", voiceId: "voice-id", apiKey: "sk-test", model: "s2\ninjected" },
-      ctx,
-    );
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>).model).toBe("s1");
+    await expect(
+      new FishAudioVoiceProvider().synthesize(
+        { text: "Hi", voiceId: "voice-id", apiKey: "sk-test", model: "s2\ninjected" },
+        ctx,
+      ),
+    ).rejects.toThrow("Invalid speech model id");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps s2.1-pro when FISH_TTS_MODEL is not a model id", async () => {

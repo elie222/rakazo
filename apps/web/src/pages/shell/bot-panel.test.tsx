@@ -879,9 +879,9 @@ describe("BotSettings cached data", () => {
     ]);
     await render("Billing", { voiceId: "voice-1" });
     await vi.waitFor(() =>
-      expect(container.querySelector<HTMLElement>('[role="combobox"][id$="-voice"]')?.textContent).toContain(
-        "Original voice",
-      ),
+      expect(
+        container.querySelector<HTMLElement>('[role="combobox"][id$="-voice"]')?.textContent,
+      ).toContain("Original voice"),
     );
   });
 
