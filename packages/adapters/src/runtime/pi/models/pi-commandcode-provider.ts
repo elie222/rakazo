@@ -14,7 +14,7 @@ import { createProvider } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
-import { guardToolCallNames } from "./pi-tool-call-guard.js";
+import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
 import { disableCatalogProbe } from "./provider-traits.js";
 
 export const COMMANDCODE_PROVIDER_ID = "commandcode";
