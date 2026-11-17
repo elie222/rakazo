@@ -11,10 +11,10 @@ import {
 import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { rpc } from "../../lib/rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
+import { providerDisplayName } from "../../lib/models/localized-provider-hint";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { rpc } from "../../lib/query/rpc";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */

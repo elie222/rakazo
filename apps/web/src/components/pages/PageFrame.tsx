@@ -3,8 +3,8 @@ import { pageCopyRequest, pageCopyResult, pageLinkRequest } from "@rakazo/core";
 import type { CSSProperties } from "react";
 import { useCallback, useRef, useState } from "react";
 import { writeClipboard } from "../../lib/copy-text";
-import { pageFrameHeight } from "../../lib/page-cards";
-import { SandboxedHtmlViewer } from "../SandboxedHtmlViewer";
+import { pageFrameHeight } from "../../lib/pages/page-cards";
+import { SandboxedHtmlViewer } from "../messages/SandboxedHtmlViewer";
 
 /**
  * A page document in the sandboxed viewer. Only an `interactive` frame acts for its page (copy,

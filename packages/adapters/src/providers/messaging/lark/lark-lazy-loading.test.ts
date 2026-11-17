@@ -15,8 +15,8 @@ vi.mock("@larksuiteoapi/node-sdk", async (original) => {
   return original();
 });
 
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 
 describe("Lark lazy loading", () => {
   it("loads neither module without credentials, including when another surface mounts", async () => {

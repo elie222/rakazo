@@ -4,8 +4,8 @@ import type { Me } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { keptTimezones } from "../lib/kept-timezone";
-import { createQueryRoot } from "../lib/query-root.test-support";
+import { keptTimezones } from "../lib/locale/kept-timezone";
+import { createQueryRoot } from "../lib/query/query-root.test-support";
 import { TimezonePrompt } from "./TimezonePrompt";
 
 const device = vi.hoisted(() => ({ zone: "Asia/Tokyo" }));
@@ -20,7 +20,7 @@ const rpc = vi.hoisted(() => ({
     adoptTimezone: vi.fn(async ({ timezone }: { timezone: string }) => ({ timezone }) as Me),
   },
 }));
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/query/rpc", () => ({
   rpc,
   rpcForSpace: () => rpc,
   createSpaceRpc: () => rpc,

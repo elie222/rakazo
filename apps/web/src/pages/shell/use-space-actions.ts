@@ -1,8 +1,8 @@
 import type { RefObject } from "react";
-import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
-import { selectedSpaceId, selectSpace } from "../../lib/rpc";
-import { commitSpaceRename } from "./space-sidebar";
-import type { useSpaceRoster } from "./use-space-roster";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { selectedSpaceId, selectSpace } from "../../lib/query/rpc";
+import { commitSpaceRename } from "./sidebar/space-sidebar";
+import type { useSpaceRoster } from "./sidebar/use-space-roster";
 
 type Roster = ReturnType<typeof useSpaceRoster>;
 

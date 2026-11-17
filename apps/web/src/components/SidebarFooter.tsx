@@ -29,7 +29,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Organization } from "../lib/organizations";
+import type { Organization } from "../lib/auth/organizations";
 import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
 
