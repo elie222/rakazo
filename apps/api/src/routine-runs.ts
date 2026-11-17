@@ -47,7 +47,6 @@ export async function listRoutineRuns(
       createdAt: true,
       startedAt: true,
       completedAt: true,
-      sourceMessage: { select: { runId: true, seq: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
@@ -71,26 +70,6 @@ export async function listRoutineRuns(
       `)
     : [];
   const replyByRun = new Map(messages.map((message) => [message.runId, message.id]));
-  // A run handed to the chat's working run links to that run's first reply after the hand-off.
-  const handedReplies = await Promise.all(
-    runs.map(async (run) => {
-      const handedTo = run.sourceMessage?.runId;
-      if (!handedTo || handedTo === run.id) return null;
-      const reply = await prisma.message.findFirst({
-        where: {
-          runId: handedTo,
-          threadId: run.threadId,
-          role: "bot",
-          seq: { gt: run.sourceMessage!.seq },
-          thread: { spaceId: actor.spaceId },
-        },
-        orderBy: { seq: "asc" },
-        select: { id: true },
-      });
-      return reply ? ([run.id, reply.id] as const) : null;
-    }),
-  );
-  for (const handed of handedReplies) if (handed) replyByRun.set(handed[0], handed[1]);
   return {
     nextCursor,
     runs: runs.map((run) => ({

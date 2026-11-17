@@ -61,11 +61,12 @@ export async function holdRoutineRunForConversation(
   const now = new Date();
   // Not due yet: its wake comes back here.
   if (run.wakeAt && run.wakeAt > now) return;
-  const busy = await deps.prisma.run.findFirst({
-    where: { threadId: run.threadId, ...busyRunWhere(run, now) },
-    select: { id: true },
-  });
-  if (!busy) return;
+  const chatBusy = async () =>
+    (await deps.prisma.run.findFirst({
+      where: { threadId: run.threadId, ...busyRunWhere(run, new Date()) },
+      select: { id: true },
+    })) !== null;
+  if (!(await chatBusy())) return;
   const waitEnds = new Date(run.createdAt.getTime() + ROUTINE_CONVERSATION_WAIT_MS);
   if (now >= waitEnds) {
     const task = await deps.prisma.task.findUnique({
@@ -91,6 +92,8 @@ export async function holdRoutineRunForConversation(
   await wakeRun(deps.jobs, run.id, {
     at: now < waitEnds ? waitEnds : new Date(now.getTime() + ROUTINE_CONVERSATION_WAIT_MS),
   });
+  // A run that ended before the wake time was saved found nothing to start.
+  if (!(await chatBusy())) await wakeRun(deps.jobs, run.id);
 }
 
 /** A run stopped working on its chat: scheduled runs waiting on it may start now. */

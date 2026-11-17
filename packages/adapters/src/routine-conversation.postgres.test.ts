@@ -130,6 +130,28 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
   });
 
+  it("starts at once when the working run ended while its wait was being set", async () => {
+    const scheduled = await createRun({ trigger: "routine", status: "queued" });
+    // The chat reads busy once, as if its run ended right after.
+    let busyOnce = true;
+    const raced = {
+      run: {
+        findFirst: async (args: Parameters<PrismaClient["run"]["findFirst"]>[0]) => {
+          if (!busyOnce) return system.run.findFirst(args);
+          busyOnce = false;
+          return { id: "ended" };
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await holdRoutineRunForConversation({ ...deps, prisma: raced }, scheduled);
+
+    expect(jobs.map((job) => job.availableAt)).toEqual([
+      new Date(scheduled.createdAt.getTime() + ROUTINE_CONVERSATION_WAIT_MS),
+      undefined,
+    ]);
+  });
+
   it("waits behind a run queued ahead of it, but not behind one queued after", async () => {
     const earlier = await createRun({
       trigger: "webhook",
