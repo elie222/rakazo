@@ -249,11 +249,12 @@ function isModelFailureText(text: string) {
   return /^(?:I hit a problem:|Unknown model )/i.test(text.trim());
 }
 
-/** A turn that ended or moved on cancels its pending status; that is no failure. */
+/**
+ * A turn that ended or moved on cancels its pending status; that is no failure. A timeout is
+ * one, so it is logged.
+ */
 function isCancelled(error: unknown) {
-  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")
-    ? error.name === "AbortError"
-    : false;
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function requestPrompt(request: string, secrets: string[]) {
