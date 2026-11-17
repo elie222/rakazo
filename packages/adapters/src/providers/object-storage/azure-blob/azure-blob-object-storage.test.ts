@@ -126,7 +126,7 @@ function storage(prefix = "") {
   return new AzureBlobObjectStorage({
     container: "test-container",
     account: "devstoreaccount1",
-    accountKey: Buffer.from("fake-account-key").toString("base64"),
+    auth: { kind: "account-key", accountKey: Buffer.from("fake-account-key").toString("base64") },
     endpoint,
     prefix,
   });
@@ -188,7 +188,10 @@ describe("AzureBlobObjectStorage", () => {
       {
         container: "test-container",
         account: "devstoreaccount1",
-        accountKey: Buffer.from("fake-account-key").toString("base64"),
+        auth: {
+          kind: "account-key",
+          accountKey: Buffer.from("fake-account-key").toString("base64"),
+        },
         endpoint,
         prefix: "",
       },
@@ -220,7 +223,7 @@ describe("AzureBlobObjectStorage", () => {
     const missing = new AzureBlobObjectStorage({
       container: "missing",
       account: "devstoreaccount1",
-      accountKey: Buffer.from("fake-account-key").toString("base64"),
+      auth: { kind: "account-key", accountKey: Buffer.from("fake-account-key").toString("base64") },
       endpoint,
       prefix: "",
     });
@@ -255,9 +258,98 @@ describe("azureBlobConfigFromEnv", () => {
     ).toEqual({
       container: "homes",
       account: "account",
-      accountKey: "key",
+      auth: { kind: "account-key", accountKey: "key" },
       endpoint: "http://127.0.0.1:10000/account",
       prefix: "rakazo/",
     });
+  });
+});
+
+describe("Azure Blob authentication", () => {
+  const baseEnv = {
+    OBJECT_STORAGE_BUCKET: "homes",
+    OBJECT_STORAGE_ACCESS_KEY_ID: "mystorageaccount",
+  };
+
+  it("keeps the shared key when OBJECT_STORAGE_AUTH is unset", () => {
+    expect(
+      azureBlobConfigFromEnv({ ...baseEnv, OBJECT_STORAGE_SECRET_ACCESS_KEY: "key" }),
+    ).toMatchObject({
+      account: "mystorageaccount",
+      auth: { kind: "account-key", accountKey: "key" },
+    });
+  });
+
+  it.each([
+    [
+      "client-secret",
+      {
+        OBJECT_STORAGE_TENANT: "tenant",
+        OBJECT_STORAGE_CLIENT_ID: "client",
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
+      },
+      { kind: "client-secret", tenantId: "tenant", clientId: "client", clientSecret: "secret" },
+    ],
+    [
+      "client-certificate",
+      {
+        OBJECT_STORAGE_TENANT: "tenant",
+        OBJECT_STORAGE_CLIENT_ID: "client",
+        OBJECT_STORAGE_CERTIFICATE: "-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----",
+      },
+      {
+        kind: "client-certificate",
+        tenantId: "tenant",
+        clientId: "client",
+        certificate: "-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----",
+      },
+    ],
+    [
+      "federated-identity",
+      {
+        OBJECT_STORAGE_TENANT: "tenant",
+        OBJECT_STORAGE_CLIENT_ID: "client",
+        OBJECT_STORAGE_FEDERATED_TOKEN_FILE: "/var/run/secrets/azure/token",
+      },
+      {
+        kind: "federated-identity",
+        tenantId: "tenant",
+        clientId: "client",
+        tokenFilePath: "/var/run/secrets/azure/token",
+      },
+    ],
+    [
+      "managed-identity",
+      { OBJECT_STORAGE_CLIENT_ID: "user-assigned" },
+      { kind: "managed-identity", clientId: "user-assigned" },
+    ],
+    ["managed-identity", {}, { kind: "managed-identity", clientId: undefined }],
+  ] as const)("reads %s", (auth, settings, expected) => {
+    expect(
+      azureBlobConfigFromEnv({ ...baseEnv, OBJECT_STORAGE_AUTH: auth, ...settings })?.auth,
+    ).toEqual(expected);
+  });
+
+  it("names the variable a mode is missing", () => {
+    expect(() =>
+      azureBlobConfigFromEnv({ ...baseEnv, OBJECT_STORAGE_AUTH: "client-secret" }),
+    ).toThrow(/OBJECT_STORAGE_TENANT is required with OBJECT_STORAGE_AUTH=client-secret/);
+    expect(() =>
+      azureBlobConfigFromEnv({
+        ...baseEnv,
+        OBJECT_STORAGE_AUTH: "federated-identity",
+        OBJECT_STORAGE_TENANT: "tenant",
+        OBJECT_STORAGE_CLIENT_ID: "client",
+      }),
+    ).toThrow(/OBJECT_STORAGE_FEDERATED_TOKEN_FILE is required/);
+    expect(() =>
+      azureBlobConfigFromEnv({ ...baseEnv, OBJECT_STORAGE_AUTH: "account-key" }),
+    ).toThrow(/OBJECT_STORAGE_SECRET_ACCESS_KEY is required/);
+  });
+
+  it("rejects an unknown mode instead of falling back to a key", () => {
+    expect(() =>
+      azureBlobConfigFromEnv({ ...baseEnv, OBJECT_STORAGE_AUTH: "default-credential" }),
+    ).toThrow(/OBJECT_STORAGE_AUTH must be one of account-key, client-secret/);
   });
 });

@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type * as AzureSdk from "@azure/storage-blob";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
-import {
-  objectStorageConnectionFromEnv,
-  PART_BYTES,
-  parts,
-} from "../../../object-storage-common.js";
+import { objectStorageBaseFromEnv, PART_BYTES, parts } from "../../../object-storage-common.js";
 
 /** Bounds each request attempt, from sending it to receiving its response headers. */
 const TRY_TIMEOUT_MS = 120_000;
@@ -13,31 +9,137 @@ const TRY_TIMEOUT_MS = 120_000;
 const IDLE_BODY_TIMEOUT_MS = 60_000;
 const DELETE_CONCURRENCY = 16;
 
+/**
+ * How the adapter proves who it is to the storage account. Every mode but the shared key needs
+ * an Azure identity, and each names its own credentials rather than taking an SDK's ambient
+ * chain, so object storage never borrows an identity configured for something else.
+ */
+export type AzureBlobAuth =
+  /** The account's shared key; no Azure identity required. */
+  | { kind: "account-key"; accountKey: string }
+  /** A service principal's client secret. */
+  | { kind: "client-secret"; tenantId: string; clientId: string; clientSecret: string }
+  /** A service principal's certificate, PEM holding the certificate and its private key. */
+  | {
+      kind: "client-certificate";
+      tenantId: string;
+      clientId: string;
+      certificate: string;
+    }
+  /** The service account token Kubernetes workload identity projects into the pod. */
+  | { kind: "federated-identity"; tenantId: string; clientId: string; tokenFilePath: string }
+  /** The host's own managed identity, system-assigned or the named user-assigned one. */
+  | { kind: "managed-identity"; clientId?: string };
+
 export interface AzureBlobObjectStorageConfig {
   /** Container name. */
   container: string;
   /** Storage account name. */
   account: string;
-  accountKey: string;
+  auth: AzureBlobAuth;
   /** Account URL; empty uses `https://<account>.blob.core.windows.net`. */
   endpoint?: string;
   /** Prepended to every key, so one container can hold several deployments. */
   prefix: string;
 }
 
-/** Reads the shared `OBJECT_STORAGE_*` settings: the bucket is the container, the access key id is the account name and the secret is its key. */
+const AUTH_KINDS = [
+  "account-key",
+  "client-secret",
+  "client-certificate",
+  "federated-identity",
+  "managed-identity",
+] as const;
+
+/**
+ * The authentication `OBJECT_STORAGE_AUTH` selects, unset meaning the shared key the backend
+ * started with. A mode names the variables it needs, so a missing one fails at startup with the
+ * variable to set instead of at the first upload.
+ */
+function azureBlobAuthFromEnv(env: NodeJS.ProcessEnv): AzureBlobAuth {
+  const requested = env.OBJECT_STORAGE_AUTH?.trim().toLowerCase() || "account-key";
+  if (!(AUTH_KINDS as readonly string[]).includes(requested)) {
+    throw new Error(`OBJECT_STORAGE_AUTH must be one of ${AUTH_KINDS.join(", ")}`);
+  }
+  const kind = requested as (typeof AUTH_KINDS)[number];
+  const require = (name: string) => {
+    const value = env[name]?.trim();
+    if (!value) throw new Error(`${name} is required with OBJECT_STORAGE_AUTH=${kind}`);
+    return value;
+  };
+  switch (kind) {
+    case "account-key":
+      return { kind, accountKey: require("OBJECT_STORAGE_SECRET_ACCESS_KEY") };
+    case "client-secret":
+      return {
+        kind,
+        tenantId: require("OBJECT_STORAGE_TENANT"),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
+        clientSecret: require("OBJECT_STORAGE_SECRET_ACCESS_KEY"),
+      };
+    case "client-certificate":
+      return {
+        kind,
+        tenantId: require("OBJECT_STORAGE_TENANT"),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
+        certificate: require("OBJECT_STORAGE_CERTIFICATE"),
+      };
+    case "federated-identity":
+      return {
+        kind,
+        tenantId: require("OBJECT_STORAGE_TENANT"),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
+        tokenFilePath: require("OBJECT_STORAGE_FEDERATED_TOKEN_FILE"),
+      };
+    case "managed-identity":
+      return { kind, clientId: env.OBJECT_STORAGE_CLIENT_ID?.trim() || undefined };
+  }
+}
+
+/** Reads the shared `OBJECT_STORAGE_*` settings: the bucket is the container, the access key id is the account name. */
 export function azureBlobConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): AzureBlobObjectStorageConfig | undefined {
-  const connection = objectStorageConnectionFromEnv(env);
-  if (!connection) return undefined;
+  const base = objectStorageBaseFromEnv(env);
+  if (!base) return undefined;
+  const account = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
+  if (!account) {
+    throw new Error(
+      "OBJECT_STORAGE_ACCESS_KEY_ID (the storage account name) is required with OBJECT_STORAGE_BUCKET",
+    );
+  }
   return {
-    container: connection.bucket,
-    account: connection.accessKeyId,
-    accountKey: connection.secretAccessKey,
-    endpoint: connection.endpoint,
-    prefix: connection.prefix,
+    container: base.bucket,
+    account,
+    auth: azureBlobAuthFromEnv(env),
+    endpoint: base.endpoint,
+    prefix: base.prefix,
   };
+}
+
+/** The token credential for an identity mode; the shared key never reaches this. */
+function tokenCredential(
+  identity: typeof import("@azure/identity"),
+  auth: Exclude<AzureBlobAuth, { kind: "account-key" }>,
+) {
+  switch (auth.kind) {
+    case "client-secret":
+      return new identity.ClientSecretCredential(auth.tenantId, auth.clientId, auth.clientSecret);
+    case "client-certificate":
+      return new identity.ClientCertificateCredential(auth.tenantId, auth.clientId, {
+        certificate: auth.certificate,
+      });
+    case "federated-identity":
+      return new identity.WorkloadIdentityCredential({
+        tenantId: auth.tenantId,
+        clientId: auth.clientId,
+        tokenFilePath: auth.tokenFilePath,
+      });
+    case "managed-identity":
+      return auth.clientId === undefined
+        ? new identity.ManagedIdentityCredential()
+        : new identity.ManagedIdentityCredential({ clientId: auth.clientId });
+  }
 }
 
 export class AzureBlobObjectStorage implements ObjectStorage {
@@ -48,13 +150,19 @@ export class AzureBlobObjectStorage implements ObjectStorage {
     private readonly idleBodyMs = IDLE_BODY_TIMEOUT_MS,
   ) {}
 
-  /** The SDK loads on first use, so deployments without object storage never load it. */
+  /** The SDKs load on first use, so deployments without object storage never load them. */
   private connect() {
-    this.container ??= import("@azure/storage-blob").then((sdk) => {
-      const { account, accountKey, endpoint, container } = this.config;
+    this.container ??= Promise.all([
+      import("@azure/storage-blob"),
+      this.config.auth.kind === "account-key" ? undefined : import("@azure/identity"),
+    ]).then(([sdk, identity]) => {
+      const { account, auth, endpoint, container } = this.config;
+      const url = endpoint ?? `https://${account}.blob.core.windows.net`;
       const service = new sdk.BlobServiceClient(
-        endpoint ?? `https://${account}.blob.core.windows.net`,
-        new sdk.StorageSharedKeyCredential(account, accountKey),
+        url,
+        auth.kind === "account-key"
+          ? new sdk.StorageSharedKeyCredential(account, auth.accountKey)
+          : tokenCredential(identity!, auth),
         { retryOptions: { tryTimeoutInMs: TRY_TIMEOUT_MS } },
       );
       return { sdk, client: service.getContainerClient(container) };

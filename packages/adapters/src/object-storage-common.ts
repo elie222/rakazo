@@ -11,6 +11,19 @@ export interface ObjectStorageConnection {
   prefix: string;
 }
 
+/** The bucket, service URL and key prefix every backend reads; undefined without a bucket. */
+export function objectStorageBaseFromEnv(
+  env: NodeJS.ProcessEnv,
+): Pick<ObjectStorageConnection, "bucket" | "endpoint" | "prefix"> | undefined {
+  const bucket = env.OBJECT_STORAGE_BUCKET?.trim();
+  if (!bucket) return undefined;
+  const endpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
+  if (endpoint && !/^https?:\/\//.test(endpoint))
+    throw new Error("OBJECT_STORAGE_ENDPOINT must be an http(s) URL");
+  const prefix = (env.OBJECT_STORAGE_PREFIX?.trim() ?? "").replace(/^\/+|\/+$/g, "");
+  return { bucket, endpoint, prefix: prefix ? `${prefix}/` : "" };
+}
+
 /**
  * The `OBJECT_STORAGE_*` settings every backend shares. `OBJECT_STORAGE_BUCKET` turns object
  * storage on. Credentials are required rather than taken from an SDK's default chain, so object
@@ -19,19 +32,15 @@ export interface ObjectStorageConnection {
 export function objectStorageConnectionFromEnv(
   env: NodeJS.ProcessEnv,
 ): ObjectStorageConnection | undefined {
-  const bucket = env.OBJECT_STORAGE_BUCKET?.trim();
-  if (!bucket) return undefined;
+  const base = objectStorageBaseFromEnv(env);
+  if (!base) return undefined;
   const accessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
   const secretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim();
   if (!accessKeyId || !secretAccessKey)
     throw new Error(
       "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY are required with OBJECT_STORAGE_BUCKET",
     );
-  const endpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
-  if (endpoint && !/^https?:\/\//.test(endpoint))
-    throw new Error("OBJECT_STORAGE_ENDPOINT must be an http(s) URL");
-  const prefix = (env.OBJECT_STORAGE_PREFIX?.trim() ?? "").replace(/^\/+|\/+$/g, "");
-  return { bucket, endpoint, accessKeyId, secretAccessKey, prefix: prefix ? `${prefix}/` : "" };
+  return { ...base, accessKeyId, secretAccessKey };
 }
 
 /** Regroups a stream into buffers of exactly `size` bytes, except a shorter last one. */
