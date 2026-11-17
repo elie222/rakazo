@@ -132,6 +132,8 @@ it("shows a running computer's screen inline while the bot's own run holds it up
   const frame = container.querySelector("iframe");
   expect(frame?.getAttribute("src")).toBe(screenUrl);
   expect(frame?.style.pointerEvents).toBe("none");
+  // Watching only: Tab never moves keyboard focus into the screen.
+  expect(frame?.tabIndex).toBe(-1);
   expect(
     container.querySelector('[data-testid="computer-preview"]')?.getAttribute("data-state"),
   ).toBe("live");

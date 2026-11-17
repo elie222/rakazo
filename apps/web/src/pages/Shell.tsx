@@ -58,8 +58,7 @@ import { PagesProvider, usePagesForChat } from "../lib/pages";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
-import type { Panel } from "../lib/right-panel-state";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
+import { readLastBotTab, rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
@@ -204,10 +203,6 @@ function SpaceShell() {
   const showComposerModel = composerModelPickerPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
-  // The bot panel reopens on the tab it was last left on, so a watch on the computer comes back.
-  const lastBotTab = useRef<Panel>("computer");
-  if (panel === "computer" || panel === "routines" || panel === "pages" || panel === "settings")
-    lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
@@ -437,7 +432,14 @@ function SpaceShell() {
     if (chatPanelOpen) setPanel(null);
     else if (inGroup) setPanel("group-settings");
     else if (active) {
-      setPanel(lastBotTab.current);
+      // The bot panel reopens on the tab this bot was last left on, so a watch on the computer comes back.
+      setPanel(
+        readLastBotTab(
+          userId && bootstrapMe?.spaceId
+            ? rightPanelStorageKey(userId, bootstrapMe.spaceId, "bot", active.id)
+            : null,
+        ),
+      );
       // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
       void refreshThread(active.id).catch(() => undefined);
     } else return false;

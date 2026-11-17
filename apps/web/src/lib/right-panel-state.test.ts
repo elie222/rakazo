@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  readLastBotTab,
   readRightPanelState,
   rightPanelStorageKey,
   writeRightPanelState,
@@ -67,5 +68,34 @@ describe("right panel preferences", () => {
     // An import is not reopened after a reload either.
     writeRightPanelState(key, "import-agent");
     expect(readRightPanelState(key)).toEqual({ panel: "settings" });
+  });
+  it("keeps a bot's last tab while its panel is closed, across reloads", () => {
+    const entries = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => entries.set(key, value),
+    });
+    expect(readLastBotTab("bot-a")).toBe("computer");
+    writeRightPanelState("bot-a", "pages");
+    writeRightPanelState("bot-b", "settings");
+    writeRightPanelState("bot-a", null);
+    expect(readRightPanelState("bot-a")).toEqual({ panel: null });
+    expect(readLastBotTab("bot-a")).toBe("pages");
+    expect(readLastBotTab("bot-b")).toBe("settings");
+    // A routine editor or group panel is not a tab and keeps the one before it.
+    writeRightPanelState("bot-a", "routine", "routine-a");
+    writeRightPanelState("bot-a", null);
+    expect(readLastBotTab("bot-a")).toBe("pages");
+  });
+  it("falls back to the Computer tab with no key, no entry or unreadable storage", () => {
+    vi.stubGlobal("localStorage", { getItem: () => '{"panel":null,"tab":"unknown"}' });
+    expect(readLastBotTab(null)).toBe("computer");
+    expect(readLastBotTab("bot-a")).toBe("computer");
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("denied");
+      },
+    });
+    expect(readLastBotTab("bot-a")).toBe("computer");
   });
 });
