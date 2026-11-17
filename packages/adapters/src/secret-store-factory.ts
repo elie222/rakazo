@@ -151,6 +151,17 @@ export class ComposedSecretStore extends SecretChanges implements SecretStore {
   isRemote(ref: string): boolean {
     return Boolean(this.remote?.isRemote(ref));
   }
+  async listRemote(before: Date, signal: AbortSignal): Promise<string[]> {
+    return (await this.remote?.listRemote(before, signal)) ?? [];
+  }
+  async deleteListed(ref: string, signal: AbortSignal): Promise<void> {
+    if (!this.remote) return;
+    try {
+      await this.remote.deleteListed(ref, signal);
+    } finally {
+      await this.publish(ref);
+    }
+  }
 
   redact(_value: string): string {
     return "[redacted]";

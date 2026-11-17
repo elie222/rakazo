@@ -525,6 +525,13 @@ export interface SecretStore {
   delete(ref: string, context: SecretContext): Promise<void>;
   /** Whether the ref names a remote resource, which stays until `delete` removes it. */
   isRemote(ref: string): boolean;
+  /**
+   * The remote entries this store wrote before `before`, for the sweep that removes the ones no
+   * row holds. A store without remote entries leaves it out.
+   */
+  listRemote?(before: Date, signal: AbortSignal): Promise<string[]>;
+  /** Deletes a listed entry without the record it was written under, once no row holds it. */
+  deleteListed?(ref: string, signal: AbortSignal): Promise<void>;
   redact(value: string): string;
   onChange(listener: SecretChangeListener): () => void;
   start(): Promise<void>;

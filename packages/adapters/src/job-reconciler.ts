@@ -126,6 +126,8 @@ export function createJobReconciler(
     reconcileSecurityEventRetention?: () => Promise<void>;
     reconcileAuditLog?: () => Promise<void>;
     reconcileHomeStorage?: () => Promise<void>;
+    /** Removes secret store entries no row holds, which a crash or a failed delete left. */
+    reconcileSecretStore?: () => Promise<void>;
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
     /** Gives chat messages whose backup job was lost a new one. */
@@ -171,6 +173,7 @@ export function createJobReconciler(
     deps.reconcileSecurityEventRetention,
     deps.reconcileAuditLog,
     deps.reconcileHomeStorage,
+    deps.reconcileSecretStore,
     deps.reconcileIdleComputers,
     deps.reconcileDeadJobs,
     deps.reconcileChatDelivery,

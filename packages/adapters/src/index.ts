@@ -253,6 +253,7 @@ export * from "./secret-cleanup.js";
 export * from "./secret-migration.js";
 export * from "./secret-persistence.js";
 export * from "./secret-store-factory.js";
+export * from "./secret-store-sweep.js";
 export * from "./secrets.js";
 export * from "./skill-tools.js";
 export * from "./smtp-email.js";

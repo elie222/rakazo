@@ -324,7 +324,11 @@ export function createRunReconciler(
   },
   workerOnly: Pick<
     JobReconcilerDeps,
-    "leadership" | "reconcileRoutineRetryNotices" | "reconcileHomeStorage" | "reconcileDeadJobs"
+    | "leadership"
+    | "reconcileRoutineRetryNotices"
+    | "reconcileHomeStorage"
+    | "reconcileSecretStore"
+    | "reconcileDeadJobs"
   > = {},
   chat: { messagingDelivery?: MessagingDelivery; teamChat?: TeamChat } = {},
 ) {

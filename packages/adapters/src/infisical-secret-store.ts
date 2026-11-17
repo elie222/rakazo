@@ -29,12 +29,20 @@ export interface InfisicalSecretStoreOptions {
   now?: () => number;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
-type RestResult = { accessToken?: string; expiresIn?: number; secret?: { secretValue?: string } };
+type RestResult = {
+  accessToken?: string;
+  expiresIn?: number;
+  secret?: { secretValue?: string };
+  secrets?: Array<{ secretKey?: unknown; createdAt?: unknown }>;
+};
 type CacheEntry = { value: string; expires: number; timer: ReturnType<typeof setTimeout> };
 const SECRETS_PATH = "/api/v4/secrets";
 // Infisical rate limits per 60s window; a longer wait is the caller's retry, not ours.
 const MAX_RETRY_AFTER_MS = 5_000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+/** A folder listing carries every key's name and dates, without values. */
+const MAX_LIST_RESPONSE_BYTES = 64 * 1024 * 1024;
+const KEY_PATTERN = /^rakazo_[a-f0-9]{24}_[a-f0-9-]{36}$/;
 
 /** Targeted REST reads only: no plaintext folder snapshot. */
 export class InfisicalSecretStore extends SecretChanges implements SecretStore {
@@ -139,11 +147,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     const recordId = typeof context === "string" ? context : context.recordId;
     const prefix = `rakazo_${credentialDigest(recordId).slice(0, 24)}_`;
     const key = ref.slice(INFISICAL_REF_PREFIX.length);
-    if (
-      !ref.startsWith(INFISICAL_REF_PREFIX) ||
-      !key.startsWith(prefix) ||
-      !/^rakazo_[a-f0-9]{24}_[a-f0-9-]{36}$/.test(key)
-    )
+    if (!ref.startsWith(INFISICAL_REF_PREFIX) || !key.startsWith(prefix) || !KEY_PATTERN.test(key))
       throw new SecretNotFoundError();
     return key;
   }
@@ -267,6 +271,37 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
   isRemote(ref: string): boolean {
     return ref.startsWith(INFISICAL_REF_PREFIX);
   }
+  async listRemote(before: Date, signal: AbortSignal): Promise<string[]> {
+    const query = this.readQuery();
+    query.set("viewSecretValue", "false");
+    query.set("recursive", "false");
+    const result = await this.request(
+      `${SECRETS_PATH}?${query}`,
+      "GET",
+      undefined,
+      signal,
+      MAX_LIST_RESPONSE_BYTES,
+    );
+    if (!Array.isArray(result.secrets)) throw new SecretStoreUnavailableError();
+    return result.secrets.flatMap(({ secretKey, createdAt }) => {
+      if (typeof secretKey !== "string" || !KEY_PATTERN.test(secretKey)) return [];
+      // An entry without a readable date is never old enough to remove.
+      const written = typeof createdAt === "string" ? Date.parse(createdAt) : Number.NaN;
+      return written < before.getTime() ? [INFISICAL_REF_PREFIX + secretKey] : [];
+    });
+  }
+  async deleteListed(ref: string, signal: AbortSignal): Promise<void> {
+    const key = ref.slice(INFISICAL_REF_PREFIX.length);
+    if (!ref.startsWith(INFISICAL_REF_PREFIX) || !KEY_PATTERN.test(key))
+      throw new SecretNotFoundError();
+    try {
+      await this.request(`${SECRETS_PATH}/${key}`, "DELETE", this.scope(), signal);
+    } catch (error) {
+      if (!(error instanceof SecretNotFoundError)) throw error;
+    } finally {
+      this.invalidate(ref);
+    }
+  }
   redact(_value: string): string {
     return "[redacted]";
   }
@@ -297,12 +332,13 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     method: string,
     body?: unknown,
     signal?: AbortSignal,
+    maxBytes = MAX_RESPONSE_BYTES,
   ): Promise<RestResult> {
     try {
       // Caller cancellation doesn't cancel a shared login used by other requests.
       const token = await this.withCancellation(this.authenticate(), signal);
       try {
-        return await this.http(path, method, body, token, signal);
+        return await this.http(path, method, body, token, signal, maxBytes);
       } catch (error) {
         if (!(error instanceof SecretStoreUnavailableError) || error.status !== 401) throw error;
         if (this.token?.value === token) this.token = undefined;
@@ -312,6 +348,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
           body,
           await this.withCancellation(this.authenticate(), signal),
           signal,
+          maxBytes,
         );
       }
     } catch (error) {
@@ -335,6 +372,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     body?: unknown,
     token?: string,
     callerSignal?: AbortSignal,
+    maxBytes = MAX_RESPONSE_BYTES,
   ): Promise<RestResult> {
     if (this.closed) throw new SecretStoreUnavailableError();
     const signal = AbortSignal.any([
@@ -383,11 +421,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
             this.degraded = false;
             return {};
           }
-          const result = await readBoundedJsonResponse<RestResult>(
-            response,
-            MAX_RESPONSE_BYTES,
-            signal,
-          );
+          const result = await readBoundedJsonResponse<RestResult>(response, maxBytes, signal);
           this.degraded = false;
           return result;
         },

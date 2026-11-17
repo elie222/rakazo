@@ -27,7 +27,9 @@ authentication and secrets without transport encryption.
 
 Create that folder first. Give a universal-auth machine identity read, create,
 and delete permissions only in this project, environment, and folder. Use a
-dedicated folder and HTTPS outside a trusted local deployment. Infisical can be
+dedicated folder for each deployment, since the worker removes keys in it that
+its own database no longer refers to, and HTTPS outside a trusted local
+deployment. Infisical can be
 self-hosted; no hosted service or SDK is required. Infisical configuration is
 validated only when selected.
 
@@ -55,7 +57,7 @@ remote refs after the database commit. Rollbacks clean up unique new writes.
 Agent secret transaction retries write a fresh remote key per attempt. Failed
 remote writes attempt deletion with an independent two-second cleanup deadline.
 Cleanup is best effort and failures produce redacted warnings. Retry failed
-cleanup before revoking machine-identity access; there is no age-based pruning.
+cleanup before revoking machine-identity access.
 Credential rows, bot secrets, vault items and integration provider settings
 (the replacement, row deletion, parent deletion and rollback above), computer
 settings, messaging workspace credentials, payment wallet credentials,
@@ -72,8 +74,14 @@ settings can share a ref, so for them that read counts every row of all four
 tables, in every Space. Only Infisical refs are recorded: an encrypted ref is the sealed
 value itself, leaves with its row, and is never copied into a job. Every other
 path is best effort as described above: a failed delete is logged, not retried.
+
 A process crash between the external write and database persistence can leave an
-unreferenced key; reconcile such keys against database refs during maintenance.
+unreferenced key, as can a delete that was only logged. Once an hour the worker
+lists the folder's key names and dates (never their values) and deletes keys
+older than a day that no database row refers to, checking every column that
+holds credential refs, in every Space, again just before each delete. A pass
+deletes at most 100 keys, and deletes nothing when it cannot read those columns
+or when no listed key is referred to at all.
 
 ## Availability
 

@@ -6,6 +6,8 @@ const errorNames = { GET: "GetSecretByName", POST: "CreateSecret", DELETE: "Dele
 /** Strict offline REST fake shared by provider and credential-boundary tests. */
 export function infisicalFake() {
   const values = new Map<string, string>();
+  /** When each key was written; a test backdates one to make it old enough to sweep. */
+  const created = new Map<string, Date>();
   const folders = new Set(["/rakazo"]);
   const statuses: number[] = [];
   const loginStatuses: number[] = [];
@@ -43,6 +45,30 @@ export function infisicalFake() {
     }
     expect(headers.get("authorization")).toMatch(/^Bearer token-[1-9][0-9]*$/);
     expect(Number(headers.get("authorization")?.split("-").at(-1))).toBeLessThanOrEqual(logins);
+    if (url.pathname === "/api/v4/secrets") {
+      expect(init?.method).toBe("GET");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        projectId: "fake-project",
+        environment: "test",
+        secretPath: "/rakazo",
+        type: "shared",
+        expandSecretReferences: "false",
+        includeImports: "false",
+        viewSecretValue: "false",
+        recursive: "false",
+      });
+      const status = statuses.shift();
+      if (status && status !== 200) return failure(status);
+      return Response.json({
+        secrets: [...values.keys()].map((secretKey) => ({
+          secretKey,
+          secretValue: "<hidden-by-infisical>",
+          secretValueHidden: true,
+          createdAt: created.get(secretKey)?.toISOString(),
+        })),
+        imports: [],
+      });
+    }
     expect(url.pathname).toMatch(
       /^\/api\/v4\/secrets\/(rakazo_[a-f0-9]{24}_[a-f0-9-]{36}|rakazo_start_check)$/,
     );
@@ -76,6 +102,7 @@ export function infisicalFake() {
       );
     if (method === "POST") {
       values.set(key, body.secretValue);
+      created.set(key, new Date());
       return Response.json({ secret: { secretValue: body.secretValue } });
     }
     if (!values.has(key))
@@ -90,6 +117,7 @@ export function infisicalFake() {
     if (method === "DELETE") {
       const secretValue = values.get(key);
       values.delete(key);
+      created.delete(key);
       return Response.json({ secret: { secretValue } });
     }
     return Response.json({ secret: { secretValue: values.get(key) } });
@@ -109,6 +137,7 @@ export function infisicalFake() {
   };
   return {
     values,
+    created,
     folders,
     statuses,
     loginStatuses,
