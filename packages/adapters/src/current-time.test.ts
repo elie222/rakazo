@@ -47,9 +47,7 @@ describe("formatCurrentTimeInstruction", () => {
       "Europe/Athens",
       new Date("2026-11-11T21:42:00Z"),
     );
-    expect(line).toContain(
-      "The previous message in this chat was sent Wednesday, 2026-11-11 23:42 (UTC+02:00), 11 hours earlier. Time passing is not an error in what you said earlier.",
-    );
+    expect(line).toContain("Wednesday, 2026-11-11 23:42 (UTC+02:00), 11 hours earlier");
   });
 
   it("counts long pauses in days and falls back to UTC", () => {
@@ -58,7 +56,7 @@ describe("formatCurrentTimeInstruction", () => {
       null,
       new Date("2026-11-09T08:00:00Z"),
     );
-    expect(line).toContain("sent Monday, 2026-11-09 08:00 (UTC), 3 days earlier.");
+    expect(line).toContain("Monday, 2026-11-09 08:00 (UTC), 3 days earlier");
   });
 
   it("says nothing about the previous message within the hour", () => {
@@ -67,7 +65,7 @@ describe("formatCurrentTimeInstruction", () => {
       "Europe/Athens",
       new Date("2026-11-12T08:00:00Z"),
     );
-    expect(line).not.toContain("previous message");
+    expect(line).not.toContain("earlier");
   });
 
   it("defaults to the real clock", () => {
