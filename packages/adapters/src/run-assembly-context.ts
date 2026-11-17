@@ -31,7 +31,6 @@ import type { RunContext, RunState } from "./run-context.js";
 import { restoreTurnCheckpointEffects } from "./run-context.js";
 import { buildApprovalContinuation } from "./run-effects.js";
 import {
-  BOT_DIRECTORY_LIMIT,
   connectedPluginsInstruction,
   taughtSkillsInstruction,
   voiceCallInstruction,
@@ -272,7 +271,7 @@ export async function buildTurnPrompt(
   const { takeoverResume } = hold.takeover;
   const { checkpointModelResolver, savedComputerMode } = parts.saved;
   let { turnCheckpoint } = parts.saved;
-  const { agentSkills, bot, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
+  const { agentSkills, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
     parts.records;
   const { connectedPlugins, context } = parts.connected;
   const { compactedHistory, people } = parts.thread;
@@ -422,25 +421,12 @@ export async function buildTurnPrompt(
       )
     : history;
   const runtimeHistory = [...historicalContext, ...historyWithImages];
-  // Without a roster a bot only knows the bots it spawned itself.
-  const [teammates, groupDirectory] = await Promise.all([
-    conversationThread.groupId
-      ? []
-      : deps.prisma.bot.findMany({
-          where: {
-            spaceId: run.spaceId,
-            archivedAt: null,
-            id: { not: bot.id },
-            thread: { isNot: null },
-          },
-          select: { id: true, name: true, description: true },
-          orderBy: { createdAt: "asc" },
-          take: BOT_DIRECTORY_LIMIT,
-        }),
-    !conversationThread.groupId ? loadBotGroupDirectory(deps.prisma, run) : undefined,
-  ]);
+  const groupDirectory = conversationThread.groupId
+    ? undefined
+    : await loadBotGroupDirectory(deps.prisma, run);
   const botDirectory =
-    [renderBotDirectory(teammates), groupDirectory].filter(Boolean).join("\n\n") || undefined;
+    [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
+    undefined;
   return {
     pluginLine,
     taughtSkillsLine,
