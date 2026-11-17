@@ -37,7 +37,7 @@ import {
   validateUpdateRequest,
 } from "@rakazo/core";
 import type { Logger } from "@rakazo/logging";
-import { SERVICE_NAMES } from "@rakazo/logging";
+import { bestEffort, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import type { Context } from "hono";
@@ -48,6 +48,7 @@ import {
   cacheComputerImage,
   cacheRuntimeBaseline,
   PREVIOUS_COMPUTER_TAG_ENV,
+  pruneComputerCache,
   readScheduledComputer,
   readScheduledRuntime,
 } from "./runtime-state.js";
@@ -856,6 +857,11 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
+      if (input.computerTags)
+        await bestEffort(
+          "prune obsolete computer rollback cache",
+          readEnvFile().then((env) => pruneComputerCache(config, env, run)),
+        );
       return record;
     } finally {
       if (!record.ok && checkoutNeedsRestore && !(await restoreCheckout())) {

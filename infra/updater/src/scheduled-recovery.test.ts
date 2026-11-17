@@ -1,17 +1,20 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { UpdaterCommandRunner } from "./index.js";
 import { createUpdaterApp } from "./index.js";
+import { pruneComputerCache } from "./runtime-state.js";
 import { resolveUpdaterConfig } from "./updater-logic.js";
 
 const older = "1".repeat(40);
 const newer = "2".repeat(40);
 const appImage = "ghcr.io/elie222/rakazo/app";
 const computerImage = "ghcr.io/elie222/rakazo/computer";
-const cachedOlder = `cached-${"1".repeat(64)}`;
-const cachedNewer = `cached-${"2".repeat(64)}`;
+const cachePrefix = `cached-${createHash("sha256").update("cache-test").digest("hex").slice(0, 16)}-`;
+const cachedOlder = `${cachePrefix}${"1".repeat(64)}`;
+const cachedNewer = `${cachePrefix}${"2".repeat(64)}`;
 const token = "fake-scheduled-recovery-token-00000000";
 const directories: string[] = [];
 afterEach(async () => {
@@ -23,7 +26,11 @@ async function fixture(env: string, commit: string, computers = false) {
   directories.push(dir);
   const envFile = path.join(dir, ".env");
   await writeFile(envFile, env);
-  const config = resolveUpdaterConfig({ RAKAZO_DEPLOY_DIR: dir, RAKAZO_UPDATER_TOKEN: token });
+  const config = resolveUpdaterConfig({
+    RAKAZO_DEPLOY_DIR: dir,
+    RAKAZO_UPDATER_TOKEN: token,
+    COMPOSE_PROJECT_NAME: "cache-test",
+  });
   if (computers) config.updateServices = ["api", "worker", "web", "supervisor", "computer"];
   const state = {
     versions: {
@@ -66,6 +73,11 @@ async function fixture(env: string, commit: string, computers = false) {
       if (!service) throw new Error("Unexpected container");
       if (args[0] === "inspect") return ok(`sha256:${state.versions[service]?.[0]?.repeat(64)}`);
       return ok(args.at(-1) === "process.env.GIT_SHA" ? state.versions[service] : state.computer);
+    }
+    if (args[0] === "image" && args[1] === "ls") return ok(Object.keys(state.images).join("\n"));
+    if (args[0] === "image" && args[1] === "rm") {
+      delete state.images[args[2]?.split(":").at(-1) ?? ""];
+      return ok();
     }
     if (args[0] === "image" && args[1] === "inspect") {
       const tag = args[2]?.split(":").at(-1) ?? "";
@@ -212,6 +224,52 @@ describe("scheduled release state and recovery", () => {
     const deployments = subject.calls.filter(({ args }) => args.includes("up")).length;
     await subject.app.applyScheduledUpdate();
     expect(subject.calls.filter(({ args }) => args.includes("up"))).toHaveLength(deployments);
+  });
+
+  it("continues cleanup when Docker protects an image used by a container", async () => {
+    const busy = `${cachePrefix}${"3".repeat(64)}`;
+    const obsolete = `${cachePrefix}${"4".repeat(64)}`;
+    const removed: string[] = [];
+    const config = resolveUpdaterConfig({
+      RAKAZO_DEPLOY_DIR: "/tmp",
+      RAKAZO_UPDATER_TOKEN: token,
+      COMPOSE_PROJECT_NAME: "cache-test",
+    });
+    const run: UpdaterCommandRunner = async (_command, args) => {
+      if (args[1] === "ls")
+        return { ok: true, exitCode: 0, stdout: `${busy}\n${obsolete}`, output: "" };
+      removed.push(args[2] ?? "");
+      const ok = args[2] !== `${computerImage}:${busy}`;
+      return { ok, exitCode: ok ? 0 : 1, stdout: "", output: ok ? "" : "image is in use" };
+    };
+    await expect(pruneComputerCache(config, "", run)).rejects.toThrow(busy);
+    expect(removed).toEqual([`${computerImage}:${busy}`, `${computerImage}:${obsolete}`]);
+  });
+
+  it("removes obsolete cache tags after success while preserving rollback and ordinary tags", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
+    );
+    const obsolete = `${cachePrefix}${"3".repeat(64)}`;
+    subject.state.images[obsolete] = `sha256:${"3".repeat(64)}`;
+    subject.state.images[`cached-other-project-${"5".repeat(64)}`] = `sha256:${"5".repeat(64)}`;
+    subject.state.images["operator-backup"] = `sha256:${"4".repeat(64)}`;
+    subject.state.computer = `${computerImage}:latest`;
+    subject.state.failTarget = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.state.images[obsolete]).toBeDefined();
+    subject.state.failTarget = false;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.images[obsolete]).toBeUndefined();
+    expect(subject.state.images[cachedOlder]).toBeDefined();
+    expect(subject.state.images["operator-backup"]).toBeDefined();
+    expect(subject.state.images[`cached-other-project-${"5".repeat(64)}`]).toBeDefined();
+    expect(subject.state.images.latest).toBeDefined();
+    expect(subject.calls.filter(({ args }) => args[1] === "rm").map(({ args }) => args)).toEqual([
+      ["image", "rm", `${computerImage}:${obsolete}`],
+    ]);
   });
 
   it("refuses an update before changing pins when the previous computer cannot be cached", async () => {

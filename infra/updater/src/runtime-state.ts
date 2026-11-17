@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { RemoteRelease } from "@rakazo/core";
 import {
   commitImageTag,
@@ -15,6 +16,9 @@ export const COMPUTER_TAG_ENV = "RAKAZO_COMPUTER_IMAGE_TAG";
 export const PREVIOUS_COMPUTER_TAG_ENV = "RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS";
 const COMPUTER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/computer`;
 const READ_TIMEOUT_MS = 120_000;
+function computerCachePrefix(config: UpdaterConfig): string {
+  return `cached-${createHash("sha256").update(config.projectName).digest("hex").slice(0, 16)}-`;
+}
 
 interface RuntimeService {
   service: string;
@@ -144,11 +148,41 @@ export async function cacheComputerImage(
   const id = inspected.stdout.trim();
   if (!inspected.ok || !/^sha256:[0-9a-f]{64}$/.test(id))
     throw new UpdateRefused("Could not cache the previous computer image. Nothing was recreated.");
-  const cachedTag = `cached-${id.slice(7)}`;
+  const cachedTag = `${computerCachePrefix(config)}${id.slice(7)}`;
   const tagged = await run("docker", ["image", "tag", id, imageRef(image, cachedTag)], options);
   if (!tagged.ok)
     throw new UpdateRefused("Could not cache the previous computer image. Nothing was recreated.");
   return cachedTag;
+}
+
+/** Remove only obsolete updater cache tags; Docker protects images still used by containers. */
+export async function pruneComputerCache(
+  config: UpdaterConfig,
+  env: string,
+  run: UpdaterCommandRunner,
+): Promise<void> {
+  const image = readEnvAssignment(env, "RAKAZO_COMPUTER_IMAGE") || COMPUTER_IMAGE;
+  const retained = new Set([
+    readEnvAssignment(env, COMPUTER_TAG_ENV),
+    readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV),
+  ]);
+  const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
+  const listed = await run("docker", ["image", "ls", image, "--format", "{{.Tag}}"], options);
+  if (!listed.ok) throw new Error("Could not list computer rollback cache tags.");
+  const prefix = computerCachePrefix(config);
+  const failed: string[] = [];
+  for (const tag of new Set(listed.stdout.trim().split(/\s+/))) {
+    if (
+      !tag.startsWith(prefix) ||
+      !/^[0-9a-f]{64}$/.test(tag.slice(prefix.length)) ||
+      retained.has(tag)
+    )
+      continue;
+    const removed = await run("docker", ["image", "rm", imageRef(image, tag)], options);
+    if (!removed.ok) failed.push(tag);
+  }
+  if (failed.length > 0)
+    throw new Error(`Could not remove obsolete computer cache tags: ${failed.join(", ")}.`);
 }
 
 export async function readScheduledComputer(
