@@ -21,6 +21,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  toolkitDisplayName,
   withSharedAccessHint,
 } from "./composio-connector.js";
 
@@ -1657,6 +1658,11 @@ describe("composio tool mapping", () => {
       connectIds: [],
       revokeIds: ["row-err"],
     });
+  });
+
+  it("names the business-only messaging toolkit for what it signs in to", () => {
+    expect(toolkitDisplayName({ slug: "WHATSAPP", name: "WhatsApp" })).toBe("WhatsApp Business");
+    expect(toolkitDisplayName({ slug: "GITHUB", name: "GitHub" })).toBe("GitHub");
   });
 
   it("filters the catalog by name or slug", () => {

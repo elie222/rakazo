@@ -149,6 +149,13 @@ function activeSlugs(toolkits: ToolkitConnection[]): string[] {
     .map((toolkit) => toolkit.slug);
 }
 
+/** Names the directory gets wrong: this toolkit only signs in to a business account. */
+const TOOLKIT_NAMES: Record<string, string> = { whatsapp: "WhatsApp Business" };
+
+export function toolkitDisplayName(toolkit: { slug: string; name: string }): string {
+  return TOOLKIT_NAMES[composioSlugKey(toolkit.slug)] ?? toolkit.name;
+}
+
 function composioSlugKey(slug: string): string {
   return slug.trim().toLowerCase();
 }
@@ -553,7 +560,7 @@ export class ComposioConnector implements ComposioProvider {
     ]);
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
-      name: toolkit.name,
+      name: toolkitDisplayName(toolkit),
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
       ...(!toolkit.isNoAuth && needsSetup.has(composioSlugKey(toolkit.slug))
