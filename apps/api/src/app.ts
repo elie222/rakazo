@@ -820,6 +820,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           ),
         );
       },
+      resolveAddresses: messaging?.resolveAddresses?.bind(messaging),
       openSignup: env.messagingOpenSignup,
     },
     env: {

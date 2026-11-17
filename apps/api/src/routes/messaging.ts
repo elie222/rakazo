@@ -57,7 +57,10 @@ export function messagingRoutes(ctx: RouterContext) {
         return {
           enabled: deps.messaging?.enabled ?? false,
           providers: deps.messaging?.providers ?? [],
-          addresses: deps.messaging?.addresses ?? {},
+          addresses:
+            (await deps.messaging?.resolveAddresses?.(context.signal)) ??
+            deps.messaging?.addresses ??
+            {},
           openSignup: deps.messaging?.openSignup ?? false,
           identities: await Promise.all(
             identities.map((identity) => messagingIdentityDto(deps.prisma, identity)),

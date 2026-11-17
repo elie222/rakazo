@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import { deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { AdapterPostableMessage, CardElement, Root } from "chat";
 import {
@@ -110,6 +111,7 @@ function telegramPlatform(
     get address() {
       return adapter.verifiedLinkAddress;
     },
+    resolveAddress: (signal) => adapter.resolveLinkAddress(signal),
     capabilities: { direct: true, groups: true, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
@@ -171,15 +173,34 @@ export function telegramFallbackText(
   return plainText.trim() ? plainText : markdown;
 }
 
-/** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
+/** Authenticated linking identity and plain-text rendering absent from the SDK surface. */
 class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
   verifiedLinkAddress: string | undefined;
+  private addressLookup: Promise<string | undefined> | undefined;
+
+  resolveLinkAddress(signal?: AbortSignal): Promise<string | undefined> {
+    this.addressLookup ??= this.telegramFetch("getMe", undefined, {
+      signal: deadlineSignal(10_000, signal),
+    })
+      .then(
+        () => this.verifiedLinkAddress,
+        () => {
+          // Provider failures can include credential-bearing request URLs.
+          throw new Error("Messaging link address unavailable");
+        },
+      )
+      .finally(() => {
+        this.addressLookup = undefined;
+      });
+    return this.addressLookup;
+  }
 
   protected override async telegramFetch<TResult>(
     method: string,
     payload?: Record<string, unknown> | FormData,
     request?: { signal?: AbortSignal },
   ): Promise<TResult> {
+    if (method === "getMe") this.verifiedLinkAddress = undefined;
     const result = await super.telegramFetch<TResult>(method, payload, request);
     if (method === "getMe") {
       const identity = asRecord(result);

@@ -653,6 +653,8 @@ export interface MessagingSurface {
   describe(): AdapterDescriptor<{ providers: string[] }>;
   /** Enabled platforms and what each supports. */
   platforms(): MessagingPlatformDescriptor[];
+  /** Resolve public linking destinations on demand, including recovery after a startup outage. */
+  resolveAddresses?(signal?: AbortSignal): Promise<Record<string, string>>;
   /**
    * Verify and process one platform webhook request. Parsed events reach the
    * sink registered via onInbound before the returned response resolves.

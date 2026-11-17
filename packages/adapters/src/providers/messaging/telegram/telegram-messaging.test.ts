@@ -1,5 +1,6 @@
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
 import type { MessagingEnvironmentValues } from "../../../messaging-platforms.js";
@@ -85,6 +86,54 @@ describe("Telegram authenticated linking destination", () => {
     );
     await surface.initialize();
     expect(surface.platforms()[0]?.address).toBeUndefined();
+    await surface.shutdown();
+  });
+
+  it("hides a previously verified address after a failed refresh and recovers on demand", async () => {
+    const { surface } = createSurface();
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("identity unavailable");
+      }),
+    );
+    expect(await surface.resolveAddresses()).toEqual({});
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ ok: true, result: { id: 999, is_bot: true, username: "renamed_testbot" } }),
+      ),
+    );
+    expect(await surface.resolveAddresses()).toEqual({ telegram: "@renamed_testbot" });
+    await surface.shutdown();
+  });
+
+  it("recovers a startup identity outage when concurrent settings reads request the destination", async () => {
+    const { surface } = createSurface();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("startup outage");
+      }),
+    );
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn(async () => lookup.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const first = surface.resolveAddresses();
+    const second = surface.resolveAddresses();
+    lookup.resolve(
+      Response.json({ ok: true, result: { id: 999, is_bot: true, username: "testbot" } }),
+    );
+    expect(await Promise.all([first, second])).toEqual([
+      { telegram: "@testbot" },
+      { telegram: "@testbot" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledOnce();
     await surface.shutdown();
   });
 

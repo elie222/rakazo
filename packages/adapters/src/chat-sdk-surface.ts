@@ -16,7 +16,7 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { trimEndChars } from "@rakazo/contracts";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./providers/messaging/lark/text-parts.js";
@@ -83,6 +83,8 @@ export interface MessagingPlatform {
   adapterName?: string;
   /** The line people message to reach this deployment (a phone number), when it has one. */
   address?: string;
+  /** Refresh an authenticated public destination without starting an inbound receiver. */
+  resolveAddress?: (signal?: AbortSignal) => Promise<string | undefined>;
   /** Deterministic 1:1 thread id for platforms without openDM (sendblue). */
   directThreadId?: (address: string) => string;
   /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts, WhatsApp statuses). */
@@ -255,6 +257,18 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       capabilities: platform.capabilities,
       address: platform.address,
     }));
+  }
+
+  async resolveAddresses(signal?: AbortSignal): Promise<Record<string, string>> {
+    const entries = await Promise.all(
+      [...this.byProvider.values()].map(async ({ platform }) => {
+        const address = platform.resolveAddress
+          ? await bestEffort("resolve messaging link address", platform.resolveAddress(signal))
+          : platform.address;
+        return address ? [[platform.provider, address] as const] : [];
+      }),
+    );
+    return Object.fromEntries(entries.flat());
   }
 
   onInbound(sink: (event: MessagingInboundEvent) => Promise<void>): void {

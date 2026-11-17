@@ -28,8 +28,9 @@ MESSAGING_OPEN_SIGNUP=false
 Use a cryptographically random webhook secret (for example, 32 random bytes encoded as hex).
 The public linking destination is discovered from the authenticated `getMe` response when the
 adapter initializes. No username setting is needed. Until identity lookup succeeds, no destination
-is advertised. A legacy SDK username override cannot change the displayed destination. Restart
-the deployment after renaming the bot so its verified identity is refreshed.
+is advertised. Opening messaging settings refreshes the authenticated destination and can recover
+from a startup identity outage without an inbound message or restart. Failed refreshes hide the
+previous address. A legacy SDK username override cannot change the displayed destination.
 
 The standard Compose files forward these settings. Named bots additionally use
 `TELEGRAM_BOT_TOKEN_SUPPORT` and `TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT`. Forward both through a

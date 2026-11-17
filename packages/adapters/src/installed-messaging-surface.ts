@@ -47,6 +47,18 @@ export class InstalledMessagingSurface implements MessagingSurface {
       },
     ];
   }
+  async resolveAddresses(signal?: AbortSignal): Promise<Record<string, string>> {
+    const addresses =
+      (await this.fallback?.resolveAddresses?.(signal)) ??
+      Object.fromEntries(
+        (this.fallback?.platforms() ?? []).flatMap((platform) =>
+          platform.address ? [[platform.provider, platform.address]] : [],
+        ),
+      );
+    return Object.fromEntries(
+      Object.entries(addresses).filter(([provider]) => provider !== this.provider.provider),
+    );
+  }
   onInbound(sink: (event: MessagingInboundEvent) => Promise<void>) {
     this.sink = sink;
     this.fallback?.onInbound(sink);

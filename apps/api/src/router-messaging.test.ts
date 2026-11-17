@@ -21,6 +21,7 @@ const identity = {
 function messagingDeps(
   overrides: {
     enabled?: boolean;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     identity?: unknown;
     /** Every chat app the caller has linked; defaults to the single identity. */
     identities?: Array<Record<string, unknown>>;
@@ -296,6 +297,7 @@ function messagingDeps(
       enabled: overrides.enabled ?? true,
       providers: ["sendblue"],
       addresses: { sendblue: "+15550001111" },
+      resolveAddresses: overrides.resolveAddresses,
       openSignup: false,
     },
     dataDir: "/tmp/rakazo-router-test",
@@ -357,6 +359,14 @@ describe("messaging.status", () => {
         ],
       },
     });
+  });
+
+  it("resolves linking destinations during an authenticated settings read", async () => {
+    const resolveAddresses = vi.fn(async () => ({ sendblue: "+15550002222" }));
+    const { handler, actor } = messagingDeps({ resolveAddresses });
+    const response = await call(handler, actor, "messaging/status");
+    expect((await response.json()).json.addresses).toEqual({ sendblue: "+15550002222" });
+    expect(resolveAddresses).toHaveBeenCalledOnce();
   });
 
   it("reports no identities when the caller has not linked a chat app", async () => {
