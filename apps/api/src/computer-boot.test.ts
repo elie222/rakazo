@@ -2,7 +2,11 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
-import { ComputerBusyError, ComputerRecoveryRequiredError } from "@rakazo/adapters";
+import {
+  ComputerBusyError,
+  ComputerRecoveryRequiredError,
+  sandboxStoppedError,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
@@ -36,8 +40,9 @@ const actor = {
   isDeploymentOwner: true,
 } satisfies Actor;
 
-function routerDeps(prisma: PrismaClient) {
+function routerDeps(prisma: PrismaClient, extra: Partial<RouterDeps> = {}) {
   return {
+    ...extra,
     prisma,
     jobs: { enqueue: vi.fn() },
     env: {
@@ -51,8 +56,8 @@ function routerDeps(prisma: PrismaClient) {
   } as unknown as RouterDeps;
 }
 
-async function boot(prisma: PrismaClient) {
-  const handler = new RPCHandler(createRouter(routerDeps(prisma)), {
+async function boot(prisma: PrismaClient, extra: Partial<RouterDeps> = {}) {
+  const handler = new RPCHandler(createRouter(routerDeps(prisma, extra)), {
     clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
   });
   const { response } = await handler.handle(
@@ -173,6 +178,55 @@ describe("computer boot", () => {
     expect(response?.status).toBe(409);
     expect(lifecycle.acquireComputerExecutionLease).toHaveBeenCalledOnce();
     expect(lifecycle.provisionComputer).not.toHaveBeenCalled();
+  });
+
+  it("starts a computer its provider paused by itself while it was recorded running", async () => {
+    lifecycle.provisionComputer.mockRejectedValue(new Error("stop after the start"));
+    const running = {
+      ...stoppedBot,
+      computer: {
+        ...stoppedBot.computer,
+        state: "running",
+        providerRef: "box-1",
+        kind: "instabox",
+        spaceId: "workspace-1",
+        controlLeaseId: null,
+        runningSince: new Date("2026-11-14T05:50:27Z"),
+      },
+    };
+    const updateMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
+    const prisma = {
+      spaceMember: { count: vi.fn(async () => 1) },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue(running),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      computer: { updateMany },
+      computerRun: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      // The provider's answer for a computer it paused on its own: it keeps its disk.
+      execute: vi.fn(() => {
+        throw sandboxStoppedError("instabox computer is paused; start it before using it");
+      }),
+    };
+
+    await boot(prisma, {
+      sandbox,
+      events: { append: vi.fn(), draftRecordingsOfLease: vi.fn(async () => []) },
+    } as unknown as Partial<RouterDeps>);
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "computer-1",
+          providerRef: "box-1",
+          state: "running",
+        }),
+        data: expect.objectContaining({ state: "suspended" }),
+      }),
+    );
+    expect(lifecycle.provisionComputer).toHaveBeenCalledOnce();
   });
 
   it("reports a computer removed while the boot waited as not found", async () => {

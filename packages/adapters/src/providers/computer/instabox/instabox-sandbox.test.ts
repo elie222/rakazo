@@ -5,7 +5,7 @@ import { ComputerBrowserProvider } from "../../../computer-browser.js";
 import { installPageBrowserCommand } from "../../../page-browser-install.js";
 import type { RemoteDesktopSdk } from "../../../remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError, isSandboxStoppedError } from "../../../sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
@@ -102,6 +102,27 @@ describe("instabox computer backend", () => {
     expect(emulator.computers.has(computer.id)).toBe(false);
     await expect(provider.destroy(computer, ctx)).resolves.toBeUndefined();
     await expect(provider.stop(computer, ctx)).resolves.toBeUndefined();
+  });
+
+  it("reports a computer instabox paused by itself as stopped, not gone, and resumes it", async () => {
+    const emulator = new InstaboxEmulator();
+    const { computer } = await started(emulator);
+    // instabox's own idle pause, seen by another API process that holds no handle to it.
+    emulator.computers.get(computer.id)!.state = "suspended";
+    const elsewhere = emulatedInstabox(emulator).provider();
+    expect(await elsewhere.isStopped(computer, ctx)).toBe(true);
+    const refused = await elsewhere
+      .connectScreen(computer, { view: "stream" }, ctx)
+      .catch((error: unknown) => error);
+    expect(isSandboxStoppedError(refused)).toBe(true);
+    expect(isSandboxGoneError(refused)).toBe(false);
+    expect(emulator.computers.get(computer.id)!.state).toBe("suspended");
+    await elsewhere.provision(
+      { ...request, providerRef: computer.id, providerKind: "instabox" },
+      ctx,
+    );
+    expect(emulator.computers.get(computer.id)!.state).toBe("running");
+    expect(await elsewhere.isStopped(computer, ctx)).toBe(false);
   });
 
   it("replaces a deleted computer, but not one missing a file", async () => {

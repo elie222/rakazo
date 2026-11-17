@@ -18,6 +18,7 @@ import {
   isSandboxUnsafeStopError,
   SandboxUnsafeStopError,
   sandboxNotFoundError,
+  sandboxStoppedError,
 } from "../../../sandbox-errors.js";
 
 /** instabox's stock desktop image; the shared prepare step installs the rest. */
@@ -233,10 +234,14 @@ export function instaboxSdk(
     connectRunning: async (id) => {
       const machine = await reach(id, false);
       if ((await state(machine)) !== "running")
-        throw new Error("instabox computer is paused; start it before using it");
+        throw sandboxStoppedError("instabox computer is paused; start it before using it");
       return openDesktop(machine, false, pause(machine));
     },
     isRunning: async (id) => (await state(await reach(id, false))) === "running",
+    isStopped: async (id) => {
+      const current = await state(await reach(id, false));
+      return current === "suspended" || current === "stopped";
+    },
     pause: async (id) => {
       let machine: InstaboxMachine;
       try {

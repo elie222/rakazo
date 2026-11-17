@@ -109,6 +109,8 @@ export interface RemoteDesktopSdk {
   keepAlive?(id: string, options: { apiKey: string; timeoutMs: number }): Promise<void>;
   /** Reads the sandbox's status without resuming it. */
   isRunning?(id: string, options: { apiKey: string; signal: AbortSignal }): Promise<boolean>;
+  /** Whether the provider holds it paused with its disk kept, read without resuming it. */
+  isStopped?(id: string, options: { apiKey: string; signal: AbortSignal }): Promise<boolean>;
   pause(id: string, options: { apiKey: string }): Promise<unknown>;
   kill(id: string, options: { apiKey: string }): Promise<boolean>;
 }
@@ -357,6 +359,19 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     if (computer.kind !== this.config.id || !this.config.sdk.isRunning) return false;
     try {
       return await this.config.sdk.isRunning(sandboxId(computer), {
+        apiKey: this.config.apiKey,
+        signal: context.signal,
+      });
+    } catch (error) {
+      if (isSandboxGoneError(error)) return false;
+      throw error;
+    }
+  }
+
+  async isStopped(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== this.config.id || !this.config.sdk.isStopped) return false;
+    try {
+      return await this.config.sdk.isStopped(sandboxId(computer), {
         apiKey: this.config.apiKey,
         signal: context.signal,
       });
