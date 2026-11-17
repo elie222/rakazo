@@ -373,6 +373,8 @@ export function ThreadComposer({
     updateBindings(resolved.bindings);
     draftRef.current = resolved.text;
     setDraft(resolved.text);
+    // An emptied box goes back to one row even when its height did not change on the way.
+    if (!resolved.text) setWrapped(false);
     completedSelection.current = null;
     return resolved;
   }
