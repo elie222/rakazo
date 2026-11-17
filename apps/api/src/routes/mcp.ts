@@ -211,7 +211,9 @@ export function mcpRoutes(ctx: RouterContext) {
                   include: { availableIn: AVAILABILITY_SELECT },
                   orderBy: { createdAt: "asc" },
                 });
-                const existing = rows.find((row) => new URL(row.endpoint!).href === endpoint);
+                const existing = rows.find(
+                  (row) => URL.canParse(row.endpoint!) && new URL(row.endpoint!).href === endpoint,
+                );
                 if (existing) return { row: existing, created: false };
                 return {
                   row: await insertMcpServer(tx, actor, config, stored, { everywhere: true }),

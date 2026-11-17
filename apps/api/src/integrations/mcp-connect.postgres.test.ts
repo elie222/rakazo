@@ -132,6 +132,26 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   );
 
   it(
+    "connects past a saved server whose address no longer parses",
+    asActor(async () => {
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      const rpc = client();
+      const { server } = await rpc.mcp.servers.connect({
+        name: "Old",
+        endpoint: "https://mcp.old.example.test/mcp",
+      });
+      await prisma.mcpServer.update({ where: { id: server.id }, data: { endpoint: "not a url" } });
+
+      const next = await rpc.mcp.servers.connect({
+        name: "Tracker",
+        endpoint: "https://mcp.tracker.example.test/mcp",
+      });
+
+      expect(next.server.id).not.toBe(server.id);
+    }),
+  );
+
+  it(
     "gives the bot a server that needs no sign-in right away",
     asActor(async () => {
       vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });

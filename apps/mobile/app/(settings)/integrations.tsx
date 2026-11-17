@@ -1202,9 +1202,10 @@ export default function Integrations() {
                 {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
                 ) : null}
-                {catalogsReady && !category ? (
+                {catalogsReady ? (
                   <IntegrationCatalogSearch
                     query={query}
+                    hidden={Boolean(category)}
                     noLocalMatch={noMatch}
                     onChanged={(serverId) => {
                       if (serverId) setOauthServerId(serverId);

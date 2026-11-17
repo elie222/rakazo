@@ -16,10 +16,13 @@ import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
 /** Looks the search up in the public app catalog when asked, and connects a server by signing in. */
 export function IntegrationCatalogSearch({
   query,
+  hidden,
   noLocalMatch,
   onChanged,
 }: {
   query: string;
+  /** Kept mounted while hidden so a connect still in flight reports back when it finishes. */
+  hidden: boolean;
   /** Nothing on the screen matched, so say so unless the catalog finds something. */
   noLocalMatch: boolean;
   /** A server was added or signed in to, whether or not its sign-in finished. */
@@ -53,7 +56,7 @@ export function IntegrationCatalogSearch({
     onSaved: (serverId) => onChanged(serverId),
     onFailed: (_error, server) => onChanged(addedIds.current.get(server.endpoint)),
   });
-  if (!trimmed) return null;
+  if (!trimmed || hidden) return null;
   const servers = searching && search.data ? signInMcpServers(search.data.results) : null;
   const failure = connect.error ?? (searching ? search.error : null);
   return (

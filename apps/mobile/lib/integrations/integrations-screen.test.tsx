@@ -1422,6 +1422,61 @@ it("offers Connect on a catalog server whose sign-in failed", async () => {
   );
 });
 
+it("shows a catalog server added while another category was open", async () => {
+  state.marketplace.mockResolvedValue({
+    entries: [plugin, { ...plugin, id: "sentry", displayName: "Sentry", category: "ops" }],
+    unavailableRegistries: [],
+    skippedEntries: 0,
+  });
+  const fallback = state.rpc.getMockImplementation();
+  let added = false;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "capabilities/catalogSearch")
+      return Promise.resolve(catalogResult({ type: "oauth" }));
+    if (proc === "mcp/servers/connect") {
+      added = true;
+      return Promise.resolve({
+        server: { id: "tracker-server", name: "Tracker", enabled: true },
+        signIn: {
+          status: "authorization_required",
+          sessionId: "mobile-session",
+          authorizationUrl: "https://identity.example.test/authorize",
+        },
+      });
+    }
+    if (proc === "mcp/servers/list")
+      return Promise.resolve(
+        added
+          ? [
+              {
+                id: "tracker-server",
+                name: "Tracker",
+                enabled: true,
+                oauthStatus: "none",
+                health: { status: "unknown" },
+              },
+            ]
+          : [],
+      );
+    return fallback?.(proc, args);
+  });
+  const browser = deferred<{ type: "cancel" }>();
+  state.authSession.mockReturnValue(browser.promise);
+  await render();
+  await act(async () => catalog.resolve([]));
+  await searchFor("tracker");
+  await press("Search more apps");
+  await press("Connect");
+  await press("Security & Ops");
+  await act(async () => browser.resolve({ type: "cancel" }));
+  await settle();
+  await press("All");
+
+  expect(container.querySelector('[data-testid="registered-mcp-server"]')?.textContent).toBe(
+    "TTrackerNot connectedConnect",
+  );
+});
+
 it("does not offer a catalog server that needs a key", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>
