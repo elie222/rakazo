@@ -16,21 +16,21 @@ import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError, comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
-import { requireAdmin } from "../admins.js";
-import { searchIntegrationCatalog } from "../integration-catalog.js";
-import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../mcp-servers.js";
+import { requireAdmin } from "../auth/admins.js";
+import { searchIntegrationCatalog } from "../integrations/integration-catalog.js";
+import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import {
   installConfig,
   installPlugin,
   lockPluginInstalls,
   rethrowUnlessPluginSourceFailed,
   setPluginParts,
-} from "../plugin-installs.js";
+} from "../integrations/plugin-installs.js";
 import {
   approvedPluginEntries,
   listPluginSubmissions,
   reviewPluginSubmission,
-} from "../plugin-submissions.js";
+} from "../integrations/plugin-submissions.js";
 import type { RouterContext } from "./context.js";
 
 export function capabilitiesRoutes(ctx: RouterContext) {
