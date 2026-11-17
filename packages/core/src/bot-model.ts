@@ -1,6 +1,5 @@
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { modelMark } from "./model-marks.js";
-import type { ChatModelChoice } from "./model-providers.js";
 import {
   chatModelChoices,
   connectedModelChoices,
@@ -60,11 +59,7 @@ export function botModelState({
           choice.provider === me?.defaultProvider &&
           choice.modelId === me?.defaultModel,
       );
-  // Its own name, without its connection, and its maker's mark.
-  const selectedName =
-    shortModelName(shown?.modelLabel ?? shown?.label) ??
-    (selectedModelKey ? undefined : (shortModelName(defaultEntry?.label) ?? me?.defaultModel)) ??
-    undefined;
+  // Its maker's mark, and its own name without its connection or the product word the mark stands for.
   const selectedMark = modelMark(
     shown ?? {
       provider: me?.defaultProvider,
@@ -72,6 +67,15 @@ export function botModelState({
       modelLabel: defaultEntry?.label,
     },
   );
+  const fullName =
+    shortModelName(shown?.modelLabel ?? shown?.label) ??
+    (selectedModelKey ? undefined : (shortModelName(defaultEntry?.label) ?? me?.defaultModel)) ??
+    undefined;
+  const family = selectedMark?.family ? `${selectedMark.family} ` : undefined;
+  const selectedName =
+    family && fullName?.startsWith(family) && fullName.length > family.length
+      ? fullName.slice(family.length)
+      : fullName;
 
   const provider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const modelId = selectedModel?.modelId ?? me?.defaultModel ?? null;

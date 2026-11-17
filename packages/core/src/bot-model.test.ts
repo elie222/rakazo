@@ -72,7 +72,8 @@ describe("botModelState", () => {
       spaceDefaultLabel: "Space default",
     });
     expect(routed.selectedMark).toBeDefined();
-    expect(routed.selectedName).toBe("Claude X");
+    // The mark stands for "Claude", so the name leaves it off.
+    expect(routed.selectedName).toBe("X");
     const unknown = botModelState({
       credentials: [{ provider: "router", label: "Router" }] as unknown as ModelCredential[],
       catalog: [
