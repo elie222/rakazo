@@ -102,7 +102,7 @@ export class StripeEmulator {
       latestInvoice: {
         id: `in_fake_${n}`,
         status: "paid",
-        total: trialEnd || status ? 0 : 1000,
+        total: trialEnd || (status && status !== "active") ? 0 : 1000,
         status_transitions: { paid_at: nowSeconds },
       },
       items: {

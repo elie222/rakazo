@@ -343,7 +343,9 @@ export class BillingEmulator implements BillingProvider {
       priceId: "price_emulated",
       cardFingerprint,
       status: status ?? (trialEnd ? "trialing" : "active"),
-      ...(status || trialEnd ? {} : { paidAt: new Date(nowSeconds * 1000) }),
+      ...(trialEnd || (status && status !== "active")
+        ? {}
+        : { paidAt: new Date(nowSeconds * 1000) }),
       seats: checkout.seats,
       trialEndsAt: trialEnd === null ? null : new Date(trialEnd * 1000),
       currentPeriodStartsAt: new Date(nowSeconds * 1000),
