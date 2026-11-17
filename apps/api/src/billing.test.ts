@@ -305,14 +305,6 @@ describe("opening the portal on cancelling", () => {
     expect(snapshots.map((data) => data.subscriptionId)).toEqual(["sub-live", null]);
   });
 
-  it("passes any other failure of opening the session through", async () => {
-    const { billing, provider } = portalService(stored, liveSubscription);
-    vi.mocked(provider.createPortal).mockRejectedValue(new Error("provider unavailable"));
-    await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
-      "provider unavailable",
-    );
-  });
-
   it("follows up the change it stores, which no later sync would see again", async () => {
     const analytics = { capture: vi.fn(), flush: vi.fn() } as unknown as ProductAnalytics;
     const { billing, prisma } = portalService(
@@ -351,6 +343,79 @@ describe("opening the portal on cancelling", () => {
       expect.objectContaining({ name: "subscription_started" }),
       expect.objectContaining({ id: "sub-live" }),
       undefined,
+    );
+  });
+
+  it("does not follow up a read a newer sync superseded", async () => {
+    const analytics = { capture: vi.fn(), flush: vi.fn() } as unknown as ProductAnalytics;
+    const { billing, provider, prisma } = portalService(
+      stored,
+      { ...liveSubscription, status: "active", creditAmountCents: 1000 },
+      { analytics },
+    );
+    // The conditional write lands on no row: a sync that started later stored its own first.
+    // Only the snapshot write lands on no row; the lease claim and the like still land.
+    vi.mocked(prisma.billingAccount.updateMany).mockImplementation((async (args: {
+      data: Stored;
+    }) => ({ count: "subscriptionId" in args.data ? 0 : 1 })) as never);
+    vi.mocked(prisma.member.findFirst).mockResolvedValue({ userId: "owner-1" } as never);
+    await expect(billing.portal(actor, undefined, "cancel")).resolves.toEqual({
+      url: "https://portal.example.com",
+    });
+    expect(analytics.capture).not.toHaveBeenCalled();
+    expect(provider.createPortal).toHaveBeenCalled();
+  });
+
+  it("refuses when the plan ended after the read and the provider refuses the session", async () => {
+    const { billing, provider, prisma } = portalService(stored, liveSubscription);
+    vi.mocked(provider.getCustomerSubscription)
+      .mockResolvedValueOnce(liveSubscription as never)
+      .mockResolvedValueOnce({ ...liveSubscription, status: "canceled" } as never);
+    vi.mocked(provider.createPortal).mockRejectedValue(new Error("subscription is canceled"));
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      kind: "CONFLICT",
+      code: "NO_PLAN_TO_CANCEL",
+    });
+    const statuses = vi
+      .mocked(prisma.billingAccount.updateMany)
+      .mock.calls.map(([a]) => (a.data as Stored).status)
+      .filter((status) => status !== undefined);
+    expect(statuses).toEqual(["trialing", "canceled"]);
+  });
+
+  it("passes the original failure through when the plan is still cancellable on a re-read", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    vi.mocked(provider.createPortal).mockRejectedValue(new Error("portal not configured"));
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
+      "portal not configured",
+    );
+    expect(provider.getCustomerSubscription).toHaveBeenCalledTimes(2);
+  });
+
+  it("follows up what the re-read after a refused session changes only once", async () => {
+    const analytics = { capture: vi.fn(), flush: vi.fn() } as unknown as ProductAnalytics;
+    const { billing, provider, prisma } = portalService(
+      stored,
+      { ...liveSubscription, status: "active", creditAmountCents: 1000 },
+      { analytics },
+    );
+    vi.mocked(prisma.member.findFirst).mockResolvedValue({ userId: "owner-1" } as never);
+    vi.mocked(provider.createPortal).mockRejectedValue(new Error("portal not configured"));
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
+      "portal not configured",
+    );
+    // The first read's change is followed up; the re-read compares with what that stored.
+    expect(analytics.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the original failure through when the re-read fails too", async () => {
+    const { billing, provider } = portalService(stored, liveSubscription);
+    vi.mocked(provider.getCustomerSubscription)
+      .mockResolvedValueOnce(liveSubscription as never)
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+    vi.mocked(provider.createPortal).mockRejectedValue(new Error("portal not configured"));
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
+      "portal not configured",
     );
   });
 

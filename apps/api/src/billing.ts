@@ -51,6 +51,7 @@ import {
   syncCreditPurchases,
   unexpiredCreditAccount,
   withLease,
+  writeBillingSnapshot,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "./access-grants.js";
@@ -294,6 +295,38 @@ export function createBillingService(deps: {
         },
         data: { mode: "byok", pendingCreditCheckout: false },
       });
+  }
+
+  /**
+   * The provider's own read of the customer's subscription, stored as it is made so a refusal
+   * leaves the status the client reads next up to date. A customer the provider deleted reads as
+   * having no subscription. What the stored account differed by is followed up too, or this write
+   * would hide it from every later sync; that cannot block cancelling, and runs only for a read
+   * that is now the stored one (when a newer sync stored its own first, that sync follows up).
+   */
+  async function readForCancel(held: BillingAccount) {
+    const previous = (await billingAccountForOrganization(prisma, held.organizationId)) ?? held;
+    // Assigned in the callback, which control-flow narrowing does not follow.
+    let read = null as BillingSubscriptionSnapshot | null;
+    const outcome = await writeBillingSnapshot(prisma, held.customerId, async () => {
+      read = await provider.getCustomerSubscription(held.customerId);
+      return read;
+    });
+    const live = read as BillingSubscriptionSnapshot | null;
+    if (outcome === "written")
+      await bestEffort("billing follow-ups on cancel", afterSnapshot(previous, live));
+    return live;
+  }
+
+  /** A live plan that is not already set to end, which cancelling can act on. */
+  function cancellableSubscription(
+    live: BillingSubscriptionSnapshot | null,
+  ): live is BillingSubscriptionSnapshot & { subscriptionId: string } {
+    return (
+      !!live?.subscriptionId &&
+      (hasBillingAccess(live.status) || needsBillingPortal(live.status)) &&
+      !live.cancelAtPeriodEnd
+    );
   }
 
   async function reportCancellation(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
@@ -887,22 +920,8 @@ export function createBillingService(deps: {
         // so a refusal leaves the status the client reads next up to date. A customer the
         // provider deleted reads as having no subscription, so it is refused here like any
         // other account with no plan; the next plain portal or checkout replaces the customer.
-        // Assigned in the callback, which control-flow narrowing does not follow.
-        let read = null as BillingSubscriptionSnapshot | null;
-        const written = await syncBillingSnapshot(prisma, customerId, async () => {
-          read = await provider.getCustomerSubscription(customerId);
-          return read;
-        });
-        const live = read as BillingSubscriptionSnapshot | null;
-        // What the stored account differed by is followed up here too, or this write would hide
-        // it from every later sync. It cannot block cancelling.
-        if (written) await bestEffort("billing follow-ups on cancel", afterSnapshot(held, live));
-        if (
-          !live?.subscriptionId ||
-          !(hasBillingAccess(live.status) || needsBillingPortal(live.status)) ||
-          live.cancelAtPeriodEnd
-        )
-          throw new NoPlanToCancelError();
+        const live = await readForCancel(held);
+        if (!cancellableSubscription(live)) throw new NoPlanToCancelError();
         try {
           return await provider.createPortal({
             customerId,
@@ -910,11 +929,23 @@ export function createBillingService(deps: {
             cancelSubscriptionId: live.subscriptionId,
           });
         } catch (error) {
-          if (!(error instanceof BillingCustomerNotFoundError)) throw error;
-          // Deleted since the read: deleting a customer ends its subscriptions, so none is left.
-          // Stored as such, so the status the client reads next shows no plan either.
-          await syncBillingSnapshot(prisma, customerId, async () => null);
-          throw new NoPlanToCancelError();
+          if (error instanceof BillingCustomerNotFoundError) {
+            // Deleted since the read: deleting a customer ends its subscriptions, so none is
+            // left. Stored as such, so the status the client reads next shows no plan either.
+            await syncBillingSnapshot(prisma, customerId, async () => null);
+            throw new NoPlanToCancelError();
+          }
+          // The subscription may have ended or been set to end since the read, which the
+          // provider refuses as an ordinary request failure. Read again and store it: the
+          // refusal is the plan's if it is gone, and the original failure otherwise, so a
+          // configuration or provider fault is not hidden.
+          const fresh = await bestEffort(
+            "billing re-read after a refused cancel",
+            readForCancel(held),
+          );
+          if (fresh !== undefined && !cancellableSubscription(fresh))
+            throw new NoPlanToCancelError();
+          throw error;
         }
       });
     },

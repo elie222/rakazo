@@ -10,6 +10,7 @@ import {
   organizationSeatCount,
   ownedBillingAccounts,
   syncBillingSnapshot,
+  writeBillingSnapshot,
 } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -154,6 +155,29 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
       status: "active",
     });
+  });
+
+  it("says whether a read was stored, superseded by a newer sync, or has no account", async () => {
+    await expect(writeBillingSnapshot(prisma, "cus_unknown", async () => snapshot)).resolves.toBe(
+      "unknown",
+    );
+    await expect(writeBillingSnapshot(prisma, customerId, async () => snapshot)).resolves.toBe(
+      "written",
+    );
+    const loaded = deferred();
+    let olderRead!: Deferred;
+    const older = writeBillingSnapshot(prisma, customerId, async () => {
+      loaded.resolve();
+      olderRead = deferred();
+      await olderRead.promise;
+      return { ...snapshot, status: "trialing" };
+    });
+    await loaded.promise;
+    await expect(
+      writeBillingSnapshot(prisma, customerId, async () => ({ ...snapshot, status: "active" })),
+    ).resolves.toBe("written");
+    olderRead.resolve();
+    await expect(older).resolves.toBe("superseded");
   });
 
   it("deletes the account with its organization", async () => {

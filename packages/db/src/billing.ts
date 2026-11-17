@@ -373,13 +373,27 @@ export function needsBillingPortal(status: string | null): boolean {
 /**
  * Loads the customer's current subscription and overwrites the stored snapshot (`null` clears
  * it). The write only lands if no sync that started later has written first, so an older read
- * never replaces a newer one. Returns false when no account is stored for the customer.
+ * never replaces a newer one. Returns false when no account is stored for the customer, and
+ * true for a read that was superseded too: use `writeBillingSnapshot` to tell those apart.
  */
 export async function syncBillingSnapshot(
   prisma: PrismaClient,
   customerId: string,
   load: () => Promise<BillingSubscriptionSnapshot | null>,
 ): Promise<boolean> {
+  return (await writeBillingSnapshot(prisma, customerId, load)) !== "unknown";
+}
+
+/**
+ * `syncBillingSnapshot` that says what became of the read: "written" when it is now the stored
+ * snapshot, "superseded" when a sync that started later stored its own first, and "unknown"
+ * when no account is stored for the customer.
+ */
+export async function writeBillingSnapshot(
+  prisma: PrismaClient,
+  customerId: string,
+  load: () => Promise<BillingSubscriptionSnapshot | null>,
+): Promise<"written" | "superseded" | "unknown"> {
   // The database clock, so API instances with skewed clocks still order correctly.
   const [{ startedAt }] = await prisma.$queryRaw<[{ startedAt: Date }]>(
     Prisma.sql`SELECT clock_timestamp() AS "startedAt"`,
@@ -420,8 +434,10 @@ export async function syncBillingSnapshot(
       data: { paidAt: startedAt },
     });
   }
-  if (written.count > 0) return true;
-  return (await prisma.billingAccount.count({ where: { customerId } })) > 0;
+  if (written.count > 0) return "written";
+  return (await prisma.billingAccount.count({ where: { customerId } })) > 0
+    ? "superseded"
+    : "unknown";
 }
 
 /** Billable seats: every organization member but guests, never fewer than one. */
