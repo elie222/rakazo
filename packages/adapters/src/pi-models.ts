@@ -15,6 +15,7 @@ import {
   trimEndChars,
 } from "@rakazo/contracts";
 import { cloudflareRoutingFields } from "./cloudflare-ai-gateway.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
 import { modelProviderDefinition } from "./model-provider-registry.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
@@ -101,6 +102,7 @@ const pricedCatalogKeys = new Set<string>();
 
 /** Rakazo credits reserve a call's price before sending it, so they only run a model with one. */
 export function creditsCanPriceModel(entry: { provider: string; id: string }): boolean {
+  if (modelCreditOfferings()) return Boolean(approvedModelCreditOffering(entry.provider, entry.id));
   listPiCatalog();
   return pricedCatalogKeys.has(`${canonicalPiProviderId(entry.provider)}:${entry.id}`);
 }

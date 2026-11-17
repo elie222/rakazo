@@ -1,5 +1,6 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { isModelCredentialRejected } from "@rakazo/adapter-kit";
+import { modelRoleConnectionId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -34,7 +35,8 @@ export async function resolveComputerRunModel(
   for (const choice of primary ? [primary, ...backups] : []) {
     try {
       const connectionId =
-        choice.credentialId ?? (await deps.connectionFor(choice.provider, choice.modelId));
+        modelRoleConnectionId(choice) ??
+        (await deps.connectionFor(choice.provider, choice.modelId));
       if (!connectionId) continue;
       if (
         choice.provider === main.provider &&

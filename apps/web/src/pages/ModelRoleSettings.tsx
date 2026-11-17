@@ -90,6 +90,7 @@ const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
 const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   provider: option.provider,
   modelId: option.id,
+  ...(option.creditOfferingId ? { creditOfferingId: option.creditOfferingId } : {}),
   ...(option.credentialId ? { credentialId: option.credentialId } : {}),
 });
 
@@ -202,7 +203,12 @@ export function ModelRoleSettings({
       label: choice.label,
       billing: "",
     }),
-    providerName: choice.credentialId ? choice.connectionName : providerLabel(choice.provider),
+    creditOfferingId: choice.creditOfferingId,
+    providerName: choice.creditOfferingId
+      ? t`Rakazo credits`
+      : choice.credentialId
+        ? choice.connectionName
+        : providerLabel(choice.provider),
     ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
   }));
   // A pinned row runs on its connection; others on the provider's newest.
@@ -214,6 +220,7 @@ export function ModelRoleSettings({
         )
       : [];
   const providerName = (choice: ModelRoleChoice) =>
+    (choice.creditOfferingId ? t`Rakazo credits` : undefined) ||
     (choice.credentialId &&
       options.find((option) => option.credentialId === choice.credentialId)?.providerName) ||
     providerLabel(choice.provider);

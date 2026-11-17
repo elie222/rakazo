@@ -37,6 +37,7 @@ export type AutoReviewChecker = {
   thinkingLevel?: AgentRunModel["thinkingLevel"];
   /** The connection the approval choice is pinned to. */
   credentialId?: string;
+  creditOfferingId?: string;
 };
 
 export type AutoReviewJudgeResult = AutoReviewResult;

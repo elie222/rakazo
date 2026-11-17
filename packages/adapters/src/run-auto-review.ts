@@ -31,14 +31,16 @@ export async function autoReviewCheckerProvider(
   if (kind === "jev" || kind === "scripted") {
     return createAutoReviewProvider(kind);
   }
-  const reviewCredential = await findConnectedModelCredential(
-    deps.prisma,
-    deps.secretStore,
-    { userId, spaceId },
-    checker.provider,
-    checker.model,
-    { credentialId: checker.credentialId },
-  );
+  const reviewCredential = checker.creditOfferingId
+    ? null
+    : await findConnectedModelCredential(
+        deps.prisma,
+        deps.secretStore,
+        { userId, spaceId },
+        checker.provider,
+        checker.model,
+        { credentialId: checker.credentialId },
+      );
   if (
     (memberChecker ||
       checker.credentialId ||
@@ -46,6 +48,7 @@ export async function autoReviewCheckerProvider(
         (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
       )) &&
     !reviewCredential &&
+    !checker.creditOfferingId &&
     !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
   ) {
     throw new Error("Selected checker connection is unavailable");
@@ -58,6 +61,10 @@ export async function autoReviewCheckerProvider(
     checker.provider,
     checker.model,
     registerSecrets,
+    {
+      creditOfferingId: checker.creditOfferingId,
+      requireStoredSecret: Boolean(checker.credentialId),
+    },
   );
   const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
     recordUsage(deps.prisma, event, {

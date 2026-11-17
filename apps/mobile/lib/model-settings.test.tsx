@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ModelCatalogEntry, ModelCredential, ModelRoleView } from "@rakazo/contracts";
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
@@ -59,6 +60,9 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
       modelId: string | null;
     }[],
     failBotList: false,
+    roleCatalog: [] as ModelCatalogEntry[],
+    roleSettings: { primary: null, backups: [] } as ModelRoleView,
+    extraCredentials: [] as ModelCredential[],
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
@@ -96,7 +100,17 @@ vi.mock("./api", () => ({
       throw new Error(saved.failProbe);
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
-    if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "models/role") return saved.roleSettings;
+    if (procedure === "models/setRole") {
+      const {
+        role: _role,
+        scope: _scope,
+        expectedUserId: _user,
+        ...patch
+      } = input as ModelRoleView & { role: string; scope: string; expectedUserId: string };
+      saved.roleSettings = { ...saved.roleSettings, ...patch };
+      return saved.roleSettings;
+    }
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
       return saved.bots;
@@ -133,7 +147,7 @@ vi.mock("./api", () => ({
         headerNames: ["x-session"],
       };
     }
-    if (procedure === "models/forRole") return [];
+    if (procedure === "models/forRole") return saved.roleCatalog;
     if (procedure === "models/list")
       return [
         {
@@ -154,6 +168,7 @@ vi.mock("./api", () => ({
       ];
     if (procedure === "models/credentials")
       return [
+        ...saved.extraCredentials,
         {
           id: "credential-fixture",
           provider: "openai-compatible",
@@ -331,6 +346,9 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   rpcCalls.length = 0;
+  saved.roleCatalog = [];
+  saved.roleSettings = { primary: null, backups: [] };
+  saved.extraCredentials = [];
   delete params.spaceId;
   back.mockClear();
   container = document.createElement("div");
@@ -1113,5 +1131,54 @@ describe("connection success with a failed refresh", () => {
     );
     expect(container.textContent).toContain("The server refused the header value •••.");
     expect(container.textContent).not.toContain("synthetic-test-key");
+  });
+});
+
+it("keeps native picker credit and personal selections distinct for the same model", async () => {
+  saved.roleCatalog = [
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "model-example",
+      label: "Example",
+      billing: "",
+      creditOfferingId: "offering-example",
+    },
+  ];
+  saved.extraCredentials = [
+    {
+      id: "personal-example",
+      provider: "anthropic",
+      label: "Personal",
+      hasKey: true,
+      isDefault: false,
+    },
+  ];
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  const add = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Add fallback"),
+  );
+  await act(async () => add!.click());
+  const request = modelPickerRequest(
+    (push.mock.calls.at(-1)![0] as { params: { requestId: string } }).params.requestId,
+  )!;
+  const credit = request.choices.find((choice) => choice.providerLabel === "Rakazo credits")!;
+  const personal = request.choices.find((choice) => choice.providerLabel?.includes("Personal"))!;
+  expect(credit.key).not.toBe(personal.key);
+  await act(async () => {
+    request.onSelect(credit);
+  });
+  expect(saved.roleSettings.backups).toEqual([
+    { provider: "anthropic", modelId: "model-example", creditOfferingId: "offering-example" },
+  ]);
+  await act(async () => {
+    request.onSelect(personal);
+  });
+  expect(saved.roleSettings.backups).toContainEqual({
+    provider: "anthropic",
+    modelId: "model-example",
+    credentialId: "personal-example",
   });
 });

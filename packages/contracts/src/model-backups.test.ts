@@ -401,3 +401,34 @@ describe("withConnectionName", () => {
     expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
 });
+
+it("offers credit and personal funding for the same model as separate connection rows", () => {
+  const entry = {
+    provider: "provider-example",
+    id: "model-example",
+    label: "Example",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  const options = connectedBackupOptions(
+    [entry],
+    [
+      {
+        id: "personal-example",
+        provider: entry.provider,
+        label: "Personal",
+        hasKey: true,
+        isDefault: true,
+      },
+    ],
+  );
+  expect(options).toHaveLength(2);
+  expect(options).toContainEqual(
+    expect.objectContaining({
+      creditOfferingId: "offering-example",
+      connectionName: "Rakazo credits",
+    }),
+  );
+  expect(options).toContainEqual(expect.objectContaining({ credentialId: "personal-example" }));
+  expect(new Set(options.map(modelRoleChoiceKey)).size).toBe(2);
+});

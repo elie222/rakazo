@@ -158,6 +158,7 @@ export * from "./model-connect.js";
 export * from "./model-connect-check.js";
 export * from "./model-credential-refresh.js";
 export { hostedModelCreditObserver } from "./model-credit-observer.js";
+export { approvedModelCreditOffering, modelCreditOfferings } from "./model-credit-offerings.js";
 export * from "./model-credit-reconciler.js";
 export * from "./model-roles.js";
 export * from "./model-secret.js";

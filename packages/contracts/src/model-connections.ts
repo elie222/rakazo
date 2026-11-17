@@ -394,6 +394,7 @@ export const ModelCatalogEntrySchema = z.object({
   credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
+  creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
   id: z.string(),

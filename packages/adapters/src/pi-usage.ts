@@ -547,13 +547,14 @@ export function observedPiStream(
               message,
             );
             if (observer && reservation !== undefined) {
-              await observer.afterCall(
+              const priced = await observer.afterCall(
                 reservation,
                 receipt(
                   { ...normalized, operationKind },
                   message.content.length ? message : (received ?? message),
                 ),
               );
+              if (priced) normalized = priced;
               settled = true;
             }
             await emitUsage(normalized, operationKind);

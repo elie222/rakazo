@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
@@ -192,6 +193,7 @@ export async function reserveModelCredits(
     runId?: string;
     provider?: string;
     model?: string;
+    usage?: AgentUsage;
   },
   now = new Date(),
 ) {
@@ -210,6 +212,16 @@ export async function reserveModelCredits(
     if (existing) {
       if (existing.organizationId !== organizationId)
         throw new Error("Model call belongs to another account");
+      if (
+        attribution &&
+        ["userId", "spaceId", "provider", "model"].some((field) => {
+          const key = field as "userId" | "spaceId" | "provider" | "model";
+          return attribution[key] !== undefined && existing[key] !== attribution[key];
+        })
+      )
+        throw new Error("Model call attribution changed");
+      if (attribution?.usage && !isDeepStrictEqual(existing.usage, attribution.usage))
+        throw new Error("Model call funding snapshot changed");
       return existing.id;
     }
     if (attribution?.userId && account?.modelCreditCapMicros != null)
@@ -226,6 +238,7 @@ export async function reserveModelCredits(
       await tx.modelCreditEntry.create({
         data: {
           ...attribution,
+          ...(attribution?.usage ? { usage: JSON.parse(JSON.stringify(attribution.usage)) } : {}),
           id: callId,
           callId,
           source,
@@ -302,6 +315,7 @@ export function hasFinalModelCost(
     Number.isFinite(usage.costUsd) &&
     usage.costUsd >= 0 &&
     (usage.costSource === "provider-reported" ||
+      usage.costSource === "deployment-tariff" ||
       usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE ||
       (usage.costUsd === 0 &&
         ["not-started", "provider-rejected"].includes(usage.usageSource ?? "")))

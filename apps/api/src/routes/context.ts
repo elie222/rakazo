@@ -12,6 +12,7 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasHostedModelCredits,
   hasReadyModelCredential,
   hiddenCatalogModel,
   isAutoReviewCheckerConfigured,
@@ -19,6 +20,7 @@ import {
   listAvailablePiCatalog,
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
+  modelCreditOfferings,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
@@ -27,6 +29,7 @@ import {
   scriptedCatalogEntry,
   spaceCanRunCatalogModel,
   validateConnectedModelChoice,
+  validateCreditOfferingChoice,
   withLiveModelSettings,
 } from "@rakazo/adapters";
 import type {
@@ -155,7 +158,32 @@ export function createRouterContext(deps: RouterDeps) {
       actor,
       deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
     );
+    const approved = deps.billing?.modelCreditsEnabled
+      ? (modelCreditOfferings()?.offerings ?? [])
+      : [];
+    const fundedProviders = new Set(
+      (
+        await Promise.all(
+          [...new Set(approved.map((entry) => entry.provider))].map(async (provider) =>
+            (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
+          ),
+        )
+      ).filter(Boolean),
+    );
     const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
+    for (const offering of approved) {
+      if (
+        !fundedProviders.has(offering.provider) ||
+        available.some(
+          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+        )
+      )
+        continue;
+      const entry = listAvailablePiCatalog({ [offering.provider]: "api_key" }).find(
+        (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+      );
+      if (entry) available.push(entry);
+    }
     const [live, providerLive] = await Promise.all([
       codexLiveCatalogsForSpace(deps.prisma, deps.secrets, actor, auth, codexCatalog, {
         // An expired bearer yields no catalog this round; kick the runtime's
@@ -186,7 +214,8 @@ export function createRouterContext(deps: RouterDeps) {
         (entry) =>
           (auth.byProvider[entry.provider] ||
             auth.byModel[entry.provider] ||
-            entry.provider === auth.managedProvider) &&
+            entry.provider === auth.managedProvider ||
+            auth.managedProviders?.includes(entry.provider)) &&
           (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
       )
     )
@@ -197,8 +226,17 @@ export function createRouterContext(deps: RouterDeps) {
         (entry) =>
           spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
       )
+      .map((entry) => {
+        const offering = approved.find(
+          (offering) =>
+            offering.provider === entry.provider &&
+            offering.modelId === entry.id &&
+            fundedProviders.has(entry.provider),
+        );
+        return offering ? { ...entry, creditOfferingId: offering.id } : entry;
+      })
       .map((entry) =>
-        entry.provider === auth.managedProvider
+        entry.provider === auth.managedProvider || auth.managedProviders?.includes(entry.provider)
           ? {
               ...entry,
               managed: true,
@@ -365,6 +403,31 @@ export function createRouterContext(deps: RouterDeps) {
         (entry) =>
           entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,
       );
+      if (choice.creditOfferingId) {
+        if (
+          !deps.billing?.modelCreditsEnabled ||
+          !(await validateCreditOfferingChoice(
+            deps.prisma,
+            actor,
+            choice.provider,
+            choice.modelId,
+            choice.creditOfferingId,
+          )) ||
+          !entry ||
+          entry.creditOfferingId !== choice.creditOfferingId ||
+          (role === "computer" && entry.images === false)
+        )
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Selected credit offering is unavailable",
+          });
+        if (
+          choice.thinkingLevel &&
+          entry.thinkingLevels &&
+          !entry.thinkingLevels.includes(choice.thinkingLevel)
+        )
+          throw new ORPCError("BAD_REQUEST", { message: "Unsupported thinking level" });
+        continue;
+      }
       // A row pinned to a connection runs only there, never on the deployment's.
       const resolution = { credentialId: choice.credentialId };
       const credential = await findConnectedModelCredential(

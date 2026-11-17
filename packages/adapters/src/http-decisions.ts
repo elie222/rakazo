@@ -134,37 +134,36 @@ export class HttpDecisionProvider implements DecisionProvider {
       // Transport and validation errors can contain credentials or supplied state.
       throw new DecisionProviderError("unavailable");
     } finally {
-      try {
-        if (usage)
-          await this.options.onUsage?.({
-            type: "usage",
-            ...usage,
-            provider: this.provider,
-            model: request.model,
-            callId,
-          });
-      } finally {
-        if (reservation)
-          await this.options.callObserver?.afterCall(
-            reservation,
-            usage ??
-              (sent
-                ? {
-                    inputTokens: null,
-                    outputTokens: null,
-                    costUsd: null,
-                    operationKind: "setup",
-                    pricingSnapshot,
-                    countedTokens: context.signal.aborted
-                      ? {
-                          ...countedTokens,
-                          ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
-                        }
-                      : countedTokens,
-                  }
-                : null),
-          );
+      if (reservation) {
+        const priced = await this.options.callObserver?.afterCall(
+          reservation,
+          usage ??
+            (sent
+              ? {
+                  inputTokens: null,
+                  outputTokens: null,
+                  costUsd: null,
+                  operationKind: "setup",
+                  pricingSnapshot,
+                  countedTokens: context.signal.aborted
+                    ? {
+                        ...countedTokens,
+                        ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
+                      }
+                    : countedTokens,
+                }
+              : null),
+        );
+        if (priced) usage = priced;
       }
+      if (usage)
+        await this.options.onUsage?.({
+          type: "usage",
+          ...usage,
+          provider: this.provider,
+          model: request.model,
+          callId,
+        });
     }
   }
 }

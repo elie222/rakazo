@@ -1116,3 +1116,68 @@ it("lets a deployment-managed model lead the main model like any other purpose",
     vi.unstubAllEnvs();
   }
 });
+
+it("persists an explicit approved credit route alongside the personal route", async () => {
+  const { call, deps, roles } = setup();
+  deps.billing = { modelCreditsEnabled: true } as never;
+  const offering = {
+    id: "offering-example",
+    connectionId: "operator-example",
+    provider: availableModel.provider,
+    modelId: availableModel.id,
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 1 },
+  };
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({ defaultOfferingId: offering.id, offerings: [offering] }),
+  );
+  try {
+    const credit = {
+      provider: offering.provider,
+      modelId: offering.modelId,
+      creditOfferingId: offering.id,
+    };
+    const personal = {
+      provider: offering.provider,
+      modelId: offering.modelId,
+      credentialId: "credential-one",
+    };
+    const catalog = (await (await call("models/forRole", { role: "main" })).response.json()).json;
+    expect(catalog).toContainEqual(
+      expect.objectContaining({ id: offering.modelId, creditOfferingId: offering.id }),
+    );
+    expect(
+      (await call("models/setRole", { role: "main", primary: credit, backups: [personal] }))
+        .response.status,
+    ).toBe(200);
+    expect(roles()).toEqual([
+      expect.objectContaining({ ...credit, credentialId: null }),
+      expect.objectContaining({ ...personal, creditOfferingId: null }),
+    ]);
+    expect(
+      (
+        await call("models/setRole", {
+          role: "main",
+          primary: { ...credit, credentialId: personal.credentialId },
+        })
+      ).response.status,
+    ).toBe(400);
+    expect(
+      (
+        await call("models/setRole", {
+          role: "main",
+          primary: { ...credit, creditOfferingId: "unapproved" },
+        })
+      ).response.status,
+    ).toBe(400);
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({ defaultOfferingId: null, offerings: [] }),
+    );
+    expect((await call("models/setRole", { role: "main", primary: credit })).response.status).toBe(
+      400,
+    );
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

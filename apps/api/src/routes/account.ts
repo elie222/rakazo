@@ -7,6 +7,7 @@ import {
   loadUserIncomingCalls,
   PushSessionEndedError,
   settleCallRequest,
+  validateCreditOfferingChoice,
 } from "@rakazo/adapters";
 import type {
   ActionApprovalRule,
@@ -707,6 +708,21 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
   );
   const checkerAvailable =
     connections.some(Boolean) ||
+    (
+      await Promise.all(
+        memberChoices.map((choice) =>
+          choice.creditOfferingId
+            ? validateCreditOfferingChoice(
+                deps.prisma,
+                actor,
+                choice.provider,
+                choice.modelId,
+                choice.creditOfferingId,
+              )
+            : false,
+        ),
+      )
+    ).some(Boolean) ||
     (deploymentChecker !== null && environmentAvailable) ||
     (
       await Promise.all(

@@ -707,6 +707,37 @@ describe("Pi usage accounting", () => {
     expect(onUsage).toHaveBeenCalledOnce();
     expect((await stream.result()).stopReason).toBe("stop");
   });
+  it("emits the observer's customer tariff instead of the upstream cost", async () => {
+    const push = vi.fn();
+    const onUsage = vi.fn();
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () =>
+          new Response(sse({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0 }), {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      },
+      push,
+      {
+        beforeCall: () => "reservation",
+        afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
+      },
+      undefined,
+      { onUsage },
+    );
+    for await (const _event of stream) {
+    }
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ costUsd: 0.25, costSource: "deployment-tariff" }),
+    );
+    expect(push).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "usage", costUsd: 0.25, costSource: "deployment-tariff" }),
+    );
+  });
   it("context policy rejection terminates without reserving or spending", async () => {
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
     const fetcher = vi.fn();

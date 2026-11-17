@@ -20,6 +20,7 @@ import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
 } from "./memory-provider-factory.js";
+import { modelCreditOfferings } from "./model-credit-offerings.js";
 
 export { MAX_COMPACTED_SUMMARY_CHARS } from "./history-compaction.prompt.js";
 
@@ -383,6 +384,8 @@ export async function compactHistory(
   const { spaceId, botId } = thread;
   const userId = requesterId ?? thread.userId;
   const resolveModel = deps.resolveModel;
+  if (modelCreditOfferings() && !resolveModel)
+    throw new Error("Approved model summaries require the metered model resolver");
   const model = resolveModel
     ? // Their credentials are only readable as them.
       await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))

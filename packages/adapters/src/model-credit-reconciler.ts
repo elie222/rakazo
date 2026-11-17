@@ -186,7 +186,9 @@ export function createModelCreditReconciler(deps: {
             const receipt = storedUsage(call);
             let usage = receipt.usage;
             let reconciled = false;
-            const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
+            const tariff = usage?.pricingVersion?.startsWith("deployment-tariff:") === true;
+            const canLookUp =
+              !tariff && lookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {
               try {
                 const recovered = await lookup.lookupUsage(call.providerRequestId!);
@@ -229,6 +231,7 @@ export function createModelCreditReconciler(deps: {
             if (
               !(usage && hasFinalModelCost(usage)) &&
               !running &&
+              !tariff &&
               !unfinishedPaidService &&
               (lastAttempt || (usage && !canLookUp))
             ) {

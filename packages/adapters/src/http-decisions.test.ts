@@ -73,6 +73,39 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
         expect.objectContaining({ maxCostUsd: expect.any(Number) }),
       );
   });
+  it("keeps unknown provider usage unpriced for customer holds", async () => {
+    const onUsage = vi.fn();
+    const afterCall = vi.fn();
+    const body = await response().json();
+    delete body.usage;
+    const result = await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => Response.json(body),
+      onUsage,
+      callObserver: { beforeCall: () => "reservation", afterCall },
+    }).decide(request, context);
+    expect(result.usage?.costUsd).toBeNull();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null }),
+    );
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ costUsd: null }));
+  });
+  it("reports the observer tariff rather than a provider bill", async () => {
+    const onUsage = vi.fn();
+    await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => response(),
+      onUsage,
+      callObserver: {
+        beforeCall: () => "reservation",
+        afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
+      },
+    }).decide(request, context);
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ costUsd: 0.25, costSource: "deployment-tariff" }),
+    );
+  });
   it("rejects unknown answers while retaining provider costs", async () => {
     const onUsage = vi.fn();
     await expect(

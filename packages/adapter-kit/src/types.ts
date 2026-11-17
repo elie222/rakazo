@@ -806,7 +806,10 @@ export interface ModelCallObserver {
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
     cacheWriteRetention?: "1h";
   }): string | Promise<string>;
-  afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+  afterCall(
+    reservationId: string,
+    usage: AgentUsage | null,
+  ): void | AgentUsage | Promise<void> | Promise<AgentUsage | undefined>;
   onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;
 }
 

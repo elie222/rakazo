@@ -1,5 +1,6 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import { modelCreditOfferings } from "./model-credit-offerings.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "./pi-local-provider-id.js";
@@ -30,6 +31,17 @@ export function hostCredentialSource(provider: string): string {
  * Vendor env names and model ids live in the model provider registry, not in core.
  */
 export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
+  const offerings = modelCreditOfferings(env);
+  if (offerings) {
+    const selected = offerings.offerings.find((entry) => entry.id === offerings.defaultOfferingId);
+    return {
+      provider: selected?.provider ?? "",
+      model: selected?.modelId ?? "",
+      key: undefined,
+      configured: Boolean(selected),
+      hostCredentials: false,
+    };
+  }
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   // An unknown provider gets no key rather than another vendor's.
   const deployment = modelProviderDefinition(provider)?.deployment;

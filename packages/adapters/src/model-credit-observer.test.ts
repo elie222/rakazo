@@ -1,6 +1,11 @@
 import type { ModelCallObserver } from "@rakazo/adapter-kit";
-import { creditAccount, organizationForMember, reserveModelCredits } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  creditAccount,
+  organizationForMember,
+  recordModelCreditReceipt,
+  reserveModelCredits,
+} from "@rakazo/db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
 
 vi.mock("@rakazo/db", () => ({
@@ -52,5 +57,86 @@ describe("hosted model credit gate", () => {
       provider: "test-provider",
       model: "test-model",
     });
+  });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+describe("approved model tariffs", () => {
+  const entry = {
+    id: "approved",
+    connectionId: "operator-connection",
+    provider: "provider-a",
+    modelId: "model-a",
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 1 },
+  };
+  const configure = () => {
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({ defaultOfferingId: entry.id, offerings: [entry] }),
+    );
+    vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
+  };
+  const call = {
+    provider: entry.provider,
+    modelId: entry.modelId,
+    inputTokensEstimate: 1000000,
+    maxOutputTokens: 1000000,
+  };
+  it("rejects unapproved auxiliary and backup calls before reserving", async () => {
+    configure();
+    const observer = await hostedModelCreditObserver({} as never, scope);
+    await expect(observer.beforeCall({ ...call, modelId: "unapproved" })).rejects.toThrow(
+      "personal connection",
+    );
+    expect(reserveModelCredits).not.toHaveBeenCalled();
+  });
+  it("isolates concurrent calls and retains their tariff after withdrawal", async () => {
+    configure();
+    vi.mocked(reserveModelCredits).mockImplementation(
+      async (_db, _org, _cost, attribution) => attribution!.callId!,
+    );
+    const observer = await hostedModelCreditObserver({} as never, scope);
+    await Promise.all([
+      observer.beforeCall({ ...call, callId: "call-a" }),
+      observer.beforeCall({ ...call, callId: "call-b" }),
+    ]);
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({ defaultOfferingId: null, offerings: [] }),
+    );
+    const usage = {
+      inputTokens: 1000000,
+      outputTokens: 1000000,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 0,
+      costSource: "provider-reported",
+    };
+    const results = await Promise.all([
+      observer.afterCall("call-b", usage),
+      observer.afterCall("call-a", usage),
+    ]);
+    expect(results).toEqual([
+      expect.objectContaining({ costUsd: 3 }),
+      expect.objectContaining({ costUsd: 3 }),
+    ]);
+    expect(recordModelCreditReceipt).toHaveBeenCalledWith(
+      {},
+      "call-a",
+      expect.objectContaining({ costUsd: 3 }),
+    );
+    expect(reserveModelCredits).toHaveBeenCalledWith(
+      {},
+      "org-1",
+      3,
+      expect.objectContaining({
+        usage: expect.objectContaining({
+          costUsd: null,
+          pricingSnapshot: expect.objectContaining({ connectionId: "operator-connection" }),
+        }),
+      }),
+    );
+    const withdrawn = await hostedModelCreditObserver({} as never, scope);
+    await expect(withdrawn.beforeCall(call)).rejects.toThrow("personal connection");
   });
 });
