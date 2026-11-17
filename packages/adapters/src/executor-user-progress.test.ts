@@ -897,6 +897,24 @@ describe("notes that can't be posted as messages", () => {
     });
   });
 
+  it("posts a repeated update when it answers the person's message", async () => {
+    expect(
+      await updateTurn(["Still checking.", "Still checking."], {
+        startedAt: new Date(Date.now() - 120_000),
+        steerAt: 1,
+      }),
+    ).toMatchObject({ sent: ["Still checking.", "Still checking."] });
+  });
+
+  it("replies with an update it couldn't post even when an earlier message said the same", async () => {
+    expect(
+      await updateTurn(["A.", "B.", "C.", "A."], {
+        startedAt: new Date(Date.now() - 120_000),
+        final: "",
+      }),
+    ).toMatchObject({ sent: ["A.", "B.", "C."], statuses: ["A."], reply: "A." });
+  });
+
   it("still says when an update was cut off, whether it was posted or shown as the working line", async () => {
     const long = `Checking ${"every invoice ".repeat(60)}`.trim();
     const cutOff = { ok: true, truncated: true, note: expect.stringContaining("cut off") };
@@ -1042,6 +1060,22 @@ describe("messages mode", () => {
       },
     });
     expect(sentTexts(messages)).toEqual(["Starting.", "Found it.", "Starting."]);
+  });
+
+  it("keeps text written before a repeated update out of the reply", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "text", text: "Double-checking privately." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-2" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-2");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["The total is 4."]);
+    expect(finalText(finalizeRun)).toBe("");
   });
 
   it("shows the latest text as the reply when nothing follows the last step", async () => {

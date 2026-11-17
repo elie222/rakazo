@@ -271,10 +271,12 @@ export const messagingTools: ToolHandlers = {
           note: `This progress update was cut off at ${maxLength} characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.`,
         }
       : { ok: true };
-    if (reply.midTurnUserTexts.at(-1) === text) return call.finish(result);
+    // The person already has this text, unless it answers a message they just sent.
+    const repeat = !reply.steeringReplyPending && reply.midTurnUserTexts.at(-1) === text;
     // An update that can't be a chat message yet is shown as the working line, so the bot has
     // nothing to resend. As the bot's latest word, it becomes the reply if the bot writes none.
     if (
+      !repeat &&
       ctx.replyMode === "chat" &&
       !canPublishDurableProgress(reply) &&
       !canPostLongTaskHeadsUp(ctx)
@@ -284,7 +286,8 @@ export const messagingTools: ToolHandlers = {
       await showNarrationStatus(ctx, text);
       return call.finish(result);
     }
-    await publishInterimMessage(ctx, text, true);
+    if (repeat) reply.lastDiscardedMidTurnNarration = "";
+    else await publishInterimMessage(ctx, text, true);
     // The person already has this message; notes written before it are no longer a missing answer.
     if (ctx.replyMode === "messages") reply.workingNotes.length = 0;
     return call.finish(result);
