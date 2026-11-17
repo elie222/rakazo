@@ -102,7 +102,7 @@ describe("computer allowance", () => {
     // A lapsed plan's tier no longer applies.
     expect(await limit("canceled", "max")).toBe(5_000_000);
     // Every tier's trial gets the trial allowance.
-    expect(await limit("trialing", "max")).toBe(2_000_000);
+    expect(await limit("trialing", "max")).toBe(3_000_000);
   });
 
   it("gives a monthly credit plan a fifth of its amount", async () => {
@@ -186,13 +186,13 @@ describe("computer allowance", () => {
     expect(prisma.accessGrant.aggregate).not.toHaveBeenCalled();
   });
 
-  it("gives a trial $2 and a cancelled trial nothing", async () => {
+  it("gives a trial $3 and a cancelled trial nothing", async () => {
     const trial = allowanceDeps({
       billing: true,
       mode: "byok",
       subscription: { status: "trialing" },
     });
-    expect((await sandboxAllowance(trial.deps, "organization"))?.limitMicros).toBe(2_000_000);
+    expect((await sandboxAllowance(trial.deps, "organization"))?.limitMicros).toBe(3_000_000);
     const cancelled = allowanceDeps({
       billing: true,
       mode: "byok",
