@@ -497,7 +497,7 @@ it("says working only while the bot works, and shows nothing beside the time", (
   ]);
 });
 
-it("marks a ghost bot waiting on you like an unread chat", () => {
+it("says a ghost bot is waiting on you without marking a read chat unread", () => {
   const bot = {
     id: "asks",
     name: "Helper",

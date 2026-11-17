@@ -28,7 +28,7 @@
   "packages/adapters/src/run-tools-computer.ts": 1,
   "packages/adapters/src/run-tools-email.ts": 1,
   "packages/adapters/src/wakeup.ts": 1,
-  "packages/core/src/screen-reconnect.ts": 1,
+  "packages/core/src/computers/screen-reconnect.ts": 1,
   "packages/db/src/client.ts": 1,
   "packages/db/src/database-outage.ts": 1,
   "packages/db/src/deferred-migrations.ts": 1,

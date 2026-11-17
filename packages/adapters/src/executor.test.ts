@@ -660,6 +660,21 @@ describe("run tool selection", () => {
     expect(toolNames("user")).toContain("message_bot");
   });
 
+  it("offers message_bot only when there is another bot to message", () => {
+    const names = (patch: { hasTeammates: boolean; fleetManagement?: boolean }) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "user",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        ...patch,
+      }).map((tool) => tool.name);
+    expect(names({ hasTeammates: false })).not.toContain("message_bot");
+    expect(names({ hasTeammates: true })).toContain("message_bot");
+    expect(names({ hasTeammates: false, fleetManagement: true })).not.toContain("message_bot");
+  });
+
   it("keeps schedule tools in group chats and offers creation to routines", () => {
     expect(toolNames("user", "group-1")).toEqual(
       expect.arrayContaining(["schedule_create", "schedule_list", "schedule_cancel"]),
@@ -1865,7 +1880,7 @@ describe("userTurnInstructions", () => {
 describe("desktopGuardShellInstruction", () => {
   it("names write_file only when it is offered and says nothing without shell", () => {
     expect(desktopGuardShellInstruction(new Set(["shell", "write_file"]))).toBe(
-      "Shell commands must be literal: no `$(...)`, backticks, subshells, loop or computed variables, or interpreter heredocs. For more, write a script with write_file and run it with `python3` or `bash`.",
+      "Shell commands must be literal: no `$(...)`, backticks, subshells, or loop or computed variables. For more, write a script with write_file and run it with `python3` or `bash`.",
     );
     expect(desktopGuardShellInstruction(new Set(["shell"]))).toContain("write a script file and");
     expect(desktopGuardShellInstruction(new Set(["write_file"]))).toBeUndefined();

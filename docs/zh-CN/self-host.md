@@ -43,8 +43,10 @@ bash install-images.sh
 也可以设置 `OPENROUTER_API_KEY`；如需使用插件，再设置 `COMPOSIO_API_KEY`。
 也可以注册后在界面中连接模型。
 
-默认镜像标签是 `edge`，随主分支更新；发布的镜像同时支持 `amd64` 和 `arm64`。
-不要假定仓库中一定存在 `latest` 标签。固定版本与更新方法见[升级](./self-host-upgrading.md)。
+默认镜像标签是 `latest`，仅跟随稳定发布版本；发布的镜像同时支持 `amd64` 和 `arm64`。
+安装前必须已有稳定发布版本；安装器不会回退到主分支构建。默认不启用自动更新；如需启用，
+请参阅[定时稳定版更新（英文）](../self-host-upgrading.md#scheduled-stable-updates)。
+固定版本与更新方法见[升级](./self-host-upgrading.md)。
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)，注册并连接模型。注册账号不会自动获得服务器管理权限。
 在机器人中打开计算机，或发送需要使用桌面的消息，即可启动本地 Docker 计算机。
@@ -66,6 +68,8 @@ app.example.com {
 如果还要通过其他主机名访问（例如局域网 IP 或 tailnet 名称），请用逗号分隔写入
 `RAKAZO_ALLOWED_HOSTS`。否则网页服务会拒绝其他 `Host` 请求头，计算机屏幕可能保持空白。
 如需 Compose 内置 Caddy 或完整的主机加固流程，使用[生产部署指南（英文）](../self-host-production.md#public-single-vm-deployment)。
+
+在应用前再加一层 Cookie 登录门（例如 Google / oauth2-proxy）时，必须把计算机屏幕路径 `/novnc/session/*` 单独转发到 Rakazo，由应用校验屏幕能力 URL，否则画面会一直被外层登录重定向挡住。见[登录门与计算机屏幕](./self-host-login-gate.md)。
 
 ### 受限网络
 

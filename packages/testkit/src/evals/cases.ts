@@ -34,7 +34,9 @@ export type Step =
       ifScheduled?: true;
     }
   /** A request from the case's peer bot, delivered through message_bot's product path. */
-  | { fromPeer: string };
+  | { fromPeer: string }
+  /** A member posts a handoff through the real group delivery path. */
+  | { fromMember: string; text: string };
 export type Evidence = {
   text: string;
   delegation?: {
@@ -59,6 +61,8 @@ export type Evidence = {
   deliveries?: Array<{ kind: "message" | "handoff"; text: string; files: string[] }>;
   /** For an unaddressed group step: what each member posted afterwards, by name; empty if nothing. */
   memberReplies?: Record<string, string>;
+  /** Transient progress published in the group during the trial. */
+  groupProgressEvents?: number;
   files: Record<string, string | null>;
   /** Files seeded into history, by name: their computer path and content there after the trial. */
   seededAttachments?: Record<string, { path: string; content: string | null }>;
@@ -66,7 +70,10 @@ export type Evidence = {
   notes: EvalServices["notes"];
   /** The case's connected services by kind, with every call and write they recorded. */
   apps?: Record<string, AppEmulator>;
+  /** Every service call in the trial, by any bot; `botId` says whose run made it. */
   calls: ServiceCall[];
+  /** The bot under test, to tell its calls from a peer's. */
+  subjectBotId?: string;
   routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;

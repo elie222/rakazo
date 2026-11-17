@@ -1,5 +1,5 @@
 {
-  "installCommand": "corepack pnpm install",
+  "installCommand": "sh scripts/clone-marketing.sh && corepack pnpm install",
   "redirects": [
     {
       "source": "/",

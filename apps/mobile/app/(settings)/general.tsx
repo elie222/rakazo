@@ -16,6 +16,11 @@ import {
 import { currentApiBase, selectedSpaceId } from "../../lib/api";
 import { getCachedAppearancePreference, setAppearancePreference } from "../../lib/appearance";
 import {
+  getCachedComposerModelPicker,
+  setComposerModelPicker,
+  subscribeComposerModelPicker,
+} from "../../lib/composer-model-picker-preference";
+import {
   getHapticsEnabled,
   loadHapticsPreference,
   setHapticsEnabled,
@@ -84,6 +89,11 @@ export default function General() {
   const loadRemoteImages = useSyncExternalStore(
     subscribeRemoteImages,
     getCachedRemoteImagesEnabled,
+    () => false,
+  );
+  const composerModelPicker = useSyncExternalStore(
+    subscribeComposerModelPicker,
+    getCachedComposerModelPicker,
     () => false,
   );
   const hapticsEnabled = useSyncExternalStore(
@@ -302,6 +312,11 @@ export default function General() {
             label={t`Stream replies`}
             value={streamReplies}
             onChange={(checked) => void setResponseStreamingPreference(checked ? "on" : "off")}
+          />
+          <SettingsSwitch
+            label={t`Model picker in chat`}
+            value={composerModelPicker}
+            onChange={(checked) => void setComposerModelPicker(checked)}
           />
           <SettingsSwitch
             label={t`Load web images automatically`}

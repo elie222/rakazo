@@ -22,13 +22,23 @@ export function useStackedSettings(): boolean {
   return stacksAtTextScale(useWindowDimensions().fontScale);
 }
 
-export function SettingsLabel({ children }: { children: string }) {
+export function SettingsLabel({ children, leading }: { children: string; leading?: ReactNode }) {
   const styles = useThemedStyles(createSettingsStyles);
   const stacked = useStackedSettings();
-  return (
+  const label = (
     <Text accessibilityRole="header" style={[styles.groupLabel, stacked && styles.compactLabel]}>
       {children}
     </Text>
+  );
+  if (!leading) return label;
+  // A small mark before the label, inside the label's own inset.
+  return (
+    <View style={[styles.labelRow, stacked && styles.compactLabel]}>
+      {leading}
+      <Text accessibilityRole="header" style={styles.labelBeside}>
+        {children}
+      </Text>
+    </View>
   );
 }
 
@@ -259,6 +269,8 @@ function createSettingsStyles() {
       gap: 12,
     },
     compactLabel: { paddingStart: 12 },
+    labelRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingStart: 16 },
+    labelBeside: { color: native.secondaryLabel, ...typeScale.caption },
     compactSeparator: { marginStart: 12 },
     compactRow: { paddingHorizontal: 12, gap: 8 },
     titleColumn: { flex: 1, flexShrink: 1, gap: 2 },
