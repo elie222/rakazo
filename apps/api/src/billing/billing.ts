@@ -404,7 +404,10 @@ export function createBillingService(deps: {
     await deps.scheduleLifecycleEmail(
       "model-connection",
       { organizationId: previous.organizationId, userId },
-      new Date(Date.now() + MODEL_CONNECTION_EMAIL_DELAY_MS),
+      // From the plan's own start, so every sync that sees it names the same time.
+      new Date(
+        (live.currentPeriodStartsAt ?? new Date()).getTime() + MODEL_CONNECTION_EMAIL_DELAY_MS,
+      ),
     );
   }
 

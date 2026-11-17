@@ -126,9 +126,9 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("subscription_started"), ...planTerms, trial: z.boolean() }).strict(),
   // A trial's end: its first payment, or access lost without one.
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
-  // Only the fixed reason; the comment stays in the database.
   // Which lifecycle mail went out; never the address or the person.
   z.object({ name: z.literal("lifecycle_email_sent"), email: LifecycleEmailKind }).strict(),
+  // Only the fixed reason; the comment stays in the database.
   z
     .object({
       name: z.literal("subscription_cancel_feedback"),
