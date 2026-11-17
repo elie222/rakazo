@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PREFIX="${TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX:-}"
+# Matches the image start-postgres runs, for callers that do not set the prefix.
+PREFIX="${TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX:-mirror.gcr.io/}"
 IMAGE="${PREFIX}library/postgres:18-alpine"
 CACHE_DIR="${RUNNER_TEMP:-/tmp}/docker-postgres-cache"
 CACHE_TAR="$CACHE_DIR/postgres-18-alpine.tar"
