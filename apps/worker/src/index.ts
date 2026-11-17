@@ -233,17 +233,21 @@ async function main() {
   });
   // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
   // switched off since they were queued, those jobs are dropped.
-  const accountEmail = configuredEmailProvider({
-    provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
-    apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
-    from: process.env.EMAIL_FROM?.trim() || undefined,
-    replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
-    smtpUrl: process.env.SMTP_URL?.trim() || undefined,
-  });
-  const lifecycleEmail =
-    accountEmail && process.env.WELCOME_EMAIL_ENABLED === "true"
-      ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+  // Read only when product mail is on, so incomplete mail settings never stop a worker that
+  // sends none.
+  const accountEmail =
+    process.env.WELCOME_EMAIL_ENABLED === "true"
+      ? configuredEmailProvider({
+          provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
+          apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+          from: process.env.EMAIL_FROM?.trim() || undefined,
+          replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+          smtpUrl: process.env.SMTP_URL?.trim() || undefined,
+        })
       : undefined;
+  const lifecycleEmail = accountEmail
+    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+    : undefined;
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     prisma,

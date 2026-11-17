@@ -42,6 +42,7 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isOwnerRole,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
@@ -438,12 +439,12 @@ export function createBillingService(deps: {
   }
 
   async function ownerUserId(organizationId: string) {
-    const owner = await prisma.member.findFirst({
+    const members = await prisma.member.findMany({
       where: { organizationId, role: { contains: "owner" } },
       orderBy: { createdAt: "asc" },
-      select: { userId: true },
+      select: { userId: true, role: true },
     });
-    return owner?.userId;
+    return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
   async function cancel(organizationId: string) {
