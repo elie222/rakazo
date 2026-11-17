@@ -122,12 +122,12 @@
   "packages/adapters/src/workspace-save-policy.ts": 2,
   "packages/auth/src/oidc.ts": 1,
   "packages/auth/src/token-storage.ts": 1,
-  "packages/db/src/board-live.ts": 1,
-  "packages/db/src/content-keys.ts": 1,
-  "packages/db/src/database-access.ts": 1,
-  "packages/db/src/deferred-migrations.ts": 1,
-  "packages/db/src/event-stream.ts": 2,
-  "packages/db/src/events.ts": 1,
-  "packages/db/src/roster-changes.ts": 3,
-  "packages/db/src/row-security.ts": 1
+  "packages/db/src/artifacts/board-live.ts": 1,
+  "packages/db/src/bots/roster-changes.ts": 3,
+  "packages/db/src/database/database-access.ts": 1,
+  "packages/db/src/database/deferred-migrations.ts": 1,
+  "packages/db/src/database/row-security.ts": 1,
+  "packages/db/src/encryption/content-keys.ts": 1,
+  "packages/db/src/threads/event-stream.ts": 2,
+  "packages/db/src/threads/events.ts": 1
 }

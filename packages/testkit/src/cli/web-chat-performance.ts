@@ -11,7 +11,7 @@ import { abortableDelay, RESPONSE_STREAMING_STORAGE_KEY } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createThreadEvents, createThreadMessage, runAsSystem } from "@rakazo/db";
-import type { NumericSummary } from "../performance-report.js";
+import type { NumericSummary } from "../performance/performance-report.js";
 import {
   checkBudgets,
   parseTcpPort,
@@ -19,7 +19,7 @@ import {
   renderBudgetTable,
   roundedSummary,
   roundMetric,
-} from "../performance-report.js";
+} from "../performance/performance-report.js";
 import {
   benchmarkThreadMessages,
   STREAM_END,
