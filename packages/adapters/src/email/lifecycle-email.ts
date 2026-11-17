@@ -57,7 +57,12 @@ async function needsModelConnection(prisma: PrismaClient, target: Target): Promi
 async function recipient(prisma: PrismaClient, target: Target) {
   const [user, deleting] = await Promise.all([
     prisma.user.findFirst({
-      where: { id: target.userId, emailVerified: true, marketingEmailOptOutAt: null },
+      where: {
+        id: target.userId,
+        emailVerified: true,
+        marketingEmailOptOutAt: null,
+        deactivatedAt: null,
+      },
       select: {
         email: true,
         members: { where: { organizationId: target.organizationId }, select: { role: true } },

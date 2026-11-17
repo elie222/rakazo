@@ -171,7 +171,7 @@ dbTests("model connection email", () => {
     expect([...sentTo(chose.id), ...sentTo(funded.id)]).toHaveLength(0);
   });
 
-  it("writes only to a verified owner who has not opted out, of an organization that is staying", async () => {
+  it("writes only to a verified, active owner who has not opted out, of an organization that is staying", async () => {
     const optedOut = await subscriber("opted-out");
     await prisma.user.update({
       where: { id: optedOut.id },
@@ -179,6 +179,11 @@ dbTests("model connection email", () => {
     });
     const unverified = await subscriber("unverified");
     await prisma.user.update({ where: { id: unverified.id }, data: { emailVerified: false } });
+    const deactivated = await subscriber("deactivated");
+    await prisma.user.update({
+      where: { id: deactivated.id },
+      data: { deactivatedAt: new Date() },
+    });
     const demoted = await subscriber("demoted");
     await prisma.member.update({ where: { id: demoted.id }, data: { role: "member" } });
     const guest = await subscriber("guest");
@@ -188,7 +193,7 @@ dbTests("model connection email", () => {
     const deleted = await subscriber("deleted");
     await prisma.organization.delete({ where: { id: deleted.id } });
 
-    const dropped = [optedOut, unverified, demoted, guest, deleting, deleted];
+    const dropped = [optedOut, unverified, deactivated, demoted, guest, deleting, deleted];
     for (const { job } of dropped) await send(job);
     expect(dropped.flatMap(({ id }) => sentTo(id))).toHaveLength(0);
   });
