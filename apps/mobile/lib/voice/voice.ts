@@ -39,6 +39,7 @@ export function createSpeechOwner(): SpeechOwner {
 }
 
 type SpeechOptions = {
+  callId?: string;
   requestContext?: ApiRequestContext;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
@@ -565,6 +566,7 @@ async function renderUtterance(
             text,
             voiceId: opts.voiceId,
             botId: opts.botId,
+            callId: opts.callId,
             scope: opts.scope,
           }),
           signal: deadline.signal,

@@ -1,4 +1,4 @@
-import type { VoiceProvider } from "@rakazo/adapter-kit";
+import type { VoiceProvider, VoiceUsage } from "@rakazo/adapter-kit";
 import type { VoiceCatalogEntry } from "@rakazo/contracts";
 
 export interface VoiceProviderOptions {
@@ -20,5 +20,10 @@ export interface VoiceProviderDefinition {
   synthesisModel?: string;
   /** A fixed recognition model when the deployment supports one model. */
   transcriptionModel?: string;
+  /** A unit this model reliably reports and this deployment policy can price. */
+  deploymentUsageUnit?(
+    operation: "synthesize" | "transcribe",
+    model: string,
+  ): VoiceUsage["unit"] | undefined;
   create(options: VoiceProviderOptions): VoiceProvider;
 }

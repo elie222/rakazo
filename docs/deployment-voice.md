@@ -52,6 +52,14 @@ match the pricing models. Endpoint fields require valid HTTP(S) URLs and a provi
 supports custom endpoints; unsupported fields are rejected so consent names the actual recipient.
 Compatible connections require the main server URL; a separate recognition key requires its own
 recognition URL. Fixed recognition models are validated by the provider descriptor.
+
+The adapter must declare usable metering for both configured models. Reported units must match
+pricing units; startup rejects mismatches. Models without reliable usage evidence, including
+compatible servers, require explicit `"allowUnmeteredUsage": true` in this JSON. Use that opt-in
+only with an operator process for importing cost evidence: every unmetered request retains its
+full reservation until reconciled and can exhaust the allowance after a few replies. Token-billed
+models also require that opt-in because this policy cannot price mixed token classes automatically.
+
 Endpoint/private-network restrictions remain in force. Keep server keys
 out of account settings, client configuration, repository files and logs. Use a dedicated speech
 service key, separate from reasoning credentials. No provider purchase or key retrieval is automated.

@@ -269,9 +269,9 @@ export function startCall(
   if (call.session !== undefined && call.session !== currentSessionGeneration()) return undefined;
   endCall();
   callSessionGeneration = currentSessionGeneration();
+  callId = call.answered?.callId ?? newClientId();
   deps = { ...productionDeps(call.requestContext), ...overrides };
   switchBot = call.switchBot;
-  callId = call.answered?.callId ?? newClientId();
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
@@ -878,6 +878,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   // One owner per call: its hang-up and barge-in stop only its own speech, never
   // unrelated read-aloud that has since replaced it.
   const speechOwner = createSpeechOwner();
+  const sessionCallId = callId;
   // A late request of this call fails instead of going out with a newer session.
   const generation = callSessionGeneration;
   const callContext = async () => {
@@ -902,10 +903,8 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
       await ensureVoiceConsent(await callContext());
       return recordClip(signal);
     },
-    transcribe: async (clip, signal) => {
-      const currentCallId = callId;
-      return transcribeClip(clip, signal, await callContext(), currentCallId);
-    },
+    transcribe: async (clip, signal) =>
+      transcribeClip(clip, signal, await callContext(), sessionCallId),
     send: (botId, text, clientNonce) =>
       endOnUnauthorized(
         callContext().then(async (requestContext) => {
@@ -926,7 +925,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
         }),
       ),
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
-    speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
+    speak: (botId, text) => speakReply(botId, text, speechOwner, sessionCallId, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
     audio: setCallAudio,
     cue: playCallCue,
@@ -1091,9 +1090,10 @@ async function speakReply(
   botId: string,
   text: string,
   owner: SpeechOwner,
+  callId: string,
   requestContext?: ApiRequestContext,
 ): Promise<void> {
-  if (!(await speakText(text, { botId, owner, requestContext }))) {
+  if (!(await speakText(text, { botId, owner, callId, requestContext }))) {
     throw new Error(t`Add a voice provider in Voice settings.`);
   }
 }

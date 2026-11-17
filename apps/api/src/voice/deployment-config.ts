@@ -2,6 +2,7 @@ import {
   isVoiceProviderId,
   voiceDeploymentConnectionSupported,
   voiceDeploymentModelSupported,
+  voiceDeploymentUsageUnit,
 } from "@rakazo/adapters";
 import { z } from "zod";
 
@@ -31,6 +32,7 @@ const deploymentVoiceSchema = z
       })
       .strict(),
     voiceId: z.string().min(1),
+    allowUnmeteredUsage: z.boolean().optional(),
     pricing: z.object({ synthesize: price, transcribe: price }).strict(),
   })
   .strict();
@@ -56,6 +58,16 @@ export function deploymentVoiceFromEnv(value: string | undefined): DeploymentVoi
       (config.connection.sttModel && config.connection.sttModel !== config.pricing.transcribe.model)
     ) {
       throw new Error("Invalid deployment speech configuration");
+    }
+    for (const operation of ["synthesize", "transcribe"] as const) {
+      const pricing = config.pricing[operation];
+      const unit = voiceDeploymentUsageUnit(config.provider, pricing.model, operation);
+      if (
+        (unit !== undefined && unit !== pricing.unit) ||
+        ((unit === undefined || unit === "tokens") && config.allowUnmeteredUsage !== true)
+      ) {
+        throw new Error("Invalid deployment speech metering policy");
+      }
     }
     return {
       ...config,

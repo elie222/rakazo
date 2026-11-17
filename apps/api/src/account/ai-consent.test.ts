@@ -381,6 +381,7 @@ function includedSpeechSetup() {
   deps.env.deploymentVoice = deploymentVoiceFromEnv(
     JSON.stringify({
       provider: "openai-compatible",
+      allowUnmeteredUsage: true,
       voiceId: "fixture-voice",
       connection: {
         plaintext: "fake-operator-secret",

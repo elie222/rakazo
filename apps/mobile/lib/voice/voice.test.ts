@@ -149,7 +149,7 @@ describe("mobile speech", () => {
   });
 
   it("keeps every request on the server and space captured before preparation", async () => {
-    await expect(speakText("Read this", { botId: "bot-1" })).resolves.toBe(true);
+    await expect(speakText("Read this", { botId: "bot-1", callId: "call-1" })).resolves.toBe(true);
 
     const requestContext = {
       apiBase: "https://support.example",
@@ -169,6 +169,7 @@ describe("mobile speech", () => {
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe("https://support.example/api/voice/speak");
       expect(init?.headers).toMatchObject(requestContext.headers);
+      expect(JSON.parse(init?.body as string)).toMatchObject({ callId: "call-1" });
     }
   });
 

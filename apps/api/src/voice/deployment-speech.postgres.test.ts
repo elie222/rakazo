@@ -27,6 +27,7 @@ suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
         deploymentVoice: deploymentVoiceFromEnv(
           JSON.stringify({
             provider: "scripted",
+            allowUnmeteredUsage: true,
             voiceId: "alloy-test",
             connection: { plaintext: "fake-server-key" },
             pricing: { synthesize: price, transcribe: price },

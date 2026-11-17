@@ -31,6 +31,7 @@ const price = {
 };
 const config = {
   provider: "scripted",
+  allowUnmeteredUsage: true,
   connection: { plaintext: "fake-server-key" },
   voiceId: "test-voice",
   pricing: { synthesize: price, transcribe: { ...price, unit: "seconds" } },
@@ -124,6 +125,7 @@ describe("deployment speech default", () => {
     const valid = {
       ...config,
       provider: "xai",
+      allowUnmeteredUsage: undefined,
       pricing: {
         synthesize: { ...price, model: "tts" },
         transcribe: { ...price, unit: "seconds", model: "grok-voice-transcribe-2.0" },
@@ -138,6 +140,68 @@ describe("deployment speech default", () => {
             ...valid.pricing,
             transcribe: { ...valid.pricing.transcribe, model: "mistyped-model" },
           },
+        }),
+      ),
+    ).toThrow("Invalid DEPLOYMENT_VOICE");
+  });
+  it.each(["synthesize", "transcribe"] as const)(
+    "rejects pricing units that disagree with the adapter's %s usage",
+    (operation) => {
+      for (const allowUnmeteredUsage of [false, true]) {
+        expect(() =>
+          deploymentVoiceFromEnv(
+            JSON.stringify({
+              ...config,
+              provider: "xai",
+              allowUnmeteredUsage,
+              pricing: {
+                synthesize: {
+                  ...price,
+                  model: "tts",
+                  unit: operation === "synthesize" ? "seconds" : "characters",
+                },
+                transcribe: {
+                  ...price,
+                  model: "grok-voice-transcribe-2.0",
+                  unit: operation === "transcribe" ? "characters" : "seconds",
+                },
+              },
+            }),
+          ),
+        ).toThrow("Invalid DEPLOYMENT_VOICE");
+      }
+    },
+  );
+  it("requires explicit acceptance of manual reconciliation for unmetered models", () => {
+    const unmetered = {
+      ...config,
+      provider: "openai-compatible",
+      connection: { plaintext: "fake-server-key", baseUrl: "https://speech.example.test/v1" },
+      allowUnmeteredUsage: undefined,
+    };
+    expect(() => deploymentVoiceFromEnv(JSON.stringify(unmetered))).toThrow(
+      "Invalid DEPLOYMENT_VOICE",
+    );
+    expect(
+      deploymentVoiceFromEnv(JSON.stringify({ ...unmetered, allowUnmeteredUsage: true })),
+    ).toBeDefined();
+  });
+  it("accepts automatically priced models and rejects unknown models without opt-in", () => {
+    const metered = {
+      ...config,
+      provider: "openai",
+      allowUnmeteredUsage: undefined,
+      pricing: {
+        synthesize: { ...price, model: "tts-1" },
+        transcribe: { ...price, model: "whisper-1", unit: "seconds" },
+      },
+    };
+    expect(deploymentVoiceFromEnv(JSON.stringify(metered))).toBeDefined();
+    expect(() =>
+      deploymentVoiceFromEnv(
+        JSON.stringify({
+          ...metered,
+          pricing: { ...metered.pricing, synthesize: { ...price, model: "unknown-speech" } },
         }),
       ),
     ).toThrow("Invalid DEPLOYMENT_VOICE");

@@ -163,6 +163,7 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
 }
 
 export const xaiVoice: VoiceProviderDefinition = {
+  deploymentUsageUnit: (operation) => (operation === "synthesize" ? "characters" : "seconds"),
   synthesisModel: "tts",
   transcriptionModel: TRANSCRIPTION_MODEL,
   catalog: {

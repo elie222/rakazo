@@ -167,6 +167,12 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 }
 
 export const openaiVoice: VoiceProviderDefinition = {
+  deploymentUsageUnit: (operation, model) => {
+    if (operation === "synthesize" && (model === "tts-1" || model === "tts-1-hd"))
+      return "characters";
+    if (operation === "transcribe" && model === "whisper-1") return "seconds";
+    return undefined;
+  },
   catalog: {
     name: "OpenAI",
     description: "Simple TTS plus Whisper-class transcription. Reuse an OpenAI key.",

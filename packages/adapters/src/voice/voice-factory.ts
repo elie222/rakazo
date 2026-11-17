@@ -1,4 +1,4 @@
-import type { VoiceProvider } from "@rakazo/adapter-kit";
+import type { VoiceProvider, VoiceUsage } from "@rakazo/adapter-kit";
 import type { VoiceCatalogEntry } from "@rakazo/contracts";
 import type { VoiceProviderOptions } from "./voice-provider-descriptor.js";
 import type { VoiceProviderId } from "./voice-providers.js";
@@ -71,4 +71,13 @@ export function voiceDeploymentConnectionSupported(
   return [connection.baseUrl, connection.sttBaseUrl, connection.sttApiKey].every(
     (value) => value === undefined,
   );
+}
+
+/** Undefined requires explicit operator acceptance of manual cost reconciliation. */
+export function voiceDeploymentUsageUnit(
+  provider: string,
+  model: string,
+  operation: "synthesize" | "transcribe",
+): VoiceUsage["unit"] | undefined {
+  return knownVoiceProvider(provider)?.deploymentUsageUnit?.(operation, model);
 }

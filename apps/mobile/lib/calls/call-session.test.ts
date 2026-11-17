@@ -2702,8 +2702,10 @@ describe("mobile call on a session change", () => {
       sessionGeneration: currentSessionGeneration(),
     }));
     const fake = fakes();
-    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
-    startCall(
+    const { speakText } = await import("../voice/voice");
+    vi.mocked(speakText).mockResolvedValue(true);
+    const { send: _send, endCall: _endCall, speak: _speak, ...deps } = fake.deps;
+    const startedCallId = startCall(
       {
         botId: "bot-1",
         botName: "Ada",
@@ -2718,6 +2720,12 @@ describe("mobile call on a session change", () => {
     await flush();
     fake.say("hello");
     await flush();
+    fake.replyWith("reply-1", "Hello back", "run-1");
+    await flush();
+    expect(speakText).toHaveBeenCalledWith(
+      "Hello back",
+      expect.objectContaining({ callId: startedCallId }),
+    );
     endCall();
     await flush();
 
