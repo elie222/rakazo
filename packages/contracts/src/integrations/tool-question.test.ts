@@ -38,6 +38,13 @@ describe("tool question forms", () => {
     if (checked.ok) expect(Object.hasOwn(checked.values, "__proto__")).toBe(true);
   });
 
+  it("reads a field named like an object built-in as empty when it was left out", () => {
+    const optional: ToolQuestionField[] = [
+      { name: "toString", label: "Note", required: false, type: "text", maxLength: 10 },
+    ];
+    expect(checkToolQuestionValues(optional, {})).toEqual({ ok: true, values: {} });
+  });
+
   it("shows the answer just sent until the card itself changes", () => {
     expect(toolQuestionShownStatus("pending", "accept")).toBe("accepted");
     expect(toolQuestionShownStatus("pending", undefined)).toBe("pending");

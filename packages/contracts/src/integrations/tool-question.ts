@@ -91,7 +91,8 @@ export function checkToolQuestionValues(
     if (!known.has(name)) return { ok: false, reason: `Unknown field ${name}` };
   }
   for (const field of fields) {
-    const value = values[field.name];
+    // Own values only: a field named like an object built-in (`toString`) is empty when unset.
+    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
     if (value === undefined || value === null || value === "") {
       if (field.required) return { ok: false, reason: `${field.label || field.name} is required` };
       continue;

@@ -80,6 +80,9 @@ async function askInRun(
       await bestEffort("tool question", take(true));
       throw error;
     }
+    // The wait ended; a failure that is not that ending still leaves a trace.
+    if (error !== wait.reason && !(error instanceof DOMException && error.name === "AbortError"))
+      getLogger().warn("tool_question.wait_failed", { "run.id": run.id, error });
   }
   // The wait ended, the server withdrew the question or the run stopped: the card closes as
   // expired unless an answer got in first.
