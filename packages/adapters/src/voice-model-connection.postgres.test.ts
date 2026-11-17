@@ -5,7 +5,7 @@ import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { serializeModelSecret } from "./model-secret.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { MODEL_CONNECTION_VOICE_SECRET, resolveVoiceKey } from "./voice-model-connection.js";
+import { modelConnectionVoiceSecret, resolveVoiceKey } from "./voice-model-connection.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -72,7 +72,7 @@ describePostgres("voice through a Grok sign-in (PostgreSQL contract)", () => {
           { prisma, secretStore: secrets },
           scope,
           "xai",
-          MODEL_CONNECTION_VOICE_SECRET,
+          modelConnectionVoiceSecret(),
         ),
       );
     return { resolve, storedModelSecret };

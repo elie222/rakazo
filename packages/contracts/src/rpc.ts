@@ -1683,6 +1683,8 @@ export const appContract = {
              * the account's model connection authenticates (the catalog's `modelConnection`).
              */
             apiKey: z.string().max(4096).default(""),
+            /** With no key, the account's model connection voice uses; omitted uses the newest. */
+            modelCredentialId: z.string().max(64).optional(),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */

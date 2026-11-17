@@ -1,21 +1,45 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential } from "@rakazo/db";
+import { findModelCredential, findModelCredentialById } from "@rakazo/db";
 import { resolveStoredModelAuth, withModelCredentialLock } from "./model-credential-refresh.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { voiceCatalogEntry } from "./voice-factory.js";
 
 /**
- * A voice connection's secret when it authenticates with the account's model connection to the
- * same provider instead of a key of its own. It holds no token: each request reads the model
- * connection, so a refresh or reconnect there carries over.
+ * A voice connection's secret when it authenticates with one of the account's model connections
+ * to the same provider instead of a key of its own. It holds no token: each request reads the
+ * model connection, so a refresh or reconnect there carries over. Without `credentialId`, as
+ * saved before a connection could be chosen, it uses the provider's preferred connection.
  */
-export const MODEL_CONNECTION_VOICE_SECRET = JSON.stringify({ kind: "model_connection" });
+export function modelConnectionVoiceSecret(credentialId?: string): string {
+  return JSON.stringify(
+    credentialId ? { kind: "model_connection", credentialId } : { kind: "model_connection" },
+  );
+}
+
+/** The model connection a voice secret names, or undefined when the secret is a key. */
+export function parseModelConnectionVoiceSecret(
+  plaintext: string,
+): { credentialId?: string } | undefined {
+  // A pasted key is never parsed: only the exact shape written above counts.
+  if (!plaintext.startsWith('{"kind":"model_connection"')) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(plaintext);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || !("kind" in parsed)) return undefined;
+  if (parsed.kind !== "model_connection") return undefined;
+  const credentialId = "credentialId" in parsed ? parsed.credentialId : undefined;
+  if (credentialId === undefined) return {};
+  return typeof credentialId === "string" && credentialId ? { credentialId } : undefined;
+}
 
 export function isModelConnectionVoiceSecret(plaintext: string): boolean {
-  return plaintext === MODEL_CONNECTION_VOICE_SECRET;
+  return parseModelConnectionVoiceSecret(plaintext) !== undefined;
 }
 
 export type VoiceKeyDeps = {
@@ -36,15 +60,17 @@ export async function resolveVoiceKey(
   signal?: AbortSignal,
 ): Promise<string> {
   // Only a provider the catalog lets use the model connection may; elsewhere it is a pasted key.
-  if (!isModelConnectionVoiceSecret(plaintext) || !voiceCatalogEntry(provider)?.modelConnection) {
-    return plaintext;
-  }
+  const link = parseModelConnectionVoiceSecret(plaintext);
+  if (!link || !voiceCatalogEntry(provider)?.modelConnection) return plaintext;
   const missing = () =>
     new VoiceAccountError(
       undefined,
       `Connect ${voiceCatalogEntry(provider)?.name ?? provider} in Models settings.`,
     );
-  const credential = await findModelCredential(deps.prisma, { userId: scope.userId }, provider);
+  const owner = { userId: scope.userId };
+  const credential = link.credentialId
+    ? await findModelCredentialById(deps.prisma, owner, link.credentialId, provider)
+    : await findModelCredential(deps.prisma, owner, provider);
   if (!credential) throw missing();
   return withModelCredentialLock(credential.secretId, async () => {
     const row = await deps.prisma.secret.findFirst({

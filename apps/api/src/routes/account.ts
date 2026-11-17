@@ -578,6 +578,7 @@ export function accountRoutes(ctx: RouterContext) {
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
+          modelCredentialId: input.modelCredentialId,
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,

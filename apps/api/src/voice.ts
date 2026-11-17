@@ -6,10 +6,11 @@ import {
   isModelConnectionVoiceSecret,
   isSpeechModelId,
   isVoiceProviderId,
+  listPiCatalog,
   listVoiceCatalog,
   MAX_SPEAK_CHARS,
   MAX_TRANSCRIBE_BYTES,
-  MODEL_CONNECTION_VOICE_SECRET,
+  modelConnectionVoiceSecret,
   NoVoiceConfigured,
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   openAiCompatibleVoiceServer,
@@ -21,6 +22,7 @@ import type {
   Actor,
   SettingsScope,
   VoiceAccountErrorCode,
+  VoiceCatalogEntry,
   VoiceCredential,
   VoiceStatus,
 } from "@rakazo/contracts";
@@ -30,12 +32,13 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
-  findModelCredential,
   findVoiceCredential,
   findVoicePreference,
   IsolationError,
   isDatabaseUnavailable,
   lockSpaceSettings,
+  modelCredentialProviderFilter,
+  newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
   runAsSystemInTransaction,
@@ -75,15 +78,29 @@ export async function voiceProviderFor(deps: VoiceDeps, provider: string) {
   });
 }
 
-/** The catalog as this account sees it: `modelConnection` stays only where it has one. */
-export async function accountVoiceCatalog(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
+/**
+ * The catalog as this account sees it. A provider that can use a model connection lists the
+ * account's connections to it, or offers its Models sign-in when there are none.
+ */
+export async function accountVoiceCatalog(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId">,
+): Promise<VoiceCatalogEntry[]> {
   const catalog = listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint });
   return Promise.all(
-    catalog.map(async ({ modelConnection, ...entry }) =>
-      modelConnection && (await findModelCredential(deps.prisma, actor, entry.id))
-        ? { ...entry, modelConnection }
-        : entry,
-    ),
+    catalog.map(async ({ modelConnection, ...entry }) => {
+      if (!modelConnection) return entry;
+      const modelConnections = await deps.prisma.userModelCredential.findMany({
+        where: { userId: actor.userId, provider: modelCredentialProviderFilter(entry.id) },
+        orderBy: newestModelCredentialOrder,
+        select: { id: true, label: true },
+      });
+      if (modelConnections.length) return { ...entry, modelConnection, modelConnections };
+      const modelSignIn = listPiCatalog().find(
+        (model) => model.provider === entry.id && model.signIn,
+      )?.oauthLabel;
+      return modelSignIn ? { ...entry, modelSignIn } : entry;
+    }),
   );
 }
 
@@ -214,6 +231,8 @@ export function voiceCredentialPlaintext(input: {
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
   allowPrivateEndpoint?: boolean;
+  /** With no key, the account's model connection to use; omitted uses the preferred one. */
+  modelCredentialId?: string;
 }): string {
   if (voiceCatalogEntry(input.provider)?.keyless) {
     // The credential row is what selects the provider; it has no key to keep.
@@ -222,7 +241,7 @@ export function voiceCredentialPlaintext(input: {
   if (input.provider !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
     const key = input.plaintext.trim();
     if (!key && voiceCatalogEntry(input.provider)?.modelConnection) {
-      return MODEL_CONNECTION_VOICE_SECRET;
+      return modelConnectionVoiceSecret(input.modelCredentialId);
     }
     if (key.length < 8) {
       throw new ORPCError("BAD_REQUEST", { message: "Enter an API key." });
@@ -357,6 +376,8 @@ export async function persistVoiceCredential(
   input: {
     provider: string;
     plaintext: string;
+    /** With no key, the account's model connection to use. */
+    modelCredentialId?: string;
     voiceId?: string;
     speechModel?: string;
     baseUrl?: string;

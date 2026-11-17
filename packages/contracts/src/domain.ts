@@ -1427,6 +1427,13 @@ export const VoiceCatalogEntrySchema = z.object({
    * optional. Set only for an account that has one.
    */
   modelConnection: z.boolean().optional(),
+  /** The account's model connections to this provider that voice can use instead of a key. */
+  modelConnections: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
+  /**
+   * The Models sign-in button text for this provider, when voice can use a sign-in and the
+   * account has no model connection to it yet. Signing in adds one.
+   */
+  modelSignIn: z.string().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
 });

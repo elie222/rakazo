@@ -156,10 +156,25 @@ function modelConnectionDeps(
   prisma: Record<string, unknown> = {},
   modelCredentials = [xaiModelCredential],
 ) {
+  type Where = { id?: string; provider?: string | { in: string[] } };
+  const matches = (row: typeof xaiModelCredential, where: Where = {}) =>
+    (!where.id || row.id === where.id) &&
+    (!where.provider ||
+      (typeof where.provider === "string"
+        ? row.provider === where.provider
+        : where.provider.in.includes(row.provider)));
   return {
     prisma: {
       userModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
-      userModelCredential: { findMany: vi.fn().mockResolvedValue(modelCredentials) },
+      userModelCredential: {
+        findMany: vi.fn(async ({ where }: { where?: Where } = {}) =>
+          modelCredentials.filter((row) => matches(row, where)),
+        ),
+        findFirst: vi.fn(async ({ where }: { where?: Where } = {}) => {
+          const row = modelCredentials.find((credential) => matches(credential, where));
+          return row ? { ...row, userPreferences: [] } : null;
+        }),
+      },
       secret: {
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
           where.id in plaintexts ? { id: where.id, ciphertext: `cipher:${where.id}` } : null,
@@ -805,7 +820,7 @@ describe("synthesizeVoice", () => {
       vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
       const deps = modelConnectionDeps(
         {
-          "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET,
+          "voice-secret": adapters.modelConnectionVoiceSecret(),
           "model-secret": "xai-model-key",
         },
         voicePrisma,
@@ -819,11 +834,33 @@ describe("synthesizeVoice", () => {
       });
     });
 
+    it("speaks with the model connection it was linked to, not the newest one", async () => {
+      const synthesize = vi
+        .fn()
+        .mockResolvedValue({ bytes: new Uint8Array(), mimeType: "audio/mpeg" });
+      vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+      const newest = { ...xaiModelCredential, id: "model-cred-new", secretId: "model-secret-new" };
+      const linked = { ...xaiModelCredential, id: "model-cred-old", secretId: "model-secret-old" };
+      const deps = modelConnectionDeps(
+        {
+          "voice-secret": adapters.modelConnectionVoiceSecret("model-cred-old"),
+          "model-secret-new": "xai-newest-key",
+          "model-secret-old": "xai-linked-key",
+        },
+        voicePrisma,
+        [newest, linked],
+      ) as unknown as VoiceDeps;
+
+      await synthesizeVoice(deps, actor, { text: "Hello" });
+
+      expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ apiKey: "xai-linked-key" });
+    });
+
     it("asks to reconnect the model provider once that connection is gone", async () => {
       const synthesize = vi.fn();
       vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
       const deps = modelConnectionDeps(
-        { "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET },
+        { "voice-secret": adapters.modelConnectionVoiceSecret() },
         voicePrisma,
         [],
       ) as unknown as VoiceDeps;
@@ -857,8 +894,11 @@ describe("voiceCredentialPlaintext", () => {
 
   it("links a blank key to the model connection only where the provider allows it", () => {
     expect(voiceCredentialPlaintext({ provider: "xai", plaintext: "  " })).toBe(
-      adapters.MODEL_CONNECTION_VOICE_SECRET,
+      adapters.modelConnectionVoiceSecret(),
     );
+    expect(
+      voiceCredentialPlaintext({ provider: "xai", plaintext: "", modelCredentialId: "model-1" }),
+    ).toBe(adapters.modelConnectionVoiceSecret("model-1"));
     expect(voiceCredentialPlaintext({ provider: "xai", plaintext: "xai-test-key" })).toBe(
       "xai-test-key",
     );
@@ -987,14 +1027,14 @@ describe("voiceCredentialHasKey", () => {
   };
 
   it("is false only for a connection linked to the model connection", async () => {
-    const link = depsWith({ "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET });
+    const link = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     expect(await voiceCredentialHasKey(link.deps, actor, linked)).toBe(false);
     const keyed = depsWith({ "voice-secret": "xai-test-key" });
     expect(await voiceCredentialHasKey(keyed.deps, actor, linked)).toBe(true);
   });
 
   it("does not decrypt other providers' keys and counts an unreadable secret as a key", async () => {
-    const hosted = depsWith({ "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET });
+    const hosted = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     expect(
       await voiceCredentialHasKey(hosted.deps, actor, {
         provider: "openai",
@@ -1003,14 +1043,14 @@ describe("voiceCredentialHasKey", () => {
     ).toBe(true);
     expect(hosted.load).not.toHaveBeenCalled();
 
-    const broken = depsWith({ "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET });
+    const broken = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     broken.load.mockImplementation(() => {
       throw new Error("bad ciphertext");
     });
     expect(await voiceCredentialHasKey(broken.deps, actor, linked)).toBe(true);
     const missing = depsWith({});
     expect(await voiceCredentialHasKey(missing.deps, actor, linked)).toBe(true);
-    const dbDown = depsWith({ "voice-secret": adapters.MODEL_CONNECTION_VOICE_SECRET });
+    const dbDown = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
     dbDown.raw.prisma.secret.findFirst.mockRejectedValue(new Error("db down"));
     expect(await voiceCredentialHasKey(dbDown.deps, actor, linked)).toBe(true);
   });
@@ -1019,24 +1059,36 @@ describe("voiceCredentialHasKey", () => {
 describe("accountVoiceCatalog", () => {
   async function catalogFor(modelCredentials: Array<typeof xaiModelCredential>) {
     const deps = modelConnectionDeps({}, {}, modelCredentials) as unknown as VoiceDeps;
-    const catalog = await accountVoiceCatalog(deps, actor);
-    return {
-      ids: catalog.map((entry) => entry.id),
-      linkable: catalog.flatMap((entry) =>
-        "modelConnection" in entry ? [[entry.id, entry.modelConnection]] : [],
-      ),
-    };
+    return accountVoiceCatalog(deps, actor);
   }
 
-  it("offers the model connection only for a provider the account is connected to", async () => {
-    const connected = await catalogFor([xaiModelCredential]);
-    expect(connected.linkable).toEqual([["xai", true]]);
+  it("lists each of the account's model connections a provider can use for voice", async () => {
+    const second = { ...xaiModelCredential, id: "model-cred-2", label: "xAI 2" };
+    const catalog = await catalogFor([xaiModelCredential, second]);
+    expect(catalog.find((entry) => entry.id === "xai")).toMatchObject({
+      modelConnection: true,
+      modelConnections: [
+        { id: "model-cred-1", label: "xAI" },
+        { id: "model-cred-2", label: "xAI 2" },
+      ],
+    });
+    expect(catalog.find((entry) => entry.id === "xai")).not.toHaveProperty("modelSignIn");
+    expect(catalog.filter((entry) => entry.modelConnections)).toHaveLength(1);
+  });
 
+  it("offers the Models sign-in when the account has no connection voice can use", async () => {
     for (const credentials of [[], [{ ...xaiModelCredential, provider: "openai" }]]) {
-      const other = await catalogFor(credentials);
-      expect(other.ids).toContain("xai");
-      expect(other.linkable).toEqual([]);
+      const xai = (await catalogFor(credentials)).find((entry) => entry.id === "xai");
+      expect(xai).not.toHaveProperty("modelConnections");
+      expect(xai).not.toHaveProperty("modelConnection");
+      expect(xai?.modelSignIn).toBe(
+        adapters.listPiCatalog().find((model) => model.provider === "xai" && model.signIn)
+          ?.oauthLabel,
+      );
+      expect(xai?.modelSignIn).toBeTruthy();
     }
+    const others = (await catalogFor([])).filter((entry) => entry.id !== "xai");
+    expect(others.some((entry) => entry.modelSignIn || entry.modelConnections)).toBe(false);
   });
 });
 
@@ -1187,7 +1239,10 @@ describe("persistVoiceCredential", () => {
   );
 
   describe("for a provider that can use the model connection", () => {
-    function linkedDeps(modelCredentials = [xaiModelCredential]) {
+    function linkedDeps(
+      modelCredentials = [xaiModelCredential],
+      plaintexts: Record<string, string> = { "model-secret": "xai-model-key" },
+    ) {
       const tx = {
         userVoiceCredential: {
           findFirst: vi.fn().mockResolvedValue(null),
@@ -1198,7 +1253,7 @@ describe("persistVoiceCredential", () => {
         $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
       };
       const deps = modelConnectionDeps(
-        { "model-secret": "xai-model-key" },
+        plaintexts,
         { $transaction: vi.fn((run: (client: typeof tx) => unknown) => run(tx)) },
         modelCredentials,
       );
@@ -1221,9 +1276,51 @@ describe("persistVoiceCredential", () => {
 
       expect(verify).toHaveBeenCalledWith("xai-model-key", expect.anything());
       expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything());
-      expect(put).toHaveBeenCalledWith(adapters.MODEL_CONNECTION_VOICE_SECRET, expect.anything());
+      expect(put).toHaveBeenCalledWith(adapters.modelConnectionVoiceSecret(), expect.anything());
       expect(JSON.stringify(put.mock.calls)).not.toContain("xai-model-key");
       expect(saved).toMatchObject({ provider: "xai", hasKey: false, voiceId: "eve" });
+    });
+
+    it("links the model connection the user chose and checks it with that one's key", async () => {
+      const { verify } = stubProvider();
+      const chosen = { ...xaiModelCredential, id: "model-cred-2", secretId: "model-secret-2" };
+      const { deps, put } = linkedDeps([xaiModelCredential, chosen], {
+        "model-secret": "xai-model-key",
+        "model-secret-2": "xai-second-key",
+      });
+
+      const saved = await persistVoiceCredential(deps, actor, {
+        provider: "xai",
+        plaintext: "",
+        modelCredentialId: "model-cred-2",
+      });
+
+      expect(verify).toHaveBeenCalledWith("xai-second-key", expect.anything());
+      expect(put).toHaveBeenCalledWith(
+        adapters.modelConnectionVoiceSecret("model-cred-2"),
+        expect.anything(),
+      );
+      expect(saved.hasKey).toBe(false);
+    });
+
+    it("refuses a model connection that is not the account's connection to that provider", async () => {
+      const { verify } = stubProvider();
+      const { deps, put } = linkedDeps([
+        xaiModelCredential,
+        { ...xaiModelCredential, id: "openai-cred", provider: "openai" },
+      ]);
+
+      for (const modelCredentialId of ["openai-cred", "someone-elses"]) {
+        await expect(
+          persistVoiceCredential(deps, actor, {
+            provider: "xai",
+            plaintext: "",
+            modelCredentialId,
+          }),
+        ).rejects.toMatchObject({ message: "Connect xAI in Models settings." });
+      }
+      expect(verify).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
     });
 
     it("uses a key the user enters instead of the model connection", async () => {
