@@ -37,7 +37,8 @@ Computer usage is recorded at several boundaries:
   success produces none. Giving up on a recovery or forcing a stop records the final observed
   state and elapsed time. Wait failures are warnings because background jobs may retry.
   A requested recovery or update that fails because its provider is unavailable or unresponsive
-  reports an error with computer and bot correlation ids to the optional error collector.
+  reports a fixed failure reason with computer and bot correlation ids to the optional error
+  collector; provider error text and cause chains are excluded from that report.
 - `computer.maintenance_refused`: a recovery or update refused as busy, with its guard reason and
   the computer state and control reservation as last read. A refused conditional claim means
   the state may have changed, or an active run or execution lease prevented maintenance.

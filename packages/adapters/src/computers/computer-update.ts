@@ -625,6 +625,18 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
             "tell the computer's bots it is too large to save",
             announceUnsavedHome(deps, update.computer, keptUnsaved),
           );
+      } else if (expected && failedProviderOperation) {
+        // Provider causes may contain arbitrary response text that redaction cannot recognize.
+        const reason =
+          error instanceof SandboxUnavailableError
+            ? "provider_unavailable"
+            : "provider_unresponsive";
+        getLogger().error("computer update failed", {
+          ...failureContext,
+          reason,
+          "error.details": JSON.stringify({ action: update.action, reason }),
+          "error.fingerprint": ["computer.update", update.action, reason],
+        });
       } else {
         getLogger().error("computer update failed", error, failureContext);
       }

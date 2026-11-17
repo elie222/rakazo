@@ -216,6 +216,41 @@ describe("background computer maintenance", () => {
       ]);
     },
   );
+  it.each([
+    [
+      new SandboxUnavailableError({ cause: new Error("unrecognized private prose") }),
+      "provider_unavailable",
+    ],
+    [
+      new SandboxUnresponsiveError("unrecognized private prose", {
+        cause: new Error("nested private prose"),
+      }),
+      "provider_unresponsive",
+    ],
+  ])(
+    "reports a fixed provider failure without its text or cause chain (%s)",
+    async (error, reason) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const { row, deps } = fixture();
+      replacement.mockRejectedValueOnce(error);
+      await performComputerUpdate(deps, row.id);
+      const failures = sink.events.filter((event) => event.level === "error");
+      expect(failures).toEqual([
+        expect.objectContaining({
+          message: "computer update failed",
+          reason,
+          "computer.id": row.computerId,
+          "bot.id": row.botId,
+          "error.fingerprint": ["computer.update", "update", reason],
+          "error.details": JSON.stringify({ action: "update", reason }),
+        }),
+      ]);
+      expect(failures[0]).not.toHaveProperty("error");
+      expect(JSON.stringify(sink.events)).not.toContain("private prose");
+    },
+  );
+
   it("tells the bots of a computer left running because its files are too large to save", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
