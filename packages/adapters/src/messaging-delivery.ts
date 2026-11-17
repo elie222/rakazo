@@ -1481,8 +1481,8 @@ function textBlocks(blocks: unknown): string[] {
 
 /** Pages the run's replies already link by name, so their cards add nothing more. */
 /** The blocks that wait on the owner: a question, or a screen to take over. */
-function askBlocks(blocks: unknown): unknown {
-  if (!Array.isArray(blocks)) return blocks;
+function askBlocks(blocks: unknown): unknown[] {
+  if (!Array.isArray(blocks)) return [];
   return blocks.filter(
     (block: { kind?: unknown } | null) => block?.kind === "ask" || block?.kind === "computer",
   );
