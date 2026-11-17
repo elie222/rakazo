@@ -392,15 +392,24 @@ export default function VoiceSettings() {
       credentialId: null,
       makeDefault: false,
       target,
-      onSignedIn: (credentialId) => void connect(credentialId),
+      onSignedIn: (credentialId) => void connectSignedIn(credentialId),
     });
     signInRequest.current = requestId;
     router.push({ pathname: "/model-connection", params: { requestId } });
   }
 
+  /**
+   * The sign-in already saved the model connection; when voice cannot connect through it, read
+   * the catalog again so it shows as a connection to use instead of another sign-in.
+   */
+  async function connectSignedIn(credentialId: string) {
+    if (await connect(credentialId)) return;
+    await load(selected?.id, { keepForm: true }).catch(() => undefined);
+  }
+
   /** Connects with the typed key, or through one of the account's model connections. */
-  async function connect(modelCredentialId?: string) {
-    if (!selected || !(modelCredentialId || canConnect)) return;
+  async function connect(modelCredentialId?: string): Promise<boolean> {
+    if (!selected || !(modelCredentialId || canConnect)) return false;
     // What this connect carries; anything typed after this point was not saved.
     const sentApiKey = modelCredentialId ? "" : apiKey;
     const sentSttApiKey = sttApiKey;
@@ -465,8 +474,10 @@ export default function VoiceSettings() {
       await load(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
+      return true;
     } catch (err) {
       setError(errorText(err, t`Could not connect`));
+      return false;
     } finally {
       setPending(null);
     }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -1285,7 +1286,7 @@ describe("a provider the account's model connection can authenticate", () => {
       modelSignIn: "Sign in with Subscription",
     });
     vi.spyOn(window, "open").mockReturnValue(null);
-    let complete!: (value: { status: "ready" }) => void;
+    const completion = deferred<{ status: "ready" }>();
     models.beginOAuth.mockReset().mockResolvedValue({
       mode: "device-code",
       loginId: "login-1",
@@ -1293,11 +1294,7 @@ describe("a provider the account's model connection can authenticate", () => {
       userCode: "ABCD-1234",
       expiresInSeconds: 300,
     });
-    models.completeOAuth.mockReset().mockReturnValue(
-      new Promise((resolve) => {
-        complete = resolve;
-      }),
-    );
+    models.completeOAuth.mockReset().mockReturnValue(completion.promise);
     models.finishOAuth.mockReset().mockResolvedValue({ id: "cred-model-new" });
     models.cancelOAuth.mockReset().mockResolvedValue(undefined);
     try {
@@ -1310,7 +1307,7 @@ describe("a provider the account's model connection can authenticate", () => {
       expect(container.textContent).toContain("ABCD-1234");
       expect(voice.connect).not.toHaveBeenCalled();
       voice.credentials.mockResolvedValue([linkedCredential]);
-      await act(async () => complete({ status: "ready" }));
+      await act(async () => completion.resolve({ status: "ready" }));
       await vi.waitFor(() =>
         expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
           expect.objectContaining({
@@ -1327,6 +1324,38 @@ describe("a provider the account's model connection can authenticate", () => {
       await vi.waitFor(() => expect(container.textContent).toContain("Connected xAI."));
       expect(button(container, "Sign in with Subscription")).toBeUndefined();
       expect(button(container, "Disconnect")).toBeTruthy();
+    } finally {
+      await close();
+    }
+  });
+
+  it("offers the new connection, not another sign-in, when voice cannot use it", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelSignIn: "Sign in with Subscription",
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    models.beginOAuth.mockReset().mockResolvedValue({
+      mode: "device-code",
+      loginId: "login-1",
+      verificationUri: "https://example.test/device",
+      userCode: "ABCD-1234",
+      expiresInSeconds: 300,
+    });
+    models.completeOAuth.mockReset().mockResolvedValue({ status: "ready" });
+    models.finishOAuth.mockReset().mockResolvedValue({ id: "cred-model-new" });
+    models.cancelOAuth.mockReset().mockResolvedValue(undefined);
+    voice.connect.mockReset().mockRejectedValue(new Error("xAI is unavailable right now."));
+    // The sign-in saved a Models connection, which the next catalog read lists.
+    voice.catalog.mockResolvedValue([
+      { ...xai, modelConnections: [{ id: "cred-model-new", label: "me@example.test" }] },
+    ]);
+    try {
+      await click(button(container, "Sign in with Subscription"));
+      await vi.waitFor(() => expect(button(container, "Use me@example.test")).toBeTruthy());
+      expect(container.textContent).toContain("xAI is unavailable right now.");
+      expect(button(container, "Sign in with Subscription")).toBeUndefined();
+      expect(models.beginOAuth).toHaveBeenCalledOnce();
     } finally {
       await close();
     }

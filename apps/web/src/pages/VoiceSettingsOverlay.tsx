@@ -136,7 +136,9 @@ export function VoiceSettingsOverlay({
       // Models lists the new connection too; nothing signals it, so its reads go stale here.
       void queryClient.invalidateQueries({ queryKey: queries.models.credentials.queryKey() });
       void queryClient.invalidateQueries({ queryKey: queries.models.list.queryKey() });
-      if (!controller.signal.aborted) await connect(credentialId);
+      if (controller.signal.aborted || (await connect(credentialId))) return;
+      // The sign-in saved the model connection; it should show as one to use, not another sign-in.
+      await refresh(providerRef.current, { keepForm: true }).catch(() => undefined);
     },
   });
   const signingIn = signIn.oauthPending || signIn.oauth !== null;
@@ -280,8 +282,8 @@ export function VoiceSettingsOverlay({
     (modelConnections.length > 0 || Boolean(modelSignIn)) && keyShownFor !== selected?.id;
 
   /** Connects with the key form, or through the account's model connection when given one. */
-  async function connect(modelCredentialId?: string) {
-    if (!selected || (!modelCredentialId && !canConnect)) return;
+  async function connect(modelCredentialId?: string): Promise<boolean> {
+    if (!selected || (!modelCredentialId && !canConnect)) return false;
     setError(null);
     setNotice(null);
     // What this connect carries; anything typed after this point was not saved.
@@ -312,7 +314,7 @@ export function VoiceSettingsOverlay({
         });
       } catch (err) {
         setError(errorText(err, t`Could not connect this voice provider`));
-        return;
+        return false;
       }
       // A key typed while the connect ran was not saved; keep it for the next try.
       setApiKey((current) => (current === sentApiKey ? "" : current));
@@ -341,6 +343,7 @@ export function VoiceSettingsOverlay({
       await refresh(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
+      return true;
     } finally {
       markPending(null);
     }

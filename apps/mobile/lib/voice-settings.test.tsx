@@ -855,6 +855,37 @@ it("signs in through the Models connection screen, then connects voice through t
   expectOnlyDisconnect();
 });
 
+it("offers the new connection, not another sign-in, when voice cannot connect through it", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
+  await render();
+  await click("Linked");
+  await click("Sign in with a plan");
+  const [{ params }] = state.push.mock.calls[0] as [{ params: { requestId: string } }];
+  const request = modelConnectionRequest(params.requestId)!;
+  // The sign-in saved a Models connection, which the next catalog read lists; voice refuses it.
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc, args) => {
+    if (proc === "voice/connect") throw new Error("The provider is unavailable.");
+    if (proc === "voice/catalog")
+      return [
+        ...catalog,
+        { id: "linked", name: "Linked", transcribe: true, modelConnections: [personalPlan] },
+      ];
+    return original(proc, args);
+  });
+
+  await act(async () => request.onSignedIn!("signed-in-connection"));
+
+  expect(container.textContent).toContain("The provider is unavailable.");
+  expect(button("Use Personal plan")).toBeDefined();
+  expect(
+    [...container.querySelectorAll("button")].some(
+      (item) => item.textContent === "Sign in with a plan",
+    ),
+  ).toBe(false);
+});
+
 it("still needs a whole key to replace a key saved for a model-connection provider", async () => {
   state.load.mockResolvedValue(false);
   withLinkedProvider({ hasKey: true });
