@@ -10,7 +10,12 @@ import type { LabFeature } from "@rakazo/contracts";
 import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { createSecurityEventPruner, securityEventRetentionDays } from "@rakazo/db";
+import {
+  chatHistoryRetentionDays,
+  createChatHistoryPruner,
+  createSecurityEventPruner,
+  securityEventRetentionDays,
+} from "@rakazo/db";
 import { auditLogConfig, createAuditLogReconciler } from "./audit-forwarding.js";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { cliModelRuntime } from "./cli-models/runtime.js";
@@ -334,6 +339,7 @@ export function createRunReconciler(
 ) {
   const { prisma, jobs, cloudAgent, paymentWallet, mediaGeneration } = deps;
   const { messagingDelivery, teamChat } = chat;
+  const chatHistoryDays = chatHistoryRetentionDays();
   return createJobReconciler({
     prisma,
     jobs,
@@ -366,6 +372,8 @@ export function createRunReconciler(
       securityEventRetentionDays(),
     ),
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
+    reconcileChatHistoryRetention:
+      chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
   });
 }
