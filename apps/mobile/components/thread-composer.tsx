@@ -29,7 +29,7 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
-import type { ReactNode, Ref } from "react";
+import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { TextInputInstance, ViewStyle } from "react-native";
 import {
@@ -49,6 +49,7 @@ import type { ComposerModel } from "../lib/composer-model";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { BotAvatar } from "./bot-avatar";
+import { ModelChip, TrailingControls } from "./composer-model-chip";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
@@ -904,80 +905,6 @@ export function ThreadComposer({
 }
 
 /** Beside the text on one line; once it wraps, a row of its own under it. */
-function TrailingControls({ stacked, children }: { stacked: boolean; children: ReactNode }) {
-  if (!stacked) return <>{children}</>;
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "flex-end",
-        gap: 8,
-        paddingBottom: 8,
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-function ModelChip({
-  model,
-  show,
-  style,
-}: {
-  model: ComposerModel;
-  show: "mark" | "name" | "full";
-  style?: ViewStyle;
-}) {
-  const { t } = useLingui();
-  const tokens = useMobileTokens();
-  const name = model.label;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t`Model: ${ph({ model: name })}`}
-      accessibilityValue={model.thinking ? { text: model.thinking } : undefined}
-      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-      onPress={model.onPress}
-      style={[
-        {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 4,
-          height: 28,
-          flexShrink: 1,
-        },
-        style,
-      ]}
-    >
-      {show === "mark" ? (
-        <NativeSymbol
-          ios="cpu"
-          android="hardware-chip-outline"
-          size={16}
-          color={tokens.mutedForeground}
-        />
-      ) : (
-        <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 15, flexShrink: 1 }}>
-          {name}
-        </Text>
-      )}
-      {show === "full" && model.thinking ? (
-        <Text numberOfLines={1} style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-          {model.thinking}
-        </Text>
-      ) : null}
-      <NativeSymbol
-        ios="chevron.down"
-        android="chevron-down"
-        size={11}
-        color={tokens.mutedForeground}
-      />
-    </Pressable>
-  );
-}
-
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   const tokens = useMobileTokens();
   if (mention.kind === "bot") {
