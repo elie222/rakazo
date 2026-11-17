@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PluginsOverlay } from "./PluginsOverlay";
-import { SourceFormView, useSourceForm } from "./plugins/source-form";
+import { SourceFormView, useSourceForm } from "./source-form";
 
 const api = vi.hoisted(() => ({
   connections: {
