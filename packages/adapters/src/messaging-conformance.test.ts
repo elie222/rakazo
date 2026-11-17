@@ -40,7 +40,11 @@ const fixtures = {
     },
   },
   telegram: {
-    env: { TELEGRAM_BOT_TOKEN: "tg-token", TELEGRAM_WEBHOOK_SECRET_TOKEN: "tg-secret" },
+    env: {
+      TELEGRAM_BOT_TOKEN: "tg-token",
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: "tg-secret",
+      TELEGRAM_BOT_USERNAME: "example_bot",
+    },
     named: {
       env: { TELEGRAM_BOT_TOKEN_WORK: "tg-work", TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: "tg-work-s" },
       provider: "telegram-work",

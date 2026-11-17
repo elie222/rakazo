@@ -65,6 +65,46 @@ describe("messagingPlatformsFromEnv", () => {
     expect(addresses.slack).toBeUndefined();
   });
 
+  it("publishes each deployment bot's public destination without exposing credentials", () => {
+    const env = messagingEnvFromProcess({
+      TELEGRAM_BOT_TOKEN: "fake-token",
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: "fake-secret",
+      TELEGRAM_BOT_USERNAME: " @example_bot ",
+      TELEGRAM_BOT_TOKEN_SUPPORT: "fake-support-token",
+      TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT: "fake-support-secret",
+      TELEGRAM_BOT_USERNAME_SUPPORT: "example_support_bot",
+    });
+    const surface = new ChatSdkMessagingSurface(messagingPlatformsFromEnv(env));
+    expect(surface.platforms().map(({ provider, address }) => ({ provider, address }))).toEqual([
+      { provider: "telegram", address: "@example_bot" },
+      { provider: "telegram-support", address: "@example_support_bot" },
+    ]);
+  });
+
+  it("rejects malformed public bot usernames without echoing their value", () => {
+    expect(() =>
+      messagingPlatformsFromEnv({
+        telegramBotToken: "fake-token",
+        telegramWebhookSecret: "fake-secret",
+        telegramBotUsername: "https://example.test/private",
+      }),
+    ).toThrow("Invalid Telegram bot username");
+  });
+
+  it("keeps public API deployments webhook-only even before registration", () => {
+    const credentials = {
+      telegramBotToken: "fake-token",
+      telegramWebhookSecret: "fake-secret",
+      telegramBots: [{ name: "support", botToken: "fake-support", webhookSecret: "fake-secret" }],
+    };
+    const modes = (apiUrl?: string) =>
+      messagingPlatformsFromEnv({ ...credentials, apiUrl }, { pollInboundMessages: true }).map(
+        ({ adapter }) => (adapter as unknown as { mode: string }).mode,
+      );
+    expect(modes("https://api.example.test")).toEqual(["webhook", "webhook"]);
+    expect(modes()).toEqual(["auto", "auto"]);
+  });
+
   it("requires all four sendblue values", () => {
     for (const key of [
       "sendblueApiKeyId",

@@ -1,0 +1,163 @@
+# Hosted Telegram operator runbook
+
+Status: implemented and tested offline; hosted delivery is **not verified**. Keep the
+self-hosted-only marketing restriction until the acceptance steps below pass on the hosted
+deployment. This runbook does not authorize production changes.
+
+## Ownership and configuration
+
+The operator owns one deployment bot and its webhook. Every customer links their own account
+and chosen Rakazo bot to that shared bot. Customers connect their model in Rakazo's existing
+model connection settings using a supported subscription connection or API key; they do not
+register a Telegram bot, supply its token, or configure infrastructure services. This does not
+make an arbitrary consumer LLM subscription usable as an API connection. Existing model access
+and billing gates still apply. Optional voice transcription needs a configured voice connection;
+Telegram linking does not supply one.
+
+An operator must create or select a bot through BotFather and securely obtain its token. Set
+these values in the deployment's secret/configuration system, on **both API and worker**, and
+restart those processes. Values below are placeholders, never real credentials:
+
+```dotenv
+API_URL=https://api.example.test
+TELEGRAM_BOT_TOKEN=<deployment-bot-token>
+TELEGRAM_WEBHOOK_SECRET_TOKEN=<random-webhook-secret>
+TELEGRAM_BOT_USERNAME=example_bot
+MESSAGING_OPEN_SIGNUP=false
+```
+
+Use a cryptographically random webhook secret (for example, 32 random bytes encoded as hex).
+The username is public: copy the username reported by `getMe`, without a URL; a leading `@`
+is accepted. It supplies the destination shown in the existing code instructions on web,
+Electron and mobile. It is optional for existing installations; without it users still need
+the operator to tell them where to send the code. A malformed configured username fails setup.
+Changing the bot username requires updating this setting and restarting.
+
+The standard Compose files forward these settings. Named bots additionally use
+`TELEGRAM_BOT_TOKEN_SUPPORT`, `TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT` and optional
+`TELEGRAM_BOT_USERNAME_SUPPORT`. Forward all three through a Compose override to API and worker
+as described in [named settings](./self-host-configuration.md#settings-with-names-you-choose).
+The provider and route for that mount are `telegram-support` and
+`/api/v1/messaging/webhook/telegram-support`. Each token must identify a distinct bot.
+
+## Register the webhook (operator action, not performed here)
+
+Route public HTTPS requests to the API at `/api/v1/messaging/webhook/telegram`. Preserve
+`X-Telegram-Bot-Api-Secret-Token` through the ingress. Do not put browser login middleware in
+front of this endpoint. The adapter checks the shared secret before inbound work; Telegram
+uses this header rather than a body HMAC signature. Keep the token and header out of access
+logs, traces and tickets. API and worker must have the same credentials and access to the
+existing shared database/jobs infrastructure. Only API receives inbound updates.
+
+With `API_URL` configured the adapter is webhook-only, even if no webhook has been registered.
+A local API without `API_URL` may use automatic polling; workers never poll. Do not run a local
+poller or another webhook consumer with the hosted bot token.
+
+The following example registers the webhook without placing credentials in command arguments
+or printing raw API responses. Run only in an authorized operator shell with the above variables
+already supplied securely. It checks that the token belongs to the configured public username,
+keeps pending updates, and reports sanitized success/failure. It changes the bot's webhook.
+
+```sh
+python3 - <<'PY'
+import json
+import os
+import sys
+import urllib.request
+
+try:
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    secret = os.environ["TELEGRAM_WEBHOOK_SECRET_TOKEN"]
+    username = os.environ["TELEGRAM_BOT_USERNAME"].strip().removeprefix("@")
+    origin = os.environ["API_URL"].rstrip("/")
+    if not origin.startswith("https://") or not secret:
+        raise ValueError()
+    webhook = origin + "/api/v1/messaging/webhook/telegram"
+
+    def call(method, payload):
+        request = urllib.request.Request(
+            "https://api.telegram.org/bot" + token + "/" + method,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.load(response)
+        if not result.get("ok"):
+            raise ValueError()
+        return result["result"]
+
+    if call("getMe", {}).get("username", "").lower() != username.lower():
+        raise ValueError()
+    if call("setWebhook", {
+        "url": webhook,
+        "secret_token": secret,
+        "allowed_updates": ["message", "edited_message", "callback_query"],
+        "drop_pending_updates": False,
+    }) is not True:
+        raise ValueError()
+    info = call("getWebhookInfo", {})
+    if info.get("url") != webhook or info.get("last_error_message"):
+        raise ValueError()
+    print("Webhook registered; complete delivery acceptance checks next.")
+except Exception:
+    print("Webhook setup failed; inspect securely without publishing raw responses.", file=sys.stderr)
+    sys.exit(1)
+PY
+```
+
+For a named mount, substitute that mount's three environment names and webhook path in the
+example. Registration replaces any webhook previously registered for the same bot. Schedule
+that change deliberately. Do not use `drop_pending_updates=true` for routine setup or recovery.
+`getWebhookInfo` checks registration and recent delivery errors; it cannot prove linking or
+agent replies work. See the [Telegram Bot API](https://core.telegram.org/bots/api#setwebhook)
+for registration parameters.
+
+## Customer flow and hosted acceptance
+
+Use dedicated test accounts and synthetic conversations. Do not publish their identifiers,
+link codes, message contents, or unredacted screenshots.
+
+1. Verify the bot's identity and HTTPS ingress; verify an unsigned request and one with an
+   incorrect secret are refused without creating an identity or run.
+2. Connect a supported model in Rakazo. In **Settings → Messaging**, select an owned bot,
+   choose Telegram, and verify the configured `@example_bot` destination appears. Open that
+   bot in Telegram, press **Start**, then send only the displayed code in the private chat
+   within ten minutes. `/start` by itself does not link an account.
+3. Confirm the link appears in Rakazo and the confirmation returns to the same private chat.
+   Send a synthetic prompt; verify one run in the selected bot's Space and a reply in Telegram.
+   Confirm the existing billing/model-access gates still refuse unavailable access.
+4. Repeat with a second Rakazo account and a different Telegram sender using the **same**
+   deployment bot. Verify their runs, credentials, memory, approvals and replies stay separate.
+   A code selects its issuer's bot; possession of the shared deployment bot is not account access.
+5. Verify a spent or expired code cannot link a different sender, and issuing a fresh code
+   invalidates the old one. Never paste a code into a group. Verify an address already owned
+   by another account cannot be reassigned with a code.
+6. In a controlled test environment, replay a delivered update and retry one after an induced
+   transient processing failure. Verify no duplicate run or confirmation is recorded and
+   failed processing can recover. Check pending delivery drains after recovery.
+7. Verify unlinking stops delivery. In a synthetic group, verify each linked member gets their
+   own consent request and no personal relay starts before approval; test decline, leave and
+   removal. Broadcast channels are unsupported. For full group delivery, disable privacy mode
+   in BotFather and re-add the bot, or make it an admin. See Telegram's
+   [privacy-mode guidance](https://core.telegram.org/bots/features#privacy-mode).
+8. Check linking status on web, Electron and mobile. Clients use the same authenticated API;
+   no customer infrastructure credential is part of this flow.
+
+Record the deployment version, sanitized outcomes and unresolved failures privately. Only after
+these checks pass should a separate marketing change remove the hosted restriction.
+
+## Recovery and limits
+
+If inbound is silent, inspect `getWebhookInfo` privately for endpoint, backlog and recent error,
+then check ingress forwarding, matching secrets, and API startup. Re-register the correct
+endpoint/secret after rotation; synchronize API and worker credentials first. Never log raw
+requests or credential-bearing Telegram request URLs. If the bot token is compromised, revoke
+it through BotFather and replace it in both processes before re-registering the webhook.
+
+Inbound retries use SDK deduplication plus durable per-message nonces; link consumption and
+confirmation recording share a transaction. Delivery uses the existing durable outbox and
+backup jobs. Telegram sends have no provider idempotency key: a process crash after Telegram
+accepts a send but before its handle is persisted can produce a duplicate reply. Do not claim
+exactly-once external delivery. Blocking the bot is a permanent send refusal; customers must
+unblock it before expecting replies. Long replies are split using the existing formatting-aware
+limits. No production Telegram calls were made for this implementation.

@@ -60,6 +60,17 @@ afterEach(() => {
 });
 
 describe("LazyPhotonAdapter", () => {
+  it("rejects Beta project credentials before loading the legacy client", async () => {
+    const adapter = new LazyPhotonAdapter({
+      projectId: "pho_prj_example",
+      projectSecret: "fake-beta-key",
+      pollInboundMessages: false,
+    });
+    await expect(adapter.initialize(chat)).rejects.toThrow("Stable Spectrum projects only");
+    expect(fake.created).toEqual([]);
+    expect(fake.listens).toEqual([]);
+  });
+
   it("loads Photon's adapter only when first used", async () => {
     const adapter = new LazyPhotonAdapter({ ...credentials, pollInboundMessages: false });
     expect(fake.created).toEqual([]);

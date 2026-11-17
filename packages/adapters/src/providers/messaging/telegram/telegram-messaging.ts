@@ -26,11 +26,18 @@ export const telegramMessaging = defineMessagingPlatform({
   env: {
     telegramBotToken: { name: "TELEGRAM_BOT_TOKEN", required: true },
     telegramWebhookSecret: { name: "TELEGRAM_WEBHOOK_SECRET_TOKEN", required: true },
+    telegramBotUsername: { name: "TELEGRAM_BOT_USERNAME" },
     /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
     telegramBots: { read: telegramBotsFromEnv },
   },
   mount(env, options) {
-    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, options);
+    return telegramPlatform(
+      "telegram",
+      env.telegramBotToken,
+      env.telegramWebhookSecret,
+      options,
+      env.telegramBotUsername,
+    );
   },
   // Same rules as the default bot; each named bot has its own token and so
   // its own getUpdates slot. The surface maps their native "telegram:" thread
@@ -47,7 +54,7 @@ export const telegramMessaging = defineMessagingPlatform({
       }
       tokens.add(bot.botToken.trim());
       platforms.push({
-        ...telegramPlatform(provider, bot.botToken, bot.webhookSecret, options),
+        ...telegramPlatform(provider, bot.botToken, bot.webhookSecret, options, bot.username),
         adapterName: "telegram",
       });
     }
@@ -60,6 +67,7 @@ export interface TelegramBotCredentials {
   name: string;
   botToken: string;
   webhookSecret: string;
+  username?: string;
 }
 
 const TELEGRAM_NAMED_TOKEN = /^TELEGRAM_BOT_TOKEN_([A-Z0-9]+)$/;
@@ -82,7 +90,13 @@ export function telegramBotsFromEnv(
     const botToken = value?.trim();
     const webhookSecret = env[`TELEGRAM_WEBHOOK_SECRET_TOKEN_${suffix}`]?.trim();
     if (!botToken || !webhookSecret) continue;
-    bots.push({ name: suffix.toLowerCase(), botToken, webhookSecret });
+    const username = env[`TELEGRAM_BOT_USERNAME_${suffix}`]?.trim();
+    bots.push({
+      name: suffix.toLowerCase(),
+      botToken,
+      webhookSecret,
+      ...(username ? { username } : {}),
+    });
   }
   bots.sort((a, b) => a.name.localeCompare(b.name));
   return bots;
@@ -93,6 +107,7 @@ function telegramPlatform(
   botToken: string,
   secretToken: string,
   options: MessagingMountContext,
+  username?: string,
 ): MessagingPlatform {
   const adapter = new TelegramAdapterWithLinkAddresses({
     botToken,
@@ -100,15 +115,28 @@ function telegramPlatform(
     // Auto mode long-polls when no webhook is registered, for deployments
     // without a public HTTPS endpoint. Only the API process may poll: it
     // owns the inbound sink, and Telegram allows one getUpdates per bot.
-    mode: options.pollInboundMessages ? "auto" : "webhook",
+    // A public deployment must register its webhook before receiving, rather
+    // than silently starting competing pollers on multiple API instances.
+    mode: options.pollInboundMessages && !options.apiUrl ? "auto" : "webhook",
   });
   return {
     provider,
+    address: telegramLinkAddress(username),
     capabilities: { direct: true, groups: true, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
     isPermanentSendError: isTelegramBlocked,
   };
+}
+
+/** Public destination only; credentials must never become a displayed address. */
+function telegramLinkAddress(username: string | undefined): string | undefined {
+  if (!username?.trim()) return undefined;
+  const name = username.trim().replace(/^@/, "");
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(name)) {
+    throw new Error("Invalid Telegram bot username");
+  }
+  return `@${name}`;
 }
 
 /**

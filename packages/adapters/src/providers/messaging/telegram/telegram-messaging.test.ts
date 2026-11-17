@@ -350,6 +350,25 @@ describe("Telegram bots side by side", () => {
     );
   });
 
+  it("refuses a webhook with no shared-secret header", async () => {
+    const { surface, inbound } = createTwoBotSurface();
+    const request = webhook("home-secret", "forged");
+    request.headers.delete("x-telegram-bot-api-secret-token");
+    expect((await surface.handleWebhook("telegram", request))?.status).toBe(401);
+    expect(inbound).toEqual([]);
+  });
+
+  it("acknowledges a repeated webhook without delivering it twice", async () => {
+    const { surface, inbound } = createTwoBotSurface();
+    expect((await surface.handleWebhook("telegram", webhook("home-secret", "hello")))?.status).toBe(
+      200,
+    );
+    expect((await surface.handleWebhook("telegram", webhook("home-secret", "hello")))?.status).toBe(
+      200,
+    );
+    expect(inbound).toHaveLength(1);
+  });
+
   it("rejects an update signed with another bot's webhook secret", async () => {
     const { surface, inbound } = createTwoBotSurface();
 

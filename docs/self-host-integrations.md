@@ -182,8 +182,12 @@ not establish eligibility. Proactive template reminders are not implemented.
 
 ### Telegram
 
-Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
-worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses the provider
+With `API_URL` configured, Telegram is webhook-only: Telegram sends the secret in
+`X-Telegram-Bot-Api-Secret-Token`, and the worker never long-polls. Without a public API URL,
+the receiving API can fall back to polling. Set optional `TELEGRAM_BOT_USERNAME` (or
+`TELEGRAM_BOT_USERNAME_<NAME>`) to show the public destination in linking instructions.
+See the [hosted Telegram runbook](./hosted-telegram.md) for operator registration and acceptance.
+An extra bot named `<NAME>` (letters and digits) uses the provider
 `telegram-<name>` and the webhook `/api/v1/messaging/webhook/telegram-<name>`; see
 [settings with names you choose](./self-host-configuration.md#settings-with-names-you-choose).
 Telegram groups use personal group linking, like iMessage: each linked member approves their own
@@ -193,6 +197,9 @@ receives group messages that mention it. Broadcast channel posts never start run
 can run side by side, allowing one person to link a different Rakazo bot through each.
 
 ### iMessage through Photon
+
+This connection uses the Stable Spectrum API, not Photon 2.0 Beta credentials. See the
+[hosted iMessage/SMS runbook](./hosted-imessage-sms.md) for adapter limits and operator checks.
 
 Photon receives messages over an outbound stream from the API, so it works without a public URL.
 To use webhooks instead, set `PHOTON_WEBHOOK_SECRET`. Each additional project uses
