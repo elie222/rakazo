@@ -685,7 +685,8 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
-    stop_grace_period: 3h
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     logging: *logging
     user: root

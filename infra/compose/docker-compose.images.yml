@@ -638,7 +638,8 @@ services:
     profiles: [updater]
     image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-latest}
     restart: unless-stopped
-    stop_grace_period: 3h
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     user: root
     security_opt:
