@@ -124,13 +124,13 @@ OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
 **Azure Blob with Entra ID.** Deployments that keep no account keys can authenticate with an
 Entra ID identity instead. `OBJECT_STORAGE_AUTH` picks how, and unset keeps the shared key above:
 
-| `OBJECT_STORAGE_AUTH` | Credentials it reads |
-| --- | --- |
-| unset or `account-key` | `OBJECT_STORAGE_SECRET_ACCESS_KEY` |
-| `client-secret` | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY` |
-| `client-certificate` | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_CERTIFICATE` (PEM with its private key) |
-| `federated-identity` | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_FEDERATED_TOKEN_FILE` |
-| `managed-identity` | `OBJECT_STORAGE_CLIENT_ID` for a user-assigned identity; nothing for the host's own |
+| `OBJECT_STORAGE_AUTH`  | Credentials it reads                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| unset or `account-key` | `OBJECT_STORAGE_SECRET_ACCESS_KEY`                                                                           |
+| `client-secret`        | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`                      |
+| `client-certificate`   | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_CERTIFICATE` (PEM with its private key) |
+| `federated-identity`   | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_FEDERATED_TOKEN_FILE`                   |
+| `managed-identity`     | `OBJECT_STORAGE_CLIENT_ID` for a user-assigned identity; nothing for the host's own                          |
 
 Nothing is taken from an SDK's ambient credential chain: a mode uses the credentials it names and
 no others. Give the identity the **Storage Blob Data Contributor** role on the account — with the

@@ -62,34 +62,39 @@ function azureBlobAuthFromEnv(env: NodeJS.ProcessEnv): AzureBlobAuth {
     throw new Error(`OBJECT_STORAGE_AUTH must be one of ${AUTH_KINDS.join(", ")}`);
   }
   const kind = requested as (typeof AUTH_KINDS)[number];
-  const require = (name: string) => {
-    const value = env[name]?.trim();
-    if (!value) throw new Error(`${name} is required with OBJECT_STORAGE_AUTH=${kind}`);
-    return value;
+  // Each name is read through its own property, so the settings a deployment must pass are
+  // visible to the scans that keep the compose files and .env.example in step.
+  const require = (name: string, value: string | undefined) => {
+    const trimmed = value?.trim();
+    if (!trimmed) throw new Error(`${name} is required with OBJECT_STORAGE_AUTH=${kind}`);
+    return trimmed;
   };
   switch (kind) {
     case "account-key":
-      return { kind, accountKey: require("OBJECT_STORAGE_SECRET_ACCESS_KEY") };
+      return {
+        kind,
+        accountKey: require("OBJECT_STORAGE_SECRET_ACCESS_KEY", env.OBJECT_STORAGE_SECRET_ACCESS_KEY),
+      };
     case "client-secret":
       return {
         kind,
-        tenantId: require("OBJECT_STORAGE_TENANT"),
-        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
-        clientSecret: require("OBJECT_STORAGE_SECRET_ACCESS_KEY"),
+        tenantId: require("OBJECT_STORAGE_TENANT", env.OBJECT_STORAGE_TENANT),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID", env.OBJECT_STORAGE_CLIENT_ID),
+        clientSecret: require("OBJECT_STORAGE_SECRET_ACCESS_KEY", env.OBJECT_STORAGE_SECRET_ACCESS_KEY),
       };
     case "client-certificate":
       return {
         kind,
-        tenantId: require("OBJECT_STORAGE_TENANT"),
-        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
-        certificate: require("OBJECT_STORAGE_CERTIFICATE"),
+        tenantId: require("OBJECT_STORAGE_TENANT", env.OBJECT_STORAGE_TENANT),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID", env.OBJECT_STORAGE_CLIENT_ID),
+        certificate: require("OBJECT_STORAGE_CERTIFICATE", env.OBJECT_STORAGE_CERTIFICATE),
       };
     case "federated-identity":
       return {
         kind,
-        tenantId: require("OBJECT_STORAGE_TENANT"),
-        clientId: require("OBJECT_STORAGE_CLIENT_ID"),
-        tokenFilePath: require("OBJECT_STORAGE_FEDERATED_TOKEN_FILE"),
+        tenantId: require("OBJECT_STORAGE_TENANT", env.OBJECT_STORAGE_TENANT),
+        clientId: require("OBJECT_STORAGE_CLIENT_ID", env.OBJECT_STORAGE_CLIENT_ID),
+        tokenFilePath: require("OBJECT_STORAGE_FEDERATED_TOKEN_FILE", env.OBJECT_STORAGE_FEDERATED_TOKEN_FILE),
       };
     case "managed-identity":
       return { kind, clientId: env.OBJECT_STORAGE_CLIENT_ID?.trim() || undefined };
