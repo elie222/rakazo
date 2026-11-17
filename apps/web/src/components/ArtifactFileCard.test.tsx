@@ -242,6 +242,75 @@ it("previews plain text in the app instead of only offering a download", async (
   );
 });
 
+it("copies a previewed text file and keeps select-all inside the preview", async () => {
+  const text = "Line one.\n\nLine two.";
+  mocks.fetch.mockResolvedValue(new TextEncoder().encode(text));
+  const writeText = vi.fn(async () => {});
+  // The chat behind the dialog must not end up in the selection.
+  const behind = document.createElement("p");
+  behind.textContent = "earlier chat message";
+  document.body.append(behind);
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+
+  try {
+    await act(async () =>
+      root?.render(
+        <ArtifactFileCard
+          target={{ botId: "bot-1" }}
+          artifactId="notes-1"
+          name="notes.txt"
+          mimeType="text/plain"
+          size={text.length}
+        />,
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Preview notes.txt"]')?.click(),
+    );
+    await vi.waitFor(() => expect(document.body.querySelector("pre")?.textContent).toBe(text));
+
+    const copy = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="Copy notes.txt"]',
+    );
+    expect(copy).not.toBeNull();
+    await act(async () => copy?.click());
+    expect(writeText).toHaveBeenCalledWith(text);
+
+    const close = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="Close preview"]',
+    );
+    const selectAll = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    close?.dispatchEvent(selectAll);
+    expect(selectAll.defaultPrevented).toBe(true);
+    const selected = window.getSelection()?.toString() ?? "";
+    expect(selected).toContain(text);
+    expect(selected).not.toContain("earlier chat message");
+
+    // A field keeps its own select-all, so text can still be picked out of a copy fallback.
+    const field = document.body.querySelector<HTMLTextAreaElement>("textarea");
+    if (field) {
+      const inField = new KeyboardEvent("keydown", {
+        key: "a",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      field.dispatchEvent(inField);
+      expect(inField.defaultPrevented).toBe(false);
+    }
+  } finally {
+    behind.remove();
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
+
 it("retries failed audio loads in place without duplicate requests", async () => {
   const bytes = deferred<Uint8Array>();
   mocks.fetch

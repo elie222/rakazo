@@ -49,12 +49,14 @@ import { VideoPreview } from "../components/ArtifactFileCard";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
+import { PreviewCopyButton } from "../components/PreviewCopyButton";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { desktopBridge } from "../lib/desktop";
 import { useSave, useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
+import { useSelectPreviewText } from "../lib/select-preview-text";
 import { createStoredPreference } from "../lib/stored-preference";
 import { useObjectUrl } from "../lib/use-object-url";
 import { errorText } from "../lib/user-error";
@@ -910,6 +912,14 @@ function PreviewPane({
             message: errorText(artifactQuery.error, t`Could not load this artifact.`),
           }
         : { status: "loading" };
+  const preview = useRef<HTMLDivElement>(null);
+  const kind = state.status === "ready" ? artifactPreviewKind(state.artifact.mimeType) : null;
+  // The text the preview draws is the file itself; other kinds have nothing to copy or select.
+  const text =
+    state.status === "ready" && (kind === "markdown" || kind === "text")
+      ? new TextDecoder("utf-8").decode(state.bytes)
+      : null;
+  useSelectPreviewText(preview, text !== null);
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -938,6 +948,9 @@ function PreviewPane({
         ) : null}
         {state.status === "ready" ? (
           <>
+            {text !== null ? (
+              <PreviewCopyButton text={text} name={state.artifact.name} appearance="labelled" />
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -977,7 +990,10 @@ function PreviewPane({
             {state.message}
           </div>
         ) : (
-          <div className="relative h-full overflow-hidden rounded-2xl border border-border">
+          <div
+            ref={preview}
+            className="relative h-full overflow-hidden rounded-2xl border border-border"
+          >
             <ArtifactPreview artifact={state.artifact} bytes={state.bytes} />
             {state.artifact.mimeType === "text/html" ? (
               <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">

@@ -5,10 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ listSpace: vi.fn(), remove: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listSpace: vi.fn(),
+  listVersions: vi.fn(),
+  getById: vi.fn(),
+  remove: vi.fn(),
+}));
 const rpcClient = vi.hoisted(() => ({ artifacts: api, bootstrap: vi.fn() }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcClient,
@@ -19,13 +24,15 @@ vi.mock("../lib/rpc", () => ({
 vi.mock("../lib/bootstrap", () => ({
   takeInitialBootstrap: vi.fn().mockResolvedValue({ bots: [] }),
 }));
+const decode = vi.hoisted(() => vi.fn());
 vi.mock("../lib/artifact-open", () => ({
-  decodeArtifactBase64: vi.fn(),
+  decodeArtifactBase64: decode,
   downloadArtifactBytes: vi.fn(),
 }));
 vi.mock("../lib/relative-time", () => ({ formatRelativeTime: () => "just now" }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/chat-ui/web", () => ({
@@ -101,6 +108,18 @@ vi.mock("@rakazo/ui-web", () => {
     Tooltip: Container,
     TooltipContent: () => null,
     TooltipTrigger: ({ render }: { render: ReactNode }) => render,
+    // The copy control is exercised through the clipboard it writes to.
+    useCopyText: () => [
+      false,
+      async (text: string) => {
+        await navigator.clipboard.writeText(text);
+        return true;
+      },
+      false,
+      () => undefined,
+      "",
+    ],
+    CopyTextFallback: () => null,
   };
 });
 
@@ -135,15 +154,17 @@ beforeEach(() => {
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
-async function renderArtifacts() {
+async function renderArtifacts(path = "/app/artifacts") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () =>
     root.render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/app/artifacts"]}>
-          <ArtifactsPage />
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/app/artifacts/:artifactId?" element={<ArtifactsPage />} />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -416,5 +437,51 @@ it("says why an artifact was not deleted and offers the confirmation again", asy
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();
+  }
+});
+
+it("copies the file the preview shows, not its rendered page", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const text = "# Plan\n\nShip it.";
+  const writeText = vi.fn(async () => {});
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  api.listSpace.mockReset().mockResolvedValue({
+    items: [artifact("Plan.md", "artifact-1")],
+    nextCursor: null,
+  });
+  api.listVersions
+    .mockReset()
+    .mockResolvedValue([{ id: "artifact-1", version: 1, createdAt: new Date().toISOString() }]);
+  api.getById
+    .mockReset()
+    .mockResolvedValue({ ...artifact("Plan.md", "artifact-1"), contentBase64: "ignored" });
+  decode.mockReset().mockReturnValue(new TextEncoder().encode(text));
+  const page = await renderArtifacts("/app/artifacts/artifact-1");
+  try {
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Ship it"));
+    const copy = page.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Copy Plan.md"]',
+    );
+    expect(copy).not.toBeNull();
+    await act(async () => copy?.click());
+    expect(writeText).toHaveBeenCalledWith(text);
+
+    // Select-all inside the preview answers with the file, never the list beside it.
+    const article = page.container.querySelector("article");
+    const selectAll = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    article?.dispatchEvent(selectAll);
+    expect(selectAll.defaultPrevented).toBe(true);
+    expect(window.getSelection()?.toString()).toContain("Ship it");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
   }
 });

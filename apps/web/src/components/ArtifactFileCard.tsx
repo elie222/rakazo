@@ -10,10 +10,12 @@ import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
+import { useSelectPreviewText } from "../lib/select-preview-text";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
 import { IconTooltip } from "./IconTooltip";
 import { PdfViewer } from "./PdfViewer";
+import { PreviewCopyButton } from "./PreviewCopyButton";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
 type ArtifactFileCardProps = {
@@ -152,6 +154,7 @@ function FilePreview({
     | { status: "ready"; bytes: Uint8Array; text?: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
+  const content = useRef<HTMLDivElement>(null);
   const targetBotId = "botId" in target ? target.botId : undefined;
   const targetGroupId = "groupId" in target ? target.groupId : undefined;
 
@@ -185,6 +188,10 @@ function FilePreview({
     };
   }, [artifactId, targetBotId, targetGroupId, mimeType, t]);
   const kind = artifactPreviewKind(mimeType);
+  // Only text the preview renders itself can be copied or selected as the file's contents.
+  const textKind = kind === "markdown" || kind === "text";
+  const previewText = state.status === "ready" ? state.text : undefined;
+  useSelectPreviewText(content, textKind && previewText !== undefined);
 
   return (
     <>
@@ -192,6 +199,9 @@ function FilePreview({
         <DialogTitle className="min-w-0 flex-1 truncate text-body font-medium text-foreground">
           {name}
         </DialogTitle>
+        {previewText !== undefined ? (
+          <PreviewCopyButton text={previewText} name={name} appearance="icon" />
+        ) : null}
         <IconTooltip label={t`Download ${name}`}>
           <Button
             variant="ghost"
@@ -228,7 +238,7 @@ function FilePreview({
           <DownloadError message={downloadError} />
         </div>
       ) : null}
-      <div className="relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={content} className="relative min-h-0 flex-1 overflow-y-auto">
         {state.status === "loading" ? (
           <div className="absolute inset-0 grid place-items-center text-muted-foreground">
             <Spinner aria-label={t`Loading preview…`} />
