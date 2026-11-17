@@ -12,18 +12,18 @@ import {
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../../components/settings-group";
-import { aiDataDisclosure, promptAiConsent } from "../../lib/ai-consent";
+} from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { aiDataDisclosure, promptAiConsent } from "../../lib/settings/ai-consent";
 import {
   aiDataSharingPlaceholder,
   aiPrivacyLinks,
   groupAiRecipients,
-} from "../../lib/ai-data-sharing";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/settings/ai-data-sharing";
 
 export default function AiDataSharing() {
   const sideInsets = useSideInsets();
