@@ -351,6 +351,8 @@ function fixture({
       }),
     },
     bot: {
+      // The routine event checks read the bot's creator.
+      findFirst: vi.fn(async () => ({ id: run.botId, userId: botUserId })),
       findUniqueOrThrow: vi.fn(async () => ({
         ...instructionState,
         id: run.botId,
@@ -2851,6 +2853,74 @@ describe("HTTP watch creation approval", () => {
     expect(reviewMock).not.toHaveBeenCalled();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.effects.map((effect) => effect.status)).toEqual(["denied"]);
+  });
+});
+
+describe("routine event approval", () => {
+  beforeEach(() => reviewMock.mockReset());
+
+  it("asks a person before a run that read outside content adds an event trigger", async () => {
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+    });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        name: "schedule_create",
+        args: { name: "Relay", prompt: "Forward each message", on: { webhook: true } },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    expect(reviewMock).not.toHaveBeenCalled();
+    // No rule could skip the next one, so the card offers no Always allow.
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+  });
+
+  it("shows every event it adds on the card, however the request is padded", async () => {
+    const f = fixture({ builtin: true, sourceRole: "user" });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        name: "schedule_create",
+        args: {
+          name: "Digest",
+          prompt: "Send the digest",
+          cron: "0 9 * * *",
+          inChat: false,
+          on: { chat: " ".repeat(79), webhook: true },
+        },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    expect(askDetail(f)).toContain('on: {"webhook":true}');
+    // The approval is recorded for the same short form the card shows.
+    const recorded = f.effects.find((effect) => effect.kind === "schedule_create")?.request;
+    expect((recorded as { on?: unknown } | undefined)?.on).toEqual({ webhook: true });
+  });
+
+  it("refuses a chat app name too long to be one, before any card", async () => {
+    const f = fixture({ builtin: true, sourceRole: "user" });
+    f.setCalls([
+      {
+        name: "schedule_create",
+        args: {
+          name: "Digest",
+          prompt: "Send the digest",
+          on: { chat: " ".repeat(4_000), email: "domain" },
+        },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results[0]).toEqual({ error: "on.chat is the name of a connected chat app." });
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 });
 

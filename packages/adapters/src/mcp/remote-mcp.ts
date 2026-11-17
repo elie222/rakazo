@@ -49,13 +49,18 @@ const DEFAULT_MAX_MCP_TOOLS = 250;
 const DEFAULT_MAX_MCP_PAGES = 20;
 const MCP_TIMEOUT_MS = 30_000;
 /** How long a tool call may go without an answer or a progress report. Real calls (a
- * search across mail folders, a document export, a gateway running a program) take
- * minutes; connecting and listing stay short. Below the HTTP client's default
- * five-minute header wait, so this timeout fires first. */
-export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
+ * search across mail folders, a document export, a gateway running a program for up to
+ * five minutes without reporting progress) take minutes; connecting and listing stay short. */
+export const MCP_TOOL_TIMEOUT_MS = 6 * 60_000;
 /** Progress restarts the wait, but never past this. The run's own cancellation still
  * ends a call at any time. */
 export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
+/** The HTTP client's own waits (five minutes by default) sit past every MCP wait above, so
+ * those decide when a call ends and the client only catches a connection nobody closes. */
+export const MCP_HTTP_TIMEOUTS = {
+  headersTimeout: MCP_TOOL_MAX_TOTAL_MS + 60_000,
+  bodyTimeout: MCP_TOOL_MAX_TOTAL_MS + 60_000,
+} as const;
 const MAX_RESULT_BYTES = 1_000_000;
 
 export type { ResolveHostname } from "../network/network-address.js";
@@ -272,6 +277,8 @@ async function withRemoteMcpClient<T>(
     options.fetch,
     options.resolveHostname ?? resolveHostname,
     policy,
+    undefined,
+    MCP_HTTP_TIMEOUTS,
   );
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
@@ -458,6 +465,8 @@ export class RemoteMcpSessionCache {
       options.fetch,
       options.resolveHostname ?? resolveHostname,
       policy,
+      undefined,
+      MCP_HTTP_TIMEOUTS,
     );
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: {
@@ -646,9 +655,14 @@ export function createSafeRemoteFetch(
   policy: RemoteUrlPolicy = {},
   /** Called once the destination is checked, just before the request is sent; a throw stops it. */
   beforeSend?: () => void,
+  /** The HTTP client's waits for headers and between body chunks; its defaults otherwise. */
+  responseTimeouts?: { headersTimeout: number; bodyTimeout: number },
 ): SafeRemoteFetch {
-  const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
-    assertSafeRemoteAddresses(addresses, hostname, policy),
+  const dispatcher = createCheckedProxyDispatcher(
+    resolve,
+    (addresses, hostname) => assertSafeRemoteAddresses(addresses, hostname, policy),
+    undefined,
+    responseTimeouts,
   );
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.

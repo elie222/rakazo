@@ -85,8 +85,6 @@
   "packages/auth/src/index.ts": 1,
   "packages/auth/src/oidc.test.ts": 1,
   "packages/chat-ui/src/markdown.native.test.tsx": 1,
-  "packages/contracts/src/domain.ts": 1,
-  "packages/contracts/src/rpc.ts": 1,
   "packages/core/src/node/desktop-runtime.test.ts": 1,
   "packages/core/src/node/desktop-runtime.ts": 1,
   "packages/core/src/threads/thread-snapshot-events.test.ts": 1,
