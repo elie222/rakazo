@@ -31,6 +31,7 @@ describe("built-in tool bridge", () => {
       "connect_app",
       "find_tool",
       "list_files",
+      "message_bot",
       "message_user",
       "read_file",
       "read_history",
@@ -53,8 +54,9 @@ describe("built-in tool bridge", () => {
     // request_secret carries the card and contact kinds; update_bot carries instructions paging;
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
     // read_file takes a line range; ask_user carries the content being decided about;
-    // search_history lists earlier tool work by kind without a keyword.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(32_579);
+    // search_history lists earlier tool work by kind without a keyword; message_bot is the
+    // most used deferred tool, and a lookup before each message cost a step.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(33_397);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
