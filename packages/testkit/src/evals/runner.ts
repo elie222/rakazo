@@ -646,6 +646,10 @@ export async function runTrial(
           step.text,
           group.id,
         ))!;
+        ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
+          where: { id: runId },
+          select: { sourceMessageId: true },
+        }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(
@@ -1150,6 +1154,13 @@ export async function runTrial(
       ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
+      ...(group
+        ? {
+            groupProgressEvents: await prisma.event.count({
+              where: { threadId: group.threadId, type: "thread.progress" },
+            }),
+          }
+        : {}),
       routineRuns,
       peerExchanges,
       ...(deliveries.length ? { deliveries } : {}),

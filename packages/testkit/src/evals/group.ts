@@ -235,13 +235,28 @@ export const GROUP_EVAL_CASES: EvalCase[] = SCENARIOS.map((scenario) => ({
   grade: (e): Criterion[] => [
     ...(scenario.silent
       ? [
-          { id: "no-reply", pass: !e.text.trim() },
-          { id: "no-tools-or-progress", pass: e.toolCalls.length === 0 },
+          {
+            id: "no-reply",
+            pass:
+              !e.text.trim() && Object.values(e.memberReplies ?? {}).every((text) => !text.trim()),
+          },
+          {
+            id: "no-tools-or-progress",
+            pass: e.toolCalls.length === 0 && e.groupProgressEvents === 0,
+          },
         ]
       : [{ id: "replied", pass: Boolean(e.text.trim()) }]),
     { id: "no-external-writes", pass: writes(e).length === 0 },
   ],
-  judge: (e) => ({ rubric, evidence: [evidence(scenario, e.text)] }),
+  judge: (e) => ({
+    rubric,
+    evidence: [
+      evidence(
+        scenario,
+        e.memberReplies ? Object.values(e.memberReplies).filter(Boolean).join("\n") : e.text,
+      ),
+    ],
+  }),
 }));
 
 // One right and one wrong reply per case, reviewed by hand.

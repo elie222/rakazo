@@ -228,6 +228,15 @@ export function mayBeSilentEnding(
   );
 }
 
+/** Keep transient activity private for runs whose final reply may be silent. */
+export function holdsTransientProgress(ctx: Pick<RunContext, "run" | "allowSilentEmptyRun">) {
+  return (
+    ctx.run.trigger === "routine" ||
+    isBackgroundRunTrigger(ctx.run.trigger) ||
+    (ctx.allowSilentEmptyRun && ctx.run.trigger === "follow_up")
+  );
+}
+
 export async function flushProgress(ctx: RunContext) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
@@ -236,8 +245,7 @@ export async function flushProgress(ctx: RunContext) {
   if (
     ctx.scripted ||
     !reply.pendingProgress ||
-    run.trigger === "routine" ||
-    isBackgroundRunTrigger(run.trigger) ||
+    holdsTransientProgress(ctx) ||
     progressHeldForSilence(ctx)
   )
     return;

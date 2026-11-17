@@ -6,6 +6,7 @@ import { GROUP_EVAL_CASES, GROUP_JUDGE_CALIBRATION } from "./group.js";
 function evidence(text: string, partial: Partial<Evidence> = {}): Evidence {
   return {
     text,
+    groupProgressEvents: 0,
     files: {},
     records: [],
     notes: [],
@@ -51,6 +52,12 @@ describe("group history eval", () => {
     for (const id of ["group-monitor-email", "group-monitor-email-zh"]) {
       const scenario = GROUP_EVAL_CASES.find((c) => c.id === id)!;
       expect(scenario.grade(evidence("")).every((c) => c.pass)).toBe(true);
+      expect(scenario.grade(evidence("", { groupProgressEvents: 1 })).every((c) => c.pass)).toBe(
+        false,
+      );
+      expect(
+        scenario.grade(evidence("", { memberReplies: { Mika: "Received" } })).every((c) => c.pass),
+      ).toBe(false);
       expect(scenario.grade(evidence("Received; monitoring.")).every((c) => c.pass)).toBe(false);
       expect(
         scenario

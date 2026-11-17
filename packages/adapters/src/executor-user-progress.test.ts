@@ -2218,6 +2218,29 @@ describe("monitor-only group handoffs", () => {
     );
   });
 
+  it.each(["NO_RESPONSE", "NO_RESPONSE hello"])(
+    "holds runtime activity and %s until completion",
+    async (text) => {
+      const result = await runTurn("", false, [], [], "request", {
+        trigger: "follow_up",
+        group: { optional: false },
+        runtimeEvents: [
+          { type: "progress", text: "Checking", activity: true },
+          { type: "text", text },
+          { type: "done" },
+        ],
+      });
+      expect(
+        result.append.mock.calls.filter(([event]) => event.type === "thread.progress"),
+      ).toEqual([]);
+      expect(result.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          blocks: text === "NO_RESPONSE" ? [] : [{ kind: "text", text: "hello" }],
+        }),
+      );
+    },
+  );
+
   it("still delivers new findings from a handoff", async () => {
     const result = await runTurn(
       "The interview overlaps your dentist appointment.",
