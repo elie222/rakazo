@@ -11,7 +11,7 @@ import {
   realSandboxTimeout,
   rpc,
   signup,
-} from "./helpers";
+} from "./helpers/helpers";
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
   return page.locator("[data-sidebar-group] [data-roster-bot-id]").filter({

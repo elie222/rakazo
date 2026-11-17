@@ -23,8 +23,12 @@ const SPEC_FILE_PATTERN = /^(.*)\.spec\.[cm]?[jt]sx?$/i;
 export function specStemsFromChangedPaths(changedPaths: readonly string[]): string[] {
   const stems = new Set<string>();
   for (const changedPath of changedPaths) {
-    const baseName = changedPath.split(/[\\/]/).at(-1) ?? changedPath;
-    const match = SPEC_FILE_PATTERN.exec(baseName);
+    // Playwright names a test's output folder after its path inside the test folder, so a spec in
+    // e2e/chat/ writes to "chat-<stem>-…".
+    const segments = changedPath.split(/[\\/]/);
+    const testDir = segments.lastIndexOf("e2e");
+    const inTestDir = testDir < 0 ? segments.slice(-1) : segments.slice(testDir + 1);
+    const match = SPEC_FILE_PATTERN.exec(inTestDir.join("-"));
     if (match?.[1]) stems.add(match[1].toLowerCase());
   }
   return [...stems].sort();

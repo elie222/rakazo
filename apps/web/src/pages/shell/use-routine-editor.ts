@@ -6,20 +6,20 @@ import { cronFromPreset } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
-import { localTimezone } from "../../lib/local-timezone";
-import { parseModelOptionKey } from "../../lib/model-catalog";
+import { localTimezone } from "../../lib/locale/local-timezone";
+import { parseModelOptionKey } from "../../lib/models/model-catalog";
+import type { createSpaceRpc } from "../../lib/query/rpc";
+import { sharedInflight } from "../../lib/query/shared-inflight";
+import { errorCode, errorText } from "../../lib/query/user-error";
 import type { Panel } from "../../lib/right-panel-state";
-import type { RoutineDraftState } from "../../lib/routine-draft";
+import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
-} from "../../lib/routine-draft";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { sharedInflight } from "../../lib/shared-inflight";
-import { errorCode, errorText } from "../../lib/user-error";
-import type { RoutineEditor } from "../RoutineEditor";
+} from "../../lib/routines/routine-draft";
+import type { RoutineEditor } from "../routines/RoutineEditor";
 
 export function useRoutineEditor({
   rpc,
