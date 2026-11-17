@@ -6,6 +6,7 @@ import {
   storedImageMimeType,
 } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
+import { detectImageMimeType } from "../../shared/image-mime-type.js";
 import { listCurrentTurnFiles } from "../../storage/thread-artifacts.js";
 import { currentTurnFilesInstruction } from "../../storage/thread-artifacts.prompt.js";
 import { loadReplyContext } from "../assembly/reply-context.js";
@@ -79,7 +80,7 @@ export async function loadCurrentTurnImages(
       const bytes = await deps.artifacts.get(row.storageKey, context);
       images.push({
         name: block.name,
-        mimeType: block.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+        mimeType: detectImageMimeType(bytes) ?? block.mimeType,
         data: bytes,
       });
     } catch (error) {
@@ -185,7 +186,7 @@ async function loadTurnImagesWithinBudget(
     }
     newestFirst.push({
       name: block.name,
-      mimeType: block.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      mimeType: detectImageMimeType(bytes) ?? block.mimeType,
       data: bytes,
     });
     usedBytes += bytes.byteLength;

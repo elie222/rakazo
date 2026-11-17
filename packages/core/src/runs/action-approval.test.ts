@@ -15,7 +15,6 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
-  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
@@ -25,6 +24,7 @@ import {
   resolveActionApproval,
   resolveActionApprovalDetail,
   resolveActionApprovalForTools,
+  savedContextWriteNeedsApproval,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -947,15 +947,15 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
-describe("memoryWriteNeedsApproval", () => {
+describe("savedContextWriteNeedsApproval", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
 
-  it.each(["remember", "save_memory", "save_shared_memory"])(
+  it.each(["remember", "save_memory", "save_shared_memory", "skill_create", "skill_update"])(
     "gates %s only once outside content entered the run",
     async (name) => {
-      await expect(memoryWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
-      await expect(memoryWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+      await expect(savedContextWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
+      await expect(savedContextWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
     },
   );
 
@@ -965,8 +965,15 @@ describe("memoryWriteNeedsApproval", () => {
       checked = true;
       return true;
     };
-    for (const name of ["recall_memory", "forget_memory", "write_file", "send_email"]) {
-      await expect(memoryWriteNeedsApproval(name, check)).resolves.toBe(false);
+    for (const name of [
+      "recall_memory",
+      "forget_memory",
+      "skill_read",
+      "skill_delete",
+      "write_file",
+      "send_email",
+    ]) {
+      await expect(savedContextWriteNeedsApproval(name, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
   });
@@ -990,7 +997,17 @@ describe("toolResultTaintsRun", () => {
   });
 
   it("does not taint on the bot's own writes and saved state", () => {
-    for (const tool of ["ask_user", "remember", "recall_memory", "skill_read", "write_file"]) {
+    // A skill write confirms the bot's own arguments, so a second save in a clean run stays clean.
+    for (const tool of [
+      "ask_user",
+      "remember",
+      "recall_memory",
+      "skill_create",
+      "skill_read",
+      "skill_update",
+      "skill_delete",
+      "write_file",
+    ]) {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });

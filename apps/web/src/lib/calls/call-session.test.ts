@@ -269,6 +269,7 @@ describe("call session", () => {
       expect(speak).toHaveBeenCalledExactlyOnceWith("The current task is done", {
         botId: "call-bot",
         messageId: "current-reply",
+        callId: expect.any(String),
       });
       expect(getSnapshot()?.exchanges).toEqual([
         { role: "user", text: "continue the current task" },
@@ -367,6 +368,7 @@ describe("call session", () => {
     expect(speak).toHaveBeenCalledExactlyOnceWith("The task is done", {
       botId: "call-bot",
       messageId: "current",
+      callId: expect.any(String),
     });
   });
 
@@ -1675,6 +1677,7 @@ describe("answered incoming call", () => {
     expect(speak).toHaveBeenCalledOnce();
     expect(speak).toHaveBeenCalledWith("You missed my reminders, so I'm calling.", {
       botId: "call-bot",
+      callId: "bot-call-1",
     });
     expect(listen).not.toHaveBeenCalled();
     expect(getSnapshot()?.exchanges).toEqual([
