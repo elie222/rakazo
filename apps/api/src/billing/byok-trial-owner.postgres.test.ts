@@ -495,7 +495,7 @@ dbTests("own-key trial hold lifecycle", () => {
           .query(
             `SELECT 1 FROM pg_stat_activity
               WHERE application_name = 'expiry' AND wait_event_type = 'Lock'
-                AND query LIKE '%billing_accounts%'`,
+                AND query LIKE '%leases%'`,
           )
           .then((result) => result.rowCount);
       expiryWrite = expireCheckoutLease(asSystem(expiry.prisma), owner.first.organizationId)
@@ -559,8 +559,8 @@ dbTests("own-key trial hold lifecycle", () => {
       // renewals and other organizations' work do not queue behind it.
       const leaseRowFree = async () =>
         db.pool
-          .query('SELECT 1 FROM billing_accounts WHERE "organizationId" = $1 FOR UPDATE NOWAIT', [
-            owner.first.organizationId,
+          .query('SELECT 1 FROM leases WHERE "key" = $1 FOR UPDATE NOWAIT', [
+            `billing-checkout:${owner.first.organizationId}`,
           ])
           .then(
             () => true,

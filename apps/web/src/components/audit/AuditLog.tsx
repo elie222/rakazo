@@ -4,11 +4,11 @@ import { AuditIdentifyingKeySchema } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { downloadArtifactBytes } from "../../lib/artifact-open";
-import { queryClient } from "../../lib/query";
-import { rpc, withSpaceHeaders } from "../../lib/rpc";
-import { errorCode, errorText } from "../../lib/user-error";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
+import { queryClient } from "../../lib/query/query";
+import { rpc, withSpaceHeaders } from "../../lib/query/rpc";
+import { errorCode, errorText } from "../../lib/query/user-error";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 

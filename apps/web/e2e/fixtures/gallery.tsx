@@ -7,10 +7,10 @@ import { Button } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import type { ResolvedAppearance } from "../../src/lib/ui-appearance";
-import { applyResolvedAppearance } from "../../src/lib/ui-appearance";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import type { ResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { applyResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { queryClient } from "../../src/lib/query/query";
 import "../../src/styles.css";
 import { BOT, FixtureTranscript } from "./thread-fixture";
 
