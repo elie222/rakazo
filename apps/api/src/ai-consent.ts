@@ -85,7 +85,7 @@ export async function aiConsentStatus(
           })
         : [],
       uses.includes("voice")
-        ? query.uses
+        ? query.uses || query.voiceProvider || query.botId
           ? selectVoiceTarget(deps, actor, {
               botId: query.botId,
               provider: query.voiceProvider,

@@ -446,6 +446,25 @@ describe("bot and preview voice consent", () => {
     expect(upsert).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { query: { voiceProvider: "provider-c" }, recipient: "voice:provider-c" },
+    { query: { botId: "bot" }, recipient: "voice:provider-b" },
+  ])(
+    "honors the requested speech target when uses is omitted: $recipient",
+    async ({ query, recipient }) => {
+      const { deps, actor, upsert } = voiceSetup();
+      const reviewed = await aiConsentStatus(deps, actor, query);
+      expect(reviewed.recipients.map((entry) => entry.key)).toEqual([recipient]);
+      await allowAiConsent(deps, actor, {
+        ...query,
+        scope: reviewed.scope,
+        version: reviewed.version,
+        keys: [recipient],
+      });
+      expect(upsert).toHaveBeenCalledOnce();
+    },
+  );
+
   it("uses the explicit preview provider and scope instead of the bot or Space default", async () => {
     const { deps, actor, accountPreference, spacePreference } = voiceSetup();
     vi.mocked(deps.prisma.spaceSettingOverride.findUnique).mockResolvedValue({

@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
     voiceId: null as string | null,
   },
   defaultProvider: "provider-a",
+  connected: ["provider-a", "provider-b"],
   save: vi.fn(),
   speak: vi.fn(),
   stop: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("./api", () => ({
           voiceId: "b-default",
           isDefault: state.defaultProvider === "provider-b",
         },
-      ];
+      ].filter((credential) => state.connected.includes(credential.provider));
     if (proc === "voice/voices")
       return [
         {
@@ -162,6 +163,7 @@ beforeEach(() => {
   queryClient.clear();
   state.bot = { id: "bot-a", name: "Helper", voiceProvider: null, voiceId: null };
   state.defaultProvider = "provider-a";
+  state.connected = ["provider-a", "provider-b"];
   state.save.mockResolvedValue(undefined);
   state.speak.mockResolvedValue(true);
   container = document.createElement("div");
@@ -308,4 +310,26 @@ it("keeps the accepted provider and voice when a new selection fails to save", a
     voiceId: "custom",
     owner: expect.any(Symbol),
   });
+});
+
+it("omits unavailable voice controls before any connection is configured", async () => {
+  state.connected = [];
+  await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(queryClient.getQueryState(rpcQuery("voice/credentials").queryKey)?.status).toBe(
+        "success",
+      ),
+    );
+  });
+  expect(container.textContent).toBe("");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+it("explains a disconnected saved provider instead of offering a stale ready preview", async () => {
+  state.bot.voiceProvider = "provider-b";
+  state.connected = ["provider-a"];
+  await open();
+  expect(container.textContent).toContain("Reconnect this provider in Settings → Voice.");
+  expect(button("Hear a sample").disabled).toBe(true);
 });

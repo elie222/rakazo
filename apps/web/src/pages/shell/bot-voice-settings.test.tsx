@@ -191,3 +191,24 @@ it("pins a custom voice chosen under Default until the provider is reset", async
   expect(bot.voiceId).toBeNull();
   expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Default (Bright)");
 });
+
+it("omits unavailable voice controls until a connection exists", async () => {
+  credentials = [];
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <BotVoiceSettings bot={bot} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(
+        client.getQueryState(spaceQueries(null, "space-1").voice.credentials.queryKey())?.status,
+      ).toBe("success"),
+    );
+  });
+  await act(flush);
+  expect(container.textContent).toBe("");
+  expect(container.querySelector("button")).toBeNull();
+});

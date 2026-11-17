@@ -138,8 +138,8 @@ it("releases a timed-out status read so a later Call can succeed", async () => {
   mocks.status.mockReturnValueOnce(stalled.promise).mockResolvedValue(ready);
   await render();
   await act(async () => container.querySelector("button")!.click());
-  await act(async () => vi.advanceTimersByTimeAsync(10_000));
-  expect(mocks.error).toHaveBeenCalledWith("Voice request timed out.");
+  await act(async () => vi.advanceTimersToNextTimerAsync());
+  await vi.waitFor(() => expect(mocks.error).toHaveBeenCalledWith("Voice request timed out."));
   expect(mocks.configure).not.toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();
   await act(async () => container.querySelector("button")!.click());

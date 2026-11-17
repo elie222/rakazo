@@ -81,6 +81,8 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     if (speaker.state.messageId === previewId) speaker.stop();
   }
 
+  if (credentials.data && providers.options.length === 0) return null;
+
   return (
     <FieldGroup className="gap-0" data-testid="bot-voice-settings">
       <Field orientation="horizontal" className="min-h-12 justify-between">
@@ -151,11 +153,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
         <p role="alert" className="pb-3 text-body text-destructive">
           {failure ? errorText(failure) : previewError}
         </p>
-      ) : credentials.data?.length === 0 ? (
-        <p className="pb-3 text-body text-muted-foreground">
-          <Trans>Connect a provider in Settings → Voice.</Trans>
-        </p>
-      ) : selectedProvider && !connection ? (
+      ) : credentials.data && selectedProvider && !connection ? (
         <p role="alert" className="pb-3 text-body text-destructive">
           <Trans>Reconnect this provider in Settings → Voice.</Trans>
         </p>

@@ -88,9 +88,21 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     credentials.error ??
     status.error ??
     voices.error;
+  const needsReconnect = Boolean(credentials.data && bot?.voiceProvider && !providers.connection);
+
+  if (credentials.data && providers.options.length === 0) return null;
 
   return (
-    <SettingsGroup label={t`Voice`} footer={failure ? errorText(failure) : undefined}>
+    <SettingsGroup
+      label={t`Voice`}
+      footer={
+        failure
+          ? errorText(failure)
+          : needsReconnect
+            ? t`Reconnect this provider in Settings → Voice.`
+            : undefined
+      }
+    >
       <MenuPicker
         label={t`Provider`}
         choices={[
@@ -139,7 +151,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
               ios: sample.pending ? "stop.fill" : "play.fill",
               android: sample.pending ? "stop" : "play",
             }}
-            disabled={change.pending || !bot || !status.data?.ready}
+            disabled={change.pending || !bot || !providers.connection || !status.data?.ready}
             onPress={() => {
               if (sample.pending) {
                 cancelled.current = true;
