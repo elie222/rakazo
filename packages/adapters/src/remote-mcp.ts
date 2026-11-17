@@ -24,7 +24,6 @@ import {
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
-import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
@@ -41,6 +40,7 @@ import {
   egressRefused,
   withPinnedDnsLookup,
 } from "./network-address.js";
+import { composioToolBatch } from "./providers/integration/composio/composio-batch.js";
 import { createCheckedProxyDispatcher } from "./proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 

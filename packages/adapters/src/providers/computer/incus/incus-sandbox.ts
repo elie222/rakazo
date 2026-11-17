@@ -5,19 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { ConnectionOptions } from "node:tls";
 import type {
   AdapterContext,
-  CommandRequest,
-  ComputerActionRequest,
-  ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
-  PortableFile,
-  ProcessEvent,
-  SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
@@ -28,17 +16,13 @@ import WebSocket from "ws";
 import type { RawExecEvent } from "../../../exec-computer.js";
 import {
   COMMAND_KILL_AFTER_MS,
-  ExecComputer,
+  RawExecChannel,
   COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
 } from "../../../exec-computer.js";
-import { LinuxDesktop, onBotScreen } from "../../../linux-desktop.js";
+import { ImageComputerSandbox } from "../../../image-computer-sandbox.js";
 import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
 import { sandboxNotFoundError } from "../../../sandbox-errors.js";
 
-const DISPLAY_START = 20;
-const DESKTOP_PORT_START = 6100;
-// The image's own noVNC gateway listens here once its startup script has finished.
-const READY_PORT = 6080;
 const DEFAULT_PROJECT = "default";
 // Pin a release tag or digest with INCUS_SANDBOX_COMPUTER_IMAGE in production.
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
@@ -150,7 +134,7 @@ interface IncusOperation {
   metadata?: { fds?: Record<string, string>; return?: number } | null;
 }
 
-export class IncusSandboxProvider implements SandboxProvider {
+export class IncusSandboxProvider extends ImageComputerSandbox {
   private readonly project: string;
   private readonly machines: UnreferencedMachineRecords | undefined;
   private readonly computerImage: string;
@@ -159,32 +143,9 @@ export class IncusSandboxProvider implements SandboxProvider {
   private readonly processLimit: string;
   private readonly readyTimeoutMs: number;
   private readonly client: IncusClient;
-  private readonly shell = new ExecComputer((...exec) => this.execRaw(...exec), "Incus");
-
-  private readonly desktops = new LinuxDesktop({
-    environment: async (computer, context) => {
-      const address = await this.address(computer, context.signal);
-      return {
-        homeDir: WORKSPACE,
-        workspaceDir: WORKSPACE,
-        browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-        displayStart: DISPLAY_START,
-        portStart: DESKTOP_PORT_START,
-        // The relay must use the address family the web service connects to.
-        bindHost: address.includes(":") ? "::" : "0.0.0.0",
-      };
-    },
-    run: async (computer, command, context) =>
-      this.shell.run(computer, ["bash", "-c", command], context),
-    screenUrl: async (computer, port, context) => {
-      const address = await this.address(computer, context.signal);
-      const host = address.includes(":") ? `[${address}]` : address;
-      // The image's embed.html works in the sandboxed screen frame; see the Kubernetes provider.
-      return `http://${host}:${port}/embed.html`;
-    },
-  });
 
   constructor(options: IncusSandboxOptions, client?: IncusClient) {
+    super("incus", "Incus");
     this.machines = options.unreferencedMachines;
     this.project = options.project?.trim() || DEFAULT_PROJECT;
     this.computerImage = options.computerImage?.trim() || DEFAULT_COMPUTER_IMAGE;
@@ -196,22 +157,6 @@ export class IncusSandboxProvider implements SandboxProvider {
         ? options.readyTimeoutMs!
         : DEFAULT_READY_TIMEOUT_MS;
     this.client = client ?? new IncusHttpClient(options);
-  }
-
-  describe() {
-    return {
-      id: "incus",
-      contractVersion: "1",
-      adapterVersion: "0.1.0",
-      capabilities: {
-        graphical: true,
-        pty: true,
-        snapshots: true,
-        takeover: true,
-        persistentHome: false,
-        multiScreen: true,
-      },
-    };
   }
 
   async provision(
@@ -263,114 +208,13 @@ export class IncusSandboxProvider implements SandboxProvider {
     return instance?.status === "Running";
   }
 
-  async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await this.shell.prepare(computer, context);
+  protected async relayBindHost(computer: ComputerRef, context: AdapterContext) {
+    const address = await this.screenAddress(computer, context);
+    return address.includes(":") ? "::" : "0.0.0.0";
   }
 
-  async *execute(
-    computer: ComputerRef,
-    requested: CommandRequest,
-    context: AdapterContext,
-  ): AsyncIterable<ProcessEvent> {
-    yield* this.shell.execute(computer, onBotScreen(requested, context, DISPLAY_START), context);
-  }
-
-  async connectScreen(
-    computer: ComputerRef,
-    request: ScreenRequest,
-    context: AdapterContext,
-  ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    // As on Kubernetes: the API already holds the human control token, and a new run may
-    // supersede the bot's screen fence while the human keeps control of the same instance.
-    return this.desktops.connectTerminal(computer, request, {
-      ...context,
-      screenLeaseId: undefined,
-    });
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    try {
-      await this.desktops.setScreenControl(computer, interactive, context, controlToken);
-    } catch (error) {
-      throw await this.goneOr(instanceName(computer), error);
-    }
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
-  async listFiles(
-    computer: ComputerRef,
-    directory: string,
-    context: AdapterContext,
-  ): Promise<ComputerFileEntry[]> {
-    return this.shell.listFiles(computer, directory, context);
-  }
-
-  async readFile(
-    computer: ComputerRef,
-    filePath: string,
-    context: AdapterContext,
-    options?: { maxBytes?: number },
-  ): Promise<Uint8Array> {
-    return this.shell.readFile(computer, filePath, context, options);
-  }
-
-  async writeFile(
-    computer: ComputerRef,
-    file: PortableFile,
-    context: AdapterContext,
-  ): Promise<void> {
-    await this.shell.writeFile(computer, file, context);
-  }
-
-  async *exportWorkspace(
-    computer: ComputerRef,
-    context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
-    await this.desktops.stopBrowsers(computer, context);
-    yield* this.shell.exportWorkspace(computer, context);
-  }
-
-  async importWorkspace(
-    computer: ComputerRef,
-    files: AsyncIterable<PortableFile>,
-    context: AdapterContext,
-  ): Promise<void> {
-    await this.desktops.stopBrowsers(computer, context);
-    await this.shell.importWorkspace(computer, files, context);
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
+  protected override async screenControlFailure(computer: ComputerRef, error: unknown) {
+    return this.goneOr(instanceName(computer), error);
   }
 
   /** Instances are ephemeral: Incus deletes one as soon as it stops. */
@@ -528,11 +372,12 @@ export class IncusSandboxProvider implements SandboxProvider {
       const instance = await this.instance(name, signal);
       if (!instance) throw new Error(`Incus instance ${name} disappeared while starting`);
       if (instance.status === "Error") throw new Error(`Incus instance ${name} failed to start`);
-      if (instance.status === "Running" && instanceAddress(instance)) {
-        const probe = await this.shell
-          .run(computer, ["bash", "-c", `: </dev/tcp/127.0.0.1/${READY_PORT}`], context, 10_000)
-          .catch(() => undefined);
-        if (probe?.code === 0) return;
+      if (
+        instance.status === "Running" &&
+        instanceAddress(instance) &&
+        (await this.screenGatewayUp(computer, context))
+      ) {
+        return;
       }
       if (Date.now() >= deadline) {
         throw new Error(
@@ -575,7 +420,7 @@ export class IncusSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async address(computer: ComputerRef, signal: AbortSignal): Promise<string> {
+  protected async screenAddress(computer: ComputerRef, { signal }: AdapterContext) {
     const name = instanceName(computer);
     const instance = await this.instance(name, signal);
     if (!instance) throw sandboxGone(name);
@@ -633,7 +478,7 @@ export class IncusSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async *execRaw(
+  protected async *execRaw(
     computer: ComputerRef,
     command: string[],
     signal: AbortSignal,
@@ -642,44 +487,13 @@ export class IncusSandboxProvider implements SandboxProvider {
     tty = false,
   ): AsyncIterable<RawExecEvent> {
     const name = instanceName(computer);
-    const queue: RawExecEvent[] = [];
-    let wake: (() => void) | undefined;
-    let done = false;
     let exited = false;
-    let failure: unknown;
     const connecting: Promise<IncusSocket>[] = [];
     let control: Promise<IncusSocket> | undefined;
     const requests = new AbortController();
-    const notify = () => {
-      wake?.();
-      wake = undefined;
-    };
-    const push = (event: RawExecEvent) => {
-      if (done) return;
-      queue.push(event);
-      notify();
-    };
-    const finish = (code: number) => {
-      if (done) return;
-      queue.push({ type: "exit", code });
-      done = true;
-      notify();
-    };
-    const fail = (error: unknown) => {
-      if (done) return;
-      failure = error;
-      done = true;
-      notify();
-    };
-    const abort = () => {
-      push({ type: "stderr", data: Buffer.from("command aborted\n") });
-      finish(130);
-    };
-    const timeout = setTimeout(() => {
-      push({ type: "stderr", data: Buffer.from(`command timed out after ${timeoutMs} ms\n`) });
-      finish(124);
-    }, timeoutMs + 10_000);
-    signal.addEventListener("abort", abort, { once: true });
+    const channel = new RawExecChannel(signal, timeoutMs);
+    const push = (event: RawExecEvent) => channel.push(event);
+    const fail = (error: unknown) => channel.fail(error);
     // A failing input stream (for example a workspace iterator that throws)
     // would otherwise leave the command waiting for input until the timeout.
     stdin?.on("error", fail);
@@ -750,7 +564,7 @@ export class IncusSandboxProvider implements SandboxProvider {
         outputs = Promise.all([out.ended, err.ended]);
         if (stdin) {
           for await (const chunk of stdin) {
-            if (done) return;
+            if (channel.done) return;
             await input.send(Buffer.from(chunk as Uint8Array));
           }
         }
@@ -760,21 +574,15 @@ export class IncusSandboxProvider implements SandboxProvider {
       await outputs;
       const result = await this.waitOperation(started, requests.signal);
       exited = true;
-      finish(exitCode(result));
+      channel.finish(exitCode(result));
     };
 
     try {
-      if (signal.aborted) abort();
-      else session().catch(fail);
-      while (!done || queue.length) {
-        if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
-        while (queue.length) yield queue.shift()!;
-      }
-      if (failure) throw failure;
+      if (!channel.done) session().catch(fail);
+      yield* channel.drain();
+      if (channel.failure) throw channel.failure;
     } finally {
-      done = true;
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", abort);
+      channel.close();
       requests.abort();
       stdin?.destroy();
       void closeStreams(connecting, exited ? undefined : control);

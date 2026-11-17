@@ -1,6 +1,7 @@
 import { ModelOutputError } from "@rakazo/adapter-kit";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
+import { handoffEndedTurn } from "./run-fail.js";
 import { runIdentityInstruction } from "./run-instructions.prompt.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import {
@@ -25,7 +26,6 @@ import {
   runReplyMode,
   TICKET_SILENT_REPLY_GUIDANCE,
 } from "./run-replies.prompt.js";
-import { handoffEndedTurn } from "./run-turn.js";
 import {
   couldBecomeNoResponse,
   isExactNoResponse,
