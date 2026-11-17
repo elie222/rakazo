@@ -73,7 +73,7 @@ RAKAZO_IMAGE_TAG=local
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  build --build-arg GIT_SHA=$(git rev-parse HEAD)
+  build --build-arg GIT_SHA="$(git rev-parse HEAD)"
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
   up -d --wait --pull never
 curl --fail https://app.example.com/health
@@ -186,7 +186,7 @@ docker compose --env-file .env \
   -f infra/compose/docker-compose.prod.yml \
   -f infra/compose/docker-compose.prod.docker.yml \
   pull --ignore-buildable
-docker compose --env-file .env \
+GIT_SHA="$(git rev-parse HEAD)" docker compose --env-file .env \
   -f infra/compose/docker-compose.prod.yml \
   -f infra/compose/docker-compose.prod.docker.yml \
   up -d --build --wait --wait-timeout 300 --pull never
