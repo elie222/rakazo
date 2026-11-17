@@ -36,7 +36,14 @@ export function isAvailableChatApp(
   app: { name: string; slug: string },
   chatApps: readonly string[],
 ): boolean {
-  return [app.name, app.slug].some((name) => messagingProviderNamed(name, chatApps) !== null);
+  // A named extra line ("Telegram (work)") is still that app.
+  const appNames = new Set(
+    chatApps.flatMap((provider) => {
+      const name = messagingProviderName(provider).toLowerCase();
+      return [provider.toLowerCase(), name, name.replace(/ \([^)]*\)$/, "")];
+    }),
+  );
+  return [app.name, app.slug].some((name) => appNames.has(name.trim().toLowerCase()));
 }
 
 /** Per-message provider label, narrowed to a recognized transport when available. */

@@ -57,4 +57,5 @@ it("recognizes a catalog app that is also a chat app people can connect here", (
   expect(isAvailableChatApp({ name: "Telegram Bot", slug: "telegram" }, chatApps)).toBe(true);
   expect(isAvailableChatApp({ name: "Notion", slug: "notion" }, chatApps)).toBe(false);
   expect(isAvailableChatApp({ name: "Slack", slug: "slack" }, [])).toBe(false);
+  expect(isAvailableChatApp({ name: "Telegram", slug: "tg" }, ["telegram-work"])).toBe(true);
 });
