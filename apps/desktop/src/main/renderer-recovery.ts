@@ -18,6 +18,9 @@ export function installRendererRecovery(win: BrowserWindow, isQuitting: () => bo
     if (prompting || stopped()) return;
     prompting = true;
     try {
+      // macOS hides closed windows; wait until one is shown again before asking.
+      if (!win.isVisible()) await new Promise<void>((resolve) => win.once("show", () => resolve()));
+      if (stopped()) return;
       // A native window-modal dialog works even with no living renderer.
       const { response } = await dialog.showMessageBox(win, {
         type: "error",

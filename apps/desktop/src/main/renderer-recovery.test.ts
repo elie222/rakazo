@@ -15,6 +15,7 @@ function windowFixture() {
   });
   const win = Object.assign(new EventEmitter(), {
     isDestroyed: vi.fn(() => false),
+    isVisible: vi.fn(() => true),
     webContents: contents,
   });
   const quitting = vi.fn(() => false);
@@ -119,5 +120,21 @@ describe("renderer recovery", () => {
     answer({ response: 0 });
     await vi.advanceTimersByTimeAsync(0);
     expect(contents.reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for a hidden window to be shown before asking", async () => {
+    const { win, gone } = windowFixture();
+    gone();
+    await vi.advanceTimersByTimeAsync(1_000);
+    gone();
+    await vi.advanceTimersByTimeAsync(5_000);
+    win.isVisible.mockReturnValue(false);
+    gone();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.showMessageBox).not.toHaveBeenCalled();
+    win.isVisible.mockReturnValue(true);
+    win.emit("show");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.showMessageBox).toHaveBeenCalledOnce();
   });
 });
