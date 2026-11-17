@@ -1,6 +1,5 @@
 {
-  "apps/api/src": 289,
-  "apps/desktop/src/main": 90,
+  "apps/api/src": 291,
   "apps/mobile/components": 163,
   "apps/mobile/lib": 567,
   "apps/web/e2e": 131,
@@ -10,7 +9,6 @@
   "apps/web/src/pages/shell": 122,
   "packages/adapters/src": 868,
   "packages/contracts/src": 113,
-  "packages/db/src": 187,
   "packages/testkit/src": 103,
   "packages/testkit/src/evals": 61
 }
