@@ -1,11 +1,27 @@
-import type { MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
+import type { ExtraReplyQuote, MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
+import { ExtraReplyQuotesSchema } from "@rakazo/contracts";
 import { splitToolHistory } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import { readJsonColumn } from "../database/json-column.js";
 import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "../database/transaction-retry.js";
 import { markThreadUnreadForMembers } from "./thread-reads.js";
+
+/** The further excerpts a stored reply quotes; none when the column is empty or unreadable. */
+export function storedExtraReplyQuotes(message: {
+  id: string;
+  extraReplyQuotes?: unknown;
+}): ExtraReplyQuote[] {
+  if (message.extraReplyQuotes == null) return [];
+  return readJsonColumn(
+    ExtraReplyQuotesSchema,
+    message.extraReplyQuotes,
+    { table: "messages", column: "extraReplyQuotes", id: message.id },
+    { fallback: [] },
+  );
+}
 
 /**
  * What a group turn reads of its thread: one channel's messages, or only the message that woke
@@ -59,6 +75,7 @@ export async function loadRunHistoryMessages(
       createdAt: true,
       replyToMessageId: true,
       replyQuote: true,
+      extraReplyQuotes: true,
       replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
       clientNonce: true,
       steeringMessages: { where: { botId: run.botId, runId: null }, select: { id: true } },
@@ -112,6 +129,7 @@ export interface CreateThreadMessageInput {
   authorUserId?: string;
   replyToMessageId?: string;
   replyQuote?: string;
+  extraReplyQuotes?: ExtraReplyQuote[];
   runId?: string;
   clientNonce?: string;
   markUnread?: boolean;
@@ -166,6 +184,7 @@ export async function createThreadMessageInTransaction(
       authorUserId: input.authorUserId,
       replyToMessageId: input.replyToMessageId,
       replyQuote: input.replyQuote,
+      ...(input.extraReplyQuotes?.length ? { extraReplyQuotes: input.extraReplyQuotes } : {}),
       runId: input.runId,
       clientNonce: input.clientNonce,
     },

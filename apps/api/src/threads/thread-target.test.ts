@@ -4,6 +4,7 @@ import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { reactToThreadMessage } from "./thread-reactions.js";
 import { threadSnapshot } from "./thread-snapshot.js";
@@ -4342,6 +4343,269 @@ describe("sendThreadMessage", () => {
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ replyQuote: "42% growth" }),
+    });
+  });
+
+  describe("stacked quotes", () => {
+    async function sendStacked(input: {
+      extraReplyQuotes: Array<{ messageId: string; text: string }>;
+      fromPage?: true;
+      replyQuote?: string;
+      parentBlocks?: unknown;
+      noFirstQuote?: true;
+      others: Array<{ id: string; role: string; botId?: string; blocks: unknown }>;
+    }) {
+      let messageSeq = 0;
+      let eventSeq = 0;
+      const tx = {
+        space: { findUnique: vi.fn(async () => null) },
+        user: { findMany: vi.fn().mockResolvedValue([]) },
+        spaceMember: { count: vi.fn().mockResolvedValue(1) },
+        $executeRaw: vi.fn(async () => 0),
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        thread: {
+          update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+            data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
+          ),
+        },
+        message: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "parent",
+            role: "bot",
+            blocks: input.parentBlocks ?? [{ kind: "text", text: "we saw 42% growth last week" }],
+          }),
+          findMany: vi.fn().mockResolvedValue(input.others),
+          update: vi.fn(),
+          create: vi.fn().mockResolvedValue({
+            id: "msg-1",
+            threadId: "thread-1",
+            seq: 1,
+            role: "user",
+            blocks: [{ kind: "text", text: "why these?" }],
+            botId: null,
+            runId: null,
+            createdAt: new Date(),
+          }),
+        },
+        run: {
+          findMany: vi.fn().mockResolvedValue([]),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
+          create: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1", status: "queued" }),
+        },
+        task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+        event: {
+          create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),
+        },
+        steeringMessage: { create: vi.fn() },
+      };
+      const prisma = {
+        message: { findUnique: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      await sendThreadMessage(
+        {
+          prisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget,
+        {
+          text: "why these?",
+          replyToMessageId: "parent",
+          ...(input.noFirstQuote ? {} : { replyQuote: input.replyQuote ?? "42% growth" }),
+          extraReplyQuotes: input.extraReplyQuotes,
+          ...(input.fromPage ? { fromPage: true as const } : {}),
+          clientNonce: "nonce-1",
+        },
+      );
+      return tx;
+    }
+
+    it("saves each further excerpt with its own message and drops one its message does not hold", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [
+          { messageId: "second", text: "ship on friday" },
+          { messageId: "second", text: "ship on friday" },
+          { messageId: "second", text: "never said this" },
+          { messageId: "foreign-thread", text: "anything" },
+          { messageId: "mine", text: "a question" },
+        ],
+        others: [
+          {
+            id: "second",
+            role: "bot",
+            botId: "bot-2",
+            blocks: [{ kind: "text", text: "we should ship on friday" }],
+          },
+          { id: "mine", role: "user", blocks: [{ kind: "text", text: "a question for later" }] },
+        ],
+      });
+
+      expect(tx.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: ["second", "foreign-thread", "mine"] }, threadId: "thread-1" },
+        }),
+      );
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved.extraReplyQuotes).toEqual([
+        { messageId: "second", role: "bot", botId: "bot-2", text: "ship on friday" },
+        { messageId: "mine", role: "user", text: "a question" },
+      ]);
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ extraReplyQuotes: saved.extraReplyQuotes }),
+        }),
+      });
+    });
+
+    it("drops a further excerpt that repeats the first quote, and keeps the same text from another message", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [
+          { messageId: "parent", text: "42% growth" },
+          { messageId: "second", text: "42% growth" },
+        ],
+        others: [
+          {
+            id: "parent",
+            role: "bot",
+            blocks: [{ kind: "text", text: "we saw 42% growth last week" }],
+          },
+          { id: "second", role: "bot", blocks: [{ kind: "text", text: "also 42% growth here" }] },
+        ],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved.extraReplyQuotes).toEqual([
+        { messageId: "second", role: "bot", text: "42% growth" },
+      ]);
+    });
+
+    it("leaves out only the further excerpt whose message blocks cannot be read, and warns about that row", async () => {
+      const warn = vi.spyOn(getLogger(), "warn");
+      const tx = await sendStacked({
+        extraReplyQuotes: [
+          { messageId: "broken-blocks-row", text: "ship on friday" },
+          { messageId: "second", text: "ship on friday" },
+        ],
+        others: [
+          { id: "broken-blocks-row", role: "bot", blocks: { not: "a list" } },
+          { id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] },
+        ],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved.extraReplyQuotes).toEqual([
+        { messageId: "second", role: "bot", text: "ship on friday" },
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ table: "messages", column: "blocks", id: "broken-blocks-row" }),
+      );
+      warn.mockRestore();
+    });
+
+    it("keeps a further excerpt whose message also holds a block this release no longer reads", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "older", text: "ship on friday" }],
+        others: [
+          {
+            id: "older",
+            role: "bot",
+            blocks: [
+              { kind: "text", text: "we should ship on friday" },
+              { kind: "retired_block_kind", detail: 1 },
+            ],
+          },
+        ],
+      });
+
+      expect(tx.message.create.mock.calls[0]![0].data.extraReplyQuotes).toEqual([
+        { messageId: "older", role: "bot", text: "ship on friday" },
+      ]);
+    });
+
+    it("keeps no further excerpts on a whole-message reply, whose quote is only its preview", async () => {
+      const tx = await sendStacked({
+        noFirstQuote: true,
+        extraReplyQuotes: [{ messageId: "second", text: "ship on friday" }],
+        others: [{ id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] }],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("we saw 42% growth last week");
+      expect(tx.message.findMany).not.toHaveBeenCalled();
+      expect(saved).not.toHaveProperty("extraReplyQuotes");
+    });
+
+    it("keeps no further excerpts when the only one repeats the first quote", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "parent", text: "42% growth" }],
+        others: [
+          {
+            id: "parent",
+            role: "bot",
+            blocks: [{ kind: "text", text: "we saw 42% growth last week" }],
+          },
+        ],
+      });
+
+      expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
+      expect(tx.event.create.mock.calls[0]![0].data.payload.extraReplyQuotes).toBeUndefined();
+    });
+
+    it("sends the message plainly when no further excerpt checks out", async () => {
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "second", text: "not in there" }],
+        others: [{ id: "second", role: "bot", blocks: [{ kind: "text", text: "something else" }] }],
+      });
+
+      const saved = tx.message.create.mock.calls[0]![0].data;
+      expect(saved.replyQuote).toBe("42% growth");
+      expect(saved).not.toHaveProperty("extraReplyQuotes");
+      expect(tx.event.create.mock.calls[0]![0].data.payload.extraReplyQuotes).toBeUndefined();
+    });
+
+    it("drops a further excerpt whose message has a role a reply cannot read back, and warns about that row", async () => {
+      const warn = vi.spyOn(getLogger(), "warn");
+      const tx = await sendStacked({
+        extraReplyQuotes: [{ messageId: "odd", text: "ship on friday" }],
+        others: [{ id: "odd", role: "tool", blocks: [{ kind: "text", text: "ship on friday" }] }],
+      });
+
+      expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
+      expect(warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ messageId: "odd" }),
+      );
+      warn.mockRestore();
+    });
+
+    it("keeps no further excerpts beside a page card, which has no text to quote", async () => {
+      const tx = await sendStacked({
+        replyQuote: "Q3 plan",
+        parentBlocks: [{ kind: "page", pageId: "page-1", version: 3, title: "Q3 plan" }],
+        extraReplyQuotes: [{ messageId: "second", text: "ship on friday" }],
+        others: [{ id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] }],
+      });
+
+      expect(tx.message.findMany).not.toHaveBeenCalled();
+      expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
+    });
+
+    it("keeps no further excerpts on a reply sent from a page", async () => {
+      const tx = await sendStacked({
+        fromPage: true,
+        extraReplyQuotes: [{ messageId: "second", text: "ship on friday" }],
+        others: [{ id: "second", role: "bot", blocks: [{ kind: "text", text: "ship on friday" }] }],
+      });
+
+      expect(tx.message.findMany).not.toHaveBeenCalled();
+      expect(tx.message.create.mock.calls[0]![0].data).not.toHaveProperty("extraReplyQuotes");
     });
   });
 

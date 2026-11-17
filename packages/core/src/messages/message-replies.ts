@@ -1,5 +1,5 @@
-import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
+import type { ExtraReplyQuote, MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
+import { ExtraReplyQuotesSchema, MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "../asks/ask-kind.js";
 import { displayName } from "../bots/display-name.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
@@ -22,6 +22,7 @@ export function compactReplyExcerpt(text: string): string {
 type ReplyMetadata = {
   replyToMessageId?: string;
   replyQuote?: string;
+  extraReplyQuotes?: ExtraReplyQuote[];
   replyPreview?: ReplyPreview | null;
 };
 
@@ -31,12 +32,14 @@ export function replyMetadata(
   previous?: ReplyMetadata,
 ): ReplyMetadata {
   const preview = ReplyPreviewSchema.nullable().safeParse(payload.replyPreview);
+  const extra = ExtraReplyQuotesSchema.safeParse(payload.extraReplyQuotes);
   return {
     replyToMessageId:
       typeof payload.replyToMessageId === "string"
         ? payload.replyToMessageId
         : previous?.replyToMessageId,
     replyQuote: typeof payload.replyQuote === "string" ? payload.replyQuote : previous?.replyQuote,
+    extraReplyQuotes: extra.success ? extra.data : previous?.extraReplyQuotes,
     replyPreview: preview.success ? preview.data : previous?.replyPreview,
   };
 }

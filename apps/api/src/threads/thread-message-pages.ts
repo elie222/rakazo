@@ -9,7 +9,7 @@ import {
 } from "@rakazo/core";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { loadMessageAuthors, storedMessageBlocks } from "@rakazo/db";
+import { loadMessageAuthors, storedExtraReplyQuotes, storedMessageBlocks } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
 
@@ -267,6 +267,7 @@ type MessageRow = {
   authorUserId?: string | null;
   replyToMessageId: string | null;
   replyQuote: string | null;
+  extraReplyQuotes?: Prisma.JsonValue;
   replyTo?: {
     threadId: string;
     role: string;
@@ -302,6 +303,7 @@ function toThreadMessage(row: MessageRow, authors: Map<string, MessageAuthor>): 
         ? null
         : undefined;
   const author = row.authorUserId ? authors.get(row.authorUserId) : undefined;
+  const extraReplyQuotes = storedExtraReplyQuotes(row);
   return {
     id: row.id,
     threadId: row.threadId,
@@ -312,6 +314,7 @@ function toThreadMessage(row: MessageRow, authors: Map<string, MessageAuthor>): 
     ...(author ? { author } : {}),
     replyToMessageId: row.replyToMessageId ?? undefined,
     replyQuote: row.replyQuote ?? undefined,
+    ...(extraReplyQuotes.length ? { extraReplyQuotes } : {}),
     replyPreview,
     runId: row.runId ?? undefined,
     callId: callIdFromClientNonce(row.clientNonce),

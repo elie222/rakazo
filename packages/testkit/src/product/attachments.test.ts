@@ -283,6 +283,46 @@ describeAttachments("chat attachments", () => {
     expect(missingReply?.replyToMessageId).toBeUndefined();
     expect(missingReply?.replyPreview).toBeNull();
   });
+
+  it("saves the further excerpts a reply stacks and drops one from another thread", async () => {
+    const cookie = await signup(app, `stacked-${stamp}@rakazo.test`, "Stacked User");
+    const createBot = (name: string) =>
+      rpc<{ id: string }>(app, cookie, "bots/create", {
+        name,
+        title: name,
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+    const bot = await createBot("Stacker");
+    const otherBot = await createBot("Elsewhere");
+    await sendAndWait(app, cookie, bot.id, { text: "First point about pricing" });
+    await sendAndWait(app, cookie, bot.id, { text: "Second point about launch dates" });
+    await sendAndWait(app, cookie, otherBot.id, { text: "A point from another chat" });
+    const userMessage = async (botId: string, text: string) =>
+      (await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId })).messages.find((message) =>
+        message.blocks.some((block) => block.kind === "text" && block.text === text),
+      )!;
+    const first = await userMessage(bot.id, "First point about pricing");
+    const second = await userMessage(bot.id, "Second point about launch dates");
+    const foreign = await userMessage(otherBot.id, "A point from another chat");
+
+    await sendAndWait(app, cookie, bot.id, {
+      text: "Both of these",
+      replyToMessageId: first.id,
+      replyQuote: "pricing",
+      extraReplyQuotes: [
+        { messageId: second.id, text: "launch dates" },
+        { messageId: foreign.id, text: "another chat" },
+      ],
+    });
+
+    const reply = await userMessage(bot.id, "Both of these");
+    expect(reply.replyQuote).toBe("pricing");
+    expect(reply.extraReplyQuotes).toEqual([
+      { messageId: second.id, role: "user", text: "launch dates" },
+    ]);
+  });
 });
 
 async function signup(app: App, email: string, name: string) {
@@ -321,7 +361,13 @@ async function sendAndWait(
   app: App,
   cookie: string,
   botId: string,
-  input: { text?: string; artifactIds?: string[]; replyToMessageId?: string },
+  input: {
+    text?: string;
+    artifactIds?: string[];
+    replyToMessageId?: string;
+    replyQuote?: string;
+    extraReplyQuotes?: Array<{ messageId: string; text: string }>;
+  },
 ) {
   await rpc(app, cookie, "threads/send", { botId, ...input });
   await waitFor(

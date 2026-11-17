@@ -540,6 +540,20 @@ export const ReplyPreviewSchema = z.object({
 });
 export type ReplyPreview = z.infer<typeof ReplyPreviewSchema>;
 
+/**
+ * A further excerpt a reply quotes, after the first one in `replyToMessageId` and `replyQuote`.
+ * The server saves the parent's role and bot with it, so the excerpt reads on its own after the
+ * parent has left the loaded page or been deleted.
+ */
+export const ExtraReplyQuoteSchema = z.object({
+  messageId: Id,
+  role: MessageRole,
+  botId: Id.optional(),
+  text: z.string().min(1),
+});
+export type ExtraReplyQuote = z.infer<typeof ExtraReplyQuoteSchema>;
+export const ExtraReplyQuotesSchema = z.array(ExtraReplyQuoteSchema);
+
 export const ThreadMessageSchema = z.object({
   id: Id,
   threadId: Id,
@@ -550,6 +564,7 @@ export const ThreadMessageSchema = z.object({
   author: MessageAuthorSchema.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
+  extraReplyQuotes: ExtraReplyQuotesSchema.optional(),
   replyPreview: ReplyPreviewSchema.nullable().optional(),
   runId: Id.optional(),
   /** Set when the message was sent from a live voice call; groups one call's transcript. */

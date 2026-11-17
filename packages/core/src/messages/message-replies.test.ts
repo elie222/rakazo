@@ -30,6 +30,15 @@ describe("shared reply presentation", () => {
       replyPreview: { role: "bot" as const, text: "Earlier" },
     };
     expect(replyMetadata({}, previous)).toEqual(previous);
+    const extra = [{ messageId: "other", role: "bot" as const, text: "Another span" }];
+    expect(replyMetadata({ extraReplyQuotes: extra }, previous)).toEqual({
+      ...previous,
+      extraReplyQuotes: extra,
+    });
+    // A later update that leaves the stack out, or sends a malformed one, keeps what is known.
+    const known = { ...previous, extraReplyQuotes: extra };
+    expect(replyMetadata({}, known)).toEqual(known);
+    expect(replyMetadata({ extraReplyQuotes: [{ messageId: 3 }] }, known)).toEqual(known);
     expect(replyMetadata({ replyPreview: { text: 12 } }, previous)).toEqual(previous);
     expect(replyMetadata({ replyPreview: null }, previous)).toEqual({
       ...previous,

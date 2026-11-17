@@ -123,6 +123,7 @@ import {
   CreateRoutineInput,
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
+  EXTRA_REPLY_QUOTES_MAX,
   ExportManifestSchema,
   ExternalConversationPolicySchema,
   GroupDetailSchema,
@@ -270,6 +271,16 @@ const threadSendFields = threadTarget.safeExtend({
     .optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH).optional(),
+  /** Further excerpts, each checked against its own message, after the one in `replyQuote`. */
+  extraReplyQuotes: z
+    .array(
+      z.object({
+        messageId: Id,
+        text: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH),
+      }),
+    )
+    .max(EXTRA_REPLY_QUOTES_MAX)
+    .optional(),
   /** Sent from the open page: a reply to its card that quotes nothing. */
   fromPage: z.literal(true).optional(),
   clientNonce: z.string().min(1).max(200).optional(),
@@ -290,6 +301,13 @@ export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
       code: "custom",
       message: "replyQuote requires replyToMessageId",
       path: ["replyQuote"],
+    });
+  }
+  if (input.extraReplyQuotes?.length && (!input.replyQuote || input.fromPage)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "extraReplyQuotes follows a replyQuote and cannot come from a page",
+      path: ["extraReplyQuotes"],
     });
   }
 });

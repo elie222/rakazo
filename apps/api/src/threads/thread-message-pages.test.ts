@@ -993,6 +993,39 @@ describe("authoritative reply previews", () => {
     expect(page.messages[0]?.replyPreview).toBeNull();
     expect(JSON.stringify(page)).not.toContain("Private text");
   });
+  it("returns the further quotes a reply saved, and none for an unreadable column", async () => {
+    const row = {
+      threadId: "thread-1",
+      seq: 1,
+      role: "user",
+      blocks: [],
+      botId: null,
+      runId: null,
+      createdAt: new Date(),
+      replyToMessageId: "parent",
+      replyQuote: "one",
+      replyTo: null,
+    };
+    const extra = [{ messageId: "other", role: "bot", botId: "bot-1", text: "two" }];
+    const page = await loadMessagePage(
+      {
+        message: {
+          findMany: vi.fn().mockResolvedValue([
+            { ...row, id: "stacked", extraReplyQuotes: extra },
+            { ...row, id: "plain", extraReplyQuotes: null },
+            { ...row, id: "broken", extraReplyQuotes: [{ text: 4 }] },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      "thread-1",
+      undefined,
+      100,
+    );
+    const byId = Object.fromEntries(page.messages.map((message) => [message.id, message]));
+    expect(byId.stacked?.extraReplyQuotes).toEqual(extra);
+    expect(byId.plain).not.toHaveProperty("extraReplyQuotes");
+    expect(byId.broken).not.toHaveProperty("extraReplyQuotes");
+  });
 });
 
 describe("reply target validation", () => {

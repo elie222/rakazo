@@ -180,6 +180,59 @@ describe("reply context", () => {
     expect(quoted).toHaveLength(REPLY_QUOTE_MAX_LENGTH);
   });
 
+  it("gives the bot each stacked excerpt with the message it came from", () => {
+    const text = messageToAgentHistoryText({
+      id: "reply",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "Why these two?" }],
+      replyToMessageId: target.id,
+      replyQuote: "just this span",
+      extraReplyQuotes: [
+        { messageId: "message-second", role: "bot", botId: "bot-2", text: "and this one" },
+      ],
+      replyTo: target,
+    });
+    const note = JSON.parse(text.split("\n")[2]!);
+    expect(note).toEqual({
+      messageId: "message-first",
+      role: "assistant",
+      quotedText: "just this span",
+      alsoQuoted: [
+        { messageId: "message-second", role: "bot", botId: "bot-2", quotedText: "and this one" },
+      ],
+    });
+  });
+
+  it("reads a stacked excerpt column that does not match its schema as no extra excerpts", () => {
+    const text = messageToAgentHistoryText({
+      id: "reply",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "Why?" }],
+      replyToMessageId: target.id,
+      replyQuote: "just this span",
+      extraReplyQuotes: [{ messageId: 7 }],
+      replyTo: target,
+    });
+    expect(text).toContain('"quotedText":"just this span"');
+    expect(text).not.toContain("alsoQuoted");
+  });
+
+  it("keeps full target content for a whole-message reply even when stacked excerpts are stored", () => {
+    const text = messageToAgentHistoryText({
+      id: "reply",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "Why?" }],
+      replyToMessageId: target.id,
+      extraReplyQuotes: [{ messageId: "message-second", role: "bot", text: "orphan" }],
+      replyTo: target,
+    });
+    expect(text).toContain("Test message 1/3: Hello!");
+    expect(text).not.toContain("alsoQuoted");
+  });
+
   it("reactions keep full target content even when a quote is stored", () => {
     const text = messageToAgentHistoryText({
       id: "reaction-1",

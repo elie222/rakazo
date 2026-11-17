@@ -9,7 +9,7 @@ import {
 } from "@rakazo/core";
 import { isPageCardMessage } from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
-import { storedMessageBlocks } from "@rakazo/db";
+import { storedExtraReplyQuotes, storedMessageBlocks } from "@rakazo/db";
 import { replyTargetNote } from "../../runtime/context/history-replay.prompt.js";
 
 type QuotedMessage = {
@@ -22,6 +22,7 @@ type QuotedMessage = {
 type ReplyMessage = QuotedMessage & {
   replyToMessageId?: string | null;
   replyQuote?: string | null;
+  extraReplyQuotes?: unknown;
   replyTo?: QuotedMessage | null;
 };
 
@@ -41,8 +42,19 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
     !emoji && !wholePage && typeof source.replyQuote === "string"
       ? source.replyQuote.trim()
       : undefined;
+  const alsoQuoted = excerpt
+    ? storedExtraReplyQuotes(source).map((extra) => ({
+        messageId: extra.messageId,
+        role: extra.role,
+        botId: extra.botId,
+        quotedText: truncateReplyQuote(extra.text.trim()),
+      }))
+    : [];
   const targetPayload = excerpt
-    ? { quotedText: truncateReplyQuote(excerpt) }
+    ? {
+        quotedText: truncateReplyQuote(excerpt),
+        ...(alsoQuoted.length ? { alsoQuoted } : {}),
+      }
     : (() => {
         const content = blocksToAgentHistoryText(messageBlocks(target));
         return {
@@ -104,6 +116,7 @@ export async function loadReplyContext(
       ...selection,
       replyToMessageId: true,
       replyQuote: true,
+      extraReplyQuotes: true,
       replyTo: { select: selection },
     },
   });

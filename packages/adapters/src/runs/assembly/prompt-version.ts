@@ -89,6 +89,16 @@ export function promptVersionParts() {
       blocks: [{ kind: "text", text: "Reply." }],
       replyTo: { id: "m1", threadId: "t", role: "bot", blocks: [{ kind: "text", text: "Hi." }] },
     }),
+    replyQuotes: messageToAgentHistoryText({
+      id: "m3",
+      threadId: "t",
+      role: "user",
+      blocks: [{ kind: "text", text: "Reply." }],
+      replyToMessageId: "m1",
+      replyQuote: "Hi.",
+      extraReplyQuotes: [{ messageId: "m0", role: "bot", text: "Hello." }],
+      replyTo: { id: "m1", threadId: "t", role: "bot", blocks: [{ kind: "text", text: "Hi." }] },
+    }),
     instructions: toolSets.flatMap((disabledBuiltinTools) =>
       (["connected", "offline"] as const).map((userComputer) =>
         userTurnInstructions({
