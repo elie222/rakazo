@@ -74,9 +74,7 @@ it("switches the account to the device zone", async () => {
   expect(prompt()?.textContent).toContain("Switch to Tokyo time?");
   await act(async () => button("Switch")?.click());
   expect(rpc.preferences.update).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" });
-  await vi.waitFor(() =>
-    expect(onSaved).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" }, "Asia/Tokyo"),
-  );
+  await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" }));
 });
 
 it("remembers Keep for this device zone and asks again once the device moves", async () => {

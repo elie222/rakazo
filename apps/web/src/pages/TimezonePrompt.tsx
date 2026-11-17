@@ -29,7 +29,8 @@ export function TimezonePrompt({
   userId: string;
   /** Undefined from a server that predates timezones, which leaves everything alone. */
   timezone: string | null | undefined;
-  onSaved: (me: Me) => void;
+  /** `adopted` when the save only filled an empty zone. */
+  onSaved: (me: Me, adopted?: boolean) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -50,7 +51,7 @@ export function TimezonePrompt({
     save: (zone: string, client) => client.preferences.update({ timezone: zone }),
     // Usage is grouped by day in the account's timezone.
     stale: [queries.usage.breakdown.key()],
-    onSaved,
+    onSaved: (me) => onSaved(me),
   });
 
   const adoptedFor = useRef<string | null>(null);
@@ -62,7 +63,7 @@ export function TimezonePrompt({
       .adoptTimezone({ timezone: device })
       .then((me) => {
         // The shell remounts this per account, so a late answer for another one is dropped.
-        if (adoptedFor.current === userId) onSaved(me);
+        if (adoptedFor.current === userId) onSaved(me, true);
       })
       .catch(() => {
         // The next focus or visit tries again.

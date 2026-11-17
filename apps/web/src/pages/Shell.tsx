@@ -982,8 +982,15 @@ function SpaceShell() {
           key={userId}
           userId={userId}
           timezone={bootstrapMe.timezone}
-          onSaved={(me) =>
-            setBootstrapMe((prev) => (prev ? { ...prev, timezone: me.timezone } : me))
+          onSaved={(me, adopted) =>
+            setBootstrapMe((prev) =>
+              // An adoption only fills an empty zone, so it never replaces a newer pick.
+              !prev
+                ? me
+                : adopted && prev.timezone != null
+                  ? prev
+                  : { ...prev, timezone: me.timezone },
+            )
           }
         />
       ) : null}

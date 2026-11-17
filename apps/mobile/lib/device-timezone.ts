@@ -84,6 +84,8 @@ export async function checkDeviceTimezone(
           return;
         }
         rpc("preferences/update", { timezone: device })
+          // A load that read the zone before this save must not ask again; kept for this launch only.
+          .then(() => void kept.set(userId, answer))
           .catch((error: unknown) =>
             Alert.alert(errorText(error, t`Couldn't update your timezone`)),
           )
