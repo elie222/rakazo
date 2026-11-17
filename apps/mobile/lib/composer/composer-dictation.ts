@@ -141,11 +141,14 @@ export function useComposerDictation({
   }
 
   async function start(mine: Session) {
-    const plan = await resolveVoiceCallPlan({
-      loadDeviceVoiceEnabled,
-      dictationAvailable: dictation.available,
-      loadVoiceStatus: () => rpc("voice/status"),
-    });
+    const plan = await resolveVoiceCallPlan(
+      {
+        loadDeviceVoiceEnabled,
+        dictationAvailable: dictation.available,
+        loadVoiceStatus: () => rpc("voice/status"),
+      },
+      "dictation",
+    );
     if (session.current !== mine) return;
     if (plan.kind === "settings") {
       end(mine);

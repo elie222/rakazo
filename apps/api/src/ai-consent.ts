@@ -29,7 +29,7 @@ import {
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
-import { voiceCredentialServer } from "./voice.js";
+import { includedVoice, voiceCredentialServer } from "./voice.js";
 
 export async function aiConsentStatus(
   deps: RouterDeps,
@@ -220,6 +220,18 @@ export async function aiConsentStatus(
           use: "model",
         }),
       );
+    }
+  }
+  if (uses.includes("voice") && voices.length === 0) {
+    const included = await includedVoice(deps, actor, query.settingsScope);
+    if (included) {
+      const { provider, connection } = included.deployment;
+      if (included.synthesize || (included.transcribe && !connection.sttBaseUrl)) {
+        add(aiRecipient({ provider, use: "voice", baseUrl: connection.baseUrl }));
+      }
+      if (included.transcribe && connection.sttBaseUrl) {
+        add(aiRecipient({ provider, use: "voice", baseUrl: connection.sttBaseUrl }));
+      }
     }
   }
   for (const voice of voices) {

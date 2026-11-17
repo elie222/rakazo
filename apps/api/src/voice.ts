@@ -261,9 +261,15 @@ export function speechModelValue(speechModel: string): string | null {
 }
 
 /** A configured service is available only after the operator grants an unexpired allowance. */
-async function includedVoice(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
+export async function includedVoice(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  scope?: SettingsScope,
+) {
   const deployment = deps.env?.deploymentVoice;
   if (!deployment) return undefined;
+  const target = await voicePreferenceTarget(deps.prisma, actor, scope);
+  if (target.scope !== "account") return undefined;
   const allowance = await deps.prisma.speechAllowance.findFirst({
     where: { userId: actor.userId, expiresAt: { gt: new Date() } },
   });
@@ -281,8 +287,7 @@ async function includedVoice(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
 export async function effectiveVoiceStatus(deps: VoiceDeps, actor: Actor, scope?: SettingsScope) {
   const cred = await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (cred) return toVoiceStatus(cred);
-  const target = await voicePreferenceTarget(deps.prisma, actor, scope);
-  const included = target.scope === "account" ? await includedVoice(deps, actor) : undefined;
+  const included = await includedVoice(deps, actor, scope);
   if (!included || (!included.synthesize && !included.transcribe)) return toVoiceStatus(null);
   const status = toVoiceStatus({
     provider: included.deployment.provider,
@@ -349,11 +354,11 @@ export async function loadVoiceCredential(
     ? await findVoiceCredential(deps.prisma, actor, provider, scope)
     : await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (!cred) {
-    const included = await includedVoice(deps, actor);
+    // Named connections never fall back to operator funding.
+    if (provider) return null;
+    const included = await includedVoice(deps, actor, scope);
     const deployment = included?.[operation] ? included.deployment : undefined;
-    const target = await voicePreferenceTarget(deps.prisma, actor, scope);
-    // An explicit Space copy can intentionally have no voice. Named connections never fall back.
-    if (provider || !deployment || target.scope === "space") return null;
+    if (!deployment) return null;
     const apiKey = voiceCredentialPlaintext({
       provider: deployment.provider,
       ...deployment.connection,
