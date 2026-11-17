@@ -3,6 +3,7 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { foldPeerReplies } from "@rakazo/core";
 import type { ComponentProps, ReactNode, RefObject } from "react";
 import { act } from "react";
+import { flushSync } from "react-dom";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -342,4 +343,53 @@ it("drops the quote pill when an edit removes only one end of the selection", as
 
   expect(window.getSelection()!.getRangeAt(0).collapsed).toBe(false);
   expect(document.querySelector("[data-quote-selection]")).toBeNull();
+});
+
+/** Renders outside act, so the first commit is visible before the transition mounts the rest. */
+async function renderFirstFrame(props: ComponentProps<typeof Transcript>) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+  flushSync(() => root.render(<Transcript {...props} />));
+  const first = [...container.querySelectorAll("[data-message-id]")].map((row) =>
+    row.getAttribute("data-message-id"),
+  );
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll("[data-message-id]").length).toBeGreaterThan(first.length),
+  );
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  return first;
+}
+
+it("paints a chat's latest rows first, then mounts its history", async () => {
+  const messages = Array.from({ length: 30 }, (_, index) =>
+    textMessage(`t${index}`, index % 2 ? "bot" : "user", `Message ${index}`),
+  );
+  const first = await renderFirstFrame({ ...baseProps(messages), running: false });
+  expect(first).toEqual(messages.slice(-20).map((message) => message.id));
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(30);
+});
+
+it("does not spend the first frame on rows hidden tool activity would leave blank", async () => {
+  const shown = Array.from({ length: 3 }, (_, index) =>
+    textMessage(`shown${index}`, "user", `Question ${index}`),
+  );
+  const tools: ThreadMessage[] = Array.from({ length: 25 }, (_, index) => {
+    seq += 1;
+    return {
+      id: `tool${index}`,
+      threadId: "thread",
+      seq,
+      role: "bot",
+      createdAt: at(seq),
+      blocks: [{ kind: "steps", steps: [{ label: "Searched the web", count: 1 }] }],
+    };
+  });
+  const props = { ...baseProps([...shown, ...tools]), running: false };
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+  flushSync(() => root.render(<Transcript {...props} />));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  expect(
+    [...container.querySelectorAll("[data-message-id]")].map((row) =>
+      row.getAttribute("data-message-id"),
+    ),
+  ).toEqual(shown.map((message) => message.id));
 });

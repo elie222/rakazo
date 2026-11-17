@@ -49,7 +49,10 @@ test("the supervisor refuses a page browser request with the code adapters recog
 
 test("the updater's default project name is the one production Compose pins", () => {
   assert.equal(
-    capture("packages/core/src/compose-update.ts", /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/),
+    capture(
+      "packages/core/src/deployment/compose-update.ts",
+      /DEFAULT_COMPOSE_PROJECT_NAME = "([^"]+)";/,
+    ),
     capture("infra/compose/docker-compose.prod.yml", /^name: (\S+)$/m),
   );
 });

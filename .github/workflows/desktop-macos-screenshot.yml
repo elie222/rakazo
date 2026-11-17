@@ -10,9 +10,9 @@ on:
       - "packages/ui-tokens/assets/**"
       - "apps/desktop/scripts/copy-static.mjs"
       - "apps/desktop/src/setup-renderer/**"
-      - "apps/desktop/src/main/setup*"
+      - "apps/desktop/src/main/setup/**"
       - "apps/desktop/src/preload/setup*"
-      - "apps/desktop/src/main/window-options.ts"
+      - "apps/desktop/src/main/windows/window-options.ts"
       - "packages/contracts/src/desktop.ts"
   pull_request:
     paths: *desktop-setup-paths
