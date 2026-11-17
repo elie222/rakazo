@@ -89,6 +89,11 @@ export async function holdRoutineRunForConversation(
         "run.working_id": handed.workingRunId,
       });
       await bestEffort("notify routine handover", deps.events.notify(handed.threadId, handed.seq));
+      if (deps.events.publishSpaceChange)
+        await bestEffort(
+          "publish routine handover",
+          deps.events.publishSpaceChange(handed.spaceId, "runs"),
+        );
       return;
     }
   }

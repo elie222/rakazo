@@ -412,7 +412,7 @@ const NO_HANDOVER_TRIGGERS = [
 export async function handQueuedRunToWorkingRun(
   prisma: PrismaClient,
   input: { runId: string; text: string },
-): Promise<{ threadId: string; seq: number; workingRunId: string } | null> {
+): Promise<{ spaceId: string; threadId: string; seq: number; workingRunId: string } | null> {
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const queued = await tx.run.findUnique({
@@ -428,7 +428,7 @@ export async function handQueuedRunToWorkingRun(
       });
       if (!queued) return null;
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${queued.threadId} FOR UPDATE`;
-      const working = await tx.run.findFirst({
+      const candidates = await tx.run.findMany({
         where: {
           id: { not: queued.id },
           threadId: queued.threadId,
@@ -438,13 +438,16 @@ export async function handQueuedRunToWorkingRun(
           // A run paused for a takeover reads nothing until the person resumes it.
           status: { in: [...WORKING_RUN_STATUSES] },
           trigger: { notIn: NO_HANDOVER_TRIGGERS },
-          // A group chat's run reads only that channel's messages.
-          NOT: {
-            sourceMessage: { is: { blocks: { array_contains: [{ kind: "channel_message" }] } } },
-          },
         },
         orderBy: [{ startedAt: "desc" }, { id: "desc" }],
-        select: { id: true },
+        select: { id: true, sourceMessage: { select: { id: true, blocks: true } } },
+      });
+      // A group chat's run reads only that channel's messages; a source that lost entries may
+      // have lost its channel marker, so it is taken as one.
+      const working = candidates.find(({ sourceMessage }) => {
+        if (!sourceMessage) return true;
+        const source = readMessageBlocks(sourceMessage);
+        return source.intact && !hasChannelMessage(source.blocks);
       });
       if (!working) return null;
       const now = new Date();
@@ -485,7 +488,12 @@ export async function handQueuedRunToWorkingRun(
         runId: queued.id,
         payload: {},
       });
-      return { threadId: queued.threadId, seq: completed.seq, workingRunId: working.id };
+      return {
+        spaceId: queued.spaceId,
+        threadId: queued.threadId,
+        seq: completed.seq,
+        workingRunId: working.id,
+      };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
 }
