@@ -445,11 +445,12 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
     userFacts: distinct(bot.userFacts),
   }));
   if (bots.length === 0) throw new GrokBotExportError("not_export");
-  // Bounded like any imported file, measured on the documents the preview will show.
+  // Memories split across documents of an imported file's size; only one entry too long for a
+  // document of its own cannot come over.
   if (
     bots.some((bot) =>
-      [bot.memories, bot.userFacts].some(
-        (items) => bullets(items).length > AGENT_IMPORT_MAX_FILE_LENGTH,
+      [...bot.memories, ...bot.userFacts].some(
+        (item) => bullets([item]).length > AGENT_IMPORT_MAX_FILE_LENGTH,
       ),
     )
   )
@@ -637,11 +638,32 @@ function bullets(lines: readonly string[]): string {
   return `${lines.map((line) => `- ${line.replace(/\r?\n/g, "\n  ")}`).join("\n")}\n`;
 }
 
-/**
- * More distinct entries than this cannot fit one imported document, since the shortest bullet
- * takes four characters. It bounds the work done before a document's size is checked.
- */
+/** Far more entries than a Bot keeps; it bounds the work done before documents are built. */
 const MEMORY_ENTRY_LIMIT = AGENT_IMPORT_MAX_FILE_LENGTH / 4;
+
+/**
+ * Bullets in documents no longer than an imported file: `MEMORY.md`, then `MEMORY-2.md`, ...
+ * Entries stay whole and in order.
+ */
+function memoryDocuments(stem: string, lines: readonly string[]): AgentImportMemory[] {
+  const parts: string[][] = [];
+  let size = 0;
+  for (const line of lines) {
+    const length = bullets([line]).length;
+    const current = parts.at(-1);
+    if (!current || size + length > AGENT_IMPORT_MAX_FILE_LENGTH) {
+      parts.push([line]);
+      size = length;
+    } else {
+      current.push(line);
+      size += length;
+    }
+  }
+  return parts.map((part, index) => {
+    const path = index === 0 ? `${stem}.md` : `${stem}-${index + 1}.md`;
+    return memoryItem(path, path, path, bullets(part));
+  });
+}
 
 /** Entries once, ignoring case and spacing, in their first order. */
 function distinct(lines: readonly string[]): string[] {
@@ -685,10 +707,8 @@ export function parseGrokBot(
     (routine) => routine.instruction && grokRoutineTrigger(routine, triggers) === null,
   );
   const memory: AgentImportMemory[] = [
-    ...(memories.length
-      ? [memoryItem("MEMORY.md", "MEMORY.md", "MEMORY.md", bullets(memories))]
-      : []),
-    ...(userFacts.length ? [memoryItem("USER.md", "USER.md", "USER.md", bullets(userFacts))] : []),
+    ...memoryDocuments("MEMORY", memories),
+    ...memoryDocuments("USER", userFacts),
     ...(toSetUp.length
       ? [
           memoryItem(

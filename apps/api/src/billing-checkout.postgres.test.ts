@@ -15,7 +15,7 @@ import {
   createDb,
   releaseCheckoutLease,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
 import { expireCheckoutLease, watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 
@@ -308,7 +308,28 @@ dbTests("checkout and organization deletion", () => {
     provider.releaseCheckout();
     await expect(pending).rejects.toMatchObject({ code: "CONFLICT" });
     await canceling;
+    // The cancellation ran before this session existed, so the checkout expires it itself.
+    await vi.waitFor(() => expect(provider.openSessions()).toBe(0));
   });
+
+  it("cancels the customer a checkout swapped in while the cancellation waited", async () => {
+    const provider = new GatedCheckoutEmulator(`deletion-swap-${stamp}`, true);
+    const { organizationId, actor } = await accountFor("swap", provider);
+    const { customerId: previous } = (await billingAccountForOrganization(prisma, organizationId))!;
+    provider.deleteCustomer(previous);
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    const pending = service.purchaseCredits(actor, { amountCents: 2000, monthly: false });
+    await provider.providerCallStarted;
+    // Holding the lease, the checkout finds its customer gone and swaps in a new one.
+    const canceling = service.cancelForDeletedOrganization(organizationId);
+    provider.releaseCheckout();
+    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
+    await canceling;
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    expect(customerId).not.toBe(previous);
+    expect(provider.openSessions()).toBe(0);
+  });
+
   /** An organization whose billing account exists, so the previous release could claim it. */
   async function accountFor(name: string, provider: GatedCheckoutEmulator) {
     const organization = await organizationFor(name);
