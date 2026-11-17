@@ -1,4 +1,4 @@
-import { EMAIL_SEND_SUBJECT_MAX_CHARS } from "@rakazo/contracts";
+import { EMAIL_SEND_SUBJECT_MAX_CHARS, EMAIL_SEND_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import { ClientError } from "../primitives/client-error.js";
 import { isServerUnreachable, isTechnicalErrorMessage } from "../primitives/user-error.js";
 
@@ -199,10 +199,36 @@ export type EmailReplyParent = {
   messageId?: string | null;
   references: readonly string[];
   fromAddress: string;
+  fromName?: string;
+  text?: string;
   verified: boolean;
   sent: boolean;
   receivedAt: Date;
 };
+
+/**
+ * The reply body the provider should receive: the user's text, then the parent quoted the way
+ * mail clients do. Truncates to the shared send limit when the quote would overflow.
+ */
+export function emailReplyQuotedBody(
+  body: string,
+  parent: Pick<EmailReplyParent, "fromAddress" | "fromName" | "text" | "receivedAt"> | null,
+): string {
+  const reply = body.trimEnd();
+  if (!parent?.text?.trim()) return reply;
+  const who = parent.fromName?.trim()
+    ? `${parent.fromName.trim()} <${parent.fromAddress}>`
+    : parent.fromAddress;
+  const quoted = parent.text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  const combined = `${reply}\n\nOn ${parent.receivedAt.toUTCString()}, ${who} wrote:\n${quoted}\n`;
+  return combined.length <= EMAIL_SEND_TEXT_MAX_CHARS
+    ? combined
+    : combined.slice(0, EMAIL_SEND_TEXT_MAX_CHARS);
+}
 
 /**
  * Threading headers and the sender a reply may be addressed to. No parent means

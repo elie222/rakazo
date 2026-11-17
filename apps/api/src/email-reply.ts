@@ -17,6 +17,7 @@ import {
   emailReplyDeliveryError,
   emailReplyDraftFromBlock,
   emailReplyOutbound,
+  emailReplyQuotedBody,
   emailReplySubjectLine,
   emailReplyThreading,
   emailReplyWithStatus,
@@ -106,6 +107,36 @@ export async function commitEmailReply(
       "EMAIL_REPLY_OWNER_ONLY",
     );
   }
+  // A claim marked after the provider accepted the mail finishes the card even when the earlier
+  // store missed it, so the draft does not stay Ready after delivery.
+  if (loaded.block.status === "ready") {
+    const delivered = await deliveredCopy(deps, loaded);
+    if (delivered) {
+      if (input.action.type === "discard") {
+        throw new ClientError(
+          "CONFLICT",
+          "This email was already sent.",
+          "EMAIL_REPLY_ALREADY_SENT",
+        );
+      }
+      return storeBlock(
+        deps,
+        loaded,
+        emailReplyBlock(
+          emailReplyWithStatus(
+            {
+              ...emailReplyDraftFromBlock(loaded.block),
+              subject: delivered.subject,
+              body: delivered.body,
+              toText: delivered.to.join(", "),
+              ccText: delivered.cc.join(", "),
+            },
+            "sent",
+          ),
+        ),
+      );
+    }
+  }
   if (input.action.type === "discard") {
     const draft = emailReplyWithStatus(emailReplyDraftFromBlock(loaded.block), "discarded");
     return storeBlock(deps, loaded, emailReplyBlock(draft));
@@ -144,6 +175,16 @@ export async function commitEmailReply(
       ),
     ),
   );
+}
+
+async function deliveredCopy(
+  deps: Pick<RouterDeps, "prisma">,
+  loaded: Loaded,
+): Promise<SentCopy | null> {
+  const key = `card:${loaded.message.id}:${loaded.block.draftId}`;
+  const claim = await readClaim(deps, loaded.bot.id, key);
+  if (!claim?.sent) return null;
+  return { subject: claim.subject, body: claim.text, to: claim.to, cc: claim.cc };
 }
 
 async function loadDraft(
@@ -273,19 +314,12 @@ async function dispatch(
     );
   }
   const subject = emailReplySubjectLine(redactSecrets(mail.subject, secrets));
-  const body = redactSecrets(mail.body, secrets);
+  let body = redactSecrets(mail.body, secrets);
   if (!subject) {
     throw new ClientError("BAD_REQUEST", "Add a subject", "EMAIL_REPLY_NO_SUBJECT");
   }
   if (!body.trim()) {
     throw new ClientError("BAD_REQUEST", "Write the message", "EMAIL_REPLY_NO_BODY");
-  }
-  if (body.length > EMAIL_SEND_TEXT_MAX_CHARS) {
-    throw new ClientError(
-      "BAD_REQUEST",
-      "The email is too long once secrets are removed. Shorten it.",
-      "EMAIL_REPLY_BODY_TOO_LONG",
-    );
   }
 
   const replyTo = mail.inReplyTo.trim();
@@ -296,6 +330,8 @@ async function dispatch(
           messageId: true,
           references: true,
           fromAddress: true,
+          fromName: true,
+          text: true,
           verified: true,
           sent: true,
           receivedAt: true,
@@ -307,6 +343,21 @@ async function dispatch(
       "BAD_REQUEST",
       "No email with that id in your inbox.",
       "EMAIL_REPLY_UNKNOWN_PARENT",
+    );
+  }
+  if (parent) {
+    body = emailReplyQuotedBody(body, {
+      fromAddress: parent.fromAddress,
+      fromName: parent.fromName,
+      text: redactSecrets(parent.text, secrets),
+      receivedAt: parent.receivedAt,
+    });
+  }
+  if (body.length > EMAIL_SEND_TEXT_MAX_CHARS) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "The email is too long once secrets are removed. Shorten it.",
+      "EMAIL_REPLY_BODY_TOO_LONG",
     );
   }
   const threading = emailReplyThreading(parent, domain);
@@ -365,8 +416,8 @@ async function dispatch(
     }
     throw error;
   }
-  // The provider accepted the mail. Record that even if the write fails: the next send finishes
-  // the draft from a confirmed claim, and must not show Sent from an unconfirmed one.
+  // The provider accepted the mail. Mark the claim before finishing the draft so a later request
+  // can complete the card without sending again. An unconfirmed claim must never show as Sent.
   await bestEffort(
     "record that the email reply was accepted",
     deps.prisma.botEmailMessage.update({
@@ -483,6 +534,7 @@ async function takeClaim(
   }
 }
 
+/** Same vault, command, purchase, and run forms a run loads before tools. */
 async function draftRedactions(
   deps: Pick<RouterDeps, "prisma" | "secrets">,
   loaded: Loaded,

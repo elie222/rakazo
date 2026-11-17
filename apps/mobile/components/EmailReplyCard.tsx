@@ -70,7 +70,8 @@ export function EmailReplyCard({
   });
   session.current = draft;
   const { card } = draft;
-  const locked = !card.editable || autosave.pending || commit.pending;
+  const locked = !card.editable || commit.pending;
+  const busy = locked || autosave.pending;
   const failure = commit.error ?? autosave.error;
   const error = failure ? errorText(failure) : null;
   const rows: Array<{ label: string; value: string; onChange?: (value: string) => void }> = [
@@ -126,7 +127,7 @@ export function EmailReplyCard({
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          disabled={locked}
+          disabled={busy}
           onPress={() => draft.send()}
           style={[styles.button, { backgroundColor: tokens.foreground }]}
         >
@@ -134,7 +135,7 @@ export function EmailReplyCard({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          disabled={locked}
+          disabled={busy}
           onPress={() => draft.discard()}
           style={[
             styles.button,

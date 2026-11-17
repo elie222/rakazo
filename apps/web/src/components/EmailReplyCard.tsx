@@ -66,6 +66,7 @@ export function EmailReplyCard({
   });
   const draft = useEmailReplyDraft({
     block,
+    // Autosave may be in flight while the user keeps typing; only a send or discard holds the form.
     pending: autosave.pending || commit.pending,
     run: (action) => (action.type === "save" ? autosave.run(action) : commit.run(action)),
     onEdit: () => {
@@ -75,7 +76,8 @@ export function EmailReplyCard({
   });
   session.current = draft;
   const { card } = draft;
-  const locked = !card.editable || autosave.pending || commit.pending;
+  const locked = !card.editable || commit.pending;
+  const busy = locked || autosave.pending;
   const failure = commit.error ?? autosave.error;
   const error = failure ? errorText(failure) : null;
 
@@ -136,10 +138,10 @@ export function EmailReplyCard({
         </button>
       ) : null}
       <footer className="flex items-center gap-2 border-t border-border px-4 py-3">
-        <Button type="button" disabled={locked} onClick={() => draft.send()}>
+        <Button type="button" disabled={busy} onClick={() => draft.send()}>
           {t`Send`}
         </Button>
-        <Button type="button" variant="outline" disabled={locked} onClick={() => draft.discard()}>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => draft.discard()}>
           {t`Discard`}
         </Button>
         <div className="ms-auto w-40">

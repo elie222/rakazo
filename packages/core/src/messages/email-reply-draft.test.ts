@@ -9,6 +9,7 @@ import {
   emailReplyDraftFromBlock,
   emailReplyOutbound,
   emailReplyPreview,
+  emailReplyQuotedBody,
   emailReplySubjectLine,
   emailReplyThreading,
   emailReplyWithStatus,
@@ -146,6 +147,18 @@ describe("email reply drafts", () => {
         now,
       ).verifiedReplySender,
     ).toBeUndefined();
+  });
+
+  it("quotes the parent message under the reply", () => {
+    const body = emailReplyQuotedBody("Thanks", {
+      fromAddress: "clinic@example.com",
+      fromName: "Clinic",
+      text: "Can we book Friday?",
+      receivedAt: new Date("2026-01-02T15:04:05.000Z"),
+    });
+    expect(body).toContain("Thanks");
+    expect(body).toContain("Clinic <clinic@example.com> wrote:");
+    expect(body).toContain("> Can we book Friday?");
   });
 
   it("keeps a mail failure a person can read and drops a technical one", () => {

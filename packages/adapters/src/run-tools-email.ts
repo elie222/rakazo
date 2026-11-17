@@ -89,7 +89,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
 
   if (input.id) {
     const email = await deps.prisma.botEmailMessage.findFirst({
-      where: { id: input.id, botId: bot.id },
+      where: { id: input.id, botId: bot.id, NOT: inFlightCardClaim },
     });
     if (!email) return call.finish({ error: "No email with that id in your inbox." });
     const offset = input.textOffset ?? 0;
@@ -149,6 +149,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     botId: bot.id,
     // Waiting is for mail to arrive, so what the bot sent never ends it.
     ...(input.waitSeconds ? { sent: false } : {}),
+    // Reply-card claims are outbound mail in flight, not something the bot received.
+    NOT: inFlightCardClaim,
     ...(input.since || input.before
       ? {
           receivedAt: {
@@ -240,7 +242,12 @@ async function deleteEmail(ctx: RunContext, call: ToolCall) {
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
   // Only mail it received: the bot's own sent mail stays as its record of what went out.
   const { count } = await deps.prisma.botEmailMessage.deleteMany({
-    where: { id: { in: [...new Set(parsed.data.ids)] }, botId: bot.id, sent: false },
+    where: {
+      id: { in: [...new Set(parsed.data.ids)] },
+      botId: bot.id,
+      sent: false,
+      NOT: inFlightCardClaim,
+    },
   });
   return call.finish({ deleted: count });
 }
@@ -284,6 +291,9 @@ const SEND_RECIPIENTS_MAX = EMAIL_SEND_RECIPIENTS_MAX;
 const SEND_TEXT_MAX_CHARS = EMAIL_SEND_TEXT_MAX_CHARS;
 const SUBJECT_MAX_CHARS = EMAIL_SEND_SUBJECT_MAX_CHARS;
 const MAX_REFERENCES = 20;
+
+/** A reply-card send claim before the provider accepts it: outbound, not inbox mail. */
+const inFlightCardClaim = { key: { startsWith: "card:" }, sent: false };
 
 const Recipients = z
   .union([BotEmailRecipientSchema, z.array(BotEmailRecipientSchema)])
