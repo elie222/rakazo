@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import type { Server, Socket } from "node:net";
 import { createServer } from "node:net";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it } from "vitest";
 import { Socks5Error, socks5Connect } from "./socks5-client.js";
 
@@ -74,10 +75,13 @@ describe("socks5Connect", () => {
   });
 
   it("stops waiting when cancelled", async () => {
-    const port = await proxy(() => {});
+    // The proxy takes the request and never answers it.
+    const asked = deferred();
+    const port = await proxy(() => asked.resolve());
     const controller = new AbortController();
     const pending = connectTo(port, controller.signal);
-    setTimeout(() => controller.abort(), 50);
+    await asked.promise;
+    controller.abort();
     await expect(pending).rejects.toThrow("The connection was cancelled.");
   });
 
