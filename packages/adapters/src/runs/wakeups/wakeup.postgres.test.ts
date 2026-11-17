@@ -473,10 +473,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await host.start(target);
       await publisher.enqueue(lifecycleEmailJob(payload, new Date()));
       // Another of the person's mails, under its own key, shares their queue.
-      await publisher.enqueue({
-        ...lifecycleEmailJob(second, new Date()),
-        replaceKey: `email.lifecycle:another-kind:${userId}`,
-      });
+      await publisher.enqueue(lifecycleEmailJob(second, new Date()));
       await waitFor(() =>
         expect(ran).toEqual([
           "lifecycle-organization",

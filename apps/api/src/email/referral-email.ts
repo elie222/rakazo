@@ -3,7 +3,7 @@ import { LIFECYCLE_EMAIL_GAP_MS } from "@rakazo/adapters";
 import { emailLocale, referralEmail } from "@rakazo/auth";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { isForeignKeyViolation } from "@rakazo/db";
+import { claimProductEmail } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -58,16 +58,15 @@ export function sendReferralEmails(deps: {
           unsubscribeUrl(deps.origin, deps.secret, user.id),
           emailLocale(user.locale),
         );
-        // Claim before sending: concurrent instances race on (userId, kind), and an
-        // uncertain delivery is never retried.
-        const claim = await deps.prisma.emailSend.createMany({
-          data: { userId: user.id, kind: KIND },
-          skipDuplicates: true,
-        });
-        if (claim.count > 0) await deps.email.send(message);
+        // Claim before sending: concurrent instances and our other mails race on the person,
+        // and an uncertain delivery is never retried. A mail inside the gap waits for a later sweep.
+        const claim = await claimProductEmail(
+          deps.prisma,
+          { userId: user.id, kind: KIND },
+          LIFECYCLE_EMAIL_GAP_MS,
+        );
+        if (claim === "claimed") await deps.email.send(message);
       } catch (error) {
-        // Account deletion may race the foreign-key insert.
-        if (isForeignKeyViolation(error)) continue;
         deps.onError(error);
       }
     }

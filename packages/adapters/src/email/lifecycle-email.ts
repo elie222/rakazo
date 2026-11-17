@@ -8,7 +8,7 @@ import { lifecycleEmailJob } from "@rakazo/adapter-kit";
 import type { LifecycleEmailKind } from "@rakazo/contracts";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { hasBillingAccess, isForeignKeyViolation, isOwnerRole } from "@rakazo/db";
+import { claimProductEmail, hasBillingAccess, isOwnerRole } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /** No person gets two of our mails closer together than this, whichever kinds they are. */
@@ -88,32 +88,13 @@ export function createLifecycleEmailSender(deps: {
     const { kind, userId } = job;
     const user = await recipient(prisma, job);
     if (!user || !(await STILL_WANTED[kind](prisma, job))) return;
-    const recent = await prisma.emailSend.findMany({
-      where: {
-        userId,
-        OR: [{ kind }, { sentAt: { gt: new Date(Date.now() - LIFECYCLE_EMAIL_GAP_MS) } }],
-      },
-      select: { kind: true, sentAt: true },
-    });
-    if (recent.some((sent) => sent.kind === kind)) return;
-    if (recent.length > 0) {
-      const last = Math.max(...recent.map((sent) => sent.sentAt.getTime()));
-      await deps.jobs.enqueue(lifecycleEmailJob(job, new Date(last + LIFECYCLE_EMAIL_GAP_MS)));
+    const claim = await claimProductEmail(prisma, { userId, kind }, LIFECYCLE_EMAIL_GAP_MS);
+    if (claim === "skip") return;
+    if (claim !== "claimed") {
+      await deps.jobs.enqueue(lifecycleEmailJob(job, claim.clearAt));
       return;
     }
-    try {
-      // Claim before sending: retries and other instances race on (userId, kind), and a
-      // delivery that may have gone out is never repeated.
-      const claim = await prisma.emailSend.createMany({
-        data: { userId, kind },
-        skipDuplicates: true,
-      });
-      if (claim.count === 0) return;
-    } catch (error) {
-      // Account deletion may race the foreign-key insert.
-      if (isForeignKeyViolation(error)) return;
-      throw error;
-    }
+    // Claimed before sending: a delivery that may have gone out is never repeated.
     try {
       await deps.email.send({ ...job.message, to: user.email });
     } catch (error) {

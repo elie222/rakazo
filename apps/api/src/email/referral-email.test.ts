@@ -14,6 +14,7 @@ function fixture() {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   const sent = new Set<string>();
+  let claiming: Promise<unknown> = Promise.resolve();
   const user = {
     id: "user-1",
     email: "alex@example.com",
@@ -21,22 +22,39 @@ function fixture() {
     members: [{ role: "owner" }],
   };
   const findMany = vi.fn(async () => [user]);
-  const createMany = vi.fn(async ({ data }: { data: { userId: string; kind: string } }) => {
-    const key = `${data.userId}:${data.kind}`;
-    if (sent.has(key)) return { count: 0 };
-    sent.add(key);
-    return { count: 1 };
+  const create = vi.fn(async ({ data }: { data: { userId: string; kind: string } }) => {
+    sent.add(`${data.userId}:${data.kind}`);
   });
+  // The claim's transaction: the person's row lock, their sends, then the insert.
+  const tx = {
+    $queryRaw: async () => [{ now }],
+    emailSend: {
+      findMany: async ({
+        where,
+      }: {
+        where: { userId: string; OR: [{ kind: string }, unknown] };
+      }) =>
+        sent.has(`${where.userId}:${where.OR[0].kind}`)
+          ? [{ kind: where.OR[0].kind, sentAt: now }]
+          : [],
+      create,
+    },
+  };
   const email = { send: vi.fn(async () => {}) } as unknown as TransactionalEmailProvider;
   const deps = {
-    prisma: { user: { findMany }, emailSend: { createMany } } as never,
+    prisma: {
+      user: { findMany },
+      // One at a time, as the person's row lock makes them.
+      $transaction: (run: (client: typeof tx) => unknown) =>
+        (claiming = claiming.then(() => run(tx))),
+    } as never,
     email,
     appUrl: `${origin}/app`,
     origin,
     secret,
     onError: vi.fn(),
   };
-  return { user, deps, findMany, createMany, sweep: sendReferralEmails(deps) };
+  return { user, deps, findMany, create, sweep: sendReferralEmails(deps) };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -63,9 +81,8 @@ describe("day-one referral email", () => {
         },
       }),
     );
-    expect(f.createMany).toHaveBeenCalledWith({
-      data: { userId: "user-1", kind: "referral-day1" },
-      skipDuplicates: true,
+    expect(f.create).toHaveBeenCalledWith({
+      data: { userId: "user-1", kind: "referral-day1", sentAt: now },
     });
     expect(f.deps.email.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -102,7 +119,7 @@ describe("day-one referral email", () => {
     const f = fixture();
     Object.assign(f.user, change);
     await f.sweep();
-    expect(f.createMany).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
   });
 
   it("runs at startup and hourly without overlapping sweeps, aborting the running one on stop", async () => {

@@ -116,8 +116,8 @@ link, after it first signs in. It needs one of the providers above.
 
 With billing configured, the same switch also sends an organization's owner one reminder a day
 after their plan starts if they have not connected a model yet. That reminder is queued and
-sent by the worker, so give the worker the same `EMAIL_*` and `SMTP_URL` settings as the API (the
-Compose and Kubernetes examples already do); a worker without them drops the reminder.
+sent by the worker, so give the worker the same mail settings as the API, including this switch
+(the Compose files already do); a worker without them drops the reminder.
 
 ## Password policy
 

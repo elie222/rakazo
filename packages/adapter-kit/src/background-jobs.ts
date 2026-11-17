@@ -468,9 +468,9 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
 const LIFECYCLE_EMAIL_MAX_ATTEMPTS = 5;
 
 /**
- * One lifecycle mail for one person, due at `availableAt`. Keyed by person and kind, so
- * scheduling it again moves the one job, and a person's mails share a queue, so two that are
- * due together run one after the other and the second sees the first.
+ * One lifecycle mail for one owner of one organization, due at `availableAt`. Keyed by kind,
+ * person and organization, so scheduling it again moves the one job, and a person's mails share
+ * a queue, so two that are due together run one after the other.
  */
 export function lifecycleEmailJob(
   payload: BackgroundJobPayloads["email.lifecycle"],
@@ -480,7 +480,7 @@ export function lifecycleEmailJob(
     name: "email.lifecycle",
     payload,
     availableAt,
-    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}`,
+    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}:${payload.organizationId}`,
     queueName: `email.lifecycle:${payload.userId}`,
     maxAttempts: LIFECYCLE_EMAIL_MAX_ATTEMPTS,
   };

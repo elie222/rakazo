@@ -311,7 +311,11 @@ export function createBillingService(deps: {
         });
       }
     if (live && subscriptionStarted(previous, live))
-      await bestEffort("schedule the model connection email", remindToConnectModel(previous, live));
+      // Not in the snapshot's transaction, so a brief queue outage is ridden out here.
+      await bestEffort(
+        "schedule the model connection email",
+        retry(() => remindToConnectModel(previous, live), { attempts: 3 }),
+      );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -390,9 +394,11 @@ export function createBillingService(deps: {
   /**
    * An own-key plan runs nothing until its owner connects a model, so a day in they are reminded
    * if they still have not. Concurrent syncs that both see the start queue the same keyed job.
+   * Without model credits the deployment's own model serves everyone, so nobody is asked.
    */
   async function remindToConnectModel(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
-    if (!deps.scheduleLifecycleEmail || !live.byokPlan || live.creditAmountCents) return;
+    if (!deps.scheduleLifecycleEmail || !modelCredits) return;
+    if (!live.byokPlan || live.creditAmountCents) return;
     const userId = await ownerUserId(previous.organizationId);
     if (!userId) return;
     await deps.scheduleLifecycleEmail(

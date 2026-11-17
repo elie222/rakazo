@@ -2,6 +2,7 @@ export * from "./account/account-export.js";
 export * from "./account/account-status.js";
 export * from "./account/audit-events.js";
 export * from "./account/bootstrap-user.js";
+export * from "./account/product-email-sends.js";
 export * from "./account/security-events.js";
 export * from "./account/sessions.js";
 export * from "./artifacts/artifact-versions.js";

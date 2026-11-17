@@ -692,9 +692,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       onTicketChange: ticketChanges,
       email: botEmail,
       // Single-process mode answers the job here; otherwise the worker does.
-      lifecycleEmail: email
-        ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
-        : undefined,
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)

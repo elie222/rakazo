@@ -7,7 +7,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
+import { asSystem, billingAccountForOrganization, claimProductEmail, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "../billing/billing.js";
 import { lifecycleEmailScheduler, MODEL_CONNECTION_EMAIL_DELAY_MS } from "./lifecycle-email.js";
@@ -107,7 +107,7 @@ dbTests("model connection email", () => {
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({
       name: "email.lifecycle",
-      replaceKey: `email.lifecycle:model-connection:${id}`,
+      replaceKey: `email.lifecycle:model-connection:${id}:${id}`,
       queueName: `email.lifecycle:${id}`,
       payload: { kind: "model-connection", organizationId: id, userId: id },
     });
@@ -206,7 +206,7 @@ dbTests("model connection email", () => {
       expect.objectContaining({
         name: "email.lifecycle",
         payload: job,
-        replaceKey: `email.lifecycle:model-connection:${id}`,
+        replaceKey: `email.lifecycle:model-connection:${id}:${id}`,
         availableAt: new Date(lastSentAt.getTime() + LIFECYCLE_EMAIL_GAP_MS),
       }),
     ]);
@@ -217,6 +217,17 @@ dbTests("model connection email", () => {
     });
     await send(job);
     expect(sentTo(id)).toHaveLength(1);
+  });
+
+  it("lets only one of two different mails racing for the same person through", async () => {
+    const { id } = await subscriber("race");
+    const claims = await Promise.all(
+      ["first-kind", "second-kind"].map((kind) =>
+        claimProductEmail(db.prisma, { userId: id, kind }, LIFECYCLE_EMAIL_GAP_MS),
+      ),
+    );
+    expect(claims.filter((claim) => claim === "claimed")).toHaveLength(1);
+    expect(claims.filter((claim) => typeof claim === "object")).toHaveLength(1);
   });
 
   it("never repeats a mail whose delivery failed after it was claimed", async () => {

@@ -231,7 +231,8 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
-  // Account mail, for the lifecycle mails the queue holds; without it those jobs are dropped.
+  // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
+  // switched off since they were queued, those jobs are dropped.
   const optionalEnv = (name: string) => process.env[name]?.trim() || undefined;
   const accountEmail = configuredEmailProvider({
     provider: optionalEnv("EMAIL_PROVIDER"),
@@ -240,9 +241,10 @@ async function main() {
     replyTo: optionalEnv("EMAIL_REPLY_TO"),
     smtpUrl: optionalEnv("SMTP_URL"),
   });
-  const lifecycleEmail = accountEmail
-    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
-    : undefined;
+  const lifecycleEmail =
+    accountEmail && process.env.WELCOME_EMAIL_ENABLED === "true"
+      ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+      : undefined;
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     prisma,
