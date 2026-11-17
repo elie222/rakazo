@@ -8,9 +8,9 @@ import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contr
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import * as z from "zod";
-import { ComposioConnector } from "./composio-connector.js";
 import { credentialDigest } from "./credential-digest.js";
-import { PipedreamConnector } from "./pipedream-connector.js";
+import { ComposioConnector } from "./providers/integration/composio/composio-connector.js";
+import { PipedreamConnector } from "./providers/integration/pipedream/pipedream-connector.js";
 
 /** Each provider this build has, with the credentials it takes. */
 const IntegrationProviderConfigSchema = z.discriminatedUnion("provider", [

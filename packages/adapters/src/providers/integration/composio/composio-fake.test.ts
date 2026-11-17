@@ -3,9 +3,9 @@ import type { AdapterContext, ConnectorEvent } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { createConnectorStack } from "../../../connector-registry.js";
 import { ComposioConnector } from "./composio-connector.js";
 import { FakeComposioClient } from "./composio-fake.js";
-import { createConnectorStack } from "./connector-registry.js";
 
 const USER = "user-1";
 

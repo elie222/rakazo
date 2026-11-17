@@ -13,9 +13,9 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { ProviderTransactionBusyError, runProviderTransaction } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
-import { sanitizeIntegrationError } from "./composio-connector.js";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { prepareManagedConnectorForTransaction } from "./integration-provider-settings.js";
+import { sanitizeIntegrationError } from "./providers/integration/composio/composio-connector.js";
 
 type ConnectionScope = { spaceId: string; userId: string; connectorId: string; provider: string };
 type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"];
