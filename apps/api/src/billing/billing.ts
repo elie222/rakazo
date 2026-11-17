@@ -401,13 +401,16 @@ export function createBillingService(deps: {
     if (!live.byokPlan || live.creditAmountCents) return;
     const userId = await ownerUserId(previous.organizationId);
     if (!userId) return;
+    // From the plan's own start, so every sync that sees it names the same time. A start
+    // recorded more than a day late still leaves the owner a day.
+    const now = Date.now();
+    const day = MODEL_CONNECTION_EMAIL_DELAY_MS;
+    const fromStart = (live.currentPeriodStartsAt?.getTime() ?? now) + day;
+    const dueAt = new Date(fromStart > now ? fromStart : now + day);
     await deps.scheduleLifecycleEmail(
       "model-connection",
       { organizationId: previous.organizationId, userId },
-      // From the plan's own start, so every sync that sees it names the same time.
-      new Date(
-        (live.currentPeriodStartsAt ?? new Date()).getTime() + MODEL_CONNECTION_EMAIL_DELAY_MS,
-      ),
+      dueAt,
     );
   }
 

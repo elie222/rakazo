@@ -39,8 +39,8 @@ import {
   expireComputerControl,
   scheduleComputerControlExpiry,
 } from "../../computers/screens/computer-control.js";
-import { retryConnectionCleanup } from "../../connectors/connection-cleanup.js";
-import type { ConnectorRegistry } from "../../connectors/connector-registry.js";
+import { retryConnectionCleanup } from "../../integrations/connection-cleanup.js";
+import type { ConnectorRegistry } from "../../integrations/connector-registry.js";
 import { pollMediaVideo } from "../../media/media-video-poll.js";
 import {
   abandonRetainedConversation,

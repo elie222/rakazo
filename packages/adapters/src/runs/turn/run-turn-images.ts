@@ -6,7 +6,7 @@ import {
   storedImageMimeType,
 } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
-import { detectImageMimeType } from "../../shared/image-mime-type.js";
+import { detectImageMimeType } from "../../media/image-mime-type.js";
 import { listCurrentTurnFiles } from "../../storage/thread-artifacts.js";
 import { currentTurnFilesInstruction } from "../../storage/thread-artifacts.prompt.js";
 import { loadReplyContext } from "../assembly/reply-context.js";

@@ -3,11 +3,11 @@ import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import { getLogger } from "@rakazo/logging";
 import { executeCloudAgentTool } from "../../cloud-agents/cloud-agent-service.js";
-import { connectApp } from "../../connectors/connect-app.js";
+import { connectApp } from "../../integrations/connect-app.js";
 import {
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../../connectors/connector-safety.js";
+} from "../../integrations/connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "../../mcp/mcp-app.js";
 import { addMcpServerFromTool } from "../../mcp/mcp-server-tool.js";
 import { serviceCallFromTool, serviceSearchFromTool } from "../../payments/paid-service-tools.js";

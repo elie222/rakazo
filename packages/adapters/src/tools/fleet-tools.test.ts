@@ -1,6 +1,10 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ROUTINE_CHAT_TRIGGER_NOTE,
+  ROUTINE_WEBHOOK_SETUP_NOTE,
+} from "../routines/routine-triggers.prompt.js";
 import type { FleetDeps, FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
   createChildRoutine,
@@ -588,6 +592,57 @@ describe("prepareFleetRequest create_child_routine", () => {
         lines: ["Runs at 18 Oct 2026, 09:30 UTC", "Prompt: Summarize the news"],
       },
     });
+  });
+
+  it("prepares a routine only events start, with the events on the card", async () => {
+    const { deps } = fakeFleet(fleet);
+    const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {
+      bot_name: "Writer",
+      name: "Deploys",
+      prompt: "Summarize the deploy",
+      on: { webhook: true, git: true },
+    });
+    expect(prepared).toEqual({
+      ok: true,
+      canonical: {
+        botId: "bot-writer",
+        botName: "Writer",
+        threadId: "thread-bot-writer",
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        timezone: "UTC",
+        timezoneFromAccount: true,
+        schedule: {},
+        on: { webhook: true, git: true },
+      },
+      summary: {
+        title: "Schedule “Deploys” for Writer?",
+        lines: ["Starts on webhook, git", "Prompt: Summarize the deploy"],
+      },
+    });
+  });
+
+  it("refuses events another member's bot or a one-time schedule cannot take", async () => {
+    const { deps } = fakeFleet({
+      bots: [...fleet.bots, { id: "bot-theirs", name: "Theirs", userId: "user-2" }],
+    });
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Theirs",
+        name: "Hook",
+        prompt: "Check",
+        on: { webhook: true },
+      }),
+    ).toEqual({ ok: false, error: "Only the bot's creator can start its routines from events." });
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Writer",
+        name: "Once",
+        prompt: "Check",
+        delayMinutes: 5,
+        on: { webhook: true },
+      }),
+    ).toEqual({ ok: false, error: "A one-time schedule takes no events (on)." });
   });
 
   it("stores a repeating schedule as its cron and shows the next run", async () => {
@@ -1623,6 +1678,53 @@ describe("createChildRoutine", () => {
       botName: "Writer",
     });
     expect(prisma.routine.create).not.toHaveBeenCalled();
+  });
+
+  it("looks up a retry by the approved events too", async () => {
+    const { prisma } = fakeFleet({
+      ...fleet,
+      routines: [
+        {
+          id: "routine-1",
+          name: "Daily",
+          crons: [],
+          nextRunAt: null,
+          webhookEnabled: true,
+          githubEnabled: false,
+          messageProvider: "slack",
+          emailSenders: null,
+        },
+      ],
+    });
+    // The bot is linked to Slack now, so only a Slack routine is the approved one.
+    (prisma as { messagingIdentity?: unknown }).messagingIdentity = {
+      findUnique: vi.fn(async () => ({ provider: "slack" })),
+    };
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      schedule: {},
+      on: { webhook: true, chat: "Slack" },
+    });
+    // A retry tells the bot what a first creation would: the events and where the key is.
+    expect(result).toMatchObject({
+      ok: true,
+      routineId: "routine-1",
+      on: { webhook: true, chat: "Slack" },
+      setup: ROUTINE_WEBHOOK_SETUP_NOTE,
+      chatNote: ROUTINE_CHAT_TRIGGER_NOTE,
+    });
+    expect(prisma.routine.create).not.toHaveBeenCalled();
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          crons: { equals: [] },
+          webhookEnabled: true,
+          githubEnabled: false,
+          messageProvider: "slack",
+          emailSenders: null,
+        }),
+      }),
+    );
   });
 
   it("does not replay an account-derived request onto an unrelated pinned routine", async () => {

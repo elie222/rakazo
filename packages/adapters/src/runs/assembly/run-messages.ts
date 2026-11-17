@@ -13,7 +13,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { redactConnectorPayload } from "../../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 
 /** Deps for one attempt: its run's history writes carry the lease, so a superseded attempt cannot write. */

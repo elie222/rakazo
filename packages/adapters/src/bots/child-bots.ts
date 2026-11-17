@@ -39,14 +39,14 @@ import {
   teamBrowserProfileName,
   withCleanupDeadline,
 } from "../computers/computer-workspace.js";
+import { isSandboxGoneError } from "../computers/sandbox/sandbox-errors.js";
+import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { BrowserStoppedReleaseError } from "../computers/screens/computer-screens.js";
 import { toComputerRef } from "../computers/screens/computer-support.js";
 import { purgeClearedConversationMemory } from "../memory/conversation-memory-cleanup.js";
 import type { MemoryProviderResolver } from "../memory/memory-provider-factory.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { removePiBotSessions } from "../runtime/pi/pi-session.js";
-import { isSandboxGoneError } from "../sandboxes/sandbox-errors.js";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { forgetPageShareSecrets } from "../secrets/vault/page-share-secrets.js";
 import { removeAgentHome, removeAgentHomeFolders } from "../storage/home.js";
 
