@@ -1,7 +1,7 @@
 {
-  "apps/desktop/src/main/app-document-state.test.ts": 1,
-  "apps/desktop/src/main/docker-cli.test.ts": 1,
-  "apps/desktop/src/main/docker-move.test.ts": 1,
+  "apps/desktop/src/main/this-computer/docker-cli.test.ts": 1,
+  "apps/desktop/src/main/this-computer/docker-move.test.ts": 1,
+  "apps/desktop/src/main/windows/app-document-state.test.ts": 1,
   "apps/web/e2e/page-browser.spec.ts": 1,
   "infra/sandboxes/supervisor/src/focus-or-launch.test.ts": 1,
   "packages/adapters/src/expo-push.test.ts": 1,

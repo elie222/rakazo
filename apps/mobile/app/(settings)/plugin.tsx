@@ -22,26 +22,26 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { SkillSymbol } from "../../components/skill-symbol";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
   useOwnSpaces,
-} from "../../components/space-availability";
-import { mobileTokens } from "../../lib/appearance";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import type { PluginParams } from "../../lib/plugin-marketplace";
-import { sourceHref } from "../../lib/plugin-marketplace";
-import type { SaveSend } from "../../lib/query";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../components/settings/space-availability";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/home/last-bot";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
+import { sourceHref } from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import type { SaveSend } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 const SKILLS_SHOWN = 5;
 
