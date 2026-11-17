@@ -102,3 +102,13 @@ it("shows the thread without switching when no space is requested", async () => 
   expect(state.selectSpace).not.toHaveBeenCalled();
   expect(container.textContent).toBe("thread:user-1");
 });
+
+it("draws the next chat in its first commit once a chat confirmed the account", async () => {
+  await render();
+  act(() => root.unmount());
+  root = createRoot(container);
+
+  act(() => root.render(createElement(ThreadRoute)));
+
+  expect(container.textContent).toBe("thread:user-1");
+});
