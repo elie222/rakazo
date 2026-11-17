@@ -263,6 +263,8 @@ export const Transcript = memo(function Transcript({
   // Remounted per chat, so each opened chat paints its latest rows before the full history.
   const [tailOnly, setTailOnly] = useState(true);
   useEffect(() => startTransition(() => setTailOnly(false)), []);
+  // A jump needs older rows, and must keep them after it clears its request.
+  if (tailOnly && scrollRequest) setTailOnly(false);
   const showTail = tailOnly && !scrollRequest;
   const items = groupVoiceChats(reactionView.visibleMessages);
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
