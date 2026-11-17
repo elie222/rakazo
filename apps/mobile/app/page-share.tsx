@@ -17,9 +17,9 @@ import {
   View,
 } from "react-native";
 import { NativeSymbol } from "../components/native/native-symbol";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { useMobileTokens } from "../lib/native/native";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import {
   getLatestPage,
   pageShareLink,

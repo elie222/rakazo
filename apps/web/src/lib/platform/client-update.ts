@@ -11,9 +11,9 @@ import {
   composerHoldsWorkInFlight,
   hasUnsentComposerDraft,
 } from "../composer/composer-draft";
-import { hasOpenDialog } from "../has-open-dialog";
 import { onRpcResponse } from "../query/rpc";
 import { CLIENT_BUILD } from "./client-build";
+import { hasOpenDialog } from "./has-open-dialog";
 import { recoveryReload } from "./preload-recovery";
 
 const ATTEMPT_KEY = "rk:client-update-attempt";

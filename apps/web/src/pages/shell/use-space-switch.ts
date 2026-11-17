@@ -1,15 +1,15 @@
 import { abortableDelay } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
-import { leaveOrganization } from "../../lib/auth/organizations";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
 import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
 import { queryClient, spaceSeedKey } from "../../lib/query/query";
 import { selectedSpaceId, selectSpace } from "../../lib/query/rpc";
-import { remountShellForSpace, spaceSwitchDecision } from "../../lib/space-switch";
+import { leaveOrganization } from "../../lib/spaces/organizations";
 import { useEventListener } from "../../lib/use-event-listener";
-import { readShellOverlay, searchString, withShellOverlay } from "../shell-overlay";
+import { readShellOverlay, searchString, withShellOverlay } from "./shell-overlay-url";
+import { remountShellForSpace, spaceSwitchDecision } from "./space-switch";
 import type { useShellNavigation } from "./use-shell-navigation";
 
 /**

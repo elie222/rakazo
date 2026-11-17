@@ -21,10 +21,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
-import type { Organization } from "../../lib/auth/organizations";
-import { organizationMembersQuery, organizationsQuery } from "../../lib/auth/organizations";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+import type { Organization } from "../../lib/spaces/organizations";
+import { organizationMembersQuery, organizationsQuery } from "../../lib/spaces/organizations";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import { SettingsGroup } from "../settings/SettingsRows";

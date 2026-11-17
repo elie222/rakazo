@@ -20,12 +20,12 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../lib/native/native", () => ({ useThemedStyles: () => ({}) }));
-vi.mock("../../lib/home/activity", () => ({
+vi.mock("../../lib/inbox/activity", () => ({
   activityPreview: () => "",
   activityStatusLabel: (status: string) => status,
   formatActivityRelativeTime: () => "",
 }));
-vi.mock("./home-styles", () => ({ createHomeStyles: () => ({}) }));
+vi.mock("./inbox-styles", () => ({ createInboxStyles: () => ({}) }));
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => <i /> }));
 vi.mock("../bots/group-avatar", () => ({ GroupAvatar: () => <i /> }));
 vi.mock("./inbox-rows", () => ({

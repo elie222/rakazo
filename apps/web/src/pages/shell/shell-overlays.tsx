@@ -15,8 +15,8 @@ import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
 import type { SpaceQueries } from "../../lib/query/query";
 import { queryClient } from "../../lib/query/query";
 import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
-import type { ShellOverlay } from "../shell-overlay";
 import { FALLBACK_BOT_COLOR } from "./chat/chat-shared";
+import type { ShellOverlay } from "./shell-overlay-url";
 
 const SettingsOverlay = lazyOverlay(() =>
   import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay),
