@@ -77,4 +77,9 @@ export const HI_MESSAGES: Record<string, string> = {
   "Join {organization}": "{organization} से जुड़ें",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "यह आमंत्रण 7 दिनों में समाप्त हो जाएगा। इसे स्वीकार करने के लिए इसी ईमेल पते से साइन इन करें।",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} ने आपको Rakazo पर {space} में आमंत्रित किया",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} ने आपको Rakazo पर {space} से जुड़ने के लिए आमंत्रित किया है।",
+  "Join {space}": "{space} से जुड़ें",
+  "This invitation expires in 7 days.": "यह आमंत्रण 7 दिनों में समाप्त हो जाएगा।",
 };

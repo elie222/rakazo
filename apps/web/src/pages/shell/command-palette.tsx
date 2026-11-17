@@ -17,7 +17,7 @@ import {
 import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { formatRelativeTime } from "../../lib/relative-time";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { useEventListener } from "../../lib/use-event-listener";
 import { isApplePlatform } from "./shell-shortcuts";
 

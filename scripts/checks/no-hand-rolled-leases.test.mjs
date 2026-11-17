@@ -9,8 +9,6 @@ const SCHEMA = new URL("../../packages/db/prisma/schema.prisma", import.meta.url
 const EXISTING = new Set([
   "ScimConnectionBinding.decommissionLeaseId",
   "ScimConnectionBinding.decommissionLeaseExpiresAt",
-  "BillingAccount.checkoutLeaseId",
-  "BillingAccount.checkoutLeaseExpiresAt",
   "PluginSubmission.claim",
   "Space.deletionClaimId",
   "Space.deletionAttemptId",
@@ -20,16 +18,9 @@ const EXISTING = new Set([
   "Run.leaseExpiresAt",
   "SteeringMessage.claimedAt",
   "Attempt.fence",
-  "Computer.executionLeaseExpiresAt",
-  "Computer.executionFence",
   "ModelOAuthSession.leaseExpiresAt",
   "MessagingOutbound.claimedAt",
   "ModelCreditEntry.reconciliationAttempts",
-  // Moved onto `withLease`; kept only while the previous release still claims them.
-  "CloudAgent.leaseToken",
-  "CloudAgent.leaseExpiresAt",
-  "HomeDeletionNotice.claimId",
-  "HomeDeletionNotice.claimExpiresAt",
   // The primitive's own table.
   "Lease.fence",
   // Not long work in one process, so not for `withLease`: a person's page holds computer control
@@ -69,7 +60,7 @@ test("adds no hand-written lease, claim or attempt column", () => {
   assert.deepEqual(
     added,
     [],
-    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/leases.ts), " +
+    "Coordinate long work across processes with `withLease` from @rakazo/db (packages/db/src/database/leases.ts), " +
       "and retries with the job queue's attempts and backoff, instead of new lease, claim or attempt columns.",
   );
 });

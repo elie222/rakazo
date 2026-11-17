@@ -72,8 +72,19 @@ settings can share a ref, so for them that read counts every row of all four
 tables, in every Space. Only Infisical refs are recorded: an encrypted ref is the sealed
 value itself, leaves with its row, and is never copied into a job. Every other
 path is best effort as described above: a failed delete is logged, not retried.
-A process crash between the external write and database persistence can leave an
-unreferenced key; reconcile such keys against database refs during maintenance.
+Every Infisical write is recorded first: before the key is created, a
+`secret.cleanup` job naming it is queued to run five and a half minutes later
+(the write's 30-second deadline plus time for the save that follows). The save
+removes the job, in its own transaction for the four secret tables and right
+after the commit elsewhere. If the process dies between the write and the save,
+the job runs, finds no row in any column that can hold a ref, and deletes the
+key; a key a row holds by then is kept. A write whose job cannot be queued is
+refused, so no key is created without one. A write inside a database transaction
+(a credential refresh) queues its job on that transaction's connection, so it
+never waits for a second one; if the transaction rolls back, the job is queued
+again afterwards. A process that dies while that transaction is still open loses
+the job with it. Writes made before the queue starts, and by tools that run
+without one, are not recorded.
 
 ## Availability
 

@@ -1,15 +1,15 @@
 import * as z from "zod";
-import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
-import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
-import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
-import { ComputerModeSchema, ComputerStatusSchema } from "./computer.js";
+import { SpaceAvailabilitySchema } from "./account/space-availability.js";
+import { AGENT_SECRET_NAME_PATTERN } from "./bots/agent-secret-name.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bots/bot-avatar.js";
+import { DisabledBuiltinToolsSchema } from "./bots/builtin-tools.js";
+import { NavLinkSchema } from "./clients/nav-links.js";
+import { ComputerModeSchema, ComputerStatusSchema } from "./computers/computer.js";
+import { RoutineWatchSchema, RoutineWatchStateSchema } from "./conversations/routine-watch.js";
+import { RunTriggerSchema } from "./conversations/runs.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, ReplyModeSchema, RunStatus, ThinkingLevelSchema } from "./ids.js";
 import { LabFeatureSchema } from "./labs.js";
-import { NavLinkSchema } from "./nav-links.js";
-import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
-import { RunTriggerSchema } from "./runs.js";
-import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 
@@ -377,6 +377,8 @@ export const SpaceSchema = z.object({
   canDelete: z.boolean().optional(),
   /** True when more than one person belongs to the space. */
   shared: z.boolean().optional(),
+  /** True when someone from outside the Space's organization belongs to it. */
+  hasGuests: z.boolean().optional(),
   /** Every bot deleting the space removes, archived and other members' included. */
   botCount: z.number().int().nonnegative().optional(),
   bots: z.array(SpaceBotSchema),
@@ -388,12 +390,17 @@ export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceRoleSchema = z.enum(["owner", "member"]);
 
-export const SpaceMemberSchema = z.object({
+const PersonSchema = z.object({
   userId: Id,
   name: z.string(),
   email: z.string(),
   image: z.string().nullable(),
+});
+
+export const SpaceMemberSchema = PersonSchema.extend({
   role: SpaceRoleSchema,
+  /** From outside the Space's organization: they see only the Spaces they were added to. */
+  guest: z.boolean().optional(),
 });
 export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
 
@@ -405,7 +412,9 @@ export const SpaceMembersSchema = z.object({
   /** For the owner: links created but not yet used or expired. */
   openInvites: z.number().int().nonnegative().optional(),
   /** For the owner: people in the Space's organization who are not in it yet. */
-  addable: z.array(SpaceMemberSchema.omit({ role: true })).optional(),
+  addable: z.array(PersonSchema).optional(),
+  /** For the owner: the Space's organization, which anyone invited from outside does not join. */
+  organizationName: z.string().optional(),
 });
 export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
 
@@ -413,7 +422,7 @@ export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
 export const OrganizationRoleSchema = z.enum(["owner", "admin", "member"]);
 export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>;
 
-export const OrganizationMemberSchema = SpaceMemberSchema.extend({
+export const OrganizationMemberSchema = PersonSchema.extend({
   role: OrganizationRoleSchema,
   /** Whether the viewer may remove them: never the owner or themselves. */
   manageable: z.boolean(),
@@ -449,6 +458,8 @@ export type OrganizationInvitationPreview = z.infer<typeof OrganizationInvitatio
 export const SpaceInviteLinkSchema = z.object({
   url: z.string().url(),
   expiresAt: z.string(),
+  /** Whether the link was emailed to the address given; when not, the owner shares it by hand. */
+  emailed: z.boolean().optional(),
 });
 
 export const SpaceInvitePreviewSchema = z.object({

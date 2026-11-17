@@ -51,8 +51,9 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
-import { mayUsePrivateEndpoint } from "../mcp-servers.js";
-import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
+import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
+import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
+import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
 import {
   modelConnectionErrorMessage,
   modelConnectionTarget,
@@ -61,8 +62,7 @@ import {
   prepareModelReconnectSettings,
   saveConnectionModelSettings,
   throwIfAborted,
-} from "../model-credentials.js";
-import { assertCompatibleDefaultChange } from "../model-pins.js";
+} from "../models/model-credentials.js";
 import type { RouterContext } from "./context.js";
 
 /** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
@@ -230,6 +230,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           input.role,
           await withDeploymentDefault(
+            context.actor,
             input.role,
             await getModelRole(
               deps.prisma,
@@ -251,6 +252,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           role,
           await withDeploymentDefault(
+            context.actor,
             role,
             await updateModelRole(
               deps.prisma,

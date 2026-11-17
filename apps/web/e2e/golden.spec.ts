@@ -11,7 +11,7 @@ import {
   realSandboxTimeout,
   rpc,
   signup,
-} from "./helpers";
+} from "./helpers/helpers";
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
   return page.locator("[data-sidebar-group] [data-roster-bot-id]").filter({
@@ -115,7 +115,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Save" }).click();
   await savedRoutine;
   await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
@@ -299,10 +299,21 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/OpenAPI\s*https:\/\/api\.example\.test\/v1/)).toBeVisible();
 
+  // Executor signs in on its hosted address (editable for a self-hosted one); no token to paste.
   await addSource("Executor");
   await expect(form.getByLabel("Name", { exact: true })).toHaveValue("Executor");
+  await expect(form.getByLabel("URL", { exact: true })).toHaveValue("https://mcp.executor.sh/mcp");
+  await expect(form.getByLabel("Bearer token", { exact: true })).toHaveCount(0);
+  await expect(form.getByRole("button", { name: "Save and sign in", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11c-executor-sign-in");
+  await form.getByRole("button", { name: "Back", exact: true }).click();
+
+  // An Executor access token still connects as an ordinary MCP server.
+  await addSource("MCP server");
+  await form.getByLabel("Name", { exact: true }).fill("Executor");
   await form.getByLabel("URL", { exact: true }).fill("https://executor.example.test/mcp");
-  await form.getByLabel("Bearer token", { exact: true }).fill("fake-executor-browser-credential");
+  await chooseOption(form.getByLabel("Authentication", { exact: true }), "Bearer token");
+  await form.getByLabel("Credential", { exact: true }).fill("fake-executor-browser-credential");
   await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(toolSources.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11d-provider-emulators");

@@ -16,7 +16,7 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { setAccountActive } from "../account-status.js";
+import { setAccountActive } from "../account/account-status.js";
 import { loadEnv } from "../env.js";
 
 const [action, address] = process.argv.slice(2);

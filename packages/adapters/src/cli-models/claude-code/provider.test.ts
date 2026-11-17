@@ -17,12 +17,12 @@ import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/a
 import { normalizeRunError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostCredentialSource, resolveDeploymentModel } from "../../deployment-model.js";
-import { knownModelImageInput, modelAcceptsImageInput } from "../../model-vision.js";
-import { listPiCatalog } from "../../pi-models.js";
-import { resolveRuntimeModel } from "../../pi-runtime-models.js";
-import { scopedRuntimeModels } from "../../pi-runtime-scope.js";
-import { normalizePiUsage } from "../../pi-usage.js";
+import { hostCredentialSource, resolveDeploymentModel } from "../../models/deployment-model.js";
+import { knownModelImageInput, modelAcceptsImageInput } from "../../models/model-vision.js";
+import { listPiCatalog } from "../../runtime/pi/models/pi-models.js";
+import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
+import { scopedRuntimeModels } from "../../runtime/pi/pi-runtime-scope.js";
+import { normalizePiUsage } from "../../runtime/pi/usage/pi-usage.js";
 import {
   PERSONAL_CLI_BILLING_REFUSAL,
   PERSONAL_CLI_SHARED_REFUSAL,

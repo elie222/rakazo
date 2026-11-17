@@ -79,4 +79,9 @@ export const KO_MESSAGES: Record<string, string> = {
   "Join {organization}": "{organization} 참여하기",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "이 초대는 7일 후에 만료됩니다. 수락하려면 이 이메일 주소로 로그인하세요.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter}님이 Rakazo의 {space}에 초대했습니다",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter}님이 Rakazo의 {space}에 참여하도록 초대했습니다.",
+  "Join {space}": "{space} 참여하기",
+  "This invitation expires in 7 days.": "이 초대는 7일 후에 만료됩니다.",
 };

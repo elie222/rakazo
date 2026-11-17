@@ -81,13 +81,13 @@
     "id": "models",
     "title": "Models",
     "flow": "flows/models.yaml",
-    "screens": ["models", "model-picker", "model-settings", "model-connection"]
+    "screens": ["models", "model-picker", "model-connection"]
   },
   {
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",

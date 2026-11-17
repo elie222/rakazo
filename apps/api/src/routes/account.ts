@@ -48,12 +48,10 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
-import { requireAdmin } from "../admins.js";
-import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
-import type { BillingService } from "../billing.js";
-import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
-import type { RouterDeps } from "../router.js";
+import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
+import { requireAdmin } from "../auth/admins.js";
+import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
@@ -69,11 +67,14 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
-} from "../voice.js";
+} from "../calls/voice.js";
+import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
 const ROSTER_CHANGED = Symbol("roster changed");
+const ORGANIZATIONS_CHANGED = Symbol("organizations changed");
 
 const SIGNAL_FAILURE_HOLD_MS = 30_000;
 
@@ -366,7 +367,12 @@ export function accountRoutes(ctx: RouterContext) {
     },
     notifications: {
       subscribe: authed.notifications.subscribe.handler(async function* ({ context }) {
-        const { followChatAlerts, followRosterChanges, followSpaceChanges } = deps.events;
+        const {
+          followChatAlerts,
+          followOrganizationChanges,
+          followRosterChanges,
+          followSpaceChanges,
+        } = deps.events;
         if (!followChatAlerts) throw new ORPCError("NOT_FOUND");
         const { spaceId, userId } = context.actor;
         const rosterChanges = async function* (
@@ -397,16 +403,30 @@ export function accountRoutes(ctx: RouterContext) {
             throw error;
           }
         };
+        const organizationChanges = async function* (
+          signal: AbortSignal,
+        ): AsyncGenerator<typeof ORGANIZATIONS_CHANGED> {
+          if (!followOrganizationChanges) return;
+          try {
+            for await (const _ of followOrganizationChanges(userId, signal))
+              yield ORGANIZATIONS_CHANGED;
+          } catch (error) {
+            await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
+            throw error;
+          }
+        };
         const frames = withHeartbeats(context, (signal) =>
           mergeStreams(
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
+            organizationChanges(signal),
           ),
         );
         for await (const next of frames) {
           if (next === HEARTBEAT) yield { type: "heartbeat" as const };
           else if (next === ROSTER_CHANGED) yield { type: "roster" as const };
+          else if (next === ORGANIZATIONS_CHANGED) yield { type: "organizations" as const };
           else if ("spaceChange" in next) yield { type: next.spaceChange };
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
@@ -648,7 +668,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
       deps.prisma,
       actor,
       "approval",
-      { env: process.env },
+      { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true },
       scope === "account" ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
@@ -663,7 +683,12 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),
     ...role.backups,
   ];
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({
+    env: process.env,
+    checker: deploymentChecker
+      ? { provider: deploymentChecker.provider, model: deploymentChecker.modelId }
+      : undefined,
+  });
   if (memberChoices.length === 0) {
     // The deployment's checker runs on its own configuration or on the member's key for it.
     const requiredUserProvider =
