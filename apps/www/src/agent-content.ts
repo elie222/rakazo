@@ -176,6 +176,8 @@ function hasNoTwin(pathname: string): boolean {
 export function getMarkdownAlternate(pathname: string): string | undefined {
   const normalizedPathname = normalizePathname(pathname);
   if (normalizedPathname === "/") return "/index.md";
+  // A path such as `//host/x` would name another origin once resolved as a URL.
+  if (!/^\/[^/\\]/.test(normalizedPathname) || normalizedPathname.includes("\\")) return undefined;
   return hasNoTwin(normalizedPathname) ? undefined : `${normalizedPathname}.md`;
 }
 

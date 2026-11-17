@@ -37,7 +37,9 @@ export default function middleware(request: Request): Response {
 
   const markdownAlternate = getMarkdownAlternate(url.pathname);
   if (markdownAlternate && negotiateRepresentation(request.headers.get("accept")) === "markdown") {
-    return rewrite(new URL(markdownAlternate, url), {
+    const destination = new URL(url);
+    destination.pathname = markdownAlternate;
+    return rewrite(destination, {
       headers: {
         "Content-Language": "en",
         "Content-Type": "text/markdown; charset=utf-8",
