@@ -46,17 +46,17 @@ import {
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { createAgentImportServices } from "../agent-import-services.js";
-import { createAgentSkillsService } from "../agent-skills.js";
-import { createBotRemoval } from "../bot-removal.js";
-import { createMcpServers } from "../mcp-servers.js";
-import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
-import { rosterChangeFor } from "../roster-procedures.js";
+import { procedureSecurityEvent } from "../auth/security-audit.js";
+import { createAgentImportServices } from "../bots/agent-import-services.js";
+import { createAgentSkillsService } from "../bots/agent-skills.js";
+import { createBotRemoval } from "../bots/bot-removal.js";
+import { rosterChangeFor } from "../bots/roster-procedures.js";
+import { createTaughtSkillsService } from "../bots/taught-skills.js";
+import { createMcpServers } from "../integrations/mcp-servers.js";
+import { createModelConnector, prepareAllowedThinkingLevels } from "../models/model-credentials.js";
 import type { RouterDeps } from "../router.js";
-import { createRoutineAnnouncer } from "../routines.js";
-import { procedureSecurityEvent } from "../security-audit.js";
-import { spaceChangesFor } from "../space-change-procedures.js";
-import { createTaughtSkillsService } from "../taught-skills.js";
+import { createRoutineAnnouncer } from "../routines/routines.js";
+import { spaceChangesFor } from "../spaces/space-change-procedures.js";
 import { meDto } from "./shared.js";
 
 /**

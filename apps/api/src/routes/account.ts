@@ -48,12 +48,10 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
-import { requireAdmin } from "../admins.js";
-import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
-import type { BillingService } from "../billing.js";
-import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
-import type { RouterDeps } from "../router.js";
+import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
+import { requireAdmin } from "../auth/admins.js";
+import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
@@ -69,7 +67,9 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
-} from "../voice.js";
+} from "../calls/voice.js";
+import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 

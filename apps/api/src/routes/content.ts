@@ -10,6 +10,7 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import {
   createOwnedArtifact,
   deleteArtifactFamily,
@@ -18,11 +19,10 @@ import {
   getSpaceArtifactById,
   listArtifactVersions,
   listSpaceArtifacts,
-} from "../artifacts.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { listSpaceRuns } from "../runs.js";
-import { querySpaceSearch } from "../search.js";
-import { loadAllMessages } from "../thread-message-pages.js";
+} from "../content/artifacts.js";
+import { querySpaceSearch } from "../content/search.js";
+import { listSpaceRuns } from "../threads/runs.js";
+import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
