@@ -178,6 +178,7 @@ export function useThreadSync({
     key: string;
     read: Promise<ThreadSnapshot>;
     startedAt: number;
+    abort: AbortController;
   } | null>(null);
   const startChatRead = useCallback(
     (target: { botId?: string; groupId?: string }) => {
@@ -193,22 +194,34 @@ export function useThreadSync({
           : input.botId === activeBotId.current && !activeGroupId.current)
       )
         return;
-      const read = rpc.threads.get(input, {
-        signal: AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS),
-      });
+      earlyRead.current?.abort.abort();
+      const abort = new AbortController();
+      const read = rpc.threads.get(input, { signal: threadSnapshotSignal(abort.signal) });
       // The chat's own load awaits this read and handles its failure.
       void read.catch(() => undefined);
-      earlyRead.current = { key: JSON.stringify(input), read, startedAt: performance.now() };
+      earlyRead.current = {
+        key: JSON.stringify(input),
+        read,
+        startedAt: performance.now(),
+        abort,
+      };
     },
     [rpc, activeBotId, activeGroupId],
   );
-  function takeEarlyRead(input: { botId: string } | { groupId: string }) {
+  /** The early read for this chat, cancelled with `signal`; any other is cancelled now. */
+  function takeEarlyRead(input: { botId: string } | { groupId: string }, signal: AbortSignal) {
     const early = earlyRead.current;
     earlyRead.current = null;
-    return early?.key === JSON.stringify(input) &&
-      performance.now() - early.startedAt < THREAD_SNAPSHOT_TIMEOUT_MS
-      ? early.read
-      : undefined;
+    if (!early) return undefined;
+    if (
+      early.key !== JSON.stringify(input) ||
+      performance.now() - early.startedAt >= THREAD_SNAPSHOT_TIMEOUT_MS
+    ) {
+      early.abort.abort();
+      return undefined;
+    }
+    signal.addEventListener("abort", () => early.abort.abort(), { once: true });
+    return early.read;
   }
 
   /**
@@ -456,7 +469,7 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
-    const started = takeEarlyRead({ botId: active.id });
+    const started = takeEarlyRead({ botId: active.id }, abort.signal);
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: async () => {
@@ -564,7 +577,7 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshGroupThread(groupId));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
-    const started = takeEarlyRead({ groupId });
+    const started = takeEarlyRead({ groupId }, abort.signal);
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: () =>
