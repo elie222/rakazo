@@ -66,7 +66,9 @@ vi.mock("react-native", () => {
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../../components/integrations/header-rows-editor", () => ({ HeaderRowsEditor: () => null }));
+vi.mock("../../components/integrations/header-rows-editor", () => ({
+  HeaderRowsEditor: () => null,
+}));
 vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SettingsRow: ({
