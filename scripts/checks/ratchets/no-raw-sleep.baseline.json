@@ -1,5 +1,5 @@
 {
-  "apps/api/src/computer-control.ts": 1,
+  "apps/api/src/computers/computer-control.ts": 1,
   "apps/worker/src/index.ts": 1,
   "infra/sandboxes/supervisor/src/egress-probe.ts": 1,
   "infra/sandboxes/supervisor/src/readiness.ts": 2,
@@ -29,8 +29,8 @@
   "packages/adapters/src/run-tools-email.ts": 1,
   "packages/adapters/src/wakeup.ts": 1,
   "packages/core/src/computers/screen-reconnect.ts": 1,
-  "packages/db/src/client.ts": 1,
-  "packages/db/src/database-outage.ts": 1,
-  "packages/db/src/deferred-migrations.ts": 1,
+  "packages/db/src/database/client.ts": 1,
+  "packages/db/src/database/database-outage.ts": 1,
+  "packages/db/src/database/deferred-migrations.ts": 1,
   "packages/logging/src/logger.ts": 1
 }

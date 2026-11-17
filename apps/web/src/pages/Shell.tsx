@@ -116,6 +116,7 @@ import { useTeaching } from "./shell/use-teaching";
 import { useThreadState } from "./shell/use-thread-state";
 import { useThreadSync } from "./shell/use-thread-sync";
 import type { SettingsSection } from "./shell-overlay";
+import { TimezonePrompt } from "./TimezonePrompt";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -437,7 +438,6 @@ function SpaceShell() {
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const rosterSignals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer,
@@ -487,6 +487,7 @@ function SpaceShell() {
     else if (active) read.markBotReadIfVisible(active.id);
   }, [openChatWoke]);
   const {
+    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,
@@ -607,6 +608,7 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
     beginSpaceSwitch: roster.beginSpaceSwitch,
+    startChatRead,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -986,6 +988,23 @@ function SpaceShell() {
       />
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} onMeUpdated={setBootstrapMe} />
+      ) : null}
+      {userId && bootstrapMe ? (
+        <TimezonePrompt
+          key={userId}
+          userId={userId}
+          timezone={bootstrapMe.timezone}
+          onSaved={(me, adopted) =>
+            setBootstrapMe((prev) =>
+              // An adoption only fills an empty zone, so it never replaces a newer pick.
+              !prev
+                ? me
+                : adopted && prev.timezone != null
+                  ? prev
+                  : { ...prev, timezone: me.timezone },
+            )
+          }
+        />
       ) : null}
       <ShellSidebar
         isMobile={isMobileSidebar}
