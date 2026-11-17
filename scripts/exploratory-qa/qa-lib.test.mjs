@@ -130,6 +130,13 @@ test("an issue edited below its fingerprint is still recognized", () => {
   assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
 });
 
+test("a marker quoted in any code a person adds is not taken for a filed bug", () => {
+  const other = fingerprint({ ...bug, key: "pinned-chats-hidden" });
+  const marker = `<!-- exploratory-qa-fingerprint: ${other} -->`;
+  const body = `${issueBody(bug, links)}\n\nSee \`${marker}\` and:\n\n\`\`\`html\n${marker}\n\`\`\``;
+  assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
+});
+
 test("keys that differ only past the shown length are different bugs", () => {
   const long = "x".repeat(60);
   assert.notEqual(

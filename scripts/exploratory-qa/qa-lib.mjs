@@ -4,7 +4,7 @@ export const ISSUE_LABEL = "exploratory-qa";
 // Anchored to the end of the body, where only our own comment sits, so model text above it cannot pose as one.
 export const FINGERPRINT_PATTERN = /<!-- exploratory-qa-fingerprint: ([0-9a-f]{16}) -->/g;
 // Model text only ever sits in code, so a fingerprint there is not ours.
-const CODE_IN_BODY = /^(`{3,})text\n[\s\S]*?\n\1$|`[^`\n]*`/gm;
+const CODE_IN_BODY = /^(`{3,})[^\n`]*\n[\s\S]*?\n\1[ \t]*$|`[^`\n]*`/gm;
 export const SCREENSHOT_NAME = /^[0-9]+-[0-9]+\.png$/;
 export const LIMITS = { workers: 6, minutesPerWorker: 30, budgetUsd: 25, issuesPerRun: 10 };
 
