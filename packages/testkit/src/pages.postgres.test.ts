@@ -816,6 +816,117 @@ describePages("pages", () => {
     });
   });
 
+  it("lets the other members of a Space read a page its owner shared with it, and change nothing", async () => {
+    const ownerCookie = await signup(app, `pages-shared-${stamp}@rakazo.test`, "Space Owner");
+    const owner = await rpc<{ userId: string; spaceId: string }>(app, ownerCookie, "me");
+    const space = await db().space.findUniqueOrThrow({
+      where: { id: owner.spaceId },
+      select: { organizationId: true },
+    });
+    const { id: pageId } = await db().page.create({
+      data: {
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        title: "Owner's plan",
+        versions: {
+          create: {
+            version: 1,
+            title: "Owner's plan",
+            source: page("Plan"),
+            code: pageViewerCode(page("Plan")),
+          },
+        },
+      },
+    });
+    const memberCookie = await signup(app, `pages-shared-member-${stamp}@rakazo.test`, "Member");
+    const member = await rpc<{ userId: string }>(app, memberCookie, "me");
+    await db().member.deleteMany({ where: { userId: member.userId } });
+    await db().member.create({
+      data: {
+        id: `pages-shared-org-${stamp}`,
+        organizationId: space.organizationId,
+        userId: member.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const none = { items: [], nextCursor: null };
+    const sharedList = () =>
+      rpc<{ items: { id: string; mine: boolean; ownerName: string | null }[] }>(
+        app,
+        memberCookie,
+        "pages/list",
+        { scope: "space" },
+        owner.spaceId,
+      );
+    const openAsMember = () => raw(app, memberCookie, "pages/get", { pageId }, owner.spaceId);
+
+    // Private: the member sees nothing.
+    expect(await sharedList()).toEqual(none);
+    expect((await openAsMember()).status).toBe(404);
+
+    // Shared with the Space: listed with its owner and readable, and no link exists.
+    expect(
+      await rpc(app, ownerCookie, "pages/setVisibility", { pageId, visibility: "space" }),
+    ).toEqual({ visibility: "space", shareUrl: null });
+    expect((await sharedList()).items).toMatchObject([
+      { id: pageId, mine: false, ownerName: "Space Owner" },
+    ]);
+    expect(await rpc(app, memberCookie, "pages/list", {}, owner.spaceId)).toEqual(none);
+    const opened = await rpc<PageDetail>(
+      app,
+      memberCookie,
+      "pages/get",
+      { pageId, link: true },
+      owner.spaceId,
+    );
+    expect(opened).toMatchObject({
+      visibility: "space",
+      mine: false,
+      shareUrl: null,
+      botId: null,
+      groupId: null,
+      pinned: false,
+      code: pageViewerCode(page("Plan")),
+    });
+
+    // Only the owner changes it.
+    for (const [proc, body] of [
+      ["pages/rename", { pageId, title: "Taken" }],
+      ["pages/setVisibility", { pageId, visibility: "link" }],
+      ["pages/pin", { pageId, pinned: true }],
+      ["pages/remove", { pageId }],
+    ] as const) {
+      expect((await raw(app, memberCookie, proc, body, owner.spaceId)).status).toBe(404);
+    }
+    expect(await db().page.findUniqueOrThrow({ where: { id: pageId } })).toMatchObject({
+      title: "Owner's plan",
+      visibility: "space",
+      pinnedAt: null,
+    });
+
+    // The page follows its owner's membership, and goes private again when its owner says so.
+    await db().spaceMember.deleteMany({
+      where: { spaceId: owner.spaceId, userId: owner.userId },
+    });
+    expect(await sharedList()).toEqual(none);
+    expect((await openAsMember()).status).toBe(404);
+    await db().spaceMember.create({
+      data: {
+        id: `pages-shared-back-${stamp}`,
+        spaceId: owner.spaceId,
+        organizationId: space.organizationId,
+        userId: owner.userId,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    expect((await sharedList()).items).toHaveLength(1);
+    await rpc(app, ownerCookie, "pages/setVisibility", { pageId, visibility: "private" });
+    expect(await sharedList()).toEqual(none);
+    expect((await openAsMember()).status).toBe(404);
+  });
+
   it("forgets every member's page links when the owner deletes their shared space", async () => {
     const ownerCookie = await signup(app, `pages-space-owner-${stamp}@rakazo.test`, "Owner");
     const shared = await rpc<{ id: string }>(app, ownerCookie, "spaces/create", { name: "Crew" });

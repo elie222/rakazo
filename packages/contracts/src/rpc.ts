@@ -196,6 +196,7 @@ import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./m
 import {
   PAGE_LIST_MAX_LIMIT,
   PageDetailSchema,
+  PageListItemSchema,
   PageSummarySchema,
   PageTitleSchema,
   PageVisibilitySchema,
@@ -297,7 +298,7 @@ const threadSendWithRoutinesInput = threadSendFields.safeExtend({
 });
 
 /** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
-export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines", "pages"]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
 
 const spaceName = z.string().trim().min(1).max(60);
@@ -1496,12 +1497,16 @@ export const appContract = {
     getById: oc.input(z.object({ artifactId: Id })).output(ArtifactWithContentSchema),
     remove: oc.input(z.object({ artifactId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Pages bots built for the caller in this Space. */
+  /** Pages bots built for the caller in this Space, and the ones members shared with it. */
   pages: {
-    /** Pinned first, then most recently updated. */
+    /**
+     * Pinned first, then most recently updated. `scope: "space"` lists every page shared with
+     * the Space, anyone's, newest first and unpinned; it takes no bot or group.
+     */
     list: oc
       .input(
         z.strictObject({
+          scope: z.enum(["mine", "space"]).optional(),
           botId: Id.optional(),
           groupId: Id.optional(),
           cursor: z.string().max(500).optional(),
@@ -1511,9 +1516,12 @@ export const appContract = {
         }),
       )
       .output(
-        z.strictObject({ items: z.array(PageSummarySchema), nextCursor: z.string().nullable() }),
+        z.strictObject({ items: z.array(PageListItemSchema), nextCursor: z.string().nullable() }),
       ),
-    /** `link` also reads the page's share link, which only the share controls need. */
+    /**
+     * `link` also reads the page's share link, which only the share controls need. Another
+     * member's page opens read-only at its current version, and `version` of any other is not found.
+     */
     get: oc
       .input(
         z.strictObject({
@@ -1528,7 +1536,8 @@ export const appContract = {
       .output(PageSummarySchema),
     /**
      * Turning the link on returns the page's live link, or a new one when it has none it can
-     * read; turning it off breaks the old link, so the next turn-on issues a new one.
+     * read; turning it off, or choosing `space`, breaks the old link, so the next turn-on issues
+     * a new one. Owner only.
      */
     setVisibility: oc
       .input(z.strictObject({ pageId: Id, visibility: PageVisibilitySchema }))
@@ -1558,8 +1567,9 @@ export const appContract = {
      * Run alerts for the signed-in user's chats in this space, live while connected. `roster`
      * says `spaces.list` may have changed, `computerUpdates` that `computer.updates` may have,
      * `runs` that `runs.list` and `routines.history` may have, `routines` that `routines.list`
-     * may have, and `organizations` that `organizations.list` and `organizations.members.list`
-     * may have; each is sent once when the stream opens.
+     * may have, `pages` that `pages.list` and `pages.get` may have, and `organizations` that
+     * `organizations.list` and `organizations.members.list` may have; each is sent once when the
+     * stream opens.
      */
     subscribe: oc.output(
       eventIterator(

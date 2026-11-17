@@ -128,10 +128,11 @@ function changedLines(before: string, after: string): string[] {
 }
 
 /**
- * Anyone with a shared page's link sees each save at once, so a save to one is held for approval,
- * except under Never ask. The card shows every line that changes, and the approval holds the
- * version it was shown against. A save that would fail anyway is not held: it fails as it would.
- * An approved replay stays held so it claims the approval it was given.
+ * Anyone a page is shared with (its Space's members, or whoever holds its link) sees each save at
+ * once, so a save to one is held for approval, except under Never ask. The card shows every line
+ * that changes, and the approval holds the version it was shown against. A save that would fail
+ * anyway is not held: it fails as it would. An approved replay stays held so it claims the
+ * approval it was given.
  */
 export async function holdSharedPageSave(
   ctx: RunContext,
@@ -159,7 +160,7 @@ export async function holdSharedPageSave(
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
   });
-  if (page?.visibility !== "link") return undefined;
+  if (!page || page.visibility === "private") return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
@@ -307,6 +308,10 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       return { error: "The page changed while saving; read it again and retry.", unchanged: true };
     }
     throw error;
+  }
+  // Members the page is shared with see the new version, so their open page and list read again.
+  if (page && page.visibility !== "private") {
+    await deps.events?.publishSpaceChange?.(run.spaceId, "pages");
   }
   const block: MessageBlock = { kind: "page", ...saved };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");

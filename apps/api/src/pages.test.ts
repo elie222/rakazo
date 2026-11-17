@@ -19,6 +19,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
   let committedElsewhere: (() => void) | undefined;
   const summary = (row: Row) => ({
     ...row,
+    userId: "user-1",
     botId: "bot-1",
     groupId: null,
     currentVersion: 1,
@@ -100,7 +101,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
 
 const actor = { userId: "user-1", spaceId: "space-1" } as never;
 const signal = new AbortController().signal;
-const share = (deps: unknown, visibility: "link" | "private") =>
+const share = (deps: unknown, visibility: "link" | "private" | "space") =>
   setPageVisibility(deps as never, actor, { pageId: "page-1", visibility }, signal);
 
 describe("page links", () => {
@@ -223,5 +224,148 @@ describe("page title search", () => {
       spaceId: "space-1",
       userId: "user-1",
     });
+  });
+});
+
+describe("pages shared with the Space", () => {
+  const other = { userId: "user-2", spaceId: "space-1" } as never;
+  const summary = {
+    id: "page-1",
+    title: "Trip",
+    visibility: "space",
+    userId: "user-1",
+    botId: "bot-1",
+    groupId: "group-1",
+    currentVersion: 2,
+    pinnedAt: new Date(0),
+    shareSecretId: "secret-1",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
+  const readDeps = (
+    found: unknown,
+    versionCode: { code: string } | null = { code: "compiled" },
+  ) => {
+    const findFirst = vi.fn().mockResolvedValue(found);
+    const load = vi.fn();
+    const deps = {
+      prisma: {
+        page: { findFirst },
+        pageVersion: { findUnique: vi.fn().mockResolvedValue(versionCode) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: "Ada", image: null }) },
+      },
+      secrets: { load },
+      webOrigin: "https://rakazo.test",
+    } as never;
+    return { deps, findFirst, load };
+  };
+
+  it("opens another member's page read-only, without their bot, chat, pin or link", async () => {
+    const { deps, findFirst, load } = readDeps(summary);
+    const detail = await getPage(deps, other, { pageId: "page-1", link: true });
+    expect(detail).toMatchObject({
+      id: "page-1",
+      visibility: "space",
+      mine: false,
+      botId: null,
+      groupId: null,
+      pinned: false,
+      shareUrl: null,
+      owner: { name: "Ada" },
+    });
+    expect(load).not.toHaveBeenCalled();
+    // The read is the caller's own page, or a shared one whose owner is still in the Space.
+    expect(findFirst.mock.calls[0]?.[0].where).toMatchObject({
+      id: "page-1",
+      spaceId: "space-1",
+      OR: [
+        { userId: "user-2" },
+        { visibility: { in: ["space", "link"] }, user: { members: expect.anything() } },
+      ],
+    });
+  });
+
+  it("shows another member only a page's current version", async () => {
+    const { deps } = readDeps(summary);
+    await expect(getPage(deps, other, { pageId: "page-1", version: 1 })).rejects.toThrow();
+    await expect(getPage(deps, other, { pageId: "page-1", version: 2 })).resolves.toMatchObject({
+      version: 2,
+    });
+  });
+
+  it("keeps a page no one may read as not found", async () => {
+    const { deps } = readDeps(null);
+    await expect(getPage(deps, other, { pageId: "page-1" })).rejects.toThrow();
+  });
+
+  it("lists the Space's shared pages newest first with their owners, never another member's pin", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { ...summary, user: { name: "Ada" } },
+      { ...summary, id: "page-2", userId: "user-2", pinnedAt: new Date(0), user: { name: "Bo" } },
+    ]);
+    const { items, nextCursor } = await listPages({ page: { findMany } } as never, other, {
+      scope: "space",
+    });
+    expect(nextCursor).toBeNull();
+    expect(items).toMatchObject([
+      { id: "page-1", mine: false, ownerName: "Ada", pinned: false },
+      { id: "page-2", mine: true, ownerName: null, pinned: true },
+    ]);
+    const query = findMany.mock.calls[0]?.[0];
+    expect(query.where).toMatchObject({
+      spaceId: "space-1",
+      visibility: { in: ["space", "link"] },
+    });
+    expect(query.where).not.toHaveProperty("userId");
+    expect(query.orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+  });
+
+  it("pages the Space list by update time without a pin in the cursor", async () => {
+    const rows = [1, 2, 3].map((n) => ({
+      ...summary,
+      id: `page-${n}`,
+      updatedAt: new Date(10_000 - n),
+      user: { name: "Ada" },
+    }));
+    const findMany = vi.fn().mockResolvedValue(rows);
+    const first = await listPages({ page: { findMany } } as never, other, {
+      scope: "space",
+      limit: 2,
+    });
+    expect(first.items.map((item) => item.id)).toEqual(["page-1", "page-2"]);
+    expect(first.nextCursor).not.toBeNull();
+    findMany.mockResolvedValue([]);
+    await listPages({ page: { findMany } } as never, other, {
+      scope: "space",
+      limit: 2,
+      cursor: first.nextCursor ?? undefined,
+    });
+    expect(findMany.mock.calls[1]?.[0].where.AND).toEqual([
+      {
+        OR: [
+          { updatedAt: { lt: new Date(10_000 - 2) } },
+          { updatedAt: new Date(10_000 - 2), id: { lt: "page-2" } },
+        ],
+      },
+    ]);
+  });
+
+  it("does not list the Space's pages by bot or chat", async () => {
+    const findMany = vi.fn();
+    const list = (input: { botId?: string; groupId?: string }) =>
+      listPages({ page: { findMany } } as never, other, { scope: "space", ...input });
+    await expect(list({ botId: "bot-1" })).rejects.toThrow("not listed by bot or group");
+    await expect(list({ groupId: "group-1" })).rejects.toThrow("not listed by bot or group");
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("ends a page's link when it is shared with the Space, and keeps it off the link", async () => {
+    const fake = fakeDeps();
+    const { shareUrl } = await share(fake.deps, "link");
+    expect(shareUrl).not.toBeNull();
+    expect(await share(fake.deps, "space")).toEqual({ visibility: "space", shareUrl: null });
+    expect(fake.page()).toMatchObject({ visibility: "space", shareSecretId: null });
+    expect(fake.secretIds()).toEqual([]);
+    expect(fake.store.delete).toHaveBeenCalledTimes(1);
   });
 });

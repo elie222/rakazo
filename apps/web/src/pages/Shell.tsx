@@ -81,6 +81,7 @@ import { ComputerPanel } from "./shell/computer-panel";
 import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/import-setup-card";
 import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
+import { SharedPages } from "./shell/shared-pages";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
@@ -1030,6 +1031,7 @@ function SpaceShell() {
         }
         archived={
           <>
+            <SharedPages showSpaceSearch={search.showSpaceSearch} />
             <SnoozedChats
               snoozed={sidebarSpaces.flatMap((space) => [
                 ...space.bots

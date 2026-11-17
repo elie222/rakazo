@@ -10,7 +10,7 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@rakazo/ui-web";
-import { ArrowUpRight, Check, Globe, Lock, Share } from "lucide-react";
+import { ArrowUpRight, Check, Globe, Lock, Share, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCopyText } from "../../lib/copy-text";
 
@@ -44,7 +44,7 @@ function OwnerImage({ initial, image }: { initial: string | null; image: string 
   );
 }
 
-/** Who can open a page: only its owner, or anyone holding the link. */
+/** Who can open a page: only its owner, the members of its Space, or anyone holding the link. */
 export function SharePopover({
   title,
   owner,
@@ -74,13 +74,21 @@ export function SharePopover({
   const shownOwner = accountDisplay(owner, t`You`);
   const [copied, copy, copyFailed] = useCopyText();
   const shared = visibility === "link";
+  // The link may be live when visibility is link, or unknown after a lost answer.
+  const linkMayBeLive = visibility === "link" || visibility === null;
   const options: { value: PageVisibility; title: string; detail?: string; icon: ReactNode }[] = [
     {
       value: "private",
       title: t`Only you`,
       // Said where the choice is made: turning the link off breaks it for everyone holding it.
-      detail: visibility === "private" ? undefined : t`The shared link stops working`,
+      detail: linkMayBeLive ? t`The shared link stops working` : undefined,
       icon: <Lock className="size-4 text-foreground/70!" strokeWidth={1.5} />,
+    },
+    {
+      value: "space",
+      title: t`Your Space`,
+      detail: linkMayBeLive ? t`The shared link stops working` : undefined,
+      icon: <Users className="size-4 text-foreground/70!" strokeWidth={1.5} />,
     },
     {
       value: "link",

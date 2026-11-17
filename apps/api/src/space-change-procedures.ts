@@ -10,6 +10,10 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   "routines.update": ["routines"],
   "routines.remove": ["routines"],
   "routines.testRun": ["runs"],
+  // What a page is shared with changes who can list and open it.
+  "pages.setVisibility": ["pages"],
+  "pages.rename": ["pages"],
+  "pages.remove": ["pages"],
   // These can queue a run.
   "threads.sendWithRoutines": ["runs"],
   "threads.react": ["runs"],

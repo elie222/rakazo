@@ -14,6 +14,7 @@ const detail = (id: string, title: string): PageDetail => ({
   pinned: false,
   createdAt: "2026-10-30T00:00:00.000Z",
   updatedAt: "2026-10-30T00:00:00.000Z",
+  mine: true,
   version: 1,
   code: "",
   owner: { name: "Elie", image: null },

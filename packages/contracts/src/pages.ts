@@ -20,7 +20,8 @@ export const PageSourceSchema = z
     `Page source must fit within ${PAGE_SOURCE_MAX_BYTES} UTF-8 bytes`,
   );
 
-export const PageVisibilitySchema = z.enum(["private", "link"]);
+/** `private` is the owner alone, `space` every member of the page's Space, `link` also anyone with the URL. */
+export const PageVisibilitySchema = z.enum(["private", "space", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 
 /**
@@ -45,6 +46,17 @@ export const PageSummarySchema = z.strictObject({
 });
 export type PageSummary = z.infer<typeof PageSummarySchema>;
 
+/**
+ * A listed page. `mine` and `ownerName` are missing from an older server, which lists only the
+ * caller's own pages; `ownerName` is set only for another member's page.
+ */
+export const PageListItemSchema = z.strictObject({
+  ...PageSummarySchema.shape,
+  mine: z.boolean().optional(),
+  ownerName: z.string().nullable().optional(),
+});
+export type PageListItem = z.infer<typeof PageListItemSchema>;
+
 export const PageDetailSchema = z.strictObject({
   ...PageSummarySchema.shape,
   /** The version shown; `currentVersion` is the newest. */
@@ -52,7 +64,12 @@ export const PageDetailSchema = z.strictObject({
   /** The version's source compiled for the viewer, which carries no compiler. */
   code: z.string(),
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
-  /** Set while anyone with the link can open the page. */
+  /**
+   * False for a page another member shared with the Space: read-only, current version only.
+   * Missing from an older server, which opens only the caller's own pages.
+   */
+  mine: z.boolean().optional(),
+  /** Set while anyone with the link can open the page; only ever for its owner. */
   shareUrl: z.string().nullable(),
 });
 export type PageDetail = z.infer<typeof PageDetailSchema>;
