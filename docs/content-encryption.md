@@ -20,9 +20,9 @@ Not yet encrypted, planned next: the quoted excerpts a reply keeps beside its
 message (`messages.replyQuote` and `messages.extraReplyQuotes`), external
 conversation messages, outbound messaging bodies, steering messages, ticket
 comments, agent skills, taught skill playbooks and recordings, and bot
-instruction history. Names and other
-metadata stay plaintext: bot, group, file and thread names, routine prompts,
-memory paths, timestamps, ids, block kinds and statuses.
+instruction history. Names and other metadata stay plaintext: bot, group, file
+and thread names, routine prompts, memory paths, timestamps, ids, block kinds
+and statuses.
 
 ## Turning it off
 
