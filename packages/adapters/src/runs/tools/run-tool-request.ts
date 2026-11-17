@@ -729,6 +729,53 @@ function uncheckedPress(why: UncheckedPress): { error: string } {
  */
 const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud", ...BOT_SETTING_ARGS];
 
+/** The settings that decide how every later run behaves; a change waits for the owner or Auto Review. */
+const HELD_RUN_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
+
+/**
+ * Own settings in a call that change how the bot runs; a value it already has changes nothing.
+ * Turning daily check-ins off never waits.
+ */
+function heldOwnSettings(
+  args: Record<string, unknown>,
+  current: { thinkingLevel: string | null; autoSpeak: boolean; dailyCheckIns: boolean } | null,
+): string[] {
+  const on = (value: unknown) => value === true || value === "true";
+  const held = HELD_RUN_SETTINGS.filter((key) => {
+    if (!argumentGiven(args[key])) return false;
+    if (key === "readAloud") return !current || on(args.readAloud) !== Boolean(current.autoSpeak);
+    if (key === "thinkingLevel")
+      return !current || String(args.thinkingLevel) !== (current.thinkingLevel ?? "");
+    return true;
+  });
+  if (on(args.dailyCheckIns) && !current?.dailyCheckIns) held.push("dailyCheckIns");
+  return held;
+}
+
+/** The approval card for a held settings change: each setting, from what to what. */
+function ownSettingsSummary(
+  args: Record<string, unknown>,
+  current: { thinkingLevel: string | null; autoSpeak: boolean } | null,
+  held: string[],
+): FleetCardSummary {
+  const onOff = (value: unknown) => (value === true || value === "true" ? "on" : "off");
+  const lines = held.map((key) => {
+    switch (key) {
+      case "model":
+        return `Model: ${String(args.model)}`;
+      case "thinkingLevel":
+        return `Thinking: ${String(args.thinkingLevel)} (now ${current?.thinkingLevel ?? "default"})`;
+      case "voice":
+        return `Voice: ${String(args.voice)}`;
+      case "readAloud":
+        return `Read replies aloud: ${onOff(args.readAloud)} (now ${onOff(current?.autoSpeak)})`;
+      default:
+        return "Daily check-ins: on";
+    }
+  });
+  return { title: "Change how this bot runs?", lines };
+}
+
 /**
  * Everything a bot may change on itself. Credentials, access, approvals and turning tools back
  * on stay in Settings.
@@ -784,10 +831,16 @@ async function prepareOwnBotUpdate(
   const { executionId, nextApprovedTool } = request;
   if (nextApprovedTool === "update_bot") {
     // The approved replay runs the stored request.
-    request.heldForApproval = typeof request.args.previousInstructions === "string";
+    request.heldForApproval =
+      typeof request.args.previousInstructions === "string" || request.args.heldSettings === true;
     return undefined;
   }
-  const { previousInstructions: _previous, reason: _reason, ...given } = request.args;
+  const {
+    previousInstructions: _previous,
+    reason: _reason,
+    heldSettings: _held,
+    ...given
+  } = request.args;
   const current = await ctx.deps.prisma.bot.findUnique({
     where: { id: run.botId },
     select: {
@@ -848,6 +901,22 @@ async function prepareOwnBotUpdate(
         "Only the owner can change your settings, from their own chat.",
       );
     request.settingsChange = true;
+  }
+  // How the bot runs is the owner's decision, like its instructions: the change waits for the
+  // owner or Auto Review, and an approved replay applies exactly the stored request.
+  const runSettings = heldOwnSettings(args, current);
+  if (runSettings.length && !unguarded) {
+    if (isSubagentToolExecution(executionId))
+      return refusal("helper_run_settings", "Helpers cannot change how the bot runs.");
+    if (argumentGiven(args.instructions))
+      return refusal(
+        "instructions_need_own_call",
+        "Change your instructions in their own update_bot call.",
+      );
+    request.args = { ...args, heldSettings: true };
+    request.heldForApproval = true;
+    request.fleetSummary = ownSettingsSummary(args, current, runSettings);
+    return undefined;
   }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId))
