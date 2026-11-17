@@ -378,11 +378,12 @@ export async function buildTurnPrompt(
     // A hang-up turn is read, not heard: no spoken-reply constraint.
     voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
     // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-    formatCurrentTimeInstruction(
+    // Tagged so it is never read as part of what the user asked for, such as text to save.
+    `<current_time>\n${formatCurrentTimeInstruction(
       deps.now?.() ?? new Date(),
       userTimeZone,
       previousMessageAt(historyMessages, currentTurnMessage?.id),
-    ),
+    )}\n</current_time>`,
     lateRoutineNote,
     sharedSpaceNote,
   ]
