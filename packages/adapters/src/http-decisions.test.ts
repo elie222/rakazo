@@ -190,7 +190,11 @@ describe("decision provider failures", () => {
       "reservation",
       expect.objectContaining({
         costUsd: null,
-        pricingSnapshot: { input: expect.any(Number) },
+        costSource: null,
+        pricingSnapshot: expect.objectContaining({
+          input: expect.any(Number),
+          source: expect.any(String),
+        }),
         countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 },
       }),
     );
@@ -237,5 +241,28 @@ describe("decision provider failures", () => {
       ).rejects.toMatchObject({ kind });
       expect(afterCall).toHaveBeenCalledWith("reservation", expect.objectContaining(usage));
     },
+  );
+});
+
+it("retains header request IDs and estimated pricing when a response is malformed", async () => {
+  const afterCall = vi.fn();
+  const onRequestId = vi.fn();
+  await expect(
+    new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        new Response("invalid-json", { headers: { "x-request-id": "request-fixture" } }),
+      callObserver: { beforeCall: () => "call", onRequestId, afterCall },
+    }).decide(request, context),
+  ).rejects.toMatchObject({ kind: "unavailable" });
+  expect(onRequestId).toHaveBeenCalledWith("call", "request-fixture");
+  expect(afterCall).toHaveBeenCalledWith(
+    "call",
+    expect.objectContaining({
+      providerRequestId: "request-fixture",
+      costSource: null,
+      pricingVersion: "decision-pricing-2026-11-17",
+      costUsd: null,
+    }),
   );
 });

@@ -53,7 +53,7 @@ To withdraw an offering, remove it and choose another approved default. To withd
 all offerings, keep the variable set to:
 
 ```json
-{"defaultOfferingId":null,"offerings":[]}
+{ "defaultOfferingId": null, "offerings": [] }
 ```
 
 Do not unset it to withdraw service: absence restores legacy deployment behavior.
@@ -107,3 +107,18 @@ markup, cache pricing policy, withdrawal schedule, purchase products, and custom
 terms. Vendor promotional credit expiry must control offering availability, not
 customer balance expiry or customer prices. No initial commercial policy is implied
 by the example.
+
+## Integration with included services
+
+Included deployment decision checks use an explicit operator-funded resolution path. The approved
+customer catalog neither grants access to those credentials nor restricts the configured included
+checker; its observer records operator expenses rather than purchased-credit charges. An explicitly
+selected credit-funded member checker retains its approved offering and customer tariff. Personal
+checker connections retain their own credentials. These funding sources cannot be combined.
+
+The decision transport settles durable receipts before publishing priced customer usage, while
+unknown provider costs remain unknown. Only the operator expense observer records inferred
+checker estimates. Speech uses its own deployment connection and allowance accounting.
+
+Apply the approval usage and speech migrations before the credit-offering migration. Enable the
+catalog only after all API and worker processes enforce the new funding contract.

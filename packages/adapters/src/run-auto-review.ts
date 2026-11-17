@@ -1,14 +1,19 @@
 import type { AgentRuntimeEvent, AutoReviewProvider } from "@rakazo/adapter-kit";
 import { recordUsage } from "@rakazo/db";
 import type { AutoReviewChecker } from "./auto-review.js";
-import { autoReviewTimeoutMs, resolveAutoReviewProviderKind } from "./auto-review.js";
+import {
+  autoReviewTimeoutMs,
+  isAutoReviewCheckerConfigured,
+  resolveAutoReviewProviderKind,
+} from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
-import { resolveModelKey } from "./run-model.js";
+import { operatorReviewObserver } from "./operator-review-usage.js";
+import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
@@ -24,23 +29,56 @@ export async function autoReviewCheckerProvider(
   const { runId, spaceId, userId, botId, threadId } = scope;
   const { injectedReview, memberChecker, backups, registerSecrets } = options;
   if (injectedReview) return injectedReview;
+  const deploymentChoice =
+    !memberChecker &&
+    !checker.credentialId &&
+    !checker.creditOfferingId &&
+    !backups?.some(
+      (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
+    );
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
       : resolveAutoReviewProviderKind();
+  // Only the included decision checker uses operator auth without a personal connection.
+  const included =
+    deploymentChoice &&
+    Boolean(decisionModel(checker.provider, checker.model)) &&
+    isAutoReviewCheckerConfigured({ checker }) &&
+    !process.env.RAKAZO_AUTO_REVIEW_PROVIDER?.trim() &&
+    !process.env.RAKAZO_AUTO_REVIEW_MODEL?.trim() &&
+    (await modelCreditBillingEnabled(deps));
+  const reviewCredential =
+    checker.creditOfferingId || included || kind === "jev" || kind === "scripted"
+      ? null
+      : await findConnectedModelCredential(
+          deps.prisma,
+          deps.secretStore,
+          { userId, spaceId },
+          checker.provider,
+          checker.model,
+          { credentialId: checker.credentialId },
+        );
+  const operatorFunded =
+    deploymentChoice &&
+    !reviewCredential &&
+    (Boolean(decisionModel(checker.provider, checker.model)) ||
+      kind === "jev" ||
+      kind === "scripted");
+  const operatorObserver = operatorFunded
+    ? operatorReviewObserver(deps.prisma, {
+        spaceId,
+        userId,
+        botId,
+        runId,
+        parentRunId: runId,
+        operationId: `auto-review:${runId}`,
+        operationKind: "setup",
+      })
+    : undefined;
   if (kind === "jev" || kind === "scripted") {
-    return createAutoReviewProvider(kind);
+    return createAutoReviewProvider(kind, { callObserver: operatorObserver });
   }
-  const reviewCredential = checker.creditOfferingId
-    ? null
-    : await findConnectedModelCredential(
-        deps.prisma,
-        deps.secretStore,
-        { userId, spaceId },
-        checker.provider,
-        checker.model,
-        { credentialId: checker.credentialId },
-      );
   if (
     (memberChecker ||
       checker.credentialId ||
@@ -64,8 +102,10 @@ export async function autoReviewCheckerProvider(
     {
       creditOfferingId: checker.creditOfferingId,
       requireStoredSecret: Boolean(checker.credentialId),
+      operatorFunded,
     },
   );
+  const callObserver = operatorObserver ?? judgeKey.callObserver;
   const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
     recordUsage(deps.prisma, event, {
       spaceId,
@@ -75,13 +115,14 @@ export async function autoReviewCheckerProvider(
       runId,
       operationId: `auto-review:${runId}`,
       operationKind: "setup",
+      fundingSource: operatorFunded ? "operator" : "customer",
     });
   return decisionModel(checker.provider, checker.model)
     ? new DecisionAutoReviewProvider({
         provider: new HttpDecisionProvider("openrouter", {
           apiKey: judgeKey.apiKey ?? "",
-          callObserver: judgeKey.callObserver,
-          onUsage,
+          callObserver,
+          onUsage: operatorFunded ? undefined : onUsage,
         }),
         providerId: checker.provider,
         model: checker.model,
@@ -92,7 +133,7 @@ export async function autoReviewCheckerProvider(
           runtime: deps.runtime,
           checker,
           apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
-          callObserver: judgeKey.callObserver,
+          callObserver,
           accountId: judgeKey.accountId,
           gatewayId: judgeKey.gatewayId,
           projectId: judgeKey.projectId,

@@ -159,7 +159,10 @@ export async function modelCreditBillingEnabled(
 
 export async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
   const [deps, userId, spaceId, , provider] = args;
-  const billingEnabled = await modelCreditBillingEnabled(deps);
+  const operatorFunded = args[7]?.operatorFunded === true;
+  if (operatorFunded && (args[3] || args[7]?.creditOfferingId || args[7]?.requireStoredSecret))
+    throw new UnavailableModelForAuthError("Conflicting model funding sources");
+  const billingEnabled = !operatorFunded && (await modelCreditBillingEnabled(deps));
   const scope = { userId, spaceId };
   if (
     modelCreditOfferings() &&
@@ -205,7 +208,9 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
   const fundingOfferingId =
     creditOfferingId ??
-    (!credential ? approvedModelCreditOffering(provider, args[5])?.id : undefined);
+    (!operatorFunded && !credential
+      ? approvedModelCreditOffering(provider, args[5])?.id
+      : undefined);
   return {
     ...material,
     apiKey: material.apiKey ?? runtimeKey,
@@ -230,7 +235,8 @@ async function resolveModelKeyMaterial(
   registerSecrets?: (values: string[]) => void,
   {
     requireStoredSecret = false,
-  }: { requireStoredSecret?: boolean; creditOfferingId?: string } = {},
+    operatorFunded = false,
+  }: { requireStoredSecret?: boolean; creditOfferingId?: string; operatorFunded?: boolean } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -391,7 +397,7 @@ async function resolveModelKeyMaterial(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  if (modelCreditOfferings()) {
+  if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
     const material = await approvedModelCreditMaterial(

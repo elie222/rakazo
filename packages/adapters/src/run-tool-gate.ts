@@ -333,7 +333,7 @@ export async function gateToolCall(
       memberChecker ||
       Boolean(reviewSettings?.backups.length) ||
       (checker
-        ? isAutoReviewCheckerConfigured({}) ||
+        ? isAutoReviewCheckerConfigured({ checker }) ||
           Boolean(
             await findConnectedModelCredential(
               deps.prisma,

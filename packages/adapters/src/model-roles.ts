@@ -20,6 +20,7 @@ export type DeploymentModelDefaults = {
   /** The environment's model, when the deployment can run it. */
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
+  includedApproval?: boolean;
 };
 
 /** What runs for a purpose without a member's choice, in the same shape as one. */
@@ -28,7 +29,7 @@ export function deploymentModelRole(
   defaults: DeploymentModelDefaults,
 ): ModelRoleSettings {
   if (role === "approval") {
-    const checker = resolveAutoReviewChecker(defaults.env);
+    const checker = resolveAutoReviewChecker(defaults.env, defaults.includedApproval);
     return {
       primary: checker ? { provider: checker.provider, modelId: checker.model } : null,
       backups: [],

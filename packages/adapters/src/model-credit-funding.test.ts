@@ -79,6 +79,41 @@ describe("explicit model credit funding", () => {
     expect(load).toHaveBeenCalledTimes(1);
     expect(load).toHaveBeenCalledWith("operator-secret", "operator-secret");
   });
+  it("keeps included operator checks outside the purchased-credit allowlist", async () => {
+    const { deps, load, findUnique } = setup();
+    vi.stubEnv("OPENROUTER_API_KEY", "fake-included-checker-key");
+    const result = await resolveModelKey(
+      deps,
+      scope.userId,
+      scope.spaceId,
+      null,
+      "openrouter",
+      "typesafe/jev-1.14",
+      undefined,
+      { operatorFunded: true },
+    );
+    expect(result.apiKey).toBe("fake-included-checker-key");
+    expect(result.callObserver).toBeUndefined();
+    expect(result.connectionId).toBeUndefined();
+    expect(load).not.toHaveBeenCalled();
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+  it("rejects a caller mixing operator expense and credit-funded selection", async () => {
+    const { deps, load } = setup();
+    await expect(
+      resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        offering.provider,
+        offering.modelId,
+        undefined,
+        { operatorFunded: true, creditOfferingId: offering.id },
+      ),
+    ).rejects.toThrow("Conflicting model funding");
+    expect(load).not.toHaveBeenCalled();
+  });
   it("never meters a personal call to the same provider/model", async () => {
     const { deps, personal, findUnique } = setup();
     const result = await resolveModelKey(

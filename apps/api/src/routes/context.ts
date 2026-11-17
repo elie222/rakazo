@@ -261,9 +261,15 @@ export function createRouterContext(deps: RouterDeps) {
               ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
               : null,
           }
-        : { env: process.env };
+        : { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true };
     let deploymentPrimary = deploymentModelRole(role, defaults).primary;
-    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+    if (
+      role === "approval" &&
+      deploymentPrimary &&
+      !isAutoReviewCheckerConfigured({
+        checker: { provider: deploymentPrimary.provider, model: deploymentPrimary.modelId },
+      })
+    ) {
       try {
         const ready = await hasReadyModelCredential(
           deps.prisma,

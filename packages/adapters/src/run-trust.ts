@@ -21,6 +21,7 @@ import type { EffectiveModelRole } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import { CATALOG_APPROVAL_TOOL, PASSED_EFFECT_STATUSES } from "./run-effects.js";
+import { modelCreditBillingEnabled } from "./run-model.js";
 import { loadRunOrigin } from "./run-origin.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "./run-tool-selection.js";
 
@@ -97,11 +98,10 @@ export function createRunTrustLoaders(
   };
   let approvalModelPromise: Promise<EffectiveModelRole> | undefined;
   const loadApprovalModel = () =>
-    (approvalModelPromise ??= effectiveModelRole(
-      deps.prisma,
-      { userId: run.userId, spaceId: run.spaceId },
-      "approval",
-      {},
+    (approvalModelPromise ??= modelCreditBillingEnabled(deps).then((includedApproval) =>
+      effectiveModelRole(deps.prisma, { userId: run.userId, spaceId: run.spaceId }, "approval", {
+        includedApproval,
+      }),
     ));
   let autoReviewPreferencePromise:
     | Promise<{ enabled: boolean; skipApprovals: boolean }>
