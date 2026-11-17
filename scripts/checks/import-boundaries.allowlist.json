@@ -1,12 +1,20 @@
 {
-  "app": ["packages/testkit/src/pi-image-file.postgres.test.ts -> ../../../apps/api/src/app.ts"],
+  "app": [
+    "packages/testkit/src/pi-image-file.postgres.test.ts -> ../../../apps/api/src/app.ts"
+  ],
   "relative": [
+    ".github/builds/desktop-release.cjs -> ../../apps/desktop/package.json",
+    ".github/builds/desktop.cjs -> ../../apps/desktop/package.json",
+    ".github/builds/preview-config.test.mjs -> ../../apps/desktop/package.json",
     "apps/api/src/account-deletion.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
     "apps/api/src/board-app.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/computer-provider-config.test.ts -> ../../../packages/adapters/src/providers/computer/fake/fake-computer-settings.test-support.js",
+    "apps/api/src/connected-app-tools.test.ts -> ../../../packages/adapters/src/connector-registry.js",
+    "apps/api/src/connected-app-tools.test.ts -> ../../../packages/adapters/src/creative.test-support.js",
     "apps/api/src/desktop-host-choice.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/health.test.ts -> ../../../packages/adapters/src/secret-store-fake.js",
     "apps/api/src/home-retention.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
+    "apps/api/src/model-account.postgres.test.ts -> ../../../packages/adapters/src/run-model.js",
     "apps/api/src/organizations.postgres.test.ts -> ../../../packages/adapters/src/object-storage.test-support.js",
     "apps/api/src/request-auth-queries.postgres.test.ts -> ../../../packages/testkit/src/index.js",
     "apps/api/src/router-test-support.ts -> ../../../packages/adapters/src/testing/model-roles.js",
@@ -56,6 +64,8 @@
     "packages/testkit/src/history-compaction-pi.test.ts -> ../../adapters/src/history-compaction.js",
     "packages/testkit/src/history-context.test.ts -> ../../adapters/src/context-selection.js",
     "packages/testkit/src/mobile-screenshots-env.test.ts -> ../../db/prisma.config.js",
+    "packages/testkit/src/native-execution.postgres.test.ts -> ../../native-runtime/src/protocol.test-support.js",
+    "packages/testkit/src/native-execution.postgres.test.ts -> ../../native-runtime/src/service.js",
     "packages/testkit/src/parallel-web.test.ts -> ../../adapters/src/computer-lifecycle.js",
     "packages/testkit/src/parallel-web.test.ts -> ../../adapters/src/pi-runtime-models.js",
     "packages/testkit/src/parallel-web.test.ts -> ../../adapters/src/providers/web/parallel/parallel-web.test-support.js",

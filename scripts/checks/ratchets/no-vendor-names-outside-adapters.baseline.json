@@ -1,5 +1,6 @@
 {
   "apps/api/src/billing.ts": 1,
+  "apps/api/src/model-account-setup.ts": 4,
   "apps/desktop/src/main/renderer-assets.ts": 3,
   "apps/web/server/preview-middleware.ts": 3,
   "apps/web/server/screen-proxy.ts": 1,

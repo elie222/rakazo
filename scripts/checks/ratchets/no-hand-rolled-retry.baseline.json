@@ -15,6 +15,7 @@
   "packages/adapters/src/media-generation-provider.ts": 1,
   "packages/adapters/src/messaging-delivery.ts": 1,
   "packages/adapters/src/model-credential-refresh.ts": 1,
+  "packages/adapters/src/native-harness/host-process-macos.ts": 1,
   "packages/adapters/src/pi-oauth.ts": 1,
   "packages/adapters/src/providers/billing/stripe/stripe-billing.ts": 1,
   "packages/adapters/src/providers/computer/createos/createos-sandbox.ts": 2,

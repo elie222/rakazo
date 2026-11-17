@@ -1,5 +1,6 @@
 {
   "infra/sandboxes/supervisor/src/readiness.ts": 1,
+  "packages/adapters/src/native-harness/host-process.ts": 1,
   "packages/adapters/src/providers/computer/boat/boat-sandbox.ts": 2,
   "packages/adapters/src/providers/computer/boxd/boxd-sandbox.ts": 2,
   "packages/adapters/src/providers/computer/daytona/daytona-sandbox.ts": 1,

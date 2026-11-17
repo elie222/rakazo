@@ -12,7 +12,6 @@
   "packages/adapters/src/pi-anthropic-oauth.test.ts": 1,
   "packages/adapters/src/pi-codex-catalog.test.ts": 1,
   "packages/adapters/src/pi-oauth.postgres.test.ts": 1,
-  "packages/adapters/src/providers/integration/pipedream/pipedream-connector.test.ts": 1,
   "packages/adapters/src/run-turn-stop.test.ts": 1,
   "packages/adapters/src/sandbox-conformance.test.ts": 2,
   "packages/adapters/src/web-ssrf.test.ts": 4

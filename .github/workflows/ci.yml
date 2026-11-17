@@ -222,7 +222,7 @@ jobs:
           WHOLE: ${{ steps.unit.outputs.whole }}
           SHARD: ${{ matrix.shard }}
         run: |
-          if [[ "$WHOLE" == true ]]; then pnpm run test; else pnpm run test --shard="$SHARD/4"; fi
+          if [[ "$WHOLE" == true ]]; then pnpm run test; else pnpm run test --shard="$SHARD/6"; fi
       - name: Unit tests for affected packages
         if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages == 'false'
         env:
@@ -246,7 +246,7 @@ jobs:
             (( ${{ matrix.shard }} == 1 )) || exit 0
             pnpm exec vitest run "${targets[@]}"
           else
-            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/4
+            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/6
           fi
 
   # The required check and the deploy gate, under one stable name.
@@ -337,7 +337,7 @@ jobs:
       - name: Wait for Postgres
         if: steps.areas.outputs.server != 'false'
         run: bash .github/actions/start-postgres/wait.sh
-      - run: pnpm test:integration --shard=${{ matrix.shard }}/4
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/6
         if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.

@@ -8,6 +8,7 @@
   "apps/mobile/lib/foreground-poll.ts": 1,
   "apps/mobile/lib/thread-list-scroll.ts": 1,
   "apps/mobile/lib/thread-sync.ts": 2,
+  "apps/web/src/components/ModelAccount.tsx": 2,
   "apps/web/src/components/call/IncomingCall.tsx": 1,
   "apps/web/src/components/teach/TeachCaptureOverlay.tsx": 7,
   "apps/web/src/lib/preload-recovery.ts": 1,
