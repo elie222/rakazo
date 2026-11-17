@@ -90,6 +90,25 @@ describe("managed voice profiles", () => {
     );
   });
 
+  it("rejects a model that cannot be sent as a provider model id", async () => {
+    const directory = await root();
+    await save(directory, {
+      version: 1,
+      profiles: [
+        {
+          botId: BOT_ID,
+          voiceId: "test::voice-1",
+          voiceLabel: "Test voice",
+          model: "bad model",
+        },
+      ],
+    });
+
+    await expect(loadManagedVoiceProfiles(directory)).rejects.toThrow(
+      "managed-voice-profiles.json",
+    );
+  });
+
   it("reports invalid JSON with the private file name", async () => {
     const directory = await root();
     await writeFile(join(directory, "managed-voice-profiles.json"), "{");

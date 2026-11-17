@@ -273,8 +273,9 @@ export function stripFishAsrTags(text: string): string {
 /** Connection override, then `FISH_TTS_MODEL`, then s2.1-pro. */
 function resolveFishSpeechModel(override?: string | null): string {
   const requested = override?.trim() ?? "";
-  if (requested && isSpeechModelId(requested)) return requested;
-  return deploymentFishSpeechModel();
+  if (!requested) return deploymentFishSpeechModel();
+  if (!isSpeechModelId(requested)) throw new Error("Invalid speech model id");
+  return requested;
 }
 
 /** `FISH_TTS_MODEL` when it is a single model id; otherwise s2.1-pro. */

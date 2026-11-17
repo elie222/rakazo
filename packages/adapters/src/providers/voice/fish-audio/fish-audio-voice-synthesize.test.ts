@@ -75,4 +75,22 @@ describe("Fish Audio speech", () => {
       expect(fetch).not.toHaveBeenCalled();
     },
   );
+
+  it("rejects an invalid managed speech model instead of silently using the deployment default", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      new FishAudioVoiceProvider().synthesize(
+        {
+          text: "Hello.",
+          voiceId: "managed-reference",
+          apiKey: "test-key",
+          model: "bad model",
+        },
+        context,
+      ),
+    ).rejects.toThrow("speech model");
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

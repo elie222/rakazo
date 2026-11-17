@@ -1448,7 +1448,11 @@ export const ManagedVoiceProfileSchema = z
       .max(240)
       .regex(/^[a-z][a-z0-9-]*::\S+$/),
     voiceLabel: z.string().trim().min(1).max(200),
-    model: z.string().trim().min(1).max(200).optional(),
+    model: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)
+      .optional(),
     settings: z.record(z.string(), z.json()).optional(),
   })
   .strict();
