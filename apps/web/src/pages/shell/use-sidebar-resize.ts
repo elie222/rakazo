@@ -39,7 +39,7 @@ export function useSidebarResize({
     initialCollapsed: boolean;
     mini: boolean;
   } | null>(null);
-  const expandedWidth = Math.max(BOTS_SIDEBAR_MIN_WIDTH, Math.min(maxWidth, preferredWidth));
+  const expandedWidth = clampBotsSidebarWidth(preferredWidth, maxWidth);
   const width =
     dragWidth !== null
       ? Math.min(maxWidth, dragWidth)
@@ -60,7 +60,7 @@ export function useSidebarResize({
       onCollapsedChange(true);
       return;
     }
-    const expanded = clampBotsSidebarWidth(next, window.innerWidth);
+    const expanded = clampBotsSidebarWidth(next, maxWidth);
     setPreferredWidth(expanded);
     writeBotsSidebarWidth(userId, expanded);
     onCollapsedChange(false);
@@ -85,7 +85,7 @@ export function useSidebarResize({
       current.mini = mini;
       onPreviewCollapsedChange(mini);
     }
-    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, window.innerWidth);
+    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, maxWidth);
   }
 
   function cancelPreview() {

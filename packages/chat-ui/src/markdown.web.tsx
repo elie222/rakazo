@@ -763,17 +763,27 @@ function renderMarkdown(source: string) {
 }
 
 // Parsing is most of the cost of drawing a message, and opening a chat again draws every message
-// again. The output depends only on the source, so finished text is parsed once.
+// again. The output depends only on the source, so finished text is parsed once. The cache is
+// bounded by total text, and long documents are not kept.
 const renderedSources = new Map<string, ReactElement>();
-const RENDERED_SOURCE_LIMIT = 1_000;
+const RENDERED_TEXT_LIMIT = 2_000_000;
+const CACHED_SOURCE_LIMIT = 50_000;
+let renderedTextLength = 0;
 
 function renderFinishedMarkdown(source: string) {
+  if (source.length > CACHED_SOURCE_LIMIT) return renderMarkdown(source);
   let rendered = renderedSources.get(source);
-  if (rendered) renderedSources.delete(source);
-  else rendered = renderMarkdown(source);
+  if (rendered) {
+    renderedSources.delete(source);
+  } else {
+    rendered = renderMarkdown(source);
+    renderedTextLength += source.length;
+  }
   renderedSources.set(source, rendered);
-  if (renderedSources.size > RENDERED_SOURCE_LIMIT) {
-    renderedSources.delete(renderedSources.keys().next().value as string);
+  for (const oldest of renderedSources.keys()) {
+    if (renderedTextLength <= RENDERED_TEXT_LIMIT) break;
+    renderedSources.delete(oldest);
+    renderedTextLength -= oldest.length;
   }
   return rendered;
 }
