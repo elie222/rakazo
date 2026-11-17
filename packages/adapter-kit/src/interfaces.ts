@@ -16,6 +16,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
   BrowserActRequest,
@@ -85,6 +86,7 @@ import type {
   StreamedPortableFile,
   TerminalRequest,
   TransactionalEmail,
+  UnreferencedMachine,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -259,6 +261,23 @@ export interface SandboxProvider {
     options?: { discardUnsaved?: boolean },
   ): Promise<void>;
   destroy(computer: ComputerRef, context: AdapterContext): Promise<void>;
+  /**
+   * Deletes a machine no stored computer points at, from its id alone. Resolves once it is gone,
+   * which includes never having existed; rejects when the provider could not be asked.
+   */
+  deleteMachine?(machine: UnreferencedMachine, signal: AbortSignal): Promise<void>;
+}
+
+/**
+ * Where a provider records the machines no stored computer points at, so that one it could not
+ * delete, or one left by a process that died, is deleted later. Supplied where providers are
+ * built; a provider built without it only deletes and logs.
+ */
+export interface UnreferencedMachineRecords {
+  /** Records the machine, or moves its record: it is deleted at `deleteAt` unless a computer stores it first. */
+  record(machine: UnreferencedMachine, deleteAt: Date): Promise<void>;
+  /** Drops the record of a machine that is gone. */
+  clear(machine: UnreferencedMachine): Promise<void>;
 }
 
 export interface ConnectorProvider {
@@ -293,6 +312,8 @@ export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
+  /** The actions one app offers, to show people what connecting it gives bots. */
+  listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
   /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
   needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;
@@ -300,7 +321,12 @@ export interface ManagedConnectorProvider
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
   warmDirectory?(): Promise<void>;
-  /** Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids. */
+  /**
+   * Map a begin() state or stored ref to the concrete remote account id, skipping excluded ids.
+   * A connector without `cancelAuthorizationRequest` must reject here when the provider could
+   * not be asked: connection cleanup removes an authorization through this lookup then, and
+   * reads undefined as nothing left to remove.
+   */
   resolveConnectedAccountId?(
     userId: string,
     slug: string,
@@ -393,8 +419,19 @@ export interface ModelProvider {
   listModels(): Promise<Array<{ provider: string; id: string; label: string; billing: string }>>;
 }
 
+/** An open database transaction a job can be written in, so the job exists only if it commits. */
+export interface JobTransaction {
+  $executeRawUnsafe(query: string, ...values: unknown[]): PromiseLike<unknown>;
+}
+
 export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
+  /** Adds the job, or replaces the one with its key, as part of the caller's transaction. */
+  enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void>;
+  /** `enqueueIn` for many jobs in one statement; a key given twice keeps its last job. */
+  enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void>;
+  /** Removes the keyed job as part of the caller's transaction. */
+  cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -418,6 +455,7 @@ export interface AgentHomeStore {
     context: AdapterContext,
     options?: { directory?: string; skipHidden?: boolean },
   ): AsyncIterable<PortableFile>;
+  /** Throws `SandboxFileTooLargeError` for a file over `maxBytes`. */
   readFile(
     botId: string,
     path: string,
@@ -487,6 +525,8 @@ export interface SecretStore {
   load(ref: string, context: SecretContext): Promise<string>;
   /** Inline encrypted refs have no remote resource; removal is owned by persistence. */
   delete(ref: string, context: SecretContext): Promise<void>;
+  /** Whether the ref names a remote resource, which stays until `delete` removes it. */
+  isRemote(ref: string): boolean;
   redact(value: string): string;
   onChange(listener: SecretChangeListener): () => void;
   start(): Promise<void>;
@@ -531,6 +571,11 @@ export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
   createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
+  /**
+   * Paid own-key plan invoices created since `since`, the payments a referring partner earns on.
+   * Credits never count.
+   */
+  listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
@@ -567,8 +612,16 @@ export interface BillingProvider {
   /** Sets seats on the customer's subscription; a no-op when none can still take updates. */
   updateSeats(customerId: string, seats: number): Promise<void>;
   cancelCustomerSubscriptions(customerId: string): Promise<void>;
-  /** Verifies the signature. `null` means the request is not authentic. */
-  parseWebhook(rawBody: string, headers: Headers): { customerId: string } | "ignored" | null;
+  /**
+   * Verifies the signature. `null` means the request is not authentic. An event about a payment
+   * rather than a customer, such as a dispute, names the payment for `customerForPayment`.
+   */
+  parseWebhook(
+    rawBody: string,
+    headers: Headers,
+  ): { customerId: string } | { paymentId: string } | "ignored" | null;
+  /** The customer a payment named by `parseWebhook` belongs to, or null when it has none. */
+  customerForPayment(paymentId: string): Promise<string | null>;
 }
 
 export interface ExecutionRunner {
@@ -633,6 +686,11 @@ export interface MessagingSurface {
    * webhook URL is reachable) otherwise never start until a webhook or send touches them.
    */
   initialize?(): Promise<void>;
+  /**
+   * Stop pulling inbound updates so a replacement process can claim them, while sends keep
+   * working. No-op for surfaces that only receive webhooks.
+   */
+  stopReceiving?(): Promise<void>;
   /**
    * Release long-lived inbound resources (Telegram getUpdates polling) so a
    * replacement process can claim them. No-op when the surface never started.

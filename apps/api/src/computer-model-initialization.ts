@@ -61,7 +61,11 @@ export function mountComputerModelInitialization(
     if (!grant) throw new HTTPException(401, { message: "invalid_grant" });
     if (await accountDeactivated(deps.prisma, grant.userId))
       throw new HTTPException(403, { message: "authorization_required" });
-    const owner = await requireMembership(deps.prisma, grant.userId, grant.spaceId);
+    const grantUser = await deps.prisma.user.findUniqueOrThrow({
+      where: { id: grant.userId },
+      select: { id: true, email: true },
+    });
+    const owner = await requireMembership(deps.prisma, grantUser, grant.spaceId);
     const scope = { userId: grant.userId, spaceId: grant.spaceId, homeKey: grant.homeKey };
     const computer = await deps.prisma.computer.findFirst({
       where: {
@@ -135,7 +139,7 @@ export function mountComputerModelInitialization(
     const current = await deps.identity(owner.userId);
     if (current.accountId !== identity.accountId || current.binding !== identity.binding)
       throw new HTTPException(401, { message: "authorization_required" });
-    await requireMembership(deps.prisma, grant.userId, grant.spaceId);
+    await requireMembership(deps.prisma, { id: owner.userId, email: owner.email }, grant.spaceId);
     if (
       (await accountDeactivated(deps.prisma, grant.userId)) ||
       !(await deps.prisma.computer.findFirst({

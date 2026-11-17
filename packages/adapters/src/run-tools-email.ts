@@ -5,7 +5,12 @@ import {
   BotEmailRecipientSchema,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
-import { claimBotEmailName, contentEncryptionOf, reserveBotEmailSend } from "@rakazo/db";
+import {
+  claimBotEmailName,
+  contentEncryptionOf,
+  reserveBotEmailSend,
+  storedEmailAttachments,
+} from "@rakazo/db";
 import { z } from "zod";
 import { redactConnectorPayload } from "./connector-safety.js";
 import type { RunContext } from "./run-context.js";
@@ -46,8 +51,6 @@ const DeleteEmailSchema = z
 function sender(email: { fromName: string; fromAddress: string }): string {
   return email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress;
 }
-
-type SavedFile = { name: string; artifactId?: string; mimeType?: string; size?: number };
 
 /**
  * Plaintext mail matches the query inside any field. Encrypted mail matches on blind-index
@@ -90,7 +93,7 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
     // Masked whole before paging, so a secret split across two pages is still caught.
     const body = redactSecrets(email.text, ctx.secrets);
     const text = body.slice(offset, offset + TEXT_PAGE_CHARS);
-    const files = email.attachments as SavedFile[];
+    const files = storedEmailAttachments(email);
     const kept = files.flatMap((file) =>
       file.artifactId && file.mimeType
         ? [
@@ -214,8 +217,8 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
       .slice(0, PREVIEW_CHARS)
       .replace(/\s+/g, " ")
       .trim(),
-    ...((email.attachments as SavedFile[]).length
-      ? { files: (email.attachments as SavedFile[]).length }
+    ...(storedEmailAttachments(email).length
+      ? { files: storedEmailAttachments(email).length }
       : {}),
   }));
   return call.finish({

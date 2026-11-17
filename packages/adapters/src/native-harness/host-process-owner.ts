@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import type { NativeProcessTree } from "../desktop-process-tree.js";
+import type { NativeProcessTree } from "../providers/computer/desktop/desktop-process-tree.js";
 import type { HostProcessMarker } from "./host-process-macos.js";
 import { macosHostOwnershipAvailable, spawnMacosHostCommand } from "./host-process-macos.js";
 import { spawnWindowsHostCommand } from "./host-process-windows.js";

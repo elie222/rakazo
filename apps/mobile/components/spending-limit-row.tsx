@@ -1,31 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpendingStatus } from "@rakazo/contracts";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
-import { rpc } from "../lib/api";
 import { useUiLocale } from "../lib/i18n";
+import { accountRpcQuery } from "../lib/query";
+import { useScreenQuery } from "../lib/screen-query";
 import { spendingLimitSummary } from "../lib/spending-limit";
 import { SettingsRow } from "./settings-group";
 
 /** The spending limit and what counts against it, read again each time the screen is shown. */
 export function useSpendingStatus(): SpendingStatus | null {
-  const [status, setStatus] = useState<SpendingStatus | null>(null);
-  useFocusEffect(
-    useCallback(() => {
-      let current = true;
-      // A failed read leaves the row out; the setting is not needed to use the app.
-      void rpc("spendingLimit/get")
-        .then((next) => {
-          if (current) setStatus(next);
-        })
-        .catch(() => undefined);
-      return () => {
-        current = false;
-      };
-    }, []),
-  );
-  return status;
+  // A failed read leaves the row out; the setting is not needed to use the app.
+  return useScreenQuery(accountRpcQuery("spendingLimit/get")).data ?? null;
 }
 
 /** The spending limit in account settings. Render it only once `status.shown`. */

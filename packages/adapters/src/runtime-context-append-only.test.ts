@@ -321,6 +321,16 @@ describe("append-only run transcript", () => {
     expect(first).toBeDefined();
     const rebuilt = sent[first!]!;
     expect(staleThinking(rebuilt)).toEqual([]);
+    // History and the two short steps stay byte-for-byte stable. Keeping larger recent
+    // results must not evict that prefix and invalidate all of its signed thinking.
+    const previous = sent[first! - 1]!;
+    const firstLargeResult = previous.messages.findIndex(
+      (message) => message.role === "toolResult" && message.toolCallId === "call-2",
+    );
+    expect(firstLargeResult).toBeGreaterThan(0);
+    expect(rebuilt.messages.slice(0, firstLargeResult)).toEqual(
+      previous.messages.slice(0, firstLargeResult),
+    );
     // The two short results were not rewritten, so the thinking before them survives.
     const kept = rebuilt.messages.filter(
       (message) =>

@@ -8,7 +8,6 @@ import {
   formatFileSize,
   isApprovalAskBlock,
   isQuestionAskBlock,
-  memberName,
   messagingProviderLabel,
   resolveAskChoice,
   selectedAskActionLabel,
@@ -34,7 +33,7 @@ import { messagePresentationSegments } from "../../lib/message-presentation";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
 import { blockText } from "../../lib/mobile-types";
 import { useResolvedAppearance } from "../../lib/native";
-import { speakerColorFor } from "../../lib/thread-message-text";
+import { botDisplayName, speakerColorFor } from "../../lib/thread-message-text";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
 import { errorText } from "../../lib/user-error";
@@ -91,8 +90,11 @@ export const MessageBubble = memo(function MessageBubble({
 }) {
   const { members, onOpenBot } = props;
   const userMentions = useMemo(
-    () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
-    [members, onOpenBot],
+    () =>
+      members?.length
+        ? { targets: userMentionTargets(members, blockText(props.message)), onOpenBot }
+        : undefined,
+    [members, onOpenBot, props.message],
   );
   const body = (
     <MarkdownLongPressContext.Provider value={props.actionProps.onLongPress}>
@@ -321,8 +323,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const handoff = message.blocks.find((block) => block.kind === "handoff");
   if (handoff) {
-    const from = memberName(members, handoff.fromBotId) ?? t`bot`;
-    const to = memberName(members, handoff.toBotId) ?? t`bot`;
+    const from = botDisplayName(members, bots, handoff.fromBotId) ?? t`bot`;
+    const to = botDisplayName(members, bots, handoff.toBotId) ?? t`bot`;
     return (
       <AgentEventLabel
         actionProps={actionProps}
@@ -568,7 +570,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     .join("\n");
   if (attachments.length > 0) {
     const speaker =
-      message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
+      message.role === "bot"
+        ? (botDisplayName(members, bots, message.botId) ?? botName)
+        : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     const hasInlineImages = attachments.some(isInlineImageBlock);
@@ -727,7 +731,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   }
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
-    message.role === "bot" ? (memberName(members, message.botId) ?? botName) : authorName;
+    message.role === "bot" ? (botDisplayName(members, bots, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
   const showSpeaker = showBotSenderName || Boolean(authorName);

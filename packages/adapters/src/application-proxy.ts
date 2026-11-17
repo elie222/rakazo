@@ -6,7 +6,7 @@ import type {
   ConnectorProvider,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { runAsTenant } from "@rakazo/db";
 import { z } from "zod";
 import type { ApplicationServices, ConnectedApplication } from "./configured-apps.js";

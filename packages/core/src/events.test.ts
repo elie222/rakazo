@@ -1,8 +1,10 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  appToolLabel,
   containsSecret,
   createStreamingRedactor,
   endsSentence,
@@ -19,12 +21,14 @@ import {
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  splitToolHistory,
   stripLiveStreamingProgress,
   toolNameFromLabel,
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
   withoutLastToolStepNotes,
+  withToolHistory,
   withToolStepOutcomes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
@@ -634,12 +638,97 @@ describe("projectMessages", () => {
     ]);
     expect(messages).toHaveLength(0);
   });
+
+  it("stops showing the run as working while it waits for input, and again once it resumes", () => {
+    const at = "2026-01-01T00:00:00.000Z";
+    const paused: Parameters<typeof projectMessages>[0] = [
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Where should it ship?" }],
+        },
+        createdAt: at,
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        seq: 2,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+      {
+        id: "e4",
+        threadId: "t1",
+        seq: 3,
+        type: "run.waiting_input",
+        runId: "r1",
+        payload: {},
+        createdAt: at,
+      },
+    ];
+    expect(projectMessages(paused).map((message) => message.id)).toEqual(["m1"]);
+
+    const resumed = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "WEB_SEARCH" },
+        createdAt: at,
+      },
+    ]);
+    expect(resumed.map((message) => message.id)).toEqual([
+      "m1",
+      expect.stringMatching(/^progress:/),
+    ]);
+
+    const asked = projectMessages([
+      ...paused,
+      {
+        id: "e5",
+        threadId: "t1",
+        seq: 4,
+        type: "agent.tool.called",
+        runId: "r1",
+        payload: { name: "ask_user" },
+        createdAt: at,
+      },
+    ]);
+    expect(asked.map((message) => message.id)).toEqual(["m1"]);
+  });
 });
 
 describe("toolNameFromLabel", () => {
   it("turns a displayed name back into the tool name", () => {
     expect(toolNameFromLabel(" Write  file ")).toBe("Write_file");
     expect(toolNameFromLabel("write_file")).toBe("write_file");
+  });
+});
+
+describe("appToolLabel", () => {
+  it("drops the app's own prefix only", () => {
+    expect(appToolLabel("GMAIL_SEND_EMAIL", "gmail")).toBe("Send email");
+    expect(appToolLabel("SLACK_FIND_CHANNELS", "gmail")).toBe("Slack find channels");
   });
 });
 
@@ -999,7 +1088,7 @@ describe("createStreamingRedactor", () => {
     const redactor = createStreamingRedactor(["abcdefghij"]); // length 10
     const high = "\uD83D";
     const low = "\uDE00";
-    // safeStartLimit lands between high and low; the pair must stay buffered together.
+    // The hold-window cut lands between high and low; the pair must stay buffered together.
     expect(redactor.push(`x${high}${low}abcdefgh`)).toBe("x");
     expect(redactor.push("ij done")).toBe("😀[redacted]");
     expect(redactor.finish()).toBe(" done");
@@ -1138,5 +1227,40 @@ describe("withToolStepOutcomes", () => {
       segments,
     );
     expect(withToolStepOutcomes(segments, [])).toEqual(segments);
+  });
+});
+
+describe("a reply's kept tool calls", () => {
+  it("split off the blocks as one entry per step and merge back unchanged", () => {
+    const kept = {
+      tool: "shell",
+      calls: [{ arguments: '{"command":"ls"}', result: "notes.txt" }],
+    };
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ] as MessageBlock[];
+    const { blocks: shown, toolHistory } = splitToolHistory(blocks);
+    expect(JSON.stringify(shown)).not.toMatch(/"tool"|"calls"|notes\.txt/);
+    expect(toolHistory).toEqual({ steps: [kept, null, kept] });
+    expect(withToolHistory(shown, toolHistory)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Shell", count: 1, ...kept },
+          { label: "Web fetch", count: 2 },
+        ],
+      },
+      { kind: "text", text: "Done." },
+      { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
+    ]);
+    expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });

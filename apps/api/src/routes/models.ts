@@ -25,11 +25,12 @@ import {
 import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
+  ConnectionSetupError,
   canonicalPiProviderId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   usableModelId,
 } from "@rakazo/contracts";
-import { clampCatalogThinkingLevel } from "@rakazo/core";
+import { ClientError, clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appliedModelRole,
@@ -53,13 +54,36 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
+  modelConnectionErrorMessage,
   modelConnectionTarget,
   persistModelCredential,
   prepareAllowedThinkingLevels,
+  prepareModelReconnectSettings,
+  saveConnectionModelSettings,
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
 import type { RouterContext } from "./context.js";
+
+/** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
+function secretStoreOutage(error: unknown): unknown {
+  return error instanceof SecretStoreUnavailableError
+    ? new ClientError("SERVICE_UNAVAILABLE", "Service Unavailable", undefined, { cause: error })
+    : error;
+}
+
+/** What a probe found wrong with the server or its details is the member's to fix. */
+function probeRefusal(
+  error: unknown,
+  attempted: { apiKey?: string; headers?: Record<string, string> },
+): unknown {
+  return error instanceof ConnectionSetupError
+    ? new ClientError(
+        "BAD_REQUEST",
+        modelConnectionErrorMessage(error, "Could not list models", attempted),
+      )
+    : error;
+}
 
 export function modelsRoutes(ctx: RouterContext) {
   const {
@@ -68,6 +92,7 @@ export function modelsRoutes(ctx: RouterContext) {
     connectModelCredential,
     refreshExpiredCredential,
     chatCatalog,
+    withServingConnections,
     withDeploymentDefault,
     withImageInput,
     modelRoleCatalog,
@@ -81,13 +106,19 @@ export function modelsRoutes(ctx: RouterContext) {
         // Read before the save: it only counts a member's first connection.
         const record = await firstModelConnectAnalytics(deps, actor, "oauth");
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
+        const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
           deps,
           actor,
           {
             provider: login.provider,
             credentialId: target?.id ?? null,
-            plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+            plaintext: serializeModelSecret({
+              kind: "oauth",
+              credential: login.credential,
+              ...retained.settings,
+            }),
+            expectedSecret: retained.expectedSecret,
             // A second account is told apart by the email it signed in with.
             label:
               oauthCredentialEmail(login.credential) ??
@@ -111,7 +142,9 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
+      list: authed.models.list.handler(async ({ context }) =>
+        withServingConnections(context.actor, await chatCatalog(context.actor)),
+      ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
@@ -181,8 +214,7 @@ export function modelsRoutes(ctx: RouterContext) {
             try {
               return dto(await deps.secrets.load(ciphertext, row.secretId));
             } catch (error) {
-              if (error instanceof SecretStoreUnavailableError)
-                throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+              if (error instanceof SecretStoreUnavailableError) throw secretStoreOutage(error);
               return dto();
             }
           }),
@@ -198,6 +230,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           input.role,
           await withDeploymentDefault(
+            context.actor,
             input.role,
             await getModelRole(
               deps.prisma,
@@ -219,6 +252,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           role,
           await withDeploymentDefault(
+            context.actor,
             role,
             await updateModelRole(
               deps.prisma,
@@ -318,9 +352,7 @@ export function modelsRoutes(ctx: RouterContext) {
             );
             return { models };
           } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not list models",
-            });
+            throw probeRefusal(error, { apiKey, headers });
           }
         },
       ),
@@ -333,9 +365,7 @@ export function modelsRoutes(ctx: RouterContext) {
           );
           return { models };
         } catch (error) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: error instanceof Error ? error.message : "Could not list models",
-          });
+          throw probeRefusal(error, input);
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
@@ -372,7 +402,9 @@ export function modelsRoutes(ctx: RouterContext) {
                 reason: error instanceof Error ? error.message : String(error),
               });
               markExpectedFailure();
-              throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+              throw new ClientError("SERVICE_UNAVAILABLE", "Service Unavailable", undefined, {
+                cause: error,
+              });
             }
             throw error;
           });
@@ -382,7 +414,7 @@ export function modelsRoutes(ctx: RouterContext) {
           .submit(input.loginId, context.actor, input.code, saveSignIn(context.actor))
           .catch((error: unknown) => {
             if (error instanceof ModelSignInError)
-              throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
+              throw new ClientError("BAD_REQUEST", error.message);
             throw error;
           });
       }),
@@ -589,9 +621,13 @@ export function modelsRoutes(ctx: RouterContext) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           );
         }).catch((error: unknown) => {
-          if (error instanceof SecretStoreUnavailableError)
-            throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
-          throw error;
+          throw secretStoreOutage(error);
+        });
+        return { ok: true as const };
+      }),
+      saveModelSettings: authed.models.saveModelSettings.handler(async ({ context, input }) => {
+        await saveConnectionModelSettings(deps, context.actor, input).catch((error: unknown) => {
+          throw secretStoreOutage(error);
         });
         return { ok: true as const };
       }),

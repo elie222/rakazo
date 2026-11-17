@@ -1,6 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import type { StuckWorkStatus } from "@rakazo/core";
+import type { ExpirableWaitStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -12,13 +12,14 @@ import {
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { clearEndedRunState } from "./run-secrets.js";
+import { publishSpaceChange } from "./space-changes.js";
 import { createPendingSteeringRun, discardAnsweredSteering } from "./thread-steering.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export interface ExpireStuckRunInput {
   runId: string;
   threadId: string;
-  status: StuckWorkStatus;
+  status: ExpirableWaitStatus;
   /** Episode clock. A newer claim or answer changes updatedAt and must win. */
   updatedAt: Date;
   now: Date;
@@ -124,23 +125,6 @@ export async function expireStuckRun(
     where: { runId: input.runId, ...transientRunEventsWhere() },
   });
   await expireComputerExecutionLeases(tx, { runId: input.runId });
-  // A user lease still on this row is on the screen until release or revocation.
-  // Dropping controlRunId first makes maintenance treat the takeover as idle.
-  await tx.computer.updateMany({
-    where: {
-      controlRunId: input.runId,
-      OR: [{ controlHolder: { not: "user" } }, { controlLeaseId: null }],
-    },
-    data: { controlRunId: null },
-  });
-  await tx.computer.updateMany({
-    where: { executionRunId: input.runId },
-    data: {
-      executionRunId: null,
-      executionBotId: null,
-      executionLeaseExpiresAt: null,
-    },
-  });
   await discardAnsweredSteering(tx, { threadId: run.threadId, runId: input.runId });
   await tx.steeringMessage.updateMany({
     where: { runId: input.runId },
@@ -166,7 +150,7 @@ export async function endTakeoverWaits(
 ): Promise<number> {
   const waits = await prisma.run.findMany({
     where: { id: { in: runIds }, status: "waiting_takeover" },
-    select: { id: true, threadId: true, updatedAt: true },
+    select: { id: true, spaceId: true, threadId: true, updatedAt: true },
   });
   let ended = 0;
   for (const wait of waits) {
@@ -186,28 +170,42 @@ export async function endTakeoverWaits(
     if (!expired) continue;
     ended += 1;
     await notifyRealtime(realtime, wait.threadId, expired.seq);
+    await publishSpaceChange(realtime, wait.spaceId, "runs");
   }
   return ended;
 }
 
 /**
- * Whether the user has taken this bot's screen. Any control lease still on the row counts, even
- * an expired one or one mid-release: releasing it resumes the waiting run, which a cancel here
- * would prevent. Locks the computer row, so a concurrent takeover grant either lands first and
- * is seen here, or waits for this cancel.
+ * Whether the person the run asked has taken this bot's screen. Any lease of theirs still on the
+ * row counts, even an expired one or one mid-release: they may still be finishing the step the run
+ * waits on, so it is not cancelled under them. Locks the computer row, so a concurrent takeover
+ * grant either lands first and is seen here, or waits for this cancel.
  */
 async function userHasTakeoverScreen(
   tx: Prisma.TransactionClient,
   runId: string,
 ): Promise<boolean> {
   const [computer] = await tx.$queryRaw<
-    Array<{ botId: string; controlBotId: string | null; controlLeaseId: string | null }>
+    Array<{
+      botId: string;
+      userId: string;
+      controlBotId: string | null;
+      controlLeaseId: string | null;
+      controlUserId: string | null;
+      computerUserId: string;
+    }>
   >`
-    SELECT r."botId", c."controlBotId", c."controlLeaseId"
+    SELECT r."botId", r."userId", c."controlBotId", c."controlLeaseId", c."controlUserId",
+      c."userId" AS "computerUserId"
     FROM runs r
     JOIN bots b ON b.id = r."botId"
     JOIN computers c ON c.id = b."computerId"
     WHERE r.id = ${runId}
     FOR UPDATE OF c`;
-  return Boolean(computer?.controlLeaseId && computer.controlBotId === computer.botId);
+  // Only the person the run asked counts: another member on the screen is not doing its step.
+  return Boolean(
+    computer?.controlLeaseId &&
+      computer.controlBotId === computer.botId &&
+      (computer.controlUserId ?? computer.computerUserId) === computer.userId,
+  );
 }

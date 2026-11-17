@@ -70,20 +70,6 @@ describe("renderTicketContext", () => {
   });
 });
 
-it("skips ticket reference lookup completely when disabled", async () => {
-  const findUnique = vi.fn();
-  const prisma = { board: { findUnique } } as never;
-  for (const ticketBoardEnabled of [undefined, false]) {
-    await expect(
-      loadAgentTicketContext(
-        { prisma, ticketBoardEnabled },
-        { spaceId: "space-1", text: "Work RAK-42" },
-      ),
-    ).resolves.toBeUndefined();
-  }
-  expect(findUnique).not.toHaveBeenCalled();
-});
-
 it("does not query tickets for an out-of-range reference in a message", async () => {
   const findMany = vi.fn(async () => []);
   const prisma = {
@@ -93,7 +79,7 @@ it("does not query tickets for an out-of-range reference in a message", async ()
 
   await expect(
     loadAgentTicketContext(
-      { prisma, ticketBoardEnabled: true },
+      { prisma },
       { spaceId: "space-1", text: `Check RAK-${"9".repeat(115)}` },
     ),
   ).resolves.toBeUndefined();

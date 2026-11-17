@@ -1,15 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "./async.test-support.js";
 import { createRefreshCoalescer } from "./refresh-coalescer.js";
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 
 describe("event refresh coalescing", () => {
   it("retains updates during both the first and trailing reads", async () => {

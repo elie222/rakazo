@@ -16,6 +16,7 @@ const UNCOVERED: Record<string, string> = {
   "model-account":
     "requires an authorized model account, which the screenshot backend does not provide",
   "model-authorization": "browser callback redirects immediately and has no visible screen",
+  "model-settings": "opens only for a model the catalog cannot describe; the fixtures connect none",
   share: "Android only: iOS has no share extension yet",
 };
 

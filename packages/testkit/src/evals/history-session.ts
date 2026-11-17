@@ -1,7 +1,8 @@
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
-import type { HistoryFixture, HistoryMessage } from "./history-fixtures.js";
+import type { HistoryExpectation, HistoryFixture, HistoryMessage } from "./history-fixtures.js";
+import { historyAnchors, historyJudge } from "./history-fixtures.js";
 
-export const SESSION_FIXTURE_VERSION = "history-session-v1";
+export const SESSION_FIXTURE_VERSION = "history-session-v2";
 
 /**
  * One ordinary working chat, short enough to fit any model many times over. The decisions the
@@ -100,25 +101,38 @@ function sessionFixture(scenario: SessionScenario): HistoryFixture {
   };
 }
 
-const GRADERS: Record<SessionScenario, (text: string) => Criterion[]> = {
-  sql: (text) => [
-    { id: "reporting-schema", pass: /\brpt_v3\b/.test(text) },
-    { id: "reporting-table", pass: /\borders_daily\b/.test(text) },
-    { id: "no-live-table", pass: !/\b(?:from|join)\s+(?:\w+\.)?orders\b/i.test(text) },
-  ],
-  option: (text) => [
-    { id: "vendor", pass: /northwind/i.test(text) },
-    { id: "price", pass: /1,?240/.test(text) },
-    { id: "no-other-quote", pass: !/1,?610|2,?075/.test(text) },
-  ],
-  plan: (text) => [
-    { id: "step", pass: /rollback drill/i.test(text) },
-    { id: "owner", pass: /priya/i.test(text) },
-  ],
-  date: (text) => [
-    { id: "current-date", pass: /\bmar(?:ch|\.)?\s+21|\b21(?:st)?\s+(?:of\s+)?mar/i.test(text) },
-  ],
+/** The SQL is held to its identifiers; what the other three replies say is graded by meaning. */
+const sqlCriteria = (text: string): Criterion[] => [
+  { id: "reporting-schema", pass: /\brpt_v3\b/.test(text) },
+  { id: "reporting-table", pass: /\borders_daily\b/.test(text) },
+  { id: "no-live-table", pass: !/\b(?:from|join)\s+(?:\w+\.)?orders\b/i.test(text) },
+];
+
+const EXPECTATIONS: Record<Exclude<SessionScenario, "sql">, HistoryExpectation> = {
+  option: {
+    expected:
+      "The second shipping option was Northwind Freight: 4 days, $1,240. A sound reply drafts a confirmation to Northwind Freight at $1,240; one addressed to Calder Logistics or Pelican Express, or confirming $1,610 or $2,075, fails.",
+    pass: "Hi Northwind Freight team,\nPlease go ahead with the launch-week pallets at your quoted $1,240; it beat the $1,610 alternative.",
+    fail: "Hi Calder Logistics team,\nPlease go ahead with the launch-week pallets. Northwind's $1,240 quote was cheaper, but we need your two-day delivery.",
+  },
+  plan: {
+    expected:
+      "Step 4 of the rollout plan is running the rollback drill on the staging portal, and Priya owns it.",
+    pass: "Next up is the staging rollback rehearsal, which is Priya's.",
+    fail: "Step 4 is switching DNS and announcing, owned by Marco. Priya's rollback drill is already behind us.",
+  },
+  date: {
+    expected:
+      "The launch date is March 21; it moved from March 14. A sound reply is a team announcement that gives March 21 as the launch date.",
+    pass: "Team: the Harbor wholesale portal goes live on 21/03!",
+    fail: "Team: we are no longer launching March 21; the Harbor wholesale portal goes live March 14.",
+  },
 };
+
+// One right and one wrong reply per expectation, reviewed by hand.
+export const SESSION_JUDGE_CALIBRATION = (["option", "plan", "date"] as const).flatMap((scenario) =>
+  historyAnchors(ASKS[scenario], EXPECTATIONS[scenario]),
+);
 
 const historyTool = (name: string) => name === "search_history" || name === "read_history";
 
@@ -133,12 +147,18 @@ export const SESSION_EVAL_CASES: EvalCase[] = (["sql", "option", "plan", "date"]
       connections: [],
       steps: [{ ask: fixture.ask }],
       grade: (e: Evidence) => [
-        ...GRADERS[scenario](e.text),
+        ...(scenario === "sql" ? sqlCriteria(e.text) : []),
         {
           id: "no-external-writes",
           pass: e.calls.every((call) => call.outcome === "read" || call.outcome === "rejected"),
         },
       ],
+      ...(scenario === "sql"
+        ? {}
+        : {
+            judge: (e: Evidence) =>
+              historyJudge(EXPECTATIONS[scenario], [{ question: fixture.ask, reply: e.text }]),
+          }),
       observe: (e: Evidence) => ({
         "looked-up-history": e.toolCalls.some((call) => historyTool(call.name)),
       }),

@@ -8,7 +8,6 @@ import type { HostExecution, Prisma, PrismaClient, ThreadEvents } from "@rakazo/
 import {
   appendEventInTransaction,
   cancelRunsInTransaction,
-  clearEndedExecutionRunBinding,
   createThreadMessageInTransaction,
   partialReplyClientNonce,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -632,7 +631,6 @@ export async function finishHostExecution(deps: HostExecutionDeps, runId: string
       where: { runId: run.id, computerId: saved.targetComputerId },
       data: { expiresAt: new Date(0) },
     });
-    await clearEndedExecutionRunBinding(deps.prisma, saved.targetComputerId);
     if (deps.jobs) scheduleComputerSleep(deps.jobs, saved.targetComputerId);
   }
   const key = runJobKey(runId);

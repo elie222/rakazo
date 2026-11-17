@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import type { LoginFieldInput } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { CSSProperties, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -300,14 +302,11 @@ it("closes an open login sheet once the viewer is no longer the run's user", asy
 });
 
 it("keeps a reopened sheet open when an earlier save completes", async () => {
-  let complete!: () => void;
-  await render(
-    loginAsk,
-    () =>
-      new Promise<void>((resolve) => {
-        complete = resolve;
-      }),
-  );
+  let complete!: Deferred;
+  await render(loginAsk, () => {
+    complete = deferred();
+    return complete.promise;
+  });
   await openSheet();
   const first = sheet;
   let saving!: Promise<void>;
@@ -317,7 +316,7 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
   await act(async () => first.onClose());
   await openSheet();
   await act(async () => {
-    complete();
+    complete.resolve();
     await saving;
   });
   // The earlier save does not close the reopened sheet itself; it tells it the card is answered,

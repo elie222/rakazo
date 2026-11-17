@@ -1,8 +1,7 @@
 import type { AudioPlayer } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import { activateVoiceAudio, callAudioActive } from "./voice";
-import type { WaitTone, WaitUnit } from "./wait-pattern";
-import { nextWaitUnit, WAIT_PATTERNS } from "./wait-pattern";
+import { nextWaitUnit } from "./wait-pattern";
 
 export const CALL_SOUNDS_KEY = "rakazo.call-sounds";
 export const WAIT_SOUND_KEY = "rakazo.wait-sound";
@@ -107,62 +106,61 @@ export async function playCallCue(cue: CallCue): Promise<void> {
     });
   } finally {
     finish();
-    if (cuePlayers.delete(player)) player.remove();
+    // Not remove(): on Android that keeps the native player and its audio track until GC.
+    if (cuePlayers.delete(player)) player.release();
   }
 }
 
 const cuePlayers = new Map<AudioPlayer, () => void>();
 
+type QueuedWait = { player: AudioPlayer; pattern: number };
+
 /** Track the played pattern, excluding units that were only queued. */
 let lastWaitPattern = 0;
-let waitPlayers: Map<string, AudioPlayer> | null = null;
+/**
+ * The next unit, loading while the current one plays so it starts without a gap. Each loaded
+ * player holds an Android audio track, so only this one and the playing one exist at a time.
+ */
+let waitQueued: QueuedWait | null = null;
 /** Invalidate pending playback on start, stop, or release. */
 let waitGeneration = 0;
-/** Prevent preloads from caching players after hang-up. */
+/** Prevent preloads from queueing players after hang-up. */
 let waitCallEpoch = 0;
 let waitCurrent: AudioPlayer | null = null;
 let wakeWait: (() => void) | null = null;
 let fade: { timer: ReturnType<typeof setInterval>; player: AudioPlayer } | null = null;
 
-async function waitPlayer(unit: WaitUnit, epoch: number): Promise<AudioPlayer | null> {
+async function queueWaitUnit(epoch: number): Promise<QueuedWait | null> {
   const { createAudioPlayer } = await import("expo-audio");
   if (epoch !== waitCallEpoch) return null;
-  waitPlayers ??= new Map();
-  const key = `${unit.tone}-${unit.pattern}`;
-  let player = waitPlayers.get(key);
-  if (!player) {
-    player = createAudioPlayer(WAIT_ASSETS[unit.tone][unit.pattern - 1], CALL_PLAYER);
-    waitPlayers.set(key, player);
+  if (!waitQueued) {
+    const unit = nextWaitUnit(lastWaitPattern);
+    const player = createAudioPlayer(WAIT_ASSETS[unit.tone][unit.pattern - 1], CALL_PLAYER);
+    waitQueued = { player, pattern: unit.pattern };
   }
-  return player;
+  return waitQueued;
 }
 
-/** Preload waiting units before the first turn. */
+/** Load the first waiting unit before the first turn. */
 export async function preloadWaitSound(): Promise<void> {
   const epoch = waitCallEpoch;
   if (!(await loadWaitSoundEnabled().catch(() => true))) return;
-  for (const tone of Object.keys(WAIT_ASSETS) as WaitTone[]) {
-    for (let pattern = 1; pattern <= WAIT_PATTERNS; pattern += 1) {
-      if (!(await waitPlayer({ tone, pattern }, epoch))) return;
-    }
-  }
+  await queueWaitUnit(epoch);
 }
 
 export async function startWaitSound(): Promise<void> {
-  const generation = ++waitGeneration;
+  // A unit still playing for an earlier turn fades out rather than being left playing.
+  stopWaitSound();
+  const generation = waitGeneration;
   const epoch = waitCallEpoch;
   if (!(await loadWaitSoundEnabled().catch(() => true))) return;
   if (generation !== waitGeneration || epoch !== waitCallEpoch) return;
-  let unit = nextWaitUnit(lastWaitPattern);
-  let next = await waitPlayer(unit, epoch);
+  let next = await queueWaitUnit(epoch);
   while (next && generation === waitGeneration) {
-    const player = next;
-    const playing = unit;
+    const { player, pattern } = next;
+    waitQueued = null;
     endFade();
     waitCurrent = player;
-    player.volume = 1;
-    await player.seekTo(0);
-    if (generation !== waitGeneration) return;
     const finished = new Promise<void>((resolve) => {
       const subscription = player.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish) done();
@@ -175,23 +173,26 @@ export async function startWaitSound(): Promise<void> {
       wakeWait = done;
     });
     player.play();
-    lastWaitPattern = playing.pattern;
+    lastWaitPattern = pattern;
     // Queue the next unit during playback.
-    unit = nextWaitUnit(lastWaitPattern);
-    next = await waitPlayer(unit, epoch);
+    next = await queueWaitUnit(epoch);
     await finished;
+    // A stopped unit belongs to the fade, and hang-up has already released it.
+    if (waitCurrent === player) {
+      waitCurrent = null;
+      player.release();
+    }
   }
 }
 
 function endFade(): void {
   if (!fade) return;
   clearInterval(fade.timer);
-  fade.player.pause();
-  fade.player.volume = 1;
+  fade.player.release();
   fade = null;
 }
 
-/** Fade out and discard the queued unit. */
+/** Fade out the playing unit; the queued one stays loaded for the next turn. */
 export function stopWaitSound(): void {
   waitGeneration += 1;
   wakeWait?.();
@@ -214,13 +215,14 @@ export function releaseWaitSound(): void {
   for (const [player, finish] of cuePlayers) {
     finish();
     player.pause();
-    player.remove();
+    player.release();
   }
   cuePlayers.clear();
   wakeWait?.();
   endFade();
+  waitCurrent?.release();
   waitCurrent = null;
+  waitQueued?.player.release();
+  waitQueued = null;
   lastWaitPattern = 0;
-  for (const player of waitPlayers?.values() ?? []) player.remove();
-  waitPlayers = null;
 }

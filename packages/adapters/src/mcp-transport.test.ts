@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
@@ -139,13 +141,11 @@ describe("MCP transport seam", () => {
     const clientClose = vi
       .spyOn(session.client, "close")
       .mockImplementation(() => new Promise(() => {}));
-    let rejectClose: ((error: Error) => void) | undefined;
-    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectClose = reject;
-        }),
-    );
+    let rejectClose: Deferred | undefined;
+    const dispatcherClose = vi.spyOn(Agent.prototype, "close").mockImplementation(() => {
+      rejectClose = deferred();
+      return rejectClose.promise;
+    });
     try {
       const closing = session.close();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
@@ -153,7 +153,7 @@ describe("MCP transport seam", () => {
       expect(dispatcherClose).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(MCP_CLOSE_TIMEOUT_MS);
       await closing;
-      rejectClose!(new Error("late close failure"));
+      rejectClose!.reject(new Error("late close failure"));
       await vi.advanceTimersByTimeAsync(0);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -283,6 +283,59 @@ describe("MCP transport seam", () => {
     ).rejects.toThrow("private address");
     expect(fetchImpl).not.toHaveBeenCalled();
     await session.close();
+  });
+
+  it("restarts a tool call's timeout on progress and keeps the session after a timeout", async () => {
+    // A minimal stdio server: "slow" reports progress past the timeout before answering,
+    // "silent" never answers, "echo" answers at once.
+    const server = `
+      const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+      let buffer = "";
+      process.stdin.on("data", (chunk) => {
+        buffer += chunk;
+        let end;
+        while ((end = buffer.indexOf("\\n")) >= 0) {
+          const message = JSON.parse(buffer.slice(0, end));
+          buffer = buffer.slice(end + 1);
+          if (message.method === "initialize")
+            send({ id: message.id, result: { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "test", version: "1" } } });
+          if (message.method !== "tools/call") continue;
+          const answer = () => send({ id: message.id, result: { content: [{ type: "text", text: message.params.name }] } });
+          if (message.params.name === "echo") answer();
+          if (message.params.name !== "slow") continue;
+          const progressToken = message.params._meta?.progressToken;
+          let step = 0;
+          const timer = setInterval(() => {
+            step += 1;
+            if (progressToken !== undefined)
+              send({ method: "notifications/progress", params: { progressToken, progress: step } });
+            if (step === 15) { clearInterval(timer); answer(); }
+          }, 100);
+        }
+      });
+    `;
+    const session = new McpSession();
+    await session.connectStdio({
+      command: process.execPath,
+      args: ["-e", server],
+      allowedCommands: [process.execPath],
+    });
+    try {
+      // Answers after 1.5 s, past the 1 s timeout, with progress every 100 ms keeping it alive.
+      await expect(session.callTool("slow", {}, { timeoutMs: 1_000 })).resolves.toMatchObject({
+        content: [{ type: "text", text: "slow" }],
+      });
+      await expect(session.callTool("silent", {}, { timeoutMs: 200 })).rejects.toMatchObject({
+        code: -32001,
+      });
+      expect(session.open).toBe(true);
+      await expect(session.callTool("echo")).resolves.toMatchObject({
+        content: [{ type: "text", text: "echo" }],
+      });
+    } finally {
+      await session.close();
+    }
+    expect(session.open).toBe(false);
   });
 
   it("requires a connected session for operations", async () => {

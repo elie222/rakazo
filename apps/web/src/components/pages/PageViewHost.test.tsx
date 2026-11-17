@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -73,7 +74,7 @@ it("docks the chat's composer over a tablet's page sheet, so its reply goes to t
       </QueryClientProvider>,
     ),
   );
-  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   expect(session.dock.get().node).not.toBeNull();
   const card = {
     id: "m1",
@@ -108,7 +109,7 @@ it("shows the link when Share opens on a page that is already shared", async () 
       </QueryClientProvider>,
     ),
   );
-  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   const share = document.querySelector('[data-testid="page-share"]');
   expect(share?.textContent).toContain("Open link");
   expect(share?.querySelector("a")?.getAttribute("href")).toBe("https://rakazo.example/p/1");

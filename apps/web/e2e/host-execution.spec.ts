@@ -41,7 +41,7 @@ test("device agents disclose a workspace or remote computer only after selection
   await expect(page.getByRole("button", { name: "Change workspace", exact: true })).toHaveText(
     "sample-project",
   );
-  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Model/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "host-local-workspace");
   await target.selectOption("computer");
   await expect(target).toHaveValue("computer");
@@ -49,7 +49,7 @@ test("device agents disclose a workspace or remote computer only after selection
   await captureScreenshot(page, testInfo, "host-remote-computer");
   await agent.selectOption(JSON.stringify(["connection", "account", 1]));
   await expect(target).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Model/ })).toBeVisible();
   await expect(agent).toHaveValue(JSON.stringify(["connection", "account", 1]));
 });
 

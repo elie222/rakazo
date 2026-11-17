@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   ComputerScreenUnavailableError,
-  isComputerScreenUnavailable,
   SingleScreenClaimTracker,
   withComputerScreenAvailability,
 } from "./computer-screens.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { fakeBoatProvider } from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const writer = {
   operationId: "1",
@@ -112,7 +111,26 @@ describe("Team Computer parallel screens", () => {
         return "ok";
       }),
     ).resolves.toEqual({ error: expect.stringMatching(/temporarily busy/) });
-    expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
+  });
+
+  it.each([
+    [4, "All 4 Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)"],
+    [null, "All Team Computer screens are in use (SANDBOX_TEAM_SCREEN_LIMIT)"],
+  ])("tells the bot a team screen limit of %s was reached", async (limit, message) => {
+    await expect(
+      withComputerScreenAvailability(async () => {
+        throw new ComputerScreenUnavailableError(limit);
+      }),
+    ).resolves.toEqual({ error: message });
+  });
+
+  it("lets a failure that only mentions the screen limit through", async () => {
+    const failure = new Error("cannot allocate another screen (limit 4): private detail");
+    await expect(
+      withComputerScreenAvailability(async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
   });
 
   it("lets Team bots use independent Boat screens concurrently", async () => {

@@ -57,7 +57,7 @@ function errorFacts(value: unknown) {
   visit(value, 0);
   for (const detail of text) {
     for (const match of detail.matchAll(
-      /(?:\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*|\bapi error\s*\(\s*|^\s*)([45]\d{2})\b/gi,
+      /(?:\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*(?:[:=]\s*)?|\bapi error\s*\(\s*|^\s*)([45]\d{2})\b/gi,
     )) {
       statuses.add(Number(match[1]));
     }
@@ -128,7 +128,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
   if (
     [400, 401, 403].some((status) => statuses.has(status)) ||
-    /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*(?:400|401|403)\b/.test(
+    /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*(?:[:=]\s*)?(?:400|401|403)\b/.test(
       text,
     )
   ) {
@@ -169,7 +169,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|the origin web server sent a response that cloudflare could not parse|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended (?:without finish_reason|before \w+)|json error injected into sse stream|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|the origin web server sent a response that cloudflare could not parse|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended (?:without (?:a )?finish[_ ]reason|before \w+)|json error injected into sse stream|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }

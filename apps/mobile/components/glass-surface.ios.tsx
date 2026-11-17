@@ -17,7 +17,7 @@ export function GlassSurface({
   const scheme = useResolvedAppearance();
   if (!iosAtLeast(26)) return <View style={[style, fallbackStyle]}>{children}</View>;
   const modifiers = [
-    foregroundStyle("#00000000"),
+    foregroundStyle("transparent"),
     glassEffect({
       glass: { variant: "regular", ...(tint ? { tint } : {}) },
       shape,

@@ -4,6 +4,7 @@ import {
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
@@ -134,6 +135,11 @@ describe("normalizeRunError", () => {
       '400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace\'s Privacy settings to use it."}',
       "Your model provider can't run this model.",
     ],
+    [
+      '400: {"type":"invalid_request_error","message":"This example model is hosted outside Europe and the United States. Select Global in your workspace\'s privacy settings to use it."}',
+      "Your model provider can't run this model.",
+    ],
+    ["SAFETY margin exceeded", "The model provider returned an error."],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',
@@ -475,6 +481,9 @@ describe("normalizeRunError", () => {
       "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
       "Cyber safeguards flagged this message. If this is legitimate security work, you can apply for the Cyber Verification Program: https://support.claude.com/en/articles/<article-id>",
       "This request triggered cyber-related safeguards. To learn about the Cyber Verification Program, see https://support.claude.com/en/articles/<article-id>",
+      "SAFETY",
+      "PROHIBITED_CONTENT",
+      '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
@@ -990,5 +999,18 @@ describe("the one action that fixes a failed run", () => {
         recovery: "connection",
       });
     },
+  );
+});
+
+it("reads a reset date after spacing and a separator, and stays fast on long spacing", () => {
+  expect(
+    normalizeRunError(
+      '403: {"message":"Key limit exceeded (weekly limit). Resets on : 2099-01-01"}',
+    ),
+  ).toMatchObject({
+    resetAt: Date.parse("2099-01-01"),
+  });
+  expectLinearTime(() =>
+    normalizeRunError(`429: weekly limit reached, resets${" \t".repeat(100_000)}x`),
   );
 });

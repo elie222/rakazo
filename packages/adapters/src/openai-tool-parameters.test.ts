@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,

@@ -1,9 +1,17 @@
 import type { IntegrationCatalogResult, IntegrationCatalogSurface } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
+import { ClientError, cancelResponseBody } from "@rakazo/core";
 
 const RESPONSE_LIMIT = 1_000_000;
 const SEARCH_LIMIT = 8;
 const SURFACE_LIMIT = 24;
+
+/** The catalog did not answer a search usefully; searching again later may work. */
+export class IntegrationCatalogUnavailableError extends ClientError {
+  constructor(message = "Integration catalog search failed", options?: ErrorOptions) {
+    super("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", options);
+    this.name = "IntegrationCatalogUnavailableError";
+  }
+}
 
 export async function searchIntegrationCatalog(input: {
   baseUrl: string;
@@ -26,29 +34,55 @@ export async function searchIntegrationCatalog(input: {
   // Admin-configured bases may be private (LAN mirrors). Do not reuse connector
   // SSRF checks that block private hosts. Still refuse redirects so a mirror
   // cannot bounce the server onto cloud metadata or another host.
-  const response = await (input.fetch ?? globalThis.fetch)(searchUrl, {
-    headers: { accept: "application/json" },
-    redirect: "manual",
-    signal: AbortSignal.any([input.signal, AbortSignal.timeout(5_000)]),
-  });
+  let response: Response;
+  try {
+    response = await (input.fetch ?? globalThis.fetch)(searchUrl, {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.any([input.signal, AbortSignal.timeout(5_000)]),
+    });
+  } catch (error) {
+    if (input.signal.aborted) throw error;
+    throw new IntegrationCatalogUnavailableError(undefined, { cause: error });
+  }
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
     cancelResponseBody(response);
-    throw new Error("Integration catalog redirects are not allowed");
+    throw new IntegrationCatalogUnavailableError("Integration catalog redirects are not allowed");
   }
-  if (!response.ok) throw new Error(`Integration catalog returned HTTP ${response.status}`);
-  const body = await readBoundedResponse(response);
-
-  const payload: unknown = JSON.parse(body);
+  if (!response.ok) {
+    cancelResponseBody(response);
+    throw new IntegrationCatalogUnavailableError(
+      `Integration catalog returned HTTP ${response.status}`,
+    );
+  }
+  let body: string;
+  try {
+    body = await readBoundedResponse(response);
+  } catch (error) {
+    if (error instanceof IntegrationCatalogUnavailableError || input.signal.aborted) throw error;
+    throw new IntegrationCatalogUnavailableError(undefined, { cause: error });
+  }
+  const payload = parseJson(body);
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
-    throw new Error("Integration catalog returned an invalid response");
+    throw new IntegrationCatalogUnavailableError(INVALID_RESPONSE);
   }
   return payload.results.slice(0, SEARCH_LIMIT).flatMap(normalizeResult);
+}
+
+const INVALID_RESPONSE = "Integration catalog returned an invalid response";
+
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw new IntegrationCatalogUnavailableError(INVALID_RESPONSE, { cause: error });
+  }
 }
 
 async function readBoundedResponse(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > RESPONSE_LIMIT) {
-    throw new Error("Integration catalog response is too large");
+    throw new IntegrationCatalogUnavailableError("Integration catalog response is too large");
   }
   if (!response.body) return "";
 
@@ -63,7 +97,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
       size += value.byteLength;
       if (size > RESPONSE_LIMIT) {
         await reader.cancel();
-        throw new Error("Integration catalog response is too large");
+        throw new IntegrationCatalogUnavailableError("Integration catalog response is too large");
       }
       body += decoder.decode(value, { stream: true });
     }

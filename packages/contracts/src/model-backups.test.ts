@@ -8,6 +8,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { expectLinearTime } from "./timing.test-support.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -101,6 +102,20 @@ describe("connected backup model choices", () => {
     expect(offered(true)).not.toContain("custom-model");
     expect(offered(true)).not.toContain("hosted-vision");
   });
+  it.each([undefined, []])(
+    "keeps models with undeclared image support out of computer use (%j)",
+    (visionModelIds) => {
+      const local = {
+        ...credentials[1]!,
+        enabledModelIds: ["custom-model"],
+        visionModelIds,
+      };
+      expect(
+        connectedBackupOptions(catalog, [local], false).map((option) => option.modelId),
+      ).toContain("custom-model");
+      expect(connectedBackupOptions(catalog, [local], true)).toEqual([]);
+    },
+  );
   it("offers only non-placeholder catalog models for connected providers", () => {
     expect(connectedBackupOptions(catalog, credentials)).toEqual([
       {
@@ -377,5 +392,12 @@ describe("withConnectionName", () => {
     expect(withConnectionName("Claude Sonnet", "OpenRouter (Work)")).toBe(
       "Claude Sonnet (OpenRouter, Work)",
     );
+    expect(withConnectionName("M", "A (B) (C)")).toBe("M (A (B), C)");
+    expect(withConnectionName("M", "A ()")).toBe("M (A ())");
+    expect(withConnectionName("M", " (B)")).toBe("M ( (B))");
+  });
+
+  it("stays fast on a long name full of brackets", () => {
+    expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
 });

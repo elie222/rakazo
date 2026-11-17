@@ -6,6 +6,7 @@ import {
   BUILTIN_AGENT_SKILLS,
   isCatalogModelChoice,
   readAgentImportSettings,
+  readGrokBotImportSettings,
 } from "@rakazo/adapters";
 import type {
   Actor,
@@ -34,6 +35,7 @@ import {
   combineImportedInstructions,
   parseAgentImport,
   readAgentImportFolder,
+  readGrokBotExportJson,
   renameRoutineSkillMentions,
   resolveAgentImportNames,
 } from "@rakazo/core";
@@ -43,8 +45,12 @@ import {
   availableInSpace,
   createThreadMessageInTransaction,
   isUniqueViolation,
+  JsonColumnMismatchError,
+  readJsonColumn,
+  reportJsonColumnOnce,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 
 type Reader = Pick<Prisma.TransactionClient, "memoryDocument" | "agentSkill" | "mcpServer">;
 type Stored = Awaited<ReturnType<SecretStore["put"]>> | null;
@@ -118,18 +124,21 @@ export type AgentImportServices<PreparedKey = unknown> = {
 };
 
 /** What the setup checklist checks for each imported MCP server. */
-type ImportRecord = {
+const ImportRecordSchema = z.object({
   /**
    * `credentials`/`env`: names that need values before the server works (its checklist);
    * `unverifiable`: it also needs a program or local paths, which cannot be checked.
    */
-  mcpServers: {
-    id: string;
-    credentials?: string[];
-    env?: string[];
-    unverifiable?: boolean;
-  }[];
-};
+  mcpServers: z.array(
+    z.object({
+      id: z.string(),
+      credentials: z.array(z.string()).optional(),
+      env: z.array(z.string()).optional(),
+      unverifiable: z.boolean().optional(),
+    }),
+  ),
+});
+type ImportRecord = z.infer<typeof ImportRecordSchema>;
 
 const BLOCKING: ReadonlySet<AgentImportWarning> = new Set(["unsupported_command"]);
 
@@ -179,16 +188,25 @@ async function buildPlan(
   const base = parsePlan(files, input.skillFiles);
   const taken = await takenNames(services.prisma, actor);
   const plan = resolveAgentImportNames(base, taken);
-  const folder =
-    base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
   const connectedKeyIds = new Set<string>();
-  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
-  const settings = readAgentImportSettings(folder, {
-    includeSecrets,
-    stdioAllowed: await services.stdioAllowed(actor),
-  });
+  let settings: Built["settings"];
+  if (base.source === "grok_bot") {
+    // parsePlan has checked that this file holds exactly one Bot.
+    const [bot] = readGrokBotExportJson(files[0]?.content ?? "");
+    settings = bot ? readGrokBotImportSettings(bot) : null;
+  } else {
+    const folder =
+      base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
+    settings = folder
+      ? readAgentImportSettings(folder, {
+          includeSecrets,
+          stdioAllowed: await services.stdioAllowed(actor),
+        })
+      : null;
+  }
+  if (!settings) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
 
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
@@ -223,6 +241,14 @@ async function buildPlan(
     };
   });
 
+  const originalSkillNames = new Map(base.skills.map((skill) => [skill.id, skill.name]));
+  const previewSkillNames = new Map<string, string>([
+    ...taken.skillNames.map((name): [string, string] => [name, name]),
+    ...plan.skills.flatMap((skill): [string, string][] => {
+      const original = originalSkillNames.get(skill.id);
+      return original ? [[original, skill.name]] : [];
+    }),
+  ]);
   const fallbackZone = await savedTimeZone(services.prisma, actor);
   const routines = settings.routines.flatMap((routine) => {
     const timezone = routine.timezone ?? fallbackZone;
@@ -236,7 +262,8 @@ async function buildPlan(
       active: false,
     });
     if (!parsed.success) {
-      skipped.push({ path: `cron/jobs.json: ${routine.title}`, reason: "unsupported" });
+      const file = base.source === "grok_bot" ? "routines" : "cron/jobs.json";
+      skipped.push({ path: `${file}: ${routine.title}`, reason: "unsupported" });
       return [];
     }
     routineInputs.set(routine.id, parsed.data);
@@ -244,7 +271,7 @@ async function buildPlan(
       {
         id: routine.id,
         title: routine.title,
-        content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
+        content: `${routine.cron} (${timezone})\n\n${renameRoutineSkillMentions(routine.prompt, previewSkillNames)}`,
         warnings: routine.warnings,
         status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
@@ -711,14 +738,31 @@ export async function agentImportSetupState(
       where: { botId: input.botId, id: { in: input.routineIds }, bot: owner },
       select: { id: true, active: true },
     }),
-    db.agentImport.findMany({ where: { ...owner, botId: input.botId }, select: { created: true } }),
+    db.agentImport.findMany({
+      where: { ...owner, botId: input.botId },
+      select: { id: true, created: true },
+    }),
   ]);
   const needed = new Map(
-    imports.flatMap((row) =>
-      (row.created as unknown as ImportRecord).mcpServers.map(
-        (server) => [server.id, server] as const,
-      ),
-    ),
+    imports.flatMap((row) => {
+      // Setup is judged against this checklist, so a record in another shape is rejected. Only
+      // that import is left out: its servers read as not set up, and the others are judged.
+      try {
+        return readJsonColumn(
+          ImportRecordSchema,
+          row.created,
+          { table: "agent_imports", column: "created", id: row.id },
+          "reject",
+        ).mcpServers.map((server) => [server.id, server] as const);
+      } catch (error) {
+        if (!(error instanceof JsonColumnMismatchError)) throw error;
+        reportJsonColumnOnce(
+          "An import's checklist cannot be read; its setup is not judged",
+          error.row,
+        );
+        return [];
+      }
+    }),
   );
   const given = new Set(assigned.map((row) => row.serverId));
   const nonBlank = (value: string | undefined) => typeof value === "string" && value.trim() !== "";

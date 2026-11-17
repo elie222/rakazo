@@ -38,10 +38,22 @@ key="$(sed -n 's/^ENCRYPTION_KEY=//p' "$tmp/cwd/.env")"
 # Part of the key leaks it too: neither half may appear.
 [[ "$out" != *"${key:0:32}"* && "$out" != *"${key:32}"* ]] || fail "the installer printed part of the key"
 
+updater_token="$(sed -n 's/^RAKAZO_UPDATER_TOKEN=//p' "$tmp/cwd/.env")"
+[[ ${#updater_token} -eq 64 ]] || fail "dedicated updater token was not generated"
+[[ "$out" != *"$updater_token"* ]] || fail "the installer printed the updater token"
+for name in BETTER_AUTH_SECRET ENCRYPTION_KEY SCREEN_PROXY_SECRET SANDBOX_SUPERVISOR_TOKEN; do
+  existing="$(sed -n "s/^${name}=//p" "$tmp/cwd/.env")"
+  [[ "$existing" != "$updater_token" ]] || fail "updater token reuses an application secret"
+done
+! grep -q '^COMPOSE_PROFILES=' "$tmp/cwd/.env" || fail "updater profile enabled without consent"
+
+printf '\nRAKAZO_IMAGE_TAG_PREVIOUS=sha-1111111111111111111111111111111111111111\nRAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS=sha-1111111111111111111111111111111111111111\n' >> "$tmp/cwd/.env"
 again="$(run_install)" || fail "second run failed: $again"
 [[ "$again" == *"Keeping existing .env."* ]] || fail "second run did not keep .env: $again"
+[[ "$again" != *"RAKAZO_IMAGE_TAG_PREVIOUS"* && "$again" != *"RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS"* ]] || fail "updater metadata was reported as unused"
 [[ "$again" != *"Back up ENCRYPTION_KEY"* ]] || fail "notice repeated for an existing key: $again"
 [[ "$again" != *"$key"* ]] || fail "the installer printed the key on rerun"
+[[ "$(sed -n 's/^RAKAZO_UPDATER_TOKEN=//p' "$tmp/cwd/.env")" == "$updater_token" ]] || fail "existing updater token changed"
 
 # A template that already carries a key is not a newly generated one.
 rm "$tmp/cwd/.env"

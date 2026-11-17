@@ -54,7 +54,13 @@ function fixture() {
       findFirst: vi.fn(async () => ({ id: "fixture-secret", ciphertext: "fake-ciphertext" })),
     },
     computer,
-    user: { findUnique: vi.fn(async () => ({ deactivatedAt: deactivated ? new Date() : null })) },
+    user: {
+      findUnique: vi.fn(async () => ({ deactivatedAt: deactivated ? new Date() : null })),
+      findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        email: "fixture@example.test",
+      })),
+    },
     spaceMember: {
       findFirst: vi.fn(async () => ({
         ...grant,

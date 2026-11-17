@@ -5,7 +5,7 @@ import path from "node:path";
 import { runJobKey } from "@rakazo/adapter-kit";
 import type { createApp } from "@rakazo/api/app";
 import type { HostFrame, HostStart } from "@rakazo/contracts";
-import { COMPUTER_USING_RUNS } from "@rakazo/core";
+import { computerUsingRuns } from "@rakazo/core";
 import { createThreadMessageInTransaction, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
@@ -122,7 +122,7 @@ integration("desktop-originated runs through the authenticated API", () => {
         where: { threadId: grant.threadId, clientNonce: input.clientNonce },
       }),
     ).toBe(1);
-    expect(await db.run.count({ where: { id: grant.runId, ...COMPUTER_USING_RUNS } })).toBe(0);
+    expect(await db.run.count({ where: { id: grant.runId, ...computerUsingRuns() } })).toBe(0);
     const key = runJobKey(grant.runId);
     const backup = await db.$queryRaw<
       { run_at: Date }[]
@@ -272,7 +272,7 @@ integration("desktop-originated runs through the authenticated API", () => {
 
   it("runs remote workspace tools once and rejects a changed computer", async () => {
     const grant = await start(request({ target: "computer" }));
-    expect(await db.run.count({ where: { id: grant.runId, ...COMPUTER_USING_RUNS } })).toBe(1);
+    expect(await db.run.count({ where: { id: grant.runId, ...computerUsingRuns() } })).toBe(1);
     const write = vi.spyOn(app.sandbox, "writeFile");
     const call = {
       runId: grant.runId,

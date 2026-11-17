@@ -36,6 +36,24 @@ export function primaryActiveRun<T extends { status: string }>(runs: readonly T[
   );
 }
 
+/** Each bot's status from its active runs in any thread; idle without one. */
+export async function botRunStatuses(
+  prisma: Pick<PrismaClient, "run">,
+  botIds: string[],
+): Promise<Map<string, string>> {
+  const runs = await prisma.run.findMany({
+    where: { botId: { in: botIds }, ...activeRunSelection.where },
+    orderBy: activeRunSelection.orderBy,
+    select: { botId: true, status: true },
+  });
+  return new Map(
+    botIds.map((botId) => [
+      botId,
+      primaryActiveRun(runs.filter((run) => run.botId === botId))?.status ?? "idle",
+    ]),
+  );
+}
+
 export function threadRunStatus(
   runs: readonly { status: string; threadId: string }[],
   threadId: string,

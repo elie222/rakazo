@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { trackConnections } from "./drain.js";
+import { RUN_DRAIN_SIGNAL, trackConnections } from "./drain.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
 afterEach(() => {
@@ -61,5 +63,15 @@ describe("trackConnections", () => {
 
     await drain(100);
     await expect(hung).rejects.toThrow();
+  });
+});
+
+describe("RUN_DRAIN_SIGNAL", () => {
+  it("is the signal the app image tells the deploy to send", () => {
+    const dockerfile = readFileSync(
+      fileURLToPath(new URL("../../../infra/compose/Dockerfile", import.meta.url)),
+      "utf8",
+    );
+    expect(dockerfile).toContain(`LABEL org.rakazo.run-drain-signal=${RUN_DRAIN_SIGNAL}\n`);
   });
 });

@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultMcpPackagesRoot,
@@ -339,20 +340,17 @@ describe("ensureMcpPackage", () => {
   it("observes a shared install rejection even when the caller is already aborted", async () => {
     const controller = new AbortController();
     controller.abort(new Error("cancelled before install"));
-    let settled!: () => void;
-    const done = new Promise<void>((resolve) => {
-      settled = resolve;
-    });
+    const done = deferred();
     await expect(
       ensureMcpPackage("missing@2", {
         ...options({ NPM_CONFIG_FAKE_MODE: "fail" }),
         signal: controller.signal,
         onSettled: async () => {
-          settled();
+          done.resolve();
         },
       }),
     ).rejects.toThrow("cancelled before install");
-    await done;
+    await done.promise;
     expect(await leftovers()).toEqual([]);
   });
 

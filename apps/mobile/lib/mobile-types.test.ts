@@ -1,6 +1,7 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
 import { mergeThreadSnapshot, reduceThreadSnapshot } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MobileMessage, MobileSnapshot } from "./mobile-types.js";
 import {
@@ -33,12 +34,9 @@ describe("mobile thread refresh targeting", () => {
   it("drops a deferred group A refresh after navigation to group B", async () => {
     let activeGroupId: string | undefined = "group-a";
     let currentEpoch = 1;
-    let resolveRequest!: (snapshot: MobileSnapshot) => void;
-    const request = new Promise<MobileSnapshot>((resolve) => {
-      resolveRequest = resolve;
-    });
+    const request = deferred<MobileSnapshot>();
     let applied: MobileSnapshot | null = null;
-    const refresh = request.then((snapshot) => {
+    const refresh = request.promise.then((snapshot) => {
       if (
         shouldApplyMobileThreadRefresh({
           requestEpoch: 1,
@@ -55,7 +53,7 @@ describe("mobile thread refresh targeting", () => {
 
     activeGroupId = "group-b";
     currentEpoch += 1;
-    resolveRequest({
+    request.resolve({
       groupId: "group-a",
       threadId: "thread-a",
       messages: [],

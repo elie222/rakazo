@@ -12,9 +12,11 @@ DATA=${PREVIEW_DATA_DIR:-/data}
 PG_BIN=${PG_BIN:-/usr/lib/postgresql/18/bin}
 PORT=${PORT:-8080}
 HOST=${PREVIEW_HOST:-${FLY_APP_NAME:?Set PREVIEW_HOST or FLY_APP_NAME}.fly.dev}
+# http only for a stack reached on localhost inside CI, such as the exploratory QA run.
+SCHEME=${PREVIEW_SCHEME:-https}
+[[ $SCHEME == https || ($SCHEME == http && $HOST == localhost:*) ]] || { echo "PREVIEW_SCHEME=http needs a localhost PREVIEW_HOST" >&2; exit 1; }
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-OWNER_EMAIL=preview@example.com
-OWNER_PASSWORD=rakazo-preview-demo
+source "$ROOT/infra/preview/demo-account.env"
 PGDATA="$DATA/postgres"
 IMAGE_ID=$(cat "$ROOT/infra/preview/image-id" 2> /dev/null || true)
 INITIALIZED_IMAGE="$PGDATA/.preview-image"
@@ -67,13 +69,14 @@ stop_database() {
 export NODE_ENV=production
 export DATABASE_URL="postgres://rakazo_app:${PG_APP_PASSWORD}@127.0.0.1:5432/rakazo"
 export DATA_DIR="$DATA/app"
-export WEB_ORIGIN="https://$HOST" BETTER_AUTH_URL="https://$HOST" RAKAZO_HOST="$HOST"
+export WEB_ORIGIN="$SCHEME://$HOST" BETTER_AUTH_URL="$SCHEME://$HOST" RAKAZO_HOST="$HOST"
 export API_HOST=127.0.0.1 API_PORT=3100 API_URL=http://127.0.0.1:3100
 export API_PROXY_TARGET=http://127.0.0.1:3100 WEB_PORT="$PORT"
 export TRUSTED_PROXIES=127.0.0.1 CLIENT_IP_HEADER=fly-client-ip
 export WAKEUP_DRIVER=graphile AGENT_RUNTIME=scripted SANDBOX_PROVIDER=fake
 export CLOUD_AGENT_PROVIDER=emulator PAYMENT_WALLET_PROVIDER=emulator
-export RAKAZO_LIVE_MODEL_CATALOG=off SIGNUPS_ENABLED=false CONTENT_ENCRYPTION=on
+export RAKAZO_LIVE_MODEL_CATALOG=off CONTENT_ENCRYPTION=on
+export DEMO_ACCOUNT_EMAIL=$OWNER_EMAIL DEMO_ACCOUNT_PASSWORD=$OWNER_PASSWORD
 
 migrate() {
   DATABASE_MIGRATION_URL="postgres://rakazo:${PG_OWNER_PASSWORD}@127.0.0.1:5432/rakazo" \
@@ -89,8 +92,14 @@ SQL
 }
 
 shutdown() {
-  kill $(jobs -pr) 2> /dev/null || true
-  wait || true
+  local pids
+  pids=$(jobs -pr)
+  # Name the jobs: after a trapped signal interrupts `wait -n`, a bare `wait` can spin forever in
+  # bash 5.3.
+  if [[ -n $pids ]]; then
+    kill $pids 2> /dev/null || true
+    wait $pids 2> /dev/null || true
+  fi
   stop_database
 }
 trap shutdown EXIT
@@ -150,6 +159,6 @@ wait "$waiting" 2> /dev/null || true
     -u PG_APP_PASSWORD gosu node node_modules/.bin/vite preview --host 0.0.0.0 --port "$PORT" \
     --strictPort
 ) &
-log "Ready at https://$HOST"
+log "Ready at $SCHEME://$HOST"
 wait -n
 exit 1

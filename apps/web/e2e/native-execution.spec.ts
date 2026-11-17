@@ -46,7 +46,7 @@ test("ordinary users discover unprepared environments and retry without an admin
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByRole("option", { name: "Personal account", exact: true })).toBeEnabled();
   await execution.selectOption(JSON.stringify(["connection", "account", 1]));
-  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Model/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "native-ordinary-user-ready");
 });
 
@@ -71,17 +71,17 @@ test("execution switches stop only after confirmation and offer available models
   await page.getByRole("button", { name: "Stop and switch", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(execution).toHaveValue(selected);
-  const model = page.getByRole("combobox", { name: "Model", exact: true });
-  await expect(model).toHaveValue("");
-  await expect(model.getByRole("option", { name: "Default (Model A)", exact: true })).toHaveCount(
-    1,
-  );
-  await model.selectOption("provider/model-b");
-  await expect(model).toHaveValue("provider/model-b");
+  const model = page.getByRole("button", { name: /^Model/ });
+  await expect(model).toContainText("Default (Model A)");
+  await model.click();
+  await expect(page.getByRole("option", { name: "Default (Model A)", exact: true })).toHaveCount(1);
+  await page.getByRole("option", { name: "Model B", exact: true }).click();
+  await expect(model).toContainText("Model B");
   await captureScreenshot(page, testInfo, "native-execution-model-selection");
   await execution.selectOption("");
-  await expect(model).toHaveValue("");
-  await expect(model.getByRole("option", { name: "Space default", exact: true })).toHaveCount(1);
+  await expect(model).toContainText("Space default");
+  await model.click();
+  await expect(page.getByRole("option", { name: "Space default", exact: true })).toHaveCount(1);
   await captureScreenshot(page, testInfo, "native-built-in-model-selection");
 });
 

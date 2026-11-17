@@ -195,9 +195,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answerId: z.string().optional(),
   }),
   z.object({
-    /** Inline app authorization card (Composio-backed): logo, name, one-line
+    /** Inline app authorization card: logo, name, one-line
         description, and an Authorize button that flips to connected. */
     kind: z.literal("app_connect"),
+    /** Absent on cards stored before connector ids; the server reads those as its default. */
     connectorId: z.string().optional(),
     provider: z.string(),
     name: z.string(),
@@ -414,6 +415,33 @@ export const MessageBlock = z.discriminatedUnion("kind", [
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;
 
+/** One call a reply kept for the bot's later turns: what it was sent and what came back. */
+export const ToolStepCallSchema = z.object({
+  /** The call's arguments as JSON. */
+  arguments: z.string().optional(),
+  result: z.string().optional(),
+  /** The screenshot the call returned, kept as a hidden artifact runs read. */
+  image: z.object({ artifactId: z.string() }).optional(),
+  /** The call ended in an error; its result is that error. */
+  failed: z.literal(true).optional(),
+});
+export type ToolStepCall = z.infer<typeof ToolStepCallSchema>;
+
+/**
+ * What a bot reply's tool calls were sent and returned, for its later runs to replay. Stored
+ * encrypted beside the message, never in its blocks, so clients never receive it. One entry per
+ * step of the message's steps blocks, in order; null for a step whose calls were not all kept.
+ */
+export const ToolHistorySchema = z.object({
+  steps: z.array(z.object({ tool: z.string(), calls: z.array(ToolStepCallSchema) }).nullable()),
+});
+export type ToolHistory = z.infer<typeof ToolHistorySchema>;
+/** A step as a run replays it: what the UI shows, with its tool and kept calls when it has them. */
+export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number] & {
+  tool?: string;
+  calls?: ToolStepCall[];
+};
+
 /**
  * Something the bot did on its computer, shown in the terminal's Activity view: a shell
  * command (with a redacted output tail) or a file/app action, whose `command` is the path or
@@ -468,7 +496,6 @@ export function hasThinkingActivityMarker(payload: Record<string, unknown>): pay
   const activity = payload.activity;
   return activity !== null && typeof activity === "object" && "thinking" in activity;
 }
-export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
 
 export const ProductEventSchema = z
   .object({

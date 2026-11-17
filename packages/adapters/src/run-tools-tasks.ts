@@ -2,7 +2,7 @@ import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
-} from "./desktop-command-guard.js";
+} from "./providers/computer/desktop/desktop-command-guard.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 import {
@@ -44,7 +44,7 @@ function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undef
   const command = commandWatchFromTool(watch);
   const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
   return desktopGuardApplies(ctx.computer) && refusal
-    ? desktopProtectionGuardMessage(refusal)
+    ? desktopProtectionGuardMessage(refusal, command ?? "")
     : undefined;
 }
 

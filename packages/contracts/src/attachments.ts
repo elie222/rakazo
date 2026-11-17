@@ -18,11 +18,42 @@ export const ATTACHMENT_IMAGE_MIME_TYPES = [
   "image/gif",
 ] as const;
 
+export type AttachmentImageMimeType = (typeof ATTACHMENT_IMAGE_MIME_TYPES)[number];
+const STEP_SCREENSHOT_PROFILE = ";profile=step-screenshot";
+/**
+ * A screenshot a reply kept so its later turns can see it again. Stored and read like an image
+ * attachment, but this type keeps it out of every file list, search and version history.
+ */
+export const STEP_SCREENSHOT_MIME_TYPES = ATTACHMENT_IMAGE_MIME_TYPES.map(
+  (type) => `${type}${STEP_SCREENSHOT_PROFILE}`,
+);
+export function stepScreenshotMimeType(imageType: AttachmentImageMimeType): string {
+  return `${imageType}${STEP_SCREENSHOT_PROFILE}`;
+}
+export function isStepScreenshotMimeType(mimeType: string): boolean {
+  return mimeType.endsWith(STEP_SCREENSHOT_PROFILE);
+}
+/** The image type a kept screenshot, or an image attachment, shows as; else undefined. */
+export function storedImageMimeType(mimeType: string): AttachmentImageMimeType | undefined {
+  const type = mimeType.endsWith(STEP_SCREENSHOT_PROFILE)
+    ? mimeType.slice(0, -STEP_SCREENSHOT_PROFILE.length)
+    : mimeType;
+  return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(type)
+    ? (type as AttachmentImageMimeType)
+    : undefined;
+}
+
 export const ATTACHMENT_AUDIO_MIME_TYPES = [
   "audio/mpeg",
   "audio/wav",
   "audio/ogg",
   "audio/mp4",
+] as const;
+
+export const ATTACHMENT_ARCHIVE_MIME_TYPES = [
+  "application/zip",
+  "application/vnd.rar",
+  "application/x-7z-compressed",
 ] as const;
 
 export const ATTACHMENT_FILE_MIME_TYPES = [
@@ -36,7 +67,7 @@ export const ATTACHMENT_FILE_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/html",
   "application/json",
-  "application/zip",
+  ...ATTACHMENT_ARCHIVE_MIME_TYPES,
 ] as const;
 
 export const ATTACHMENT_ALLOWED_MIME_TYPES = [
@@ -76,6 +107,10 @@ export function artifactPreviewKind(mimeType: string): ArtifactPreviewKind {
 
 export function isAttachmentAudioMimeType(mimeType: string): boolean {
   return (ATTACHMENT_AUDIO_MIME_TYPES as readonly string[]).includes(mimeType);
+}
+
+export function isAttachmentArchiveMimeType(mimeType: string): boolean {
+  return (ATTACHMENT_ARCHIVE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
 export function isAllowedAttachmentMimeType(mimeType: string): mimeType is AttachmentMimeType {

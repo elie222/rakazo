@@ -1,4 +1,6 @@
 import { DEFAULT_MODEL_CONTEXT_WINDOW } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexCatalogCache } from "./pi-codex-catalog.js";
 import { liveModelCatalogEnabled } from "./pi-live-cache.js";
@@ -263,13 +265,11 @@ describe("provider catalog cache", () => {
   );
   it("bounds cold latency and cuts off a hung probe; invalidation prevents its result returning", async () => {
     vi.useFakeTimers();
-    let finish!: (ids: string[]) => void;
-    const probe = vi.fn(
-      () =>
-        new Promise<string[]>((resolve) => {
-          finish = resolve;
-        }),
-    );
+    let finish!: Deferred<string[]>;
+    const probe = vi.fn(() => {
+      finish = deferred<string[]>();
+      return finish.promise;
+    });
     const cache = new ProviderCatalogCache({
       enabled: true,
       probe,
@@ -280,7 +280,7 @@ describe("provider catalog cache", () => {
     await vi.advanceTimersByTimeAsync(1_500);
     expect(await read).toBeUndefined();
     cache.invalidate(provider);
-    finish(ids);
+    finish.resolve(ids);
     await vi.advanceTimersByTimeAsync(0);
     expect(
       (cache as unknown as { cache: { entries: Map<string, unknown> } }).cache.entries.size,

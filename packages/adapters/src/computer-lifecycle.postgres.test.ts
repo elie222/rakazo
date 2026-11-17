@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { asSystem, createDb, provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -23,8 +24,8 @@ import {
   reconcileComputerUpdates,
 } from "./computer-update.js";
 import { checkpointAndStopComputer, checkpointRunComputerWorkspace } from "./computer-workspace.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { takeoverContinuePlan } from "./takeover-resume.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -50,11 +51,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       await db.pool.end();
     };
     identity = await runAsSystem("lease fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const bot = await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } });
     computerId = bot.computerId!;
@@ -82,7 +79,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -139,15 +136,12 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
           // part-way through the restore, or inside the provider call before it returns, so no
           // failure handling runs.
           sandbox.boxes.delete(first.id);
-          let importing!: () => void;
-          const started = new Promise<void>((resolve) => {
-            importing = resolve;
-          });
+          const started = deferred();
           if (next === "lost") {
             const provision = sandbox.provision.bind(sandbox);
             vi.spyOn(sandbox, "provision").mockImplementationOnce(async (...args) => {
               await provision(...args);
-              importing();
+              started.resolve();
               return new Promise(() => undefined);
             });
           } else {
@@ -163,12 +157,12 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
                 })(),
                 ctx,
               );
-              importing();
+              started.resolve();
               await new Promise(() => undefined);
             });
           }
           void provisionComputer(deps, computerId, context);
-          await started;
+          await started.promise;
           await prisma.computer.update({
             where: { id: computerId },
             data: { updatedAt: new Date(0) },
@@ -284,7 +278,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -329,15 +323,12 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         // start has either already claimed the computer when the run's save begins, or begins
         // during the export; the save streams the old machine's first file only.
         sandbox.boxes.delete(running.id);
-        let release!: () => void;
-        const gate = new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        const gate = deferred();
         const provision = sandbox.provision.bind(sandbox);
         const provisioning = vi
           .spyOn(sandbox, "provision")
           .mockImplementationOnce(async (...args) => {
-            await gate;
+            await gate.promise;
             return provision(...args);
           });
         let start: Promise<unknown> | undefined;
@@ -351,13 +342,13 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         vi.spyOn(sandbox, "exportWorkspace").mockImplementationOnce(async function* () {
           yield { path: "a.txt", content: new TextEncoder().encode("a.txt") };
           if (!start) begin();
-          release();
+          gate.resolve();
           await start;
         });
         await expect(
           checkpointRunComputerWorkspace(deps, saved, running, context),
         ).resolves.toBeUndefined();
-        release();
+        gate.resolve();
         await start;
 
         const after = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
@@ -385,7 +376,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox,
       home,
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -455,7 +446,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox: new FakeSandboxProvider(),
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -528,7 +519,7 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox: new FakeSandboxProvider(),
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn(), cancelIn: vi.fn() } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -616,7 +607,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   it("frees a computer a vanished update left booting, then recovers it", async () => {
     const { botId } = identity;
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-abandoned-update-"));
-    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const jobs = {
+      enqueue: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      cancelIn: vi.fn(),
+    } as unknown as JobPublisher;
     const deps = {
       prisma,
       sandbox: new FakeSandboxProvider(),
@@ -654,7 +649,6 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
           controlLeaseId: null,
           controlLeaseExpiresAt: null,
           controlBotId: null,
-          controlRunId: null,
         },
       });
       await reconcileComputerUpdates(deps);
@@ -697,7 +691,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   ] as const)(
     "releases a %s computer with machine %s left by a vanished update as %s",
     async (left, providerRef, expected) => {
-      const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+      const jobs = {
+        enqueue: vi.fn(async () => {}),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher;
       const update = await prisma.computerUpdate.create({
         data: {
           computerId,
@@ -718,7 +716,6 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
           },
         });
         await reconcileComputerUpdates({ prisma, jobs });
@@ -742,7 +739,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   );
 
   it("leaves a computer another operation reserved alone", async () => {
-    const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn() } as unknown as JobPublisher;
+    const jobs = {
+      enqueue: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      cancelIn: vi.fn(),
+    } as unknown as JobPublisher;
     const update = await prisma.computerUpdate.create({
       data: {
         computerId,
@@ -806,7 +807,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma: client,
       sandbox,
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };
@@ -856,7 +861,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home: new LocalAgentHomeStore(dataDir),
-        jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: {
+          enqueue: vi.fn(async () => undefined),
+          cancel: vi.fn(),
+          cancelIn: vi.fn(),
+        } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -870,23 +879,17 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       } satisfies AdapterContext;
       /** Opens a transaction that runs `hold`, then waits until `release` to commit. */
       const held = (hold: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
-        let ready!: () => void;
-        let release!: () => void;
-        const holding = new Promise<void>((done) => {
-          ready = done;
-        });
-        const released = new Promise<void>((done) => {
-          release = done;
-        });
+        const holding = deferred();
+        const released = deferred();
         const committed = prisma.$transaction(
           async (tx) => {
             await hold(tx);
-            ready();
-            await released;
+            holding.resolve();
+            await released.promise;
           },
           { timeout: 30_000 },
         );
-        return { holding, release, committed };
+        return { holding: holding.promise, release: released.resolve, committed };
       };
       const pause = () => new Promise((done) => setTimeout(done, 300));
       try {
@@ -950,7 +953,11 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox,
       home: new LocalAgentHomeStore(dataDir),
-      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: {
+        enqueue: vi.fn(async () => undefined),
+        cancel: vi.fn(),
+        cancelIn: vi.fn(),
+      } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };

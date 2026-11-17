@@ -33,7 +33,9 @@ export function BotMemberPicker({
   // member remains re-checkable until the form is saved.
   const [everPicked, setEverPicked] = useState<ReadonlySet<string>>(() => new Set(selected));
   const needle = expanded ? query.trim().toLowerCase() : "";
-  const base = expanded ? bots : bots.filter((bot) => everPicked.has(bot.id));
+  const base = expanded
+    ? bots
+    : bots.filter((bot) => everPicked.has(bot.id) || selected.includes(bot.id));
   const visible = needle ? base.filter((bot) => bot.name.toLowerCase().includes(needle)) : base;
 
   return (
@@ -105,7 +107,7 @@ export function BotMemberPicker({
                 disabled={disabled || (!checked && selected.length >= GROUP_MEMBER_MAX)}
                 onValueChange={(next) => {
                   if (next && selected.length >= GROUP_MEMBER_MAX) return;
-                  if (next) setEverPicked((current) => new Set(current).add(bot.id));
+                  setEverPicked((current) => new Set(current).add(bot.id));
                   onChange(next ? [...selected, bot.id] : selected.filter((id) => id !== bot.id));
                 }}
                 value={checked}

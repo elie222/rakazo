@@ -7,20 +7,15 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import {
-  isSandboxProviderOutage,
-  routineJobKey,
-  runContinueJob,
-  runJobKey,
-} from "@rakazo/adapter-kit";
+import { isSandboxProviderOutage, routineJobKey, runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import { ACTIVE_RUN_STATUSES, retry } from "@rakazo/core";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
   clearEndedRunState,
@@ -28,6 +23,7 @@ import {
   createRepos,
   createThreadMessageInTransaction,
   deletePageShareSecrets,
+  draftRecordingsOfLeaseInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
   recordComputerRunEnd,
@@ -51,6 +47,8 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { forgetPageShareSecrets } from "./page-share-secrets.js";
 import { removePiBotSessions } from "./pi-session.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { wakeRun } from "./wake-run.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -141,9 +139,7 @@ export async function spawnBot(
       spawnKey: input.spawnKey,
       prompt,
     });
-    await deps.jobs
-      .enqueue(runContinueJob(run.id))
-      .catch((error) => getLogger().error("spawned bot enqueue", error));
+    await wakeRun(deps.jobs, run.id);
   }
 
   return {
@@ -220,6 +216,7 @@ type BotLifecycleDeps = {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   jobs: JobPublisher;
+  events?: Pick<ThreadEvents, "publishSpaceChange">;
   dataDir?: string;
   memoryProviders?: MemoryProviderResolver;
   artifacts?: ArtifactStore;
@@ -334,12 +331,18 @@ export async function archiveBot(
       data: { active: false, nextRunAt: null },
     });
     await expireComputerExecutionLeases(tx, { botId: bot.id });
+    // Archiving ends a person's control of the bot's screen, and the recording made under it.
+    const held = await tx.computer.findMany({
+      where: { controlBotId: bot.id, controlLeaseId: { not: null } },
+      select: { spaceId: true, controlLeaseId: true },
+    });
     await tx.computer.updateMany({
-      where: {
-        OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
-      },
+      where: { controlBotId: bot.id },
       data: releasedComputerLease(),
     });
+    for (const { spaceId, controlLeaseId } of held) {
+      await draftRecordingsOfLeaseInTransaction(tx, { spaceId, leaseId: controlLeaseId! });
+    }
     if (dedicated) {
       await tx.computer.updateMany({
         where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
@@ -352,6 +355,9 @@ export async function archiveBot(
     });
     return cancelled;
   });
+  // Activity leaves out archived bots' runs, and their routines are paused.
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "runs");
+  await deps.events?.publishSpaceChange?.(bot.spaceId, "routines");
   await Promise.allSettled([
     ...cancelledRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...activeRoutines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
@@ -471,7 +477,7 @@ export async function destroyBot(
       await tx.computer.updateMany({
         where: {
           ...(dedicated ? { id: { not: dedicated.id } } : {}),
-          OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
+          controlBotId: bot.id,
         },
         data: releasedComputerLease(),
       });
@@ -507,6 +513,7 @@ export async function destroyBot(
           ...botArtifacts.map((artifact) => artifact.storageKey),
           ...groupCleanup.artifactKeys,
         ],
+        removedGroupIds: groupCleanup.removedGroupIds,
         directMemory,
         groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
@@ -515,7 +522,7 @@ export async function destroyBot(
       };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  if (!deletion) return;
+  if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -591,6 +598,7 @@ export async function destroyBot(
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
   }
   if (deps.secretStore) await forgetPageShareSecrets(deps.secretStore, deletion.pageShareSecrets);
+  return { removedGroupIds: deletion.removedGroupIds };
 }
 
 type DissolvableGroup = {
@@ -707,14 +715,6 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   if (cancelledRuns.length) {
     const runIds = cancelledRuns.map((run) => run.id);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: runIds } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
   }
   if (affectedGroups.length) {
     await tx.chatGroupMember.deleteMany({ where: { botId } });
@@ -732,6 +732,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
+    removedGroupIds: dissolvedGroupIds,
     memory,
     artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
     pageShareSecrets,
@@ -769,10 +770,6 @@ function releasedComputerLease() {
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
-    executionRunId: null,
-    executionBotId: null,
-    executionLeaseExpiresAt: null,
   };
 }
 
@@ -820,25 +817,14 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set([
-  "e2b",
-  "novita",
-  "instabox",
-  "daytona",
-  "boat",
-  "createos",
-  "kubernetes",
-  "incus",
-  "local-vm",
-]);
-
 /**
- * Whether only the server writes this computer's stored home. A Kubernetes computer that
- * mounts the server's home directory writes it itself, like a Docker computer.
+ * Whether only the server writes this computer's stored home. A computer that can mount the
+ * server's home directory, and is set up to, writes it itself.
  */
 function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
-  if (!REMOTE_TEAM_SANDBOX_KINDS.has(kind)) return false;
-  return !(kind === "kubernetes" && sandbox.describe().capabilities.persistentHome);
+  const { serverOwnsStoredTeamHome, serverHomeMount } = sandboxKindCapabilities(kind);
+  if (!serverOwnsStoredTeamHome) return false;
+  return !(serverHomeMount === "optional" && sandbox.describe().capabilities.persistentHome);
 }
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
@@ -903,22 +889,16 @@ async function removeProfileOnceClosed(
   name: string,
   context: AdapterContext,
 ) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      await removeComputerWorkspaceDirectories(
-        sandbox,
-        computer,
-        ".browser-profiles",
-        [name],
-        context,
-      );
-      return;
-    } catch (error) {
-      if (!isBusyError(error) || attempt >= PROFILE_BUSY_ATTEMPTS) throw error;
-      await new Promise((resolve) => setTimeout(resolve, PROFILE_BUSY_RETRY_MS));
-      context.signal.throwIfAborted();
-    }
-  }
+  await retry(
+    () =>
+      removeComputerWorkspaceDirectories(sandbox, computer, ".browser-profiles", [name], context),
+    {
+      attempts: PROFILE_BUSY_ATTEMPTS,
+      delayMs: PROFILE_BUSY_RETRY_MS,
+      retryable: isBusyError,
+      signal: context.signal,
+    },
+  );
 }
 
 /** A Team Computer that is not running removes the folder when it next boots. */

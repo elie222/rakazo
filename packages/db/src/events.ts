@@ -1,8 +1,9 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
-import type { ChatAlert, MessageBlock, ProductEvent } from "@rakazo/contracts";
+import type { ChatAlert, MessageBlock, ProductEvent, SpaceChangeKind } from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   hasThinkingActivityMarker,
+  STEP_SCREENSHOT_MIME_TYPES,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -15,9 +16,10 @@ import {
   normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
   sanitizeJsonValue,
+  splitToolHistory,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { cancelRunsInTransaction } from "./cancel-runs.js";
+import { cancelRunsInTransaction, conversationRunsWhere } from "./cancel-runs.js";
 import { createChatAlerts } from "./chat-alerts.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -34,6 +36,7 @@ import {
   notifyCommittedEvent,
   notifyRealtime,
 } from "./event-stream.js";
+import { readMessageBlocks } from "./message-blocks.js";
 import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
@@ -43,6 +46,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { followOrganizationChanges, publishOrganizationChange } from "./organization-changes.js";
 import { isRecordNotFound } from "./prisma-errors.js";
 import type { RosterChange } from "./roster-changes.js";
 import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
@@ -50,7 +54,9 @@ import { createRowId } from "./row-id.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { followSpaceChanges, publishSpaceChange } from "./space-changes.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "./spaces.js";
+import { draftRecordingsOfLease } from "./teaching-recordings.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
 import { clearThreadReads } from "./thread-reads.js";
@@ -60,13 +66,18 @@ import {
   createPendingSteeringRun,
   discardAnsweredSteering,
   hasChannelMessage,
+  releaseUnreadHandovers,
 } from "./thread-steering.js";
 import type {
-  FinalizeComputerControlReleaseInput,
-  FinalizeComputerControlReleaseResult,
+  AnswerTakeoverRequestInput,
   PauseRunForTakeover,
+  ReleaseUserControlInput,
 } from "./thread-takeover.js";
-import { finalizeComputerControlRelease, pauseRunForTakeover } from "./thread-takeover.js";
+import {
+  answerTakeoverRequest,
+  pauseRunForTakeover,
+  releaseUserControl,
+} from "./thread-takeover.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "./transaction-retry.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
@@ -106,14 +117,21 @@ export interface ThreadEvents {
   ): AsyncGenerator<ChatAlert>;
   publishRosterChange?(change: RosterChange): Promise<void>;
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
+  publishSpaceChange?(spaceId: string, kind: SpaceChangeKind): Promise<void>;
+  followSpaceChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<SpaceChangeKind>;
+  publishOrganizationChange?(
+    organizationId: string,
+    alsoUserIds?: readonly string[],
+  ): Promise<void>;
+  followOrganizationChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
   clearThread(input: ClearThreadInput): Promise<ClearThreadResult>;
-  finalizeComputerControlRelease(
-    input: FinalizeComputerControlReleaseInput,
-  ): Promise<FinalizeComputerControlReleaseResult | false>;
+  answerTakeoverRequest(input: AnswerTakeoverRequestInput): Promise<boolean>;
+  draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
+  releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
@@ -132,6 +150,8 @@ export interface ClearThreadInput {
 export interface ClearThreadResult {
   event: ProductEvent;
   cancelledRunIds: string[];
+  /** Stored files of the cleared replies' kept screenshots, for the caller to remove. */
+  removedStorageKeys: string[];
   historyCompactionGeneration: number;
 }
 
@@ -154,6 +174,7 @@ export type FinalizeRunInput = FinalizeRunBase &
   (
     | {
         outcome: "completed";
+        /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
       }
@@ -189,6 +210,23 @@ export interface SendUserMessageInput {
     modelId: string;
     thinkingLevel: string | null;
   };
+  /**
+   * Runs in the send's transaction once its message and run exist. Returning false rolls the
+   * send back with SendClaimLostError, so a row the caller owns decides between two sends that
+   * must not both happen. A replayed send has already passed its claim and skips it.
+   */
+  claim?: (
+    tx: Prisma.TransactionClient,
+    sent: { messageId: string; runId: string | null },
+  ) => Promise<boolean>;
+}
+
+/** A send's claim was lost: another path already owns what it would have started. */
+export class SendClaimLostError extends Error {
+  override readonly name = "SendClaimLostError";
+  constructor() {
+    super("Another delivery already owns this message");
+  }
 }
 
 export interface SendUserMessageResult {
@@ -219,13 +257,20 @@ export function createThreadEvents(
     ...(realtime && {
       followRosterChanges: (userId, signal) =>
         followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
+      followSpaceChanges: (spaceId, signal) => followSpaceChanges(realtime, spaceId, signal),
+      followOrganizationChanges: (userId, signal) =>
+        followOrganizationChanges(realtime, userId, signal),
     }),
+    publishSpaceChange: (spaceId, kind) => publishSpaceChange(realtime, spaceId, kind),
+    publishOrganizationChange: (organizationId, alsoUserIds) =>
+      publishOrganizationChange(prisma, realtime, organizationId, alsoUserIds),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),
-    finalizeComputerControlRelease: (input) =>
-      finalizeComputerControlRelease(prisma, input, realtime),
+    answerTakeoverRequest: (input) => answerTakeoverRequest(prisma, input, realtime),
+    draftRecordingsOfLease: (input) => draftRecordingsOfLease(prisma, input, realtime),
+    releaseUserControl: (input) => releaseUserControl(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
     notify: (threadId, seq, firstResponseRunId) =>
       notifyCommittedEvent(prisma, realtime, threadId, seq, firstResponseRunId),
@@ -243,7 +288,7 @@ export async function clearThread(
   realtime?: RealtimeFanout,
 ): Promise<ClearThreadResult> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Group before thread, the order every group writer uses (see lockOwnedGroup).
+    // Group before thread, the order every group writer uses (see lockSpaceGroup).
     if (input.groupId) {
       await tx.$queryRaw`
         SELECT id FROM chat_groups
@@ -264,15 +309,7 @@ export async function clearThread(
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        ...(input.groupId
-          ? { threadId: input.threadId }
-          : {
-              OR: [
-                { threadId: input.threadId, botId: input.botId },
-                // Background helpers this chat started work in threads of their own.
-                { trigger: BACKGROUND_HELPER_TRIGGER, sourceMessage: { threadId: input.threadId } },
-              ],
-            }),
+        ...conversationRunsWhere(input.threadId),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -281,20 +318,48 @@ export async function clearThread(
     const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    // Helpers start only from the bot's own chat, so every thread the bot's helpers wrote goes
-    // with it, including imported ones that have no runs.
-    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };
-    const cleared = input.groupId
-      ? { threadId: input.threadId }
-      : { OR: [{ threadId: input.threadId }, { thread: helperThreads }] };
+    // Capture hidden histories before deleting their source cards; other chats keep theirs.
+    const helperThreads = await tx.thread.findMany({
+      where: {
+        spaceId: input.spaceId,
+        OR: [
+          {
+            runs: {
+              some: {
+                trigger: BACKGROUND_HELPER_TRIGGER,
+                sourceMessage: { threadId: input.threadId },
+              },
+            },
+          },
+          ...(!input.groupId ? [{ helperBotId: input.botId, runs: { none: {} } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    const helperThreadIds = helperThreads.map((thread) => thread.id);
+    const cleared = { OR: [{ threadId: input.threadId }, { threadId: { in: helperThreadIds } }] };
+    // A reply's kept screenshots belong to its messages, so they go with them.
+    const clearedRuns = await tx.message.findMany({
+      where: { ...cleared, runId: { not: null } },
+      select: { runId: true },
+      distinct: ["runId"],
+    });
+    const screenshots = await tx.artifact.findMany({
+      where: {
+        spaceId: input.spaceId,
+        mimeType: { in: STEP_SCREENSHOT_MIME_TYPES },
+        runId: { in: clearedRuns.flatMap((message) => (message.runId ? [message.runId] : [])) },
+      },
+      select: { id: true, storageKey: true },
+    });
+    if (screenshots.length > 0)
+      await tx.artifact.deleteMany({ where: { id: { in: screenshots.map((row) => row.id) } } });
     await tx.message.deleteMany({ where: cleared });
     await tx.event.deleteMany({ where: cleared });
-    if (!input.groupId) {
-      await tx.thread.updateMany({
-        where: { ...helperThreads, historyCompactionSummary: { not: null } },
-        data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
-      });
-    }
+    await tx.thread.updateMany({
+      where: { id: { in: helperThreadIds }, historyCompactionSummary: { not: null } },
+      data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },
+    });
     if (thread.nextMessageSeq > 0) {
       // nextMessageSeq is not reset, so mark every deleted message as already compacted.
       // Leaving the cursor behind would let compaction re-summarize deleted history (or, reset
@@ -334,36 +399,19 @@ export async function clearThread(
       userId: thread.userId,
       cancelledRunIds: runIds,
       historyCompactionGeneration: thread.historyCompactionGeneration,
+      removedStorageKeys: screenshots.map((row) => row.storageKey),
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  if (committed.cancelledRunIds.length > 0)
+    await publishSpaceChange(realtime, input.spaceId, "runs");
   if (!input.groupId && committed.userId)
     await realtime?.publish(`incoming-calls:${committed.userId}`, "").catch(() => undefined);
-  // Legacy execution bindings point at runs of pre-lease releases, which kept writing
-  // Computer.executionRunId. Clearing them inside the transaction reaches for the
-  // computer row while holding the thread row — the inverted half of a cycle with a
-  // concurrent finalizeComputerControlRelease, which locks the computer first and the
-  // thread second. This statement holds no other row, so it can wait out any holder.
-  // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
-  // to clear, and must not report the clear itself as failed.
-  if (committed.cancelledRunIds.length > 0) {
-    await withTransactionRetry(() =>
-      prisma.computer.updateMany({
-        where: { executionRunId: { in: committed.cancelledRunIds } },
-        data: {
-          executionRunId: null,
-          executionBotId: null,
-          executionLeaseExpiresAt: null,
-        },
-      }),
-    ).catch((error: unknown) => {
-      getLogger().error("legacy computer binding sweep after thread clear", error);
-    });
-  }
   return {
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,
     historyCompactionGeneration: committed.historyCompactionGeneration,
+    removedStorageKeys: committed.removedStorageKeys,
   };
 }
 
@@ -446,7 +494,7 @@ export async function sendUserMessage(
                 trigger: true,
                 status: true,
                 userId: true,
-                sourceMessage: { select: { blocks: true } },
+                sourceMessage: { select: { id: true, blocks: true } },
               },
             })
           : [];
@@ -455,14 +503,16 @@ export async function sendUserMessage(
       const channelId = messagingChannelId(input.blocks);
       // A run acts with its sender's accounts, so another person's message waits for a run of
       // their own.
-      const steersRun = (run: (typeof activeRuns)[number]) =>
-        run.userId === input.userId &&
-        messageSteersRun(
-          input.trigger,
-          run.trigger,
-          channelId,
-          messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined),
-        );
+      const steersRun = (run: (typeof activeRuns)[number]) => {
+        if (run.userId !== input.userId) return false;
+        const source = run.sourceMessage ? readMessageBlocks(run.sourceMessage) : undefined;
+        const runChannelId = messagingChannelId(source?.blocks);
+        // A source that lost entries may have lost its channel marker, so a chat-app message
+        // cannot be matched to that run's chat and gets a run of its own.
+        if (input.trigger === "messaging" && source?.intact === false && !runChannelId)
+          return false;
+        return messageSteersRun(input.trigger, run.trigger, channelId, runChannelId);
+      };
       const holdingRuns = activeRuns.filter(
         (run) => !messageBypassesTakeoverWait(run, fromGroup || steersRun(run)),
       );
@@ -532,6 +582,11 @@ export async function sendUserMessage(
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
+      if (
+        input.claim &&
+        !(await input.claim(tx, { messageId: message.id, runId: run?.id ?? busy?.id ?? null }))
+      )
+        throw new SendClaimLostError();
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,
@@ -565,6 +620,7 @@ export async function sendUserMessage(
     // The event is durable; subscribers recover it from their persisted cursor.
     getLogger().error("user message realtime notification", error);
   });
+  if (committed.run) await publishSpaceChange(realtime, input.spaceId, "runs");
   return {
     messageId: committed.message.id,
     seq: committed.message.seq,
@@ -687,6 +743,7 @@ export async function finalizeRun(
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   const timing = await readRunTimingFields(prisma, input.runId);
   if (committed.firstResponse) {
     getLogger().info("run.first_response", { "run.id": input.runId, ...timing });
@@ -817,15 +874,18 @@ async function finalizeRunOnce(
       });
     }
     let firstResponse = false;
-    const replyBlocks =
+    // Clients get the blocks without the kept calls, in the message and in its event alike.
+    const { blocks: replyBlocks, toolHistory } = splitToolHistory(
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
-        : (input.partialReply ?? []);
+        : (input.partialReply ?? []),
+    );
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "bot",
         blocks: replyBlocks,
+        toolHistory,
         botId: input.botId,
         runId: input.runId,
         ...(input.outcome === "completed"
@@ -866,6 +926,8 @@ async function finalizeRunOnce(
         where: { runId: input.runId },
         data: { runId: null },
       });
+    } else {
+      await releaseUnreadHandovers(tx, input.runId);
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });

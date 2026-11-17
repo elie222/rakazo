@@ -1,5 +1,4 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { PaymentWalletStatus } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,8 +6,7 @@ import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
-import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
 
 /** How often an open sign-in asks whether the provider finished it. */
@@ -37,29 +35,28 @@ export function PaymentWalletSettingsPanel({
       query.state.data?.status === "connecting" ? PAYMENT_WALLET_POLL_MS : false,
   });
   const status = statusQuery.data;
-  const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const shownError = error ?? (statusQuery.isError ? t`Couldn't load your wallet` : null);
-
-  async function act(action: () => Promise<PaymentWalletStatus>) {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const next = await action();
+  const change = useSave({
+    save: async (action: "connect" | "disconnect", rpc) => {
+      const next = await rpc.paymentWallet[action]();
       await writeSaved(queryClient, statusOptions.queryKey, () => next);
-      if (next.status === "connecting") openVerification(next.verificationUrl);
-    } catch (err) {
-      setError(errorText(err, t`Couldn't update your wallet`));
-    } finally {
-      setPending(false);
+      return next;
+    },
+    onSaved: (next) => {
       setConfirming(false);
-    }
-  }
+      if (next.status === "connecting") openVerification(next.verificationUrl);
+    },
+    onFailed: () => setConfirming(false),
+  });
+  const pending = change.pending;
+  const shownError = change.error
+    ? errorText(change.error, t`Couldn't update your wallet`)
+    : statusQuery.isError
+      ? t`Couldn't load your wallet`
+      : null;
 
-  const connect = () => void act(() => rpc.paymentWallet.connect());
-  const disconnect = () => void act(() => rpc.paymentWallet.disconnect());
+  const connect = () => change.run("connect");
+  const disconnect = () => change.run("disconnect");
 
   return (
     <div data-testid="payment-wallet-settings" className="space-y-3">

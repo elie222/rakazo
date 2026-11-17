@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
-import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
+import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "./host-computer-protocol.js";
 import type {

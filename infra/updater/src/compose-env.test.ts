@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -45,10 +46,13 @@ const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
   OWNER_PASSWORD: "bootstrap-owner CLI input, passed on its own command line",
+  DEMO_ACCOUNT_EMAIL: "publishes a shared login; only throwaway pull request previews set it",
+  DEMO_ACCOUNT_PASSWORD: "publishes a shared login; only throwaway pull request previews set it",
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
+  BILLING_EMULATOR: "ignored when NODE_ENV=production",
   NODE_USE_ENV_PROXY:
     "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
   NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
@@ -62,6 +66,7 @@ const NOT_PASSED: Record<string, string> = {
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
+  RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
@@ -149,8 +154,29 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+type EnvRegistry = Record<string, { env?: Record<string, { name?: string }> }>;
+
+async function registryEnv(file: string, exportName: string): Promise<string[]> {
+  const module = (await import(pathToFileURL(path.join(repoRoot, file)).href)) as Record<
+    string,
+    EnvRegistry
+  >;
+  return Object.values(module[exportName] ?? {}).flatMap(({ env = {} }) =>
+    Object.values(env).flatMap((binding) => (binding.name ? [binding.name] : [])),
+  );
+}
+
+/**
+ * Computer providers and messaging platforms declare their settings as env bindings, read by
+ * name through their registries. Bindings that gather a prefix family have no single name.
+ */
+const REGISTRY_ENV = [
+  ...(await registryEnv("packages/adapters/src/computer-providers.ts", "computerProviders")),
+  ...(await registryEnv("packages/adapters/src/messaging-platforms.ts", "messagingPlatforms")),
+];
+
 function scanEnvReads(dirs: readonly string[]): Set<string> {
-  const names = new Set<string>();
+  const names = new Set<string>(dirs.includes("packages/adapters/src") ? REGISTRY_ENV : []);
   for (const dir of dirs) {
     for (const file of sourceFiles(path.join(repoRoot, dir))) {
       const text = readFileSync(file, "utf8");

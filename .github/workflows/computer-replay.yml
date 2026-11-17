@@ -7,7 +7,7 @@ on:
       - infra/sandboxes/computer/**
       - infra/sandboxes/supervisor/**
       - packages/core/src/node/**
-      - packages/adapters/src/docker-sandbox.ts
+      - packages/adapters/src/providers/computer/docker/docker-sandbox.ts
       - packages/adapters/src/computer-browser.ts
       - packages/testkit/src/computer-*.ts
       - packages/testkit/src/cli/computer-replay.ts
@@ -30,12 +30,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo

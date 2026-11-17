@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { ReactElement } from "react";
 import { act } from "react";
@@ -163,6 +165,46 @@ describe("structure", () => {
     );
     expect(plain.indexOf("Read first")).toBeGreaterThan(plain.indexOf("filters"));
     expect(plain.indexOf("Read first")).toBeLessThan(plain.indexOf("board"));
+  });
+
+  it("allows keyboard clicks with selected text while preserving pointer selection protection", () => {
+    const host = mount(
+      <Page title="t">
+        <Text>Select this text</Text>
+        <Section heading="Details" collapsible>
+          <Text>hidden body</Text>
+        </Section>
+      </Page>,
+    );
+    const toggle = host.querySelector<HTMLButtonElement>(".rk-section-toggle")!;
+    const fold = host.querySelector(".rk-section-fold")!;
+    toggle.focus();
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(host.querySelector("p")!);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    try {
+      expect(selection.toString()).toBe("Select this text");
+      // Native Enter/Space activation dispatches a click with detail zero.
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(fold.hasAttribute("inert")).toBe(false);
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(fold.hasAttribute("inert")).toBe(true);
+
+      range.selectNodeContents(toggle.querySelector("span")!);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      selection.removeAllRanges();
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      selection.removeAllRanges();
+    }
   });
 
   it("folds a collapsible section from its heading button and starts open only on request", () => {
@@ -473,17 +515,11 @@ describe("inline links", () => {
     const html = (text: string) => renderToStaticMarkup(<span>{inlineMarkup(text)}</span>);
     expect(html("See https://example.com/a).")).toContain('href="https://example.com/a"');
     for (const input of [
-      `https://a.co/${".".repeat(50_000)}x`,
-      `https://a.co/${"]".repeat(50_000)}x`,
-      `https://a.co/${".)".repeat(25_000)}x`,
+      `https://a.co/${".".repeat(500_000)}x`,
+      `https://a.co/${"]".repeat(500_000)}x`,
+      `https://a.co/${".)".repeat(250_000)}x`,
     ]) {
-      // Best of three, so a busy machine cannot fail it; the quadratic trim took seconds.
-      const runs = [0, 1, 2].map(() => {
-        const started = performance.now();
-        inlineMarkup(input);
-        return performance.now() - started;
-      });
-      expect(Math.min(...runs)).toBeLessThan(50);
+      expectLinearTime(() => inlineMarkup(input));
     }
   });
 });

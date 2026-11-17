@@ -8,8 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Switch,
   Textarea,
 } from "@rakazo/ui-web";
@@ -72,19 +71,17 @@ export function WatchTriggerCard({
         </Button>
       </div>
       <div className="mt-3 space-y-3">
-        <NativeSelect
-          className="w-full"
+        <OptionSelect<RoutineWatchDraft["kind"]>
           aria-label={t`What to watch`}
           value={watch.kind}
-          onChange={(event) =>
-            onChange({ ...watch, kind: event.target.value as RoutineWatchDraft["kind"] })
-          }
-        >
-          <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
-          <NativeSelectOption value="http">{t`An HTTPS endpoint`}</NativeSelectOption>
-          <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
-          <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
-        </NativeSelect>
+          onValueChange={(kind) => onChange({ ...watch, kind })}
+          options={[
+            { value: "files", label: t`Files or folders on the computer` },
+            { value: "http", label: t`An HTTPS endpoint` },
+            { value: "command", label: t`A command's output` },
+            { value: "tool", label: t`An integration tool` },
+          ]}
+        />
         {watch.kind === "files" ? (
           <Textarea
             aria-label={t`Files or folders, one per line`}
@@ -284,15 +281,15 @@ export function EmailTriggerCard({
         <div className="mt-2.5 space-y-2.5 text-body">
           <BotEmailAddressField bot={bot} domain={domain} address={address} />
           {ownerDomain ? (
-            <NativeSelect
+            <OptionSelect<RoutineEmailSenders>
               aria-label={t`Who can start it`}
-              className="w-full"
               value={senders}
-              onChange={(event) => onChange(event.target.value as RoutineEmailSenders)}
-            >
-              <NativeSelectOption value="owner">{t`Only me`}</NativeSelectOption>
-              <NativeSelectOption value="domain">{t`Anyone at @${ownerDomain}`}</NativeSelectOption>
-            </NativeSelect>
+              onValueChange={onChange}
+              options={[
+                { value: "owner", label: t`Only me` },
+                { value: "domain", label: t`Anyone at @${ownerDomain}` },
+              ]}
+            />
           ) : null}
         </div>
       ) : null}

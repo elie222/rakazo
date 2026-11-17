@@ -1,15 +1,15 @@
 import type { ComponentProps } from "react";
 import { ExecutionSettings } from "../../components/ExecutionSettings";
-import { ModelSection } from "./bot-settings-sections";
+import { ModelRow } from "./bot-settings-sections";
 
 export function ExecutionModelSection({
   botId,
   ...props
-}: ComponentProps<typeof ModelSection> & { botId: string }) {
+}: ComponentProps<typeof ModelRow> & { botId: string }) {
   return (
     <ExecutionSettings botId={botId}>
       {(model) => (
-        <ModelSection
+        <ModelRow
           {...props}
           {...(model
             ? {
@@ -17,7 +17,6 @@ export function ExecutionModelSection({
                 value: model.value,
                 onModelChange: model.onChange,
                 thinkingOptions: [],
-                onOpenConnections: undefined,
               }
             : {})}
         />

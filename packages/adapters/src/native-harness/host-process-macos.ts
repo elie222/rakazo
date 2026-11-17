@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { createRequire as createHostRequire } from "node:module";
 import type { Readable, Writable } from "node:stream";
-import type { NativeProcessTree } from "../desktop-process-tree.js";
+import type { NativeProcessTree } from "../providers/computer/desktop/desktop-process-tree.js";
 
 export interface HostProcessMarker {
   directory: string;

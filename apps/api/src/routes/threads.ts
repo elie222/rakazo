@@ -1,10 +1,11 @@
 import { ORPCError } from "@orpc/server";
-import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import { settleCallRequest } from "@rakazo/adapters";
+import { createAdapterContext, runJobKey } from "@rakazo/adapter-kit";
+import { getActiveTeachingSession, settleCallRequest, wakeRun } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
+  ClientError,
   callClientNonce,
   expandSkillReferencesInPrompt,
   MODEL_REQUIRED_SEND_ERROR,
@@ -25,10 +26,11 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { releaseComputerControl } from "../computer-control.js";
+import { answerComputerRequest } from "../computer-control.js";
 import { answerExecutionInput } from "../execution-answer.js";
 import { botsCanRunWithoutDefaultModel } from "../execution-model.js";
 import { stopThreadExecutionRuns } from "../execution-stop.js";
+import { HANG_UP_PROMPT } from "../hidden-turns.prompt.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -57,7 +59,6 @@ import {
   sendThreadMessage,
   threadHead,
 } from "../thread-target.js";
-import { mapBotSecretInputError } from "./bots.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, modelSetup, THREAD_MESSAGE_PAGE_SIZE, withHeartbeats } from "./shared.js";
 
@@ -67,10 +68,6 @@ import { HEARTBEAT, modelSetup, THREAD_MESSAGE_PAGE_SIZE, withHeartbeats } from 
 export function callMarkerClientNonce(callId: string): string {
   return `${CALL_CLIENT_NONCE_PREFIX}${callId}:marker`;
 }
-
-/** The card is closed by a marker; the run that follows finishes whatever the call left open. */
-const HANG_UP_PROMPT =
-  "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
 /** A send with routines that already has runs saved under its nonce. */
 class SavedSubmission extends Error {}
@@ -87,7 +84,11 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
               select: { botId: true },
             })
           )?.botId;
-    if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
+    if (!botId) return;
+    // A reply from someone the bot did not ask still steers it, but answers nothing.
+    await answerComputerRequest(deps, actor, botId, "done", runId).catch((error: unknown) => {
+      if (!(error instanceof ORPCError)) throw error;
+    });
   };
 }
 
@@ -148,7 +149,7 @@ export function threadsRoutes(ctx: RouterContext) {
       startRoutines,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
-        throw new ORPCError("BAD_REQUEST", { message: error.message });
+        throw new ClientError("BAD_REQUEST", error.message);
       }
       throw error;
     });
@@ -257,9 +258,7 @@ export function threadsRoutes(ctx: RouterContext) {
               deps.prisma.$transaction(startRoutines),
             );
             for (const run of started) {
-              await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-                getLogger().error("routine mention enqueue", error);
-              });
+              await wakeRun(deps.jobs, run.id);
             }
           }
         } catch (error) {
@@ -283,10 +282,7 @@ export function threadsRoutes(ctx: RouterContext) {
               await reactedBotId(target, input.messageId),
             ]))) &&
           (target.kind !== "bot" ||
-            (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
-              () => true,
-              () => false,
-            )));
+            !(await getActiveTeachingSession(deps.prisma, context.actor.spaceId, target.botId)));
         const result = await reactToThreadMessage(
           deps,
           context.actor,
@@ -315,14 +311,25 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const contextBotId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
         if (!contextBotId) throw new IsolationError();
-        const { cancelledRunIds, historyCompactionGeneration } = await deps.events.clearThread({
-          spaceId: context.actor.spaceId,
-          threadId: target.threadId,
-          botId: contextBotId,
-          ...(target.kind === "group" ? { groupId: target.groupId } : {}),
-        });
+        const { cancelledRunIds, historyCompactionGeneration, removedStorageKeys } =
+          await deps.events.clearThread({
+            spaceId: context.actor.spaceId,
+            threadId: target.threadId,
+            botId: contextBotId,
+            ...(target.kind === "group" ? { groupId: target.groupId } : {}),
+          });
         await Promise.all(
           cancelledRunIds.map((runId) => deps.jobs.cancel(runJobKey(runId)).catch(() => undefined)),
+        );
+        const removal = createAdapterContext(
+          context.actor,
+          contextBotId,
+          `thread-clear:${target.threadId}`,
+        );
+        await Promise.all(
+          removedStorageKeys.map((storageKey) =>
+            deps.artifacts.remove(storageKey, removal).catch(() => undefined),
+          ),
         );
         await purgeClearedThreadMemory(deps, context.actor, target, historyCompactionGeneration);
         return { ok: true as const };
@@ -343,9 +350,7 @@ export function threadsRoutes(ctx: RouterContext) {
             clientNonce: input.clientNonce,
           });
           if (sent.taskId && sent.runId) {
-            await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              getLogger().error("follow-up enqueue", error);
-            });
+            await wakeRun(deps.jobs, sent.runId);
           }
           return { ok: true as const };
         }
@@ -444,9 +449,7 @@ export function threadsRoutes(ctx: RouterContext) {
             getLogger().error("group follow-up realtime notification", error);
           });
           if (committed.runId) {
-            await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-              getLogger().error("group follow-up enqueue", error);
-            });
+            await wakeRun(deps.jobs, committed.runId);
           }
         }
         return { ok: true as const };
@@ -579,10 +582,7 @@ export function threadsRoutes(ctx: RouterContext) {
         await deps.events.notify(threadId, committed.eventSeq).catch((error) => {
           getLogger().error("call end realtime notification", error);
         });
-        // The queued run is durable; a missed wake is repaired by the reconciler.
-        await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-          getLogger().error("call end enqueue", error);
-        });
+        await wakeRun(deps.jobs, committed.runId);
         return { ok: true as const };
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
@@ -605,19 +605,15 @@ export function threadsRoutes(ctx: RouterContext) {
           })
           .catch((error: unknown) => {
             if (error instanceof AnswerTooLongError)
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            // A typed credential its destination cannot carry (e.g. a header with a line break).
-            throw mapBotSecretInputError(error);
+              throw new ClientError("BAD_REQUEST", error.message);
+            throw error;
           });
         if (!answered) {
           throw new ORPCError("CONFLICT", {
             message: "This prompt is no longer awaiting an answer",
           });
         }
-        await deps.jobs.enqueue(runContinueJob(input.runId)).catch((error) => {
-          // The answer and queued run are durable; the reconciler repairs a missed immediate wake.
-          getLogger().error("thread answer enqueue", error);
-        });
+        await wakeRun(deps.jobs, input.runId);
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

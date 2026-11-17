@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { isToolActivityBlock } from "./tool-activity.js";
 
 /** A fenced block becomes a mention of itself, with its language if known. */
 function describeCodeBlock(fence: string): string {
@@ -29,12 +30,73 @@ function describeCodeBlock(fence: string): string {
   return name ? `. (a ${name} code block) ` : ". (a code block) ";
 }
 
+const PATH_LIKE = /[\w.@/-]+/g;
+const FILE_PATH = /(?:[\w.@-]+\/)+([\w.-]+\.\w{1,6})\b/g;
+/** Short enough that FILE_PATH's backtracking stays cheap; a longer run keeps only a trailing file name. */
+const MAX_PATH_LENGTH = 512;
+
+const FILE_NAME = /^[\w.-]+\.\w{1,6}$/;
+
 /** `a/b/c/file.ts` → `file.ts`. A path's directories are for the eye. */
 function shortenPaths(text: string): string {
-  return text.replace(/(?:[\w.@-]+\/){1,}([\w.-]+\.\w{1,6})\b/g, "$1");
+  return text.replace(PATH_LIKE, (run) => {
+    if (run.length <= MAX_PATH_LENGTH) return run.replace(FILE_PATH, "$1");
+    const name = run.slice(run.lastIndexOf("/") + 1);
+    return name !== run && FILE_NAME.test(name) ? name : run;
+  });
 }
 
 const ENDS_SENTENCE = /[.!?:;]\s*$/;
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const SPACE = /\s/u;
+const LINE_END = /[\n\r\u2028\u2029]/;
+
+/**
+ * `*word*` and `_word_` → `word`, leaving `snake_case` and `2*3` alone.
+ *
+ * A marker opens when it follows no letter or digit and precedes a non-space;
+ * it closes at the nearest same marker on that line that follows a non-space
+ * and precedes no letter or digit. A regex with those lookarounds rescans the
+ * rest of the line for every unclosed opener, so this precomputes the nearest
+ * closer instead and stays linear in the input.
+ */
+function stripSingleEmphasis(text: string): string {
+  const chars = Array.from(text);
+  const n = chars.length;
+  const isWordChar = (k: number) => k >= 0 && k < n && WORD_CHAR.test(chars[k] ?? "");
+  const nextCloser: Record<string, Int32Array> = {
+    "*": new Int32Array(n + 1).fill(-1),
+    _: new Int32Array(n + 1).fill(-1),
+  };
+  for (let k = n - 1; k >= 0; k--) {
+    const char = chars[k] ?? "";
+    for (const [marker, next] of Object.entries(nextCloser)) {
+      if (LINE_END.test(char)) next[k] = -1;
+      else if (char === marker && k > 0 && !SPACE.test(chars[k - 1] ?? " ") && !isWordChar(k + 1))
+        next[k] = k;
+      else next[k] = next[k + 1] ?? -1;
+    }
+  }
+
+  let out = "";
+  let i = 0;
+  while (i < n) {
+    const char = chars[i] ?? "";
+    const next = nextCloser[char];
+    if (next && !isWordChar(i - 1) && i + 1 < n && !SPACE.test(chars[i + 1] ?? " ")) {
+      const close = next[i + 1] ?? -1;
+      if (close !== -1) {
+        out += chars.slice(i + 1, close).join("");
+        i = close + 1;
+        continue;
+      }
+    }
+    out += char;
+    i++;
+  }
+  return out;
+}
 
 /**
  * Markdown (or any agent output) → a line a voice can read.
@@ -77,13 +139,13 @@ export function speakable(input: string): string {
     ENDS_SENTENCE.test(head) ? head : `${head.trim()}.`,
   );
 
+  text = text.replace(/^\s*(?:[-*_]\s*){3,}$/gm, "");
   text = text.replace(/^\s*[-*+]\s+/gm, "");
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/^\s*>\s?/gm, "");
-  text = text.replace(/^\s*(?:[-*_]\s*){3,}$/gm, "");
 
   text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
-  text = text.replace(/(\*|_)(?=\S)(.*?)(?<=\S)\1/g, "$2");
+  text = stripSingleEmphasis(text);
   text = text.replace(/~~(.*?)~~/g, "$1");
 
   text = text.replace(/\[[ xX]\]\s*/g, "");
@@ -232,9 +294,11 @@ export function narrateTool(toolName: string): string | null {
   return /^[\w .:/-]+$/.test(short) ? `running ${short}` : null;
 }
 
+/** What a voice reads from a message: the bot's own words, never its tool activity. */
 export function speechFromBlocks(blocks: MessageBlock[]): string {
   return blocks
     .map((block) => {
+      if (isToolActivityBlock(block)) return "";
       if (block.kind === "text" || block.kind === "progress" || block.kind === "meta")
         return block.text;
       if (block.kind === "ask") return block.text;
@@ -257,17 +321,23 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
 
 // Without its accent "si" is Spanish for "if", so only "sí" says yes. `\b` only knows
 // ASCII letters, so a word ends wherever no letter or digit follows.
-const YES =
-  /^¡?(yes|yeah|yep|yup|ok|okay|sure|do it|go ahead|approve|confirmed|affirmative|sí|vale|okey|de acuerdo|adelante|hazlo|confirmo|aprobado)(?![\p{L}\p{N}])/iu;
-const NO =
-  /^¡?(no|nope|nah|cancel|stop|don't|do not|reject|deny|negative|cancela|cancelar|cancélalo|rechaza|rechazado|mejor no|detente)(?![\p{L}\p{N}])/iu;
+const YES_WORDS =
+  "yes|yeah|yep|yup|ok|okay|sure|do it|go ahead|approve|confirmed|affirmative|sí|vale|okey|de acuerdo|adelante|hazlo|confirmo|aprobado";
+const NO_WORDS =
+  "no|nope|nah|cancel|stop|don't|do not|reject|deny|negative|cancela|cancelar|cancélalo|rechaza|rechazado|mejor no|detente";
+const WORD_END = "(?![\\p{L}\\p{N}])";
+const YES = new RegExp(`^¡?(${YES_WORDS})${WORD_END}`, "iu");
+const NO = new RegExp(`^¡?(${NO_WORDS})${WORD_END}`, "iu");
+const NO_ANYWHERE = new RegExp(`(?<![\\p{L}\\p{N}])(${NO_WORDS})${WORD_END}`, "iu");
 
 /** Consent must never be inferred from a sentence that merely contained "sure". */
 export function spokenDecision(transcript: string): "yes" | "no" | null {
-  const text = transcript.trim();
+  const text = transcript.trim().replace(/[\u2018\u2019]/g, "'");
   // A question ("¿Sí? ¿Cuáles?") is not an answer.
   if (!text || /[?¿]/.test(text) || text.split(/\s+/).length > 6) return null;
-  if (YES.test(text)) return "yes";
+  // "okay, do not" opens with a yes and means no. Only a yes can be wrong in a way that acts, so
+  // a yes that also says no is no answer; a no that says "do it" ("don't do it") stays a no.
+  if (YES.test(text)) return NO_ANYWHERE.test(text) ? null : "yes";
   if (NO.test(text)) return "no";
   return null;
 }

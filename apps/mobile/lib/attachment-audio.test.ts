@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), activate: vi.fn(async () => undefined) }));
@@ -75,13 +77,11 @@ it("rewinds a completed clip before replay", async () => {
   control.dispose();
 });
 it("suppresses duplicate downloads and never plays after unmount", async () => {
-  let resolve!: (uri: string) => void;
-  const load = vi.fn(
-    () =>
-      new Promise<string>((done) => {
-        resolve = done;
-      }),
-  );
+  let pending!: Deferred<string>;
+  const load = vi.fn(() => {
+    pending = deferred<string>();
+    return pending.promise;
+  });
   const state = vi.fn();
   const control = createAttachmentAudioPlayer(load, state);
   const first = control.toggle();
@@ -89,7 +89,7 @@ it("suppresses duplicate downloads and never plays after unmount", async () => {
   expect(load).toHaveBeenCalledTimes(1);
   control.dispose();
   const calls = state.mock.calls.length;
-  resolve("file:///clip.ogg");
+  pending.resolve("file:///clip.ogg");
   await first;
   expect(mocks.create).not.toHaveBeenCalled();
   expect(state).toHaveBeenCalledTimes(calls);

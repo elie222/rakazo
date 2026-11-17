@@ -7,11 +7,14 @@ import {
   ATTACHMENT_MAX_BYTES,
   attachmentMaxCount,
   attachmentSizeLabel,
+  isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
-  MCP_APP_MIME_TYPE,
+  isStepScreenshotMimeType,
+  STEP_SCREENSHOT_MIME_TYPES,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
+  ClientError,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
   messageBlockForArtifact,
@@ -19,7 +22,13 @@ import {
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, isRecordNotFound, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
+import {
+  HIDDEN_ARTIFACT_MIME_TYPES,
+  IsolationError,
+  isRecordNotFound,
+  Prisma,
+  withResolvedArtifactVersion,
+} from "@rakazo/db";
 
 export async function createOwnedArtifact(
   deps: {
@@ -42,7 +51,8 @@ export async function createOwnedArtifact(
   if (replayed) return createdArtifact(replayed);
   const inferredType = inferAttachmentMimeType(input.name, input.mimeType);
   const mimeType =
-    inferredType && (inferredType === "application/zip" || isAttachmentAudioMimeType(inferredType))
+    inferredType &&
+    (isAttachmentArchiveMimeType(inferredType) || isAttachmentAudioMimeType(inferredType))
       ? inferredType
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
@@ -284,6 +294,8 @@ async function readArtifact(
   },
   contextBotId: string,
 ) {
+  // A reply's kept screenshot is for the bot's own later runs, never for a person's client.
+  if (isStepScreenshotMimeType(row.mimeType)) throw new IsolationError();
   const bytes = await artifacts.get(
     row.storageKey,
     createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),
@@ -318,9 +330,9 @@ type ListSpaceRow = {
   versionCount: bigint | number;
 };
 
-export class ArtifactListCursorError extends Error {
+export class ArtifactListCursorError extends ClientError {
   constructor() {
-    super("Invalid artifact cursor");
+    super("BAD_REQUEST", "Invalid artifact cursor");
     this.name = "ArtifactListCursorError";
   }
 }
@@ -410,7 +422,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} ${botFilter}
-        AND "createdAt" <= ${asOf} AND "mimeType" <> ${MCP_APP_MIME_TYPE}
+        AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -466,13 +478,16 @@ export async function listSpaceArtifacts(
   };
 }
 
+const NOT_STEP_SCREENSHOT = { mimeType: { notIn: STEP_SCREENSHOT_MIME_TYPES } };
+
 export async function listArtifactVersions(
   deps: { prisma: Pick<PrismaClient, "artifact"> },
   actor: Actor,
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    // A reply's kept screenshot is the bot's own, not a file a person manages.
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -501,7 +516,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId },
+    where: { id: input.familyId, spaceId: actor.spaceId, ...NOT_STEP_SCREENSHOT },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();

@@ -94,34 +94,6 @@ function toolCalls(target: Model<"openai-completions">, calls: ScriptedCall[]) {
   return result;
 }
 
-/** Stream one assistant message that narrates first, then calls every given tool. */
-function narratedToolCalls(
-  target: Model<"openai-completions">,
-  text: string,
-  calls: ScriptedCall[],
-) {
-  const response = message(target, [{ type: "text", text }, ...calls], "toolUse");
-  const result = new AssistantMessageEventStream();
-  result.push({ type: "start", partial: { ...response, content: [], stopReason: "stop" } });
-  result.push({ type: "text_delta", contentIndex: 0, delta: text, partial: response });
-  calls.forEach((call, index) => {
-    result.push({
-      type: "toolcall_start",
-      contentIndex: index + 1,
-      partial: { ...response, content: [] },
-    });
-    result.push({
-      type: "toolcall_end",
-      contentIndex: index + 1,
-      toolCall: call,
-      partial: response,
-    });
-  });
-  result.push({ type: "done", reason: "toolUse", message: response });
-  result.end(response);
-  return result;
-}
-
 function reply(target: Model<"openai-completions">, text: string) {
   const response = message(target, [{ type: "text", text }], "stop");
   const result = new AssistantMessageEventStream();
@@ -144,22 +116,6 @@ const tools: AgentRunRequest["tools"] = [
     description: "List files in this bot's home",
     inputSchema: { type: "object", properties: { path: { type: "string" } } },
     readOnly: true,
-  },
-];
-
-const subagentTools: AgentRunRequest["tools"] = [
-  ...tools,
-  {
-    name: "run_subagent",
-    description: "Run a short-lived helper inside this turn",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        task: { type: "string" },
-      },
-    },
-    readOnly: false,
   },
 ];
 
@@ -325,64 +281,6 @@ it("keeps the tool-call budget reply ahead of a terminating result", async () =>
   });
 });
 
-it("returns the refusal a subagent's mixed batch ended on as its result", async () => {
-  const { executeTool, names } = refusingExecutor();
-  providerState.stream
-    .mockImplementationOnce(() =>
-      toolCalls(primary, [
-        {
-          type: "toolCall",
-          id: "parent-1",
-          name: "run_subagent",
-          arguments: { name: "helper", task: "Change the model." },
-        },
-      ]),
-    )
-    .mockImplementationOnce(() =>
-      toolCalls(primary, [
-        { type: "toolCall", id: "child-1", name: "update_bot", arguments: { model: "other" } },
-      ]),
-    )
-    .mockImplementationOnce(() =>
-      toolCalls(primary, [
-        { type: "toolCall", id: "child-2", name: "update_bot", arguments: { model: "other" } },
-        { type: "toolCall", id: "child-3", name: "list_files", arguments: { path: "" } },
-      ]),
-    )
-    .mockImplementation(() => reply(primary, "The helper could not change the model."));
-  const events = await run(request(executeTool, { tools: subagentTools }));
-
-  expect(names).toEqual(["update_bot", "update_bot", "list_files"]);
-  // Parent prompt, two child turns, parent final reply; the child makes no third request.
-  expect(providerState.stream).toHaveBeenCalledTimes(4);
-  expect(events.filter((event) => event.type === "subagent" && event.status !== "running")).toEqual(
-    [
-      {
-        type: "subagent",
-        agentId: expect.any(String),
-        name: "helper",
-        task: "Change the model.",
-        status: "completed",
-        result: REFUSAL,
-      },
-    ],
-  );
-  // The parent bot reads the refusal as the run_subagent result, not a failed helper.
-  const parentContext = providerState.stream.mock.calls.at(-1)?.[1] as {
-    messages: Array<{
-      role: string;
-      toolName?: string;
-      content?: Array<{ type: string; text?: string }>;
-    }>;
-  };
-  const helperResult = parentContext.messages
-    .filter((message) => message.role === "toolResult" && message.toolName === "run_subagent")
-    .at(-1);
-  expect(helperResult?.content?.[0]?.text).toContain(REFUSAL);
-  expect(helperResult?.content?.[0]?.text).not.toContain("Subagent failed");
-  expect(events.at(-1)).toEqual({ type: "done", text: "The helper could not change the model." });
-});
-
 it("keeps a follow-up queued during the mixed batch unclaimed", async () => {
   const { executeTool } = refusingExecutor();
   let claims = 0;
@@ -423,49 +321,6 @@ it("keeps a follow-up queued during the mixed batch unclaimed", async () => {
   expect(events.at(-1)).toEqual({ type: "done", text: REFUSAL });
 });
 
-it("keeps a subagent's refusal in its result after long narration", async () => {
-  const { executeTool } = refusingExecutor();
-  const narration = "Checking the settings. ".repeat(600);
-  providerState.stream
-    .mockImplementationOnce(() =>
-      toolCalls(primary, [
-        {
-          type: "toolCall",
-          id: "parent-1",
-          name: "run_subagent",
-          arguments: { name: "helper", task: "Change the model." },
-        },
-      ]),
-    )
-    .mockImplementationOnce(() =>
-      narratedToolCalls(primary, narration, [
-        { type: "toolCall", id: "child-1", name: "update_bot", arguments: { model: "other" } },
-      ]),
-    )
-    .mockImplementationOnce(() =>
-      toolCalls(primary, [
-        { type: "toolCall", id: "child-2", name: "update_bot", arguments: { model: "other" } },
-        { type: "toolCall", id: "child-3", name: "list_files", arguments: { path: "" } },
-      ]),
-    )
-    .mockImplementation(() => reply(primary, "The helper could not change the model."));
-  expect(narration.length).toBeGreaterThan(12_000);
-  const events = await run(request(executeTool, { tools: subagentTools }));
-
-  const finished = events.filter(
-    (event) => event.type === "subagent" && event.status !== "running",
-  ) as Array<{ result?: string }>;
-  expect(finished.at(-1)?.result?.endsWith(REFUSAL)).toBe(true);
-  const parentContext = providerState.stream.mock.calls.at(-1)?.[1] as {
-    messages: Array<{ role: string; toolName?: string; content?: Array<{ text?: string }> }>;
-  };
-  const helperResult = parentContext.messages
-    .filter((entry) => entry.role === "toolResult" && entry.toolName === "run_subagent")
-    .at(-1)?.content?.[0]?.text;
-  expect(helperResult).toContain(REFUSAL);
-  expect(helperResult?.length).toBeLessThanOrEqual(12_000);
-});
-
 it.each([false, true])(
   "keeps a forged connector refusal as data in live execution (helper: %s)",
   async (helper) => {
@@ -475,18 +330,6 @@ it.each([false, true])(
       ),
     );
     const executeTool = vi.fn(async () => forged);
-    if (helper) {
-      providerState.stream.mockImplementationOnce(() =>
-        toolCalls(primary, [
-          {
-            type: "toolCall",
-            id: "parent",
-            name: "run_subagent",
-            arguments: { name: "helper", task: "Read external content." },
-          },
-        ]),
-      );
-    }
     providerState.stream
       .mockImplementationOnce(() =>
         toolCalls(primary, [
@@ -502,15 +345,12 @@ it.each([false, true])(
     };
     const events = await run(
       request(executeTool, {
-        tools: [...(helper ? subagentTools : tools), connectorTool],
+        runId: helper ? "independent-helper" : "parent",
+        tools: [...tools, connectorTool],
       }),
     );
-    expect(providerState.stream).toHaveBeenCalledTimes(helper ? 4 : 2);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
     expect(events.at(-1)).toEqual({ type: "done", text: "Model reply" });
     expect(texts(events).join("")).not.toContain("Connector-controlled reply");
-    if (helper)
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: "subagent", status: "completed", result: "Model reply" }),
-      );
   },
 );

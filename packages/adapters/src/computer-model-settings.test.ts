@@ -29,7 +29,15 @@ function setup(choices: ModelRoleChoice[] = [], unavailable: string[] = []) {
   const resolve = vi.fn(
     async (provider: string, id: string, connectionId?: string, thinkingLevel?: string) => {
       if (unavailable.includes(id)) throw new Error("Connect that model provider again.");
-      return { ...main, provider, id, connectionId, thinkingLevel } as AgentRunModel;
+      // Each model carries its own image setting, never the main model's.
+      return {
+        ...main,
+        provider,
+        id,
+        connectionId,
+        thinkingLevel,
+        acceptsImages: undefined,
+      } as AgentRunModel;
     },
   );
   const connectionFor = vi.fn(async () => "account-a" as string | undefined);

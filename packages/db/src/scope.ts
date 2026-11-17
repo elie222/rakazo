@@ -1,4 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { runAsSystem } from "./row-security.js";
 
@@ -10,11 +11,17 @@ export class IsolationError extends Error {
 }
 
 /** Unique (spaceId, userId, name) collision when renaming a bot section. */
-export class BotSectionNameConflictError extends Error {
+export class BotSectionNameConflictError extends ClientError {
   constructor(message = "Section name already used") {
-    super(message);
+    super("CONFLICT", message);
     this.name = "BotSectionNameConflictError";
   }
+}
+
+/** The signed-in session as the auth library already read it. */
+export interface MembershipSession {
+  id: string;
+  activeOrganizationId?: string | null;
 }
 
 /**
@@ -24,43 +31,59 @@ export class BotSectionNameConflictError extends Error {
  */
 export async function requireMembership(
   prisma: PrismaClient,
-  userId: string,
+  user: { id: string; email: string },
   requestedSpaceId?: string | null,
-  sessionId?: string,
+  session?: MembershipSession,
 ): Promise<Actor> {
-  const organizationId = requestedSpaceId
-    ? null
-    : await sessionOrganizationId(prisma, userId, sessionId);
-  const membership = await prisma.spaceMember.findFirst({
-    where: requestedSpaceId
-      ? { userId, spaceId: requestedSpaceId }
-      : { userId, ...(organizationId ? { organizationId } : {}), space: { deletingAt: null } },
-    orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
-    select: {
-      userId: true,
-      spaceId: true,
-      member: { select: { user: { select: { email: true } } } },
-    },
-  });
+  const membership = requestedSpaceId
+    ? await prisma.spaceMember.findFirst({
+        where: { userId: user.id, spaceId: requestedSpaceId },
+        select: { spaceId: true },
+      })
+    : await openedMembership(prisma, user.id, session);
   if (!membership) {
     throw new IsolationError("No personal space");
   }
   return {
-    userId: membership.userId,
+    userId: user.id,
     spaceId: membership.spaceId,
-    email: membership.member.user.email,
+    email: user.email,
     isDeploymentOwner: false,
   };
+}
+
+async function openedMembership(
+  prisma: PrismaClient,
+  userId: string,
+  session: MembershipSession | undefined,
+) {
+  const pinned = session?.activeOrganizationId ?? null;
+  if (pinned) {
+    const membership = await firstMembership(prisma, userId, pinned);
+    if (membership) return membership;
+  }
+  return firstMembership(
+    prisma,
+    userId,
+    await sessionOrganizationId(prisma, userId, session?.id, pinned),
+  );
+}
+
+function firstMembership(prisma: PrismaClient, userId: string, organizationId: string | null) {
+  return prisma.spaceMember.findFirst({
+    where: { userId, ...(organizationId ? { organizationId } : {}), space: { deletingAt: null } },
+    orderBy: [{ space: { isDefault: "desc" } }, { createdAt: "asc" }, { id: "asc" }],
+    select: { spaceId: true },
+  });
 }
 
 async function sessionOrganizationId(
   prisma: PrismaClient,
   userId: string,
   sessionId: string | undefined,
+  pinned: string | null,
 ): Promise<string | null> {
   return runAsSystem("pick the organization a session opens", async () => {
-    const pinned = sessionId ? await sessionPin(prisma, sessionId) : null;
-    if (pinned && (await opensInOrganization(prisma, userId, pinned))) return pinned;
     const chosen = await recentOrganizationId(prisma, userId);
     if (!sessionId || !chosen) return chosen;
     // Replace only the pin this request read, so concurrent first requests settle on one.

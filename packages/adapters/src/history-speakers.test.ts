@@ -94,7 +94,9 @@ describe("thread speakers", () => {
       { spaceId: "space", bot: { id: "bot-boris" } },
       [],
     );
-    expect(historySpeaker(speakers, { role: "system", blocks: [] })).toBeUndefined();
+    expect(
+      historySpeaker(speakers, { id: "message-1", role: "system", blocks: [] }),
+    ).toBeUndefined();
     expect(
       historySpeaker(
         speakers,

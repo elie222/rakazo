@@ -413,7 +413,7 @@ describe("schedule tool persistence", () => {
 
     expect(result).toEqual({
       error:
-        'An active routine named "Morning joke" already exists (routine-1). Update or cancel it instead.',
+        'An active routine named "Morning joke" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     });
     expect(findMany).toHaveBeenCalledWith({
       where: { spaceId: "ws-1", botId: "bot-1", active: true },
@@ -1036,7 +1036,7 @@ describe("scheduleCreateError", () => {
     await expect(check({ ...named, name: " ", watch })).resolves.toBe("name is required.");
     await expect(check({ ...named, prompt: "", watch })).resolves.toBe("prompt is required.");
     await expect(check({ ...named, name: "daily digest", watch })).resolves.toBe(
-      'An active routine named "Daily digest" already exists (routine-1). Update or cancel it instead.',
+      'An active routine named "Daily digest" (routine-1) is already scheduled. Do not create it again; update or cancel it to change it.',
     );
     await expect(check({ ...named, timezone: "Mars/Base", watch })).resolves.toBe(
       "Unknown timezone",
@@ -1155,7 +1155,6 @@ describe("updateScheduleFromTool", () => {
       ok: true,
       routineId: "routine-1",
       name: "Groceries",
-      prompt,
       active: true,
       crons: ["0 10 * * 1"],
       nextRunAt: "2026-10-26T09:00:00.000Z",
@@ -1163,6 +1162,7 @@ describe("updateScheduleFromTool", () => {
       timezone: "Europe/Berlin",
       schedule: "Every Monday at 10:00 AM",
       nextRun: "Monday, 2026-10-26 10:00 (UTC+01:00)",
+      changes: { prompt: { before: "Order the usual groceries", after: prompt } },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: {
@@ -1179,6 +1179,42 @@ describe("updateScheduleFromTool", () => {
     expect(append).toHaveBeenCalledWith(
       expect.objectContaining({ type: "routine.updated", threadId: "thread-1" }),
     );
+  });
+
+  it("reports only the timing that changed and never echoes the prompt", async () => {
+    const { update } = setup();
+    const result = await update({ schedule: { cron: "0 9 * * 1", startAt: "2026-11-02" } });
+    expect(result).toMatchObject({
+      ok: true,
+      changes: {
+        schedule: { before: "Every Monday at 10:00 AM", after: "Every Monday at 9:00 AM" },
+        nextRun: {
+          before: "Monday, 2026-10-26 10:00 (UTC+01:00)",
+          after: "Monday, 2026-11-02 09:00 (UTC+01:00)",
+        },
+      },
+    });
+    expect(result).not.toHaveProperty("prompt");
+    expect(Object.keys((result as { changes: object }).changes)).toEqual(["schedule", "nextRun"]);
+  });
+
+  it("reports a pause as active and the cleared next run, with a null in place of none", async () => {
+    const { update } = setup();
+    const result = (await update({ active: false })) as { changes: object };
+    expect(result.changes).toEqual({
+      active: { before: true, after: false },
+      nextRun: { before: "Monday, 2026-10-26 10:00 (UTC+01:00)", after: null },
+    });
+  });
+
+  it("reports no changes when the new values equal the saved ones", async () => {
+    const { update } = setup();
+    const result = (await update({ name: "Groceries", prompt: weekly.prompt })) as {
+      ok: boolean;
+      changes: object;
+    };
+    expect(result.ok).toBe(true);
+    expect(result.changes).toEqual({});
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {

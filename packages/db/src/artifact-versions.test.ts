@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveNextArtifactVersion, withResolvedArtifactVersion } from "./artifact-versions.js";
+import {
+  LISTED_ARTIFACT,
+  resolveNextArtifactVersion,
+  withResolvedArtifactVersion,
+} from "./artifact-versions.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
@@ -161,5 +165,13 @@ describe("withResolvedArtifactVersion", () => {
       "Unique constraint failed",
     );
     expect(attempt).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("listed artifacts", () => {
+  it("leave out a reply's kept screenshots and MCP app documents", () => {
+    for (const hidden of ["image/png;profile=step-screenshot", "text/html;profile=mcp-app"])
+      expect(LISTED_ARTIFACT.mimeType.notIn).toContain(hidden);
+    expect(LISTED_ARTIFACT.mimeType.notIn).not.toContain("image/png");
   });
 });

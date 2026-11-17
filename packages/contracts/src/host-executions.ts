@@ -126,5 +126,5 @@ export interface DesktopHostBridge {
   }): Promise<{ runId: string; taskId: string; seq: number }>;
   answer(input: { runId: string; messageId: string; answer: string }): Promise<boolean>;
   stop(input: { botId: string; spaceId: string }): Promise<void>;
-  disconnect(): Promise<void>;
+  disconnect(input?: Record<string, never>): Promise<void>;
 }

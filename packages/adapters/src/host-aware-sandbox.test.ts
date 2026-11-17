@@ -5,11 +5,11 @@ import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBrowserProvider } from "./computer-browser.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { createRunSandbox, HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 const ctx = {
   operationId: "1",

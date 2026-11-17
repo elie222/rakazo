@@ -11,13 +11,15 @@ import type {
   ModelCredentialRetireReason,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { ModelOAuthBegin, ModelOAuthSignInMode, SettingsScope } from "@rakazo/contracts";
+import type { ModelOAuthBegin, SettingsScope } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { ModelProviderDefinition } from "./model-provider-registry.js";
+import { modelProviders } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
-import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
+import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
@@ -25,42 +27,12 @@ export const COPILOT_OAUTH_PROVIDER = "github-copilot";
 export const XAI_OAUTH_PROVIDER = "xai";
 export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 
-export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
-  string,
-  {
-    mode: ModelOAuthSignInMode;
-    loginLabel: string;
-    hint: string;
-    billing: string;
-  }
-> = {
-  [CHATGPT_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with ChatGPT",
-    hint: "ChatGPT Plus/Pro",
-    billing:
-      "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
-  },
-  [COPILOT_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with GitHub Copilot",
-    hint: "Copilot",
-    billing: "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
-  },
-  [XAI_OAUTH_PROVIDER]: {
-    mode: "device-code",
-    loginLabel: "Sign in with SuperGrok or X Premium",
-    hint: "SuperGrok / key",
-    billing: "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
-  },
-  [ANTHROPIC_OAUTH_PROVIDER]: {
-    mode: "auth-url",
-    loginLabel: "Sign in with Claude",
-    hint: "Claude Pro/Max / key",
-    // Button + "Or paste an API key" already explain the choices; no extra paragraph.
-    billing: "",
-  },
-};
+/** Providers Rakazo offers a subscription sign-in for, by id. */
+export const SUBSCRIPTION_SIGN_IN_PROVIDERS = Object.fromEntries(
+  Object.entries(modelProviders as Record<string, ModelProviderDefinition>).flatMap(
+    ([id, { signIn }]) => (signIn ? [[id, signIn]] : []),
+  ),
+) as Record<string, NonNullable<ModelProviderDefinition["signIn"]>>;
 
 export const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
@@ -276,13 +248,7 @@ export function oauthCredentialEmail(credential: OAuthCredential): string | unde
   return email?.includes("@") ? email.trim() : undefined;
 }
 
-const retiredCredentialErrors = new WeakSet<object>();
-
-/**
- * A credential was deleted before the model started. Account-change throws this
- * directly. A terminal refresh keeps its original provider error and is recorded
- * in `retiredCredentialErrors` so callers can still see that error object.
- */
+/** A credential was deleted before the model started. */
 export class RetiredModelCredentialError extends Error {
   constructor(message: string) {
     super(message);
@@ -290,15 +256,8 @@ export class RetiredModelCredentialError extends Error {
   }
 }
 
-export function markRetiredModelCredentialError(error: unknown): void {
-  if (typeof error === "object" && error !== null) retiredCredentialErrors.add(error);
-}
-
 export function isRetiredModelCredentialError(error: unknown): boolean {
-  return (
-    error instanceof RetiredModelCredentialError ||
-    (typeof error === "object" && error !== null && retiredCredentialErrors.has(error))
-  );
+  return error instanceof RetiredModelCredentialError;
 }
 
 export type PiOAuthConnected = {
@@ -508,7 +467,7 @@ export async function resolveModelAuth(
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
-  const maxTokens = parsed.maxTokens;
+  const kept = keptModelSettings(parsed);
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
     try {
       credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
@@ -546,7 +505,7 @@ export async function resolveModelAuth(
       serializeModelSecret({
         kind: "oauth",
         credential,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...kept,
       }),
     );
   }
@@ -558,7 +517,7 @@ export async function resolveModelAuth(
     secret: {
       kind: "oauth",
       credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...kept,
     },
     apiKey: auth.apiKey,
   };

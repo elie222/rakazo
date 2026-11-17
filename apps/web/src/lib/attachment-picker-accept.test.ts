@@ -14,6 +14,10 @@ describe("attachmentPickerAccept", () => {
     expect(accept).toContain(".csv");
     expect(accept).toContain("application/pdf");
     expect(accept).toContain(".zip");
+    expect(accept).toContain("application/vnd.rar");
+    expect(accept).toContain(".rar");
+    expect(accept).toContain("application/x-7z-compressed");
+    expect(accept).toContain(".7z");
     expect(accept).toContain("application/vnd.ms-excel");
     expect(accept).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     expect(accept).toContain(".xls");

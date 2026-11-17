@@ -203,6 +203,13 @@ export function fakeJobs() {
     enqueue: async (job) => {
       enqueued.push(job);
     },
+    enqueueIn: async (_tx, job) => {
+      enqueued.push(job);
+    },
+    enqueueManyIn: async (_tx, jobs) => {
+      enqueued.push(...jobs);
+    },
+    cancelIn: async () => {},
     cancel: async () => {},
     close: async () => {},
   };

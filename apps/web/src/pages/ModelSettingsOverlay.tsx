@@ -6,7 +6,12 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { popularModelProvidersFirst } from "@rakazo/core";
+import {
+  catalogEntryFor,
+  connectionModels,
+  connectionServesModel,
+  popularModelProvidersFirst,
+} from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -15,13 +20,14 @@ import {
   DialogHeader,
   DialogTitle,
   DropdownMenuItem,
-  ModelThinkingOptions,
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SettingsPageHeader } from "../components/SettingsPageHeader";
 import type { ModelCredential } from "../lib/model-auth";
 import { useSpaceQueries } from "../lib/query";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
@@ -29,10 +35,17 @@ import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { ModelSettingsEntry } from "./model-account/ModelSettingsEntry";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
+import { ModelSettingsPanel } from "./model-settings/model-settings-panel";
+import { ProviderPage } from "./model-settings/provider-page";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
 import { SpaceBotsModelButton } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
+
+/** A connection's page, or a model's, with where its Back returns. */
+type SettingsPage =
+  | { kind: "provider"; credentialId: string }
+  | { kind: "model"; credentialId: string; modelId: string; back: SettingsPage | null };
 
 function ConnectionModelSettings({
   onClose,
@@ -70,7 +83,6 @@ function ConnectionModelSettings({
     intentRef,
     isOpenAiCompatible,
     loading,
-    maxTokens,
     me,
     notice,
     pending,
@@ -80,17 +92,21 @@ function ConnectionModelSettings({
     selectedConnectionName,
     selectedProviderName,
     setConfirmDisconnect,
-    setMaxTokens,
-    setNotice,
     settingsDirty,
   } = model;
-  // Where the connection form opens: under a role's list, under a provider row, or at the
-  // end of Providers when adding one. The rest of the page stays where it was.
+  // Where a new connection's form opens: under a role's list, or at the end of Providers.
+  // The rest of the page stays where it was.
   const [connectionAt, setConnectionAt] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     panelRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [connectionAt]);
+  // A connection's or a model's own page, opened in place of the lists.
+  const [page, setPage] = useState<SettingsPage | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    pageRef.current?.scrollIntoView?.({ block: "start" });
+  }, [page]);
 
   // Adding another account is open to every provider, connected or not.
   const allProviders = popularModelProvidersFirst<ConnectableProvider>(
@@ -159,6 +175,7 @@ function ConnectionModelSettings({
     credentialId: string | null,
     at: string,
   ) {
+    setPage(null);
     model.chooseProvider(next.id, next.baseUrl, credentialId);
     intentRef.current = {
       makeDefault: intent?.makeDefault ?? false,
@@ -177,40 +194,51 @@ function ConnectionModelSettings({
     setConnectionAt(null);
   }
 
-  const disconnectButton = connected ? (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="mt-6 -ml-2.5 text-muted-foreground"
-      disabled={busy}
-      onClick={() => setConfirmDisconnect(true)}
-    >
-      {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
-    </Button>
-  ) : null;
+  function openProvider(credentialId: string) {
+    const target = credentials.find((entry) => entry.id === credentialId);
+    if (!target) return;
+    closeConnection();
+    model.chooseProvider(target.provider, undefined, target.id);
+    setPage({ kind: "provider", credentialId });
+  }
+
+  function openModel(credentialId: string, modelId: string, back: SettingsPage | null) {
+    closeConnection();
+    setPage({ kind: "model", credentialId, modelId, back });
+  }
+
+  const providerModels = (entry: ModelCredential) => connectionModels(entry, catalog);
+
+  const catalogEntry = (provider: string, modelId: string) =>
+    catalogEntryFor(catalog, provider, modelId);
+
+  // Always the last thing on a connection's page.
+  const connectionFooter =
+    connected && credential ? (
+      <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        <ConnectionNameField key={credential.id} credential={credential} disabled={busy} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          disabled={busy}
+          onClick={() => setConfirmDisconnect(true)}
+        >
+          {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
+        </Button>
+      </div>
+    ) : null;
 
   const connection = selected ? (
     isOpenAiCompatible ? (
       <>
         <CompatibleModelFields {...model} />
         <CompatibleKeyControls {...model} />
-        {disconnectButton}
       </>
     ) : credential ? (
       <>
         <ConnectionControls {...model} />
-        <ModelThinkingOptions
-          showThinking={false}
-          disabled={busy}
-          advancedLabel={t`Advanced`}
-          maxTokens={maxTokens}
-          onMaxTokensChange={(value) => {
-            setMaxTokens(value);
-            setNotice(null);
-          }}
-          maxTokensLabel={t`Maximum output tokens`}
-        />
         {settingsDirty ? (
           <Button
             type="button"
@@ -223,7 +251,6 @@ function ConnectionModelSettings({
             {pending === "settings" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
         ) : null}
-        {disconnectButton}
       </>
     ) : (
       <>
@@ -241,18 +268,30 @@ function ConnectionModelSettings({
   ) : null;
 
   // Under its own Providers row the row is the heading, so the form sits there unframed.
-  const panelFor = (framed: boolean) => (
+  const panelFrame = ({
+    framed,
+    testId,
+    title,
+    onClose,
+    children,
+  }: {
+    framed: boolean;
+    testId: string;
+    title: ReactNode;
+    onClose: () => void;
+    children: ReactNode;
+  }) => (
     <div
       ref={panelRef}
       className={framed ? "mt-3 rounded-xl border border-border px-4 py-4" : "pt-1"}
-      data-testid="model-connection"
+      data-testid={testId}
     >
       <div className={framed ? "mb-3 flex items-center justify-between gap-3" : "sr-only"}>
         <h4
-          data-testid="model-connection-title"
-          className="min-w-0 truncate text-body-lg font-medium text-foreground"
+          data-testid={`${testId}-title`}
+          className="flex min-w-0 items-baseline gap-2 text-body-lg font-medium text-foreground"
         >
-          {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
+          {title}
         </h4>
         <Button
           type="button"
@@ -261,11 +300,35 @@ function ConnectionModelSettings({
           className="-me-1.5 shrink-0 text-muted-foreground"
           aria-label={t`Close`}
           tabIndex={framed ? undefined : -1}
-          onClick={closeConnection}
+          onClick={onClose}
         >
           <X />
         </Button>
       </div>
+      {children}
+    </div>
+  );
+
+  const panelFor = (framed: boolean) =>
+    panelFrame({
+      framed,
+      testId: "model-connection",
+      title: (
+        <span className="truncate">
+          {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
+        </span>
+      ),
+      onClose: closeConnection,
+      children: (
+        <>
+          {connectionPanel}
+          {connectionFooter}
+        </>
+      ),
+    });
+
+  const connectionPanel = (
+    <>
       {error ? (
         <p className="mb-4 text-body text-destructive" role="alert">
           {error}
@@ -278,17 +341,9 @@ function ConnectionModelSettings({
       ) : null}
       {/* Edits made while a save is in flight would be replaced by what it saved. */}
       <fieldset className="contents" disabled={pending === "connect" || pending === "settings"}>
-        {connected && credential ? (
-          <ConnectionNameField
-            key={credential.id}
-            credential={credential}
-            // A rename touches only the label; keep any unsaved form fields.
-            onRenamed={() => void refresh({ keepForm: true })}
-          />
-        ) : null}
         {connection}
       </fieldset>
-    </div>
+    </>
   );
 
   const content = (
@@ -315,9 +370,8 @@ function ConnectionModelSettings({
             providers={providers}
             providerLabel={providerLabel}
             onConnect={(next, intent) => openConnection(next, intent, null, "main")}
-            onManage={(id, credentialId) =>
-              openConnection({ id, name: id }, null, credentialId, "main")
-            }
+            onManage={(_id, credentialId) => openProvider(credentialId)}
+            onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
             panel={connectionAt === "main" ? panelFor(true) : null}
             thinking
             onChanged={() => void refresh()}
@@ -353,9 +407,8 @@ function ConnectionModelSettings({
               providers={providers}
               providerLabel={providerLabel}
               onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
-              onManage={(id, credentialId) =>
-                openConnection({ id, name: id }, null, credentialId, "approval")
-              }
+              onManage={(_id, credentialId) => openProvider(credentialId)}
+              onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
               panel={connectionAt === "approval" ? panelFor(true) : null}
             />
           ) : null}
@@ -373,9 +426,8 @@ function ConnectionModelSettings({
               providers={providers}
               providerLabel={providerLabel}
               onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
-              onManage={(id, credentialId) =>
-                openConnection({ id, name: id }, null, credentialId, "computer")
-              }
+              onManage={(_id, credentialId) => openProvider(credentialId)}
+              onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
               panel={connectionAt === "computer" ? panelFor(true) : null}
             />
           ) : null}
@@ -386,22 +438,8 @@ function ConnectionModelSettings({
               name={connectionName}
               disabled={busy}
               onAdd={(next) => openConnection(next, null, null, "providers:add")}
-              onOpen={(entry) =>
-                connectionAt === `providers:${entry.id}`
-                  ? closeConnection()
-                  : openConnection(
-                      { id: entry.provider, name: entry.provider },
-                      null,
-                      entry.id,
-                      `providers:${entry.id}`,
-                    )
-              }
-              panel={
-                connectionAt?.startsWith("providers:")
-                  ? panelFor(connectionAt === "providers:add")
-                  : null
-              }
-              panelAt={connectionAt?.slice("providers:".length) ?? null}
+              onOpen={(entry) => openProvider(entry.id)}
+              panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
         </>
@@ -417,25 +455,83 @@ function ConnectionModelSettings({
           <Trans>No model catalog is available.</Trans>
         </p>
       )}
-      <ConfirmDialog
-        open={confirmDisconnect}
-        onCancel={() => setConfirmDisconnect(false)}
-        title={<Trans>Disconnect {disconnectName}?</Trans>}
-        description={<Trans>This removes the connection from every space.</Trans>}
-        confirmDisabled={pending === "disconnect"}
-        onConfirm={() => {
-          setConfirmDisconnect(false);
-          setConnectionAt(null);
-          intentRef.current = null;
-          void disconnectCredential();
-        }}
-        confirmLabel={<Trans>Disconnect</Trans>}
-      />
     </>
   );
 
+  const disconnectDialog = (
+    <ConfirmDialog
+      open={confirmDisconnect}
+      onCancel={() => setConfirmDisconnect(false)}
+      title={<Trans>Disconnect {disconnectName}?</Trans>}
+      description={<Trans>This removes the connection from every space.</Trans>}
+      confirmDisabled={pending === "disconnect"}
+      onConfirm={() => {
+        setConfirmDisconnect(false);
+        setConnectionAt(null);
+        setPage(null);
+        intentRef.current = null;
+        void disconnectCredential();
+      }}
+      confirmLabel={<Trans>Disconnect</Trans>}
+    />
+  );
+
+  const pageCredential = page
+    ? credentials.find((entry) => entry.id === page.credentialId)
+    : undefined;
+  const modelRemoved =
+    page?.kind === "model" &&
+    pageCredential &&
+    !loading &&
+    !connectionServesModel(pageCredential, catalog, page.modelId);
+  useEffect(() => {
+    if (modelRemoved && page) setPage({ kind: "provider", credentialId: page.credentialId });
+  }, [modelRemoved, page]);
+  const body =
+    page && pageCredential ? (
+      <div ref={pageRef}>
+        {page.kind === "provider" || modelRemoved ? (
+          <ProviderPage
+            title={connected ? selectedConnectionName : connectionName(pageCredential)}
+            connection={connectionPanel}
+            footer={connectionFooter}
+            models={providerModels(pageCredential)}
+            onBack={() => setPage(null)}
+            onOpenModel={(modelId) => openModel(pageCredential.id, modelId, page)}
+          />
+        ) : (
+          <div data-testid="model-settings-page">
+            <div className="mb-6">
+              <SettingsPageHeader
+                title={catalogEntry(pageCredential.provider, page.modelId)?.label ?? page.modelId}
+                subtitle={connectionName(pageCredential)}
+                onBack={() =>
+                  page.back?.kind === "provider"
+                    ? openProvider(page.back.credentialId)
+                    : setPage(page.back)
+                }
+              />
+            </div>
+            <ModelSettingsPanel
+              key={`${pageCredential.id}:${page.modelId}`}
+              credential={pageCredential}
+              modelId={page.modelId}
+              entry={catalogEntry(pageCredential.provider, page.modelId)}
+            />
+          </div>
+        )}
+      </div>
+    ) : (
+      content
+    );
+
   if (embedded) {
-    return <div data-testid="model-settings">{content}</div>;
+    return (
+      <div data-testid="model-settings">
+        {body}
+        {disconnectDialog}
+      </div>
+    );
   }
 
   return (
@@ -457,7 +553,10 @@ function ConnectionModelSettings({
           </DialogClose>
         </DialogHeader>
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          <div className="max-w-[600px]">{content}</div>
+          <div className="max-w-[600px]">
+            {body}
+            {disconnectDialog}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

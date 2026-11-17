@@ -24,6 +24,11 @@
       "development": "./src/screen-reconnect.ts",
       "default": "./src/screen-reconnect.ts"
     },
+    "./test-async": {
+      "types": "./src/async.test-support.ts",
+      "development": "./src/async.test-support.ts",
+      "default": "./src/async.test-support.ts"
+    },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
       "development": "./src/node/load-root-env.ts",
@@ -35,19 +40,14 @@
       "default": "./src/node/shutdown-signals.ts"
     },
     "./node/approval-effect-key": {
-      "types": "./src/approval-effect-key.ts",
-      "development": "./src/approval-effect-key.ts",
-      "default": "./src/approval-effect-key.ts"
+      "types": "./src/node/approval-effect-key.ts",
+      "development": "./src/node/approval-effect-key.ts",
+      "default": "./src/node/approval-effect-key.ts"
     },
     "./node/screen-proxy-response": {
       "types": "./src/node/screen-proxy-response.ts",
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
-    },
-    "./secrets-guard": {
-      "types": "./src/secrets-guard.ts",
-      "development": "./src/secrets-guard.ts",
-      "default": "./src/secrets-guard.ts"
     },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
@@ -83,6 +83,26 @@
       "types": "./src/query.ts",
       "development": "./src/query.ts",
       "default": "./src/query.ts"
+    },
+    "./node/prompt-source-version": {
+      "types": "./src/node/prompt-source-version.ts",
+      "development": "./src/node/prompt-source-version.ts",
+      "default": "./src/node/prompt-source-version.ts"
+    },
+    "./node/secrets-guard": {
+      "types": "./src/node/secrets-guard.ts",
+      "development": "./src/node/secrets-guard.ts",
+      "default": "./src/node/secrets-guard.ts"
+    },
+    "./node/screen-lease": {
+      "types": "./src/node/screen-lease.ts",
+      "development": "./src/node/screen-lease.ts",
+      "default": "./src/node/screen-lease.ts"
+    },
+    "./node/sandbox-command": {
+      "types": "./src/node/sandbox-command.ts",
+      "development": "./src/node/sandbox-command.ts",
+      "default": "./src/node/sandbox-command.ts"
     }
   },
   "scripts": {

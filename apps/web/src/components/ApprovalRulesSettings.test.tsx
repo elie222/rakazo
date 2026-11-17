@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { act } from "react";
@@ -11,12 +13,26 @@ const rpcMock = vi.hoisted(() => ({
   autoReview: { get: vi.fn(), set: vi.fn() },
   spendingLimit: { get: vi.fn(), set: vi.fn(), payments: vi.fn() },
 }));
-vi.mock("../lib/rpc", () => ({
-  rpc: rpcMock,
-  rpcForSpace: () => rpcMock,
-  createSpaceRpc: () => rpcMock,
-  selectedSpaceId: () => null,
-}));
+/** The space each mode change named. */
+const wrote = vi.hoisted(() => [] as (string | null)[]);
+vi.mock("../lib/rpc", () => {
+  const clientFor = (spaceId: string | null) => ({
+    ...rpcMock,
+    autoReview: {
+      ...rpcMock.autoReview,
+      set: (input: unknown) => {
+        wrote.push(spaceId);
+        return rpcMock.autoReview.set(input);
+      },
+    },
+  });
+  return {
+    rpc: clientFor(null),
+    rpcForSpace: clientFor,
+    createSpaceRpc: clientFor,
+    selectedSpaceId: () => null,
+  };
+});
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce(
@@ -101,12 +117,14 @@ vi.mock("@rakazo/ui-web", async () => {
   };
 });
 
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { ApprovalRulesSettings } from "./ApprovalRulesSettings";
 
 const settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true };
 
 beforeEach(() => {
   vi.resetAllMocks();
+  wrote.length = 0;
   // Nothing to pay with yet, so the spending limit stays out of the way.
   rpcMock.spendingLimit.get.mockResolvedValue({ limit: null, spent: 0, shown: false });
 });
@@ -311,19 +329,14 @@ it("keeps a saved mode when the revisit's older background read lands after it",
     );
     await act(async () => first.unmount());
 
-    let resolveRead: (value: typeof settings) => void = () => undefined;
-    rpcMock.autoReview.get.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveRead = resolve;
-        }),
-    );
+    const resolveRead = deferred<typeof settings>();
+    rpcMock.autoReview.get.mockImplementationOnce(() => resolveRead.promise);
     const second = await mount();
     // Cached, so the mode can change while the refresh is out.
     expect(rpcMock.autoReview.get).toHaveBeenCalledTimes(2);
     await act(async () => neverAsk()?.click());
     await vi.waitFor(() => expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true"));
-    await act(async () => resolveRead(settings));
+    await act(async () => resolveRead.resolve(settings));
     // Query updates reach components on a timer; let any late write land.
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true");
@@ -440,6 +453,114 @@ it("shows why adding a rule failed", async () => {
     await act(async () => button(container, "Shell")!.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Could not save"));
     expect(container.querySelector('[data-testid^="approval-rules-"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("saves a change once for two clicks in one tick, in the Space the page is bound to", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  let saved: Deferred<typeof settings> | undefined;
+  rpcMock.autoReview.set.mockImplementation(() => {
+    saved = deferred();
+    return saved.promise;
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <SpaceRpcProvider spaceId="space-b">
+            <ApprovalRulesSettings scope="space" />
+          </SpaceRpcProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
+    await act(async () => {
+      button(container, "Never ask")?.click();
+      button(container, "Never ask")?.click();
+    });
+    expect(rpcMock.autoReview.set.mock.calls).toEqual([[{ scope: "space", mode: "never" }]]);
+    expect(wrote).toEqual(["space-b"]);
+    expect(button(container, "Add rule")!.disabled).toBe(true);
+    await act(async () => saved?.resolve({ ...settings, mode: "never", skipApprovals: true }));
+    await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
+    expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("names the change that failed, and forgets it when the next one starts", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    { id: "rule-1", effect: "deny", matchKind: "tool", matchValue: "shell" },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  rpcMock.approvalRules.remove.mockRejectedValue({});
+  rpcMock.approvalRules.set.mockRejectedValue({});
+  const { container, root } = await render();
+  try {
+    await vi.waitFor(() => expect(button(container, "Remove Shell")).toBeDefined());
+    await act(async () => button(container, "Remove Shell")?.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("Could not remove rule"));
+    expect(button(container, "Remove Shell")!.disabled).toBe(false);
+
+    await act(async () => button(container, "Ask", group("deny"))?.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("Could not save rule"));
+    expect(container.textContent).not.toContain("Could not remove rule");
+
+    rpcMock.autoReview.set.mockReturnValue(new Promise(() => undefined));
+    await act(async () => button(container, "Never ask")?.click());
+    expect(container.textContent).not.toContain("Could not save rule");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a change that lands after the page closed, for when it reopens", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([]);
+  rpcMock.autoReview.get.mockResolvedValueOnce(settings);
+  let saved: Deferred<typeof settings> | undefined;
+  rpcMock.autoReview.set.mockImplementation(() => {
+    saved = deferred();
+    return saved.promise;
+  });
+  const first = await render();
+  first.container.remove();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await vi.waitFor(() =>
+      expect(button(first.container, "Ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    await act(async () => button(first.container, "Never ask")?.click());
+    await act(async () => first.root.unmount());
+    await act(async () => saved?.resolve({ ...settings, mode: "never", skipApprovals: true }));
+
+    rpcMock.autoReview.get.mockReturnValue(new Promise(() => undefined));
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={first.client}>
+          <ApprovalRulesSettings scope="account" />
+        </QueryClientProvider>,
+      );
+    });
+    expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true");
   } finally {
     await act(async () => root.unmount());
     container.remove();

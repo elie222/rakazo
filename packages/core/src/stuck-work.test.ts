@@ -16,8 +16,8 @@ import {
 describe("stuck work age", () => {
   it("stays quiet until the reminder, then cancels at the longer limit", () => {
     const action = (ageMs: number, alreadyNotified: boolean) =>
-      stuckWorkAction({ status: "waiting_input", ageMs, alreadyNotified });
-    expect(stuckWorkDueAfterMs("waiting_input")).toBe(STUCK_WORK_NOTIFY_AFTER_MS);
+      stuckWorkAction({ status: "queued", ageMs, alreadyNotified });
+    expect(stuckWorkDueAfterMs("queued")).toBe(STUCK_WORK_NOTIFY_AFTER_MS);
     expect(action(TAKEOVER_WAIT_EXPIRE_AFTER_MS, false)).toBe("none");
     expect(action(STUCK_WORK_NOTIFY_AFTER_MS - 1, false)).toBe("none");
     expect(action(STUCK_WORK_NOTIFY_AFTER_MS, false)).toBe("notify");
@@ -34,9 +34,10 @@ describe("stuck work age", () => {
     expect(action(TAKEOVER_WAIT_EXPIRE_AFTER_MS)).toBe("expire");
   });
 
-  it("treats only queued and human waits as stuck", () => {
+  it("treats only queued runs and takeover waits as stuck, never an open question", () => {
     expect(isStuckWorkStatus("queued")).toBe(true);
-    expect(isStuckWorkStatus("waiting_input")).toBe(true);
+    expect(isStuckWorkStatus("waiting_input")).toBe(false);
+    expect(isAgedStuckWork("waiting_input", new Date(0))).toBe(false);
     expect(isStuckWorkStatus("waiting_takeover")).toBe(true);
     expect(isStuckWorkStatus("running")).toBe(false);
     expect(isAgedStuckWork("queued", new Date(Date.now() - STUCK_WORK_NOTIFY_AFTER_MS))).toBe(true);
@@ -48,10 +49,10 @@ describe("stuck work age", () => {
     const messages = STUCK_WORK_STATUSES_FOR_TEST();
     expect(new Set(messages).size).toBe(messages.length);
     expect(stuckWorkStatusMessage("waiting_takeover")).toMatch(/screen/);
-    expect(stuckWorkStoppedNotification("waiting_input", "  ")).toEqual({
+    expect(stuckWorkStoppedNotification("queued", "  ")).toEqual({
       kind: "failure",
       title: "Bot stopped",
-      body: stuckWorkStatusMessage("waiting_input"),
+      body: stuckWorkStatusMessage("queued"),
     });
     expect(stuckWorkReminder("waiting_takeover", "Ada")).toMatchObject({
       kind: "takeover",
@@ -73,8 +74,8 @@ describe("stuck work timeouts from the environment", () => {
     vi.stubEnv("STUCK_WORK_NOTIFY_AFTER_MS", String(HOUR));
     vi.stubEnv("STUCK_WORK_EXPIRE_AFTER_MS", String(2 * HOUR));
     const action = (ageMs: number, alreadyNotified = false) =>
-      stuckWorkAction({ status: "waiting_input", ageMs, alreadyNotified });
-    expect(stuckWorkDueAfterMs("waiting_input")).toBe(HOUR);
+      stuckWorkAction({ status: "queued", ageMs, alreadyNotified });
+    expect(stuckWorkDueAfterMs("queued")).toBe(HOUR);
     expect(action(HOUR - 1)).toBe("none");
     expect(action(HOUR)).toBe("notify");
     expect(action(2 * HOUR - 1, true)).toBe("none");
@@ -84,7 +85,7 @@ describe("stuck work timeouts from the environment", () => {
 
   it("can end a wait before the default reminder would go out", () => {
     vi.stubEnv("STUCK_WORK_EXPIRE_AFTER_MS", String(2 * HOUR));
-    expect(stuckWorkDueAfterMs("waiting_input")).toBe(2 * HOUR);
+    expect(stuckWorkDueAfterMs("queued")).toBe(2 * HOUR);
     expect(stuckWorkAction({ status: "queued", ageMs: 2 * HOUR, alreadyNotified: false })).toBe(
       "expire",
     );
@@ -92,9 +93,9 @@ describe("stuck work timeouts from the environment", () => {
 
   it("keeps today's limits when the settings are unset, blank, or out of range", () => {
     const limits = () => ({
-      due: stuckWorkDueAfterMs("waiting_input"),
+      due: stuckWorkDueAfterMs("queued"),
       expireAt: stuckWorkAction({
-        status: "waiting_input",
+        status: "queued",
         ageMs: STUCK_WORK_EXPIRE_AFTER_MS - 1,
         alreadyNotified: true,
       }),
@@ -104,7 +105,7 @@ describe("stuck work timeouts from the environment", () => {
       vi.stubEnv("STUCK_WORK_NOTIFY_AFTER_MS", value);
       vi.stubEnv("STUCK_WORK_EXPIRE_AFTER_MS", value);
       expect(limits()).toEqual({ due: STUCK_WORK_NOTIFY_AFTER_MS, expireAt: "none" });
-      expect(stuckWorkAction({ status: "waiting_input", ageMs: DAY, alreadyNotified: true })).toBe(
+      expect(stuckWorkAction({ status: "queued", ageMs: DAY, alreadyNotified: true })).toBe(
         "expire",
       );
     }

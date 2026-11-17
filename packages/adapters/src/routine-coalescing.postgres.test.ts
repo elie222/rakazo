@@ -24,11 +24,7 @@ describePostgres("routine timer coalescing (PostgreSQL)", () => {
     db = createDb(url!);
     system = asSystem(db.prisma);
     const provisioned = await runAsSystem("routine coalescing fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const { userId, spaceId, botId, threadId } = provisioned;
     identity = { userId, spaceId, botId, threadId };

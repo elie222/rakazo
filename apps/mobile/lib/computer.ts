@@ -4,7 +4,6 @@ import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
 
-export const COMPUTER_HEARTBEAT_MS = 60_000;
 /**
  * Computer lifecycle calls create, start or stop a container (booting, switching between the
  * Team and a Private computer); give them far more than an ordinary RPC.
@@ -184,15 +183,8 @@ export function previewPlaceholder(
   return t`Computer is stopped`;
 }
 
-export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
+export function controlLabel(computer: ComputerStatus | null, name: string) {
   if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is using it`;
-  if (
-    computer?.controlHolder === "user" &&
-    computer.controlBotId === botId &&
-    !computer.controlledByOther
-  ) {
-    return t`You have control`;
-  }
   if (computer?.state === "suspended") return t`Asleep`;
   return computerLabel(computer?.mode, name);
 }

@@ -88,8 +88,13 @@ export function modelAccountRoutes(deps: {
     return value;
   };
   const session = (request: Request) => auth.api.getSession({ headers: request.headers });
-  const actor = (userId: string, spaceId?: string | null) =>
-    requireMembership(prisma, userId, spaceId ?? null);
+  const actor = async (userId: string, spaceId?: string | null) => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    return requireMembership(prisma, user, spaceId ?? null);
+  };
   const save = async (
     owner: Actor,
     expected: { accountId: string; binding: string },

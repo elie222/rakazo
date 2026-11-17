@@ -132,6 +132,21 @@ export function browserNotificationMessage(
   };
 }
 
+export function browserNotificationTag(
+  event: Pick<ProductEvent, "type" | "threadId" | "payload">,
+): string {
+  const blocks = event.type === "thread.message.created" ? event.payload.blocks : undefined;
+  // An ask card keeps its own tag, so a later reply in the thread does not replace the question.
+  return Array.isArray(blocks) &&
+    blocks.some(
+      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
+    )
+    ? `${event.threadId}:ask`
+    : pendingTakeoverOnly(event)
+      ? `${event.threadId}:takeover`
+      : event.threadId;
+}
+
 export function deliverBrowserNotification(
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "payload">,
   botName: string,
@@ -155,8 +170,7 @@ export function deliverBrowserNotification(
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
   try {
-    const tag = pendingTakeoverOnly(event) ? `${event.threadId}:takeover` : event.threadId;
-    context.show(message.title, message.body, tag);
+    context.show(message.title, message.body, browserNotificationTag(event));
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {

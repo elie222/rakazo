@@ -74,7 +74,14 @@ export function useComputerBoot(botId: string | undefined) {
       }
       starting = false;
       if (!action.isActive()) return false;
-      if (takeControl) await rpc("computer/takeover", { botId });
+      if (takeControl) {
+        await rpc("computer/takeover", { botId }).catch(async (err: unknown) => {
+          if (!(err instanceof Error && err.name === "TimeoutError")) throw err;
+          // The server may have granted control after the app stopped waiting: ask what it holds.
+          const status = await rpc("computer/status", { botId });
+          if (!status.controlLeaseId) throw err;
+        });
+      }
       if (!action.isActive()) return false;
       await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
       if (!action.isActive()) return false;

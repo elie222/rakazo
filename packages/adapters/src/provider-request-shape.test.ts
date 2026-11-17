@@ -75,7 +75,18 @@ describe("summarizeProviderRequest", () => {
         "reasoning.summary": "auto",
         api_key: "string",
       },
-      tools: { count: 2, maxNameLength: 6, invalidNames: 0 },
+      tools: {
+        count: 2,
+        maxNameLength: 6,
+        invalidNames: 0,
+        duplicateNames: 0,
+        lists: [
+          {
+            at: "tools",
+            tools: ["search 86B root=untyped", "(unnamed) 21B web_search"],
+          },
+        ],
+      },
       messages: {
         count: 5,
         items: [
@@ -105,7 +116,10 @@ describe("summarizeProviderRequest", () => {
         tools: [{ type: "function", function: { name: "lookup", parameters: {} } }],
       }),
     ).toMatchObject({
-      tools: { count: 1, maxNameLength: 6, invalidNames: 0 },
+      tools: {
+        count: 1,
+        lists: [{ at: "tools", tools: ["lookup 64B root=untyped"] }],
+      },
       messages: { count: 4, items: ["system:text", "user:text x2", "tool:text"] },
     });
     expect(
@@ -120,7 +134,7 @@ describe("summarizeProviderRequest", () => {
         generationConfig: { maxOutputTokens: 100, thinkingConfig: { thinkingBudget: 512 } },
       }),
     ).toMatchObject({
-      tools: { count: 2, maxNameLength: 1, invalidNames: 0 },
+      tools: { count: 2, maxNameLength: 1, lists: [{ at: "tools", tools: ["x 12B", "y 12B"] }] },
       messages: { items: ["model:functionCall"] },
       params: {
         "generationConfig.maxOutputTokens": 100,
@@ -139,18 +153,105 @@ describe("summarizeProviderRequest", () => {
   });
 });
 
-describe("tool names", () => {
-  it("records only their shape, never the names", () => {
+describe("tool definitions", () => {
+  it("lists every declared tool with its size and what could make it invalid, never its schema", () => {
+    const strictTool = {
+      type: "function",
+      name: "lookup",
+      description: "PROMPT-TEXT-secret",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          not: { type: "string", description: "TOOL-ARGS-secret" },
+          filter: { oneOf: [{ $ref: "#/$defs/range" }, { type: "string" }] },
+        },
+        $defs: { range: { type: "object", patternProperties: { "^x": { type: "number" } } } },
+      },
+    };
     const shape = summarizeProviderRequest({
-      tools: [
-        { type: "function", name: "acme-private-server_search" },
-        { type: "function", name: "has spaces.and.dots" },
+      tools: [{ type: "function", name: "acme-server_search", parameters: { type: "object" } }],
+      input: [
+        { type: "additional_tools", role: "developer", tools: [strictTool] },
+        { role: "user", content: "PROMPT-TEXT-secret" },
+        {
+          type: "tool_search_output",
+          tools: [
+            { ...strictTool, defer_loading: true },
+            { type: "function", name: "has spaces", parameters: { type: "string" } },
+          ],
+        },
       ],
     });
-    expect(shape?.tools).toEqual({ count: 2, maxNameLength: 26, invalidNames: 1 });
-    expect(JSON.stringify(shape)).not.toContain("acme");
+    const uses = "uses=$defs,$ref,oneOf,patternProperties";
+    expect(shape?.tools).toEqual({
+      count: 4,
+      maxNameLength: 18,
+      invalidNames: 1,
+      duplicateNames: 0,
+      lists: [
+        {
+          at: "tools",
+          tools: [
+            `acme-server_search ${byteLength({ type: "function", name: "acme-server_search", parameters: { type: "object" } })}B`,
+          ],
+        },
+        { at: "input.0", tools: [`lookup ${byteLength(strictTool)}B strict ${uses}`] },
+        {
+          at: "input.2",
+          tools: [
+            `lookup ${byteLength({ ...strictTool, defer_loading: true })}B strict deferred ${uses}`,
+            expect.stringMatching(/^has spaces \d+B root=string$/),
+          ],
+        },
+      ],
+    });
+    const serialized = JSON.stringify(shape);
+    for (const secret of SECRETS) expect(serialized).not.toContain(secret);
+  });
+
+  it("keeps only the newest tool lists of a long history", () => {
+    const load = (index: number) => ({
+      type: "additional_tools",
+      tools: [{ type: "function", name: `t${index}`, parameters: { type: "object" } }],
+    });
+    const tools = summarizeProviderRequest({
+      input: Array.from({ length: 25 }, (_, index) => load(index)),
+    })?.tools;
+    expect(tools).toMatchObject({ count: 25, omittedLists: 5 });
+    expect(tools?.lists.map((list) => list.at)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `input.${index + 5}`),
+    );
+  });
+
+  it("counts an unnamed tool as invalid and scans every schema position", () => {
+    const tools = summarizeProviderRequest({
+      tools: [
+        { type: "function", parameters: { type: "object" } },
+        {
+          type: "function",
+          name: "x",
+          parameters: {
+            type: "object",
+            dependencies: { a: { oneOf: [] } },
+            additionalItems: { $ref: "#" },
+          },
+        },
+      ],
+    })?.tools;
+    expect(tools?.invalidNames).toBe(1);
+    expect(tools?.lists[0]?.tools[1]).toMatch(/ uses=\$ref,dependencies,oneOf$/);
+  });
+
+  it("counts a name declared twice in one list", () => {
+    const tool = { type: "function", name: "x", parameters: { type: "object" } };
+    expect(summarizeProviderRequest({ tools: [tool, tool] })?.tools?.duplicateNames).toBe(1);
   });
 });
+
+function byteLength(value: unknown) {
+  return Buffer.byteLength(JSON.stringify(value));
+}
 
 describe("request size", () => {
   it("counts the encoded bytes, not characters", () => {
@@ -189,6 +290,62 @@ describe("withRejectedRequestCapture", () => {
     for (const secret of SECRETS) expect(serialized).not.toContain(secret);
   });
 
+  it("reports the transport asked for and how the body went over the wire", async () => {
+    let rejection: RejectedProviderRequest | undefined;
+    const fetched: unknown[] = [];
+    const base: SimpleStreamOptions = {
+      transport: "sse",
+      fetch: (async (_input, init) => {
+        fetched.push(init?.body);
+        return new Response(null, { status: 400 });
+      }) as typeof fetch,
+    };
+    const options = withRejectedRequestCapture(base, (value) => {
+      rejection = value;
+    });
+    await options.onPayload?.(responsesBody, model);
+    const compressed = new Uint8Array(1234);
+    await options.fetch?.("https://provider.test/v1", {
+      method: "POST",
+      headers: {
+        "Content-Encoding": "zstd",
+        Authorization: "Bearer TOKEN-secret",
+        "chatgpt-account-id": "ACCOUNT-ID-secret",
+      },
+      body: compressed,
+    });
+    await options.onResponse?.({ status: 400, headers: { "x-request-id": "req_9" } }, model);
+    expect(fetched).toEqual([compressed]);
+    expect(rejection).toMatchObject({
+      model: "test-model",
+      requestId: "req_9",
+      transport: "sse",
+      sent: { bytes: 1234, contentEncoding: "zstd" },
+      body: {
+        bytes: Buffer.byteLength(JSON.stringify(responsesBody)),
+        messages: { count: responsesBody.input.length },
+        tools: { count: responsesBody.tools.length },
+      },
+    });
+    const serialized = JSON.stringify(rejection);
+    for (const secret of SECRETS) expect(serialized).not.toContain(secret);
+
+    await options.fetch?.("https://provider.test/v1", { method: "POST", body: "{}" });
+    await options.onResponse?.({ status: 400, headers: {} }, model);
+    expect(rejection?.sent).toEqual({ bytes: 2, contentEncoding: "identity" });
+  });
+
+  it("leaves fetch alone and the wire unknown when none was given", async () => {
+    let rejection: RejectedProviderRequest | undefined;
+    const options = withRejectedRequestCapture({} as SimpleStreamOptions, (value) => {
+      rejection = value;
+    });
+    expect(options.fetch).toBeUndefined();
+    await options.onResponse?.({ status: 400, headers: {} }, model);
+    expect(rejection?.transport).toBe("auto");
+    expect(rejection).not.toHaveProperty("sent");
+  });
+
   it("reports a success, so recovered rejections drop, but not a server error", async () => {
     const reported: unknown[] = [];
     const options = withRejectedRequestCapture({} as SimpleStreamOptions, (value) =>
@@ -204,8 +361,8 @@ describe("withRejectedRequestCapture", () => {
 
 describe("attachRejectedRequests", () => {
   it("carries every attempt's rejection on the error it is attached to only", () => {
-    const primary = { provider: "p", model: "m", status: 400 };
-    const backup = { provider: "b", model: "n", status: 404 };
+    const primary = { provider: "p", model: "m", status: 400, transport: "auto" };
+    const backup = { provider: "b", model: "n", status: 404, transport: "auto" };
     const error = attachRejectedRequests(new Error("Bad Request"), [primary, backup]);
     expect(rejectedRequestsOf(error)).toEqual([primary, backup]);
     expect(rejectedRequestsOf(new Error("Bad Request"))).toBeUndefined();

@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
-import type { NativeProcessTree } from "../desktop-process-tree.js";
-import { windowsProcessTree } from "../desktop-process-tree.js";
+import type { NativeProcessTree } from "../providers/computer/desktop/desktop-process-tree.js";
+import { windowsProcessTree } from "../providers/computer/desktop/desktop-process-tree.js";
 
 // Nothing launches until the parent owns the wrapper's Job. Only the first line is bootstrap;
 // subsequent stdin belongs to the CLI protocol, including bytes in the same chunk.

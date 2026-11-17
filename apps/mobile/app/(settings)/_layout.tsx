@@ -89,7 +89,15 @@ export default function SettingsLayout() {
         <Stack.Screen name="model-account" options={glassHeaderOptions(t`Models`)} />
         <Stack.Screen name="model-picker" options={glassHeaderOptions(t`Model`)} />
         <Stack.Screen name="model-connection" options={glassHeaderOptions(t`Model`)} />
+        <Stack.Screen name="model-settings" options={glassHeaderOptions(t`Model`)} />
         <Stack.Screen name="billing" options={glassHeaderOptions(t`Billing`)} />
+        <Stack.Screen
+          name="computers"
+          options={{
+            ...glassHeaderOptions(t`Computers`),
+            contentStyle: { backgroundColor: native.groupedPage },
+          }}
+        />
         <Stack.Screen name="models" options={glassHeaderOptions(t`Models`)} />
         <Stack.Screen name="voice" options={glassHeaderOptions(t`Voice`)} />
         <Stack.Screen name="wallet" options={glassHeaderOptions(t`Wallet`)} />
@@ -132,7 +140,21 @@ export default function SettingsLayout() {
             contentStyle: { backgroundColor: native.groupedPage },
           }}
         />
+        <Stack.Screen
+          name="organization-members"
+          options={{
+            ...glassHeaderOptions(t`Members`),
+            contentStyle: { backgroundColor: native.groupedPage },
+          }}
+        />
         <Stack.Screen name="messaging" options={glassHeaderOptions(t`Messaging`)} />
+        <Stack.Screen
+          name="labs"
+          options={{
+            ...glassHeaderOptions(t`Labs`),
+            contentStyle: { backgroundColor: native.groupedPage },
+          }}
+        />
         <Stack.Screen name="team-conversation" />
         <Stack.Screen name="integrations" options={glassHeaderOptions(t`Integrations`)} />
         <Stack.Screen name="skills" options={glassHeaderOptions(t`Skills`)} />

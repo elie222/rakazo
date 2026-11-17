@@ -2,8 +2,8 @@ import type { ComputerExecutionCapability, ComputerRef } from "@rakazo/adapter-k
 import { createAdapterContext, supportsComputerExecution } from "@rakazo/adapter-kit";
 import { expect, it, vi } from "vitest";
 import { ConfiguredSandbox } from "../configured-sandbox.js";
-import { FakeSandboxProvider } from "../fake-sandbox.js";
 import { HostAwareSandbox } from "../host-aware-sandbox.js";
+import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 
 it("forwards optional execution through configured and host routing with the original scope", async () => {
   const execution = vi.fn<ComputerExecutionCapability["execution"]>().mockResolvedValue(undefined);

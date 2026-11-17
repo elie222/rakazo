@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { deferred } from "@rakazo/core/test-async";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -483,13 +484,8 @@ describe("MCP connector managed stdio launch", () => {
     vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({
       tools: [{ name: "hello", inputSchema: { type: "object" } }],
     });
-    let finishCall: () => void = () => undefined;
-    vi.spyOn(McpSession.prototype, "callTool").mockImplementation(
-      () =>
-        new Promise((done) => {
-          finishCall = () => done({ content: [] });
-        }),
-    );
+    const call = deferred<{ content: [] }>();
+    vi.spyOn(McpSession.prototype, "callTool").mockImplementation(() => call.promise);
     const close = vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
     await publishPackage(root);
     const connector = connectorFor({ idleMs: 1_000 });
@@ -502,7 +498,7 @@ describe("MCP connector managed stdio launch", () => {
       expect(sessions.size).toBe(1);
       expect(close).not.toHaveBeenCalled();
 
-      finishCall();
+      call.resolve({ content: [] });
       await calling;
       // Reaped within one sweep interval after it went idle.
       await vi.advanceTimersByTimeAsync(2_500);

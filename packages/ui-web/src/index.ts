@@ -57,5 +57,5 @@ export { CopyTextFallback } from "./copy-text-fallback";
 export { GroupAvatar, type GroupAvatarMember, type GroupAvatarProps } from "./group-avatar.js";
 export { cn } from "./lib/utils.js";
 export { LogoAvatar } from "./logo-avatar.js";
-export { ModelThinkingOptions } from "./model-thinking-options.js";
+export { ModelSettingsFields } from "./model-settings-fields.js";
 export { SectionHeading } from "./section-heading.js";

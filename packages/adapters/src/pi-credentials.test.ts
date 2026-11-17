@@ -1,6 +1,7 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { serializeModelSecret } from "./model-secret.js";
 import { PiRuntimeCredentialStore } from "./pi-credentials.js";
@@ -99,11 +100,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("settles retirement before the refresh error surfaces", async () => {
-    let releaseRetire!: () => void;
-    const retireGate = new Promise<undefined>((resolve) => {
-      releaseRetire = () => resolve(undefined);
-    });
-    const retire = vi.fn(() => retireGate);
+    const retireGate = deferred<undefined>();
+    const retire = vi.fn(() => retireGate.promise);
     const store = new PiRuntimeCredentialStore("openai-codex", credential(), undefined, retire);
     const failure = new Error("OAuth refresh failed for openai-codex", {
       cause: new Error('OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}'),
@@ -126,7 +124,7 @@ describe("PiRuntimeCredentialStore", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(settled).toBe(false);
 
-    releaseRetire();
+    retireGate.resolve(undefined);
     await modification;
     expect(settled).toBe(true);
   });
@@ -245,11 +243,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("settles account-change retirement before the error surfaces", async () => {
-    let releaseRetire!: () => void;
-    const retireGate = new Promise<undefined>((resolve) => {
-      releaseRetire = () => resolve(undefined);
-    });
-    const retire = vi.fn(() => retireGate);
+    const retireGate = deferred<undefined>();
+    const retire = vi.fn(() => retireGate.promise);
     const store = new PiRuntimeCredentialStore(
       "openai-codex",
       credential({ accountId: "acct-a" }),
@@ -272,7 +267,7 @@ describe("PiRuntimeCredentialStore", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(settled).toBe(false);
 
-    releaseRetire();
+    retireGate.resolve(undefined);
     await modification;
     expect(settled).toBe(true);
   });

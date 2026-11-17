@@ -18,9 +18,11 @@ import type {
   TransactionalEmailProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import type { CloudAgentConnection, UserCloudAgents } from "./cloud-agent-factory.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import type { MessagingDelivery } from "./messaging-delivery.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
@@ -55,7 +57,8 @@ export interface ExecutorDeps {
   jobs: JobPublisher;
   /** Publishes board-change signals and wakes ticket owners; absent disables both. */
   onTicketChange?: TicketChangeNotifier;
-  ticketBoardEnabled?: boolean;
+  /** Labs features this deployment turns on for every account. */
+  deploymentLabs?: readonly LabFeature[];
   phoneCallsEnabled?: boolean;
   /** The domain bot email addresses are on; absent when this server receives no email. */
   inboundEmailDomain?: string;
@@ -65,6 +68,8 @@ export interface ExecutorDeps {
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
   messaging?: { hasIdentity(botId: string): Promise<boolean> };
+  /** Sends what runs say to the chat apps their turns came from; absent without one. */
+  messagingDelivery?: MessagingDelivery;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
@@ -90,8 +95,13 @@ export interface ExecutorDeps {
   codexCatalog?: CodexLiveCatalog;
   /** The run starter's connected desktop; absent never offers user_computer_shell. */
   userDevices?: UserDeviceGateway;
-  /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */
+  /** Aborts when this process's runs must stop: each hands itself back to start elsewhere. */
   shutdownSignal?: AbortSignal;
+  /**
+   * Aborts when this process begins to stop, for one that lets running turns end before
+   * `shutdownSignal` (see `drainRuns`): from then on it claims no run.
+   */
+  stoppingSignal?: AbortSignal;
   /** Set by withRunLease for one attempt; that run's history writes carry its lease. */
   runLease?: RunLease & { runId: string };
 }
