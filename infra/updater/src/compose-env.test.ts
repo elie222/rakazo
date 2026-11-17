@@ -168,8 +168,14 @@ async function registryEnv(file: string, exportName: string): Promise<string[]> 
  * name through their registries. Bindings that gather a prefix family have no single name.
  */
 const REGISTRY_ENV = [
-  ...(await registryEnv("packages/adapters/src/computer-providers.ts", "computerProviders")),
-  ...(await registryEnv("packages/adapters/src/messaging-platforms.ts", "messagingPlatforms")),
+  ...(await registryEnv(
+    "packages/adapters/src/computers/computer-providers.ts",
+    "computerProviders",
+  )),
+  ...(await registryEnv(
+    "packages/adapters/src/messaging/messaging-platforms.ts",
+    "messagingPlatforms",
+  )),
 ];
 
 function scanEnvReads(dirs: readonly string[]): Set<string> {
