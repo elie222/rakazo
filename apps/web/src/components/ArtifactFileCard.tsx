@@ -199,9 +199,6 @@ function FilePreview({
         <DialogTitle className="min-w-0 flex-1 truncate text-body font-medium text-foreground">
           {name}
         </DialogTitle>
-        {previewText !== undefined ? (
-          <PreviewCopyButton text={previewText} name={name} appearance="icon" />
-        ) : null}
         <IconTooltip label={t`Download ${name}`}>
           <Button
             variant="ghost"
@@ -223,6 +220,10 @@ function FilePreview({
             <Download />
           </Button>
         </IconTooltip>
+        {/* After Download, so Tab from the close button still lands on Download first. */}
+        {previewText !== undefined ? (
+          <PreviewCopyButton text={previewText} name={name} appearance="icon" />
+        ) : null}
         <DialogClose
           ref={closeButtonRef}
           aria-label={t`Close preview`}
