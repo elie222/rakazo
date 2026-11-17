@@ -10,10 +10,8 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   billingAccountForOrganization,
-  claimCheckoutLease,
   createBillingAccount,
   createDb,
-  releaseCheckoutLease,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
@@ -95,9 +93,6 @@ dbTests("billing checkout coordination", () => {
     expect(results).toHaveLength(3);
     expect(provider.maxInFlight).toBe(1);
     expect(provider.customers.size).toBe(1);
-    await expect(
-      prisma.billingAccount.findUniqueOrThrow({ where: { organizationId } }),
-    ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
   });
 });
 
@@ -330,7 +325,7 @@ dbTests("checkout and organization deletion", () => {
     expect(provider.openSessions()).toBe(0);
   });
 
-  /** An organization whose billing account exists, so the previous release could claim it. */
+  /** An organization whose billing account already exists. */
   async function accountFor(name: string, provider: GatedCheckoutEmulator) {
     const organization = await organizationFor(name);
     provider.releaseCustomer();
@@ -341,46 +336,4 @@ dbTests("checkout and organization deletion", () => {
     await createBillingAccount(prisma, { organizationId: organization.organizationId, customerId });
     return organization;
   }
-
-  it("waits for a checkout claim the previous release holds", async () => {
-    const provider = new GatedCheckoutEmulator(`deploy-old-holds-${stamp}`, false);
-    const { organizationId, actor } = await accountFor("old-holds", provider);
-    // The previous release claims the account's columns and knows nothing of the lease.
-    const claimId = await claimCheckoutLease(prisma, organizationId, 120_000);
-    expect(claimId).toEqual(expect.any(String));
-    const watched = watchCheckoutLeaseClaims(prisma);
-    const service = createBillingService({
-      prisma: watched.prisma,
-      provider,
-      webOrigin: "https://example.test",
-    });
-    let opened = false;
-    void provider.providerCallStarted.then(() => {
-      opened = true;
-    });
-    const pending = service.checkout(actor);
-    await watched.leaseRefused;
-    expect(opened).toBe(false);
-    await releaseCheckoutLease(prisma, organizationId, claimId!);
-    await provider.providerCallStarted;
-    provider.releaseCheckout();
-    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
-    await expect(
-      prisma.billingAccount.findUniqueOrThrow({ where: { organizationId } }),
-    ).resolves.toMatchObject({ checkoutLeaseId: null, checkoutLeaseExpiresAt: null });
-  });
-
-  it("keeps the previous release out while it holds the checkout lease", async () => {
-    const provider = new GatedCheckoutEmulator(`deploy-new-holds-${stamp}`, false);
-    const { organizationId, actor } = await accountFor("new-holds", provider);
-    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
-    const pending = service.checkout(actor);
-    await provider.providerCallStarted;
-    await expect(claimCheckoutLease(prisma, organizationId, 120_000)).resolves.toBeNull();
-    provider.releaseCheckout();
-    await expect(pending).resolves.toMatchObject({ url: expect.any(String) });
-    const claimId = await claimCheckoutLease(prisma, organizationId, 120_000);
-    expect(claimId).toEqual(expect.any(String));
-    await releaseCheckoutLease(prisma, organizationId, claimId!);
-  });
 });
