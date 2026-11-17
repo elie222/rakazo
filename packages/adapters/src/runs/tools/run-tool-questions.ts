@@ -4,7 +4,7 @@ import { checkToolQuestionValues } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
 import { createSealedBoxKey } from "@rakazo/core/node/sealed-box";
 import { takeToolQuestionAnswer } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RunContext } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 
@@ -56,7 +56,13 @@ async function askInRun(
     if (answer?.action !== "accept") return answer;
     const opened = key.open(answer.sealedValues);
     const checked = opened === undefined ? undefined : parsedValues(question, opened);
-    return checked ? { action: "accept", values: checked } : { action: "cancel" };
+    if (checked) return { action: "accept", values: checked };
+    // The person accepted, but nothing this call can read came back: the server hears cancel.
+    getLogger().warn("tool_question.unreadable_answer", {
+      "run.id": run.id,
+      opened: opened !== undefined,
+    });
+    return { action: "cancel" };
   };
   const wait = deadlineSignal(TOOL_QUESTION_WAIT_MS, AbortSignal.any([signal, ctx.context.signal]));
   try {

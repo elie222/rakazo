@@ -94,6 +94,8 @@ function questionField(
   if (s.type === "number" || s.type === "integer") {
     const minimum = num(s.minimum);
     const maximum = num(s.maximum);
+    // A range nothing fits cannot be answered.
+    if (minimum !== undefined && maximum !== undefined && minimum > maximum) return undefined;
     const value = num(s.default);
     // A default the field itself would refuse is no default: the person starts empty.
     const fallback =

@@ -397,6 +397,15 @@ describe("toolQuestionFromElicitation", () => {
     expect(question?.fields.map((field) => "default" in field)).toEqual([false, true, false]);
   });
 
+  it("skips a number range nothing fits", () => {
+    expect(
+      toolQuestionFromElicitation("G", {
+        message: "m",
+        requestedSchema: { properties: { n: { type: "number", minimum: 10, maximum: 5 } } },
+      }),
+    ).toBeUndefined();
+  });
+
   it("skips URL mode, nested objects and multi-select", () => {
     expect(toolQuestionFromElicitation("G", { mode: "url", message: "Go" })).toBeUndefined();
     for (const property of [
