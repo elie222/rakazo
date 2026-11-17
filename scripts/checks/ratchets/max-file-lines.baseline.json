@@ -78,7 +78,6 @@
   "packages/adapters/src/routine-watch.test.ts": 1,
   "packages/adapters/src/routine-watch.ts": 1,
   "packages/adapters/src/run-tools-page-browser.test.ts": 1,
-  "packages/adapters/src/run-turn.ts": 1,
   "packages/adapters/src/schedule-tools.test.ts": 1,
   "packages/adapters/src/schedule-tools.ts": 1,
   "packages/adapters/src/scripted-runtime.ts": 1,

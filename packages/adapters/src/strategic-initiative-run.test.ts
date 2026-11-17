@@ -1,8 +1,9 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { completeRun } from "./run-complete.js";
 import type { RunContext } from "./run-context.js";
 import { createReplyState } from "./run-progress.js";
-import { completeRun, consumeRunEvents } from "./run-turn.js";
+import { consumeRunEvents } from "./run-turn.js";
 
 async function context(
   options: {
