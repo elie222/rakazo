@@ -156,6 +156,13 @@ describe("account export archive", () => {
     expect(AccountExportRecordSchema.parse(olderRecord)).toMatchObject({ dailyCheckIns: true });
   });
 
+  it("preserves the bot provider and accepts archives written before provider overrides", () => {
+    expect(
+      AccountExportRecordSchema.parse({ ...botRecord("bot-1"), voiceProvider: "provider-a" }),
+    ).toMatchObject({ voiceProvider: "provider-a" });
+    expect(AccountExportRecordSchema.safeParse(botRecord("bot-1")).success).toBe(true);
+  });
+
   it("streams manifest, then each space's records, artifacts and homes", async () => {
     const fakes = stores();
     const entries = await unzipStream(

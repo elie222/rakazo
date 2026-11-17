@@ -47,7 +47,8 @@ function sourceRecords(): AccountExportRecord[] {
       // Its parent comes later in the file.
       parentBotId: "src-bot-parent",
       memoryScope: null,
-      voiceId: null,
+      voiceProvider: "provider-a",
+      voiceId: "bot-voice",
       autoSpeak: false,
       modelProvider: null,
       modelId: null,
@@ -456,6 +457,9 @@ describePostgres("account import (PostgreSQL)", () => {
     expect(child.fleetManagement).toBe(false);
     expect(child.replyMode).toBe("messages");
     expect(child.dailyCheckIns).toBe(false);
+    expect(child.voiceProvider).toBe("provider-a");
+    expect(child.voiceId).toBe("bot-voice");
+    expect(parent.voiceProvider).toBeNull();
     expect(parent.dailyCheckIns).toBe(false);
     expect(child.disabledBuiltinTools).toEqual(["browser"]);
     const section = await system.botSection.findFirstOrThrow({ where: { spaceId } });

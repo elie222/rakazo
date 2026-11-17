@@ -3,7 +3,7 @@ import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { findDefaultVoiceCredential } from "@rakazo/db";
+import { findDefaultVoiceCredential, findVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { botModelLabel } from "./fleet-tools.js";
 import { connectedModelChoices, echoedQuery, resolveModelChoice, words } from "./model-choice.js";
@@ -127,8 +127,8 @@ export async function readOwnBotSettings(
   return paged(end);
 }
 
-/** The voices the settings screen offers: those of the user's default voice connection here. */
-export async function listDefaultVoices(
+/** The voices offered by this bot's connection, or the effective settings default. */
+export async function listBotVoices(
   deps: {
     prisma: PrismaClient;
     secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
@@ -136,8 +136,11 @@ export async function listDefaultVoices(
   },
   scope: Pick<Actor, "userId" | "spaceId">,
   context: AdapterContext,
+  providerId?: string | null,
 ): Promise<VoiceInfo[] | null> {
-  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
+  const credential = providerId
+    ? await findVoiceCredential(deps.prisma, scope, providerId)
+    : await findDefaultVoiceCredential(deps.prisma, scope);
   const secret =
     credential &&
     (await deps.prisma.secret.findFirst({

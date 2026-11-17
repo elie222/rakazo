@@ -68,6 +68,7 @@ import {
   voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
+  voiceStatus,
   withVoiceConnection,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
@@ -547,10 +548,9 @@ export function accountRoutes(ctx: RouterContext) {
       catalog: authed.voice.catalog.handler(async ({ context }) =>
         accountVoiceCatalog(deps, context.actor),
       ),
-      status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
-        return toVoiceStatus(cred);
-      }),
+      status: authed.voice.status.handler(async ({ context, input }) =>
+        voiceStatus(deps, context.actor, input),
+      ),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
         const [rows, preferences] = await Promise.all([

@@ -24,6 +24,7 @@ interface SpeakOptions {
   spaceId?: string | null;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
+  provider?: string;
   voiceId?: string;
   botId?: string;
   messageId?: string;
@@ -182,7 +183,13 @@ export class Speaker {
     spaceId: string | null,
   ): Promise<string[]> {
     const body = await rpc.voice.prepare(
-      { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
+      {
+        text,
+        provider: opts.provider,
+        voiceId: opts.voiceId,
+        botId: opts.botId,
+        scope: opts.scope,
+      },
       { signal, context: { spaceId } },
     );
     if (!body.ready) {
@@ -210,6 +217,7 @@ export class Speaker {
           credentials: "include",
           body: JSON.stringify({
             text,
+            provider: opts.provider,
             voiceId: opts.voiceId,
             botId: opts.botId,
             scope: opts.scope,

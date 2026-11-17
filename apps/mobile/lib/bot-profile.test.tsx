@@ -20,6 +20,7 @@ import { queryClient } from "./query";
 import type * as RoutineHelpers from "./routine";
 import { ROUTINES_RETRY_MS } from "./routine-store";
 
+vi.mock("../components/bot-voice-settings", () => ({ BotVoiceSettings: () => null }));
 vi.mock("./haptics", () => ({
   hapticImpact: vi.fn(),
   hapticSelection: vi.fn(),

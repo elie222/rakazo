@@ -10,18 +10,14 @@ import {
   selectConfiguredModel,
   toStringRecord,
 } from "@rakazo/adapters";
-import type {
-  Actor,
-  AiConsentQuery,
-  AiConsentStatus,
-  AiRecipient,
-  SettingsScope,
-} from "@rakazo/contracts";
+import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
 import {
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
+  findVoiceCredential,
+  IsolationError,
   listModelRoleChoices,
   listVoicePreferences,
   modelRoleTarget,
@@ -93,8 +89,8 @@ export async function aiConsentStatus(
         : [],
       uses.includes("voice")
         ? query.uses
-          ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential }] : []),
+          ? selectedVoiceCredential(deps, actor, query).then((credential) =>
+              credential ? [{ credential }] : [],
             )
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
@@ -284,17 +280,36 @@ export async function aiConsentStatus(
   };
 }
 
+/** Match synthesis selection without opening a key or renewing a connection. */
+async function selectedVoiceCredential(deps: RouterDeps, actor: Actor, query: AiConsentQuery) {
+  let provider = query.voiceProvider;
+  if (query.botId) {
+    const bot = await deps.prisma.bot.findFirst({
+      where: { id: query.botId, spaceId: actor.spaceId },
+      select: { voiceProvider: true },
+    });
+    if (!bot) throw new IsolationError();
+    provider ??= bot.voiceProvider ?? undefined;
+  }
+  return provider
+    ? findVoiceCredential(deps.prisma, actor, provider, query.settingsScope)
+    : findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope);
+}
+
 export async function allowAiConsent(
   deps: RouterDeps,
   actor: Actor,
-  input: { scope: string; version: string; keys: string[]; settingsScope?: SettingsScope },
+  input: AiConsentQuery & { scope: string; version: string; keys: string[] },
 ) {
   // Checked against the same settings copy the member reviewed.
-  const current = await aiConsentStatus(
-    deps,
-    actor,
-    input.settingsScope ? { settingsScope: input.settingsScope } : {},
-  );
+  const current = await aiConsentStatus(deps, actor, {
+    uses: input.uses,
+    botId: input.botId,
+    groupId: input.groupId,
+    routineId: input.routineId,
+    voiceProvider: input.voiceProvider,
+    settingsScope: input.settingsScope,
+  });
   const known = new Set(current.recipients.map((recipient) => recipient.key));
   if (
     input.scope !== current.scope ||

@@ -457,6 +457,9 @@ export function botsRoutes(ctx: RouterContext) {
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
             input.dailyCheckIns !== undefined ||
+            input.voiceProvider !== undefined ||
+            input.voiceId !== undefined ||
+            input.autoSpeak !== undefined ||
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
           expectedSettings: input.expectedSettings,
@@ -471,7 +474,14 @@ export function botsRoutes(ctx: RouterContext) {
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
-            voiceId: input.voiceId,
+            voiceProvider: input.voiceProvider,
+            voiceId:
+              input.voiceId !== undefined
+                ? input.voiceId
+                : input.voiceProvider !== undefined &&
+                    input.voiceProvider !== existing.voiceProvider
+                  ? null
+                  : undefined,
             autoSpeak: input.autoSpeak,
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }

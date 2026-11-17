@@ -102,6 +102,7 @@ export const BotSettingsValuesSchema = z.object({
   modelId: z.string().trim().min(1).max(200).nullable().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   autoSpeak: z.boolean().optional(),
+  voiceProvider: z.string().trim().min(1).max(80).nullable().optional(),
   voiceId: z.string().max(120).nullable().optional(),
 });
 export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;

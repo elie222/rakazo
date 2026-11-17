@@ -125,6 +125,18 @@ describe("foreground AI consent", () => {
       { routineId: "routine-2" },
     ]);
   });
+
+  it("carries an explicit voice recipient without treating model providers as voices", () => {
+    expect(
+      aiConsentTargets({
+        botId: "bot",
+        scope: "space",
+        voiceProvider: "provider-a",
+        text: "Private sample",
+      }),
+    ).toEqual([{ botId: "bot", settingsScope: "space", voiceProvider: "provider-a" }]);
+    expect(aiConsentTarget({ provider: "model-provider" })).toEqual({});
+  });
   it("coalesces concurrent prompts and grants for one account-space recipient", async () => {
     const decision = deferred<boolean>();
     const prompt = vi.fn(() => decision.promise);

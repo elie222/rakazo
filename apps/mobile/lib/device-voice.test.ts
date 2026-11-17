@@ -1,6 +1,8 @@
 import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { rpc } from "./api";
+import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "./device-voice";
 
 const store = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
@@ -39,19 +41,20 @@ describe("device voice preference", () => {
     });
   });
 
-  it("defaults to on, and keeps that answer, when no hosted voice is ready", async () => {
+  it("inherits live hosted readiness without saving an inferred device preference", async () => {
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(true);
     status.ready = true;
-    expect(await loadDeviceVoiceEnabled()).toBe(true);
+    expect(await loadDeviceVoiceEnabled()).toBe(false);
+    expect(store.size).toBe(0);
   });
 
-  it("keeps a hosted voice that is already ready", async () => {
+  it("falls back to the device when the hosted default stops being ready", async () => {
     status.ready = true;
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(false);
     status.ready = false;
-    expect(await loadDeviceVoiceEnabled()).toBe(false);
+    expect(await loadDeviceVoiceEnabled()).toBe(true);
   });
 
   it("uses this device without remembering it when the server cannot answer", async () => {
@@ -61,6 +64,24 @@ describe("device voice preference", () => {
     status.fail = false;
     status.ready = true;
     expect(await loadDeviceVoiceEnabled()).toBe(false);
+  });
+
+  it("checks the bot's effective voice without requiring a global default", async () => {
+    status.ready = true;
+    const requestContext = { apiBase: "https://api.example.test", headers: {} };
+    expect(await loadDeviceVoiceEnabled("bot-voice", requestContext)).toBe(false);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "voice/status",
+      { botId: "bot-voice" },
+      { requestContext },
+    );
+    expect(store.size).toBe(0);
+  });
+
+  it("honors explicit device-only speech even when the bot has a hosted voice", async () => {
+    await saveDeviceVoiceEnabled(true);
+    status.ready = true;
+    expect(await loadDeviceVoiceEnabled("bot-voice")).toBe(true);
   });
 
   it("persists on and off", async () => {

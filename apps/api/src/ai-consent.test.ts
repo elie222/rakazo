@@ -1,6 +1,7 @@
+import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./thread-target.js", () => ({
   resolveThreadTarget: async () => ({ kind: "bot", botId: "bot" }),
@@ -364,4 +365,121 @@ it("grants the account's voice provider when the grant names the account copy", 
     settingsScope: "account",
   });
   expect(upsert).toHaveBeenCalled();
+});
+
+describe("bot and preview voice consent", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function voiceSetup() {
+    const { deps, actor, upsert } = setup();
+    const bot: { voiceProvider: string | null } = { voiceProvider: "provider-b" };
+    const disconnected = new Set<string>();
+    const preference = (scope: string) =>
+      vi.fn(async ({ where }: { where: { credential?: { provider: string } } }) => {
+        const provider = where.credential?.provider ?? "provider-a";
+        if (disconnected.has(provider)) return null;
+        return {
+          voiceId: `${scope}-voice`,
+          isDefault: provider === "provider-a",
+          speechModel: null,
+          credential: {
+            id: `credential-${provider}`,
+            provider,
+            secretId: `secret-${provider}`,
+            userId: actor.userId,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        };
+      });
+    const accountPreference = preference("account");
+    const spacePreference = preference("space");
+    Object.assign(deps.prisma, {
+      bot: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => bot) },
+      userVoicePreference: { findFirst: accountPreference },
+      spaceVoicePreference: { findFirst: spacePreference },
+      userVoiceCredential: { findFirst: vi.fn(async () => null) },
+    });
+    vi.spyOn(adapters, "aiRecipient").mockImplementation(({ provider, use }) => ({
+      key: `${use}:${provider}`,
+      name: provider ?? "none",
+      use,
+      detail: "",
+    }));
+    return { deps, actor, upsert, bot, disconnected, accountPreference, spacePreference };
+  }
+
+  it("asks about the bot recipient even when the default recipient was already allowed", async () => {
+    const { deps, actor, upsert } = voiceSetup();
+    vi.mocked(deps.prisma.aiDataConsent.findMany).mockResolvedValue([
+      { recipientKey: "voice:provider-a" },
+    ] as never);
+    const query = { botId: "bot" };
+    const reviewed = await aiConsentStatus(deps, actor, { ...query, uses: ["voice"] });
+    expect(reviewed.recipients).toEqual([
+      { key: "voice:provider-b", name: "provider-b", use: "voice", detail: "", allowed: false },
+    ]);
+    expect(upsert).not.toHaveBeenCalled();
+    await expect(
+      allowAiConsent(deps, actor, {
+        ...query,
+        uses: ["voice"],
+        scope: reviewed.scope,
+        version: reviewed.version,
+        keys: ["voice:provider-a"],
+      }),
+    ).rejects.toThrow("AI data sharing changed");
+    expect(upsert).not.toHaveBeenCalled();
+    await allowAiConsent(deps, actor, {
+      ...query,
+      uses: ["voice"],
+      scope: reviewed.scope,
+      version: reviewed.version,
+      keys: ["voice:provider-b"],
+    });
+    expect(upsert).toHaveBeenCalledOnce();
+  });
+
+  it("uses the explicit preview provider and scope instead of the bot or Space default", async () => {
+    const { deps, actor, accountPreference, spacePreference } = voiceSetup();
+    vi.mocked(deps.prisma.spaceSettingOverride.findUnique).mockResolvedValue({
+      setting: "voice",
+    } as never);
+    const status = await aiConsentStatus(deps, actor, {
+      botId: "bot",
+      uses: ["voice"],
+      voiceProvider: "provider-c",
+      settingsScope: "account",
+    });
+    expect(status.recipients.map((recipient) => recipient.key)).toEqual(["voice:provider-c"]);
+    expect(accountPreference).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: actor.userId, credential: { provider: "provider-c" } },
+      }),
+    );
+    expect(spacePreference).not.toHaveBeenCalled();
+  });
+
+  it("does not grant the old recipient after the bot provider changes or disconnects", async () => {
+    const { deps, actor, bot, disconnected, upsert } = voiceSetup();
+    const reviewed = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["voice"] });
+    const grant = {
+      botId: "bot",
+      scope: reviewed.scope,
+      version: reviewed.version,
+      keys: ["voice:provider-b"],
+    };
+    bot.voiceProvider = "provider-c";
+    await expect(allowAiConsent(deps, actor, { ...grant, uses: ["voice"] })).rejects.toThrow(
+      "AI data sharing changed",
+    );
+    bot.voiceProvider = "provider-b";
+    disconnected.add("provider-b");
+    await expect(allowAiConsent(deps, actor, { ...grant, uses: ["voice"] })).rejects.toThrow(
+      "AI data sharing changed",
+    );
+    expect(upsert).not.toHaveBeenCalled();
+  });
 });

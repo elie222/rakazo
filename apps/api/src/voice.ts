@@ -119,6 +119,36 @@ export function toVoiceStatus(cred: { provider: string; voiceId: string } | null
   };
 }
 
+async function botVoiceSettings(deps: VoiceDeps, actor: Actor, botId?: string) {
+  if (!botId) return null;
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: botId, spaceId: actor.spaceId },
+    select: { voiceProvider: true, voiceId: true },
+  });
+  if (!bot) throw new IsolationError();
+  return bot;
+}
+
+/** Speech follows the bot; dictation still uses the Settings default. Never opens secrets. */
+export async function voiceStatus(
+  deps: VoiceDeps,
+  actor: Actor,
+  input?: { botId?: string; scope?: SettingsScope },
+): Promise<VoiceStatus> {
+  const bot = await botVoiceSettings(deps, actor, input?.botId);
+  const defaultCredential = await findDefaultVoiceCredential(deps.prisma, actor, input?.scope);
+  const credential = bot?.voiceProvider
+    ? await findVoiceCredential(deps.prisma, actor, bot.voiceProvider, input?.scope)
+    : defaultCredential;
+  const status = toVoiceStatus(credential);
+  return {
+    ...status,
+    ready: Boolean(credential && (bot?.voiceId || credential.voiceId)),
+    voiceId: bot?.voiceId || credential?.voiceId || "",
+    transcribe: toVoiceStatus(defaultCredential).transcribe,
+  };
+}
+
 export function toVoiceCredential(row: {
   id: string;
   provider: string;
@@ -333,20 +363,21 @@ export async function loadVoiceCredential(
 export async function resolveVoiceTarget(
   deps: VoiceDeps,
   actor: Actor,
-  input: { botId?: string; voiceId?: string; scope?: SettingsScope; signal?: AbortSignal },
+  input: {
+    botId?: string;
+    provider?: string;
+    voiceId?: string;
+    scope?: SettingsScope;
+    signal?: AbortSignal;
+  },
 ) {
-  let botVoiceId: string | null = null;
-  if (input.botId) {
-    const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: actor.spaceId },
-      select: { voiceId: true },
-    });
-    if (!bot) throw new IsolationError();
-    botVoiceId = bot.voiceId;
-  }
-  const loaded = await loadDefaultVoiceCredential(deps, actor, input.scope, input.signal);
+  const bot = await botVoiceSettings(deps, actor, input.botId);
+  const provider = input.provider ?? bot?.voiceProvider ?? undefined;
+  const loaded = await loadVoiceCredential(deps, actor, provider, input.scope, input.signal);
   if (!loaded) throw new NoVoiceConfigured("key");
-  const voiceId = input.voiceId || botVoiceId || loaded.cred.voiceId;
+  // An explicit provider previews an unsaved choice; an omitted voice previews its default.
+  const voiceId =
+    input.voiceId || (input.provider === undefined && bot?.voiceId) || loaded.cred.voiceId;
   if (!voiceId) throw new NoVoiceConfigured("voice");
   return { ...loaded, voiceId };
 }
@@ -618,6 +649,7 @@ export async function prepareVoice(
   actor: Actor,
   input: {
     text: string;
+    provider?: string;
     voiceId?: string;
     botId?: string;
     scope?: SettingsScope;
@@ -654,6 +686,7 @@ export async function synthesizeVoice(
   actor: Actor,
   input: {
     text: string;
+    provider?: string;
     voiceId?: string;
     botId?: string;
     scope?: SettingsScope;
@@ -751,6 +784,7 @@ export function mountVoiceHttpRoutes(
       const clip = await runAsTenant(actor, () =>
         synthesizeVoice(deps, actor, {
           text: String((body as { text?: unknown }).text ?? ""),
+          provider: optionalString(body.provider),
           voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
           botId: optionalString((body as { botId?: unknown }).botId),
           scope: SettingsScopeSchema.safeParse((body as { scope?: unknown }).scope).data,

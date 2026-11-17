@@ -231,7 +231,7 @@ function SpaceShell() {
   /** Calls a bot, or opens voice settings first when no voice is connected. */
   const callBot = (bot: Bot) => {
     if (!bootstrapMe?.phoneCallsEnabled) return;
-    if (!voiceStatus?.ready) {
+    if (!botVoiceStatus?.ready) {
       openSettings("voice");
       return;
     }
@@ -279,6 +279,10 @@ function SpaceShell() {
         // With no chat named, open one that's in the list, not a snoozed one.
         bots.find((b) => !chatSnoozed(b, snoozeNow)) ??
         bots[0]);
+  const botVoiceStatus = useQuery({
+    ...queries.voice.status.queryOptions({ input: { botId: active?.id } }),
+    enabled: Boolean(active),
+  }).data;
   const selectBot = useCallback(
     (id: string) => {
       setMobileSidebarOpen(false);
@@ -1103,7 +1107,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
-            voiceReady={Boolean(voiceStatus?.ready)}
+            voiceReady={Boolean(botVoiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
@@ -1164,7 +1168,7 @@ function SpaceShell() {
               onRefresh={refreshActiveThread}
               onBotChanged={refreshBots}
               onAddRoutine={addSkillRoutine}
-              voiceReady={Boolean(voiceStatus?.ready)}
+              voiceReady={Boolean(active ? botVoiceStatus?.ready : voiceStatus?.ready)}
               speakingMessageId={speakingMessageId}
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}

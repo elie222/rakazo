@@ -71,6 +71,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     archivedAt: IsoDate.nullable(),
     parentBotId: Id.nullable(),
     memoryScope: z.string().nullable(),
+    voiceProvider: z.string().nullable().optional(),
     voiceId: z.string().nullable(),
     autoSpeak: z.boolean(),
     modelProvider: z.string().nullable(),

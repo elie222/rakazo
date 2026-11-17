@@ -25,11 +25,7 @@ import {
   updateFleetGroup,
   updateOwnBotFromTool,
 } from "./fleet-tools.js";
-import {
-  listDefaultVoices,
-  prepareOwnBotSettings,
-  readOwnBotSettings,
-} from "./own-bot-settings.js";
+import { listBotVoices, prepareOwnBotSettings, readOwnBotSettings } from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
 import {
   OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
@@ -291,6 +287,7 @@ export const fleetTools: ToolHandlers = {
         modelId: true,
         thinkingLevel: true,
         autoSpeak: true,
+        voiceProvider: true,
         voiceId: true,
       },
     });
@@ -326,7 +323,7 @@ export const fleetTools: ToolHandlers = {
       run,
       live,
       { model, thinkingLevel, readAloud, voice },
-      () => listDefaultVoices(deps, run, context),
+      () => listBotVoices(deps, run, context, live.voiceProvider),
     );
     if ("error" in settings) return call.finish(settings);
     const before = BotSettingsValuesSchema.parse(

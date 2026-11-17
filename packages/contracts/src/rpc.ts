@@ -11,7 +11,7 @@ import {
   AgentImportPreviewInput,
 } from "./agent-import.js";
 import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
-import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
+import { AiConsentQuerySchema, AiConsentStatusSchema, AiDataUseSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
@@ -334,6 +334,11 @@ export const appContract = {
           keys: z.array(z.string()).min(1).max(200),
           /** The settings copy the reviewed recipients came from, as in `status`. */
           settingsScope: SettingsScopeSchema.optional(),
+          botId: z.string().optional(),
+          groupId: z.string().optional(),
+          routineId: z.string().optional(),
+          voiceProvider: z.string().trim().min(1).max(80).optional(),
+          uses: z.array(AiDataUseSchema).optional(),
         }),
       )
       .output(AiConsentStatusSchema),
@@ -1671,7 +1676,9 @@ export const appContract = {
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
-    status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    status: oc
+      .input(settingsScopeInput.extend({ botId: Id.optional() }).optional())
+      .output(VoiceStatusSchema),
     credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
@@ -1736,6 +1743,7 @@ export const appContract = {
       .input(
         z.object({
           text: z.string().max(20000),
+          provider: z.string().trim().min(1).max(80).optional(),
           voiceId: z.string().max(120).optional(),
           botId: Id.optional(),
           scope: SettingsScopeSchema.optional(),

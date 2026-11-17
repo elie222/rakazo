@@ -30,7 +30,10 @@ don't have to keep holding.
 
 - To hear one reply, choose **Speak this reply** on the message.
 - To hear every reply from a bot, open its settings, expand **Advanced**, and turn on
-  **Read replies aloud**. The **Voice** next to it overrides your default voice for that bot.
+  **Read replies aloud**.
+- In a bot's profile, choose a **Voice provider** and **Voice** to override Settings → Voice,
+  then use the play button beside the voice to hear a sample. **Default** follows Settings live. Connections and
+  keys stay in Settings → Voice; reconnect a disconnected provider there before it can speak.
 
 ## Call a bot
 
@@ -44,5 +47,6 @@ missed call shows **Call back** in the chat.
 
 ## On mobile
 
-The mobile app uses your phone's own speech recognition and voices for calls. Pick a
-**Device voice** in a bot's settings. On Android, a call keeps going with the screen off.
+The bot's profile also offers a voice provider, voice, and sample. **Device voice** remains a
+separate, local-only choice for this phone; choosing it keeps ordinary speech on-device.
+On Android, a call keeps going with the screen off.

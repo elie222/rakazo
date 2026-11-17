@@ -80,6 +80,7 @@ vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("../../components/pages/PagesList", () => ({ PagesList: () => null }));
+vi.mock("./bot-voice-settings", () => ({ BotVoiceSettings: () => null }));
 
 import { BotSettings } from "./bot-panel";
 

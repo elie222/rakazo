@@ -38,6 +38,7 @@ type SpeechOptions = {
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
   voiceId?: string;
+  provider?: string;
   botId?: string;
   messageId?: string;
   speaker?: PlaybackSpeaker;
@@ -312,7 +313,10 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
   try {
     let useDeviceVoice = false;
     try {
-      useDeviceVoice = await loadDeviceVoiceEnabled();
+      // An explicit provider is a requested hosted sample, not automatic reply playback.
+      useDeviceVoice = opts.provider
+        ? false
+        : await loadDeviceVoiceEnabled(opts.botId, opts.requestContext);
     } catch {
       // A read failure must not be treated as "off": that would send reply text
       // through hosted voice after the user opted for on-device only.
@@ -329,7 +333,13 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
     if (!isCurrentSpeech(epoch)) return false;
     const prepared = await rpc(
       "voice/prepare",
-      { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
+      {
+        text,
+        voiceId: opts.voiceId,
+        provider: opts.provider,
+        botId: opts.botId,
+        scope: opts.scope,
+      },
       { requestContext },
     );
     if (!isCurrentSpeech(epoch)) return false;
@@ -515,7 +525,7 @@ export async function speakUtterance(
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
   const requestContext = opts.requestContext ?? (await captureApiRequestContext());
-  await ensureVoiceConsent(requestContext, opts.scope);
+  await ensureVoiceConsent(requestContext, opts.scope, opts);
   return renderUtterance(text, opts, requestContext);
 }
 
@@ -523,18 +533,20 @@ export async function speakUtterance(
 export async function ensureVoiceConsent(
   requestContext: ApiRequestContext,
   scope?: SettingsScope,
+  target?: Pick<SpeechOptions, "botId" | "provider">,
 ): Promise<void> {
+  const consentTarget = {
+    ...(scope ? { settingsScope: scope } : {}),
+    ...(target?.botId ? { botId: target.botId } : {}),
+    ...(target?.provider ? { voiceProvider: target.provider } : {}),
+  };
   await ensureAiDataConsent({
     uses: ["voice"],
     status: () =>
-      rpc(
-        "aiConsent/status",
-        { uses: ["voice"], ...(scope ? { settingsScope: scope } : {}) },
-        { requestContext },
-      ),
+      rpc("aiConsent/status", { uses: ["voice"], ...consentTarget }, { requestContext }),
     prompt: promptAiConsent,
     allow: (input) =>
-      allowPromptedAiConsent(scope ? { ...input, settingsScope: scope } : input, requestContext),
+      allowPromptedAiConsent({ ...input, ...consentTarget, uses: ["voice"] }, requestContext),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
 }
@@ -559,6 +571,7 @@ async function renderUtterance(
           body: JSON.stringify({
             text,
             voiceId: opts.voiceId,
+            provider: opts.provider,
             botId: opts.botId,
             scope: opts.scope,
           }),

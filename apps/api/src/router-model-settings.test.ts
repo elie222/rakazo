@@ -950,7 +950,8 @@ describe("bot model auth on save", () => {
       memoryScope: null,
       createdAt: now,
       updatedAt: now,
-      voiceId: null,
+      voiceProvider: "provider-a",
+      voiceId: "bot-voice",
       autoSpeak: false,
       modelProvider: "openai-codex",
       modelId,
@@ -1037,6 +1038,7 @@ describe("bot model auth on save", () => {
       preferenceFindFirst,
       secretFindFirst,
       botUpdate,
+      eventCreate: tx.event.create,
       handler: appHandler(deps),
     };
   }
@@ -1049,6 +1051,47 @@ describe("bot model auth on save", () => {
       expect.objectContaining({ data: expect.objectContaining({ dailyCheckIns: false }) }),
     );
   });
+
+  it.each(["provider-b", null])(
+    "clears the voice when switching provider to %s",
+    async (voiceProvider) => {
+      const { botUpdate, eventCreate, handler } = saveDeps({
+        modelId: spark,
+        preferences: () => null,
+      });
+      const response = await call(handler, "bots/update", {
+        botId: "bot-1",
+        voiceProvider,
+      });
+      expect(response.status).toBe(200);
+      expect(botUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ voiceProvider, voiceId: null }),
+        }),
+      );
+      expect(eventCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: "bot.updated" }) }),
+      );
+    },
+  );
+
+  it.each(["provider-a", "provider-b"])(
+    "keeps an explicit voice when saving provider %s",
+    async (voiceProvider) => {
+      const { botUpdate, handler } = saveDeps({ modelId: spark, preferences: () => null });
+      const response = await call(handler, "bots/update", {
+        botId: "bot-1",
+        voiceProvider,
+        voiceId: "new-voice",
+      });
+      expect(response.status).toBe(200);
+      expect(botUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ voiceProvider, voiceId: "new-voice" }),
+        }),
+      );
+    },
+  );
 
   it("saves a rename while resending an existing Spark override", async () => {
     const { preferenceFindFirst, secretFindFirst, botUpdate, handler } = saveDeps({

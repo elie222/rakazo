@@ -126,7 +126,7 @@ describe("mobile speech", () => {
     vi.unstubAllGlobals();
   });
 
-  it("saves an allowed voice prompt the way that tells the permissions screen", async () => {
+  it("checks and grants the actual bot preview recipient before speaking", async () => {
     const recipient = { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false };
     vi.mocked(rpc).mockResolvedValue({
       scope: "account-space",
@@ -136,13 +136,29 @@ describe("mobile speech", () => {
     vi.mocked(promptAiConsent).mockResolvedValue(true);
     const requestContext = { apiBase: "https://support.example", headers: {} };
 
-    await ensureVoiceConsent(requestContext, "space");
+    await ensureVoiceConsent(requestContext, "space", {
+      botId: "bot-1",
+      provider: "sample-provider",
+    });
+    expect(rpc).toHaveBeenCalledWith(
+      "aiConsent/status",
+      {
+        uses: ["voice"],
+        settingsScope: "space",
+        botId: "bot-1",
+        voiceProvider: "sample-provider",
+      },
+      { requestContext },
+    );
     expect(allowPromptedAiConsent).toHaveBeenCalledWith(
       {
         scope: "account-space",
         version: "2026-09-14",
         keys: ["speech"],
         settingsScope: "space",
+        uses: ["voice"],
+        botId: "bot-1",
+        voiceProvider: "sample-provider",
       },
       requestContext,
     );
@@ -160,7 +176,13 @@ describe("mobile speech", () => {
     };
     expect(rpc).toHaveBeenCalledWith(
       "voice/prepare",
-      { text: "Read this", voiceId: undefined, botId: "bot-1" },
+      {
+        text: "Read this",
+        voiceId: undefined,
+        provider: undefined,
+        botId: "bot-1",
+        scope: undefined,
+      },
       { requestContext },
     );
     expect(captureApiRequestContext).toHaveBeenCalledTimes(1);
@@ -170,6 +192,37 @@ describe("mobile speech", () => {
       expect(url).toBe("https://support.example/api/voice/speak");
       expect(init?.headers).toMatchObject(requestContext.headers);
     }
+  });
+
+  it("previews an explicit hosted provider without changing the device-only preference", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+    await expect(
+      speakText("Voice sample", {
+        botId: "bot-1",
+        provider: "connected-provider",
+        voiceId: "chosen",
+      }),
+    ).resolves.toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      "voice/prepare",
+      {
+        text: "Voice sample",
+        voiceId: "chosen",
+        provider: "connected-provider",
+        botId: "bot-1",
+        scope: undefined,
+      },
+      { requestContext: expect.any(Object) },
+    );
+    for (const [, init] of vi.mocked(fetch).mock.calls) {
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        provider: "connected-provider",
+        voiceId: "chosen",
+        botId: "bot-1",
+      });
+    }
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    expect(Speech.speak).not.toHaveBeenCalled();
   });
 
   it("plays WAV from a server that renders speech itself and MP3 otherwise", () => {

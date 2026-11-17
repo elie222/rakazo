@@ -213,11 +213,11 @@ export function useThreadVoiceCall({
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
     voiceCallStarting.current = true;
-    const loadVoiceStatus = () => rpc("voice/status");
+    const loadVoiceStatus = () => rpc("voice/status", { botId: targetBotId });
     try {
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
-          loadDeviceVoiceEnabled,
+          loadDeviceVoiceEnabled: () => loadDeviceVoiceEnabled(targetBotId),
           dictationAvailable,
           loadVoiceStatus,
         }),

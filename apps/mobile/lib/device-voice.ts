@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import type { ApiRequestContext } from "./api";
 import { rpc } from "./api";
 
 export const DEVICE_VOICE_KEY = "rakazo.device-voice";
@@ -14,22 +15,29 @@ function write(on: boolean): Promise<void> {
 }
 
 /**
- * Until someone picks a voice, the phone's own is used unless a hosted voice is already set up,
- * so earlier installs keep the provider they connected. The first answer is kept, so later
- * replies don't wait on the server to decide.
+ * An explicit device-only choice always wins. Otherwise use the current effective hosted voice,
+ * including a bot override, without turning a temporary missing connection into a saved preference.
  */
-export async function loadDeviceVoiceEnabled(): Promise<boolean> {
+export async function loadDeviceVoiceEnabled(
+  botId?: string,
+  requestContext?: ApiRequestContext,
+): Promise<boolean> {
   const seen = choices;
   const stored = await SecureStore.getItemAsync(DEVICE_VOICE_KEY);
   if (stored) return stored === "1";
   let ready: boolean;
   try {
-    ready = (await rpc("voice/status", { scope: "account" })).ready;
+    ready = (
+      await rpc(
+        "voice/status",
+        botId ? { botId } : { scope: "account" },
+        requestContext ? { requestContext } : undefined,
+      )
+    ).ready;
   } catch {
     return true;
   }
-  if (choices !== seen) return loadDeviceVoiceEnabled();
-  await write(!ready).catch(() => undefined);
+  if (choices !== seen) return loadDeviceVoiceEnabled(botId, requestContext);
   return !ready;
 }
 
