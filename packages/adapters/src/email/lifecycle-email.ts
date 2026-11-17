@@ -50,6 +50,8 @@ async function needsModelConnection(prisma: PrismaClient, target: Target): Promi
   if (!hasBillingAccess(organization.billing.status) || organization.billing.creditAmountCents)
     return false;
   const credits = organization.modelCredits;
+  // An own-key organization runs on its own model whatever balance it kept.
+  if (credits?.mode === "byok") return true;
   return credits?.mode !== "credits" && (credits?.balanceMicros ?? 0n) <= 0n;
 }
 

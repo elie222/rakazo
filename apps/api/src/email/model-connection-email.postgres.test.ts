@@ -164,11 +164,22 @@ dbTests("model connection email", () => {
     await prisma.modelCreditAccount.upsert({
       where: { organizationId: funded.id },
       create: { organizationId: funded.id, balanceMicros: 1n },
-      update: { balanceMicros: 1n },
+      update: { mode: null, balanceMicros: 1n },
     });
     await send(chose.job);
     await send(funded.job);
     expect([...sentTo(chose.id), ...sentTo(funded.id)]).toHaveLength(0);
+  });
+
+  it("still reminds an own-key organization that kept a credit balance", async () => {
+    const { id, job } = await subscriber("own-key-balance");
+    await prisma.modelCreditAccount.upsert({
+      where: { organizationId: id },
+      create: { organizationId: id, mode: "byok", balanceMicros: 1n },
+      update: { mode: "byok", balanceMicros: 1n },
+    });
+    await send(job);
+    expect(sentTo(id)).toHaveLength(1);
   });
 
   it("writes only to a verified, active owner who has not opted out, of an organization that is staying", async () => {
