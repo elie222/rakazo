@@ -406,6 +406,55 @@ describeJourneys("required product journeys", () => {
     ).toBe(0);
   });
 
+  it("refuses a takeover and a Stop while one bot's screen restart holds its lease", async () => {
+    const cookie = await signup(
+      app,
+      `maintenance-restart-race-${stamp}@rakazo.test`,
+      "Maintenance",
+    );
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Screen racer",
+      title: "Screen racer",
+      description: "Uses the screen",
+      instructions: "Help.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    const restart = await prisma.computerExecutionLease.upsert({
+      where: { computerId_botId: { computerId: computer.id, botId: bot.id } },
+      create: {
+        computerId: computer.id,
+        botId: bot.id,
+        runId: "screen:racing",
+        fence: 1,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      update: { runId: "screen:racing", expiresAt: new Date(Date.now() + 60_000) },
+    });
+    for (const proc of ["computer/takeover", "computer/stop"]) {
+      const refused = await raw(app, cookie, proc, { botId: bot.id });
+      expect(refused.status, proc).toBe(409);
+    }
+    const held = await prisma.computer.findUniqueOrThrow({ where: { id: computer.id } });
+    expect(held.state).toBe("running");
+    expect(held.controlHolder).not.toBe("user");
+
+    // Once the restart lets go, the same calls go through.
+    await prisma.computerExecutionLease.update({
+      where: { id: restart.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+  });
+
   it("resetting a computer the user has taken over hands control back first", async () => {
     const cookie = await signup(app, `maintenance-reset-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

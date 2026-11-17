@@ -53,6 +53,7 @@ import {
   computerScreenContext,
   computerStatus,
   expireStaleComputerControl,
+  holdingScreenRestart,
   holdsComputerControl,
   keepComputerAwake,
   releaseComputerControl,
@@ -151,6 +152,8 @@ export function computerRoutes(ctx: RouterContext) {
             executionLeases: {
               none: { botId: { not: bot.id }, expiresAt: { gt: now } },
             },
+            // A screen restart of this bot is mid-teardown against this computer.
+            AND: [holdingScreenRestart(bot.id, now)],
           },
           data: { state: "suspending" },
         });

@@ -49,8 +49,12 @@ export function ComputerMaintenanceActions({
 
   const busy = Boolean(computer.busyBotName);
   const action: Action = computer.canUpdate ? "recover" : "reset";
+  // The restart is refused while another person holds control, so it is not offered then.
   const canRestartScreen =
-    computer.mode === "team" && computer.state === "running" && computer.canRestartScreen === true;
+    computer.mode === "team" &&
+    computer.state === "running" &&
+    computer.canRestartScreen === true &&
+    !computer.controlledByOther;
   const asking = confirming ?? action;
 
   return (

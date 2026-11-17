@@ -106,9 +106,16 @@ it("offers Restart screen only for a running Team computer whose kind supports i
   expect(labels()).toEqual([]);
 });
 
+it("does not offer Restart screen while someone else controls the computer", async () => {
+  await render(
+    status("bot-settings", { mode: "team", canRestartScreen: true, controlledByOther: true }),
+  );
+  expect(labels()).toEqual(["Recover computer"]);
+});
+
 it("holds Restart screen while this bot is working", async () => {
   await render(
-    status("bot-settings", { mode: "team", busyBotName: "Peer", canRestartScreen: true }),
+    status("bot-settings", { mode: "team", busyBotName: "Settings bot", canRestartScreen: true }),
   );
   const button = [...host.querySelectorAll("button")].find(
     (b) => b.textContent === "Restart screen",

@@ -1,6 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type * as adapters from "@rakazo/adapters";
-import { BrowserStoppedReleaseError, FakeSandboxProvider } from "@rakazo/adapters";
+import {
+  BrowserStoppedReleaseError,
+  ComputerBusyError,
+  FakeSandboxProvider,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +31,22 @@ const actor = {
 
 const lease = { computerId: "computer-1", botId: "bot-1", runId: "screen:x", fence: 4 };
 
-const computerRow = {
+type ComputerRow = {
+  id: string;
+  spaceId: string;
+  kind: string;
+  scope: string;
+  state: string;
+  providerRef: string | null;
+  homeKey: string;
+  controlHolder: string;
+  controlLeaseId: string | null;
+  controlLeaseExpiresAt: Date | null;
+  controlBotId: string | null;
+  controlUserId: string | null;
+};
+
+const computerRow: ComputerRow = {
   id: "computer-1",
   spaceId: "space-1",
   kind: "fake",
@@ -44,30 +63,50 @@ const computerRow = {
 
 function setup(
   options: {
-    computer?: Partial<typeof computerRow> | null;
+    computer?: Partial<ComputerRow> | null;
+    // What the read after the lease sees, when it differs from the first read.
+    later?: Partial<ComputerRow> | null;
     working?: boolean;
     releaseScreen?: ReturnType<typeof vi.fn> | null;
   } = {},
 ) {
   const computer = options.computer === null ? null : { ...computerRow, ...options.computer };
+  const bot = (row: ComputerRow | null) => ({
+    id: "bot-1",
+    name: "Bot",
+    thread: { id: "thread-1" },
+    computer: row,
+  });
+  const findFirst = vi.fn().mockResolvedValue(bot(computer));
+  if (options.later !== undefined) {
+    findFirst
+      .mockResolvedValueOnce(bot(computer))
+      .mockResolvedValue(bot(options.later === null ? null : { ...computerRow, ...options.later }));
+  }
   const prisma = {
     spaceMember: { count: vi.fn(async () => 1) },
-    bot: {
-      findFirst: vi.fn().mockResolvedValue({
-        id: "bot-1",
-        name: "Bot",
-        thread: { id: "thread-1" },
-        computer,
+    bot: { findFirst },
+    run: {
+      findFirst: vi.fn().mockResolvedValue(options.working ? { id: "run-1" } : null),
+      findUnique: vi.fn().mockResolvedValue({ status: "completed" }),
+    },
+    computerExecutionLease: {
+      findUnique: vi.fn().mockResolvedValue({
+        runId: "run-just-stopped",
+        expiresAt: new Date(Date.now() + 60_000),
       }),
     },
-    run: { findFirst: vi.fn().mockResolvedValue(options.working ? { id: "run-1" } : null) },
-    computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
     computer: { updateMany: vi.fn() },
   } as unknown as PrismaClient;
   const releaseScreen =
     options.releaseScreen === null ? undefined : (options.releaseScreen ?? vi.fn());
-  const deps = { prisma, sandbox: { releaseScreen } } as unknown as RouterDeps;
-  return { deps, prisma, releaseScreen };
+  const capture = vi.fn();
+  const deps = {
+    prisma,
+    sandbox: { releaseScreen },
+    analytics: { capture },
+  } as unknown as RouterDeps;
+  return { deps, prisma, releaseScreen, capture };
 }
 
 beforeEach(() => {
@@ -77,8 +116,12 @@ beforeEach(() => {
 
 describe("restartBotScreen", () => {
   it("tears down this bot's browser and lets go of the lease", async () => {
-    const { deps, releaseScreen } = setup();
+    const { deps, releaseScreen, capture } = setup();
     await restartBotScreen(deps, { actor }, "bot-1");
+    expect(capture).toHaveBeenCalledExactlyOnceWith(actor.userId, {
+      name: "computer_repair_started",
+      action: "restartScreen",
+    });
     expect(releaseScreen).toHaveBeenCalledOnce();
     const [ref, context] = (releaseScreen as NonNullable<typeof releaseScreen>).mock.calls[0] as [
       { id: string },
@@ -89,6 +132,25 @@ describe("restartBotScreen", () => {
     // A fence naming another owner would be refused as stale and stop nothing.
     expect(context.screenLeaseId).toBeUndefined();
     expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
+  it("waits out the lease of a run that was just stopped instead of answering busy", async () => {
+    lifecycle.acquire.mockRejectedValueOnce(new ComputerBusyError()).mockResolvedValue(lease);
+    const { deps, releaseScreen } = setup();
+    await restartBotScreen(deps, { actor }, "bot-1");
+    expect(lifecycle.acquire).toHaveBeenCalledTimes(2);
+    expect(releaseScreen).toHaveBeenCalledOnce();
+  });
+
+  it("stays busy when a run that is still active holds the lease", async () => {
+    lifecycle.acquire.mockRejectedValue(new ComputerBusyError());
+    const { deps, releaseScreen, prisma } = setup();
+    (prisma.run.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "running" });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    expect(lifecycle.acquire).toHaveBeenCalledOnce();
+    expect(releaseScreen).not.toHaveBeenCalled();
   });
 
   it("really clears a screen last held by an earlier run", async () => {
@@ -157,22 +219,24 @@ describe("restartBotScreen", () => {
   });
 
   it("lets go of the lease when the teardown fails, and reports the failure", async () => {
-    const { deps } = setup({
+    const { deps, capture } = setup({
       releaseScreen: vi.fn().mockRejectedValue(new Error("supervisor unreachable")),
     });
     await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toThrow(
       "supervisor unreachable",
     );
+    expect(capture).not.toHaveBeenCalled();
     expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
   });
 
   it("counts a browser that stopped before its slot could be cleared as restarted", async () => {
-    const { deps } = setup({
+    const { deps, capture } = setup({
       releaseScreen: vi.fn().mockRejectedValue(new BrowserStoppedReleaseError()),
     });
     await expect(restartBotScreen(deps, { actor }, "bot-1")).resolves.toMatchObject({
       botId: "bot-1",
     });
+    expect(capture).toHaveBeenCalledOnce();
     expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
   });
 
@@ -190,5 +254,93 @@ describe("restartBotScreen", () => {
       code: "CONFLICT",
     });
     expect(releaseScreen).not.toHaveBeenCalled();
+  });
+
+  it("counts nothing when the sandbox turns out to be gone", async () => {
+    const { deps, capture } = setup({
+      releaseScreen: vi.fn().mockRejectedValue(new Error("sandbox not found")),
+    });
+    (deps.prisma.computer.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).resolves.toMatchObject({
+      botId: "bot-1",
+    });
+    expect(capture).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
+  it("refuses to tear the screen down while this person's own control is still on it", async () => {
+    const own = {
+      controlHolder: "user",
+      controlLeaseId: "lease-1",
+      controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+      controlBotId: "bot-1",
+      controlUserId: actor.userId,
+    };
+    const { deps, releaseScreen, capture } = setup({ computer: own, later: own });
+    // The hand back is refused, as when the lease was renewed or ended meanwhile.
+    (deps.events as unknown) = { releaseUserControl: vi.fn().mockResolvedValue(false) };
+    (deps as { sandbox: unknown }).sandbox = { releaseScreen, setScreenControl: vi.fn() };
+    (deps as { jobs: unknown }).jobs = { cancel: vi.fn(), enqueue: vi.fn() };
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
+  it("refuses a computer that is going to sleep instead of answering as if it restarted", async () => {
+    const { deps, releaseScreen } = setup({ computer: { state: "suspending" } });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(lifecycle.acquire).not.toHaveBeenCalled();
+  });
+
+  it("refuses a computer that is still booting", async () => {
+    const { deps, releaseScreen } = setup({ computer: { state: "booting" } });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+  });
+
+  it("does not tear down a screen someone else took while the lease was being acquired", async () => {
+    const { deps, releaseScreen } = setup({
+      later: {
+        controlHolder: "user",
+        controlLeaseId: "lease-9",
+        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        controlBotId: "bot-1",
+        controlUserId: "someone-else",
+      },
+    });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
+  it("does not tear down a computer that went to sleep while the lease was being acquired", async () => {
+    const { deps, releaseScreen } = setup({ later: { state: "suspending" } });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
+  });
+
+  it("leaves a computer that stopped meanwhile alone and lets go of the lease", async () => {
+    const { deps, releaseScreen, capture } = setup({
+      later: { state: "stopped", providerRef: null },
+    });
+    await expect(restartBotScreen(deps, { actor }, "bot-1")).resolves.toMatchObject({
+      botId: "bot-1",
+    });
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+    expect(lifecycle.release).toHaveBeenCalledWith(deps.prisma, lease);
   });
 });
