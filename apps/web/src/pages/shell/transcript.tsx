@@ -27,7 +27,17 @@ import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button, cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
 import type { CSSProperties, RefObject } from "react";
-import { Fragment, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -54,6 +64,9 @@ export function bubbleFrameWidth(role: ThreadMessage["role"]) {
     ? "max-w-[min(84%,calc(100%_-_8rem),39rem)] [@media(hover:none)]:max-w-[min(84%,39rem)]"
     : "max-w-[min(88%,calc(100%_-_8rem),39rem)] [@media(hover:none)]:max-w-[min(88%,39rem)]";
 }
+
+/** Rows drawn in the frame a chat opens; the rest mount right after without blocking input. */
+const FIRST_FRAME_ROWS = 20;
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -247,6 +260,17 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
+  // Remounted per chat, so each opened chat paints its latest rows before the full history.
+  const [tailOnly, setTailOnly] = useState(true);
+  useEffect(() => startTransition(() => setTailOnly(false)), []);
+  // A jump needs older rows, and must keep them after it clears its request.
+  if (tailOnly && scrollRequest) setTailOnly(false);
+  const showTail = tailOnly && !scrollRequest;
+  const items = groupVoiceChats(reactionView.visibleMessages).filter(
+    (item) =>
+      item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
+  );
+  const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -469,7 +493,7 @@ export const Transcript = memo(function Transcript({
     if (following.current) snapToEnd();
     // Content can grow below a reader who is not following without any scroll event.
     else if (element) setAtEnd(transcriptIsNearEnd(element));
-  }, [messages, running, scrollRef, snapToEnd]);
+  }, [messages, running, showTail, scrollRef, snapToEnd]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;
@@ -552,7 +576,7 @@ export const Transcript = memo(function Transcript({
             : undefined
         }
       >
-        {olderCursor != null ? (
+        {olderCursor != null && !showTail ? (
           <Button
             variant="ghost"
             size="sm"
@@ -565,7 +589,7 @@ export const Transcript = memo(function Transcript({
             {t`Load earlier messages`}
           </Button>
         ) : null}
-        {groupVoiceChats(reactionView.visibleMessages).map((item) => {
+        {shownItems.map((item) => {
           if (item.kind === "voiceChat") {
             return (
               <div key={item.key}>
@@ -591,7 +615,6 @@ export const Transcript = memo(function Transcript({
             );
           }
           const message = item.message;
-          if (!messageHasVisibleBlocks(message.blocks, showToolActivity)) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
           return (
