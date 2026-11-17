@@ -393,9 +393,11 @@ function steeringOrigin(item: {
   return intact ? "private" : "channel:unknown";
 }
 
-/** Runs that cannot take a handed-over turn: the creation intro, helpers, and work kept out of the chat. */
+/** Runs that cannot take a handed-over turn: the creation intro, bot wakes, helpers, and work kept out of the chat. */
 const NO_HANDOVER_TRIGGERS = [
   "created",
+  // Its reply goes back to the bot that woke it, not to the chat.
+  "bot_message",
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
   ...BACKGROUND_RUN_TRIGGERS,

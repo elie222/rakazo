@@ -925,6 +925,12 @@ async function finalizeRunOnce(
         where: { runId: input.runId },
         data: { runId: null },
       });
+    } else {
+      // A scheduled task handed to this run keeps its turn: it runs on its own instead.
+      await tx.steeringMessage.updateMany({
+        where: { runId: input.runId, claimedAt: null, originTrigger: "routine" },
+        data: { runId: null },
+      });
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
