@@ -40,6 +40,8 @@ async function fixture(env: string, commit: string, computers = false) {
       ...(computers ? { supervisor: commit } : {}),
     } as Record<string, string>,
     imageOverrides: {} as Record<string, string>,
+    usedComputerTags: new Set<string>(),
+    otherComputerRefs: [] as string[],
     computer: `${computerImage}:sha-${older}`,
     images: {
       [`sha-${older}`]: `sha256:${"1".repeat(64)}`,
@@ -62,6 +64,18 @@ async function fixture(env: string, commit: string, computers = false) {
     const failed = (output: string) => ({ ok: false, exitCode: 1, stdout: "", output });
     if (command === "git") return ok(`${older}\trefs/tags/v1.0.0\n${newer}\trefs/tags/v1.1.0\n`);
     if (args[0] === "ps") {
+      const ancestor = args.find((arg) => arg.startsWith("ancestor="));
+      if (ancestor)
+        return ok(
+          state.usedComputerTags.has(ancestor.split(":").at(-1) ?? "") ? "e".repeat(12) : "",
+        );
+      if (!args.some((arg) => arg.startsWith("label=com.docker.compose.project=")))
+        return ok(
+          [
+            ids.supervisor,
+            ...state.otherComputerRefs.map((_ref, index) => (index + 5).toString(16).repeat(12)),
+          ].join("\n"),
+        );
       const service = args
         .find((arg) => arg.startsWith("label=com.docker.compose.service="))
         ?.split("=")
@@ -71,7 +85,13 @@ async function fixture(env: string, commit: string, computers = false) {
     }
     if (args[0] === "exec" || args[0] === "inspect") {
       const service = Object.keys(ids).find((name) => ids[name as keyof typeof ids] === args[1]);
-      if (!service) throw new Error("Unexpected container");
+      if (!service) {
+        const index = state.otherComputerRefs.findIndex(
+          (_ref, index) => args[1] === (index + 5).toString(16).repeat(12),
+        );
+        if (index >= 0) return ok(state.otherComputerRefs[index]);
+        throw new Error("Unexpected container");
+      }
       if (args[0] === "inspect")
         return ok(
           state.imageOverrides[service] ?? `sha256:${state.versions[service]?.[0]?.repeat(64)}`,
@@ -80,12 +100,21 @@ async function fixture(env: string, commit: string, computers = false) {
     }
     if (args[0] === "image" && args[1] === "ls") return ok(Object.keys(state.images).join("\n"));
     if (args[0] === "image" && args[1] === "rm") {
-      delete state.images[args[2]?.split(":").at(-1) ?? ""];
+      for (const ref of args.slice(2)) delete state.images[ref.split(":").at(-1) ?? ""];
       return ok();
     }
     if (args[0] === "image" && args[1] === "inspect") {
       const tag = args[2]?.split(":").at(-1) ?? "";
-      return state.images[tag] ? ok(state.images[tag]) : failed("image unavailable");
+      if (!state.images[tag]) return failed("image unavailable");
+      if (args.at(-1) === "{{json .RepoTags}}")
+        return ok(
+          JSON.stringify(
+            Object.keys(state.images)
+              .filter((name) => state.images[name] === state.images[tag])
+              .map((name) => `${computerImage}:${name}`),
+          ),
+        );
+      return ok(state.images[tag]);
     }
     if (args[0] === "image" && args[1] === "tag") {
       if (args[3]?.startsWith(`${computerImage}:`))
@@ -394,6 +423,35 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls.filter(({ args }) => args[1] === "rm").map(({ args }) => args)).toEqual([
       ["image", "rm", `${computerImage}:${obsolete}`],
     ]);
+  });
+
+  it("reclaims obsolete release images while retaining current, previous, used and shared images", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:latest`;
+    const obsolete = `sha-${"3".repeat(40)}`;
+    const used = `sha-${"4".repeat(40)}`;
+    const shared = `sha-${"5".repeat(40)}`;
+    const alias = `sha-${"6".repeat(40)}`;
+    for (const [index, tag] of [obsolete, used, shared, alias].entries())
+      subject.state.images[tag] = `sha256:${(index + 3).toString().repeat(64)}`;
+    subject.state.images[`${cachePrefix}${"3".repeat(64)}`] = subject.state.images[obsolete] ?? "";
+    const secondObsolete = `sha-${"7".repeat(40)}`;
+    subject.state.images[secondObsolete] = subject.state.images[obsolete] ?? "";
+    subject.state.images["operator-backup"] = subject.state.images[alias] ?? "";
+    subject.state.usedComputerTags.add(used);
+    subject.state.otherComputerRefs.push(`${computerImage}:${shared}`);
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.images[obsolete]).toBeUndefined();
+    expect(subject.state.images[secondObsolete]).toBeUndefined();
+    for (const tag of [used, shared, alias, cachedOlder, `sha-${newer}`])
+      expect(subject.state.images[tag]).toBeDefined();
+    expect(
+      subject.calls.filter(({ args }) => args[1] === "rm").map(({ args }) => args[2]),
+    ).toContain(`${computerImage}:${obsolete}`);
   });
 
   it("refuses an update before changing pins when the previous computer cannot be cached", async () => {

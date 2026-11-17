@@ -332,6 +332,8 @@ services:
   # Pull-only stub so `compose up` fetches the published desktop image without a checkout.
   computer:
     image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-latest}
+    # Keep locally cached rollback images; latest still refreshes when explicitly pulled.
+    pull_policy: missing
     command: ["true"]
     network_mode: none
     restart: "no"

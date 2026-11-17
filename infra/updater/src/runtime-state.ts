@@ -204,8 +204,74 @@ export async function pruneComputerCache(
     const removed = await run("docker", ["image", "rm", imageRef(image, tag)], options);
     if (!removed.ok) failed.push(tag);
   }
+  await pruneComputerReleases(config, image, retained, listed.stdout.trim().split(/\s+/), run);
   if (failed.length > 0)
     throw new Error(`Could not remove obsolete computer cache tags: ${failed.join(", ")}.`);
+}
+
+/** Release tags are shared across projects: protect every supervisor's selected image. */
+async function pruneComputerReleases(
+  config: UpdaterConfig,
+  image: string,
+  retained: Set<string | null>,
+  tags: string[],
+  run: UpdaterCommandRunner,
+): Promise<void> {
+  const releases = tags.filter((tag) => /^sha-[0-9a-f]{40}$/.test(tag));
+  if (releases.length === 0) return;
+  const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
+  const supervisors = await run(
+    "docker",
+    ["ps", "--filter", "label=com.docker.compose.service=supervisor", "--format", "{{.ID}}"],
+    options,
+  );
+  const ids = supervisors.stdout.trim() ? supervisors.stdout.trim().split(/\s+/) : [];
+  if (!supervisors.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id)))
+    throw new Error("Could not identify supervisors before computer image cleanup.");
+  for (const id of ids) {
+    const selected = await run(
+      "docker",
+      ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+      options,
+    );
+    if (!selected.ok)
+      throw new Error("Could not inspect supervisor image references before cleanup.");
+    const ref = selected.stdout.trim();
+    if (ref.startsWith(`${image}:`)) retained.add(ref.slice(image.length + 1));
+  }
+  const processed = new Set<string>();
+  for (const tag of releases) {
+    if (retained.has(tag) || processed.has(tag)) continue;
+    const ref = imageRef(image, tag);
+    const inspected = await run(
+      "docker",
+      ["image", "inspect", ref, "--format", "{{json .RepoTags}}"],
+      options,
+    );
+    if (!inspected.ok)
+      throw new Error("Could not inspect computer release references before cleanup.");
+    const references: unknown = JSON.parse(inspected.stdout);
+    // Any remaining cache, operator or selected release tag retains the image bytes.
+    if (!Array.isArray(references) || references.length === 0) continue;
+    const obsoleteReferences = references.filter(
+      (value): value is string =>
+        typeof value === "string" &&
+        value.startsWith(`${image}:`) &&
+        /^sha-[0-9a-f]{40}$/.test(value.slice(image.length + 1)) &&
+        !retained.has(value.slice(image.length + 1)),
+    );
+    if (obsoleteReferences.length !== references.length) continue;
+    const users = await run(
+      "docker",
+      ["ps", "-a", "--filter", `ancestor=${ref}`, "--format", "{{.ID}}"],
+      options,
+    );
+    if (!users.ok) throw new Error("Could not inspect computer image usage before cleanup.");
+    if (users.stdout.trim()) continue;
+    for (const reference of obsoleteReferences) processed.add(reference.slice(image.length + 1));
+    const removed = await run("docker", ["image", "rm", ...obsoleteReferences], options);
+    if (!removed.ok) throw new Error("Could not remove an obsolete computer release image.");
+  }
 }
 
 export async function readScheduledComputer(

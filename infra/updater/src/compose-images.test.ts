@@ -6,6 +6,7 @@ import { parse } from "yaml";
 interface ComposeService {
   image?: string;
   profiles?: string[];
+  pull_policy?: string;
   build?: unknown;
   command?: unknown;
   env_file?: unknown;
@@ -70,6 +71,7 @@ describe("the images compose file", () => {
       expect(compose.services[service]?.image).toContain("RAKAZO_IMAGE_TAG");
     }
     expect(compose.services.computer?.image).toContain("ghcr.io/elie222/rakazo/computer");
+    expect(compose.services.computer?.pull_policy).toBe("missing");
     expect(compose.services.computer?.image).toContain("RAKAZO_COMPUTER_IMAGE_TAG");
     expect(compose.services.postgres?.image).toMatch(
       /^\$\{POSTGRES_IMAGE:-postgres:16@sha256:[0-9a-f]{64}\}$/,

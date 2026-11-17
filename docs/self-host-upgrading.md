@@ -306,6 +306,10 @@ computer image has not finished publishing leaves the running services alone. Ne
 use that pinned image rather than a moving `computer:latest` cache. Existing bot computers keep
 running. The current and previous computer pins are recorded alongside the application pins and
 restored together by rollback, without contacting the registry.
+The computer stub uses `pull_policy: missing`, so ordinary pulls and installer reruns reuse
+locally cached rollback images. After successful updates, cleanup removes obsolete computer
+cache tags and release images while retaining current/previous images, cache or operator tags,
+images used by containers, and images selected by running supervisors.
 
 The updater caches a reference to the verified running application image before changing pins.
 If the app runtimes and managed computer references already match the release, stale Compose
