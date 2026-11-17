@@ -1,12 +1,12 @@
 import { ComputerProviderDescriptorSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { createSandboxProvider } from "../sandboxes/sandbox-factory.js";
 import {
   computerProviderDescriptor,
   computerProviderDescriptors,
   computerProviderRegistry,
 } from "./computer-provider-registry.js";
 import { computerProviders } from "./computer-providers.js";
+import { createSandboxProvider } from "./sandbox/sandbox-factory.js";
 
 // Every descriptor uses this same offline suite. No credentials or vendor connections are needed.
 describe.each(computerProviderRegistry)("$id settings conformance", (descriptor) => {

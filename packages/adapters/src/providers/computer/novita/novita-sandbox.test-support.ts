@@ -8,15 +8,15 @@ import {
 } from "novita-sandbox";
 import { parse } from "shell-quote";
 import { vi } from "vitest";
-import {
-  desktopCommandResponder,
-  simpleCommand,
-} from "../../../computers/screens/linux-desktop.test-support.js";
 import type {
   CommandResult,
   RemoteDesktop,
   RemoteDesktopSdk,
-} from "../../../sandboxes/remote-desktop-sandbox.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
 import type {
   NovitaApi,
   NovitaCommandHandle,

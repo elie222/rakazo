@@ -12,6 +12,7 @@ import {
   callRequestClientNonce,
   phoneCallSettings,
   ringingCall,
+  sliceWellFormed,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -24,10 +25,9 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "../locks/advisory-lock.js";
 import { publishMessage, runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { sliceWellFormed } from "../shared/utf8.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
