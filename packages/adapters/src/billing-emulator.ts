@@ -297,6 +297,10 @@ export class BillingEmulator implements BillingProvider {
     request: T,
   ) {
     open.set(customerId, request);
+    // A newer checkout replaces the customer's earlier one of this kind, so its session is kept no longer.
+    for (const [id, session] of this.sessions) {
+      if (session.open === open && session.customerId === customerId) this.sessions.delete(id);
+    }
     const id = `cs_${this.namespace}_${++this.sessionSequence}`;
     this.sessions.set(id, { open, customerId, request });
     return { id, url: `https://billing.emulator.invalid/${kind}/${customerId}` };
