@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { studioFiles } from "./fixtures/studio.js";
+import { studioFiles } from "../evals/fixtures/studio.js";
 import { hostOverMcp } from "./mcp-host.js";
 
 const now = new Date("2026-11-06T16:30:00Z");

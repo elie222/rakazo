@@ -1,6 +1,6 @@
 import { createDb } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { captureIosProviderLimitError } from "../cli/ios-screenshot-error.js";
+import { captureIosProviderLimitError } from "./ios-screenshot-error.js";
 
 vi.mock("@rakazo/db", () => ({ createDb: vi.fn() }));
 

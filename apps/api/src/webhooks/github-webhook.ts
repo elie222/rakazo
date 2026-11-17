@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
-import { githubEventMetadataPrompt } from "./inbound-delivery.prompt.js";
+import { githubEventMetadataPrompt } from "../messaging/inbound-delivery.prompt.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,

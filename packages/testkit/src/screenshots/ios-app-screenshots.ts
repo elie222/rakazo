@@ -6,14 +6,14 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { loadIosScreenshotCatalog } from "../screenshots/ios-screenshot-catalog.js";
-import type { IosGallerySection } from "../screenshots/ios-screenshot-gallery.js";
-import { renderIosScreenshotGallery } from "../screenshots/ios-screenshot-gallery.js";
+import { runProcess } from "../cli/process.js";
 import { startIosScreenshotBackend } from "./ios-screenshot-backend.js";
+import { loadIosScreenshotCatalog } from "./ios-screenshot-catalog.js";
 import { captureIosProviderLimitError } from "./ios-screenshot-error.js";
+import type { IosGallerySection } from "./ios-screenshot-gallery.js";
+import { renderIosScreenshotGallery } from "./ios-screenshot-gallery.js";
 import { assertPublishConfigured, publishIosGallery } from "./ios-screenshot-publish.js";
 import { seedIosScreenshotFixture } from "./ios-screenshot-seed.js";
-import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const CATALOG_DIR = path.join(ROOT, "apps", "mobile", "e2e", "ios-screenshots");

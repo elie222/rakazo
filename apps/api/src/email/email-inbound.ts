@@ -21,8 +21,8 @@ import {
   formatRoutineEmailPrompt,
   ownerEmailPrompt,
 } from "../messaging/inbound-delivery.prompt.js";
-import type { WebhookDeps } from "../messaging/webhook-inbound.js";
-import { deliverWebhookEvent } from "../messaging/webhook-inbound.js";
+import type { WebhookDeps } from "../webhooks/webhook-inbound.js";
+import { deliverWebhookEvent } from "../webhooks/webhook-inbound.js";
 
 export const INBOUND_EMAIL_PATH = "/api/v1/email/inbound";
 

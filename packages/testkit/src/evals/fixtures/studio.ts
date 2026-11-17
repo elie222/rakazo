@@ -1,11 +1,11 @@
-import type { AppFault } from "../app-emulator.js";
-import { relativeDate, relativeTime } from "../app-emulator.js";
-import type { FileSeed } from "../files.js";
-import { FilesEmulator, fileId } from "../files.js";
-import type { MailThreadSeed } from "../mail.js";
-import { MailEmulator } from "../mail.js";
-import type { PageSeed } from "../notes.js";
-import { NotesEmulator } from "../notes.js";
+import type { AppFault } from "../../apps/app-emulator.js";
+import { relativeDate, relativeTime } from "../../apps/app-emulator.js";
+import type { FileSeed } from "../../apps/files.js";
+import { FilesEmulator, fileId } from "../../apps/files.js";
+import type { MailThreadSeed } from "../../apps/mail.js";
+import { MailEmulator } from "../../apps/mail.js";
+import type { PageSeed } from "../../apps/notes.js";
+import { NotesEmulator } from "../../apps/notes.js";
 
 /**
  * One fictional furniture and interiors studio across mail, files and notes, so a task can cross

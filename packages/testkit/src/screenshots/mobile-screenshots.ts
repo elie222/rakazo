@@ -16,9 +16,9 @@ import {
 import { callRequestClientNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
+import { disposableDatabaseEnv } from "../cli/postgres.js";
+import { runProcess } from "../cli/process.js";
 import { sessionCookieHeader } from "../index.js";
-import { disposableDatabaseEnv } from "./postgres.js";
-import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const REPORT_DIR = path.join(ROOT, "test-report", "mobile-screenshots");

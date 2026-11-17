@@ -5,7 +5,7 @@ import path from "node:path";
 import type { CDPSession } from "@playwright/test";
 import { abortableDelay } from "@rakazo/core";
 import { createPool } from "@rakazo/db";
-import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "../cli/postgres.js";
 
 export const repositoryRoot = path.resolve(import.meta.dirname, "../../../..");
 
