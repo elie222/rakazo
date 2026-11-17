@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
-import { NativeProviderButton } from "../../lib/native/native-provider-button";
+import { NativeProviderButton } from "../native/native-provider-button";
 
 export function SocialSignInButtons({
   providers,

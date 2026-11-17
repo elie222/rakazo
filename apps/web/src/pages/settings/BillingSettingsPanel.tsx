@@ -3,7 +3,7 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../../components/billing/ModelCredits";
-import { billingDateLabel, formatBillingPrice } from "../../lib/billing";
+import { billingDateLabel, formatBillingPrice } from "../../lib/billing/billing";
 import { useSave } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 
