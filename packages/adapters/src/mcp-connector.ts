@@ -446,11 +446,11 @@ export class McpConnector implements ConnectorProvider {
     return resolveCatalogCall(call, await this.catalogFor(context, call.args));
   }
 
-  /** The bot's catalog. Tool lists are cached per session, so a tool the cached lists lack
-   * (added or renamed on the server since) lists its server again once before failing. */
   /** Servers re-listed for a missing tool, per run (keyed by the run's signal). */
   private readonly relistedInRun = new WeakMap<AbortSignal, Set<string>>();
 
+  /** The bot's catalog. Tool lists are cached per session, so a tool the cached lists lack
+   * (added or renamed on the server since) lists its server again once per run before failing. */
   private async catalogFor(
     context: AdapterContext,
     lookup?: Record<string, unknown>,
