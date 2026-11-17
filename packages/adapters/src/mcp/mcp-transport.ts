@@ -24,6 +24,7 @@ import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.
 import {
   createSafeRemoteFetch,
   listMcpTools,
+  MCP_HTTP_TIMEOUTS,
   MCP_TOOL_MAX_TOTAL_MS,
   MCP_TOOL_TIMEOUT_MS,
 } from "./remote-mcp.js";
@@ -193,9 +194,13 @@ export function secureFetch(
     "cookie",
     "proxy-authorization",
   ]);
-  const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname, {
-    allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
-  });
+  const safeRemoteFetch = createSafeRemoteFetch(
+    network.fetch,
+    network.resolveHostname,
+    { allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint },
+    undefined,
+    MCP_HTTP_TIMEOUTS,
+  );
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
