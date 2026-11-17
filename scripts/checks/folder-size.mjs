@@ -1,16 +1,24 @@
 // How many code files sit directly in each folder. A folder past the limit mixes modules that
 // should be grouped by topic, the same way a file past its line limit mixes responsibilities.
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { repoFiles } from "./ratchets.mjs";
 
 export const LIMIT = 40;
-export const BASELINE = path.join(path.dirname(fileURLToPath(import.meta.url)), "folder-size.baseline.json");
+export const BASELINE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "folder-size.baseline.json",
+);
 
-const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt)$/;
+const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt|c|h|m|mm)$/;
 // Generated output, migrations and vendored registry components are not organised by hand.
-const IGNORED = [/\/generated\//, /\/migrations\//, /^packages\/ui-web\/src\/components\/ui\//, /\.d\.ts$/];
+const IGNORED = [
+  /\/generated\//,
+  /\/migrations\//,
+  /^packages\/ui-web\/src\/components\/ui\//,
+  /\.d\.ts$/,
+];
 
 /** Code files per folder (direct children only), for every tracked folder that has any. */
 export function folderCounts(files) {
@@ -37,17 +45,12 @@ export function readBaseline() {
   return JSON.parse(readFileSync(BASELINE, "utf8"));
 }
 
+/** Files in the working tree: a move counts before it is staged. */
 export function trackedFiles(cwd) {
-  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-    cwd,
-    encoding: "utf8",
-  })
-    .split("\n")
-    .filter(Boolean);
+  return repoFiles(cwd).filter((file) => existsSync(path.join(cwd, file)));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "--tighten") {
-  const { writeFileSync } = await import("node:fs");
   const root = path.resolve(path.dirname(BASELINE), "../..");
   const counts = folderCounts(trackedFiles(root));
   const baseline = readBaseline();
