@@ -10,13 +10,14 @@ type VoiceScope = { userId: string; spaceId: string };
 /**
  * Speaking spends the person's own voice provider without an approval card, so only their own
  * words may ask for it: their app chat or call, or their own messaging-app chat. Never another
- * bot, a routine, a webhook, or someone else in a shared chat.
+ * bot, a routine, a webhook, or someone else in a shared chat. Hanging up a call starts a run with
+ * no new words from them, and its reply is written.
  */
 export function voiceMessageRequestedByOwner(
   trigger: string,
   source: { ownerStartedRun: boolean; messagingChannelRun: boolean },
 ): boolean {
-  if (source.messagingChannelRun) return false;
+  if (source.messagingChannelRun || trigger === "call_end") return false;
   return source.ownerStartedRun || trigger === "messaging";
 }
 

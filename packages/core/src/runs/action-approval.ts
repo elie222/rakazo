@@ -278,6 +278,8 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "skill_read",
   "task_catalog",
   "update_preferences",
+  // Only confirms the bot's own recording.
+  "voice_message",
   "write_file",
 ]);
 

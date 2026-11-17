@@ -1,6 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
-import { toolRequiresApproval } from "@rakazo/core";
+import { isOwnerStartedRun, toolRequiresApproval } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ScriptedVoiceProvider } from "../providers/voice/scripted/scripted-voice.js";
@@ -141,6 +141,15 @@ describe("voice messages", () => {
     ).toBe(false);
     for (const trigger of ["bot_message", "routine", "webhook", "email", "tickets"])
       expect(voiceMessageRequestedByOwner(trigger, other)).toBe(false);
+  });
+
+  it("is not requested by hanging up a call", () => {
+    // The post-call turn has no new message from the person and writes its reply.
+    const ownerStartedRun = isOwnerStartedRun("call_end", false);
+    expect(ownerStartedRun).toBe(true);
+    expect(
+      voiceMessageRequestedByOwner("call_end", { ownerStartedRun, messagingChannelRun: false }),
+    ).toBe(false);
   });
 
   it("is offered to runs that can post, without an approval card", () => {
