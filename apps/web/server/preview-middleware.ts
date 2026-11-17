@@ -234,7 +234,10 @@ export function attachNovncProxy(server: WebServerHost, settings: WebServerSetti
               "screen.retries": retries,
             });
           }
-          const responseHeaders = safeScreenProxyResponseHeaders(incoming.headers, req.headers.origin);
+          const responseHeaders = safeScreenProxyResponseHeaders(
+            incoming.headers,
+            req.headers.origin,
+          );
           if (shouldInjectNovncStorageShim(responseHeaders, target.path)) {
             const declaredLength = Number(incoming.headers["content-length"] ?? 0);
             if (Number.isFinite(declaredLength) && declaredLength > MAX_NOVNC_HTML_BYTES) {
