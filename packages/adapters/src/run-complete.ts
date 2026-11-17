@@ -129,11 +129,9 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
-  const marksUnread = completionMarksUnread(
-    run.trigger,
-    text,
-    ctx.source.peerMessage?.repliesToRequest === true,
-  );
+  const marksUnread =
+    (!ctx.allowSilentEmptyRun || blocks.length > 0 || reply.publishedMidTurnUserMessage) &&
+    completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true);
   await ctx.settleRunningHelpers();
   const answeredMessageIds = await conversationRetentionMessages(ctx);
   const completed = await deps.events.finalizeRun({

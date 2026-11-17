@@ -209,18 +209,32 @@ export function tryFlushPendingTools(reply: ReplyState) {
 }
 
 /**
- * A member a group message named nobody for may answer with the silence sentinel, so what it
- * has written stays unseen while that is still possible. Once the text turns into a reply it
- * all shows.
+ * Silent-allowed runs keep a possible silence sentinel out of the live stream.
+ * Once the text turns into a reply it all shows.
  */
 export function progressHeldForSilence(ctx: RunContext) {
   const { reply } = ctx.state;
   return !reply.hasStreamedText && mayBeSilentEnding(ctx, reply.pendingProgress);
 }
 
-/** Text a member a group message named nobody for may still turn into its silent ending. */
-export function mayBeSilentEnding(ctx: Pick<RunContext, "groupReplyOptional">, text: string) {
-  return ctx.groupReplyOptional && (couldBecomeNoResponse(text) || isPlaceholderText(text));
+/** Text that may still become an allowed silent ending. */
+export function mayBeSilentEnding(
+  ctx: Pick<RunContext, "groupReplyOptional" | "allowSilentEmptyRun">,
+  text: string,
+) {
+  return (
+    ((ctx.groupReplyOptional || ctx.allowSilentEmptyRun) && couldBecomeNoResponse(text)) ||
+    (ctx.groupReplyOptional && isPlaceholderText(text))
+  );
+}
+
+/** Keep transient activity private for runs whose final reply may be silent. */
+export function holdsTransientProgress(ctx: Pick<RunContext, "run" | "allowSilentEmptyRun">) {
+  return (
+    ctx.run.trigger === "routine" ||
+    isBackgroundRunTrigger(ctx.run.trigger) ||
+    (ctx.allowSilentEmptyRun && ctx.run.trigger === "follow_up")
+  );
 }
 
 export async function flushProgress(ctx: RunContext) {
@@ -231,8 +245,7 @@ export async function flushProgress(ctx: RunContext) {
   if (
     ctx.scripted ||
     !reply.pendingProgress ||
-    run.trigger === "routine" ||
-    isBackgroundRunTrigger(run.trigger) ||
+    holdsTransientProgress(ctx) ||
     progressHeldForSilence(ctx)
   )
     return;
