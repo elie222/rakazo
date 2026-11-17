@@ -11,7 +11,10 @@ import {
 } from "./dictation.js";
 import { ensureVoiceConsent } from "./voice-consent.js";
 
-vi.mock("./voice-consent.js", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
+vi.mock("./voice-consent.js", () => ({
+  ensureVoiceConsent: vi.fn(async () => undefined),
+  invalidateVoiceConsent: vi.fn(),
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -162,11 +162,11 @@ it("returns character and duration evidence for operator speech accounting", asy
     { apiKey: "fake-server-key", text: "A😀", voiceId: "eve" },
     context,
   );
+  expect(clip.providerRequestId).toBe("fake-tts");
   expect(clip.usage).toEqual({
     model: "tts",
     unit: "characters",
     units: 2,
-    providerRequestId: "fake-tts",
   });
   const transcript = await provider.transcribe(
     {
@@ -177,11 +177,11 @@ it("returns character and duration evidence for operator speech accounting", asy
     },
     context,
   );
+  expect(transcript.providerRequestId).toBe("fake-stt");
   expect(transcript.usage).toEqual({
     model: "grok-voice-transcribe-2.0",
     unit: "seconds",
     units: 3.45,
-    providerRequestId: "fake-stt",
   });
   expect((fetchMock.mock.calls[1]![1].body as FormData).get("model")).toBe(
     "grok-voice-transcribe-2.0",

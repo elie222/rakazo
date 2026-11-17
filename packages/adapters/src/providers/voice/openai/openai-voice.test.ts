@@ -70,11 +70,11 @@ it("returns billable character evidence and the provider request id", async () =
     { apiKey: "fake-key", model: "tts-1", voiceId: "alloy", text: "A😀" },
     context,
   );
+  expect(clip.providerRequestId).toBe("fake-speech-request");
   expect(clip.usage).toEqual({
     model: "tts-1",
     unit: "characters",
     units: 2,
-    providerRequestId: "fake-speech-request",
   });
   expect(JSON.parse(fetchMock.mock.calls[0]![1].body).model).toBe("tts-1");
 });
@@ -93,11 +93,29 @@ it("uses measured transcription duration rather than upload bytes or guessed dur
     { apiKey: "fake-key", model: "whisper-1", audio: new Uint8Array([1]), mimeType: "audio/wav" },
     context,
   );
+  expect(result.providerRequestId).toBe("fake-transcription-request");
   expect(result.usage).toEqual({
     model: "whisper-1",
     unit: "seconds",
     units: 12.5,
-    providerRequestId: "fake-transcription-request",
   });
   expect(fetchMock.mock.calls[0]![1].body.get("response_format")).toBe("verbose_json");
+});
+
+it("retains request identity when synthesis returns no billable usage evidence", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(new Uint8Array([1]), {
+          headers: { "x-request-id": "fake-unmetered-request" },
+        }),
+    ),
+  );
+  const clip = await new OpenAIVoiceProvider().synthesize(
+    { apiKey: "fake-key", model: "gpt-4o-mini-tts", voiceId: "alloy", text: "Synthetic reply" },
+    context,
+  );
+  expect(clip.providerRequestId).toBe("fake-unmetered-request");
+  expect(clip.usage).toBeUndefined();
 });

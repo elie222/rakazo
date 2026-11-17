@@ -9,6 +9,15 @@ export type VoiceConsentRequest = {
   finish(allowed: boolean): void;
 };
 let requests: VoiceConsentRequest[] = [];
+const allowedUntil = new Map<string, number>();
+const CONSENT_CACHE_MS = 30_000;
+let consentGeneration = 0;
+let requestSerial = 0;
+
+export function invalidateVoiceConsent() {
+  allowedUntil.clear();
+  consentGeneration += 1;
+}
 const watchers = new Set<() => void>();
 function emit() {
   for (const watcher of watchers) watcher();
@@ -21,6 +30,7 @@ export function subscribeVoiceConsent(watcher: () => void) {
 }
 export const pendingVoiceConsent = () => requests[0] ?? null;
 export function cancelVoiceConsent() {
+  invalidateVoiceConsent();
   for (const request of [...requests]) request.finish(false);
 }
 function prompt(
@@ -55,6 +65,9 @@ export async function ensureVoiceConsent(
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
+  const key = JSON.stringify([spaceId, scope]);
+  if ((allowedUntil.get(key) ?? 0) > Date.now()) return;
+  const generation = consentGeneration;
   const client = createSpaceRpc(spaceId);
   await ensureAiDataConsent({
     uses: ["voice"],
@@ -72,7 +85,8 @@ export async function ensureVoiceConsent(
       signal?.throwIfAborted();
       return client.aiConsent.allow({ ...input, ...(scope ? { settingsScope: scope } : {}) });
     },
-    coalesceKey: JSON.stringify([spaceId, scope]),
+    coalesceKey: JSON.stringify([spaceId, scope, signal ? ++requestSerial : null]),
   });
   signal?.throwIfAborted();
+  if (generation === consentGeneration) allowedUntil.set(key, Date.now() + CONSENT_CACHE_MS);
 }

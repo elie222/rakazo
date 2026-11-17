@@ -891,7 +891,6 @@ export interface VoiceInfo {
 /** Provider evidence only; no transcript, audio or credentials. */
 export interface VoiceUsage {
   model: string;
-  providerRequestId?: string;
   unit: "characters" | "seconds" | "tokens";
   units: number;
   inputTokens?: number;

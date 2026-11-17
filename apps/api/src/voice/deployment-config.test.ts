@@ -306,16 +306,25 @@ it("returns completed audio when settlement storage fails", async () => {
     model: "speech-model",
     unit: "characters" as const,
     units: 12,
-    providerRequestId: "fake-provider-request",
   };
   const provider = vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({
-    synthesize: async () => ({ mimeType: "audio/mpeg", bytes: new Uint8Array([1]), usage }),
+    synthesize: async () => ({
+      mimeType: "audio/mpeg",
+      bytes: new Uint8Array([1]),
+      usage,
+      providerRequestId: "fake-provider-request",
+    }),
   } as never);
   vi.mocked(settleSpeech).mockRejectedValueOnce(new Error("temporary database outage"));
   const clip = await synthesizeVoice(deps(), actor, { text: "Synthetic speech sample" });
   expect(clip.mimeType).toBe("audio/mpeg");
   expect(clip.bytes.length).toBeGreaterThan(0);
-  expect(settleSpeech).toHaveBeenCalledWith(expect.anything(), "speech-call", usage, undefined);
+  expect(settleSpeech).toHaveBeenCalledWith(
+    expect.anything(),
+    "speech-call",
+    usage,
+    "fake-provider-request",
+  );
   expect(log).toHaveBeenCalledWith("Operator speech settlement requires reconciliation", {
     speechCostId: "speech-call",
     provider: "scripted",

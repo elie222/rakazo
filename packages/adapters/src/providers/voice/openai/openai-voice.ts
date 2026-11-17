@@ -94,7 +94,6 @@ export class OpenAIVoiceProvider implements VoiceProvider {
               model: request.model,
               unit: "characters" as const,
               units: Array.from(request.text).length,
-              providerRequestId: res.headers.get("x-request-id") ?? undefined,
             },
           }
         : {}),
@@ -158,7 +157,6 @@ export class OpenAIVoiceProvider implements VoiceProvider {
               ...(usage?.input_token_details?.text_tokens !== undefined
                 ? { inputTextTokens: usage.input_token_details.text_tokens }
                 : {}),
-              providerRequestId: res.headers.get("x-request-id") ?? undefined,
             },
           }
         : {}),

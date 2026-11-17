@@ -962,7 +962,7 @@ function voiceHttpError(c: Context, error: unknown) {
         reason: error.cause instanceof Error ? error.cause.name : error.kind,
       });
     }
-    return c.json({ error: error.message }, status);
+    return c.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, status);
   }
   if (error instanceof ORPCError) {
     const code = String(error.code ?? "BAD_REQUEST");

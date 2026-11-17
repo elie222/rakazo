@@ -98,7 +98,7 @@ export async function settleSpeech(
       "observedUnit" = ${usage?.unit ?? null}, "costMicros" = ${micros},
       "accountedMicros" = ${micros !== null ? BigInt(micros) : row.reservedMicros},
       "billableUnits" = ${usage ? JSON.stringify(usage) : null}::jsonb,
-      "providerRequestId" = ${providerRequestId ?? usage?.providerRequestId ?? null}, "updatedAt" = now()
+      "providerRequestId" = ${providerRequestId ?? null}, "updatedAt" = now()
       WHERE id = ${id}`;
       if (refund !== 0n)
         await tx.$executeRaw`UPDATE speech_allowances

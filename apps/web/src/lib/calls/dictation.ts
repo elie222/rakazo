@@ -13,7 +13,7 @@ import { desktopBridge } from "../platform/desktop.js";
 import { selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 import { DesktopSpeechRecognition } from "./desktop-speech.js";
-import { ensureVoiceConsent } from "./voice-consent.js";
+import { ensureVoiceConsent, invalidateVoiceConsent } from "./voice-consent.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -646,6 +646,7 @@ export class Dictation {
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
+        if (body.code === "AI_CONSENT_REQUIRED") invalidateVoiceConsent();
         this.failListening(mine, voiceAccountErrorText(body) ?? body.error ?? couldNotTranscribe);
         return;
       }

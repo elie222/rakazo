@@ -1,7 +1,12 @@
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import { afterEach, expect, it, vi } from "vitest";
-import { cancelVoiceConsent, ensureVoiceConsent, pendingVoiceConsent } from "./voice-consent";
+import {
+  cancelVoiceConsent,
+  ensureVoiceConsent,
+  invalidateVoiceConsent,
+  pendingVoiceConsent,
+} from "./voice-consent";
 
 const api = vi.hoisted(() => ({ status: vi.fn(), allow: vi.fn(), client: vi.fn() }));
 vi.mock("../query/rpc", () => ({ createSpaceRpc: api.client }));
@@ -14,6 +19,7 @@ const recipient = {
 };
 afterEach(() => {
   cancelVoiceConsent();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
 });
 function setup() {
@@ -88,4 +94,42 @@ it("dismisses an aborted speech request's disclosure without a grant", async () 
   await rejected;
   expect(pendingVoiceConsent()).toBeNull();
   expect(api.allow).not.toHaveBeenCalled();
+});
+
+it("does not let one aborted request reject another request's disclosure", async () => {
+  setup();
+  const first = new AbortController();
+  const second = new AbortController();
+  const stopped = ensureVoiceConsent("space-a", undefined, first.signal);
+  const rejected = expect(stopped).rejects.toThrow();
+  const continuing = ensureVoiceConsent("space-a", undefined, second.signal);
+  await flush();
+  first.abort();
+  await rejected;
+  expect(pendingVoiceConsent()).not.toBeNull();
+  pendingVoiceConsent()!.finish(true);
+  await continuing;
+  expect(api.allow).toHaveBeenCalledTimes(1);
+});
+it("reuses successful consent briefly per Space and copy, and clears it on invalidation", async () => {
+  setup();
+  let now = 100000;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  api.status.mockResolvedValue({
+    scope: "account-space",
+    version: AI_DISCLOSURE_VERSION,
+    recipients: [{ ...recipient, allowed: true }],
+  });
+  await ensureVoiceConsent("space-a");
+  await ensureVoiceConsent("space-a");
+  expect(api.status).toHaveBeenCalledTimes(1);
+  await ensureVoiceConsent("space-b");
+  await ensureVoiceConsent("space-a", "account");
+  expect(api.status).toHaveBeenCalledTimes(3);
+  now += 30001;
+  await ensureVoiceConsent("space-a");
+  expect(api.status).toHaveBeenCalledTimes(4);
+  invalidateVoiceConsent();
+  await ensureVoiceConsent("space-a");
+  expect(api.status).toHaveBeenCalledTimes(5);
 });

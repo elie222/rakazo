@@ -96,13 +96,13 @@ export class XaiVoiceProvider implements VoiceProvider {
     });
     if (!res.ok) throw xaiRequestError(res.status, "speaking", await readVoiceJson(res));
     return {
+      providerRequestId: res.headers.get("x-request-id") ?? undefined,
       bytes: await readVoiceAudio(res, signal),
       mimeType: "audio/mpeg",
       usage: {
         model: "tts",
         unit: "characters",
         units: Array.from(request.text).length,
-        providerRequestId: res.headers.get("x-request-id") ?? undefined,
       },
     };
   }
@@ -143,7 +143,7 @@ export class XaiVoiceProvider implements VoiceProvider {
       ...(providerRequestId ? { providerRequestId } : {}),
       ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0
         ? {
-            usage: { model, unit: "seconds" as const, units: duration, providerRequestId },
+            usage: { model, unit: "seconds" as const, units: duration },
           }
         : {}),
     };

@@ -67,10 +67,9 @@ suite("operator speech costs (PostgreSQL)", () => {
       model: price.model,
       unit: price.unit,
       units: 10,
-      providerRequestId: "fake-request",
     };
-    await runAsTenant(actor, () => settleSpeech(db.prisma, id, usage));
-    await runAsTenant(actor, () => settleSpeech(db.prisma, id, usage));
+    await runAsTenant(actor, () => settleSpeech(db.prisma, id, usage, "fake-request"));
+    await runAsTenant(actor, () => settleSpeech(db.prisma, id, usage, "fake-request"));
     expect(await used()).toBe(20n);
     expect(await system.speechCost.findUnique({ where: { id } })).toMatchObject({
       ...actor,

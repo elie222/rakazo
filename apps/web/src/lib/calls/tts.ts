@@ -10,7 +10,7 @@ import {
 import { rpc, selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 
-import { ensureVoiceConsent } from "./voice-consent.js";
+import { ensureVoiceConsent, invalidateVoiceConsent } from "./voice-consent.js";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
@@ -226,6 +226,7 @@ export class Speaker {
       );
       if (!res.ok) {
         const body = await readVoiceError(res, deadline.signal);
+        if (body.code === "AI_CONSENT_REQUIRED") invalidateVoiceConsent();
         throw new Error(voiceAccountErrorText(body) ?? body.error ?? "");
       }
       // A superseded request must not overwrite the voice of the one that replaced it.

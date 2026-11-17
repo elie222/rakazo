@@ -35,7 +35,7 @@ export async function withSpeechCost<T extends { usage?: VoiceUsage; providerReq
       speechCostId: id,
       provider: target.cred.provider,
       operation,
-      providerRequestId: result.providerRequestId ?? result.usage?.providerRequestId,
+      providerRequestId: result.providerRequestId,
     });
   return result;
 }
