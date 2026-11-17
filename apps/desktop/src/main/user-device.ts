@@ -253,6 +253,7 @@ export function createUserDeviceAccess(deps: {
   }
 
   async function authorize(origin: string) {
+    if (consent.get(origin)?.consent === "declined") return false;
     await consentSaves.get(origin);
     if (consent.get(origin)?.consent === "declined") return false;
     if (isAllowed(origin)) return true;

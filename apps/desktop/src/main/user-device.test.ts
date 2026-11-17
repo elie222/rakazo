@@ -357,6 +357,22 @@ describe("remote computer access", () => {
     expect(await clients[0]!.authorize()).toBe(false);
   });
 
+  it("refuses new commands immediately while saving a disabled choice", async () => {
+    const { access, clients } = setup();
+    await access.select(origin);
+    await access.pair();
+    await access.setAllowed(origin, true);
+    const saved = deferred<void>();
+    vi.mocked(setupStore.writePrivateFile)
+      .mockClear()
+      .mockImplementationOnce(() => saved.promise);
+    const turningOff = access.setAllowed(origin, false);
+    await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+    expect(await clients[0]!.authorize()).toBe(false);
+    saved.resolve();
+    await turningOff;
+  });
+
   it("stops work and stays off when saving the choice fails", async () => {
     await saveDeviceConsent(userData, origin, { consent: "allowed", userId: null });
     const { access, clients } = setup();
