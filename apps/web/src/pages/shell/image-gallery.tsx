@@ -130,7 +130,7 @@ function LightboxView({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[min(88vh,52rem)] w-[min(94vw,60rem)] max-w-none flex-col gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
+        className="flex h-[min(88vh,52rem)] w-[min(94vw,60rem)] max-w-none flex-col gap-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
@@ -140,7 +140,7 @@ function LightboxView({
               src={src}
               alt={current.name}
               onClick={onClose}
-              className="max-h-full max-w-full cursor-zoom-out rounded-xl object-contain"
+              className="max-h-full max-w-[calc(100%-6rem)] cursor-zoom-out rounded-xl object-contain"
             />
           ) : (
             <div className="size-40 rounded-xl bg-muted" />
@@ -165,7 +165,7 @@ function LightboxView({
                 size="icon-lg"
                 aria-label={t`Previous image`}
                 onClick={() => step(-1)}
-                className="absolute left-2 top-1/2 -translate-y-1/2"
+                className="absolute left-1 top-1/2 -translate-y-1/2 sm:-left-6"
               >
                 <ChevronLeft strokeWidth={1.8} />
               </Button>
@@ -174,7 +174,7 @@ function LightboxView({
                 size="icon-lg"
                 aria-label={t`Next image`}
                 onClick={() => step(1)}
-                className="absolute right-2 top-1/2 -translate-y-1/2"
+                className="absolute right-1 top-1/2 -translate-y-1/2 sm:-right-6"
               >
                 <ChevronRight strokeWidth={1.8} />
               </Button>
