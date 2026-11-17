@@ -54,7 +54,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await page.mouse.move(700, 450);
   await row.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Research" });
-  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Activity" });
+  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
   await expect(tooltip).toBeVisible();
   await expect
     .poll(async () => {
@@ -64,7 +64,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
     })
     .toBe(true);
   await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail");
-  const action = sidebar.getByRole("button", { name: "Activity", exact: true });
+  const action = sidebar.getByRole("button", { name: "Create", exact: true });
   await page.mouse.move(700, 450);
   await expect(actionLabel).toBeHidden();
   await action.hover();
@@ -137,10 +137,10 @@ test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo)
     })
     .toBe(true);
   await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail-rtl");
-  const action = sidebar.getByRole("button", { name: "Activity", exact: true });
+  const action = sidebar.getByRole("button", { name: "Create", exact: true });
   await page.mouse.move(650, 450);
   await action.hover();
-  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Activity" });
+  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
   await expect(actionLabel).toBeVisible();
   await expect
     .poll(async () => {

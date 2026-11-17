@@ -7,12 +7,7 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
-import {
-  credentialForModel,
-  modelOptionKey,
-  modelThinkingLevels,
-  resolveSelectableModelId,
-} from "@rakazo/core";
+import { botModelState, modelOptionKey } from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -30,7 +25,6 @@ import { BotEmailAddressField } from "../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { PagesList } from "../../components/pages/PagesList";
-import { botModelChoices } from "../../lib/bot-model-choices";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { lazyComponent } from "../../lib/preload-recovery";
 import { useSpaceQueries } from "../../lib/query";
@@ -285,25 +279,9 @@ export function BotSettings({
     selectedModel,
     selectedModelKey,
     choices: modelChoices,
-  } = botModelChoices({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
-
-  const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
-  const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
-  const effectiveEntry =
-    effectiveProvider && effectiveModelId
-      ? catalog.find(
-          (entry) =>
-            entry.provider === effectiveProvider &&
-            resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
-        )
-      : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = modelThinkingLevels(
-    effectiveCredential,
-    effectiveEntry,
-    effectiveModelId,
-  ).filter((level) => level !== "off");
-  const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
+    thinkingLevels: thinkingOptions,
+    defaultThinkingLevel,
+  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
 
   async function executeSave(
     patchOverrides?: {

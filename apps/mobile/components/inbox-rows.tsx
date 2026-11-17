@@ -35,7 +35,7 @@ import { NativeSymbol } from "./native-symbol";
 
 export const FALLBACK_COLOR = botColors[3];
 
-/** A bot waiting on you, which marks its row like an unread chat. */
+/** A bot waiting on you. Its question already marked the chat unread, so reading it clears the dot. */
 function useWaitingOnYou(bot: MobileBot | SpaceBot | undefined): boolean {
   return useSyncExternalStore(mobileLogoAvatarActivity.subscribe, () =>
     bot ? botNeedsAttention(bot) : false,
@@ -296,8 +296,7 @@ export const PinnedTiles = memo(function PinnedTiles({
 });
 function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
   const styles = useThemedStyles(createHomeStyles);
-  const waiting = useWaitingOnYou(chat.kind === "bot" ? chat.bot : undefined);
-  const marked = (chat.kind === "bot" ? chat.bot.unread : chat.group.unread) || waiting;
+  const marked = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
   return (
     <Text style={[styles.pinnedName, marked && styles.pinnedUnread]} numberOfLines={1}>
       {name}
@@ -445,7 +444,7 @@ export const BotRow = memo(function BotRow({
       title={bot.name}
       preview={preview}
       time={time}
-      unread={bot.unread || waiting}
+      unread={bot.unread}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress || onAction ? t`Long press to pin, move, or silence notifications` : undefined
