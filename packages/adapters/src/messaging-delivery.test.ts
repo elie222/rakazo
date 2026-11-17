@@ -265,7 +265,7 @@ function createPrisma(world: World, jobs: ReturnType<typeof createJobs>) {
     return {
       ...message,
       thread: { userId: world.threads.find((thread) => thread.id === message.threadId)!.userId },
-      replyTo: replyTo ? { runId: replyTo.runId } : null,
+      replyTo: replyTo ? { id: replyTo.id, runId: replyTo.runId, blocks: replyTo.blocks } : null,
     };
   };
   const prisma = {
@@ -658,6 +658,56 @@ function addRun(
     routineId: input.routineId ?? null,
   });
   for (const reply of input.replies ?? []) addReply(world, id, reply);
+}
+
+/**
+ * bot-1's run woken by a message from bot-2, which answers bot-1's own request when `requested`.
+ */
+function peerReply(
+  world: World,
+  input: {
+    requested: boolean;
+    intent?: string;
+    status?: string;
+    replies?: Reply[];
+  },
+) {
+  world.messages.push({
+    id: "sent-1",
+    threadId: "thread-1",
+    runId: null,
+    role: "bot",
+    seq: world.messages.length + 1,
+    clientNonce: null,
+    blocks: input.requested
+      ? [
+          {
+            kind: "bot_message_sent",
+            toBotId: "bot-2",
+            toBotName: "Helper",
+            intent: "request",
+            text: "Find flights",
+          },
+        ]
+      : [{ kind: "text", text: "Hi" }],
+    replyToMessageId: null,
+  });
+  addRun(world, {
+    trigger: "bot_message",
+    status: input.status,
+    replyTo: "sent-1",
+    source: [
+      {
+        kind: "bot_message_received",
+        fromBotId: "bot-2",
+        fromBotName: "Helper",
+        text: "Three flights found.",
+        intent: input.intent ?? "result",
+        hop: 1,
+      },
+    ],
+    replies: input.replies ?? [text("m-1", "Hello from your bot")],
+  });
 }
 
 const text = (id: string, value: string): Reply => ({
@@ -1099,14 +1149,48 @@ describe("deliverRun to a 1:1 chat", () => {
     expect(unlinked.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("sends a delegated run's reply to its owner's chat", async () => {
+  it("sends a reply to the bot's own request to its owner's chat", async () => {
     const t = setup();
-    addRun(t.world, { trigger: "bot_message", replies: [text("m-1", "Hello from your bot")] });
+    peerReply(t.world, { requested: true });
     await t.delivery.deliverRun("run-1");
 
     expect(requests(t)).toEqual([
       { threadId: "sendblue:dm-1", body: "Hello from your bot", idempotencyKey: "msg:m-1" },
     ]);
+  });
+
+  it.each<[string, Parameters<typeof peerReply>[1]]>([
+    ["a message no request of the bot's asked for", { requested: false }],
+    ["another request", { requested: true, intent: "request" }],
+  ])("keeps a bot-to-bot reply to %s out of the owner's chat", async (_label, input) => {
+    const t = setup();
+    peerReply(t.world, input);
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("sends a bot-to-bot run's failure, and a question it waits on, to its owner's chat", async () => {
+    const failed = setup();
+    peerReply(failed.world, { requested: false, status: "failed" });
+    await failed.delivery.deliverRun("run-1");
+    expect(bodies(failed)).toEqual(["Hello from your bot"]);
+
+    const asking = setup();
+    peerReply(asking.world, {
+      requested: false,
+      status: "waiting_input",
+      replies: [
+        text("m-1", "Talking it over with Helper."),
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Share your calendar?", status: "pending", actions: [] }],
+        },
+      ],
+    });
+    await asking.delivery.deliverRun("run-1");
+    expect(bodies(asking)).toEqual([expect.stringContaining("Share your calendar?")]);
   });
 
   it.each(["messaging", "bot_message"])(
@@ -2041,7 +2125,21 @@ describe("delegated team-chat replies", () => {
     addRun(world, {
       id: "run-a",
       threadId: "thread-slack",
-      replies: [text("a-msg", "Asking around.")],
+      replies: [
+        text("a-msg", "Asking around."),
+        {
+          id: "a-sent",
+          blocks: [
+            {
+              kind: "bot_message_sent",
+              toBotId: "bot-2",
+              toBotName: "Helper",
+              intent: "request",
+              text: "Find flights",
+            },
+          ],
+        },
+      ],
     });
     world.externalMessages.push({
       id: "em-1",
@@ -2056,7 +2154,7 @@ describe("delegated team-chat replies", () => {
       botId: "bot-2",
       userId: "user-2",
       trigger: "bot_message",
-      replyTo: "a-msg",
+      replyTo: "a-sent",
       replies: [text("b-msg", "Three flights found.")],
     });
     addRun(world, {
@@ -2064,7 +2162,17 @@ describe("delegated team-chat replies", () => {
       threadId: input.threadId ?? "thread-slack",
       trigger: "bot_message",
       status: input.status ?? "completed",
-      replyTo: "b-msg",
+      replyTo: "a-sent",
+      source: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-2",
+          fromBotName: "Helper",
+          text: "Three flights found.",
+          intent: "result",
+          hop: 1,
+        },
+      ],
       replies: input.replies ?? [text("c-msg", "Helper found three flights.")],
     });
   }

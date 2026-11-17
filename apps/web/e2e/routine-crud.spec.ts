@@ -70,7 +70,7 @@ async function saveAndReturn(page: Page, procedure: "routines/create" | "routine
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const response = await saved;
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   return response.request().postDataJSON().json;
 }
 

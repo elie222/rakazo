@@ -178,7 +178,10 @@ export async function loadTurnContext(
     peerMessage?.repliesToRequest,
   );
   const allowSilentEmptyRun =
-    allowSilentPeerMessage || messagingChannelRun || runAllowsSilentEmpty(run.trigger);
+    allowSilentPeerMessage ||
+    messagingChannelRun ||
+    runAllowsSilentEmpty(run.trigger) ||
+    (Boolean(parts.records.conversationThread.groupId) && run.trigger === "follow_up");
   const emptyResponseText = peerMessage
     ? peerMessage.intent === "result" ||
       peerMessage.intent === "status" ||

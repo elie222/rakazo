@@ -89,7 +89,7 @@
   "packages/contracts/src/rpc.ts": 1,
   "packages/core/src/node/desktop-runtime.test.ts": 1,
   "packages/core/src/node/desktop-runtime.ts": 1,
-  "packages/core/src/thread-snapshot-events.test.ts": 1,
+  "packages/core/src/threads/thread-snapshot-events.test.ts": 1,
   "packages/db/src/events.test.ts": 1,
   "packages/db/src/events.ts": 1,
   "packages/testkit/src/authorization.test.ts": 1,
