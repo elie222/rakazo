@@ -3,6 +3,7 @@
 // agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
 import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -403,9 +404,12 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
         : bot,
     );
     const current = merged.get(key)!;
+    // Skills, apps and routines each become a named item; memories and facts about the user
+    // become one document each, bounded like any imported file rather than by entry count.
     if (
-      [current.skills, current.apps, current.routines, current.memories, current.userFacts].some(
-        (items) => items.length > 100,
+      [current.skills, current.apps, current.routines].some((items) => items.length > 100) ||
+      [current.memories, current.userFacts].some(
+        (items) => bullets(items).length > AGENT_IMPORT_MAX_FILE_LENGTH,
       )
     )
       throw new GrokBotExportError("too_large");
@@ -424,16 +428,9 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   if (
     raw.length > 100 ||
     raw.some((bot) =>
-      [
-        bot.skills,
-        bot.apps,
-        bot.plugins,
-        bot.integrations,
-        bot.routines,
-        bot.memories,
-        bot.user_facts,
-        bot.userFacts,
-      ].some((items) => Array.isArray(items) && items.length > 100),
+      [bot.skills, bot.apps, bot.plugins, bot.integrations, bot.routines].some(
+        (items) => Array.isArray(items) && items.length > 100,
+      ),
     )
   )
     throw new GrokBotExportError("too_large");

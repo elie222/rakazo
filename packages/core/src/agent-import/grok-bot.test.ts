@@ -310,7 +310,7 @@ describe("a Grok Bot as an import plan", () => {
 });
 
 it("rejects oversized collections before allocating import names", () => {
-  for (const field of ["skills", "apps", "memories", "routines"]) {
+  for (const field of ["skills", "apps", "routines"]) {
     const source = JSON.stringify({
       bots: [{ name: "Example", [field]: Array(101).fill({ name: "same" }) }],
     });
@@ -319,6 +319,25 @@ it("rejects oversized collections before allocating import names", () => {
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ bots: Array(101).fill({ name: "same" }) })),
   ).toThrow(GrokBotExportError);
+});
+
+it("bounds memories by the size of the document they become, not by count", () => {
+  const memories = Array.from({ length: 300 }, (_, index) => `Fact ${index}.`);
+  const userFacts = Array.from({ length: 150 }, (_, index) => `About me ${index}.`);
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({ bots: [{ name: "Example", memories, user_facts: userFacts }] }),
+  );
+  expect([bot!.memories.length, bot!.userFacts.length]).toEqual([300, 150]);
+  const parsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+  ]);
+  if ("error" in parsed) throw new Error(parsed.error);
+  expect(parsed.memory.find((item) => item.path === "MEMORY.md")!.content).toContain("- Fact 299.");
+
+  const oversized = JSON.stringify({
+    bots: [{ name: "Example", memories: Array.from({ length: 30 }, () => "x".repeat(4_000)) }],
+  });
+  expect(() => readGrokBotExportJson(oversized)).toThrow(GrokBotExportError);
 });
 
 it("joins a skill split across parts, and resolves exact skill names first", () => {
