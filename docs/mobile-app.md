@@ -43,6 +43,10 @@ Turn off **Haptics** in Settings if you don't want touch feedback.
 Bots notify you when they finish or need input, controlled per bot with
 **When it finishes or needs input** in its settings.
 
+On iOS, Live Activities show bots at work on the Lock Screen and in the Dynamic Island.
+They are unavailable with the App Store build connected to a self-hosted server; see
+[the APNs requirements](./self-host-clients.md#mobile-incoming-calls).
+
 On Android, **Notifications** in Settings also lets you choose which kinds you get, including a live
 working status while a bot runs.
 

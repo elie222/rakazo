@@ -3,14 +3,69 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   expireModelCredits,
   hasFinalModelCost,
+  JsonColumnMismatchError,
   MICROS_PER_DOLLAR,
   Prisma,
   RECONCILED_ESTIMATE_COST_SOURCE,
+  readJsonColumn,
   recordUsage,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { PAID_SERVICE_USAGE_PROVIDER } from "./paid-service-tools.js";
+
+const tokens = z.number().nullable();
+const CountedTokens = z.object({ inputTokens: z.number(), outputTokens: z.number() });
+/**
+ * A call's receipt as recordModelCreditReceipt stored it. Fields the settlement does not read
+ * pass through, and a missing count reads as unavailable, as it does in AgentUsage.
+ */
+const StoredUsage = z
+  .looseObject({
+    providerRequestId: z.string().nullish(),
+    operationKind: z
+      .enum(["answer", "setup", "retrieval", "subagent", "compaction"])
+      .optional()
+      .catch(undefined),
+    inputTokens: tokens.default(null),
+    outputTokens: tokens.default(null),
+    cacheReadTokens: tokens.optional(),
+    cacheWriteTokens: tokens.optional(),
+    cacheWrite1hTokens: tokens.optional(),
+    reasoningTokens: tokens.optional(),
+    totalTokens: tokens.optional(),
+    costUsd: tokens.optional(),
+    costSource: z.string().nullish(),
+    pricingVersion: z.string().nullish(),
+    pricingSnapshot: z.record(z.string(), z.unknown()).nullish(),
+    usageSource: z.string().nullish(),
+    countedTokens: CountedTokens.extend({ ifStopped: CountedTokens.optional() }).nullish(),
+  })
+  .nullable() satisfies z.ZodType<AgentUsage | null>;
+
+/**
+ * The stored receipt, or why it could not be read. A receipt in another shape is never priced,
+ * in whole or in part, but the provider may still answer for its call.
+ */
+function storedUsage(call: { id: string; usage: unknown }): {
+  usage: AgentUsage | null;
+  unreadable?: JsonColumnMismatchError;
+} {
+  try {
+    return {
+      usage: readJsonColumn(
+        StoredUsage,
+        call.usage,
+        { table: "model_credit_entries", column: "usage", id: call.id },
+        "reject",
+      ),
+    };
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    return { usage: null, unreadable: error };
+  }
+}
 
 /**
  * When the provider never reports a cost, a call that reached it is charged for the tokens we
@@ -128,7 +183,8 @@ export function createModelCreditReconciler(deps: {
           try {
             if (!call.callId || !call.userId || !call.spaceId || !call.provider || !call.model)
               throw new Error("Legacy reservation requires manual attribution");
-            let usage = call.usage as unknown as AgentUsage | null;
+            const receipt = storedUsage(call);
+            let usage = receipt.usage;
             let reconciled = false;
             const canLookUp = lookup?.provider === call.provider && !!call.providerRequestId;
             if (canLookUp) {
@@ -144,6 +200,9 @@ export function createModelCreditReconciler(deps: {
                 reason = error instanceof Error ? error.message : String(error);
               }
             }
+            // Only the provider's answer settles a call whose receipt is in another shape. Without
+            // one the attempt fails, and the hold goes to review after the last.
+            if (receipt.unreadable && !reconciled) throw receipt.unreadable;
             // Stop cancels the run; a deploy or a stalled stream aborts the call but not the run,
             // and a stuck-run cancel records why in `error`.
             let stoppedByUser = false;
@@ -152,7 +211,9 @@ export function createModelCreditReconciler(deps: {
                 where: { id: call.runId },
                 select: { status: true, leaseExpiresAt: true, error: true },
               });
-              stoppedByUser = run?.status === "cancelled" && run.error == null;
+              // A deleted run cannot prove the call was not stopped by its user.
+              // Keep the conservative full-rate count until provider evidence replaces it.
+              stoppedByUser = !run || (run.status === "cancelled" && run.error == null);
               running =
                 !usage &&
                 (run?.status === "leased" || run?.status === "running") &&

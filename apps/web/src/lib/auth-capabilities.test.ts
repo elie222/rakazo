@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AuthCapabilities } from "./auth-capabilities";
 
@@ -68,19 +69,14 @@ it.each([null, { ...capability.sso, availability: "available" }])(
   "shares the pending and successful deployment lookup across callers with SSO %j",
   async (sso) => {
     const available = { ...capability, sso };
-    let resolve!: (response: Response) => void;
-    const fetch = vi.fn(
-      () =>
-        new Promise<Response>((done) => {
-          resolve = done;
-        }),
-    );
+    const response = deferred<Response>();
+    const fetch = vi.fn(() => response.promise);
     vi.stubGlobal("fetch", fetch);
     const auth = fetchAuthCapabilities();
     const gate = fetchAuthCapabilities();
     expect(gate).toBe(auth);
     expect(fetch).toHaveBeenCalledTimes(1);
-    resolve(Response.json(available));
+    response.resolve(Response.json(available));
     await expect(auth).resolves.toEqual(available);
     await expect(fetchAuthCapabilities()).resolves.toEqual(available);
     expect(fetch).toHaveBeenCalledTimes(1);

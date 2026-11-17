@@ -244,4 +244,97 @@ describe("history on the wire", () => {
       { role: "user", text: "What was the token?" },
     ]);
   });
+
+  const toolReply: AgentRunRequest["history"] = [
+    { id: "m1", role: "user", content: "Make pages dark." },
+    {
+      id: "m2",
+      role: "assistant",
+      content: "[tool calls this reply made]\n- Shell (succeeded): Installing it.\nDone.",
+      segments: [
+        {
+          steps: [
+            {
+              label: "Shell",
+              tool: "shell",
+              count: 1,
+              note: "Installing it.",
+              calls: [
+                {
+                  arguments: JSON.stringify({ command: "ls ext" }),
+                  result: JSON.stringify({ stdout: "10.7.1_0\n", stderr: "", code: 0 }),
+                },
+              ],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+        { text: "Done." },
+      ],
+    },
+  ];
+  const tools = [{ name: "shell", description: "Run a command.", inputSchema: { type: "object" } }];
+
+  it("sends a chat-completions provider earlier tool steps as tool calls and tool results", async () => {
+    const body = await wireBody(compatible, completionsReply, { history: toolReply, tools });
+    const [, ask, call, result, done, prompt] = body.messages as Array<Record<string, unknown>>;
+    expect(ask).toMatchObject({ role: "user", content: "Make pages dark." });
+    expect(call).toMatchObject({
+      role: "assistant",
+      content: "Installing it.",
+      tool_calls: [
+        { type: "function", function: { name: "shell", arguments: '{"command":"ls ext"}' } },
+      ],
+    });
+    const id = (call!.tool_calls as Array<{ id: string }>)[0]!.id;
+    expect(result).toMatchObject({ role: "tool", tool_call_id: id });
+    expect(JSON.stringify(result)).toContain("10.7.1_0");
+    expect(done).toMatchObject({ role: "assistant", content: "Done." });
+    expect(prompt).toMatchObject({ role: "user" });
+    expect(JSON.stringify(body.messages)).not.toContain("[tool calls this reply made]");
+  });
+
+  it("sends Anthropic earlier tool steps as tool_use and tool_result blocks", async () => {
+    const body = await wireBody(anthropic, anthropicReply, { history: toolReply, tools });
+    const messages = body.messages as Array<{
+      role: string;
+      content: Array<Record<string, unknown>>;
+    }>;
+    expect(messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    const use = messages[1]!.content.find((part) => part.type === "tool_use");
+    expect(messages[1]!.content[0]).toMatchObject({ type: "text", text: "Installing it." });
+    expect(use).toMatchObject({ name: "shell", input: { command: "ls ext" } });
+    expect(messages[2]!.content[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: use!.id,
+    });
+    expect(JSON.stringify(body.messages)).not.toContain("[tool calls this reply made]");
+  });
+
+  it("keeps a thread's replayed tool steps byte-identical from one turn to the next", async () => {
+    const strip = (messages: WireMessage[]) => JSON.parse(JSON.stringify(messages));
+    const first = await wireBody(compatible, completionsReply, {
+      history: toolReply,
+      tools,
+      prompt: "Is it still dark?",
+    });
+    const second = await wireBody(compatible, completionsReply, {
+      history: [
+        ...toolReply,
+        { id: "m3", role: "user", content: "Is it still dark?" },
+        { id: "m4", role: "assistant", content: "Yes." },
+      ],
+      tools,
+      prompt: "Thanks.",
+    });
+    // The next turn only appends, so the provider's cached prefix stays warm.
+    expect(strip(second.messages).slice(0, first.messages.length)).toEqual(strip(first.messages));
+    expect(second.messages.length).toBe(first.messages.length + 2);
+  });
 });

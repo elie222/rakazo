@@ -1,5 +1,6 @@
 import type {
   AdapterContext,
+  AgentToolCompletion,
   BrowserProvider,
   ComputerRef,
   ConnectorTool,
@@ -9,7 +10,13 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock, ReplyMode } from "@rakazo/contracts";
+import type {
+  AttachmentImageMimeType,
+  ComputerMode,
+  MessageBlock,
+  ReplyMode,
+  ToolStepCall,
+} from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -28,6 +35,7 @@ import {
   terminatingToolResult,
 } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import type { VaultItemUse } from "./bot-secrets.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
@@ -35,6 +43,8 @@ import type { selectRunConnections } from "./connection-context.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
+import type { ReplySnapshot } from "./reply-snapshot.js";
+import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { PausedTurnToolsUnavailableError } from "./run-lifecycle.js";
@@ -42,11 +52,14 @@ import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
+import type { ScreenTurn } from "./screen-turn.js";
 import type { inferScript } from "./scripted-runtime.js";
+import { providerToolCallId, runToolCallIds } from "./tool-call-ids.js";
 import type { LoopGuardStreak } from "./tool-loop.js";
 import type { ToolRefusal } from "./tool-refusal.js";
 import { refusal } from "./tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { recordVaultItemUse } from "./vault-activity.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -61,6 +74,10 @@ export interface RunLeaseState {
   lastCheckAt: number;
   /** A takeover keeps the computer lease past this attempt. */
   retainComputer: boolean;
+  /** When the heartbeat last renewed both leases, so a failover is waited out only while they hold. */
+  renewedAt: number;
+  /** The attempt handed the run back after a database outage; it keeps its turn on the computer. */
+  handedBack: boolean;
 }
 
 export interface RunComputerUseState {
@@ -122,9 +139,17 @@ export interface ReplyState {
    */
   pendingToolNames: string[];
   /** Every step label a call made, in call order, so its outcome can be saved on its step. */
-  toolCalls: { label: string; executionId: string }[];
+  toolCalls: { label: string; executionId: string; tool?: string }[];
   /** How each finished call ended, by execution id. */
   toolOutcomes: Map<string, ToolStepOutcome>;
+  /** What each call that shows as its own step was called with and returned, by execution id. */
+  toolStepCalls: Map<string, ToolStepCall>;
+  /** Characters of results the reply has kept so far, against its budget. */
+  keptResultChars: number;
+  /** Calls that finished before their call event was handled, kept once it is. */
+  earlyCompletions?: Map<string, AgentToolCompletion>;
+  /** The last screenshot a kept call returned, saved with the reply for its later turns. */
+  latestScreenshot?: { executionId: string; mimeType: AttachmentImageMimeType; data: Uint8Array };
   pendingProgress: string;
   lastProgressAt: number;
   hasStreamedText: boolean;
@@ -160,6 +185,7 @@ export interface EffectState {
 export interface ScreenState {
   lastFrameId: string | undefined;
   unchangedVisualStreak: UnchangedVisualStreak;
+  turn: ScreenTurn;
 }
 
 /** What one attempt changes while it runs. Every piece shares these objects by reference. */
@@ -207,6 +233,9 @@ export interface RunState {
    * the wallet owner approved paying there, so the pay click there asks nothing more.
    */
   walletHosts: Set<string>;
+  /** Where the page browser last said its page was, which picks a login's site to fill on. */
+  pageUrl?: string;
+  vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }
@@ -238,6 +267,7 @@ export interface RunSource {
   historySearchBeforeSeq: number;
   /** See historyMyChatsAllowed; claimed outside steering still revokes it per call. */
   myChatsAllowed: boolean;
+  conversationThreadId?: string;
   voiceCall: boolean;
   callEndRun: boolean;
   callClientNonce: string | null;
@@ -353,6 +383,32 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   reply.redactor = createStreamingRedactor(ctx.secrets);
 }
 
+// Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes
+// the run, but a login typed on another of its sites shows there too. A command variable goes to
+// the bot's shell, which is no site, so it is once per item however many commands get it.
+export async function recordVaultUse(
+  ctx: RunContext,
+  tool: string,
+  item: VaultItemUse,
+  site?: string,
+) {
+  const use = JSON.stringify([item.id, site ?? null]);
+  if (ctx.state.vaultUses.has(use)) return;
+  ctx.state.vaultUses.add(use);
+  const recorded = await recordVaultItemUse({
+    bot: ctx.bot,
+    spaceId: ctx.run.spaceId,
+    // The run's person, whose vault holds the item.
+    userId: ctx.run.userId,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    tool,
+    item,
+    site,
+  });
+  if (!recorded) ctx.state.vaultUses.delete(use);
+}
+
 export function pauseForApproval(ctx: RunContext) {
   ctx.state.approval.pausePending = true;
   return approvalPausedToolResult();
@@ -395,6 +451,11 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
+/** Fresh outside input applies the existing action protections for this run. */
+export async function markReadOutsideContent(ctx: RunContext) {
+  ctx.state.tainted = true;
+}
+
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
 export const OWN_INSTRUCTIONS_CHANGED_ERROR =
   "Instructions changed since this run started, so your instructions were not saved. Ask the user to send their request again so a new run starts from the current instructions.";
@@ -426,16 +487,31 @@ export function nextMutatingEffectOccurrence(
   return occurrence;
 }
 
+/**
+ * Save the runtime's turn with the effect occurrences it assigned, for the next attempt, and the
+ * reply built so far, since the next attempt reruns none of the steps behind it.
+ */
+export async function saveTurnCheckpoint(
+  ctx: RunContext,
+  checkpoint: string,
+  reply?: ReplySnapshot,
+) {
+  const { deps, run, workerId, fence } = ctx;
+  const effects = ctx.state.effects;
+  const saved = JSON.parse(checkpoint);
+  saved.effectOccurrences = effects.occurrences;
+  saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
+  if (reply) saved.reply = reply;
+  await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+  effects.storedTurnCheckpoint = true;
+}
+
 export async function persistTurnCheckpoint(ctx: RunContext, executionId?: string) {
   const { deps, run, workerId, fence } = ctx;
   const effects = ctx.state.effects;
   const capture = executionId ? effects.pendingTurnCheckpoints.get(executionId) : undefined;
   if (capture) {
-    const saved = JSON.parse(capture());
-    saved.effectOccurrences = effects.occurrences;
-    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
-    await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
-    effects.storedTurnCheckpoint = true;
+    await saveTurnCheckpoint(ctx, capture(), snapshotReply(ctx.state.reply));
   } else if (effects.storedTurnCheckpoint) {
     // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
     await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
@@ -496,7 +572,11 @@ export function restoreTurnCheckpointEffects(
     }
     if (saved.effectOccurrences) {
       effects.occurrences.push(...saved.effectOccurrences);
-      const pendingExecutionId = JSON.stringify(["pi-tool", "main", saved.pendingToolCallId]);
+      const pendingExecutionId = JSON.stringify([
+        "pi-tool",
+        "main",
+        providerToolCallId(runToolCallIds(saved.messages).provider, saved.pendingToolCallId),
+      ]);
       // Provider IDs can repeat in later responses. Only the restored
       // pending call may consume its saved assignment, exactly once.
       effects.restoredPending = saved.effectOccurrences.findLast(
@@ -532,6 +612,7 @@ export function restoreTurnCheckpointEffects(
     // baseline must match it, not the current row. Checkpoints without one (older saves)
     // leave it undefined, which refuses own instruction writes in this attempt.
     ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
+    restoreReply(ctx.state.reply, saved.reply, ctx.runId);
     return turnCheckpoint;
   } catch (error) {
     if (error instanceof PausedTurnToolsUnavailableError) throw error;

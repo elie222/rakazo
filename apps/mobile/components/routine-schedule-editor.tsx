@@ -41,8 +41,8 @@ export function RoutineScheduleEditor({
     "Every hour": t`Every hour`,
     "Every day": t`Every day`,
     Weekdays: t`Weekdays`,
-    "Every week": t`Every week`,
-    "Every month": t`Every month`,
+    "Every week": t`Every Monday`,
+    "Every month": t`Monthly on the 1st`,
     Interval: t`Interval`,
     Advanced: t`Advanced`,
   };

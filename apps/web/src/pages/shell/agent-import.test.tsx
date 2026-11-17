@@ -3,6 +3,8 @@
 import { i18n } from "@lingui/core";
 import type { AgentImportPlan, Bot } from "@rakazo/contracts";
 import type * as Core from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -63,16 +65,6 @@ beforeEach(() => {
 });
 
 describe("choosing backups while a file is being read", () => {
-  function deferred() {
-    let resolve!: (value: ArrayBuffer) => void;
-    let reject!: (reason: Error) => void;
-    const promise = new Promise<ArrayBuffer>((success, failure) => {
-      resolve = success;
-      reject = failure;
-    });
-    return { promise, resolve, reject };
-  }
-
   function backup(read: Promise<ArrayBuffer>) {
     const file = new File(["backup"], "backup.zip", { type: "application/zip" });
     Object.defineProperty(file, "arrayBuffer", { value: () => read });
@@ -105,8 +97,8 @@ describe("choosing backups while a file is being read", () => {
   }
 
   it("keeps the newer preview when an older backup finishes later", async () => {
-    const first = deferred();
-    const second = deferred();
+    const first = deferred<ArrayBuffer>();
+    const second = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     await select(input, backup(second.promise));
@@ -120,7 +112,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("does not show a late failure over the newer preview", async () => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     await select(input, backup(Promise.resolve(new Uint8Array([2]).buffer)));
@@ -132,7 +124,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("keeps a document selected while an older backup is still reading", async () => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const archive = await render();
     await select(archive, backup(first.promise));
     const documentInput = container!.querySelector<HTMLInputElement>(
@@ -150,34 +142,27 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("keeps a backup selected while an older document is still reading", async () => {
-    let finishDocument!: (value: string) => void;
-    const documentRead = new Promise<string>((resolve) => {
-      finishDocument = resolve;
-    });
+    const documentRead = deferred<string>();
     const archive = await render();
     const documentInput = container!.querySelector<HTMLInputElement>(
       '[data-testid="agent-import-document"]',
     )!;
     const documentFile = new File(["Document"], "agent.md", { type: "text/markdown" });
-    Object.defineProperty(documentFile, "text", { value: () => documentRead });
+    Object.defineProperty(documentFile, "text", { value: () => documentRead.promise });
     await select(documentInput, documentFile);
     await select(archive, backup(Promise.resolve(new Uint8Array([2]).buffer)));
     expect(names()).toContain("Second");
 
-    await act(async () => finishDocument("Document"));
+    await act(async () => documentRead.resolve("Document"));
     expect(names()).toContain("Second");
     expect(names()).not.toContain("Document");
     expect(importPreview).toHaveBeenCalledTimes(1);
   });
 
   it("reports an oversized document and releases busy state while an older preview is pending", async () => {
-    let finishPreview!: (value: AgentImportPlan) => void;
+    const finishPreview = deferred<AgentImportPlan>();
     const archive = await render();
-    importPreview.mockReturnValueOnce(
-      new Promise<AgentImportPlan>((resolve) => {
-        finishPreview = resolve;
-      }),
-    );
+    importPreview.mockReturnValueOnce(finishPreview.promise);
     await select(archive, backup(Promise.resolve(new Uint8Array([1]).buffer)));
     const chooseBackup = [...container!.querySelectorAll("button")].find(
       (button) => button.textContent === "Choose backup",
@@ -195,7 +180,7 @@ describe("choosing backups while a file is being read", () => {
     );
     expect(chooseBackup.disabled).toBe(false);
 
-    await act(async () => finishPreview({ ...plan, suggestedName: "First" }));
+    await act(async () => finishPreview.resolve({ ...plan, suggestedName: "First" }));
     expect(container!.querySelector('[role="alert"]')?.textContent).toContain(
       "These files are too large to import.",
     );
@@ -204,7 +189,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("discards a pending backup when the native file picker is cancelled", async () => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     await act(async () => {
@@ -216,7 +201,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("discards a pending backup when the selection is cleared", async () => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     await select(input);
@@ -226,7 +211,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it.each(["Back", "Cancel new bot"])("discards a pending backup on %s", async (label) => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     const button = container!.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
@@ -236,7 +221,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("discards a pending backup on unmount", async () => {
-    const first = deferred();
+    const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
     await act(async () => root!.unmount());
@@ -246,7 +231,7 @@ describe("choosing backups while a file is being read", () => {
   });
 
   it("shows the current backup read failure", async () => {
-    const current = deferred();
+    const current = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(current.promise));
     await act(async () => current.reject(new Error("read failed")));
@@ -308,7 +293,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -317,9 +302,11 @@ describe("an item whose text looks like it contains a key", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const continueButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Continue",
-    )!;
+    const continueButton = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((button) => button.textContent === "Continue")!;
     await act(async () => continueButton.click());
 
     const box = (label: string) =>
@@ -360,7 +347,7 @@ describe("an item whose text looks like it contains a key", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -370,7 +357,11 @@ describe("an item whose text looks like it contains a key", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );
@@ -420,8 +411,8 @@ describe("creating a bot", () => {
   }
 
   it("keeps the preview when Back is pressed while creation is running", async () => {
-    let finish!: (bot: Bot) => void;
-    importCreate.mockReturnValue(new Promise<Bot>((resolve) => (finish = resolve)));
+    const finish = deferred<Bot>();
+    importCreate.mockReturnValue(finish.promise);
     const { onClose, onCreated } = await openPreview();
     await act(async () => button("Create").click());
     expect(button("Back").disabled).toBe(true);
@@ -431,7 +422,7 @@ describe("creating a bot", () => {
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
     expect(button("Creating…").disabled).toBe(true);
 
-    await act(async () => finish({ id: "bot-1" } as Bot));
+    await act(async () => finish.resolve({ id: "bot-1" } as Bot));
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(importCreate).toHaveBeenCalledTimes(1);
   });
@@ -446,9 +437,14 @@ describe("creating a bot", () => {
   });
 
   it("does not reopen a copy failure that settled during the preview after Back", async () => {
-    let refuse!: (reason: Error) => void;
+    let refuse!: Deferred;
     Object.defineProperty(navigator, "clipboard", {
-      value: { writeText: () => new Promise<void>((_, reject) => (refuse = reject)) },
+      value: {
+        writeText: () => {
+          refuse = deferred();
+          return refuse.promise;
+        },
+      },
       configurable: true,
     });
     // The selection fallback fails too, so the attempt settles as a failure.
@@ -464,7 +460,12 @@ describe("creating a bot", () => {
     await act(async () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
-    await act(async () => button("Copy prompt").click());
+    const copyPrompt = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="agent-import-another"] button',
+      ),
+    ].find((item) => item.textContent === "Copy prompt")!;
+    await act(async () => copyPrompt.click());
     const archive = container.querySelector<HTMLInputElement>(
       '[data-testid="agent-import-archive"]',
     )!;
@@ -478,7 +479,7 @@ describe("creating a bot", () => {
     });
     expect(container.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
 
-    await act(async () => refuse(new Error("denied")));
+    await act(async () => refuse.reject(new Error("denied")));
     await act(async () => button("Back").click());
     expect(container.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -505,7 +506,7 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
     });
     const reply = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Paste the reply"]',
+      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
     )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -515,11 +516,98 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      [...container!.querySelectorAll("button")]
+      [
+        ...container!.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="agent-import-another"] button',
+        ),
+      ]
         .find((button) => button.textContent === "Continue")!
         .click(),
     );
     expect(importPreview).toHaveBeenCalledTimes(1);
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+  });
+});
+
+describe("a Grok Bot reply with several Bots", () => {
+  it("asks which Bot, and forgets the choice when another source is read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        JSON.stringify({
+          bots: [
+            { name: "Bramble", memories: ["A"] },
+            { name: "Wren", memories: ["B"] },
+          ],
+        }),
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === "Continue")!.click(),
+    );
+    expect(grok.textContent).toContain("Which Bot?");
+    expect(importPreview).not.toHaveBeenCalled();
+
+    const archive = container.querySelector<HTMLInputElement>(
+      '[data-testid="agent-import-archive"]',
+    )!;
+    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () => Promise.reject(new Error("unreadable")),
+    });
+    await act(async () => {
+      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
+      archive.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(grok.textContent).not.toContain("Which Bot?");
+  });
+});
+
+describe("choosing Grok Bot files", () => {
+  it("disables Continue while the chosen files are read", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+    });
+    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "an earlier reply",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = (label: string) =>
+      [...grok.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    expect(button("Continue").disabled).toBe(false);
+
+    let finish!: Deferred<string>;
+    const file = new File(["{}"], "grok-bot-export-a.json", { type: "application/json" });
+    Object.defineProperty(file, "text", {
+      value: () => {
+        finish = deferred();
+        return finish.promise;
+      },
+    });
+    const input = grok.querySelector<HTMLInputElement>('[data-testid="agent-import-grok-file"]')!;
+    await act(async () => {
+      Object.defineProperty(input, "files", { configurable: true, value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(button("Continue").disabled).toBe(true);
+    expect(button("Choose file").disabled).toBe(true);
+    await act(async () => finish.resolve("not an export"));
   });
 });

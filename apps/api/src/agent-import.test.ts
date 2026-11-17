@@ -210,6 +210,37 @@ describe("an imported stdio server's setup state", () => {
   });
 });
 
+describe("an import whose stored checklist cannot be read", () => {
+  it("leaves only that import's servers not set up, and judges the others", async () => {
+    const prisma = {
+      mcpServer: {
+        findMany: async () => [
+          { id: "files", secretId: null },
+          { id: "docs", secretId: null },
+        ],
+      },
+      botMcpServer: { findMany: async () => [{ serverId: "files" }, { serverId: "docs" }] },
+      routine: { findMany: async () => [] },
+      agentImport: {
+        findMany: async () => [
+          { id: "import-bad", created: { mcpServers: "files" } },
+          {
+            id: "import-good",
+            created: { mcpServers: [{ id: "docs", credentials: [], env: [] }] },
+          },
+        ],
+      },
+    };
+    const state = await agentImportSetupState(services({ prisma: prisma as never }), actor, {
+      botId: "bot-1",
+      providers: [],
+      serverIds: ["files", "docs"],
+      routineIds: [],
+    });
+    expect(state.serverIds).toEqual({ files: false, docs: true });
+  });
+});
+
 describe("an imported server asked for twice", () => {
   it("is decrypted once", async () => {
     const created = {

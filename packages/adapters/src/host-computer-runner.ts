@@ -2,15 +2,18 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { WorkspacePathError } from "./computer-support.js";
 import type { HostComputerFrame, HostComputerRequest } from "./host-computer-protocol.js";
 import {
   HOST_COMPUTER_MAX_FILE_BYTES,
   hostComputerDeadlineMs,
+  hostComputerFileTooLargeMessage,
   hostComputerRequest,
 } from "./host-computer-protocol.js";
 import type { HostScreen } from "./host-screen.js";
 import { HostScreenError } from "./host-screen.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
 
 /** Where one request's frames go. A write may wait for the transport to drain. */
 export interface HostComputerSink {
@@ -131,7 +134,7 @@ export function createHostComputerRunner(options: { root: string; screen?: HostS
       case "exportWorkspace":
         for await (const file of provider.exportWorkspace(computer)) {
           if (file.content.byteLength > HOST_COMPUTER_MAX_FILE_BYTES)
-            throw new Error(`computer file exceeds ${HOST_COMPUTER_MAX_FILE_BYTES} bytes`);
+            throw new SandboxFileTooLargeError(HOST_COMPUTER_MAX_FILE_BYTES);
           yield { ...file, content: Buffer.from(file.content).toString("base64") };
         }
         break;
@@ -233,13 +236,9 @@ export function createHostComputerRunner(options: { root: string; screen?: HostS
 /** Only messages that reveal nothing beyond the caller's own request leave this computer. */
 function hostComputerErrorMessage(error: unknown) {
   if (error instanceof HostScreenError) return error.message;
-  if (
-    error instanceof Error &&
-    (error.message === "Path escapes the computer workspace" ||
-      /^computer file exceeds \d+ bytes$/.test(error.message))
-  ) {
-    return error.message;
-  }
+  if (error instanceof SandboxFileTooLargeError)
+    return hostComputerFileTooLargeMessage(error.maxBytes);
+  if (error instanceof WorkspacePathError) return error.message;
   if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
     return "computer file not found";
   return "Local computer operation failed";

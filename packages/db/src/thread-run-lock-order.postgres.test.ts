@@ -1,3 +1,5 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
@@ -5,7 +7,7 @@ import { createDb, Prisma } from "./client.js";
 import { clearThread } from "./events.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
-import { finalizeComputerControlRelease } from "./thread-takeover.js";
+import { answerTakeoverRequest } from "./thread-takeover.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -56,11 +58,7 @@ describePostgres("thread row before run rows for clear and control release (Post
       }
     };
     ({ userId, spaceId, botId, threadId } = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     ));
     provisioned = true;
   });
@@ -79,14 +77,8 @@ describePostgres("thread row before run rows for clear and control release (Post
 
   /** A second transaction holding one row, standing in for the concurrent actor. */
   function holdRow(table: "threads" | "computers", id: string) {
-    let locked!: (xactId: string) => void;
-    const lockTaken = new Promise<string>((resolve) => {
-      locked = resolve;
-    });
-    let open!: () => void;
-    const opened = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const lockTaken = deferred<string>();
+    const opened = deferred();
     const done = system.$transaction(
       async (tx) => {
         await tx.$queryRaw(
@@ -94,12 +86,12 @@ describePostgres("thread row before run rows for clear and control release (Post
         );
         const rows = await tx.$queryRaw<Array<{ xactId: string }>>`
           SELECT pg_current_xact_id()::text AS "xactId"`;
-        locked(rows[0]?.xactId ?? "");
-        await opened;
+        lockTaken.resolve(rows[0]?.xactId ?? "");
+        await opened.promise;
       },
       { timeout: 30_000 },
     );
-    return { lockTaken, open: () => open(), done };
+    return { lockTaken: lockTaken.promise, open: () => opened.resolve(), done };
   }
 
   /**
@@ -124,13 +116,6 @@ describePostgres("thread row before run rows for clear and control release (Post
           throw error;
         }
       },
-      async runStatus(id: string): Promise<string | null> {
-        const result = await client.query<{ status: string | null }>(
-          "SELECT status FROM runs WHERE id = $1",
-          [id],
-        );
-        return result.rows[0]?.status ?? null;
-      },
       /** Backends waiting on the holder's transaction: the function under test, blocked. */
       async waitingOnHolder(xactId: string): Promise<number> {
         const result = await client.query(
@@ -151,17 +136,6 @@ describePostgres("thread row before run rows for clear and control release (Post
       if ((await probe.waitingOnHolder(xactId)) > 0) return;
       if (Date.now() >= deadline) {
         throw new Error("the function under test did not block on the held thread row");
-      }
-      await sleep(WAIT_INTERVAL_MS);
-    }
-  }
-
-  async function untilRunCancelled(probe: Probe, runId: string) {
-    const deadline = Date.now() + WAIT_BUDGET_MS;
-    for (;;) {
-      if ((await probe.runStatus(runId)) === "cancelled") return;
-      if (Date.now() >= deadline) {
-        throw new Error("the cancellation did not commit while the computer row was held");
       }
       await sleep(WAIT_INTERVAL_MS);
     }
@@ -195,27 +169,27 @@ describePostgres("thread row before run rows for clear and control release (Post
         startedAt: new Date(),
       },
     });
+    // The run asked for help with a card, as a paused run always has.
+    const cardSeq = await system.thread.update({
+      where: { id: threadId },
+      data: { nextMessageSeq: { increment: 1 } },
+      select: { nextMessageSeq: true },
+    });
+    await system.message.create({
+      data: {
+        threadId,
+        botId,
+        runId: run.id,
+        seq: cardSeq.nextMessageSeq - 1,
+        role: "bot",
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." }],
+      },
+    });
     return run.id;
   }
 
-  it("release blocks on the thread row without holding the control run", async () => {
+  it("answering a takeover blocks on the thread row without holding the waiting run", async () => {
     const runId = await createWaitingTakeoverRun();
-    stamp += 1;
-    const computer = await system.computer.create({
-      data: {
-        spaceId,
-        userId,
-        scope: "dedicated",
-        scopeKey: `thread-run-lock-${address}-${stamp}`,
-        homeKey: `thread-run-lock-home-${address}-${stamp}`,
-        kind: "fake",
-        controlHolder: "user",
-        controlBotId: botId,
-        controlLeaseId: "lease-1",
-        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-        controlRunId: runId,
-      },
-    });
 
     const holder = holdRow("threads", threadId);
     let probe: Probe | undefined;
@@ -224,21 +198,11 @@ describePostgres("thread row before run rows for clear and control release (Post
       const xactId = await holder.lockTaken;
       probe = await connectProbe();
       work = runAsTenant({ spaceId, userId }, () =>
-        finalizeComputerControlRelease(prisma, {
-          spaceId,
-          computerId: computer.id,
-          botId,
-          runId,
-          leaseId: "lease-1",
-          holder: "none",
-          reason: "done",
-        }),
+        answerTakeoverRequest(prisma, { spaceId, botId, runId, reason: "done" }),
       );
       work.catch(() => undefined);
 
       await untilBlocked(probe, xactId);
-      // The release passed its first row and now queues on the thread row.
-      expect(await probe.rowLocked("computers", computer.id)).toBe(true);
       // The run row stays free the whole time: taking it before the thread row is
       // the inverted half of the old cycle.
       for (let sample = 0; sample < SAMPLE_COUNT; sample++) {
@@ -249,14 +213,7 @@ describePostgres("thread row before run rows for clear and control release (Post
 
       holder.open();
       await holder.done;
-      const released = await work;
-      expect(released).toEqual({ runId });
-      expect(await system.computer.findUnique({ where: { id: computer.id } })).toMatchObject({
-        controlHolder: "none",
-        controlLeaseId: null,
-        controlBotId: null,
-        controlRunId: null,
-      });
+      expect(await work).toBe(true);
       expect(await system.run.findUnique({ where: { id: runId } })).toMatchObject({
         status: "queued",
         checkpoint: "takeover",
@@ -306,7 +263,7 @@ describePostgres("thread row before run rows for clear and control release (Post
     }
   }, 20_000);
 
-  it("clear commits without a legacy-bound computer and cleans the binding after", async () => {
+  it("clear commits without waiting on a held computer row", async () => {
     const runId = await createWaitingTakeoverRun();
     stamp += 1;
     const computer = await system.computer.create({
@@ -317,9 +274,6 @@ describePostgres("thread row before run rows for clear and control release (Post
         scopeKey: `thread-run-lock-${address}-${stamp}`,
         homeKey: `thread-run-lock-home-${address}-${stamp}`,
         kind: "fake",
-        // A pre-lease release left this run bound as the computer's execution.
-        executionRunId: runId,
-        executionBotId: botId,
       },
     });
 
@@ -332,25 +286,10 @@ describePostgres("thread row before run rows for clear and control release (Post
       work = runAsTenant({ spaceId, userId }, () =>
         clearThread(prisma, { spaceId, threadId, botId }),
       );
-      work.catch(() => undefined);
-
-      // The cancellation commits while the computer row is held elsewhere: the clear
-      // transaction no longer reaches for the computer row under the thread lock,
-      // which is what closed the cycle with a concurrent control release.
-      await untilRunCancelled(probe, runId);
+      // The clear never reaches for the computer row under the thread lock, which is what
+      // closed the cycle with a concurrent control release.
+      expect(await work).toMatchObject({ cancelledRunIds: [runId] });
       expect(await probe.rowLocked("computers", computer.id)).toBe(true);
-      // The legacy cleanup follows the transaction and waits out the computer holder.
-      expect(await isPending(work)).toBe(true);
-
-      holder.open();
-      await holder.done;
-      const cleared = await work;
-      expect(cleared).toMatchObject({ cancelledRunIds: [runId] });
-      expect(await system.computer.findUnique({ where: { id: computer.id } })).toMatchObject({
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      });
     } finally {
       await settle(holder, work, probe);
     }

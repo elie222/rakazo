@@ -39,8 +39,9 @@ vi.mock("./AccountSettingsOverlay", () => ({
   ComputerSettingsPanel: () => null,
   GeneralSettingsPanels: () => null,
   UpdatesSettingsPanel: () => null,
-  UsageSettingsPanel: () => null,
 }));
+
+vi.mock("./UsageSettingsPanel", () => ({ UsageSettingsPanel: () => null }));
 const { memoryConfigs, memoryConfigChange, providerConfig, updaterStatus } = vi.hoisted(() => ({
   memoryConfigs: [] as unknown[],
   memoryConfigChange: { current: (_config: unknown) => {} },
@@ -101,6 +102,7 @@ vi.mock("../components/ApprovalRulesSettings", () => ({
   ApprovalRulesSettings: recordScope("confirmations"),
 }));
 vi.mock("../components/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
+vi.mock("./LabsSettingsPanel", () => ({ LabsSettingsPanel: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -122,9 +124,11 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
         <QueryClientProvider client={queryClient}>
           <SettingsOverlay
             name="Jamie"
-            onUsageOpen={() => undefined}
             timezone={null}
             onTimezoneChange={async () => undefined}
+            labs={[]}
+            labsAvailable={["board"]}
+            onLabsChange={async () => undefined}
             memoryConfig={null}
             onMemoryConfigChange={() => undefined}
             onClose={() => undefined}
@@ -316,6 +320,21 @@ it("offers Wallet only when the deployment has a wallet provider", async () => {
     await rerender({ section: "wallet", paymentWalletProvider: { id: "link", name: "Link" } });
     expect(container.querySelector('[data-testid="settings-nav-wallet"]')).not.toBeNull();
     expect(shown()).toBe("wallet");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("hides Labs when the deployment turns every feature on", async () => {
+  const { container, rerender, cleanup } = await render({ section: "labs", labsAvailable: [] });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-labs"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({ section: "labs", labsAvailable: ["board"] });
+    expect(container.querySelector('[data-testid="settings-nav-labs"]')).not.toBeNull();
+    expect(shown()).toBe("labs");
   } finally {
     await cleanup();
   }

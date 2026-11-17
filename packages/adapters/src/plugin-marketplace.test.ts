@@ -232,6 +232,7 @@ describe("marketplace service", () => {
         "app/assets/logo.svg",
         "pack/skills/plan/SKILL.md",
         "pack/skills/write/SKILL.md",
+        "hooked/plugin.json",
         "hooked/skills/plan/SKILL.md",
         "hooked/hooks/hooks.json",
         "local-mcp/mcp.json",
@@ -272,6 +273,26 @@ describe("marketplace service", () => {
     ]);
     expect(skippedEntries).toBe(6);
   });
+  it("lists manifestless skill catalogs without importing unrelated plugin parts", async () => {
+    const read = registryReader({
+      cursor: [{ name: "catalog", source: "catalog" }],
+      tree: [
+        "catalog/skills/plan/SKILL.md",
+        "catalog/skills/write/SKILL.md",
+        "catalog/hooks/hooks.json",
+        "catalog/agents/reviewer.md",
+        "catalog/commands/deploy.md",
+      ],
+    });
+    const { entries, skippedEntries } = await createPluginMarketplace(read).catalog("");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      name: "catalog",
+      hasConnector: false,
+      skillCount: 2,
+    });
+    expect(skippedEntries).toBe(0);
+  });
   it("leaves out plugins whose connector works only in the catalog's own app", async () => {
     const server = (url: string, extra = {}) =>
       JSON.stringify({ mcpServers: { tools: { type: "http", url, ...extra } } });
@@ -281,6 +302,7 @@ describe("marketplace service", () => {
         source: name,
       })),
       tree: [
+        "drive/plugin.json",
         "drive/mcp.json",
         "drive/skills/find/SKILL.md",
         "relay/mcp.json",

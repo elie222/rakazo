@@ -6,10 +6,12 @@ import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
 import { serializeModelSecret } from "./model-secret.js";
 import {
+  connectedModelSeesImages,
   connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
+  hasReadyModelCredential,
   inboundRoutineModelPin,
   loadStoredModelSecret,
   modelCredentialAuthKindsForSpace,
@@ -43,6 +45,84 @@ function credential(provider: string, defaultModel: string | null) {
 }
 
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
+
+it("checks approval readiness with one connection scan and one read per secret", async () => {
+  const preferred = {
+    ...credential("openai-compatible", null),
+    id: "preferred",
+    secretId: "preferred-secret",
+    updatedAt: new Date(1),
+  };
+  const fallback = {
+    ...credential("openai-compatible", null),
+    id: "fallback",
+    secretId: "fallback-secret",
+  };
+  const findMany = vi.fn(async () => [preferred, fallback]);
+  const findFirst = vi.fn(async ({ where }: { where: { id: string } }) => ({
+    id: where.id,
+    ciphertext: where.id,
+  }));
+  const prisma = {
+    userModelCredential: { findMany },
+    userModelPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+    secret: { findFirst },
+  } as unknown as PrismaClient;
+  const load = vi.fn(async (ciphertext: string) =>
+    serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      enabledModelIds: ciphertext === "fallback-secret" ? ["judge"] : ["other"],
+    }),
+  );
+  await expect(
+    hasReadyModelCredential(
+      prisma,
+      { load },
+      { userId: "user-1", spaceId: "space-1" },
+      "openai-compatible",
+      "judge",
+      { allowPrivateEndpoint: true },
+    ),
+  ).resolves.toBe(true);
+  // One lookup chooses the preferred connection; one scans the alternate connections.
+  expect(findMany).toHaveBeenCalledTimes(2);
+  expect(findFirst).toHaveBeenCalledTimes(2);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(load.mock.calls.map(([ciphertext]) => ciphertext).sort()).toEqual([
+    "fallback-secret",
+    "preferred-secret",
+  ]);
+});
+
+it.each([
+  { bundled: true, catalogImages: undefined, expected: true },
+  { bundled: false, catalogImages: true, expected: true },
+  { bundled: false, catalogImages: false, expected: false },
+])(
+  "uses known image capabilities without decrypting, bundled: $bundled, answer: $catalogImages",
+  async ({ bundled, catalogImages, expected }) => {
+    const entry = bundled
+      ? listPiCatalog().find((model) => model.provider === "anthropic" && model.images)!
+      : { provider: "zai", id: "listed-model-fixture" };
+    const findFirst = vi.fn(async () => ({ ciphertext: "sealed-fixture" }));
+    const load = vi.fn(async () => {
+      throw new SecretStoreUnavailableError();
+    });
+    await expect(
+      connectedModelSeesImages(
+        { prisma: { secret: { findFirst } } as never, secretStore: { load } },
+        "user-1",
+        entry.provider,
+        entry.id,
+        credential(entry.provider, entry.id),
+        catalogImages,
+      ),
+    ).resolves.toBe(expected);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+  },
+);
 
 describe("routine model pin", () => {
   const routine = {

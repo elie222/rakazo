@@ -114,6 +114,9 @@ export function useComposerMentions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        groupMemberNames: groups
+          .find((group) => group.id === groupId)
+          ?.members.map((member) => member.name),
         bots: bots.map((bot) => ({
           id: bot.id,
           name: bot.name,

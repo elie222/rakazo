@@ -13,8 +13,10 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createThreadEvents, createThreadMessage, runAsSystem } from "@rakazo/db";
 import type { NumericSummary } from "../performance-report.js";
 import {
+  checkBudgets,
   parseTcpPort,
   percentageDelta,
+  renderBudgetTable,
   roundedSummary,
   roundMetric,
 } from "../performance-report.js";
@@ -43,10 +45,16 @@ import {
 const SCHEMA_VERSION = 1;
 const VIEWPORT = { width: 1440, height: 900 };
 
-/** Every reported metric, in table order; `lowerIsBetter` is true for all of them. */
+/** Every reported metric, in table order; lower is better for all of them. */
 const METRICS = [
+  ["firstPaintMs", "Cold open to first paint", "ms"],
   ["coldOpenMs", "Cold open to transcript painted", "ms"],
+  ["openChatMs", "Open another chat", "ms"],
   ["cachedSwitchMs", "Switch to a cached chat", "ms"],
+  ["spaceSwitchMs", "Open a chat in another Space", "ms"],
+  ["typingTaskPerKeyMs", "Typing main-thread per key", "ms"],
+  ["resizeTaskPerStepMs", "Resize main-thread per step", "ms"],
+  ["idleCpuPercent", "Idle main-thread CPU", "%"],
   ["olderPageMs", "Load one older page", "ms"],
   ["scrollFrameP50Ms", "Scroll frame time p50", "ms"],
   ["scrollFrameP95Ms", "Scroll frame time p95", "ms"],
@@ -80,6 +88,7 @@ interface WebChatReport {
   fixture: {
     sizes: number[];
     samples: number;
+    warmups?: number;
     scrollStepPx: number;
     streamUpdates: number;
     streamIntervalMs: number;
@@ -94,6 +103,7 @@ loadRootEnv();
 async function benchmark() {
   const label = argument("--label") ?? "baseline";
   const samples = positiveInteger(argument("--samples") ?? "5");
+  const warmups = argument("--warmups") === "0" ? 0 : positiveInteger(argument("--warmups") ?? "1");
   const sizes = (argument("--sizes") ?? "50,100,500").split(",").map(positiveInteger);
   const scrollStepPx = positiveInteger(argument("--scroll-step") ?? "150");
   const streamUpdates = positiveInteger(argument("--stream-updates") ?? "100");
@@ -157,12 +167,15 @@ async function benchmark() {
     const results: WebChatReport["results"] = {};
     for (const thread of account.threads) {
       const rows: Partial<Record<MetricKey, number>>[] = [];
-      for (let sample = 0; sample < samples; sample += 1) {
-        console.log(`[${label}] ${thread.size} messages, sample ${sample + 1}/${samples}`);
-        rows.push({
+      // Warmup runs prime the preview server and the API before any sample counts.
+      for (let sample = -warmups; sample < samples; sample += 1) {
+        const name = sample < 0 ? "warmup" : `sample ${sample + 1}/${samples}`;
+        console.log(`[${label}] ${thread.size} messages, ${name}`);
+        const row = {
           ...(await measureOpenScrollAndStream(bench, account, thread)),
-          cachedSwitchMs: await measureCachedSwitch(bench, account, thread),
-        });
+          ...(await measureSwitches(bench, account, thread)),
+        };
+        if (sample >= 0) rows.push(row);
       }
       results[String(thread.size)] = { samples: rows, summary: summarizeRows(rows) };
     }
@@ -188,6 +201,7 @@ async function benchmark() {
       fixture: {
         sizes,
         samples,
+        warmups,
         scrollStepPx,
         streamUpdates,
         streamIntervalMs,
@@ -249,6 +263,10 @@ interface Account {
   userId: string;
   homeBotName: string;
   threads: BenchThread[];
+  /** Per thread size, a chat of that size in the same Space, never opened before it is timed. */
+  unopened: Record<number, BenchThread>;
+  /** Per thread size, a chat of that size in a second Space. */
+  elsewhere: Record<number, BenchThread>;
 }
 
 /** Signs up through the auth API like the e2e helpers, then seeds one chat per thread size. */
@@ -274,23 +292,31 @@ async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
     const user = await runAsSystem("benchmark seed", () =>
       bench.prisma.user.findFirstOrThrow({ where: { email }, select: { id: true } }),
     );
+    const space = await rpc<{ id: string }>(page, "spaces/create", { name: "Second space" });
+    const seed = async (name: string, size: number, spaceId?: string) => {
+      const created = await rpc<{ id: string }>(
+        page,
+        "bots/create",
+        newBot(name),
+        spaceId ? { "x-rakazo-space-id": spaceId } : undefined,
+      );
+      return seedThread(bench.prisma, created.id, name, size);
+    };
     const threads: BenchThread[] = [];
+    const unopened: Account["unopened"] = {};
+    const elsewhere: Account["elsewhere"] = {};
     for (const size of sizes) {
-      const name = `Bench ${size}`;
-      const created = await rpc<{ id: string }>(page, "bots/create", {
-        name,
-        title: "",
-        description: "",
-        notifyOnFinish: false,
-        computerMode: "team",
-      });
-      threads.push(await seedThread(bench.prisma, created.id, name, size));
+      threads.push(await seed(`Bench ${size}`, size));
+      unopened[size] = await seed(`Bench unopened ${size}`, size);
+      elsewhere[size] = await seed(`Bench elsewhere ${size}`, size, space.id);
     }
     return {
       storageState: await context.storageState(),
       userId: user.id,
       homeBotName: "Chief",
       threads,
+      unopened,
+      elsewhere,
     };
   } finally {
     await context.close();
@@ -322,8 +348,20 @@ async function seedThread(prisma: PrismaClient, botId: string, name: string, siz
   });
 }
 
-async function rpc<T>(page: Page, procedure: string, body: unknown): Promise<T> {
-  const response = await page.request.post(`/rpc/${procedure}`, { data: { json: body } });
+function newBot(name: string) {
+  return { name, title: "", description: "", notifyOnFinish: false, computerMode: "team" };
+}
+
+async function rpc<T>(
+  page: Page,
+  procedure: string,
+  body: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const response = await page.request.post(`/rpc/${procedure}`, {
+    data: { json: body },
+    headers,
+  });
   const parsed = (await response.json()) as { json?: T; error?: { message?: string } };
   if (!response.ok() || parsed.error) {
     throw new Error(`${procedure} ${response.status()}: ${parsed.error?.message ?? "failed"}`);
@@ -393,8 +431,18 @@ async function measureOpenScrollAndStream(bench: Bench, account: Account, thread
     await session.send("Performance.enable");
     await page.goto(`/app/${thread.botId}`, { waitUntil: "commit" });
     const coldOpenMs = await waitForPaint(page);
+    // The paint entry is queued once the frame is presented, which can trail the frame itself.
+    const firstPaint = await page.waitForFunction(
+      () => performance.getEntriesByName("first-contentful-paint")[0]?.startTime,
+      null,
+      { timeout: 10_000 },
+    );
+    const firstPaintMs = (await firstPaint.jsonValue()) as number;
     await settle(page);
     const opened = await heapAndDom(page, session);
+    const idleCpuPercent = await measureIdleCpu(page, session);
+    const typingTaskPerKeyMs = await measureTyping(page, session, thread);
+    const resizeTaskPerStepMs = await measureResize(page, session);
 
     const olderPages: number[] = [];
     for (;;) {
@@ -408,7 +456,11 @@ async function measureOpenScrollAndStream(bench: Bench, account: Account, thread
     const scroll = await measureScroll(bench, page, session);
     const stream = await measureStream(bench, account, thread, page, session);
     return {
+      firstPaintMs: roundMetric(firstPaintMs),
       coldOpenMs: roundMetric(coldOpenMs),
+      idleCpuPercent,
+      typingTaskPerKeyMs,
+      resizeTaskPerStepMs,
       ...(olderPages.length ? { olderPageMs: roundedSummary(olderPages).median } : {}),
       heapAfterOpenMiB: opened.heapMiB,
       domNodesAfterOpen: opened.elements,
@@ -440,10 +492,15 @@ const LOAD_OLDER_PAGE = `(async () => {
   return performance.now() - started;
 })()`;
 
-async function settle(page: Page) {
+/** Waits until the frame after the next one, so work already started has painted. */
+async function nextFrames(page: Page) {
   await page.evaluate(
     "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
   );
+}
+
+async function settle(page: Page) {
+  await nextFrames(page);
   await page.waitForTimeout(500);
 }
 
@@ -632,10 +689,10 @@ async function measureStream(
 }
 
 /**
- * Opens the chat, switches to the home chat, then times the switch back: the app already holds
- * this chat's messages, so this measures rendering, not loading.
+ * Times what a person feels moving around the sidebar: opening a chat this page has not loaded,
+ * switching back to one it has (rendering, not loading), and opening a chat in another Space.
  */
-async function measureCachedSwitch(bench: Bench, account: Account, thread: BenchThread) {
+async function measureSwitches(bench: Bench, account: Account, thread: BenchThread) {
   const context = await newContext(bench, account.storageState);
   try {
     const page = await context.newPage();
@@ -643,23 +700,73 @@ async function measureCachedSwitch(bench: Bench, account: Account, thread: Bench
     await page.goto(`/app/${thread.botId}`, { waitUntil: "commit" });
     await waitForPaint(page);
     await settle(page);
+    const openChatMs = await timedSidebarOpen(page, account.unopened[thread.size]!);
     await sidebarRow(page, account.homeBotName).click();
     await page.getByRole("combobox", { name: `Message ${account.homeBotName}` }).waitFor();
     await settle(page);
-    await sidebarRow(page, thread.name).waitFor();
-    // Starting the clock and clicking in one task keeps Playwright's round trips out of it.
-    await page.evaluate(`(() => {
-      ${paintWatcher(thread.lastMessageId, "performance.now()")}
-      const name = ${JSON.stringify(thread.name)};
-      const row = [...document.querySelectorAll("aside *")].find(
-        (node) => node.childElementCount === 0 && node.textContent.trim() === name,
-      );
-      row.click();
-    })()`);
-    return roundMetric(await waitForPaint(page));
+    const cachedSwitchMs = await timedSidebarOpen(page, thread);
+    const spaceSwitchMs = await timedSidebarOpen(page, account.elsewhere[thread.size]!);
+    return { openChatMs, cachedSwitchMs, spaceSwitchMs };
   } finally {
     await context.close();
   }
+}
+
+/** Clicks the chat's sidebar row and times it until its last message is painted. */
+async function timedSidebarOpen(page: Page, thread: BenchThread) {
+  await sidebarRow(page, thread.name).waitFor();
+  // Starting the clock and clicking in one task keeps Playwright's round trips out of it.
+  await page.evaluate(`(() => {
+    ${paintWatcher(thread.lastMessageId, "performance.now()")}
+    const name = ${JSON.stringify(thread.name)};
+    const row = [...document.querySelectorAll("aside *")].find(
+      (node) => node.childElementCount === 0 && node.textContent.trim() === name,
+    );
+    row.click();
+  })()`);
+  const elapsed = roundMetric(await waitForPaint(page));
+  await settle(page);
+  return elapsed;
+}
+
+const IDLE_MS = 5_000;
+
+/** Main-thread busy time while the open chat sits untouched, as a share of wall time. */
+async function measureIdleCpu(page: Page, session: CDPSession) {
+  const before = await cdpMetrics(session);
+  await page.waitForTimeout(IDLE_MS);
+  const after = await cdpMetrics(session);
+  return roundMetric((durationDelta(before, after, "TaskDuration") / IDLE_MS) * 100);
+}
+
+const TYPED_KEYS = 40;
+
+/** Main-thread time per keystroke typed into the composer with the transcript mounted. */
+async function measureTyping(page: Page, session: CDPSession, thread: BenchThread) {
+  const composer = page.getByRole("combobox", { name: `Message ${thread.name}` });
+  await composer.click();
+  const before = await cdpMetrics(session);
+  // About three frames between keys, so each keystroke's work lands in its own frames.
+  await page.keyboard.type("a".repeat(TYPED_KEYS), { delay: 50 });
+  await nextFrames(page);
+  const after = await cdpMetrics(session);
+  await composer.fill("");
+  await settle(page);
+  return roundMetric(durationDelta(before, after, "TaskDuration") / TYPED_KEYS, 3);
+}
+
+const RESIZE_WIDTHS = [1400, 1320, 1240, 1160, 1080, 1000, 1080, 1160, 1240, 1320, 1400, 1440];
+
+/** Main-thread time per window resize step, dragging the width down and back. */
+async function measureResize(page: Page, session: CDPSession) {
+  const before = await cdpMetrics(session);
+  for (const width of RESIZE_WIDTHS) {
+    await page.setViewportSize({ width, height: VIEWPORT.height });
+    await page.evaluate("new Promise((resolve) => requestAnimationFrame(() => resolve()))");
+  }
+  await nextFrames(page);
+  const after = await cdpMetrics(session);
+  return roundMetric(durationDelta(before, after, "TaskDuration") / RESIZE_WIDTHS.length, 3);
 }
 
 function sidebarRow(page: Page, name: string) {
@@ -750,7 +857,54 @@ function formatValue(value: number | undefined, unit: string) {
   return unit === "count" ? String(Math.round(value)) : `${roundMetric(value, 1)} ${unit}`;
 }
 
-if (process.argv[2] === "compare") {
+/**
+ * The nightly scorecard's lines, held against the medians of the largest thread size: input work
+ * fits in one frame, opening or switching feels instant, and startup, idle and memory leave
+ * headroom over a CI runner's spread.
+ */
+const BUDGETS: ReadonlyArray<{ key: MetricKey; budget: number }> = [
+  { key: "firstPaintMs", budget: 1_500 },
+  { key: "coldOpenMs", budget: 2_500 },
+  { key: "openChatMs", budget: 100 },
+  { key: "cachedSwitchMs", budget: 100 },
+  { key: "spaceSwitchMs", budget: 100 },
+  { key: "typingTaskPerKeyMs", budget: 16 },
+  { key: "resizeTaskPerStepMs", budget: 16 },
+  { key: "idleCpuPercent", budget: 2 },
+  { key: "heapAfterOpenMiB", budget: 60 },
+];
+
+async function check(file: string | undefined) {
+  if (!file) throw new Error("Usage: pnpm perf:web-chat check <report.json>");
+  const report = await readReport(file);
+  const size = Object.keys(report.results).sort((a, b) => Number(b) - Number(a))[0];
+  const summary = size ? report.results[size]!.summary : {};
+  const rows = checkBudgets(
+    summary,
+    BUDGETS.map(({ key, budget }) => {
+      const [, title, unit] = METRICS.find(([metric]) => metric === key)!;
+      return { key, title, unit, budget };
+    }),
+  );
+  const over = rows.filter((row) => row.over);
+  console.log(
+    [
+      `# Web performance scorecard`,
+      "",
+      `Commit \`${String(report.environment.gitSha).slice(0, 12)}\`, ${report.environment.cpuModel} x${report.environment.cpuCount}, Chromium ${report.environment.chromium}. ${size} messages, medians of ${report.fixture.samples} runs.`,
+      "",
+      renderBudgetTable(rows),
+      "",
+      over.length ? `${over.length} over budget.` : "All within budget.",
+      "",
+    ].join("\n"),
+  );
+  if (over.length) process.exitCode = 1;
+}
+
+if (process.argv[2] === "check") {
+  await check(process.argv[3]);
+} else if (process.argv[2] === "compare") {
   await compare(process.argv[3], process.argv[4]);
 } else {
   await benchmark();

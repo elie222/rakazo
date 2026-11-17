@@ -17,8 +17,6 @@ export const PUBLISHED_IMAGE_REPO = "elie222/rakazo";
 
 /** The published server image. One image runs api, worker, and web. */
 export const OFFICIAL_SERVER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/app`;
-/** The updater sidecar's image, published alongside the server image but tagged independently. */
-export const OFFICIAL_UPDATER_IMAGE = `ghcr.io/${PUBLISHED_IMAGE_REPO}/updater`;
 
 /**
  * The tag a deployment that has never run an update is on. It is deliberately *not* `latest`: no
@@ -31,7 +29,7 @@ export const IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG";
 export const PREVIOUS_IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG_PREVIOUS";
 
 /**
- * Matches the `name:` pinned in `infra/compose/docker-compose.prod.yml`. Used when Compose has not
+ * The `name:` pinned in `infra/compose/docker-compose.prod.yml`. Used when Compose has not
  * injected `COMPOSE_PROJECT_NAME` (it does, into running services) and no dedicated override is set.
  */
 export const DEFAULT_COMPOSE_PROJECT_NAME = "rakazo-prod";

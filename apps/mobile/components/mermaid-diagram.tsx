@@ -1,7 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { chatMermaidConfig } from "@rakazo/chat-ui/mermaid";
 import type { MermaidDiagramProps } from "@rakazo/chat-ui/native";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { currentApiBase, subscribeApiBase } from "../lib/api";
@@ -45,16 +46,16 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
   });
   const diagram = state.page === page ? state.diagram : { status: "drawing" as const };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  useTimeout(
+    () =>
       setState((current) =>
         current.page === page && current.diagram.status !== "drawing"
           ? current
           : { page, diagram: { status: "failed" } },
-      );
-    }, DIAGRAM_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [page]);
+      ),
+    DIAGRAM_TIMEOUT_MS,
+    page,
+  );
 
   if (diagram.status === "failed") return fallback;
   const drawn = diagram.status === "drawn";

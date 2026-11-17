@@ -88,7 +88,8 @@ test("touch users can open and dismiss the remote computer keyboard", async ({
 }, testInfo) => {
   await openComputerEmbed(page);
   const keyboardButton = page.getByRole("button", { name: "Show keyboard" });
-  const trackpadButton = page.getByRole("button", { name: "Use trackpad" });
+  // The trackpad starts on, so its toggle offers direct touch.
+  const trackpadButton = page.getByRole("button", { name: "Use direct touch" });
   const pasteButton = page.getByRole("button", { name: "Paste" });
   const keyboardInput = page.getByRole("textbox", { name: "Remote computer keyboard input" });
   const keyboardField = page.locator("#mobile-keyboard-input");
@@ -99,8 +100,12 @@ test("touch users can open and dismiss the remote computer keyboard", async ({
   await expect(page.getByRole("button", { name: "Ctrl" })).toBeVisible();
   await expect(keyboardInput).toHaveCount(0);
 
+  await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
   await trackpadButton.click();
-  await expect(page.getByRole("button", { name: "Use direct touch" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use trackpad" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();
+  await page.getByRole("button", { name: "Use trackpad" }).click();
+  await expect(trackpadButton).toBeVisible();
 
   await keyboardButton.click();
   await expect(page.getByRole("button", { name: "Hide keyboard" })).toBeVisible();
@@ -200,13 +205,14 @@ test("desktop embed hides touch computer chrome", async ({ page }) => {
   await openComputerEmbed(page, { touch: false });
   await expect(page.getByRole("button", { name: "Paste" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Show keyboard" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Use trackpad" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Use direct touch" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Zoom in" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Escape" })).toHaveCount(0);
 });
 
 test("view-only previews expose no keyboard or touch controls", async ({ page }) => {
   await openComputerEmbed(page, { viewOnly: true });
-  for (const name of ["Show keyboard", "Paste", "Use trackpad", "Escape", "Ctrl"]) {
+  for (const name of ["Show keyboard", "Paste", "Use direct touch", "Zoom in", "Escape", "Ctrl"]) {
     await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
   await expect(page.getByRole("textbox", { name: "Remote computer keyboard input" })).toHaveCount(

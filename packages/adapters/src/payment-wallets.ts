@@ -10,11 +10,20 @@ import type { PaymentWallet, Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import { withRefreshLock } from "./refresh-lock.js";
-import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
+import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
+import {
+  cleanUpUnsavedSecret,
+  finishSecretCleanup,
+  paymentWalletRecordId,
+  recordSecretCleanup,
+  savedSecretIn,
+} from "./secret-cleanup.js";
+import { holdSecretNotifications } from "./secret-store-factory.js";
 
 export interface PaymentWalletDeps {
   prisma: PrismaClient;
   secretStore: SecretStore;
+  jobs: SecretCleanupDeps["jobs"];
   paymentWallet: PaymentWalletProvider | null | undefined;
 }
 
@@ -34,8 +43,14 @@ const SLOW_DOWN_STEP_MS = 5_000;
 
 const DISCONNECTED: PaymentWalletStatus = { status: "disconnected" };
 
-function recordId(userId: string): string {
-  return `payment-wallet:${userId}`;
+const recordId = paymentWalletRecordId;
+
+function cleanupDeps(deps: PaymentWalletDeps): SecretCleanupDeps {
+  return { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
+}
+
+function walletSecret(userId: string, ref: string): SecretCleanup {
+  return { kind: "payment_wallet", recordId: recordId(userId), ref };
 }
 
 function providerContext(actor: WalletActor, operation: string): AdapterContext {
@@ -98,10 +113,6 @@ async function readMaterial(
   }
 }
 
-function dropSecret(deps: PaymentWalletDeps, userId: string, ciphertext: string): Promise<void> {
-  return deleteSecretBestEffort(deps.secretStore, ciphertext, recordId(userId));
-}
-
 /** The user's wallet row for the configured provider; one for another provider counts as none. */
 async function currentWallet(
   deps: PaymentWalletDeps,
@@ -127,10 +138,15 @@ function statusOf(row: PaymentWallet | null): PaymentWalletStatus {
 
 /** Deletes the row only while it still holds `ciphertext`, so a newer connect survives. */
 async function removeWallet(deps: PaymentWalletDeps, row: PaymentWallet): Promise<void> {
-  const { count } = await deps.prisma.paymentWallet.deleteMany({
-    where: { id: row.id, ciphertext: row.ciphertext },
+  const dropped = walletSecret(row.userId, row.ciphertext);
+  const { count } = await deps.prisma.$transaction(async (tx) => {
+    const removed = await tx.paymentWallet.deleteMany({
+      where: { id: row.id, ciphertext: row.ciphertext },
+    });
+    if (removed.count) await recordSecretCleanup(cleanupDeps(deps), tx, dropped);
+    return removed;
   });
-  if (count) await dropSecret(deps, row.userId, row.ciphertext);
+  if (count) await finishSecretCleanup(cleanupDeps(deps), dropped);
 }
 
 /** Revokes a connected row's credential with the provider; failures only log. */
@@ -163,11 +179,13 @@ async function replaceWallet(
     await lockWallet(tx, actor.userId);
     const row = await tx.paymentWallet.findUnique({ where: { userId: actor.userId } });
     await write(tx);
+    if (row)
+      await recordSecretCleanup(cleanupDeps(deps), tx, walletSecret(actor.userId, row.ciphertext));
     return row;
   });
   if (!previous) return;
   await revokeBestEffort(deps, actor, previous);
-  await dropSecret(deps, actor.userId, previous.ciphertext);
+  await finishSecretCleanup(cleanupDeps(deps), walletSecret(actor.userId, previous.ciphertext));
 }
 
 /** Wallet status for Settings; advances a pending sign-in when its next check is due. */
@@ -220,20 +238,28 @@ export async function paymentWalletStatus(
   }
   const ciphertext = await storeMaterial(deps, actor, { secret: result.credential.secret });
   const connectedAt = new Date();
+  const signIn = walletSecret(actor.userId, row.ciphertext);
   let failure: unknown;
-  const stored = await deps.prisma.paymentWallet
-    .updateMany({
-      where: { id: row.id, ciphertext: row.ciphertext },
-      data: {
-        status: "connected",
-        ciphertext,
-        verificationUrl: null,
-        userCode: null,
-        expiresAt: null,
-        nextPollAt: null,
-        refreshAt: result.credential.refreshAt,
-        connectedAt,
-      },
+  const stored = await deps.prisma
+    .$transaction(async (tx) => {
+      const updated = await tx.paymentWallet.updateMany({
+        where: { id: row.id, ciphertext: row.ciphertext },
+        data: {
+          status: "connected",
+          ciphertext,
+          verificationUrl: null,
+          userCode: null,
+          expiresAt: null,
+          nextPollAt: null,
+          refreshAt: result.credential.refreshAt,
+          connectedAt,
+        },
+      });
+      if (updated.count) {
+        await savedSecretIn(cleanupDeps(deps), tx, ciphertext);
+        await recordSecretCleanup(cleanupDeps(deps), tx, signIn);
+      }
+      return updated;
     })
     .catch((error: unknown) => {
       failure = error;
@@ -242,7 +268,7 @@ export async function paymentWalletStatus(
   if (!stored.count) {
     // A disconnect or new sign-in landed meanwhile, or the save failed: nothing holds this
     // credential, so it is forgotten and revoked.
-    await dropSecret(deps, actor.userId, ciphertext);
+    await cleanUpUnsavedSecret(cleanupDeps(deps), walletSecret(actor.userId, ciphertext));
     try {
       await provider.disconnect(result.credential, providerContext(actor, "disconnect"));
     } catch (error) {
@@ -251,7 +277,7 @@ export async function paymentWalletStatus(
     if (failure) throw failure;
     return statusOf(await currentWallet(deps, actor.userId));
   }
-  await dropSecret(deps, actor.userId, row.ciphertext);
+  await finishSecretCleanup(cleanupDeps(deps), signIn);
   await options.onConnected?.();
   return { status: "connected", connectedAt: connectedAt.toISOString() };
 }
@@ -292,15 +318,16 @@ export async function connectPaymentWallet(
     connectedAt: null,
   };
   try {
-    await replaceWallet(deps, actor, (tx) =>
-      tx.paymentWallet.upsert({
+    await replaceWallet(deps, actor, async (tx) => {
+      await tx.paymentWallet.upsert({
         where: { userId: actor.userId },
         create: { userId: actor.userId, ...fields },
         update: fields,
-      }),
-    );
+      });
+      await savedSecretIn(cleanupDeps(deps), tx, ciphertext);
+    });
   } catch (error) {
-    await dropSecret(deps, actor.userId, ciphertext);
+    await cleanUpUnsavedSecret(cleanupDeps(deps), walletSecret(actor.userId, ciphertext));
     throw error;
   }
   return {
@@ -371,11 +398,17 @@ async function refreshCredential(
           where: { id: row.id },
           data: { ciphertext: written, refreshAt: next.refreshAt },
         });
+        await savedSecretIn(cleanupDeps(deps), tx, written);
+        await recordSecretCleanup(
+          cleanupDeps(deps),
+          tx,
+          walletSecret(actor.userId, row.ciphertext),
+        );
         return { credential: next, row: updated, replaced: row.ciphertext };
       },
     );
   } catch (error) {
-    if (written) await dropSecret(deps, actor.userId, written);
+    if (written) await cleanUpUnsavedSecret(cleanupDeps(deps), walletSecret(actor.userId, written));
     throw error;
   }
   if ("gone" in result) throw new PaymentWalletDisconnected();
@@ -383,7 +416,8 @@ async function refreshCredential(
     await removeWallet(deps, result.revoked);
     throw new PaymentWalletDisconnected();
   }
-  if (result.replaced) await dropSecret(deps, actor.userId, result.replaced);
+  if (result.replaced)
+    await finishSecretCleanup(cleanupDeps(deps), walletSecret(actor.userId, result.replaced));
   return result;
 }
 

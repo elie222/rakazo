@@ -29,6 +29,7 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { bestEffort } from "@rakazo/logging";
 
 export const DEFAULT_MCP_INSTALL_TIMEOUT_MS = 180_000;
 const READY_MARKER = ".ready";
@@ -302,7 +303,10 @@ async function installLocked(plan: InstallPlan): Promise<void> {
       await writeFile(join(staging, READY_MARKER), `${JSON.stringify({ target: plan.target })}\n`);
       await rename(staging, plan.dir);
     } catch (error) {
-      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      await bestEffort(
+        "delete package install staging directory",
+        rm(staging, { recursive: true, force: true }),
+      );
       // A holder whose lock expired mid-install may still have published the same package.
       if (await isReady(plan.dir)) return;
       throw error;

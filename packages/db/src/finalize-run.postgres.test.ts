@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -37,11 +38,7 @@ describePostgres("finalizing a run (PostgreSQL)", () => {
       }
     };
     ({ userId, spaceId, botId, threadId } = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     ));
     provisioned = true;
   });
@@ -91,19 +88,16 @@ describePostgres("finalizing a run (PostgreSQL)", () => {
       });
 
       // A thread snapshot reads under a share lock; finalizing waits for it.
-      let locked!: () => void;
-      const lockTaken = new Promise<void>((resolve) => {
-        locked = resolve;
-      });
+      const lockTaken = deferred();
       const reader = system.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR SHARE`;
-          locked();
+          lockTaken.resolve();
           await new Promise((resolve) => setTimeout(resolve, THREAD_LOCK_HOLD_MS));
         },
         { timeout: THREAD_LOCK_HOLD_MS * 3 },
       );
-      await lockTaken;
+      await lockTaken.promise;
 
       const finalized = runAsTenant({ spaceId, userId }, () =>
         finalizeRun(prisma, {

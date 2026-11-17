@@ -248,7 +248,9 @@ function visualLoopGuidance(count: number) {
 }
 
 function finiteCoordinate(value: unknown, name: string) {
-  const number = Math.round(Number(value));
+  // Number(null), Number(""), Number(true) and Number([]) are all valid, and would click at 0.
+  const given = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
+  const number = given ? Math.round(Number(value)) : Number.NaN;
   if (!Number.isFinite(number) || number < 0 || number > 100_000) {
     throw new Error(`computer action ${name} must be a non-negative coordinate`);
   }

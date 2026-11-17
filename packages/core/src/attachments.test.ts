@@ -5,10 +5,13 @@ import {
   artifactTypeLabel,
   attachmentExtensionForMimeType,
   attachmentsForBot,
+  blocksToAgentHistorySegments,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
+  isStaticPng,
   normalizeVoiceTranscript,
+  PNG_ANIMATION_HEADER_BYTES,
   promptTextForAttachments,
   toolStepsHistoryText,
   userTurnMessageForRun,
@@ -75,6 +78,8 @@ describe("attachment helpers", () => {
   });
   it("accepts zip archives and rejects unsupported mime types and empty payloads", () => {
     expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
+    expect(() => validateAttachmentMimeType("application/vnd.rar")).not.toThrow();
+    expect(() => validateAttachmentMimeType("application/x-7z-compressed")).not.toThrow();
     expect(() => validateAttachmentMimeType("application/octet-stream")).toThrow(
       AttachmentValidationError,
     );
@@ -176,6 +181,44 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("archive.ZIP", reportedType)).toBe("application/zip");
     expect(attachmentExtensionForMimeType("application/zip")).toBe(".zip");
   });
+
+  it.each([
+    [
+      "rar",
+      "application/vnd.rar",
+      [
+        undefined,
+        "",
+        "application/vnd.rar",
+        "application/x-rar-compressed",
+        "application/x-rar",
+        "application/rar",
+        "application/octet-stream",
+      ],
+    ],
+    [
+      "7z",
+      "application/x-7z-compressed",
+      [
+        undefined,
+        "",
+        "application/x-7z-compressed",
+        "application/x-7z",
+        "application/octet-stream",
+      ],
+    ],
+  ])(
+    "infers %s archive attachments across reported types",
+    (extension, mimeType, reportedTypes) => {
+      for (const reportedType of reportedTypes) {
+        expect(inferAttachmentMimeType(`archive.${extension}`, reportedType)).toBe(mimeType);
+        expect(inferAttachmentMimeType(`ARCHIVE.${extension.toUpperCase()}`, reportedType)).toBe(
+          mimeType,
+        );
+      }
+      expect(attachmentExtensionForMimeType(mimeType)).toBe(`.${extension}`);
+    },
+  );
 
   it("scopes current-turn images to user-triggered runs", () => {
     const messages = [
@@ -442,6 +485,8 @@ describe("artifactTypeLabel", () => {
     expect(artifactTypeLabel("text/markdown")).toBe("MD");
     expect(artifactTypeLabel("application/pdf")).toBe("PDF");
     expect(artifactTypeLabel("image/png")).toBe("PNG");
+    expect(artifactTypeLabel("application/vnd.rar")).toBe("RAR");
+    expect(artifactTypeLabel("application/x-7z-compressed")).toBe("7Z");
     expect(
       artifactTypeLabel("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
     ).toBe("XLSX");
@@ -536,5 +581,69 @@ describe("tool step history", () => {
 
   it("renders nothing for an empty steps block", () => {
     expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+  });
+
+  it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {
+    const steps = [{ label: "Shell", tool: "shell", count: 1, note: "Checking." }];
+    const blocks = [
+      { kind: "text", text: "First." },
+      { kind: "steps", steps },
+      { kind: "steps", steps: [{ count: 1 }] },
+      { kind: "text", text: "Done." },
+      { kind: "image", name: "shot.png" },
+    ] as unknown as MessageBlock[];
+    expect(blocksToAgentHistorySegments(blocks)).toEqual([
+      { text: "First." },
+      { steps },
+      { text: "Done.\n[image: shot.png]" },
+    ]);
+    expect(blocksToAgentHistorySegments([{ kind: "text", text: "Hi." }])).toEqual([
+      { text: "Hi." },
+    ]);
+  });
+});
+
+describe("isStaticPng", () => {
+  function header(...chunks: Array<[string, number]>) {
+    const bytes = new Uint8Array(33 + chunks.reduce((sum, [, size]) => sum + size + 12, 0));
+    bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+    const view = new DataView(bytes.buffer);
+    let offset = 33;
+    for (const [type, size] of chunks) {
+      view.setUint32(offset, size);
+      bytes.set(
+        [...type].map((c) => c.charCodeAt(0)),
+        offset + 4,
+      );
+      offset += size + 12;
+    }
+    return bytes;
+  }
+  it("allows static PNG headers with ancillary chunks", () => {
+    expect(isStaticPng(header(["tEXt", 16], ["IDAT", 0]))).toBe(true);
+  });
+  it("preserves animation even for a single-frame or malformed acTL", () => {
+    expect(isStaticPng(header(["acTL", 8], ["IDAT", 0]))).toBe(false);
+    expect(isStaticPng(header(["acTL", 0], ["IDAT", 0]))).toBe(false);
+  });
+  it("does not mistake acTL inside ancillary data for an animation chunk", () => {
+    const bytes = header(["tEXt", 8], ["IDAT", 0]);
+    bytes.set([97, 99, 84, 76], 41);
+    expect(isStaticPng(bytes)).toBe(true);
+  });
+  it("preserves truncated, invalid and over-budget headers", () => {
+    expect(isStaticPng(new Uint8Array(100))).toBe(false);
+    expect(isStaticPng(header(["IDAT", 0]).subarray(0, 36))).toBe(false);
+    expect(isStaticPng(header(["IEND", 0]))).toBe(false);
+    expect(isStaticPng(header(["tEXt", PNG_ANIMATION_HEADER_BYTES], ["IDAT", 0]))).toBe(false);
+    const bytes = header(["tEXt", 0], ["IDAT", 0]);
+    new DataView(bytes.buffer).setUint32(33, 0xffffffff);
+    expect(isStaticPng(bytes)).toBe(false);
+  });
+  it("handles a bounded subarray without inspecting adjacent memory", () => {
+    const png = header(["IDAT", 0]);
+    const bytes = new Uint8Array(png.length + 10);
+    bytes.set(png, 5);
+    expect(isStaticPng(bytes.subarray(5, 5 + png.length))).toBe(true);
   });
 });

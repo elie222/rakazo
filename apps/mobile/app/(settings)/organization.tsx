@@ -1,22 +1,24 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { canDeleteOrganization } from "@rakazo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
 import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { native, useThemedStyles } from "../../lib/native";
+import type { Organization } from "../../lib/organizations";
 import {
   activeOrganization,
   leaveDeletedOrganization,
   refreshOrganizations,
   useOrganizations,
 } from "../../lib/organizations";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
+import { useSave } from "../../lib/query";
+import { useLiveStream } from "../../lib/roster-signals";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -26,14 +28,34 @@ export default function OrganizationSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const organization = activeOrganization(query.data);
   const [draft, setDraft] = useState<string | null>(null);
   // The plan choice links here with the deletion confirmation already open.
   const deleteRequested = useLocalSearchParams<{ delete?: string }>().delete === "1";
   const [confirming, setConfirming] = useState(deleteRequested);
   const [confirmation, setConfirmation] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const renaming = useSave({
+    save: async (ask: { organization: Organization; name: string }, send) => {
+      await send("organizations/rename", { organizationId: ask.organization.id, name: ask.name });
+      // The name shows in the list cached for every Space, not only this one.
+      await refreshOrganizations();
+    },
+    onSaved: () => setDraft(null),
+  });
+  const removal = useSave({
+    // Deleting selects a Space of another organization, which must not hand Delete back.
+    target: ACCOUNT_SETTINGS,
+    save: async (deleted: Organization, send) => {
+      const { activeSpaceId } = await send("organizations/remove", { organizationId: deleted.id });
+      await leaveDeletedOrganization(deleted, activeSpaceId);
+    },
+    closesScreen: true,
+  });
+  const pending = renaming.pending || removal.pending;
+  const failure = removal.error ?? renaming.error;
+  const error = failure ? errorText(failure) : null;
 
   if (!organization) {
     return (
@@ -52,36 +74,20 @@ export default function OrganizationSettings() {
   const name = draft ?? current.name;
   const canDelete = canDeleteOrganization(query.data?.organizations ?? [], current);
 
-  async function rename() {
+  function rename() {
     const next = name.trim();
     if (!next || next === current.name || pending) {
       setDraft(null);
       return;
     }
-    setPending(true);
-    setError(null);
-    try {
-      await rpc("organizations/rename", { organizationId: current.id, name: next });
-      await refreshOrganizations();
-      setDraft(null);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setPending(false);
-    }
+    removal.reset();
+    renaming.run({ organization: current, name: next });
   }
 
-  async function remove() {
+  function remove() {
     if (confirmation.trim() !== current.name.trim() || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const { activeSpaceId } = await rpc("organizations/remove", { organizationId: current.id });
-      await leaveDeletedOrganization(current, activeSpaceId);
-    } catch (err) {
-      setError(errorText(err));
-      setPending(false);
-    }
+    renaming.reset();
+    removal.run(current);
   }
 
   return (
@@ -101,7 +107,7 @@ export default function OrganizationSettings() {
               maxLength={60}
               value={name}
               onChangeText={setDraft}
-              onEndEditing={() => void rename()}
+              onEndEditing={rename}
               returnKeyType="done"
             />
           ) : (
@@ -110,11 +116,22 @@ export default function OrganizationSettings() {
         </SettingsGroup>
         <SettingsGroup>
           <SettingsRow
-            key="create"
+            key="members"
             accessibilityRole="button"
-            disabled={pending}
-            title={t`Create organization`}
-            onPress={() => openFromSettingsSheet(router, "/new-organization")}
+            title={t`Members`}
+            // Alone in it, its owner is offered to invite someone instead of a count of one.
+            value={
+              current.memberCount === 1 && canManageOrganizationMembers(current)
+                ? t`Invite people`
+                : String(current.memberCount)
+            }
+            chevron="right"
+            onPress={() =>
+              router.push({
+                pathname: "/organization-members",
+                params: { organizationId: current.id },
+              })
+            }
           />
         </SettingsGroup>
         {canDelete ? (
@@ -155,7 +172,7 @@ export default function OrganizationSettings() {
                 trailing={
                   pending ? <ActivityIndicator color={mobileTokens().destructive} /> : undefined
                 }
-                onPress={() => void remove()}
+                onPress={remove}
               />
             ) : null}
           </SettingsGroup>

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -50,13 +52,11 @@ describe("useForegroundPoll", () => {
   });
 
   it("runs immediately and never overlaps a slow poll", async () => {
-    let resolve!: () => void;
-    const run = vi.fn(
-      () =>
-        new Promise<void>((done) => {
-          resolve = done;
-        }),
-    );
+    let held!: Deferred;
+    const run = vi.fn(() => {
+      held = deferred();
+      return held.promise;
+    });
     act(() => root.render(<Harness enabled run={run} />));
     await act(async () => {});
 
@@ -66,7 +66,7 @@ describe("useForegroundPoll", () => {
     });
     expect(run).toHaveBeenCalledOnce();
 
-    resolve();
+    held.resolve();
     await act(async () => {});
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
@@ -77,13 +77,11 @@ describe("useForegroundPoll", () => {
   it.each(["foreground", "enabled"])(
     "waits for a pending poll across %s changes",
     async (change) => {
-      let resolve!: () => void;
-      const run = vi.fn(
-        () =>
-          new Promise<void>((done) => {
-            resolve = done;
-          }),
-      );
+      let waiting!: Deferred;
+      const run = vi.fn(() => {
+        waiting = deferred();
+        return waiting.promise;
+      });
       act(() => root.render(<Harness enabled run={run} />));
       expect(run).toHaveBeenCalledOnce();
 
@@ -102,7 +100,7 @@ describe("useForegroundPoll", () => {
       });
       expect(run).toHaveBeenCalledOnce();
 
-      await act(async () => resolve());
+      await act(async () => waiting.resolve());
       expect(run).toHaveBeenCalledOnce();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(999);

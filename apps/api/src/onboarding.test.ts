@@ -30,8 +30,9 @@ function fixture(catalog: unknown[]) {
     },
     events: { notify: vi.fn() },
     connectors: {
+      defaultConnectorId: "first-connector",
       managedProviders: () => [{ catalog: async () => catalog }],
-      managed: () => ({ catalog: async () => catalog }),
+      managed: vi.fn(() => ({ catalog: async () => catalog })),
     },
   } as unknown as Parameters<typeof chooseFocus>[0];
   const actor = {
@@ -130,6 +131,21 @@ it("marks only the authorized connector when provider slugs collide", async () =
     data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
   });
   expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+});
+
+it("reads a request and a stored card that name no connector as the server's default", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "first-connector", slug: "slack", name: "Slack", connected: true },
+  ]);
+  const card = { kind: "app_connect", provider: "slack", name: "Slack", status: "pending" };
+  const other = { ...card, connectorId: "pipedream" };
+  tx.message.findMany = vi.fn(async () => [{ id: "cards", blocks: [card, other] }]) as never;
+  await markAppConnected(deps, actor, "bot", "slack", undefined);
+  expect(deps.connectors.managed).toHaveBeenCalledWith("first-connector");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "cards" },
+    data: { blocks: [{ ...card, status: "connected" }, other] },
+  });
 });
 
 it("dismisses the pending focus card under the thread-lock budget", async () => {

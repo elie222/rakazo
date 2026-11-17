@@ -1,7 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { BotAvatarSet } from "@rakazo/contracts";
-import { loadPeerHistory, peerConversations } from "@rakazo/core";
+import {
+  loadPeerHistory,
+  newestPageCards,
+  pageCardSuperseded,
+  peerConversations,
+} from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -15,12 +20,13 @@ import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
+import { PageBlockCard } from "../components/pages/PageBlockCard";
 import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { TRANSCRIPT_CONTENT_PADDING } from "../lib/transcript-layout";
 import { transcriptIsNearEnd } from "../lib/transcript-scroll";
-import { ArtifactImage } from "./shell/message-cards";
+import { ArtifactImage, ChartBlockView } from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
 
 /**
@@ -72,6 +78,12 @@ export function PeerMessagesOverlay({
     if (!history.data) return null;
     return peerConversations(history.data).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [history.data, peerBotId]);
+  const newestPages = newestPageCards(
+    (conversation?.messages ?? []).map((message) => ({
+      id: message.messageId,
+      blocks: message.blocks ?? [],
+    })),
+  );
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
@@ -177,7 +189,7 @@ export function PeerMessagesOverlay({
                   className={`flex ${sent ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                    className={`${peerMessage.blocks?.some((block) => block.kind === "page" || block.kind === "chart") ? "w-[552px]" : ""} max-w-[80%] rounded-2xl px-4 py-2.5 ${
                       sent ? "bg-accent" : "bg-muted"
                     }`}
                   >
@@ -206,6 +218,20 @@ export function PeerMessagesOverlay({
                             name={block.name}
                             mimeType={block.mimeType}
                             size={block.size}
+                          />
+                        ) : block.kind === "chart" ? (
+                          <ChartBlockView
+                            key={index}
+                            name={block.name}
+                            spec={block.spec}
+                            data={block.data}
+                          />
+                        ) : block.kind === "page" ? (
+                          <PageBlockCard
+                            key={index}
+                            block={block}
+                            onOpen={onClose}
+                            updated={pageCardSuperseded(newestPages, peerMessage.messageId, block)}
                           />
                         ) : null,
                       )}

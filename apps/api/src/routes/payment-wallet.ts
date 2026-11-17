@@ -15,6 +15,7 @@ export function paymentWalletRoutes(ctx: RouterContext) {
   const wallet: PaymentWalletDeps = {
     prisma: deps.prisma,
     secretStore: deps.secrets,
+    jobs: deps.jobs,
     paymentWallet: deps.paymentWallet,
   };
   return {

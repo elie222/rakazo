@@ -5,6 +5,7 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -65,6 +66,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
         data: {
           spaceId: t.spaceId,
           userId: t.userId,
+          connectorId: "composio",
           provider: "test",
           displayName: t.name,
           status: "connected",
@@ -166,13 +168,17 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
         data: { status: "queued" },
       }),
     );
-    let release!: () => void;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { handlers, seen, continueRun } = careless(app.prisma, pending, true);
+    const pending = deferred();
+    const { handlers, seen, continueRun } = careless(app.prisma, pending.promise, true);
     const realtime = new InMemoryRealtimeFanout();
-    const background = { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() };
+    const background = {
+      enqueue: vi.fn(),
+      enqueueIn: vi.fn(),
+      enqueueManyIn: vi.fn(),
+      cancelIn: vi.fn(),
+      cancel: vi.fn(),
+      close: vi.fn(),
+    };
     const starter = new RunStarter(realtime);
     const publisher = new RunJobPublisher(app.prisma, background, starter);
     const host = new RunWorkerHost(app.prisma, realtime, starter, { intervalMs: 25 });
@@ -185,12 +191,12 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
       await vi.waitFor(() => expect(continueRun).toHaveBeenCalledTimes(2));
       expect(background.enqueue).not.toHaveBeenCalled();
       expect(seen.size).toBe(0);
-      release();
+      pending.resolve();
       await vi.waitFor(() => expect(seen.size).toBe(2));
       expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
       expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
     } finally {
-      release();
+      pending.resolve();
       await host.stop();
       await runAsSystem("reset direct dispatch fixtures", () =>
         owner.prisma.run.updateMany({
@@ -202,11 +208,8 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
   });
 
   it("runs tenant jobs through the Graphile queue", async () => {
-    let release!: () => void;
-    const afterHandoff = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const { handlers, seen, continueRun } = careless(app.prisma, afterHandoff);
+    const afterHandoff = deferred();
+    const { handlers, seen, continueRun } = careless(app.prisma, afterHandoff.promise);
     const publisher = new GraphileJobPublisher(app.pool, app.prisma);
     const host = createReservedGraphileJobWorkerHost(app.pool, {
       concurrency: 2,
@@ -237,13 +240,13 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
       );
       // Reads happen after Graphile has completed every dispatch delivery.
       expect(seen.size).toBe(0);
-      release();
+      afterHandoff.resolve();
       await vi.waitFor(() => expect(seen.size).toBe(2), { timeout: 10_000, interval: 25 });
       expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
       expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
       expect(continueRun).toHaveBeenCalledTimes(2);
     } finally {
-      release();
+      afterHandoff.resolve();
       await host.stop();
       await publisher.close();
     }

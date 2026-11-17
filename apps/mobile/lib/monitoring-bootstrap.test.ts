@@ -14,8 +14,6 @@ vi.mock("./monitoring", () => ({
   reportMobileError: state.report,
   resetMobileMonitoring: vi.fn(),
 }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => {
   if (state.importBroken) throw new Error("app import failed");
   return {

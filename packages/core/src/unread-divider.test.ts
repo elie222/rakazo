@@ -1,4 +1,8 @@
+import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
+import { deferred, flush } from "./async.test-support.js";
+import { messageUnreadFor } from "./message-replies.js";
+import type { ReadBoundary } from "./unread-divider.js";
 import {
   canMarkMessageUnread,
   createChatQueues,
@@ -100,14 +104,12 @@ describe("createSerialQueue", () => {
   it("answers in the order tasks were queued, even when a later one is faster", async () => {
     const inOrder = createSerialQueue();
     const answered: string[] = [];
-    let releaseOpening!: () => void;
-    const opening = inOrder(
-      () => new Promise<string>((resolve) => (releaseOpening = () => resolve("opening"))),
-    ).then((value) => answered.push(value));
+    const releaseOpening = deferred<string>();
+    const opening = inOrder(() => releaseOpening.promise).then((value) => answered.push(value));
     const live = inOrder(async () => "live").then((value) => answered.push(value));
     await Promise.resolve();
     expect(answered).toEqual([]);
-    releaseOpening();
+    releaseOpening.resolve("opening");
     await Promise.all([opening, live]);
     expect(answered).toEqual(["opening", "live"]);
   });
@@ -158,15 +160,12 @@ describe("createChatQueues", () => {
   it("keeps one chat's reads in order without holding up another chat", async () => {
     const inOrder = createChatQueues();
     const answered: string[] = [];
-    let releaseA!: () => void;
-    const openingA = inOrder(
-      "bot:a",
-      () => new Promise<string>((resolve) => (releaseA = () => resolve("a1"))),
-    ).then((value) => answered.push(value));
+    const releaseA = deferred<string>();
+    const openingA = inOrder("bot:a", () => releaseA.promise).then((value) => answered.push(value));
     const liveA = inOrder("bot:a", async () => "a2").then((value) => answered.push(value));
     await inOrder("bot:b", async () => "b1").then((value) => answered.push(value));
     expect(answered).toEqual(["b1"]);
-    releaseA();
+    releaseA.resolve("a1");
     await Promise.all([openingA, liveA]);
     expect(answered).toEqual(["b1", "a1", "a2"]);
   });
@@ -254,9 +253,121 @@ describe("marking unread through a chat's read queue", () => {
       unread = true;
     });
     // The queue starts the read on the next tick; finish it once it has started.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
     finishRead();
     await Promise.all([inFlight, queued, mark]);
     expect(unread).toBe(true);
+  });
+});
+
+describe("unreadDividerMessageId properties", () => {
+  const row = fc.record(
+    {
+      role: fc.constantFrom("bot", "user"),
+      author: fc.constantFrom({ id: "me", name: "Ada" }, { id: "them", name: "Bea" }),
+      live: fc.boolean(),
+      gap: fc.integer({ min: 1, max: 3 }),
+    },
+    { requiredKeys: ["role", "live", "gap"] },
+  );
+  const chat = fc.array(row, { maxLength: 12 }).map((rows) => {
+    let seq = 0;
+    return rows.map(({ live, gap, ...message }, index) => {
+      if (!live) seq += gap;
+      return { id: `m${index}`, ...message, ...(live ? {} : { seq }) };
+    });
+  });
+  const readUpTo = fc.integer({ min: -1, max: 40 });
+  const meId = fc.constantFrom(undefined, "me");
+
+  it("sits above the first unread message after the read boundary, or nowhere", () => {
+    fc.assert(
+      fc.property(
+        chat,
+        fc.option(readUpTo, { nil: null }),
+        fc.option(fc.nat(40), { nil: null }),
+        meId,
+        (messages, read, olderCursor, meId) => {
+          const unread = messages.filter(
+            (message) =>
+              read !== null &&
+              message.seq !== undefined &&
+              message.seq > read &&
+              messageUnreadFor(message, meId),
+          );
+          const divider = unreadDividerMessageId(messages, read, olderCursor, meId);
+          const olderPagePending = olderCursor !== null && read !== null && olderCursor > read + 1;
+          const startsChat = olderCursor === null && unread[0] === messages[0];
+          expect(divider).toBe(unread[0] && !olderPagePending && !startsChat ? unread[0].id : null);
+        },
+      ),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("never moves earlier when more has been read, and stays put as later messages arrive", () => {
+    fc.assert(
+      fc.property(
+        chat,
+        readUpTo,
+        fc.nat(5),
+        fc.nat(12),
+        meId,
+        (messages, read, more, shown, meId) => {
+          const position = (id: string | null) => messages.findIndex((m) => m.id === id);
+          const divider = unreadDividerMessageId(messages, read, null, meId);
+          const later = unreadDividerMessageId(messages, read + more, null, meId);
+          if (later !== null) expect(position(later)).toBeGreaterThanOrEqual(position(divider));
+          const earlier = unreadDividerMessageId(messages.slice(0, shown), read, null, meId);
+          if (earlier !== null) expect(divider).toBe(earlier);
+        },
+      ),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+});
+
+describe("settleReadBoundary properties", () => {
+  const answer = fc.record({
+    visit: fc.integer({ min: 1, max: 4 }),
+    seq: fc.option(fc.nat(50), { nil: null }),
+  });
+
+  it("settles on the first answer of the open visit wherever answers from other visits arrive", () => {
+    fc.assert(
+      fc.property(
+        fc.array(answer, { maxLength: 10 }),
+        fc.integer({ min: 1, max: 4 }),
+        (answers, openVisit) => {
+          const settled = answers.reduce<ReadBoundary | null>(
+            (current, next) => settleReadBoundary(current, openVisit, next),
+            null,
+          );
+          expect(settled).toEqual(answers.find((next) => next.visit === openVisit) ?? null);
+        },
+      ),
+      { seed: 42, numRuns: 200 },
+    );
+  });
+
+  it("never replaces the open visit's boundary or returns to an earlier visit as chats open in turn", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ opensNext: fc.boolean(), answer }), { maxLength: 15 }),
+        (steps) => {
+          let openVisit = 1;
+          let boundary: ReadBoundary | null = null;
+          for (const step of steps) {
+            if (step.opensNext) openVisit += 1;
+            const settled = settleReadBoundary(boundary, openVisit, step.answer);
+            if (boundary?.visit === openVisit) expect(settled).toBe(boundary);
+            expect(settled?.visit ?? 0).toBeGreaterThanOrEqual(boundary?.visit ?? 0);
+            expect(settled?.visit ?? 0).toBeLessThanOrEqual(openVisit);
+            boundary = settled;
+          }
+        },
+      ),
+      { seed: 42, numRuns: 200 },
+    );
   });
 });

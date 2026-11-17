@@ -11,18 +11,21 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
 } from "./computer-workspace.js";
-import { win32NtRelativeAvailable } from "./desktop-sandbox-win32-path.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
+import { win32NtRelativeAvailable } from "./providers/computer/desktop/desktop-sandbox-win32-path.js";
+import { assertSandboxReadLimit } from "./sandbox-test-support.js";
 
 const context = {
   operationId: "test",
@@ -239,10 +242,7 @@ describe("native host computer transport", () => {
   });
 
   it("cancels only commands belonging to the requested run", async () => {
-    let ready!: () => void;
-    const started = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const started = deferred();
     const running = (async () => {
       for await (const event of client.execute(
         computer,
@@ -252,11 +252,11 @@ describe("native host computer transport", () => {
         },
         { ...context, runId: "target-run" },
       )) {
-        if (event.type === "stdout") ready();
+        if (event.type === "stdout") started.resolve();
       }
     })();
     const rejected = expect(running).rejects.toThrow();
-    await started;
+    await started.promise;
     await client.cancelRunWork(computer, "computer-id", "another-run", context);
     expect(await client.isRunning(computer, context)).toBe(true);
     await client.cancelRunWork(computer, "computer-id", "target-run", context);
@@ -265,11 +265,8 @@ describe("native host computer transport", () => {
   });
 
   it("keeps cancellation available when every execution slot is occupied", async () => {
-    let ready!: () => void;
     let started = 0;
-    const allStarted = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const allStarted = deferred();
     const runs = Array.from({ length: 16 }, () =>
       (async () => {
         for await (const event of client.execute(
@@ -280,12 +277,12 @@ describe("native host computer transport", () => {
           },
           { ...context, runId: "saturated-run" },
         )) {
-          if (event.type === "stdout" && ++started === 16) ready();
+          if (event.type === "stdout" && ++started === 16) allStarted.resolve();
         }
       })(),
     );
     const settled = Promise.allSettled(runs);
-    await allStarted;
+    await allStarted.promise;
     await client.cancelRunWork(computer, "computer-id", "saturated-run", context);
     expect((await settled).every((result) => result.status === "rejected")).toBe(true);
   });
@@ -298,6 +295,7 @@ describe("native host computer transport", () => {
       context,
     );
     expect(await client.readFile(computer, "nested/file.bin", context)).toEqual(content);
+    await assertSandboxReadLimit(client, computer, context, { path: "nested/file.bin", content });
     // attach_file supplies its 10 MiB limit even when the requested file is tiny.
     expect(
       await client.readFile(computer, "nested/file.bin", context, { maxBytes: 10 * 1024 * 1024 }),
@@ -311,10 +309,13 @@ describe("native host computer transport", () => {
       path.join(root, "desktop-computers", computer.id.slice("desktop-".length), "large.bin"),
       Buffer.alloc(8 * 1024 * 1024 + 1),
     );
+    const tooLarge = new SandboxFileTooLargeError(8 * 1024 * 1024);
     await expect(
       client.readFile(computer, "large.bin", context, { maxBytes: 10 * 1024 * 1024 }),
-    ).rejects.toThrow("exceeds");
-    await expect(collect(client.exportWorkspace(computer, context))).rejects.toThrow("exceeds");
+    ).rejects.toStrictEqual(tooLarge);
+    await expect(collect(client.exportWorkspace(computer, context))).rejects.toStrictEqual(
+      tooLarge,
+    );
     await expect(client.readFile(computer, "../../outside", context)).rejects.toThrow();
     await expect(
       client.writeFile(computer, { path: "../outside", content }, context),
@@ -322,6 +323,43 @@ describe("native host computer transport", () => {
     await expect(
       client.readFile(computer, "nested/file.bin", context, { maxBytes: 2 }),
     ).rejects.toThrow();
+  });
+
+  it("sends a file over the limit as the error text installed desktop apps read", async () => {
+    await client.writeFile(computer, { path: "note.txt", content: new Uint8Array(3) }, context);
+    const response = await fetch(`${url}/computer`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        method: "readFile",
+        botId: computer.botId,
+        path: "note.txt",
+        maxBytes: 2,
+      }),
+    });
+    expect(await response.text()).toBe('{"error":"computer file exceeds 2 bytes"}\n');
+  });
+
+  it("recognises only the over-limit error frame as a file over the limit", async () => {
+    const answer = (error: string) =>
+      vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response(`${JSON.stringify({ error })}\n`, { status: 200 }));
+    const read = () =>
+      client.readFile(computer, "note.txt", context, { maxBytes: 2 }).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+    const mock = answer("computer file exceeds 2 bytes");
+    try {
+      expect(await read()).toStrictEqual(new SandboxFileTooLargeError(2));
+      answer("Local computer response is too large");
+      const other = await read();
+      expect(other).not.toBeInstanceOf(SandboxFileTooLargeError);
+      expect(other).toMatchObject({ message: "Local computer response is too large" });
+    } finally {
+      mock.mockRestore();
+    }
   });
 
   it("preserves the saved workspace when a native file grows beyond the transfer limit", async () => {
@@ -383,10 +421,7 @@ describe("native host computer transport", () => {
   it("revocation terminates running commands and refuses subsequent operations", async () => {
     const events: ProcessEvent[] = [];
     let pid = 0;
-    let ready!: () => void;
-    const started = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const started = deferred();
     const running = (async () => {
       for await (const event of client.execute(
         computer,
@@ -399,12 +434,12 @@ describe("native host computer transport", () => {
         events.push(event);
         if (event.type === "stdout") {
           pid = Number(event.data.trim());
-          ready();
+          started.resolve();
         }
       }
     })();
     const rejected = expect(running).rejects.toThrow();
-    await started;
+    await started.promise;
     server.setEnabled(false);
     await rejected;
     await expect.poll(() => processExists(pid)).toBe(false);
@@ -455,10 +490,7 @@ describe("native host computer transport", () => {
   it("cancels the host process on client abort and rejects graphical operations", async () => {
     const controller = new AbortController();
     let pid = 0;
-    let ready!: () => void;
-    const started = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const started = deferred();
     const running = (async () => {
       for await (const event of client.execute(
         computer,
@@ -470,12 +502,12 @@ describe("native host computer transport", () => {
       )) {
         if (event.type === "stdout") {
           pid = Number(event.data.trim());
-          ready();
+          started.resolve();
         }
       }
     })();
     const rejected = expect(running).rejects.toThrow();
-    await started;
+    await started.promise;
     controller.abort();
     await rejected;
     await expect.poll(() => processExists(pid)).toBe(false);

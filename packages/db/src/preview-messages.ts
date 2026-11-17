@@ -2,7 +2,7 @@ import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 
-/** Scalar columns the sidebar preview and its older-page fallback both read. */
+/** Scalar columns a sidebar row reads from its thread's newest message. */
 export interface SidebarPreviewMessage {
   id: string;
   threadId: string;

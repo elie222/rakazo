@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { Alert, Platform } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isComposeViewAvailable } from "./compose-available";
@@ -96,18 +98,16 @@ describe("native message action sheet", () => {
       const current = getMessageActionSheet()!;
       expect(current).toEqual({ actions, title: "12:34", colorScheme: "light", selected: 2 });
       expect(Alert.alert).not.toHaveBeenCalled();
-      let hidden!: () => void;
-      const hide = vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            hidden = resolve;
-          }),
-      );
+      let hidden!: Deferred;
+      const hide = vi.fn(() => {
+        hidden = deferred();
+        return hidden.promise;
+      });
       const selected = selectMessageActionSheet(current, 3, hide);
       await selectMessageActionSheet(current, 3, hide);
       expect(hide).toHaveBeenCalledOnce();
       expect(actions[3]!.onPress).not.toHaveBeenCalled();
-      hidden();
+      hidden.resolve();
       await selected;
       expect(getMessageActionSheet()).toBeNull();
       expect(actions[3]!.onPress).toHaveBeenCalledOnce();

@@ -8,7 +8,6 @@ import {
   MAX_DESKTOP_DISPLAY,
   resetDesktopRuntimeCommand,
   screenPorts,
-  shellQuote,
   stopBrowserCommand,
   stopExtraScreenCommand,
   stopScreenTransportsCommand,
@@ -26,7 +25,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
-import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core/node/screen-lease";
 import type Docker from "dockerode";
 import { z } from "zod";
 import type { SandboxInput } from "./computer-spec.js";
@@ -467,17 +466,6 @@ export function screenReleaseStopCommand(
     return stopBrowserCommand(options.screenId);
   }
   return "";
-}
-
-export function stopScreensCommand(screens: Array<{ screenId: string; index: number }>) {
-  return [
-    "set -eu",
-    "failed=0",
-    ...screens.map(
-      ({ screenId }) => `bash -eu -c ${shellQuote(stopBrowserCommand(screenId))} || failed=1`,
-    ),
-    '[ "$failed" -eq 0 ] || { echo "computer browser failed to stop" >&2; exit 1; }',
-  ].join("\n");
 }
 
 export function resetManagedScreensCommand() {

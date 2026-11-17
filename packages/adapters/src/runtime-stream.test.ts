@@ -1,4 +1,5 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 
@@ -8,10 +9,7 @@ describe("executor runtime cleanup", () => {
     async (reason) => {
       const controller = new AbortController();
       const order: string[] = [];
-      let finishTool!: () => void;
-      const tool = new Promise<void>((resolve) => {
-        finishTool = resolve;
-      });
+      const tool = deferred();
       controller.signal.addEventListener("abort", () => {
         order.push("abort");
       });
@@ -20,7 +18,7 @@ describe("executor runtime cleanup", () => {
           yield { type: "text", text: "started" };
         } finally {
           order.push("closing");
-          await tool;
+          await tool.promise;
           order.push("settled");
         }
       }
@@ -37,7 +35,7 @@ describe("executor runtime cleanup", () => {
       };
       const consuming = consume().catch((error: Error) => error.message);
       await vi.waitFor(() => expect(order).toEqual(["abort", "closing"]));
-      finishTool();
+      tool.resolve();
       expect(await consuming).toBe(reason === "consumer error" ? "consumer failed" : undefined);
       expect(order).toEqual(["abort", "closing", "settled", "release ownership"]);
     },

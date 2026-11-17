@@ -1,9 +1,11 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import sharp from "sharp";
 import { fetch as undiciFetch } from "undici";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FaviconResolver } from "./favicon.js";
 import {
   createFaviconResolver,
@@ -583,12 +585,14 @@ describe("favicon resolver", () => {
   it("resolves at most four origins at once", async () => {
     let active = 0;
     let peak = 0;
-    const releases: Array<() => void> = [];
+    let arrived = 0;
+    const gate = deferred();
     for (let index = 0; index < 8; index += 1) {
       routes.set(`slow${index}.test/`, async () => {
         active += 1;
         peak = Math.max(peak, active);
-        await new Promise<void>((resolve) => releases.push(resolve));
+        arrived += 1;
+        await gate.promise;
         active -= 1;
         return { status: 404 };
       });
@@ -597,41 +601,29 @@ describe("favicon resolver", () => {
     const lookups = Array.from({ length: 8 }, (_, index) =>
       iconOf(resolver, `https://slow${index}.test`),
     );
-    while (releases.length < 4) await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitUntil(() => arrived >= 4, { interval: 5 });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(releases).toHaveLength(4);
-    let settled = false;
-    const results = Promise.all(lookups).finally(() => {
-      settled = true;
-    });
-    while (!settled) {
-      for (const release of releases.splice(0)) release();
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    expect(await results).toEqual(Array(8).fill(null));
+    expect(arrived).toBe(4);
+    gate.resolve();
+    expect(await Promise.all(lookups)).toEqual(Array(8).fill(null));
     expect(peak).toBe(4);
   });
 
   async function holdSlots(resolver: ReturnType<typeof createFaviconResolver>, count = 4) {
-    const releases: Array<() => void> = [];
+    let arrived = 0;
+    const gate = deferred();
     const lookups = Array.from({ length: count }, (_, index) => {
       routes.set(`hold${index}.test/`, async () => {
-        await new Promise<void>((resolve) => releases.push(resolve));
+        arrived += 1;
+        await gate.promise;
         return { status: 404 };
       });
       return iconOf(resolver, `https://hold${index}.test`);
     });
-    while (releases.length < count) await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitUntil(() => arrived >= count, { interval: 5 });
     return async () => {
-      let settled = false;
-      const all = Promise.all(lookups).finally(() => {
-        settled = true;
-      });
-      while (!settled) {
-        for (const release of releases.splice(0)) release();
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      await all;
+      gate.resolve();
+      await Promise.all(lookups);
     };
   }
 
@@ -694,9 +686,10 @@ describe("favicon resolver", () => {
   });
 
   it("ends a slow lookup at its deadline and remembers the miss", async () => {
-    let release: () => void = () => undefined;
+    let release: Deferred | undefined;
     routes.set("stall.test/", async () => {
-      await new Promise<void>((resolve) => (release = resolve));
+      release = deferred();
+      await release.promise;
       return html('<link rel="icon" href="/i.png">');
     });
     const resolver = createFaviconResolver({
@@ -707,7 +700,7 @@ describe("favicon resolver", () => {
     const started = Date.now();
     expect(await iconOf(resolver, "https://stall.test")).toBeNull();
     expect(Date.now() - started).toBeLessThan(2_000);
-    release();
+    release?.resolve();
 
     expect(await iconOf(resolver, "https://stall.test")).toBeNull();
     expect(hits).toEqual(["stall.test/"]);

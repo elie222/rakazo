@@ -1,16 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
-import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
-import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
+import type { ModelApiProtocol, ModelHeaderRow } from "@rakazo/contracts";
+import { toggleEnabledModelId } from "@rakazo/core";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../lib/native";
-import { thinkingLevelLabel } from "../lib/thinking-level";
 import type { useListSearch } from "../lib/use-list-search";
 import { HeaderRowsEditor } from "./header-rows-editor";
 import { ListSearchInput } from "./list-search-input";
 import { MenuPickerMenu } from "./menu-picker";
-import { DisclosureRow, LimitField } from "./model-connection-fields";
+import { DisclosureRow } from "./model-connection-fields";
 import { createModelsStyles } from "./model-connection-styles";
 import { NativeActionButton } from "./native-action-button";
 import { NativeSwitch } from "./native-switch";
@@ -40,24 +38,12 @@ type CompatibleEndpointFormProps = {
   probeModels: string[];
   showAdvanced: boolean;
   onToggleAdvanced: () => void;
-  reasoning: boolean;
-  setReasoning: (next: boolean) => void;
-  thinkingLevel: ThinkingLevel | null;
-  setThinkingLevel: (next: ThinkingLevel | null) => void;
-  supportsImages: boolean;
-  setSupportsImages: (next: boolean) => void;
   headerRows: ModelHeaderRow[];
   onChangeHeaderRows: (rows: ModelHeaderRow[]) => void;
   savedHeaderPlaceholder: (row: ModelHeaderRow) => boolean;
-  contextWindow: string;
-  setContextWindow: (next: string) => void;
-  maxTokens: string;
-  onChangeMaxTokens: (next: string) => void;
-  maxImagesPerPrompt: string;
-  setMaxImagesPerPrompt: (next: string) => void;
 };
 
-/** The server, protocol, model, and advanced settings of an OpenAI-compatible connection. */
+/** The server, protocol, models, and headers of an OpenAI-compatible connection. */
 export function CompatibleEndpointForm({
   busy,
   probing,
@@ -79,26 +65,13 @@ export function CompatibleEndpointForm({
   probeModels,
   showAdvanced,
   onToggleAdvanced,
-  reasoning,
-  setReasoning,
-  thinkingLevel,
-  setThinkingLevel,
-  supportsImages,
-  setSupportsImages,
   headerRows,
   onChangeHeaderRows,
   savedHeaderPlaceholder,
-  contextWindow,
-  setContextWindow,
-  maxTokens,
-  onChangeMaxTokens,
-  maxImagesPerPrompt,
-  setMaxImagesPerPrompt,
 }: CompatibleEndpointFormProps) {
   const styles = useThemedStyles(createModelsStyles);
   const { t } = useLingui();
   const effectiveBaseUrl = baseUrl.trim();
-  const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel) : t`Default`;
   const protocolChoices: { key: ModelApiProtocol; label: string }[] = [
     { key: "chat-completions", label: t`Chat Completions` },
     { key: "responses", label: t`Responses` },
@@ -243,88 +216,12 @@ export function CompatibleEndpointForm({
       )}
       <DisclosureRow label={t`Advanced`} expanded={showAdvanced} onPress={onToggleAdvanced} />
       {showAdvanced ? (
-        <>
-          <View style={styles.card}>
-            <View style={styles.modelRow}>
-              <Text style={styles.modelLabel}>{t`Supports thinking`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Supports thinking`}
-                value={reasoning}
-                onValueChange={(value) => {
-                  setReasoning(value);
-                  if (!value) setThinkingLevel(null);
-                }}
-                disabled={busy}
-              />
-            </View>
-            {reasoning ? (
-              <MenuPickerMenu
-                label={t`Reasoning effort`}
-                choices={[
-                  { key: "", label: t`Default` },
-                  ...compatibleThinkingLevels(apiProtocol).map((level) => ({
-                    key: level,
-                    label: thinkingLevelLabel(level),
-                  })),
-                ]}
-                value={thinkingLevel ?? ""}
-                disabled={busy}
-                onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
-              >
-                <View>
-                  <SettingsRow
-                    title={t`Reasoning effort`}
-                    value={reasoningEffortValue}
-                    chevron="down"
-                    accessibilityRole="button"
-                    accessible
-                    accessibilityLabel={t`Reasoning effort`}
-                    accessibilityState={{ disabled: busy }}
-                    accessibilityValue={{ text: reasoningEffortValue }}
-                  />
-                </View>
-              </MenuPickerMenu>
-            ) : null}
-            <View style={[styles.modelRow, styles.singleRow]}>
-              <Text style={styles.modelLabel}>{t`Supports images`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Supports images`}
-                value={supportsImages}
-                onValueChange={setSupportsImages}
-                disabled={busy}
-              />
-            </View>
-          </View>
-          <HeaderRowsEditor
-            rows={headerRows}
-            onChange={onChangeHeaderRows}
-            disabled={busy}
-            savedValuePlaceholder={savedHeaderPlaceholder}
-          />
-          <LimitField
-            label={t`Context limit`}
-            value={contextWindow}
-            onChangeText={setContextWindow}
-            maxLength={String(MAX_MODEL_CONTEXT_WINDOW).length}
-            busy={busy}
-          />
-          <LimitField
-            label={t`Maximum output tokens`}
-            value={maxTokens}
-            onChangeText={onChangeMaxTokens}
-            maxLength={String(MAX_MODEL_MAX_TOKENS).length}
-            busy={busy}
-          />
-          {supportsImages ? (
-            <LimitField
-              label={t`Maximum images per request`}
-              value={maxImagesPerPrompt}
-              onChangeText={setMaxImagesPerPrompt}
-              maxLength={4}
-              busy={busy}
-            />
-          ) : null}
-        </>
+        <HeaderRowsEditor
+          rows={headerRows}
+          onChange={onChangeHeaderRows}
+          disabled={busy}
+          savedValuePlaceholder={savedHeaderPlaceholder}
+        />
       ) : null}
     </>
   );

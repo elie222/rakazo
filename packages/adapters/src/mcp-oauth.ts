@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { InvalidGrantError, OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   OAuthClientInformation,
   OAuthClientInformationMixed,
@@ -26,12 +26,13 @@ import {
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { ClientError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { advisoryLock } from "./advisory-lock.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { isUnreachableHost } from "./connector-source.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -41,8 +42,10 @@ import {
 } from "./mcp-transport.js";
 import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "./refresh-lock.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import type { SecretCleanup, SecretCleanupDeps } from "./secret-cleanup.js";
+import { attemptSecretCleanup, cleanUpUnsavedSecret } from "./secret-cleanup.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
-import { deleteSecretBestEffort, holdSecretNotifications } from "./secret-store-factory.js";
+import { holdSecretNotifications } from "./secret-store-factory.js";
 
 type OAuthState = {
   tokens?: OAuthTokens;
@@ -107,7 +110,7 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
 function addSecret(values: string[], value: string | undefined): void {
   if (!value) return;
   values.push(value);
-  const bearer = value.match(/^(?:Bearer|Basic)\s+(.+)$/i);
+  const bearer = value.match(/^(?:Bearer|Basic)\s+(\S.*)$/i);
   if (bearer?.[1]) values.push(bearer[1]);
 }
 
@@ -401,9 +404,10 @@ function isCredentialRefusal(error: unknown): boolean {
 }
 
 /** Our own text, so callers may show it as is. */
-export class McpOAuthServerMismatchError extends Error {
+export class McpOAuthServerMismatchError extends ClientError {
   constructor() {
     super(
+      "BAD_REQUEST",
       "MCP OAuth authorization server differs from the one this client was first used with; reconfigure the server's OAuth client",
     );
     this.name = "McpOAuthServerMismatchError";
@@ -411,14 +415,40 @@ export class McpOAuthServerMismatchError extends Error {
 }
 
 /** The authorization server cannot register a client, so the user must enter one. */
-export class McpOAuthClientRequiredError extends Error {
-  readonly code = MCP_OAUTH_CLIENT_REQUIRED;
+export class McpOAuthClientRequiredError extends ClientError {
   /** @param revision The server revision the attempt used. */
   constructor(readonly revision: number) {
-    super(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED);
+    super("BAD_REQUEST", MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, MCP_OAUTH_CLIENT_REQUIRED);
     this.name = "McpOAuthClientRequiredError";
   }
 }
+
+/** The server's authorization server could not be reached; trying again later may work. */
+export class McpOAuthUnavailableError extends ClientError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", options);
+    this.name = "McpOAuthUnavailableError";
+  }
+}
+
+/** A sign-in that cannot start or finish as asked, or that the server's authorization server refused. */
+export class McpOAuthRefusedError extends ClientError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("BAD_REQUEST", message, "BAD_REQUEST", options);
+    this.name = "McpOAuthRefusedError";
+  }
+}
+
+/** Saving sign-in state failed on our side: a fault to report, whatever the server last answered. */
+export class McpOAuthStoreError extends Error {
+  constructor(cause: unknown) {
+    super("Could not save MCP OAuth state", { cause });
+    this.name = "McpOAuthStoreError";
+  }
+}
+
+const SESSION_INVALID = "MCP OAuth session is invalid or expired";
+const TOO_MANY_PENDING = "Too many pending MCP authorization attempts; wait and try again";
 
 export class McpReauthorizationRequiredError extends Error {
   readonly code = "MCP_REAUTHORIZATION_REQUIRED";
@@ -431,15 +461,22 @@ export class McpReauthorizationRequiredError extends Error {
 /** The grant a provider holds: tokens and when they were issued. */
 type TokenGrant = Pick<OAuthState, "tokens" | "obtainedAt">;
 
+/** Identifies a grant by its refresh and access token, so servers that never rotate the refresh token still tell grants apart. */
+function grantKey(tokens: OAuthTokens | undefined): string | null {
+  return tokens
+    ? JSON.stringify([tokens.refresh_token ?? null, tokens.access_token ?? null])
+    : null;
+}
+
 /**
- * Writes the provider's material. `storedRefreshToken` is the refresh token
- * this provider last saw in storage; when given, the write keeps the stored
+ * Writes the provider's material. `storedGrantKey` is the `grantKey` of the
+ * grant this provider last saw in storage; when given, the write keeps the stored
  * grant if another process has since changed it, and returns that grant.
  * Writes carrying newly issued tokens omit it and always win.
  */
 type PersistMaterial = (
   material: OAuthMaterial,
-  storedRefreshToken?: string | null,
+  storedGrantKey?: string | null,
 ) => Promise<TokenGrant | undefined>;
 
 type ProviderOptions = {
@@ -570,8 +607,8 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   private refreshing?: Promise<void>;
   /** The stored grant `wrapFetch` last handed the SDK in place of a token response. */
   private served?: OAuthTokens;
-  /** The refresh token storage held when this provider last read or wrote it. */
-  private storedRefreshToken: string | null;
+  /** The grant storage held when this provider last read or wrote it. */
+  private storedGrantKey: string | null;
 
   constructor(
     readonly serverId: string,
@@ -579,7 +616,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     private readonly persistMaterial: PersistMaterial,
     private readonly options: ProviderOptions = {},
   ) {
-    this.storedRefreshToken = material.oauth?.tokens?.refresh_token ?? null;
+    this.storedGrantKey = grantKey(material.oauth?.tokens);
     if (options.redirectUri) {
       this.material.oauth = { ...(this.material.oauth ?? {}), redirectUri: options.redirectUri };
     }
@@ -691,9 +728,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   async replaceRejectedToken(): Promise<void> {
     const held = this.material.oauth?.tokens;
     await this.renew();
+    if (held && this.material.oauth?.tokens === held) await this.invalidateCredentials("tokens");
+    // The drop keeps a grant stored meanwhile, as when the user reconnected during the request.
     const tokens = this.material.oauth?.tokens;
     if (tokens && tokens !== held) return;
-    if (tokens) await this.invalidateCredentials("tokens");
     throw new McpReauthorizationRequiredError(this.serverId);
   }
 
@@ -720,7 +758,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     // A write that landed while the refresh ran is newer than the grant it replaced.
     if (this.material.oauth !== oauth || oauth.tokens !== held) return;
     applyGrant(oauth, grant);
-    this.storedRefreshToken = grant.tokens?.refresh_token ?? null;
+    this.storedGrantKey = grantKey(grant.tokens);
   }
 
   async saveTokens(value: OAuthTokens): Promise<void> {
@@ -733,6 +771,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     await this.persist(true);
   }
   async redirectToAuthorization(url: URL): Promise<void> {
+    if (!this.options.onAuthorization) {
+      // Runtime re-auth needs the user, who starts a fresh sign-in that checks its own URL;
+      // drop the dead tokens so status reads "reconnect".
+      await this.invalidateCredentials("tokens");
+      throw new McpReauthorizationRequiredError(this.serverId);
+    }
     let authorizationUrl: URL;
     try {
       authorizationUrl = validateUrl(url, {
@@ -741,10 +785,9 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         maxUrlLength: MAX_AUTHORIZATION_URL_LENGTH,
       });
     } catch (error) {
-      if (!this.options.onAuthorization) {
-        await this.invalidateCredentials("tokens");
-      }
-      throw error;
+      throw new McpOAuthRefusedError(error instanceof Error ? error.message : String(error), {
+        cause: error,
+      });
     }
     const extra = this.material.oauthClient?.authorization_params;
     if (extra) {
@@ -753,18 +796,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     }
     requestOfflineAccess(authorizationUrl, this.material.oauth?.discoveryState);
     // Configured parameters are added after validation; keep the final URL within bounds too.
-    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH) {
-      if (!this.options.onAuthorization) await this.invalidateCredentials("tokens");
-      throw new Error(`MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`);
-    }
+    if (authorizationUrl.href.length > MAX_AUTHORIZATION_URL_LENGTH)
+      throw new McpOAuthRefusedError(
+        `MCP authorization URL exceeds ${MAX_AUTHORIZATION_URL_LENGTH} characters`,
+      );
     this.authorizationUrl = authorizationUrl;
-    if (this.options.onAuthorization) {
-      this.options.onAuthorization(authorizationUrl);
-      return;
-    }
-    // Runtime re-auth needs the user; drop the dead tokens so status reads "reconnect".
-    await this.invalidateCredentials("tokens");
-    throw new McpReauthorizationRequiredError(this.serverId);
+    this.options.onAuthorization(authorizationUrl);
   }
   async saveCodeVerifier(value: string): Promise<void> {
     this.oauth().codeVerifier = value;
@@ -781,6 +818,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   async saveDiscoveryState(value: OAuthDiscoveryState): Promise<void> {
     this.oauth().discoveryState = value;
     await this.persist();
+  }
+  /** When the held access token lapses, if the grant says. */
+  accessTokenExpiresAt(): number | undefined {
+    return accessTokenExpiresAt(this.material.oauth);
   }
   discoveryState(): OAuthDiscoveryState | undefined {
     return this.material.oauth?.discoveryState;
@@ -812,12 +853,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   private async persist(issued = false): Promise<void> {
     const snapshot = structuredClone(this.material);
     const held = this.material.oauth?.tokens;
-    const storedRefreshToken = issued ? undefined : this.storedRefreshToken;
+    const storedGrantKey = issued ? undefined : this.storedGrantKey;
     const next = this.persistQueue.then(async () => {
-      const kept = await this.persistMaterial(snapshot, storedRefreshToken);
+      let kept: TokenGrant | undefined;
+      try {
+        kept = await this.persistMaterial(snapshot, storedGrantKey);
+      } catch (error) {
+        if (isCredentialRefusal(error) || error instanceof ClientError) throw error;
+        throw new McpOAuthStoreError(error);
+      }
       const oauth = this.material.oauth;
       if (kept && oauth && oauth.tokens === held) applyGrant(oauth, kept);
-      this.storedRefreshToken = (kept ?? snapshot.oauth)?.tokens?.refresh_token ?? null;
+      this.storedGrantKey = grantKey((kept ?? snapshot.oauth)?.tokens);
     });
     this.persistQueue = next.catch(() => undefined);
     await next;
@@ -885,9 +932,11 @@ function oauthFetch(
   // error code, and description instead of hiding them behind `message`.
   const networkErrors = new WeakSet<Error>();
   let rejection: OAuthRejection | undefined;
+  let lastAnswerFailed = false;
   const recordingFetch: typeof fetch = async (input, init) => {
     try {
       const response = await fallbackFetch(input, init);
+      lastAnswerFailed = !response.ok;
       if (!response.ok) {
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
@@ -903,12 +952,27 @@ function oauthFetch(
     fetch: recordingFetch,
     close: () => safeFetch.close(),
     publicError: (error, message) => {
-      if (error instanceof Error && networkErrors.has(error)) return error;
+      if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
+      if (error instanceof Error && networkErrors.has(error)) {
+        const reason = sanitizeConnectorError(error, secrets);
+        return isUnreachableHost(error)
+          ? new McpOAuthUnavailableError(reason, { cause: error })
+          : new McpOAuthRefusedError(reason, { cause: error });
+      }
       const sdk = sanitizeConnectorError(error, secrets);
       const surfaced = rejection ? formatOAuthRejection(rejection, sdk, secrets) : undefined;
       getLogger().warn(`${message}: ${surfaced ?? sdk}`);
-      return new Error(surfaced ? `${message}: ${surfaced}` : message);
+      // Only a server's own answer, or a sign-in link we refused, is a refusal; anything else after a successful answer is ours.
+      if (
+        !lastAnswerFailed &&
+        !(error instanceof OAuthError) &&
+        !(error instanceof McpOAuthRefusedError)
+      )
+        return new Error(`${message}: ${sdk}`);
+      return new McpOAuthRefusedError(surfaced ? `${message}: ${surfaced}` : message, {
+        cause: error,
+      });
     },
   };
 }
@@ -1167,6 +1231,8 @@ export class McpOAuthBroker {
     private readonly secrets: SecretStore,
     private readonly network: RemoteTransportDependencies = {},
     private readonly allowPrivateEndpoint = false,
+    /** The queue that retries removing a store entry a failed refresh left behind. */
+    private readonly cleanupJobs?: SecretCleanupDeps["jobs"],
   ) {}
 
   async statusFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary["status"]> {
@@ -1212,12 +1278,12 @@ export class McpOAuthBroker {
         enabled: true,
       },
     });
-    if (!server) throw new Error("MCP server endpoint is required for OAuth");
+    if (!server) throw new McpOAuthRefusedError("MCP server endpoint is required for OAuth");
     const context = { spaceId: input.spaceId, userId: input.userId };
     const loaded = await this.loadMaterial(server, context);
     // A stdio server has no MCP endpoint; OAuth runs against its authorization server.
     const target = server.endpoint ?? loaded.material.oauthClient?.authorization_server;
-    if (!target) throw new Error("MCP server endpoint is required for OAuth");
+    if (!target) throw new McpOAuthRefusedError("MCP server endpoint is required for OAuth");
     await this.sweepExpiredPending();
     let actorPending = 0;
     for (const pending of this.pending.values()) {
@@ -1226,13 +1292,13 @@ export class McpOAuthBroker {
       }
     }
     if (actorPending >= MAX_PENDING_SESSIONS) {
-      throw new Error("Too many pending MCP authorization attempts; wait and try again");
+      throw new McpOAuthRefusedError(TOO_MANY_PENDING);
     }
     const activeCount = await this.prisma.mcpOAuthSession.count({
       where: { spaceId: input.spaceId, userId: input.userId },
     });
     if (activeCount >= MAX_PENDING_SESSIONS) {
-      throw new Error("Too many pending MCP authorization attempts; wait and try again");
+      throw new McpOAuthRefusedError(TOO_MANY_PENDING);
     }
     const sessionId = randomUUID();
     let authorizationUrl: URL | undefined;
@@ -1339,7 +1405,7 @@ export class McpOAuthBroker {
   }): Promise<{ serverId: string; revision: number }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
-      throw new Error("MCP OAuth session is invalid or expired");
+      throw new McpOAuthRefusedError(SESSION_INVALID);
     }
     let pending = this.pending.get(input.sessionId);
     if (pending && (pending.spaceId !== input.spaceId || pending.userId !== input.userId)) {
@@ -1354,7 +1420,7 @@ export class McpOAuthBroker {
           createdAt: { gte: new Date(Date.now() - PENDING_TTL_MS) },
         },
       });
-      if (!session) throw new Error("MCP OAuth session is invalid or expired");
+      if (!session) throw new McpOAuthRefusedError(SESSION_INVALID);
       const server = await this.prisma.mcpServer.findFirst({
         where: {
           id: session.serverId,
@@ -1362,7 +1428,7 @@ export class McpOAuthBroker {
           enabled: true,
         },
       });
-      if (!server) throw new Error("MCP OAuth session is invalid or expired");
+      if (!server) throw new McpOAuthRefusedError(SESSION_INVALID);
       const context = { spaceId: input.spaceId, userId: input.userId };
       const loaded = {
         material: await this.read(session.oauthCiphertext, session.id),
@@ -1394,7 +1460,7 @@ export class McpOAuthBroker {
         userId: input.userId,
       },
     });
-    if (consumed.count !== 1) throw new Error("MCP OAuth session is invalid or expired");
+    if (consumed.count !== 1) throw new McpOAuthRefusedError(SESSION_INVALID);
     // The exchange sends the client secret: check it against the binding stored now, not
     // the one this flow started with, in case an overlapping flow bound the client first.
     const current = await this.prisma.mcpServer.findFirst({
@@ -1449,8 +1515,8 @@ export class McpOAuthBroker {
           ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
           : {};
         if ((material.oauthGeneration ?? 0) !== pending.generation)
-          throw new Error("MCP OAuth session is invalid or expired");
-        if (!tokens) throw new Error("MCP OAuth authorization failed");
+          throw new McpOAuthRefusedError(SESSION_INVALID);
+        if (!tokens) throw new McpOAuthRefusedError("MCP OAuth authorization failed");
         return tx.mcpServer.update({
           where: { id: pending.serverId },
           data: { revision: { increment: 1 } },
@@ -1548,11 +1614,11 @@ export class McpOAuthBroker {
     return new StoredMcpOAuthProvider(
       server.id,
       loaded.material,
-      (material, storedRefreshToken) =>
+      (material, storedGrantKey) =>
         this.replaceMaterial(server.id, material, context, {
           expectedEndpoint: endpoint,
           onPersisted: options.onPersisted,
-          storedRefreshToken,
+          storedGrantKey,
         }),
       {
         ...(target
@@ -1596,7 +1662,7 @@ export class McpOAuthBroker {
     // Resolve the network before taking a connection for the lock.
     const network = oauthFetch(target, this.network, {}, this.allowPrivateEndpoint);
     let stored: { id: string; ciphertext: string } | undefined;
-    let rotated: { material: OAuthMaterial; grant: TokenGrant; spent: string } | undefined;
+    let rotated: { material: OAuthMaterial; grant: TokenGrant; spent: string | null } | undefined;
     try {
       const result = await persistPreparedSecret(
         this.prisma,
@@ -1632,8 +1698,9 @@ export class McpOAuthBroker {
                 if (!(error instanceof InvalidGrantError)) throw error;
                 grant = {};
               }
+              const spent = grantKey(oauth.tokens);
               applyGrant(oauth, grant);
-              if (grant.tokens) rotated = { material, grant, spent: current };
+              if (grant.tokens) rotated = { material, grant, spent };
               stored = await this.putMaterial(material, context);
               if (!(await this.commitMaterial(tx, serverId, context, snapshot, stored)))
                 throw new Error("MCP credentials changed during refresh; retry");
@@ -1646,7 +1713,8 @@ export class McpOAuthBroker {
       );
       return result.grant;
     } catch (error) {
-      if (stored) await deleteSecretBestEffort(this.secrets, stored.ciphertext, stored.id);
+      // The write can have committed with its reply lost, so the row decides, not this error.
+      if (stored) await this.discardUnsaved(stored);
       if (isCredentialRefusal(error) || !rotated) throw error;
       // The authorization server already rotated the grant, so the stored one is spent.
       // Store the new one over the grant it replaced; a login or disconnect that landed
@@ -1657,7 +1725,7 @@ export class McpOAuthBroker {
         const kept = await this.replaceMaterial(serverId, rotated.material, context, {
           expectedEndpoint: endpoint,
           onPersisted,
-          storedRefreshToken: rotated.spent,
+          storedGrantKey: rotated.spent,
           replaceCleared: true,
           onKept: (grant) => {
             observed = grant;
@@ -1673,6 +1741,18 @@ export class McpOAuthBroker {
     }
   }
 
+  /** Deletes a store entry the refresh wrote, unless the row it was written for holds it. */
+  private async discardUnsaved(stored: { id: string; ciphertext: string }): Promise<void> {
+    const cleanup: SecretCleanup = {
+      kind: "secret_row",
+      recordId: stored.id,
+      ref: stored.ciphertext,
+    };
+    const deps = { prisma: this.prisma, secrets: this.secrets };
+    if (this.cleanupJobs) await cleanUpUnsavedSecret({ ...deps, jobs: this.cleanupJobs }, cleanup);
+    else await bestEffort("delete an unsaved MCP credential", attemptSecretCleanup(deps, cleanup));
+  }
+
   private async replaceMaterial(
     serverId: string,
     material: OAuthMaterial,
@@ -1681,7 +1761,7 @@ export class McpOAuthBroker {
       incrementRevision?: boolean;
       expectedEndpoint?: string | null;
       onPersisted?: ProviderOptions["onPersisted"];
-      storedRefreshToken?: string | null;
+      storedGrantKey?: string | null;
       replaceCleared?: boolean;
       /** Raise the stored authorization generation from the value each retry re-reads. */
       raiseGeneration?: boolean;
@@ -1729,8 +1809,8 @@ export class McpOAuthBroker {
         const staleClear = options.replaceCleared && storedOAuth && !storedOAuth.tokens;
         if (
           superseded ||
-          (options.storedRefreshToken !== undefined &&
-            (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken &&
+          (options.storedGrantKey !== undefined &&
+            grantKey(storedOAuth?.tokens) !== options.storedGrantKey &&
             !staleClear)
         ) {
           // Another process rotated or replaced the grant; never overwrite it with an older one.

@@ -9,8 +9,9 @@ import type {
   PortableFile,
   ProcessEvent,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import {
   normalizeWorkspacePath,
   shellQuote,
@@ -61,6 +62,111 @@ export type RawExec = (
   stdin?: Readable,
   tty?: boolean,
 ) => AsyncIterable<RawExecEvent>;
+
+/** How long past its own timeout a command's transport waits before giving up on it. */
+const RAW_EXEC_TIMEOUT_GRACE_MS = 10_000;
+
+/**
+ * The events of one raw exec, in the order its transport produced them. Cancellation ends it
+ * with exit 130 and the timeout with 124, each after a line on stderr; `onStop` tears the
+ * transport down first. The transport calls `close` when the exec is done with.
+ */
+export class RawExecChannel {
+  private readonly queue: RawExecEvent[] = [];
+  private wake: (() => void) | undefined;
+  private ended = false;
+  private settle!: () => void;
+  /** Settles once the exec exits, fails or is stopped. */
+  readonly settled = new Promise<void>((resolve) => {
+    this.settle = resolve;
+  });
+  /** Why the transport failed, once it has. */
+  failure: unknown;
+  private readonly timer: NodeJS.Timeout;
+  private readonly abort = () => this.stop(130, "command aborted\n");
+
+  constructor(
+    private readonly signal: AbortSignal,
+    timeoutMs: number,
+    private readonly onStop: () => void = () => {},
+  ) {
+    this.timer = setTimeout(
+      () => this.stop(124, `command timed out after ${timeoutMs} ms\n`),
+      timeoutMs + RAW_EXEC_TIMEOUT_GRACE_MS,
+    );
+    signal.addEventListener("abort", this.abort, { once: true });
+    if (signal.aborted) this.abort();
+  }
+
+  get done(): boolean {
+    return this.ended;
+  }
+
+  push(event: RawExecEvent): void {
+    if (this.ended) return;
+    this.queue.push(event);
+    this.notify();
+  }
+
+  finish(code: number): void {
+    if (this.ended) return;
+    this.queue.push({ type: "exit", code });
+    this.end();
+  }
+
+  fail(error: unknown): void {
+    if (this.ended) return;
+    this.failure = error;
+    this.end();
+  }
+
+  /** Ends the exec with `code` after writing `message` to stderr. */
+  stop(code: number, message: string): void {
+    this.onStop();
+    this.push({ type: "stderr", data: Buffer.from(message) });
+    this.finish(code);
+  }
+
+  /** Yields every event until the exec ends; check `failure` afterwards. */
+  async *drain(): AsyncIterable<RawExecEvent> {
+    while (!this.ended || this.queue.length) {
+      if (!this.queue.length) {
+        await new Promise<void>((resolve) => {
+          this.wake = resolve;
+        });
+      }
+      while (this.queue.length) yield this.queue.shift()!;
+    }
+  }
+
+  close(): void {
+    this.ended = true;
+    clearTimeout(this.timer);
+    this.signal.removeEventListener("abort", this.abort);
+    this.notify();
+  }
+
+  private end() {
+    this.ended = true;
+    this.settle();
+    this.notify();
+  }
+
+  private notify() {
+    this.wake?.();
+    this.wake = undefined;
+  }
+}
+
+class CommandOutputTooLargeError extends Error {
+  constructor(
+    message: string,
+    /** How much of the output was the command's own, not its diagnostics. */
+    readonly stdoutBytes: number,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Commands, files and workspace transfer for a computer started from the published computer
@@ -164,14 +270,21 @@ export class ExecComputer {
     const size = await this.run(computer, ["stat", "-c", "%s", "--", target], context);
     if (size.code !== 0) throw new Error(size.stderr || "could not inspect computer file");
     if (Number(size.stdout.trim()) > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
-    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1);
+    const result = await this.collect(computer, ["cat", "--", target], context, maxBytes + 1).catch(
+      (error: unknown) => {
+        // The file grew after its size was checked. Diagnostics alone are a failed read.
+        if (error instanceof CommandOutputTooLargeError && error.stdoutBytes > maxBytes)
+          throw new SandboxFileTooLargeError(maxBytes);
+        throw error;
+      },
+    );
     if (result.code !== 0) {
       throw new Error(result.stderr.toString("utf8") || "could not read computer file");
     }
     if (result.stdout.byteLength > maxBytes) {
-      throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      throw new SandboxFileTooLargeError(maxBytes);
     }
     return new Uint8Array(result.stdout.buffer, result.stdout.byteOffset, result.stdout.byteLength);
   }
@@ -376,9 +489,12 @@ export class ExecComputer {
         continue;
       }
       outputBytes += event.data.byteLength;
-      if (outputBytes > maxOutputBytes)
-        throw new Error(`${this.label} command output is too large`);
       (event.type === "stdout" ? stdout : stderr).push(event.data);
+      if (outputBytes > maxOutputBytes)
+        throw new CommandOutputTooLargeError(
+          `${this.label} command output is too large`,
+          stdout.reduce((bytes, chunk) => bytes + chunk.byteLength, 0),
+        );
     }
     return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) };
   }
@@ -562,8 +678,7 @@ export class TarReader {
     if (type === "x") return { name, mode, size, kind: "pax" as const };
     if (type !== "0") return { name, mode, size, kind: "skip" as const };
     this.paxPath = undefined;
-    if (size > this.maxFileBytes)
-      throw new Error(`computer file exceeds ${this.maxFileBytes} bytes`);
+    if (size > this.maxFileBytes) throw new SandboxFileTooLargeError(this.maxFileBytes);
     return { name, mode, size, kind: "file" as const };
   }
 }

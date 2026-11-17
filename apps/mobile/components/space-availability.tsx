@@ -1,10 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AvailabilityKind, SpaceAvailability } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import type { QueryKey } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Text, View } from "react-native";
-import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import { queryClient, rpcQuery, useSave } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { MenuPicker } from "./menu-picker";
 
@@ -12,19 +14,8 @@ type Space = { id: string; name: string };
 
 /** The user's spaces; choosing where something is available only matters with two or more. */
 export function useOwnSpaces(): Space[] {
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  useEffect(() => {
-    let live = true;
-    rpc("spaces/list")
-      .then((result) => {
-        if (live) setSpaces(result.spaces.map(({ id, name }) => ({ id, name })));
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
-  return spaces;
+  const { data } = useQuery(rpcQuery("spaces/list"), queryClient);
+  return useMemo(() => (data?.spaces ?? []).map(({ id, name }) => ({ id, name })), [data]);
 }
 
 /** True when removing an item takes it from more than this one space. */
@@ -40,16 +31,25 @@ export function SpaceAvailabilityPicker({
   kind,
   id,
   availability,
-  onChanged,
+  stale,
 }: {
   kind: AvailabilityKind;
   id: string;
   availability?: SpaceAvailability;
-  onChanged: () => unknown;
+  /** The reads that show this item's availability. */
+  stale: readonly QueryKey[];
 }) {
   const { t } = useLingui();
   const spaces = useOwnSpaces();
-  const [error, setError] = useState<string | null>(null);
+  // A refused choice, such as a name already used in another space, says why; choosing again retries.
+  const change = useSave({
+    save: (next: { allSpaces: boolean; spaceIds: string[] }, send) =>
+      send("availability/set", { kind, id, ...next }),
+    stale,
+  });
+  const error = change.error
+    ? errorText(change.error, t`Could not change where this is available`)
+    : null;
   if (spaces.length < 2 || !availability) return null;
   const several = !availability.allSpaces && availability.spaceIds.length > 1;
   const value = availability.allSpaces ? "all" : several ? "several" : availability.spaceIds[0]!;
@@ -72,13 +72,7 @@ export function SpaceAvailabilityPicker({
             key === "all"
               ? { allSpaces: true, spaceIds: availability.spaceIds }
               : { allSpaces: false, spaceIds: [key] };
-          setError(null);
-          // A refused choice, such as a name already used in another space, says why; choosing again retries.
-          void rpc("availability/set", { kind, id, ...next })
-            .then(onChanged)
-            .catch((reason) =>
-              setError(errorText(reason, t`Could not change where this is available`)),
-            );
+          change.run(next);
         }}
       />
       {error ? (
