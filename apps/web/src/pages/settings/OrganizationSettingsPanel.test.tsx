@@ -85,9 +85,9 @@ vi.mock("@rakazo/ui-web", () => {
 vi.mock("../../lib/auth/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useOrganizations } from "../../lib/auth/organizations";
 import { QueryUserProvider, queryClient } from "../../lib/query/query";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
+import { useOrganizations } from "../../lib/spaces/organizations";
 import { DeleteOrganizationDialog, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 
 let container: HTMLDivElement;

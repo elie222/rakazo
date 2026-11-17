@@ -11,8 +11,8 @@ import { pushReceiptJob } from "@rakazo/adapter-kit";
 import { ResponseTooLargeError } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "../calls/apns-voip.js";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { combineSignals } from "../integrations/connector-safety.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import { readBodyCapped, withAbort } from "../web/web-ssrf.js";
 import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 

@@ -37,7 +37,7 @@
         "!**/*.test.tsx",
         "!**/packages/ui-web/src/bot-avatar.tsx",
         "!**/apps/mobile/components/bots/bot-avatar.tsx",
-        "!**/apps/web/src/pages/WindowChrome.tsx"
+        "!**/apps/web/src/components/WindowChrome.tsx"
       ]
     },
     {

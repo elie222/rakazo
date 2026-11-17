@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { errorText } from "../../lib/query/user-error";
 import { useEventListener } from "../../lib/use-event-listener";
-import { DeleteItemDialog } from "../shell/dialogs";
+import { DeleteItemDialog } from "../shell/create-delete-dialogs";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (

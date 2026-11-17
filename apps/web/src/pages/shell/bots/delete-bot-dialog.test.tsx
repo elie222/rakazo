@@ -37,7 +37,7 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 
-import { DeleteBotDialog } from "../dialogs";
+import { DeleteBotDialog } from "../create-delete-dialogs";
 
 const baseDescription =
   "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list.";

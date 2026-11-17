@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appContract } from "../rpc.js";
+import { appContract } from "../rpc/app-contract.js";
 import { BotSecretDestination, BotSecretMetadata, BotSecretPutInput } from "./bot-secrets.js";
 
 const lanPut = {

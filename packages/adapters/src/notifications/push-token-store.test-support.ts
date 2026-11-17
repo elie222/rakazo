@@ -1,4 +1,4 @@
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 
 type Row = PushRecord & { userId: string };

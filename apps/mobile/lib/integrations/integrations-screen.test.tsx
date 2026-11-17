@@ -51,7 +51,7 @@ vi.mock("./integrations-cache", () => ({
   readIntegrationsCache: state.read,
   writeIntegrationsCache: state.write,
 }));
-vi.mock("../home/last-bot", () => ({ loadLastBotId: async () => "" }));
+vi.mock("../inbox/last-bot", () => ({ loadLastBotId: async () => "" }));
 vi.mock("../appearance/appearance", () => ({
   mobileTokens: () => ({ destructive: "red", success: "green", warning: "orange" }),
 }));
