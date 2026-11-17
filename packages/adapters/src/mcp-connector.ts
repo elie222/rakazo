@@ -462,13 +462,18 @@ export class McpConnector implements ConnectorProvider {
       // Only the server the id names re-lists, so a typo or a removed tool never re-lists the
       // bot's other servers (and risks their rate limits).
       const id = String(lookup.id ?? "");
-      return catalogEntries(await this.authorizedTools(context, (slug) => id.includes(slug)));
+      return catalogEntries(
+        await this.authorizedTools(
+          context,
+          (serverId, slug) => id.startsWith(`${serverId}:`) || id.startsWith(`mcp__${slug}__`),
+        ),
+      );
     }
   }
 
   private async authorizedTools(
     context: AdapterContext,
-    refresh: (slug: string) => boolean = () => false,
+    refresh: (serverId: string, slug: string) => boolean = () => false,
   ): Promise<ConnectorTool[]> {
     if (!context.botId) return [];
     const usable = { enabled: true, ...availableInSpace(context) };
@@ -528,7 +533,7 @@ export class McpConnector implements ConnectorProvider {
               entry = this.sessions.get(key);
               return session.listTools({
                 signal: AbortSignal.any([context.signal, listing.signal]),
-                refresh: idle || refresh(assignment.server.slug),
+                refresh: idle || refresh(assignment.serverId, server.slug),
               });
             }),
             this.options.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,

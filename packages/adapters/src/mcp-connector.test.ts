@@ -14,7 +14,7 @@ import { ConnectorRegistry } from "./connector-registry.js";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { InstalledConnectorProvider } from "./installed-connectors.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
-import { DIRECT_TOOL_LIMIT } from "./lazy-tool-catalog.js";
+import { CATALOG_EXECUTE, DIRECT_TOOL_LIMIT } from "./lazy-tool-catalog.js";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
@@ -2930,6 +2930,23 @@ describe("MCP connector tool list cache", () => {
         connector.resolveCall({ tool: "mcp__demo__missing", args: {} } as never, context),
       ).rejects.toThrow("Tool is unknown");
       expect(state.lists).toBe(3);
+      // A catalog id names its server by id; an id naming no server re-lists nothing.
+      const execute = (id: string) =>
+        connector.resolveCall(
+          {
+            tool: CATALOG_EXECUTE,
+            args: { id, arguments: {} },
+            route: { connectorId: "mcp", toolName: CATALOG_EXECUTE },
+          } as never,
+          context,
+        );
+      state.tools = [...state.tools, { name: "later", inputSchema: { type: "object" } }];
+      expect(await execute(`${SERVER.id}:later`)).toMatchObject({
+        call: { tool: "mcp__demo__later" },
+      });
+      expect(state.lists).toBe(4);
+      await expect(execute("other-server:later")).rejects.toThrow("Tool is unknown");
+      expect(state.lists).toBe(4);
     } finally {
       await connector.close();
     }
