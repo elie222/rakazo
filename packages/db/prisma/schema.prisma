@@ -1917,7 +1917,7 @@ model HomeDeletionNotice {
   @@map("home_deletion_notices")
 }
 
-/// One holder at a time for long work across processes. `withLease` in packages/db/src/leases.ts
+/// One holder at a time for long work across processes. `withLease` in packages/db/src/database/leases.ts
 /// is the only writer. A release deletes its row; `fence` comes from `leases_fence_seq`, so a key's
 /// next holder always outranks every earlier one.
 model Lease {
@@ -1946,7 +1946,7 @@ model ComputerRun {
   startedAt  DateTime
   /// Null while running. When the end was not seen as it happened, this is when it was detected.
   endedAt    DateTime?
-  /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
+  /// How it ended; see `ComputerRunEnd` in packages/db/src/computers/computer-runs.ts.
   endReason  String?
   /// When Rakazo last saw this stretch running: at its start and at each idle check.
   lastSeenAt DateTime?

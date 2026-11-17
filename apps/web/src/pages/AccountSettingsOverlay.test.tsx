@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import { localTimezone } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
@@ -134,7 +135,6 @@ import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
   composerEnterToSendPreference,
 } from "../lib/composer-enter-to-send-pref";
-import { localTimezone } from "../lib/local-timezone";
 import { remoteImagesPreference } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";

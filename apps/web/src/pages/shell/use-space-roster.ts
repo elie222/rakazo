@@ -20,7 +20,6 @@ import {
   linkedBotRoute,
   linkedGroupRoute,
 } from "../../lib/bootstrap-target";
-import { localTimezone } from "../../lib/local-timezone";
 import { markOnce } from "../../lib/performance";
 import type { ChatTarget } from "../../lib/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../lib/query";
@@ -262,7 +261,6 @@ export type SpaceRoster = ReturnType<typeof useSpaceRoster>;
  * revisit paints at once. Returns what the server's roster signals drive.
  */
 export function useSpaceBootstrap({
-  rpc,
   roster,
   thread,
   commitComputer,
@@ -277,7 +275,6 @@ export function useSpaceBootstrap({
   redirectKeepingOverlay,
   openSpaceChat,
 }: {
-  rpc: ReturnType<typeof createSpaceRpc>;
   roster: SpaceRoster;
   thread: ThreadState;
   commitComputer: (next: ComputerStatus | null) => void;
@@ -373,22 +370,6 @@ export function useSpaceBootstrap({
         if (cancelled) return;
         const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
-        // First sign-in with no saved timezone: adopt this browser's, once. A choice made
-        // in Settings is never overwritten; a failure just leaves bots on UTC.
-        if (bootstrap.me.timezone === null) {
-          void rpc.preferences
-            .adoptTimezone({ timezone: localTimezone() })
-            .then((nextMe) => {
-              if (!cancelled) {
-                setBootstrapMe((current) =>
-                  current && current.timezone == null
-                    ? { ...current, timezone: nextMe.timezone }
-                    : (current ?? nextMe),
-                );
-              }
-            })
-            .catch(() => {});
-        }
         // Skip list/route writes only if a later refreshBots() successfully
         // committed (failed refreshes bump epoch but not botsRefreshApplied).
         const applyBotLists = appliedAtStart === botsRefreshApplied.current;
