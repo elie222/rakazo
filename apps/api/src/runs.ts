@@ -7,10 +7,13 @@ import {
   botMessageContext,
   displayName,
   HELPER_RESULT_TRIGGER,
+  isRunWaitingOnUser,
+  isRunWorking,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { membersInQuietHours, Prisma } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -65,11 +68,25 @@ export function activityNotificationsEnabled(
   return groupId !== null || notifyOnFinish;
 }
 
+/**
+ * In the viewer's quiet hours a run's news waits, as its push does. Their own run that waits on
+ * them or failed still comes through, and a working run still shows as working.
+ */
+export function runHeldForQuietHours(
+  run: { userId: string; status: string },
+  viewerId: string,
+): boolean {
+  if (isRunWorking(run.status)) return false;
+  return !(run.userId === viewerId && (isRunWaitingOnUser(run.status) || run.status === "failed"));
+}
+
 export async function listSpaceRuns(
   prisma: PrismaClient,
   actor: Actor,
   filter: "active" | "recent",
 ): Promise<RunActivityRow[]> {
+  // Read alongside the runs. Quiet hours that can't be read leave the list as it was.
+  const quietLookup = bestEffort("quiet hours lookup", membersInQuietHours(prisma, [actor.userId]));
   const rows = await prisma.run.findMany({
     where:
       filter === "active"
@@ -97,6 +114,7 @@ export async function listSpaceRuns(
         : [{ completedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
   });
 
+  const quiet = (await quietLookup)?.has(actor.userId) ?? false;
   return rows.map((row) => ({
     runId: row.id,
     botId: row.botId,
@@ -106,7 +124,9 @@ export async function listSpaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
-    notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
+    notificationsEnabled:
+      activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish) &&
+      !(quiet && runHeldForQuietHours(row, actor.userId)),
     ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,

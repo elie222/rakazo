@@ -322,6 +322,8 @@ export async function changeUserTimezone(
     botAvatarSet?: string;
     labs?: string[];
     marketingEmailOptOutAt?: Date | null;
+    quietHoursStart?: number | null;
+    quietHoursEnd?: number | null;
   },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];

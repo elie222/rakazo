@@ -18,6 +18,7 @@ import {
   resolveBotAvatarSet,
   resolveLabs,
 } from "@rakazo/contracts";
+import { quietHoursOf } from "@rakazo/db";
 import { isAdmin } from "../admins.js";
 import { effectiveSandboxProvider } from "../computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
@@ -38,6 +39,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         email: true,
         name: true,
         timezone: true,
+        quietHoursStart: true,
+        quietHoursEnd: true,
         locale: true,
         botAvatarSet: true,
         labs: true,
@@ -90,6 +93,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
     timezone: user.timezone ?? null,
+    quietHours: quietHoursOf(user),
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),
     // Only billing deployments ask; self-hosted installs never see the survey.

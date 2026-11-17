@@ -189,6 +189,27 @@ export function accountRoutes(ctx: RouterContext) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         const userId = context.actor.userId;
         const botAvatarSet = input.botAvatarSet;
+        const quietHours =
+          input.quietHours === undefined
+            ? {}
+            : {
+                quietHoursStart: input.quietHours?.start ?? null,
+                quietHoursEnd: input.quietHours?.end ?? null,
+              };
+        // Quiet hours are read in the account's timezone; without one they would mean UTC hours.
+        // So neither turning them on nor clearing the timezone may leave hours without a zone.
+        if (input.quietHours || (input.timezone === null && input.quietHours !== null)) {
+          const saved = await deps.prisma.user.findUnique({
+            where: { id: userId },
+            select: { timezone: true, quietHoursStart: true },
+          });
+          const timezone = input.timezone === undefined ? saved?.timezone : input.timezone;
+          const hoursOn = input.quietHours
+            ? true
+            : input.quietHours === undefined && saved?.quietHoursStart != null;
+          if (hoursOn && !timezone)
+            throw new ClientError("BAD_REQUEST", "Set a timezone to use quiet hours.");
+        }
         // A feature the deployment turns on is not the account's choice, so it is not saved with it.
         const deploymentLabs = deps.env?.deploymentLabs ?? [];
         const labs =
@@ -202,6 +223,7 @@ export function accountRoutes(ctx: RouterContext) {
           await changeUserTimezone(deps, userId, input.timezone, {
             ...(input.locale === undefined ? {} : { locale: input.locale }),
             ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+            ...quietHours,
             ...(labs === undefined ? {} : { labs }),
           });
         } else {
@@ -211,6 +233,7 @@ export function accountRoutes(ctx: RouterContext) {
             data: {
               ...(input.locale === undefined ? {} : { locale: input.locale }),
               ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+              ...quietHours,
               ...(labs === undefined ? {} : { labs }),
             },
           });

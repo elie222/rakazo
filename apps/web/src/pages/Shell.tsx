@@ -443,6 +443,8 @@ function SpaceShell() {
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
+  const quietHoursRef = useRef(bootstrapMe);
+  quietHoursRef.current = bootstrapMe;
   const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
     bots,
     botsRef,
@@ -456,6 +458,7 @@ function SpaceShell() {
       },
       meId: userId,
       groupsRef,
+      quietHoursRef,
       roster: rosterSignals,
     },
   );

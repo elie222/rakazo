@@ -14,6 +14,7 @@ import Account from "../app/(settings)/account";
 import General from "../app/(settings)/general";
 import Labs from "../app/(settings)/labs";
 import Profile from "../app/(settings)/profile";
+import type * as MenuPickerModule from "../components/menu-picker";
 import type * as Api from "./api";
 import { rpc } from "./api";
 import type * as ApiAuth from "./api-auth";
@@ -28,6 +29,7 @@ import { replaceWithSignIn } from "./auth-routing";
 import { endCallBeforeSessionEnd } from "./call-session";
 import { promptAccountDeletion } from "./delete-account-prompt";
 import { queryClient } from "./query";
+import type * as Routine from "./routine";
 import type * as Session from "./session";
 import { currentSessionGeneration } from "./session";
 import { registerSettingsSheet } from "./settings-sheet";
@@ -156,6 +158,31 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 vi.mock("../components/app-mark", () => ({ AppMark: () => null }));
+vi.mock("../components/menu-picker", async (importOriginal) => ({
+  ...(await importOriginal<typeof MenuPickerModule>()),
+  MenuPicker: ({
+    label,
+    value,
+    choices,
+    onChange,
+  }: {
+    label: string;
+    value: string;
+    choices: Array<{ key: string; label: string }>;
+    onChange: (key: string) => void;
+  }) =>
+    createElement(
+      "select",
+      {
+        "aria-label": label,
+        value,
+        onChange: (event: { target: { value: string } }) => onChange(event.target.value),
+      },
+      choices.map((choice) =>
+        createElement("option", { key: choice.key, value: choice.key }, choice.label),
+      ),
+    ),
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
@@ -367,7 +394,11 @@ vi.mock("./organizations", () => ({
 }));
 vi.mock("./push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("./returning-user", () => ({ forgetSignedIn: vi.fn() }));
-vi.mock("./queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));
+const device = vi.hoisted(() => ({ timezone: "Europe/Berlin" as string | undefined }));
+vi.mock("./routine", async (importOriginal) => ({
+  ...(await importOriginal<typeof Routine>()),
+  deviceTimeZone: () => device.timezone,
+}));
 vi.mock("./remote-images-preference", () => ({
   getCachedRemoteImagesEnabled: () => true,
   setRemoteImagesPreference: vi.fn(),
@@ -1071,6 +1102,107 @@ it("hangs up the active call before signing out", async () => {
   });
   await view.press("Sign out");
   expect(order).toEqual(["hang-up", "sign-out"]);
+});
+
+async function chooseHour(screen: HTMLElement, label: string, hour: number) {
+  const select = screen.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+  await act(async () => {
+    select.value = String(hour);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+/** Answers saves like the server: the account as saved, with the timezone the save kept. */
+function savingPreferences(fail = false) {
+  const answer = vi.mocked(rpc).getMockImplementation()!;
+  vi.mocked(rpc).mockImplementation(((method: string, ...rest: unknown[]) => {
+    if (method !== "preferences/update")
+      return (answer as (...args: unknown[]) => unknown)(method, ...rest);
+    if (fail) return Promise.reject(new Error("offline"));
+    const body = rest[0] as { quietHours?: unknown; timezone?: string };
+    account.me = {
+      ...account.me,
+      quietHours: body.quietHours,
+      ...(body.timezone ? { timezone: body.timezone } : {}),
+    };
+    return Promise.resolve(account.me);
+  }) as typeof rpc);
+  return () => vi.mocked(rpc).mockImplementation(answer);
+}
+
+const preferenceCalls = () =>
+  vi
+    .mocked(rpc)
+    .mock.calls.filter(([method]) => String(method).startsWith("preferences/"))
+    .map(([method, body]) => [method, body]);
+
+it("turns quiet hours on in this device's timezone when the account has none, and moves an end", async () => {
+  account.me = { ...account.me, timezone: null, quietHours: null };
+  const restore = savingPreferences();
+  try {
+    const { screen } = await renderAccount(General);
+    const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
+    expect(quiet().getAttribute("aria-checked")).toBe("false");
+    expect(screen.querySelector('select[aria-label="Starts"]')).toBeNull();
+
+    await act(async () => quiet().click());
+    // One save keeps both, so a failure can't leave only the timezone changed.
+    expect(preferenceCalls()).toEqual([
+      ["preferences/update", { quietHours: { start: 22, end: 7 }, timezone: "Europe/Berlin" }],
+    ]);
+    expect(quiet().getAttribute("aria-checked")).toBe("true");
+    // The start hour isn't offered as the end, so the two can't match.
+    const ends = screen.querySelector<HTMLSelectElement>('select[aria-label="Ends"]')!;
+    expect([...ends.options].map((option) => option.value)).not.toContain("22");
+
+    await chooseHour(screen, "Ends", 6);
+    expect(preferenceCalls().at(-1)).toEqual([
+      "preferences/update",
+      { quietHours: { start: 22, end: 6 } },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+it("turns quiet hours back off when the save fails, and says so", async () => {
+  account.me = { ...account.me, timezone: "Europe/Berlin", quietHours: null };
+  const restore = savingPreferences(true);
+  try {
+    const { screen } = await renderAccount(General);
+    const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
+
+    await act(async () => quiet().click());
+    expect(preferenceCalls()).toEqual([
+      ["preferences/update", { quietHours: { start: 22, end: 7 } }],
+    ]);
+    expect(quiet().getAttribute("aria-checked")).toBe("false");
+    expect(Alert.alert).toHaveBeenCalledWith("Couldn't update quiet hours");
+  } finally {
+    restore();
+  }
+});
+
+it("keeps quiet hours off when neither the account nor this device knows its timezone", async () => {
+  account.me = { ...account.me, timezone: null, quietHours: null };
+  device.timezone = undefined;
+  try {
+    const { screen } = await renderAccount(General);
+    const quiet = () => screen.querySelector<HTMLButtonElement>('[aria-label="Quiet hours"]')!;
+
+    await act(async () => quiet().click());
+    expect(preferenceCalls()).toEqual([]);
+    expect(quiet().getAttribute("aria-checked")).toBe("false");
+    expect(Alert.alert).toHaveBeenCalledWith("Couldn't update quiet hours");
+  } finally {
+    device.timezone = "Europe/Berlin";
+  }
+});
+
+it("offers no quiet hours, and on iOS no notification settings, to a server without them", async () => {
+  const { screen } = await renderAccount(General);
+  expect(screen.querySelector('[aria-label="Quiet hours"]')).toBeNull();
+  expect(screen.querySelector('[aria-label="Notifications"]')).toBeNull();
 });
 
 it("shows subscription allowances and credits only for members who have them", async () => {

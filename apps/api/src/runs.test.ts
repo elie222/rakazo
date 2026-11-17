@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityNotificationsEnabled, activityPreview } from "./runs.js";
+import { activityNotificationsEnabled, activityPreview, runHeldForQuietHours } from "./runs.js";
 
 describe("run activity copy", () => {
   it.each([
@@ -119,6 +119,19 @@ describe("run activity notification preference", () => {
   it("silences only direct messages", () => {
     expect(activityNotificationsEnabled(null, false)).toBe(false);
     expect(activityNotificationsEnabled("group-1", false)).toBe(true);
+  });
+
+  it("holds news in quiet hours, but not the viewer's own question or failure", () => {
+    const mine = { userId: "user-1" };
+    const theirs = { userId: "user-2" };
+    expect(runHeldForQuietHours({ ...mine, status: "completed" }, "user-1")).toBe(true);
+    expect(runHeldForQuietHours({ ...mine, status: "waiting_input" }, "user-1")).toBe(false);
+    expect(runHeldForQuietHours({ ...mine, status: "waiting_takeover" }, "user-1")).toBe(false);
+    expect(runHeldForQuietHours({ ...mine, status: "failed" }, "user-1")).toBe(false);
+    expect(runHeldForQuietHours({ ...theirs, status: "waiting_input" }, "user-1")).toBe(true);
+    expect(runHeldForQuietHours({ ...theirs, status: "failed" }, "user-1")).toBe(true);
+    // Still working is not news: the live status keeps showing it.
+    expect(runHeldForQuietHours({ ...theirs, status: "running" }, "user-1")).toBe(false);
   });
 });
 

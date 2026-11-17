@@ -92,6 +92,7 @@ export * from "./plugin-catalog.js";
 export * from "./product-analytics.js";
 export * from "./prompt-data.js";
 export * from "./provider-settings-form.js";
+export * from "./quiet-hours.js";
 export * from "./refresh-coalescer.js";
 export * from "./remote-images.js";
 export * from "./response-bytes.js";

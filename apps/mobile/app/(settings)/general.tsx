@@ -1,10 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
-import { APP_LOCALE_LABELS } from "@rakazo/core";
+import type { QuietHours } from "@rakazo/contracts";
+import {
+  APP_LOCALE_LABELS,
+  DEFAULT_QUIET_HOURS,
+  quietHourChoices,
+  quietHoursSave,
+} from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AppState, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MenuPicker } from "../../components/menu-picker";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import {
   SettingsGroup,
@@ -47,6 +54,7 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { deviceTimeZone } from "../../lib/routine";
 import { useScreenQuery } from "../../lib/screen-query";
 import { loadSessionToken } from "../../lib/session";
 import { createSettingsPageStyles } from "../../lib/settings-page-styles";
@@ -75,6 +83,19 @@ export default function General() {
     stale: [meRead.queryKey],
     onFailed: () => Alert.alert(t`Couldn't update bot style`),
   });
+  const quietHoursUpdate = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (next: QuietHours | null, send) => {
+      // Turning them on for an account without a timezone keeps this device's in the same save.
+      const save = quietHoursSave(next, me?.timezone, deviceTimeZone());
+      if (!save) throw new Error("No timezone to read quiet hours in");
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", save));
+    },
+    stale: [meRead.queryKey],
+    onFailed: () => Alert.alert(t`Couldn't update quiet hours`),
+  });
+  // The choice being saved shows until the server answers.
+  const quietHours = quietHoursUpdate.pending ? quietHoursUpdate.input : me?.quietHours;
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -183,6 +204,10 @@ export default function General() {
     });
     setNotificationError(null);
     notificationQueue.current.update(next);
+  }
+
+  function updateQuietHours(next: QuietHours | null) {
+    if (me && me.quietHours !== undefined) quietHoursUpdate.run(next);
   }
 
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
@@ -297,6 +322,38 @@ export default function General() {
           </SettingsGroup>
         ) : null}
 
+        {quietHours !== undefined ? (
+          <SettingsGroup>
+            <SettingsSwitch
+              label={t`Quiet hours`}
+              detail={quietHours ? t`Only what needs you comes through.` : undefined}
+              value={quietHours !== null}
+              disabled={quietHoursUpdate.pending}
+              onChange={(on) => updateQuietHours(on ? DEFAULT_QUIET_HOURS : null)}
+            />
+            {quietHours ? (
+              <>
+                <QuietHourPicker
+                  label={t`Starts`}
+                  value={quietHours.start}
+                  other={quietHours.end}
+                  locale={locale}
+                  disabled={quietHoursUpdate.pending}
+                  onChange={(start) => updateQuietHours({ ...quietHours, start })}
+                />
+                <QuietHourPicker
+                  label={t`Ends`}
+                  value={quietHours.end}
+                  other={quietHours.start}
+                  locale={locale}
+                  disabled={quietHoursUpdate.pending}
+                  onChange={(end) => updateQuietHours({ ...quietHours, end })}
+                />
+              </>
+            ) : null}
+          </SettingsGroup>
+        ) : null}
+
         <SettingsGroup>
           <SettingsSwitch
             label={t`Stream replies`}
@@ -317,5 +374,35 @@ export default function General() {
         </SettingsGroup>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
+function QuietHourPicker({
+  label,
+  value,
+  other,
+  locale,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  other: number;
+  locale: string;
+  disabled: boolean;
+  onChange: (hour: number) => void;
+}) {
+  return (
+    <MenuPicker
+      label={label}
+      value={String(value)}
+      disabled={disabled}
+      choices={quietHourChoices(other, locale).map(({ hour, label }) => ({
+        key: String(hour),
+        label,
+      }))}
+      onChange={(key) => onChange(Number(key))}
+    />
   );
 }
