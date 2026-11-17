@@ -191,6 +191,17 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     await this.revise(botId);
   }
 
+  override async writeBinaryFile(
+    botId: string,
+    filePath: string,
+    content: Uint8Array,
+    context: AdapterContext,
+  ) {
+    await this.hydrate(botId);
+    await super.writeBinaryFile(botId, filePath, content, context);
+    await this.revise(botId);
+  }
+
   /**
    * Removes the folders from the stored copy too, so no host or later boot gets them back.
    * A remote computer can save between the download and this save (deleting a bot stops its

@@ -1190,6 +1190,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           events,
           jobs,
           sandbox,
+          home,
           secrets,
           artifacts,
           env,

@@ -11,6 +11,13 @@ export const DIRECT_ATTACHMENT_ATTEMPTS = 3;
 export const DIRECT_MESSAGE_SETTLE_BUDGET_MS = 30 * 60_000;
 
 /**
+ * Time copying one received file into the bot's computer may take before the message goes on
+ * without it. With voice transcripts it stays inside the margin the backup job leaves after the
+ * settle budget.
+ */
+export const RECEIVED_FILE_SAVE_TIMEOUT_MS = 30_000;
+
+/**
  * Files of the largest allowed size this process holds in memory at once while downloading
  * chat-app files: its download budget is this many times the upload limit. A file reserves its
  * reported size, or the whole limit when none was reported, before it starts.

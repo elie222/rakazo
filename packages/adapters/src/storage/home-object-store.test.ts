@@ -206,6 +206,25 @@ describe("ObjectAgentHomeStore", () => {
     }
   });
 
+  it("stores a binary file it writes, so every host gets it", async () => {
+    const { store, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "notes.txt": "keep" }), context);
+
+    await store.writeBinaryFile(
+      "bot-1",
+      "received/2026/11/clip.mov",
+      new Uint8Array([0, 255, 1]),
+      context,
+    );
+
+    const restored = await otherHost();
+    await restored.hydrate("bot-1");
+    expect(
+      await readFile(path.join(restored.pathFor("bot-1"), "received/2026/11/clip.mov")),
+    ).toEqual(Buffer.from([0, 255, 1]));
+    expect(await readFile(path.join(restored.pathFor("bot-1"), "notes.txt"), "utf8")).toBe("keep");
+  });
+
   it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
     const { store, rows } = await setup();
     const claimedAt = new Date("2026-01-01T00:00:00Z");

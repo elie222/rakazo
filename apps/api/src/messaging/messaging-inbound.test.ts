@@ -1272,6 +1272,119 @@ describe("createMessagingInboundHandler DM routing", () => {
     );
   });
 
+  describe("received file copies", () => {
+    const SAVED = "shared/received/2026/11/2026-11-17_1912_+15551111111_photo.jpg";
+    const bytes = new Uint8Array([7, 8, 9]);
+    const storeWithBytes = () =>
+      vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(async ({ attachment }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        bytes,
+      }));
+    const promptOf = (deps: ReturnType<typeof createDeps>, call = 0) =>
+      (deps.sendUserMessage.mock.calls[call]![0] as { prompt: string }).prompt;
+
+    it("copies each received file into the bot's computer and says where", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+      vi.mocked(deps.prisma.bot.findUnique).mockResolvedValue({
+        computerId: "computer-1",
+      } as never);
+      vi.mocked(deps.prisma.user.findUnique).mockResolvedValue({
+        timezone: "Asia/Jerusalem",
+      } as never);
+      const saveReceivedFile = vi.fn<NonNullable<MessagingInboundDeps["saveReceivedFile"]>>(
+        async () => ({ saved: SAVED }),
+      );
+      deps.saveReceivedFile = saveReceivedFile;
+
+      await createMessagingInboundHandler(deps)({ ...photoEvent, content: "look" });
+      await settled(deps);
+
+      expect(saveReceivedFile).toHaveBeenCalledExactlyOnceWith(
+        {
+          bot: { id: "bot-1", computerId: "computer-1" },
+          sender: "+15551111111",
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          bytes,
+          at: expect.any(Date),
+          timeZone: "Asia/Jerusalem",
+        },
+        expect.objectContaining({ spaceId: "ws-1", userId: "user-1", botId: "bot-1" }),
+      );
+      expect(deps.sendUserMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          blocks: [
+            { kind: "text", text: `look\n[saved to ${SAVED}]` },
+            { kind: "image", artifactId: "photo.jpg", mimeType: "image/jpeg", name: "photo.jpg" },
+          ],
+        }),
+      );
+      expect(promptOf(deps)).toContain(`[saved to ${SAVED}]`);
+    });
+
+    it("posts the message without a line for a file that was skipped or failed to copy", async () => {
+      const storeAttachment = storeWithBytes();
+      const deps = createDeps({ storeAttachment });
+      deps.saveReceivedFile = vi
+        .fn<NonNullable<MessagingInboundDeps["saveReceivedFile"]>>()
+        .mockResolvedValueOnce({ skipped: "home_not_reachable" })
+        .mockRejectedValueOnce(new Error("computer unreachable"));
+
+      await createMessagingInboundHandler(deps)({
+        ...photoEvent,
+        attachments: [
+          ...photoEvent.attachments,
+          { name: "clip.mov", mimeType: "video/quicktime", size: 3, fetch: async () => bytes },
+        ],
+      });
+      await settled(deps);
+
+      expect(deps.saveReceivedFile).toHaveBeenCalledTimes(2);
+      expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+      expect(promptOf(deps)).not.toContain("[saved to");
+      expect(deps.recordIn).not.toHaveBeenCalled();
+    });
+
+    it("keeps received files out of the computer when copies are off", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+
+      await createMessagingInboundHandler(deps)(photoEvent);
+      await settled(deps);
+
+      expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+      expect(promptOf(deps)).not.toContain("[saved to");
+      expect(deps.prisma.bot.findUnique).not.toHaveBeenCalledWith(
+        expect.objectContaining({ select: { computerId: true } }),
+      );
+    });
+
+    it("copies one bot's files one at a time, so none takes another's name", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+      const first = deferred<{ saved: string }>();
+      const saveReceivedFile = vi
+        .fn<NonNullable<MessagingInboundDeps["saveReceivedFile"]>>()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValueOnce({ saved: SAVED.replace(".jpg", "-2.jpg") });
+      deps.saveReceivedFile = saveReceivedFile;
+      const handle = createMessagingInboundHandler(deps);
+
+      await handle(photoEvent);
+      await handle({ ...photoEvent, handle: "handle-2" });
+      await vi.waitFor(() => expect(saveReceivedFile).toHaveBeenCalledOnce());
+      await flush();
+      expect(saveReceivedFile).toHaveBeenCalledOnce();
+
+      first.resolve({ saved: SAVED });
+      await settled(deps, 2);
+      expect(saveReceivedFile).toHaveBeenCalledTimes(2);
+      expect(promptOf(deps, 0)).toContain(`[saved to ${SAVED}]`);
+      expect(promptOf(deps, 1)).toContain(`[saved to ${SAVED.replace(".jpg", "-2.jpg")}]`);
+    });
+  });
+
   it("records and then cancels the settle job", async () => {
     const storeAttachment = vi.fn(async () => ({
       id: "artifact-1",

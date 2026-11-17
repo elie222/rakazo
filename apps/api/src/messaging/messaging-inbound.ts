@@ -1,4 +1,5 @@
 import type {
+  AdapterContext,
   JobPublisher,
   JobQueueOrder,
   MessagingInboundMessage,
@@ -10,13 +11,19 @@ import {
   messagingInboundSettleQueue,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
+import type {
+  MessagingDelivery,
+  OutboundLane,
+  ReceivedFile,
+  SaveReceivedFileResult,
+} from "@rakazo/adapters";
 import {
   filesNotReceivedReply,
   MESSAGING_DM_OUTBOUND_CAP,
   messagingAttachmentClientNonce,
   messagingMessageClientNonce,
   messagingWakeIdempotencyKey,
+  savedFileLine,
   sealSettleText,
   wakeRun,
 } from "@rakazo/adapters";
@@ -25,12 +32,15 @@ import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contrac
 import type { MessagingCommand } from "@rakazo/core";
 import {
   abortableDelay,
+  deadlineSignal,
   displayName,
+  localTimezone,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
   parseMessagingCommand,
   promptTextForAttachments,
   sanitizeMessagingLabel,
+  withAbort,
 } from "@rakazo/core";
 import type {
   MessagingIdentityRequest,
@@ -63,6 +73,7 @@ import {
   DIRECT_ATTACHMENT_ATTEMPTS,
   DIRECT_ATTACHMENT_TIMEOUT_MS,
   DIRECT_MESSAGE_SETTLE_BUDGET_MS,
+  RECEIVED_FILE_SAVE_TIMEOUT_MS,
   SHUTDOWN_DOWNLOAD_GRACE_MS,
   SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
@@ -96,6 +107,14 @@ export interface MessagingInboundDeps {
   openSignup: boolean;
   acknowledge?: MessagingReceipts["acknowledge"];
   storeAttachment?: InboundAttachmentStore;
+  /**
+   * Copies each file a direct message brings into the bot's computer; set only when
+   * MESSAGING_SAVE_RECEIVED_FILES is on.
+   */
+  saveReceivedFile?: (
+    file: ReceivedFile & { timeZone: string },
+    context: AdapterContext,
+  ) => Promise<SaveReceivedFileResult>;
   /**
    * Transcribes inbound audio with the bot owner's voice provider. On null or
    * a throw only the file reference is delivered. `signal` aborts when the
@@ -142,6 +161,7 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
     handedOff: new Map(),
     pending: new Map(),
     closing: false,
+    saves: createSenderQueue(),
   };
   const handle = async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
@@ -219,6 +239,8 @@ type DirectIntake = {
   pending: Map<string, Arrival[]>;
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
+  /** One bot's received files are copied into its computer one at a time, so none replaces another. */
+  saves: SenderQueue;
   /** The shutdown, once it started. */
   shutdown?: Shutdown;
   /** During a shutdown's grace, the messages it hands off once the grace is over. */
@@ -503,7 +525,9 @@ async function prepareDirectEvent(
     }
     // The files download from now on, whatever is ahead of the message in its sender's queue;
     // only handing the message to the bot waits its turn there.
-    const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
+    const media = settledMedia(
+      storeInboundMedia(deps, ids, event, deadline, { saves: intake.saves, receivedAt }),
+    );
     arrival.media = media;
     return {
       inline: false,
@@ -729,10 +753,10 @@ function writeJob<T>(
   return result;
 }
 
-/** A message's stored files and the lines of those that did not arrive. */
+/** A message's stored files, the lines of those copied into the computer and of those that did not arrive. */
 type StoredMedia = Awaited<ReturnType<typeof storeInboundMedia>>;
 
-const NO_MEDIA: StoredMedia = { artifacts: [], unavailable: [] };
+const NO_MEDIA: StoredMedia = { artifacts: [], saved: [], unavailable: [] };
 
 /** How a message's downloads ended, kept until its turn in the queue comes to post it. */
 type MediaOutcome = { stored: StoredMedia } | { error: unknown };
@@ -766,7 +790,7 @@ async function deliverDirectMessage(
     }))
   )
     return stored.unavailable;
-  const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
+  const body = [text, ...stored.saved, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
     threadId: ids.threadId,
@@ -824,13 +848,18 @@ const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
  */
 const ROSTER_TIME_SKEW_MS = 5 * 60_000;
 
-/** Download provider-held files into thread artifacts, then transcribe voice notes. */
+/**
+ * Download provider-held files into thread artifacts, copying each into the bot's computer when
+ * that is on, then transcribe voice notes.
+ */
 async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
   downloadDeadline: number,
+  copies: { saves: SenderQueue; receivedAt: number },
 ) {
+  const saved: string[] = [];
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
@@ -842,6 +871,14 @@ async function storeInboundMedia(
       downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
       attempts: DIRECT_ATTACHMENT_ATTEMPTS,
       reasons: true,
+      ...(deps.saveReceivedFile
+        ? {
+            onStored: async (file: { name: string; mimeType: string }, bytes: Uint8Array) => {
+              const line = await saveReceivedCopy(deps, ids, event, file, bytes, copies);
+              if (line) saved.push(line);
+            },
+          }
+        : {}),
     },
   );
   // Transcribe only after every download, so a slow transcription cannot use up the
@@ -852,7 +889,56 @@ async function storeInboundMedia(
   for (const { artifact, bytes } of stored) {
     artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
   }
-  return { artifacts, unavailable };
+  return { artifacts, saved, unavailable };
+}
+
+/**
+ * Copies one received file into the bot's computer and returns the line that says where, or
+ * nothing when it was not copied. A copy that fails or takes too long never holds up the message.
+ */
+async function saveReceivedCopy(
+  deps: MessagingInboundDeps,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+  file: { name: string; mimeType: string },
+  bytes: Uint8Array,
+  { saves, receivedAt }: { saves: SenderQueue; receivedAt: number },
+): Promise<string | undefined> {
+  const save = deps.saveReceivedFile;
+  if (!save) return undefined;
+  const signal = deadlineSignal(RECEIVED_FILE_SAVE_TIMEOUT_MS);
+  const copy = saves.run(ids.botId, async () => {
+    signal.throwIfAborted();
+    const [bot, owner] = await Promise.all([
+      deps.prisma.bot.findUnique({ where: { id: ids.botId }, select: { computerId: true } }),
+      deps.prisma.user.findUnique({ where: { id: ids.userId }, select: { timezone: true } }),
+    ]);
+    const operationId = `messaging-received-file:${event.provider}:${event.handle}`;
+    return save(
+      {
+        bot: { id: ids.botId, computerId: bot?.computerId ?? null },
+        sender: event.from,
+        name: file.name,
+        mimeType: file.mimeType,
+        bytes,
+        at: new Date(receivedAt),
+        timeZone: owner?.timezone ?? localTimezone(),
+      },
+      {
+        operationId,
+        traceId: operationId,
+        spaceId: ids.spaceId,
+        userId: ids.userId,
+        botId: ids.botId,
+        signal,
+      },
+    );
+  });
+  const result = await bestEffort(
+    "copy a received file into the bot's computer",
+    withAbort(copy, signal),
+  );
+  return result && "saved" in result ? savedFileLine(result.saved) : undefined;
 }
 
 /**

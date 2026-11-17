@@ -223,6 +223,25 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await readFile(outside, "utf8")).toBe("secret");
   });
 
+  it("writes binary files in new folders, with the same containment as text writes", async () => {
+    const { root, store, home } = await fixture();
+    const content = new Uint8Array([0, 255, 10, 13]);
+    await store.writeBinaryFile("bot-1", "shared/received/2026/11/clip.mov", content, context);
+    expect(await readFile(path.join(home, "shared/received/2026/11/clip.mov"))).toEqual(
+      Buffer.from(content),
+    );
+
+    const outside = path.join(root, "outside-dir");
+    await mkdir(outside);
+    await symlink(outside, path.join(home, "escape-dir"), "junction");
+    await expect(
+      store.writeBinaryFile("bot-1", "escape-dir/clip.mov", content, context),
+    ).rejects.toThrow(/escapes/i);
+    await expect(
+      store.writeBinaryFile("bot-1", "../bot-2/clip.mov", content, context),
+    ).rejects.toThrow(/escapes/i);
+  });
+
   it("does not create directories through an external symlink", async () => {
     const { root, store, home } = await fixture();
     const outside = path.join(root, "outside-dir");

@@ -494,6 +494,12 @@ export interface AgentHomeStore {
     options?: { maxBytes?: number },
   ): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
+  writeBinaryFile(
+    botId: string,
+    path: string,
+    content: Uint8Array,
+    context: AdapterContext,
+  ): Promise<void>;
   list(
     botId: string,
     path: string,

@@ -56,6 +56,7 @@ export * from "./computers/host/user-device-emulator.js";
 export * from "./computers/host/user-device-gateway.js";
 export * from "./computers/host/user-device-protocol.js";
 export * from "./computers/machine-cleanup.js";
+export * from "./computers/received-files/save-received-file.js";
 export * from "./computers/sandbox/agent-environment.js";
 export { formatAgentEnvironmentInstruction } from "./computers/sandbox/agent-environment.prompt.js";
 export * from "./computers/sandbox/configured-sandbox.js";

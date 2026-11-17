@@ -48,7 +48,7 @@ export type InboundAttachmentStore = (input: {
  * `[file: name (unavailable)]` lines, which say why (`(unavailable: too large)`) with
  * `reasons`; the sender controls the name, so it is sanitized before it can reach a prompt.
  * The store enforces the download deadline itself, after looking up a file a replayed
- * delivery already saved. Only audio keeps its bytes.
+ * delivery already saved. Only audio keeps its bytes; `onStored` sees every downloaded file's.
  */
 export async function storeInboundAttachments(
   store: InboundAttachmentStore | undefined,
@@ -61,6 +61,8 @@ export async function storeInboundAttachments(
     downloadTimeoutMs?: number;
     attempts?: number;
     reasons?: boolean;
+    /** Called with each downloaded file before the next one is fetched; it must not throw. */
+    onStored?: (artifact: InboundArtifact, bytes: Uint8Array) => Promise<void>;
   },
 ) {
   const stored: Array<{ artifact: InboundArtifact; bytes: Uint8Array | undefined }> = [];
@@ -74,6 +76,7 @@ export async function storeInboundAttachments(
       unavailable.push(label("not received"));
       continue;
     }
+    let downloaded: { artifact: InboundArtifact; bytes: Uint8Array } | undefined;
     try {
       const { bytes, ...artifact } = await store({
         spaceId: owner.spaceId,
@@ -89,6 +92,7 @@ export async function storeInboundAttachments(
         artifact,
         bytes: isAttachmentAudioMimeType(artifact.mimeType) ? bytes : undefined,
       });
+      if (bytes) downloaded = { artifact, bytes };
     } catch (error) {
       getLogger().warn("inbound attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
@@ -99,6 +103,7 @@ export async function storeInboundAttachments(
         ),
       );
     }
+    if (downloaded) await options.onStored?.(downloaded.artifact, downloaded.bytes);
   }
   return { stored, unavailable };
 }

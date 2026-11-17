@@ -35,6 +35,7 @@ describe("startMessagingRuntime", () => {
       events: {} as never,
       jobs: {} as never,
       sandbox: {} as never,
+      home: {} as never,
       secrets: {} as never,
       artifacts: {} as never,
       env: { maxUploadSizeBytes: 10, messagingOpenSignup: false } as never,

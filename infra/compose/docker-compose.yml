@@ -270,6 +270,7 @@ x-app-environment: &app-environment # Runtime
   MCP_ALLOW_PRIVATE_ENDPOINT:
   # Messaging (outbound delivery runs in the worker)
   MESSAGING_OPEN_SIGNUP:
+  MESSAGING_SAVE_RECEIVED_FILES:
   SENDBLUE_API_KEY_ID:
   SENDBLUE_API_SECRET:
   SENDBLUE_SIGNING_SECRET:

@@ -256,6 +256,13 @@ room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
 Files sent in direct messages from chat apps download in the background, up to
 `MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
 
+Set `MESSAGING_SAVE_RECEIVED_FILES=true` and restart the API and worker to also copy each of
+those files into the receiving bot's computer: `shared/received/YYYY/MM/` on a team computer,
+`received/YYYY/MM/` on a bot's own computer, named by date, time, sender and file name, in the
+bot owner's time zone. The bot's message gets a `[saved to <path>]` line for each copy. A copy
+goes into a running computer, or into the saved home of a stopped one that boots from it (a
+Docker computer always does); otherwise the file still reaches the bot, without a copy.
+
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
 Web, desktop, and mobile use the advertised count; older clients and clients connected

@@ -214,6 +214,19 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     content: string,
     _context: AdapterContext,
   ): Promise<void> {
+    await this.writeContent(botId, filePath, content);
+  }
+
+  async writeBinaryFile(
+    botId: string,
+    filePath: string,
+    content: Uint8Array,
+    _context: AdapterContext,
+  ): Promise<void> {
+    await this.writeContent(botId, filePath, content);
+  }
+
+  private async writeContent(botId: string, filePath: string, content: string | Uint8Array) {
     await this.withBotWrite(botId, async () => {
       await this.recoverInterruptedCommit(botId);
       const full = await containedWritePath(this.botDir(botId), filePath);
@@ -223,7 +236,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
         0o666,
       );
       try {
-        await handle.writeFile(content, "utf8");
+        await handle.writeFile(content);
       } finally {
         await handle.close();
       }

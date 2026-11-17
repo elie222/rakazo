@@ -1,4 +1,5 @@
 import type {
+  AgentHomeStore,
   ArtifactStore,
   JobPublisher,
   JobQueueOrder,
@@ -8,7 +9,11 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { MessagingDelivery, MessagingInstallations, TeamChat } from "@rakazo/adapters";
-import { applyMessagingOutboundStatus, createMessagingTeamChatHistory } from "@rakazo/adapters";
+import {
+  applyMessagingOutboundStatus,
+  createMessagingTeamChatHistory,
+  saveReceivedFile,
+} from "@rakazo/adapters";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -37,6 +42,7 @@ export async function startMessagingRuntime({
   events,
   jobs,
   sandbox,
+  home,
   secrets,
   artifacts,
   env,
@@ -50,6 +56,7 @@ export async function startMessagingRuntime({
   events: ThreadEvents;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueOrder;
   sandbox: SandboxProvider;
+  home: AgentHomeStore;
   secrets: SecretStore;
   artifacts: ArtifactStore;
   env: AppEnv;
@@ -77,6 +84,12 @@ export async function startMessagingRuntime({
     openSignup: env.messagingOpenSignup,
     acknowledge: receipts.acknowledge,
     storeAttachment: stores.direct,
+    ...(env.saveReceivedFiles
+      ? {
+          saveReceivedFile: ({ timeZone, ...file }, context) =>
+            saveReceivedFile({ prisma, home, sandbox, timeZone }, file, context),
+        }
+      : {}),
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
       transcribeInboundVoice(
         {
