@@ -10,7 +10,9 @@ checker choices and general LLM deployment checkers keep their existing funding 
 The default uses the decision model in the adapter catalog when the deployment has its existing
 API connection key. No user setup, additional checkout, provider subscription login or personal
 connection guessing is involved. Self-hosting keeps the existing default resolution and requires
-no hosted service. An explicit deployment checker selection still wins.
+no hosted service. Its checker usage remains visible in the normal usage views; only hosted
+operator expenses are excluded from customer totals. An explicit deployment checker selection
+still wins. A matching backup does not change the primary checker’s funding source.
 
 ## Remaining operator work
 

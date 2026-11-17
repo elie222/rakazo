@@ -83,15 +83,17 @@ it("estimates an unknown operator expense without changing provider usage or cus
     outputTokens: null,
     costUsd: null,
     usageSource: "unavailable",
+    pricingSnapshot: { estimatedInputTokens: 250 },
   };
   await observer.afterCall(id, usage);
   expect(usage.costUsd).toBeNull();
   expect(updateMany).toHaveBeenLastCalledWith(
     expect.objectContaining({
       data: expect.objectContaining({
-        costUsd: 0.000042,
+        costUsd: 0.0000105,
         costSource: "request-token-estimate",
         inputTokens: null,
+        pricingSnapshot: expect.objectContaining({ estimatedInputTokens: 250 }),
       }),
     }),
   );

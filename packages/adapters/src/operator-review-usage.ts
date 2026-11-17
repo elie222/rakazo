@@ -47,7 +47,14 @@ export function operatorReviewObserver(
       const event = calls.get(id);
       if (!event) throw new Error("Unknown checker expense");
       const pricing = decisionModel(event.provider, event.model);
-      const input = usage?.inputTokens ?? event.pricingSnapshot?.estimatedInputTokens;
+      const reportedEstimate = usage?.pricingSnapshot?.estimatedInputTokens;
+      const input =
+        usage?.inputTokens ??
+        (typeof reportedEstimate === "number" &&
+        Number.isFinite(reportedEstimate) &&
+        reportedEstimate >= 0
+          ? reportedEstimate
+          : event.pricingSnapshot?.estimatedInputTokens);
       const estimate =
         usage && usage.costUsd == null && pricing && typeof input === "number"
           ? {
@@ -61,6 +68,13 @@ export function operatorReviewObserver(
           ...event,
           ...(usage ?? { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "not-sent" }),
           ...estimate,
+          pricingSnapshot: {
+            ...event.pricingSnapshot,
+            ...usage?.pricingSnapshot,
+            ...(estimate.costSource === "request-token-estimate"
+              ? { estimatedInputTokens: input }
+              : {}),
+          },
         },
         scope,
         true,
