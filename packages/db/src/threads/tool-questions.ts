@@ -30,6 +30,12 @@ export type TakenToolQuestionAnswer =
   | { action: "decline" }
   | { action: "cancel" };
 
+function withoutBox(block: MessageBlock): MessageBlock {
+  if (block.kind !== "tool_question" || block.sealedValues === undefined) return block;
+  const { sealedValues: _sealed, ...rest } = block;
+  return rest;
+}
+
 type QuestionRef = { spaceId: string; threadId: string; messageId: string };
 
 async function lockedQuestion(tx: Prisma.TransactionClient, ref: QuestionRef) {
@@ -62,7 +68,8 @@ async function writeQuestion(
     // The card closes whatever became of its run.
     allowCancelledRun: true,
     type: "thread.message.updated",
-    payload: { messageId: message.id, role: "bot", blocks: changed.blocks },
+    // The event log keeps no copy of the sealed answer, so taking it off the row removes it.
+    payload: { messageId: message.id, role: "bot", blocks: changed.blocks.map(withoutBox) },
   });
   return event.seq;
 }

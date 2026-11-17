@@ -399,6 +399,8 @@ export async function connectRun(
     runId,
     payload: {
       trigger: run.trigger,
+      // Whose cards a viewer may answer while the run runs, before the next snapshot.
+      userId: run.userId,
       routineId: run.routineId,
       ...(run.routine ? { routineName: run.routine.name } : {}),
     },

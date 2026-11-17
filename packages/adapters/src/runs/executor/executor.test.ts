@@ -3999,7 +3999,11 @@ description: Prepare standup notes
     expect(append).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "run.started",
-        payload: { trigger: "routine", routineId: "routine-1", routineName: "Daily check" },
+        payload: expect.objectContaining({
+          trigger: "routine",
+          routineId: "routine-1",
+          routineName: "Daily check",
+        }),
       }),
     );
   });

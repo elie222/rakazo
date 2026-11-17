@@ -360,6 +360,15 @@ describe("toolQuestionFromElicitation", () => {
     ]);
   });
 
+  it("skips a text field whose shortest answer is longer than this client takes", () => {
+    expect(
+      toolQuestionFromElicitation("G", {
+        message: "m",
+        requestedSchema: { properties: { essay: { type: "string", minLength: 5_000 } } },
+      }),
+    ).toBeUndefined();
+  });
+
   it("skips URL mode, nested objects and multi-select", () => {
     expect(toolQuestionFromElicitation("G", { mode: "url", message: "Go" })).toBeUndefined();
     for (const property of [

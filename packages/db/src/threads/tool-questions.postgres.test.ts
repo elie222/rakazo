@@ -127,6 +127,7 @@ describePostgres("tool questions (PostgreSQL)", () => {
     const event = await system.event.findFirstOrThrow({ where: { threadId, seq: committed!.seq } });
     // Every reader of the chat (another member of the space included) sees only the box.
     expect(JSON.stringify(event.payload)).not.toContain("quiet-hours");
+    expect(JSON.stringify(event.payload)).not.toContain("sealedValues");
     const stored = await card();
     expect(JSON.stringify(stored)).not.toContain("quiet-hours");
 

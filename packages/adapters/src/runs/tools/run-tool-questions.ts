@@ -69,7 +69,11 @@ async function askInRun(
       if (answer) return answer;
     }
   } catch (error) {
-    if (!wait.aborted) throw error;
+    if (!wait.aborted) {
+      // A failed wait still closes the card: the server is told nobody answered.
+      await bestEffort("tool question", take(true));
+      throw error;
+    }
   }
   // The wait ended, the server withdrew the question or the run stopped: the card closes as
   // expired unless an answer got in first.

@@ -121,7 +121,8 @@ function questionField(
       : undefined;
   const maxLength = Math.min(num(s.maxLength) ?? TOOL_QUESTION_TEXT_MAX, TOOL_QUESTION_TEXT_MAX);
   const minLength = num(s.minLength);
-  if (maxLength < 1) return undefined;
+  // A form whose shortest answer is longer than this client takes cannot be answered here.
+  if (maxLength < 1 || (minLength !== undefined && minLength > maxLength)) return undefined;
   return {
     ...base,
     type: "text",
