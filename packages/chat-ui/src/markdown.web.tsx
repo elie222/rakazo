@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode, RefObject } from "react";
+import type { CSSProperties, MouseEvent, ReactElement, ReactNode, RefObject } from "react";
 import {
   Component,
   createContext,
@@ -751,6 +751,33 @@ function urlTransform(url: string, key: string) {
     : (sanitizeMarkdownUrl(url, true) ?? "");
 }
 
+function renderMarkdown(source: string) {
+  return ReactMarkdown({
+    children: source,
+    components,
+    remarkPlugins,
+    rehypePlugins,
+    skipHtml: true,
+    urlTransform,
+  });
+}
+
+// Parsing is most of the cost of drawing a message, and opening a chat again draws every message
+// again. The output depends only on the source, so finished text is parsed once.
+const renderedSources = new Map<string, ReactElement>();
+const RENDERED_SOURCE_LIMIT = 1_000;
+
+function renderFinishedMarkdown(source: string) {
+  let rendered = renderedSources.get(source);
+  if (rendered) renderedSources.delete(source);
+  else rendered = renderMarkdown(source);
+  renderedSources.set(source, rendered);
+  if (renderedSources.size > RENDERED_SOURCE_LIMIT) {
+    renderedSources.delete(renderedSources.keys().next().value as string);
+  }
+  return rendered;
+}
+
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
@@ -762,15 +789,7 @@ const MarkdownBlock = memo(function MarkdownBlock({
   return (
     <StreamingSourceContext.Provider value={streaming ? source : undefined}>
       <MarkdownTableSourceContext.Provider value={parsed}>
-        <ReactMarkdown
-          components={components}
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          skipHtml
-          urlTransform={urlTransform}
-        >
-          {parsed}
-        </ReactMarkdown>
+        {streaming ? renderMarkdown(parsed) : renderFinishedMarkdown(parsed)}
       </MarkdownTableSourceContext.Provider>
     </StreamingSourceContext.Provider>
   );

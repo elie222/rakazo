@@ -27,7 +27,8 @@ export function useSidebarResize({
   onPreviewCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  // Only the limit is kept, so resizing the window re-renders the shell only when it changes.
+  const [maxWidth, setMaxWidth] = useState(() => maximumBotsSidebarWidth(window.innerWidth));
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const drag = useRef<{
     pointerId: number;
@@ -38,8 +39,7 @@ export function useSidebarResize({
     initialCollapsed: boolean;
     mini: boolean;
   } | null>(null);
-  const maxWidth = maximumBotsSidebarWidth(viewportWidth);
-  const expandedWidth = clampBotsSidebarWidth(preferredWidth, viewportWidth);
+  const expandedWidth = Math.max(BOTS_SIDEBAR_MIN_WIDTH, Math.min(maxWidth, preferredWidth));
   const width =
     dragWidth !== null
       ? Math.min(maxWidth, dragWidth)
@@ -53,7 +53,7 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
+  useEventListener(window, "resize", () => setMaxWidth(maximumBotsSidebarWidth(window.innerWidth)));
 
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {
