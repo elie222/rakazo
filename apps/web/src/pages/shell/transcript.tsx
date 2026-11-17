@@ -266,7 +266,10 @@ export const Transcript = memo(function Transcript({
   // A jump needs older rows, and must keep them after it clears its request.
   if (tailOnly && scrollRequest) setTailOnly(false);
   const showTail = tailOnly && !scrollRequest;
-  const items = groupVoiceChats(reactionView.visibleMessages);
+  const items = groupVoiceChats(reactionView.visibleMessages).filter(
+    (item) =>
+      item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
+  );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
@@ -612,7 +615,6 @@ export const Transcript = memo(function Transcript({
             );
           }
           const message = item.message;
-          if (!messageHasVisibleBlocks(message.blocks, showToolActivity)) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
           return (
