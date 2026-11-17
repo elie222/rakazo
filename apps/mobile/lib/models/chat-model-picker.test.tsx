@@ -957,14 +957,33 @@ describe("provider connection screen", () => {
     mocks.connected = false;
     mocks.subscriptionSignIn = true;
     mocks.completeOAuth.mockResolvedValueOnce({ status: "ready" });
-    const onSignedIn = vi.fn();
-    await renderConnection({ onSignedIn });
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
     await act(async () => buttonWithText("Sign in")!.click());
     expect(mocks.rpc).toHaveBeenCalledWith(
       "models/beginOAuth",
       expect.objectContaining({ provider: "openrouter", credentialId: null, makeDefault: false }),
     );
-    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("hands a saved API key to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "openrouter",
+        apiKey: "fixture-key",
+        makeDefault: false,
+      }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
     expect(mocks.back).toHaveBeenCalledOnce();
     expect(mocks.replace).not.toHaveBeenCalled();
   });

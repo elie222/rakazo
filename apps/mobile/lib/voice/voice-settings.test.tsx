@@ -854,7 +854,7 @@ it("signs in through the Models connection screen, then connects voice through t
 
   // The sign-in saved a Models connection, which the catalog now lists.
   entry.modelConnections = [{ id: "signed-in-connection", label: "Signed in" }];
-  await act(async () => request.onSignedIn!("signed-in-connection"));
+  await act(async () => request.onSaved!("signed-in-connection"));
   expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
     provider: "linked",
     scope: "account",
@@ -896,7 +896,7 @@ it("offers the new connection, not another sign-in, when voice cannot connect th
     return original(proc, args);
   });
 
-  await act(async () => request.onSignedIn!("signed-in-connection"));
+  await act(async () => request.onSaved!("signed-in-connection"));
 
   expect(container.textContent).toContain("The provider is unavailable.");
   expect(button("Use Personal plan")).toBeDefined();

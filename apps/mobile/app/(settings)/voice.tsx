@@ -402,7 +402,7 @@ export default function VoiceSettings() {
       credentialId: null,
       makeDefault: false,
       target,
-      onSignedIn: (credentialId) => void connectSignedIn(credentialId),
+      onSaved: (credentialId) => void connectSignedIn(credentialId),
     });
     signInRequest.current = requestId;
     router.push({ pathname: "/model-connection", params: { requestId } });
