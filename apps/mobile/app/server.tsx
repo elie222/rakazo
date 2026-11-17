@@ -6,7 +6,9 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../components/header-rows-editor";
+import { LongPressMenu } from "../components/long-press-menu";
 import { NativeActionButton } from "../components/native-action-button";
+import { SettingsGroup, SettingsRow } from "../components/settings-group";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
 import { currentApiBase } from "../lib/api";
 import { resetApiBase, saveApiBase } from "../lib/api-server";
@@ -14,11 +16,14 @@ import { CallKeyboardContext } from "../lib/call-keyboard-context";
 import {
   apiBaseWarning,
   defaultApiBase,
+  displayApiHost,
   normalizeApiBase,
   probeApiBase,
   usesCustomApiBase,
 } from "../lib/endpoint";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import type { SavedServer } from "../lib/saved-servers";
+import { removeSavedServer, savedServers } from "../lib/saved-servers";
 import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
 import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
@@ -37,6 +42,8 @@ export default function ServerScreen() {
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(savedServers);
+  const colorScheme = useResolvedAppearance();
   const active = useRef(true);
   const saving = useRef(false);
 
@@ -56,7 +63,8 @@ export default function ServerScreen() {
   const parsedDraft = normalizeApiBase(draft);
   const warning = parsedDraft.ok ? apiBaseWarning(parsedDraft.url) : null;
 
-  async function save() {
+  // A saved server brings the headers it was set up with; typing an address uses the rows.
+  async function save(target?: SavedServer) {
     if (saving.current) return;
     // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
@@ -65,12 +73,12 @@ export default function ServerScreen() {
       setError(null);
       let headers: Record<string, string>;
       try {
-        headers = serverHeadersFromRows(headerRows);
+        headers = target ? target.headers : serverHeadersFromRows(headerRows);
       } catch (headerError) {
         setError(errorText(headerError));
         return;
       }
-      const probed = await probeApiBase(draft, fetch, headers);
+      const probed = await probeApiBase(target ? target.apiBase : draft, fetch, headers);
       if (!active.current) return;
       if (!probed.ok) {
         setError(probed.error);
@@ -90,6 +98,16 @@ export default function ServerScreen() {
       saving.current = false;
       setPending(false);
     }
+  }
+
+  async function forget(apiBase: string) {
+    // A switch in progress records its server when it lands, which would bring this one back.
+    if (saving.current) return;
+    if (!(await removeSavedServer(apiBase))) {
+      if (active.current) setError(t`Could not remove the server`);
+      return;
+    }
+    if (active.current) setSaved(savedServers());
   }
 
   async function restoreDefault() {
@@ -172,6 +190,30 @@ export default function ServerScreen() {
             disabled={pending}
           />
           {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
+          <SettingsGroup>
+            {saved
+              .filter((entry) => entry.apiBase !== current)
+              .map((entry) => (
+                <LongPressMenu
+                  key={entry.apiBase}
+                  colorScheme={colorScheme}
+                  title={displayApiHost(entry.apiBase)}
+                  actions={[{ id: "remove", title: t`Remove`, attributes: { destructive: true } }]}
+                  onPressAction={() => void forget(entry.apiBase)}
+                >
+                  {(onLongPress) => (
+                    <SettingsRow
+                      accessibilityRole="button"
+                      title={displayApiHost(entry.apiBase)}
+                      disabled={pending}
+                      dimmed={pending}
+                      onPress={() => void save(entry)}
+                      onLongPress={onLongPress}
+                    />
+                  )}
+                </LongPressMenu>
+              ))}
+          </SettingsGroup>
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}

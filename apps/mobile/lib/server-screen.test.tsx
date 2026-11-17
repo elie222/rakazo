@@ -21,6 +21,10 @@ const api = vi.hoisted(() => ({
   reset: vi.fn(),
   save: vi.fn(),
 }));
+const saved = vi.hoisted(() => ({
+  list: [] as Array<{ apiBase: string; headers: Record<string, string> }>,
+  remove: vi.fn(),
+}));
 
 vi.mock("expo-router", () => ({
   Stack: {
@@ -62,6 +66,42 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../components/header-rows-editor", () => ({ HeaderRowsEditor: () => null }));
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsRow: ({
+    title,
+    onPress,
+    disabled,
+  }: {
+    title: string;
+    onPress?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button disabled={disabled} onClick={onPress} type="button">
+      {title}
+    </button>
+  ),
+}));
+// Shows the row's menu action as its own button, so a test can pick it.
+vi.mock("../components/long-press-menu", () => ({
+  LongPressMenu: ({
+    children,
+    onPressAction,
+    title,
+  }: {
+    children: (onLongPress: undefined) => ReactNode;
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    title: string;
+  }) => (
+    <div>
+      {children(undefined)}
+      <button
+        onClick={() => onPressAction({ nativeEvent: { event: "remove" } })}
+        type="button"
+      >{`Remove ${title}`}</button>
+    </div>
+  ),
+}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress?: () => void }) => (
     <button onClick={onPress} type="button">
@@ -87,7 +127,14 @@ vi.mock("./endpoint", async () => {
     usesCustomApiBase: () => server.custom,
   };
 });
-vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
+vi.mock("./native", () => ({
+  useMobileTokens: () => ({}),
+  useResolvedAppearance: () => "light",
+}));
+vi.mock("./saved-servers", () => ({
+  removeSavedServer: saved.remove,
+  savedServers: () => saved.list,
+}));
 vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
@@ -103,6 +150,8 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   server.custom = false;
+  saved.list = [];
+  saved.remove.mockResolvedValue(true);
   api.probe.mockImplementation(async (draft: string) => ({ ok: true, url: draft }));
   api.save.mockResolvedValue({ ok: true, url: "" });
   api.reset.mockResolvedValue({ ok: true, url: "" });
@@ -229,4 +278,73 @@ it("holds the save lock while the unsent-message confirmation is open", async ()
   } finally {
     vi.mocked(hasUnsentSends).mockReturnValue(false);
   }
+});
+
+const ACCESS = { "CF-Access-Client-Id": "id.access" };
+
+it("lists no saved servers until the device has used one", async () => {
+  await renderServer();
+  expect(container?.textContent).not.toContain("two.example.test");
+});
+
+it("switches to a saved server with the headers it was saved with, not the screen's rows", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: ACCESS }];
+  await renderServer();
+  await pressButton("two.example.test");
+  expect(api.probe).toHaveBeenCalledWith("https://two.example.test", fetch, ACCESS);
+  expect(api.save).toHaveBeenCalledWith("https://two.example.test", ACCESS);
+});
+
+it("does not list the server in use", async () => {
+  saved.list = [
+    { apiBase: "https://one.example.test", headers: {} },
+    { apiBase: "https://two.example.test", headers: {} },
+  ];
+  await renderServer();
+  expect(container?.textContent).toContain("two.example.test");
+  expect(container?.textContent).not.toContain("one.example.test");
+});
+
+it("stays on the current server when a saved server does not answer", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  api.probe.mockResolvedValueOnce({ ok: false, error: "Could not reach that server" });
+  await renderServer();
+  await pressButton("two.example.test");
+  expect(api.save).not.toHaveBeenCalled();
+  expect(container?.textContent).toContain("Could not reach that server");
+});
+
+it("asks about unsent messages before switching to a saved server", async () => {
+  vi.mocked(hasUnsentSends).mockReturnValue(true);
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  try {
+    await renderServer();
+    await pressButton("two.example.test");
+    expect(api.save).not.toHaveBeenCalled();
+    await act(async () => alertButtons()[0]!.onPress?.());
+    expect(api.save).not.toHaveBeenCalled();
+  } finally {
+    vi.mocked(hasUnsentSends).mockReturnValue(false);
+  }
+});
+
+it("removes a saved server from the list", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockImplementation(async () => {
+    saved.list = [];
+    return true;
+  });
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(saved.remove).toHaveBeenCalledWith("https://two.example.test");
+  expect(container?.textContent).not.toContain("two.example.test");
+});
+
+it("keeps a saved server listed and says so when it cannot be removed", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockResolvedValue(false);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).toContain("Could not remove the server");
+  expect(container?.textContent).toContain("two.example.test");
 });
