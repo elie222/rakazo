@@ -62,19 +62,27 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { AgentImportServices } from "../agent-import.js";
-import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
-import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
-import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
-import { loadBotForRemoval } from "../bot-removal.js";
-import { changedBotSettings } from "../bot-setting-analytics.js";
-import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
-import { botIntroPrompt } from "../hidden-turns.prompt.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { managedAppCatalog } from "../onboarding.js";
+import { managedAppCatalog } from "../account/onboarding.js";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
+import type { AgentImportServices } from "../bots/agent-import.js";
+import {
+  agentImportSetupState,
+  createImportedBot,
+  previewAgentImport,
+} from "../bots/agent-import.js";
+import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/agent-secrets.js";
+import { loadBotForRemoval } from "../bots/bot-removal.js";
+import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
+import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
+import {
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "../email/bot-email-address.js";
 import type { RouterDeps } from "../router.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
-import { loadMessagePage } from "../thread-message-pages.js";
+import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
+import { loadMessagePage } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 

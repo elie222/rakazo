@@ -5,27 +5,61 @@ import type {
 } from "@orpc/contract";
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
-import {
-  AgentImportCreateInput,
-  AgentImportPlanSchema,
-  AgentImportPreviewInput,
-} from "./agent-import.js";
-import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
-import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
-import { AnalyticsScreenInput } from "./analytics.js";
-import {
-  ARTIFACT_DESCRIPTION_MAX_LENGTH,
-  ARTIFACT_NAME_MAX_LENGTH,
-  ATTACHMENT_COUNT_CEILING,
-} from "./attachments.js";
-import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
+import { AiConsentQuerySchema, AiConsentStatusSchema } from "./account/ai-consent.js";
+import { AnalyticsScreenInput } from "./account/analytics.js";
+import { AuditEventListInputSchema, AuditEventPageSchema } from "./account/audit-events.js";
+import { SecurityEventListInputSchema, SecurityEventSchema } from "./account/security-events.js";
+import { SpaceAvailabilitySchema } from "./account/space-availability.js";
 import {
   BillingClientSchema,
   BillingStatusSchema,
   ByokIntervalSchema,
   ByokTierSchema,
   ModelCreditAmountSchema,
-} from "./billing.js";
+} from "./billing/billing.js";
+import {
+  PaymentWalletStatusSchema,
+  SpendingLimitSchema,
+  SpendingPaymentSchema,
+  SpendingStatusSchema,
+} from "./billing/payments.js";
+import { BotAvatarSetSchema } from "./bots/bot-avatar.js";
+import {
+  BotEmailAddressesSchema,
+  BotEmailAddressSchema,
+  BotEmailNameSchema,
+} from "./bots/bot-email.js";
+import {
+  BotSecretMetadata,
+  BotSecretPutInput,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldInput,
+  StoredBotSecretName,
+  VAULT_ACTIVITY_LIMIT,
+  VaultPutInput,
+  VaultRevealed,
+  VaultRevealInput,
+  VaultUse,
+} from "./bots/bot-secrets.js";
+import {
+  BotTemplateListingSchema,
+  CreateBotFromTemplateInput,
+  CreateBotFromTemplateOutput,
+} from "./bots/bot-template.js";
+import {
+  ComputerModeSchema,
+  ComputerProviderSettingsSchema,
+  ComputerProviderUpdateSchema,
+  ComputerReleaseReasonSchema,
+  ComputerScreenSchema,
+  ComputerStatusSchema,
+  ComputerUpdateSchema,
+} from "./computers/computer.js";
+import {
+  ARTIFACT_DESCRIPTION_MAX_LENGTH,
+  ARTIFACT_NAME_MAX_LENGTH,
+  ATTACHMENT_COUNT_CEILING,
+} from "./conversations/attachments.js";
 import {
   BoardEventSchema,
   BoardSchema,
@@ -39,35 +73,23 @@ import {
   TicketCommentSchema,
   TicketSchema,
   UpdateTicketInput,
-} from "./board.js";
-import { BotAvatarSetSchema } from "./bot-avatar.js";
-import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
+} from "./conversations/board.js";
 import {
-  BotSecretMetadata,
-  BotSecretPutInput,
-  LOGIN_FIELD_LIMIT,
-  LoginFieldInput,
-  StoredBotSecretName,
-  VAULT_ACTIVITY_LIMIT,
-  VaultPutInput,
-  VaultRevealed,
-  VaultRevealInput,
-  VaultUse,
-} from "./bot-secrets.js";
+  PAGE_LIST_MAX_LIMIT,
+  PageDetailSchema,
+  PageSummarySchema,
+  PageTitleSchema,
+  PageVisibilitySchema,
+} from "./conversations/pages.js";
+import { MessageReactionSchema } from "./conversations/reactions.js";
+import { RoutineWatchSchema } from "./conversations/routine-watch.js";
 import {
-  BotTemplateListingSchema,
-  CreateBotFromTemplateInput,
-  CreateBotFromTemplateOutput,
-} from "./bot-template.js";
-import {
-  ComputerModeSchema,
-  ComputerProviderSettingsSchema,
-  ComputerProviderUpdateSchema,
-  ComputerReleaseReasonSchema,
-  ComputerScreenSchema,
-  ComputerStatusSchema,
-  ComputerUpdateSchema,
-} from "./computer.js";
+  ROUTINE_HISTORY_PAGE_SIZE,
+  RoutineHistorySchema,
+  RoutineRunCursorSchema,
+  RunsListOutputSchema,
+} from "./conversations/runs.js";
+import { SearchQueryOutputSchema } from "./conversations/search.js";
 import {
   AccessGrantInputSchema,
   AccessGrantSchema,
@@ -168,16 +190,26 @@ import {
 import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
 import { Id, IsoDate, ThinkingLevelSchema } from "./ids.js";
 import {
+  AgentImportCreateInput,
+  AgentImportPlanSchema,
+  AgentImportPreviewInput,
+} from "./integrations/agent-import.js";
+import {
+  AgentImportSetupStateInput,
+  AgentImportSetupStateSchema,
+} from "./integrations/agent-import-setup.js";
+import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
-} from "./integration-settings.js";
-import { LabFeatureSchema } from "./labs.js";
+} from "./integrations/integration-settings.js";
 import {
   BotMcpServerSchema,
   McpServerConfigInput,
   McpServerSchema,
   McpSourcePresetSchema,
-} from "./mcp.js";
+} from "./integrations/mcp.js";
+import { VaultImportInput, VaultImportResult } from "./integrations/vault-import.js";
+import { LabFeatureSchema } from "./labs.js";
 import {
   ModelApiProtocolSchema,
   ModelBackupChoiceSchema,
@@ -190,36 +222,15 @@ import {
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-} from "./model-connections.js";
-import { ModelHeadersSchema } from "./model-headers.js";
-import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
+} from "./models/model-connections.js";
+import { ModelHeadersSchema } from "./models/model-headers.js";
 import {
-  PAGE_LIST_MAX_LIMIT,
-  PageDetailSchema,
-  PageSummarySchema,
-  PageTitleSchema,
-  PageVisibilitySchema,
-} from "./pages.js";
-import {
-  PaymentWalletStatusSchema,
-  SpendingLimitSchema,
-  SpendingPaymentSchema,
-  SpendingStatusSchema,
-} from "./payments.js";
-import { MemoryProviderDescriptorSchema } from "./provider-settings.js";
-import { MessageReactionSchema } from "./reactions.js";
-import { RoutineWatchSchema } from "./routine-watch.js";
-import {
-  ROUTINE_HISTORY_PAGE_SIZE,
-  RoutineHistorySchema,
-  RoutineRunCursorSchema,
-  RunsListOutputSchema,
-} from "./runs.js";
-import { SearchQueryOutputSchema } from "./search.js";
-import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
+  ModelRoleSchema,
+  ModelRoleUpdateSchema,
+  ModelRoleViewSchema,
+} from "./models/model-roles.js";
+import { MemoryProviderDescriptorSchema } from "./models/provider-settings.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
-import { SpaceAvailabilitySchema } from "./space-availability.js";
-import { VaultImportInput, VaultImportResult } from "./vault-import.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });

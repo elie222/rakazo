@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { socialPresentation } from "../../../packages/auth/src/social-presentation";
-import { LAST_SIGN_IN_COOKIE } from "../../../packages/contracts/src/auth";
+import { LAST_SIGN_IN_COOKIE } from "../../../packages/contracts/src/account/auth";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 const passwordOnly = {

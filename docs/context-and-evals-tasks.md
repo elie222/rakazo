@@ -249,7 +249,7 @@ Relevant implementation locations:
 - `packages/adapters/src/pi-runtime.ts`
 - `packages/adapter-kit/src/types.ts`
 - `packages/db/src/threads/messages.ts` and `packages/db/prisma/schema.prisma`
-- `apps/api/src/search.ts`
+- `apps/api/src/content/search.ts`
 - `packages/testkit/src/evals/` and `packages/testkit/src/cli/evals.ts`
 - `docs/agent-verification.md`
 
