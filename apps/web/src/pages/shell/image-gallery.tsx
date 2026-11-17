@@ -130,20 +130,20 @@ function LightboxView({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="flex w-[min(94vw,60rem)] max-w-none flex-col gap-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
+        className="flex h-[min(88vh,52rem)] w-[min(94vw,60rem)] max-w-none flex-col gap-0 overflow-hidden bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
-        <div className="relative flex min-h-0 items-center justify-center">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center">
           {src ? (
             // biome-ignore lint/a11y/useKeyWithClickEvents: Escape and the close button cover the keyboard.
             <img
               src={src}
               alt={current.name}
               onClick={onClose}
-              className="max-h-[72vh] max-w-full cursor-zoom-out rounded-xl object-contain"
+              className="max-h-full max-w-full cursor-zoom-out rounded-xl object-contain"
             />
           ) : (
-            <div className="h-[40vh] w-full rounded-xl bg-muted" />
+            <div className="size-40 rounded-xl bg-muted" />
           )}
           <DialogClose
             ref={close}
@@ -182,7 +182,7 @@ function LightboxView({
           )}
         </div>
         {single ? null : (
-          <div className="mt-4">
+          <div className="mt-4 shrink-0 pb-1">
             <div className="relative h-24 overflow-hidden [perspective:900px]">
               {images.map((image, position) => {
                 const offset = position - index;
