@@ -7,13 +7,13 @@ import type {
   CloudAgentActor,
   CloudAgentConnection,
   UserCloudAgents,
-} from "./cloud-agent-factory.js";
-import { USER_CLOUD_AGENT_KEY_PREFIX } from "./cloud-agent-factory.js";
-import { credentialDigest } from "./credential-digest.js";
-import type { McpOAuthBroker } from "./mcp-oauth.js";
-import { TOKEN_REFRESH_SKEW_MS } from "./mcp-oauth.js";
-import { mcpToolAllowed } from "./mcp-tool-permissions.js";
-import { listRemoteMcpTools } from "./remote-mcp.js";
+} from "../../../cloud-agent-factory.js";
+import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../../cloud-agent-factory.js";
+import { credentialDigest } from "../../../credential-digest.js";
+import type { McpOAuthBroker } from "../../../mcp-oauth.js";
+import { TOKEN_REFRESH_SKEW_MS } from "../../../mcp-oauth.js";
+import { mcpToolAllowed } from "../../../mcp-tool-permissions.js";
+import { listRemoteMcpTools } from "../../../remote-mcp.js";
 import type { T3CodeCloudAgentOptions } from "./t3code-cloud-agent.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
 
