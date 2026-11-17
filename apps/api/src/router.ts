@@ -37,6 +37,7 @@ import type { Auth } from "@rakazo/auth";
 import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
+import type { ManagedVoiceProfiles } from "./managed-voice-profiles.js";
 import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
@@ -116,6 +117,7 @@ export interface RouterDeps {
   pluginRepoFetcher?: PluginRepoFetcher;
   pluginMarketplaceRead?: PluginTextReader;
   artifacts: ArtifactStore;
+  managedVoiceProfiles?: ManagedVoiceProfiles;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
   /** Sends replies to the chat apps people message from; absent without one. */

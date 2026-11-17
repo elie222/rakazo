@@ -162,6 +162,7 @@ import { homeRetentionSweep } from "./home-retention.js";
 import { startHourlySweep } from "./hourly-sweep.js";
 import { trackInFlightRequests } from "./in-flight-requests.js";
 import { mountLocalComputerHost } from "./local-settings.js";
+import { loadManagedVoiceProfiles } from "./managed-voice-profiles.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./marketing-email.js";
 import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
 import { startMessagingRuntime } from "./messaging-runtime.js";
@@ -286,6 +287,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ...envOverrides
   } = overrides;
   const env = withEnvOverrides(loadEnv(process.env), envOverrides);
+  const managedVoiceProfiles = await loadManagedVoiceProfiles(env.dataDir);
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
@@ -804,6 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     // The scripted runtime never calls a provider, so neither does its connect.
     modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
+    managedVoiceProfiles,
     email,
     onEmailError,
     dataDir: env.dataDir,
@@ -1106,7 +1109,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
-  mountVoiceHttpRoutes(app, { prisma, secrets, env }, async (c) => {
+  mountVoiceHttpRoutes(app, { prisma, secrets, env, managedVoiceProfiles }, async (c) => {
     const actor = await sessionActor(c.req.raw);
     if (actor) enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
     return actor;

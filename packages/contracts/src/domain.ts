@@ -1439,6 +1439,28 @@ export const VoiceInfoSchema = z.object({
 });
 export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
 
+export const ManagedVoiceProfileSchema = z
+  .object({
+    botId: Id,
+    voiceId: z
+      .string()
+      .min(4)
+      .max(240)
+      .regex(/^[a-z][a-z0-9-]*::\S+$/),
+    voiceLabel: z.string().trim().min(1).max(200),
+    model: z.string().trim().min(1).max(200).optional(),
+    settings: z.record(z.string(), z.json()).optional(),
+  })
+  .strict();
+export type ManagedVoiceProfile = z.infer<typeof ManagedVoiceProfileSchema>;
+
+export const ManagedVoiceProfilesFileSchema = z
+  .object({
+    version: z.literal(1),
+    profiles: z.array(ManagedVoiceProfileSchema).max(500),
+  })
+  .strict();
+
 export const VoiceCredentialSchema = z.object({
   id: Id,
   provider: z.string(),

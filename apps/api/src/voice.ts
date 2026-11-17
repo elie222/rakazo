@@ -51,11 +51,13 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { clientErrorStatus } from "./client-error-status.js";
 import { readBoundedBody } from "./http-body.js";
+import type { ManagedVoiceProfiles } from "./managed-voice-profiles.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: SecretStore;
+  managedVoiceProfiles?: ManagedVoiceProfiles;
   /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
   env?: { mcpAllowPrivateEndpoint?: boolean };
   /** Set only when `VOICE_SUMMARY_MIN_CHARS` turns spoken summaries on. */
