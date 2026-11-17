@@ -41,7 +41,14 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import { BotAvatarSetSchema } from "./bot-avatar.js";
-import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
+import {
+  BotEmailAddressesSchema,
+  BotEmailAddressSchema,
+  BotEmailNameSchema,
+  EMAIL_SEND_RECIPIENTS_MAX,
+  EMAIL_SEND_SUBJECT_MAX_CHARS,
+  EMAIL_SEND_TEXT_MAX_CHARS,
+} from "./bot-email.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -880,20 +887,20 @@ export const appContract = {
             z.object({
               type: z.literal("save"),
               inReplyTo: z.string().max(500),
-              to: z.array(z.string().max(320)).max(10),
-              cc: z.array(z.string().max(320)).max(10),
-              subject: z.string().max(500),
-              body: z.string().max(20_000),
+              to: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+              cc: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+              subject: z.string().max(EMAIL_SEND_SUBJECT_MAX_CHARS),
+              body: z.string().max(EMAIL_SEND_TEXT_MAX_CHARS),
               approval: z.enum(["needs_approval", "send_once"]),
             }),
             z.object({ type: z.literal("discard") }),
             z.object({
               type: z.literal("send"),
               inReplyTo: z.string().max(500),
-              to: z.array(z.string().max(320)).max(10),
-              cc: z.array(z.string().max(320)).max(10),
-              subject: z.string().max(500),
-              body: z.string().max(20_000),
+              to: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+              cc: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+              subject: z.string().max(EMAIL_SEND_SUBJECT_MAX_CHARS),
+              body: z.string().max(EMAIL_SEND_TEXT_MAX_CHARS),
               approval: z.enum(["needs_approval", "send_once"]),
             }),
           ]),

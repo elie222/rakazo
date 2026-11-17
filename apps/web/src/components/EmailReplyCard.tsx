@@ -2,17 +2,15 @@ import { useLingui } from "@lingui/react/macro";
 import { useEmailReplyDraft } from "@rakazo/chat-ui/hooks";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { EmailReplyCommitAction } from "@rakazo/core";
-import { Button, OptionSelect } from "@rakazo/ui-web";
+import { Button, OptionSelect, Textarea } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
 import { useSave } from "../lib/query";
 import type { RpcClient } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { BuiCard } from "./ai/primitives";
 
 type EmailReplyBlock = Extract<MessageBlock, { kind: "email_reply" }>;
 type ThreadTarget = { botId: string } | { groupId: string };
-
-const fieldClass =
-  "w-full border-0 bg-transparent px-0 py-2 text-body text-foreground outline-none read-only:text-muted-foreground";
 
 function Field({
   label,
@@ -29,7 +27,7 @@ function Field({
     <label className="grid grid-cols-[7.5rem_1fr] items-baseline gap-3 border-b border-border px-4">
       <span className="text-body-sm text-muted-foreground">{label}</span>
       <input
-        className={fieldClass}
+        className="h-9 w-full min-w-0 border-0 bg-transparent px-0 text-body text-foreground outline-none read-only:text-muted-foreground"
         value={value}
         readOnly={!editable}
         aria-label={label}
@@ -54,7 +52,12 @@ export function EmailReplyCard({
   const session = useRef<ReturnType<typeof useEmailReplyDraft> | null>(null);
   const reply = (input: EmailReplyCommitAction, rpc: RpcClient) =>
     rpc.threads.emailReply({ ...target, messageId, draftId: block.draftId, action: input });
-  const autosave = useSave({ save: reply });
+  const autosave = useSave({
+    save: reply,
+    onSaved: (saved) => {
+      if (saved.status === "ready") session.current?.replace(saved);
+    },
+  });
   const commit = useSave({
     save: reply,
     onSaved: (saved) => {
@@ -77,12 +80,12 @@ export function EmailReplyCard({
   const error = failure ? errorText(failure) : null;
 
   return (
-    <section
+    <BuiCard
       data-testid="email-reply-card"
       data-draft-subject={draft.draft.subject}
       data-draft-body={draft.draft.body}
       data-draft-to={draft.draft.toText}
-      className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card text-foreground"
+      className="w-full max-w-xl overflow-hidden border border-border text-foreground"
     >
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-body font-medium">{t`Mail`}</h2>
@@ -115,9 +118,9 @@ export function EmailReplyCard({
         editable={!locked}
         onChange={(subject) => draft.change({ subject })}
       />
-      <textarea
+      <Textarea
         aria-label={t`Message`}
-        className="max-h-80 w-full resize-y border-0 bg-transparent px-4 py-3 text-body leading-relaxed text-foreground outline-none read-only:text-muted-foreground"
+        className="max-h-80 min-h-32 w-full resize-y rounded-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:ring-0"
         rows={card.showToggle && !expanded ? 6 : 12}
         value={draft.draft.body}
         readOnly={locked}
@@ -154,6 +157,6 @@ export function EmailReplyCard({
         </div>
       </footer>
       {error ? <p className="px-4 pb-3 text-body-sm text-destructive">{error}</p> : null}
-    </section>
+    </BuiCard>
   );
 }

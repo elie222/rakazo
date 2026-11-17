@@ -3,6 +3,9 @@ import {
   BOT_EMAIL_NAME_TAKEN,
   BotEmailNameSchema,
   BotEmailRecipientSchema,
+  EMAIL_SEND_RECIPIENTS_MAX,
+  EMAIL_SEND_SUBJECT_MAX_CHARS,
+  EMAIL_SEND_TEXT_MAX_CHARS,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, matchesSearchQuery, redactSecrets } from "@rakazo/core";
 import {
@@ -277,9 +280,9 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   return call.finish({ address: `${parsed.data}@${domain}` });
 }
 
-const SEND_RECIPIENTS_MAX = 10;
-const SEND_TEXT_MAX_CHARS = 20_000;
-const SUBJECT_MAX_CHARS = 500;
+const SEND_RECIPIENTS_MAX = EMAIL_SEND_RECIPIENTS_MAX;
+const SEND_TEXT_MAX_CHARS = EMAIL_SEND_TEXT_MAX_CHARS;
+const SUBJECT_MAX_CHARS = EMAIL_SEND_SUBJECT_MAX_CHARS;
 const MAX_REFERENCES = 20;
 
 const Recipients = z

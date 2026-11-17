@@ -1,5 +1,10 @@
 import * as z from "zod";
 
+/** Caps shared by send_email and the reply card so neither drifts from the other. */
+export const EMAIL_SEND_RECIPIENTS_MAX = 10;
+export const EMAIL_SEND_SUBJECT_MAX_CHARS = 500;
+export const EMAIL_SEND_TEXT_MAX_CHARS = 20_000;
+
 /** Preserve mailbox casing; only the domain is case-insensitive. */
 export const BotEmailRecipientSchema = z.email().transform((address) => {
   const at = address.lastIndexOf("@");

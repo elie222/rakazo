@@ -1,5 +1,10 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
+import {
+  EMAIL_SEND_RECIPIENTS_MAX,
+  EMAIL_SEND_SUBJECT_MAX_CHARS,
+  EMAIL_SEND_TEXT_MAX_CHARS,
+} from "./bot-email.js";
 import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
@@ -189,10 +194,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     draftId: z.string().min(1).max(64),
     from: z.string().max(320),
     inReplyTo: z.string().max(500).optional(),
-    to: z.array(z.string().max(320)).max(10),
-    cc: z.array(z.string().max(320)).max(10),
-    subject: z.string().max(500),
-    body: z.string().max(20_000),
+    to: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+    cc: z.array(z.string().max(320)).max(EMAIL_SEND_RECIPIENTS_MAX),
+    subject: z.string().max(EMAIL_SEND_SUBJECT_MAX_CHARS),
+    body: z.string().max(EMAIL_SEND_TEXT_MAX_CHARS),
     status: z.enum(["ready", "sent", "discarded"]),
     approval: z.enum(["needs_approval", "send_once"]).optional(),
   }),

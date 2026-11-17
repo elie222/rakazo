@@ -492,9 +492,9 @@ describe("user-visible messages", () => {
     ).toEqual(["ask", "computer", "approval", "connect", "user"]);
   });
 
-  it("keeps a ready email draft visible in a background run", () => {
+  it("keeps email reply cards visible in a background run after they finish", () => {
     const messages = [
-      message("draft", "run-ticket", [
+      message("ready", "run-ticket", [
         {
           kind: "email_reply",
           draftId: "draft-1",
@@ -506,10 +506,34 @@ describe("user-visible messages", () => {
           status: "ready",
         },
       ]),
+      message("sent", "run-ticket", [
+        {
+          kind: "email_reply",
+          draftId: "draft-2",
+          from: "ops@mail.example.com",
+          to: ["clinic@example.com"],
+          cc: [],
+          subject: "Re: Sent",
+          body: "Done",
+          status: "sent",
+        },
+      ]),
+      message("discarded", "run-ticket", [
+        {
+          kind: "email_reply",
+          draftId: "draft-3",
+          from: "ops@mail.example.com",
+          to: ["clinic@example.com"],
+          cc: [],
+          subject: "Re: Dropped",
+          body: "No",
+          status: "discarded",
+        },
+      ]),
       message("note", "run-ticket", [{ kind: "text", text: "Sent it." }]),
     ];
     expect(
       userVisibleMessages(messages, { backgroundRunIds: ["run-ticket"] }).map((row) => row.id),
-    ).toEqual(["draft"]);
+    ).toEqual(["ready", "sent", "discarded"]);
   });
 });

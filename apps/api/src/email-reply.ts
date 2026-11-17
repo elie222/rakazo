@@ -2,12 +2,15 @@ import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import {
   loadCommandVariables,
   loadLoginPasswordRedactions,
+  loadPurchaseRedactions,
   loadRunCodeRedactions,
   loadRunLoginRedactions,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { EMAIL_SEND_RECIPIENTS_MAX, EMAIL_SEND_TEXT_MAX_CHARS } from "@rakazo/contracts";
 import type { EmailReplyDraft } from "@rakazo/core";
 import {
+  applyEmailReplyEdit,
   ClientError,
   EmailReplyDraftError,
   emailReplyBlock,
@@ -60,6 +63,18 @@ type Loaded = {
 
 type SentCopy = { subject: string; body: string; to: string[]; cc: string[] };
 
+type ClaimRow = {
+  subject: string;
+  text: string;
+  to: string[];
+  cc: string[];
+  sent: boolean;
+  receivedAt: Date;
+};
+
+/** Longer than a typical provider call; a claim older than this may be retried. */
+const EMAIL_REPLY_CLAIM_STALE_MS = 120_000;
+
 const ALLOWANCE = {
   limit: "Your account has reached its email allowance for the last 24 hours. Try again later.",
   too_many:
@@ -67,6 +82,14 @@ const ALLOWANCE = {
   disabled: "Email sending is paused for this account.",
   unverified: "Verify your account email before sending.",
   recipient: "This recipient isn't approved for this account.",
+} as const;
+
+const ALLOWANCE_CODE = {
+  limit: "EMAIL_REPLY_ALLOWANCE_LIMIT",
+  too_many: "EMAIL_REPLY_ALLOWANCE_TOO_MANY",
+  disabled: "EMAIL_REPLY_ALLOWANCE_DISABLED",
+  unverified: "EMAIL_REPLY_ALLOWANCE_UNVERIFIED",
+  recipient: "EMAIL_REPLY_ALLOWANCE_RECIPIENT",
 } as const;
 
 /** Writes the draft back onto its message. Send delivers the mail before the draft is sent. */
@@ -77,18 +100,21 @@ export async function commitEmailReply(
 ) {
   const loaded = await loadDraft(deps, actor, input);
   if (loaded.bot.userId !== actor.userId) {
-    throw new ClientError("FORBIDDEN", "Only the bot's owner can change this email.");
+    throw new ClientError(
+      "FORBIDDEN",
+      "Only the bot's owner can change this email.",
+      "EMAIL_REPLY_OWNER_ONLY",
+    );
   }
   if (input.action.type === "discard") {
     const draft = emailReplyWithStatus(emailReplyDraftFromBlock(loaded.block), "discarded");
     return storeBlock(deps, loaded, emailReplyBlock(draft));
   }
 
-  const draft = emailReplyDraftFromBlock({
-    ...loaded.block,
+  const draft = applyEmailReplyEdit(emailReplyDraftFromBlock(loaded.block), {
     inReplyTo: input.action.inReplyTo,
-    to: input.action.to,
-    cc: input.action.cc,
+    to: input.action.to.join(", "),
+    cc: input.action.cc.join(", "),
     subject: input.action.subject,
     body: input.action.body,
     approval: input.action.approval,
@@ -98,7 +124,7 @@ export async function commitEmailReply(
   const current = await readDraft(deps, loaded);
   if (current.status === "sent") return current;
   if (current.status === "discarded") {
-    throw new ClientError("CONFLICT", "This draft was discarded.");
+    throw new ClientError("CONFLICT", "This draft was discarded.", "EMAIL_REPLY_DISCARDED");
   }
   const copy = await dispatch(deps, loaded, draft);
   if (!copy) return loaded.block;
@@ -128,18 +154,22 @@ async function loadDraft(
   const message = await deps.prisma.message.findFirst({
     where: { id: input.messageId, threadId: input.threadId },
   });
-  if (!message?.botId) throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+  if (!message?.botId) {
+    throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
+  }
   const block = storedMessageBlocks(message).find(
     (entry) => entry.kind === "email_reply" && entry.draftId === input.draftId,
   );
   if (block?.kind !== "email_reply") {
-    throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+    throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
   }
   const bot = await deps.prisma.bot.findFirst({
     where: { id: message.botId, spaceId: actor.spaceId },
     select: { id: true, userId: true, name: true, spaceId: true },
   });
-  if (!bot) throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+  if (!bot) {
+    throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
+  }
   const thread = await deps.prisma.thread.findUnique({
     where: { id: message.threadId },
     select: { groupId: true },
@@ -149,7 +179,13 @@ async function loadDraft(
       where: { groupId: thread.groupId, botId: bot.id },
       select: { id: true },
     });
-    if (!member) throw new ClientError("FORBIDDEN", "This bot is no longer in the group.");
+    if (!member) {
+      throw new ClientError(
+        "FORBIDDEN",
+        "This bot is no longer in the group.",
+        "EMAIL_REPLY_NOT_IN_GROUP",
+      );
+    }
   }
   return { message, block, bot, actor };
 }
@@ -170,7 +206,7 @@ async function readDraft(
         )
       : undefined;
     if (block?.kind !== "email_reply") {
-      throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+      throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
     }
     return block;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
@@ -186,24 +222,42 @@ async function dispatch(
   try {
     mail = emailReplyOutbound(draft);
   } catch (error) {
-    if (error instanceof EmailReplyDraftError) throw new ClientError("BAD_REQUEST", error.message);
+    if (error instanceof EmailReplyDraftError) throw error;
     throw error;
   }
   const domain = deps.env.inboundEmailDomain;
   if (!deps.email || !domain) {
-    throw new ClientError("SERVICE_UNAVAILABLE", "This server can't send email.");
+    throw new ClientError(
+      "SERVICE_UNAVAILABLE",
+      "This server can't send email.",
+      "EMAIL_REPLY_MAIL_UNAVAILABLE",
+    );
   }
   const named = await deps.prisma.botEmailAddress.findUnique({
     where: { botId: loaded.bot.id },
     select: { name: true },
   });
-  if (!named) throw new ClientError("BAD_REQUEST", "This bot does not have an email address yet.");
+  if (!named) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "This bot does not have an email address yet.",
+      "EMAIL_REPLY_NO_ADDRESS",
+    );
+  }
   const address = `${named.name}@${domain}`;
   if (mail.from.toLowerCase() !== address.toLowerCase()) {
-    throw new ClientError("BAD_REQUEST", "This draft is not from this bot's address.");
+    throw new ClientError(
+      "BAD_REQUEST",
+      "This draft is not from this bot's address.",
+      "EMAIL_REPLY_WRONG_FROM",
+    );
   }
-  if (mail.to.length + mail.cc.length > 10) {
-    throw new ClientError("BAD_REQUEST", "Send to at most 10 people at once.");
+  if (mail.to.length + mail.cc.length > EMAIL_SEND_RECIPIENTS_MAX) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      `Send to at most ${EMAIL_SEND_RECIPIENTS_MAX} people at once.`,
+      "EMAIL_REPLY_TOO_MANY_RECIPIENTS",
+    );
   }
   const secrets = await draftRedactions(deps, loaded);
   const lowered = secrets.map((secret) => secret.toLowerCase());
@@ -212,12 +266,27 @@ async function dispatch(
       (recipient) => redactSecrets(recipient.toLowerCase(), lowered) !== recipient.toLowerCase(),
     )
   ) {
-    throw new ClientError("BAD_REQUEST", "A recipient's address contains a secret. Don't send it.");
+    throw new ClientError(
+      "BAD_REQUEST",
+      "A recipient's address contains a secret. Don't send it.",
+      "EMAIL_REPLY_SECRET_IN_ADDRESS",
+    );
   }
   const subject = emailReplySubjectLine(redactSecrets(mail.subject, secrets));
   const body = redactSecrets(mail.body, secrets);
-  if (!subject) throw new ClientError("BAD_REQUEST", "Add a subject");
-  if (!body.trim()) throw new ClientError("BAD_REQUEST", "Write the message");
+  if (!subject) {
+    throw new ClientError("BAD_REQUEST", "Add a subject", "EMAIL_REPLY_NO_SUBJECT");
+  }
+  if (!body.trim()) {
+    throw new ClientError("BAD_REQUEST", "Write the message", "EMAIL_REPLY_NO_BODY");
+  }
+  if (body.length > EMAIL_SEND_TEXT_MAX_CHARS) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "The email is too long once secrets are removed. Shorten it.",
+      "EMAIL_REPLY_BODY_TOO_LONG",
+    );
+  }
 
   const replyTo = mail.inReplyTo.trim();
   const parent = replyTo
@@ -234,42 +303,25 @@ async function dispatch(
       })
     : null;
   if (replyTo && !parent) {
-    throw new ClientError("BAD_REQUEST", "No email with that id in your inbox.");
+    throw new ClientError(
+      "BAD_REQUEST",
+      "No email with that id in your inbox.",
+      "EMAIL_REPLY_UNKNOWN_PARENT",
+    );
   }
   const threading = emailReplyThreading(parent, domain);
   const key = `card:${loaded.message.id}:${mail.draftId}`;
-  const earlier = await deps.prisma.botEmailMessage.findUnique({
-    where: { botId_key: { botId: loaded.bot.id, key } },
-    select: { subject: true, text: true, to: true, cc: true, sent: true },
+  const claim = await takeClaim(deps, loaded, {
+    key,
+    address,
+    parent,
+    subject,
+    body,
+    to: mail.to,
+    cc: mail.cc,
   });
-  // A row written after the provider accepted the mail can finish a draft that stayed ready.
-  // A row from an attempt that never got that far must not show the draft as sent.
-  if (earlier?.sent) {
-    return { subject: earlier.subject, body: earlier.text, to: earlier.to, cc: earlier.cc };
-  }
-  if (earlier) return null;
-
-  try {
-    await deps.prisma.botEmailMessage.create({
-      data: {
-        spaceId: loaded.bot.spaceId,
-        botId: loaded.bot.id,
-        key,
-        references: parent ? referenceList(parent) : [],
-        fromAddress: address,
-        fromName: loaded.bot.name,
-        verified: true,
-        sent: false,
-        to: mail.to,
-        cc: mail.cc,
-        subject,
-        text: body,
-      },
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) return null;
-    throw error;
-  }
+  if (claim === "in_flight") return null;
+  if (claim !== "created") return claim;
   let reserved: Awaited<ReturnType<typeof reserveBotEmailSend>>;
   try {
     reserved = await reserveBotEmailSend(deps.prisma, {
@@ -290,7 +342,7 @@ async function dispatch(
       "remove an email reply the allowance refused",
       deps.prisma.botEmailMessage.deleteMany({ where: { botId: loaded.bot.id, key } }),
     );
-    throw new ClientError("BAD_REQUEST", ALLOWANCE[reserved]);
+    throw new ClientError("BAD_REQUEST", ALLOWANCE[reserved], ALLOWANCE_CODE[reserved]);
   }
   try {
     await sendMessage(
@@ -307,17 +359,128 @@ async function dispatch(
     );
     const message = emailReplyDeliveryError(error);
     if (message) {
-      throw new ClientError("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", {
+      throw new ClientError("SERVICE_UNAVAILABLE", message, "EMAIL_REPLY_DELIVERY_FAILED", {
         cause: error,
       });
     }
     throw error;
   }
-  await deps.prisma.botEmailMessage.update({
-    where: { botId_key: { botId: loaded.bot.id, key } },
-    data: { sent: true },
-  });
+  // The provider accepted the mail. Record that even if the write fails: the next send finishes
+  // the draft from a confirmed claim, and must not show Sent from an unconfirmed one.
+  await bestEffort(
+    "record that the email reply was accepted",
+    deps.prisma.botEmailMessage.update({
+      where: { botId_key: { botId: loaded.bot.id, key } },
+      data: { sent: true },
+    }),
+  );
   return { subject, body, to: mail.to, cc: mail.cc };
+}
+
+async function readClaim(
+  deps: Pick<RouterDeps, "prisma">,
+  botId: string,
+  key: string,
+): Promise<ClaimRow | null> {
+  return deps.prisma.botEmailMessage.findUnique({
+    where: { botId_key: { botId, key } },
+    select: { subject: true, text: true, to: true, cc: true, sent: true, receivedAt: true },
+  });
+}
+
+/**
+ * A confirmed claim finishes the draft. A fresh unconfirmed claim is another send in flight.
+ * A stale unconfirmed claim is cleared so Send can try again after a crash.
+ */
+async function resolveClaim(
+  deps: Pick<RouterDeps, "prisma">,
+  loaded: Loaded,
+  key: string,
+  earlier: ClaimRow | null,
+): Promise<SentCopy | "in_flight" | null> {
+  if (!earlier) return null;
+  if (earlier.sent) {
+    return { subject: earlier.subject, body: earlier.text, to: earlier.to, cc: earlier.cc };
+  }
+  if (Date.now() - earlier.receivedAt.getTime() < EMAIL_REPLY_CLAIM_STALE_MS) {
+    return "in_flight";
+  }
+  await bestEffort(
+    "remove a stale email reply claim so send can retry",
+    deps.prisma.botEmailMessage.deleteMany({ where: { botId: loaded.bot.id, key } }),
+  );
+  return null;
+}
+
+async function createClaim(
+  deps: Pick<RouterDeps, "prisma">,
+  loaded: Loaded,
+  input: {
+    key: string;
+    address: string;
+    parent: { messageId: string | null; references: string[] } | null;
+    subject: string;
+    body: string;
+    to: string[];
+    cc: string[];
+  },
+) {
+  await deps.prisma.botEmailMessage.create({
+    data: {
+      spaceId: loaded.bot.spaceId,
+      botId: loaded.bot.id,
+      key: input.key,
+      references: input.parent ? referenceList(input.parent) : [],
+      fromAddress: input.address,
+      fromName: loaded.bot.name,
+      verified: true,
+      sent: false,
+      to: input.to,
+      cc: input.cc,
+      subject: input.subject,
+      text: input.body,
+    },
+  });
+}
+
+/** Creates the unconfirmed claim, or returns a confirmed / in-flight one already stored. */
+async function takeClaim(
+  deps: Pick<RouterDeps, "prisma">,
+  loaded: Loaded,
+  input: {
+    key: string;
+    address: string;
+    parent: { messageId: string | null; references: string[] } | null;
+    subject: string;
+    body: string;
+    to: string[];
+    cc: string[];
+  },
+): Promise<SentCopy | "in_flight" | "created"> {
+  const earlier = await resolveClaim(
+    deps,
+    loaded,
+    input.key,
+    await readClaim(deps, loaded.bot.id, input.key),
+  );
+  if (earlier === "in_flight") return "in_flight";
+  if (earlier) return earlier;
+  try {
+    await createClaim(deps, loaded, input);
+    return "created";
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    const again = await resolveClaim(
+      deps,
+      loaded,
+      input.key,
+      await readClaim(deps, loaded.bot.id, input.key),
+    );
+    if (again === "in_flight") return "in_flight";
+    if (again) return again;
+    await createClaim(deps, loaded, input);
+    return "created";
+  }
 }
 
 async function draftRedactions(
@@ -330,15 +493,16 @@ async function draftRedactions(
     botId: loaded.bot.id,
   };
   const runId = loaded.message.runId;
-  const [saved, commands, logins, codes] = await Promise.all([
+  const [saved, commands, purchases, logins, codes] = await Promise.all([
     loadLoginPasswordRedactions(deps.prisma, deps.secrets, scope),
     loadCommandVariables(deps.prisma, deps.secrets, scope).then(
       (variables) => variables.redactions,
     ),
+    loadPurchaseRedactions({ prisma: deps.prisma, secretStore: deps.secrets }, scope),
     runId ? loadRunLoginRedactions(deps.prisma, deps.secrets, scope, runId) : Promise.resolve([]),
     runId ? loadRunCodeRedactions(deps.prisma, deps.secrets, scope, runId) : Promise.resolve([]),
   ]);
-  return [...saved, ...commands, ...logins, ...codes];
+  return [...saved, ...commands, ...purchases, ...logins, ...codes];
 }
 
 function referenceList(parent: { messageId: string | null; references: string[] }): string[] {
@@ -374,12 +538,14 @@ async function storeBlock(
     const message = await tx.message.findFirst({
       where: { id: loaded.message.id, threadId: loaded.message.threadId },
     });
-    if (!message) throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+    if (!message) {
+      throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
+    }
     const current = storedMessageBlocks(message).find(
       (entry) => entry.kind === "email_reply" && entry.draftId === block.draftId,
     );
     if (current?.kind !== "email_reply") {
-      throw new ClientError("NOT_FOUND", "That draft is not in this chat");
+      throw new ClientError("NOT_FOUND", "That draft is not in this chat", "EMAIL_REPLY_NOT_FOUND");
     }
     if (current.status === "sent" && block.status === "sent") {
       return { block: current, seq: null };
@@ -390,6 +556,7 @@ async function storeBlock(
         current.status === "sent"
           ? "This email was already sent."
           : "This draft is no longer editable.",
+        current.status === "sent" ? "EMAIL_REPLY_ALREADY_SENT" : "EMAIL_REPLY_NOT_EDITABLE",
       );
     }
     const next = changeMessageBlocks(message, (entry) =>

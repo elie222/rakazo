@@ -88,4 +88,23 @@ describe("copyableMessageText", () => {
     expect(selectableMessageText(indented)).toBe("    indented\nnext  ");
     expect(copyableMessageText(indented)).toBe("indented\nnext");
   });
+
+  it("copies an email reply as its subject and body", () => {
+    expect(
+      copyableMessageText(
+        message([
+          {
+            kind: "email_reply",
+            draftId: "draft-1",
+            from: "ops@mail.example.com",
+            to: ["clinic@example.com"],
+            cc: [],
+            subject: "Re: Training enquiry",
+            body: "Hello",
+            status: "ready",
+          },
+        ]),
+      ),
+    ).toBe("Re: Training enquiry\nHello");
+  });
 });

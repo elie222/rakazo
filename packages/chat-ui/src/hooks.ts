@@ -49,10 +49,15 @@ export function useEmailReplyDraft(options: {
   const unsaved = draft.status === "ready" && !sameFields(fields, saved.current);
 
   useEffect(() => {
-    if (options.block.status === "ready") return;
     const next = emailReplyDraftFromBlock(options.block);
+    const nextFields = emailReplySaveFields(next);
+    if (options.block.status === "ready") {
+      // Another device may have saved this draft. Adopt it only when this card has nothing unsaved.
+      if (!sameFields(emailReplySaveFields(draftRef.current), saved.current)) return;
+      if (sameFields(nextFields, saved.current)) return;
+    }
     draftRef.current = next;
-    saved.current = emailReplySaveFields(next);
+    saved.current = nextFields;
     setDraft(next);
   }, [options.block]);
 

@@ -1,3 +1,5 @@
+import { EMAIL_SEND_SUBJECT_MAX_CHARS } from "@rakazo/contracts";
+import { ClientError } from "../primitives/client-error.js";
 import { isServerUnreachable, isTechnicalErrorMessage } from "../primitives/user-error.js";
 
 /**
@@ -8,7 +10,6 @@ import { isServerUnreachable, isTechnicalErrorMessage } from "../primitives/user
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BODY_TOGGLE_LINES = 8;
-const SUBJECT_MAX = 500;
 const REFERENCE_LIMIT = 20;
 const VERIFIED_REPLY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -20,6 +21,8 @@ export type EmailReplyDraft = {
   id: string;
   from: string;
   inReplyTo: string;
+  /** Once true, the In reply to row stays even when the field is cleared. */
+  hasReplyTo: boolean;
   toText: string;
   ccText: string;
   subject: string;
@@ -79,9 +82,9 @@ export type EmailReplyBlockSnapshot = {
   approval?: EmailReplyApproval;
 };
 
-export class EmailReplyDraftError extends Error {
-  constructor(message: string) {
-    super(message);
+export class EmailReplyDraftError extends ClientError {
+  constructor(message: string, code: string) {
+    super("BAD_REQUEST", message, code);
     this.name = "EmailReplyDraftError";
   }
 }
@@ -95,7 +98,7 @@ export function parseAddressList(value: string): string[] {
 
 function assertAddresses(addresses: string[]): void {
   if (addresses.some((address) => !ADDRESS.test(address))) {
-    throw new EmailReplyDraftError("Check the email addresses");
+    throw new EmailReplyDraftError("Check the email addresses", "EMAIL_REPLY_INVALID_ADDRESS");
   }
 }
 
@@ -120,7 +123,7 @@ export function emailReplyCard(draft: EmailReplyDraft): EmailReplyCardView {
     body: draft.body,
     approval: draft.approval,
     showToggle: draft.body.split(/\r?\n/).length > BODY_TOGGLE_LINES,
-    showInReplyTo: draft.inReplyTo.trim().length > 0,
+    showInReplyTo: draft.hasReplyTo || draft.inReplyTo.trim().length > 0,
   };
 }
 
@@ -145,14 +148,18 @@ export function createEmailReplyDraft(input: {
   approval?: EmailReplyApproval;
 }): EmailReplyDraft {
   const from = input.from.trim();
-  if (!from || !ADDRESS.test(from)) throw new EmailReplyDraftError("The From address is invalid");
+  if (!from || !ADDRESS.test(from)) {
+    throw new EmailReplyDraftError("The From address is invalid", "EMAIL_REPLY_INVALID_FROM");
+  }
   const to = parseAddressList(addressText(input.to));
   const cc = parseAddressList(addressText(input.cc));
   assertAddresses([...to, ...cc]);
+  const inReplyTo = input.inReplyTo?.trim() ?? "";
   return {
     id: input.id,
     from,
-    inReplyTo: input.inReplyTo?.trim() ?? "",
+    inReplyTo,
+    hasReplyTo: inReplyTo.length > 0,
     toText: addressText(input.to),
     ccText: addressText(input.cc),
     subject: input.subject,
@@ -164,11 +171,13 @@ export function createEmailReplyDraft(input: {
 
 export function applyEmailReplyEdit(draft: EmailReplyDraft, edit: EmailReplyEdit): EmailReplyDraft {
   if (draft.status !== "ready") {
-    throw new EmailReplyDraftError("This draft is no longer editable");
+    throw new EmailReplyDraftError("This draft is no longer editable", "EMAIL_REPLY_NOT_EDITABLE");
   }
+  const inReplyTo = edit.inReplyTo === undefined ? draft.inReplyTo : edit.inReplyTo;
   return {
     ...draft,
-    inReplyTo: edit.inReplyTo === undefined ? draft.inReplyTo : edit.inReplyTo,
+    inReplyTo,
+    hasReplyTo: draft.hasReplyTo || inReplyTo.trim().length > 0,
     toText: edit.to === undefined ? draft.toText : edit.to,
     ccText: edit.cc === undefined ? draft.ccText : edit.cc,
     subject: edit.subject === undefined ? draft.subject : edit.subject,
@@ -182,7 +191,7 @@ export function emailReplySubjectLine(subject: string): string {
   return subject
     .replace(/[\r\n]+/g, " ")
     .trim()
-    .slice(0, SUBJECT_MAX);
+    .slice(0, EMAIL_SEND_SUBJECT_MAX_CHARS);
 }
 
 /** A message this draft may be answering, already loaded for this bot. */
@@ -250,7 +259,7 @@ export function emailReplyBlock(draft: EmailReplyDraft): EmailReplyBlockSnapshot
     kind: "email_reply",
     draftId: draft.id,
     from: draft.from,
-    ...(fields.inReplyTo ? { inReplyTo: fields.inReplyTo } : {}),
+    ...(draft.hasReplyTo || fields.inReplyTo ? { inReplyTo: fields.inReplyTo } : {}),
     to: fields.to,
     cc: fields.cc,
     subject: fields.subject,
@@ -269,6 +278,7 @@ export function emailReplyDraftFromBlock(block: EmailReplyBlockSnapshot): EmailR
     id: block.draftId,
     from: block.from,
     inReplyTo: block.inReplyTo ?? "",
+    hasReplyTo: block.inReplyTo !== undefined,
     toText: block.to.join(", "),
     ccText: block.cc.join(", "),
     subject: block.subject,
@@ -280,14 +290,24 @@ export function emailReplyDraftFromBlock(block: EmailReplyBlockSnapshot): EmailR
 
 /** The message Send would deliver. Does not change the draft. */
 export function emailReplyOutbound(draft: EmailReplyDraft): SentEmail {
-  if (draft.status === "sent") throw new EmailReplyDraftError("This draft was already sent");
-  if (draft.status === "discarded") throw new EmailReplyDraftError("This draft was discarded");
+  if (draft.status === "sent") {
+    throw new EmailReplyDraftError("This draft was already sent", "EMAIL_REPLY_ALREADY_SENT");
+  }
+  if (draft.status === "discarded") {
+    throw new EmailReplyDraftError("This draft was discarded", "EMAIL_REPLY_DISCARDED");
+  }
   const to = parseAddressList(draft.toText);
   const cc = parseAddressList(draft.ccText);
-  if (to.length === 0) throw new EmailReplyDraftError("Add a recipient");
+  if (to.length === 0) {
+    throw new EmailReplyDraftError("Add a recipient", "EMAIL_REPLY_NO_RECIPIENT");
+  }
   assertAddresses([draft.from, ...to, ...cc]);
-  if (!draft.subject.trim()) throw new EmailReplyDraftError("Add a subject");
-  if (!draft.body.trim()) throw new EmailReplyDraftError("Write the message");
+  if (!draft.subject.trim()) {
+    throw new EmailReplyDraftError("Add a subject", "EMAIL_REPLY_NO_SUBJECT");
+  }
+  if (!draft.body.trim()) {
+    throw new EmailReplyDraftError("Write the message", "EMAIL_REPLY_NO_BODY");
+  }
   return {
     draftId: draft.id,
     from: draft.from,

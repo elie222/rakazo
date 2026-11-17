@@ -44,6 +44,12 @@ describe("email reply drafts", () => {
     expect(card.showInReplyTo).toBe(false);
   });
 
+  it("keeps the reply row after the reply line is cleared", () => {
+    const cleared = applyEmailReplyEdit(createEmailReplyDraft(original), { inReplyTo: "" });
+    expect(emailReplyCard(cleared).showInReplyTo).toBe(true);
+    expect(emailReplyBlock(cleared).inReplyTo).toBe("");
+  });
+
   it("keeps an unfinished address so the field can be typed", () => {
     const draft = applyEmailReplyEdit(createEmailReplyDraft(original), { to: "clinic@" });
     expect(emailReplyCard(draft).to).toBe("clinic@");

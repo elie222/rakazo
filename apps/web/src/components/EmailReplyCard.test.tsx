@@ -7,8 +7,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const emailReply = vi.hoisted(() => vi.fn(async () => ({})));
+
 vi.mock("../lib/rpc", () => {
-  const rpc = { threads: { emailReply: vi.fn(async () => ({})) } };
+  const rpc = { threads: { emailReply } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
 vi.mock("@lingui/react/macro", () => ({
@@ -46,7 +48,8 @@ function open(reply: typeof block) {
     );
   });
   return {
-    text: host.textContent ?? "",
+    host,
+    text: () => host.textContent ?? "",
     unmount: () => {
       act(() => root.unmount());
       host.remove();
@@ -58,21 +61,25 @@ describe("EmailReplyCard", () => {
   const opened: Array<{ unmount: () => void }> = [];
   afterEach(() => {
     for (const card of opened.splice(0)) card.unmount();
+    emailReply.mockClear();
   });
 
   it("opens a reply as Mail, with the message it answers", () => {
     const card = open(block);
     opened.push(card);
-    expect(card.text).toContain("Mail");
-    expect(card.text).toContain("ops@mail.example.com");
-    expect(card.text).toContain("In reply to");
-    expect(card.text).toContain("Re: Training enquiry");
+    expect(card.host.querySelector('[data-testid="email-reply-card"]')).not.toBeNull();
+    expect(card.text()).toContain("Mail");
+    expect(card.text()).toContain("ops@mail.example.com");
+    expect(card.text()).toContain("In reply to");
+    expect(card.text()).toContain("Re: Training enquiry");
+    expect(card.text()).toContain("Send");
+    expect(card.text()).toContain("Discard");
   });
 
   it("opens a new message without an in-reply row", () => {
     const card = open({ ...block, inReplyTo: undefined });
     opened.push(card);
-    expect(card.text).toContain("Mail");
-    expect(card.text).not.toContain("In reply to");
+    expect(card.text()).toContain("Mail");
+    expect(card.text()).not.toContain("In reply to");
   });
 });
