@@ -209,10 +209,10 @@ describe("plainTextFromMarkdown", () => {
 
   it("bounds work on a long run of unclosed fences", () => {
     const source = `${"```x\n".repeat(100_000)}TAIL_MARKER`;
-    let preview = "";
-    expectLinearTime(() => {
-      preview = plainTextFromMarkdown(source);
-    });
+    expectLinearTime(() =>
+      expect(plainTextFromMarkdown(source, { maxSource: source.length })).toContain("TAIL_MARKER"),
+    );
+    const preview = plainTextFromMarkdown(source);
     expect(preview).not.toContain("TAIL_MARKER");
     expect(preview.length).toBeLessThan(4_096);
     expect(preview.startsWith("```x")).toBe(true);

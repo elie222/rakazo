@@ -7,5 +7,12 @@ export const include = [
 
 export const exclude = ["scripts/checks/no-hand-timed-speed-assertions.test.mjs"];
 
-export const pattern =
-  /\b(?:performance|Date)\.now\(\)\s*-\s*[\w.]+\s*\)\s*\.toBeLessThan(?:OrEqual)?\(/g;
+const clock = String.raw`(?:performance|Date)\.now\(\)\s*-\s*[\w.]+\s*`;
+const assertionMessage = String.raw`(?:,\s*(?:"[^"\n]*"|'[^'\n]*'|\`[^\`\n]*\`)\s*)?`;
+const upperBound = String.raw`\)\s*\.toBeLessThan(?:OrEqual)?\(`;
+
+/** The clock read inside `expect(...)`, or kept in a variable that a later `expect` bounds. */
+export const pattern = new RegExp(
+  `${clock}${assertionMessage}${upperBound}|\\b(\\w+)\\s*=\\s*${clock};[\\s\\S]{0,500}?\\bexpect\\(\\s*\\1\\b\\s*${assertionMessage}${upperBound}`,
+  "g",
+);
