@@ -17,6 +17,7 @@ export function messageHasInlineControls(blocks: readonly MessageBlock[]): boole
   return blocks.some(
     (block) =>
       block.kind === "ask" ||
+      block.kind === "email_reply" ||
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
       block.kind === "import_setup",
@@ -34,6 +35,7 @@ function isCardBlock(block: MessageBlock): boolean {
     block.kind === "app_connect" ||
     block.kind === "choice" ||
     block.kind === "computer" ||
+    block.kind === "email_reply" ||
     block.kind === "import_setup"
   );
 }

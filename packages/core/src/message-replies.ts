@@ -169,6 +169,9 @@ export function previewMessageText(
     .trim();
   if (text) return text;
   for (const block of message.blocks) {
+    if (block.kind === "email_reply" && block.status === "ready") return "The reply draft is ready…";
+  }
+  for (const block of message.blocks) {
     if (block.kind === "ask" && isQuestionAskBlock(block)) {
       const excerpt = compactReplyExcerpt(block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH));
       if (excerpt) return excerpt;

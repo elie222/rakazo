@@ -43,6 +43,7 @@ import { AskReceiptView } from "../ask-receipt";
 import { AudioAttachment } from "../audio-attachment";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
+import { EmailReplyCard } from "../EmailReplyCard";
 import { ComputerCard } from "../ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../change-undo";
 import { ImportSetupCard } from "../ImportSetupCard";
@@ -736,6 +737,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",
   );
+  const emailReplyBlocks = message.blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "email_reply" }> =>
+      block.kind === "email_reply",
+  );
   const computerBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "computer" }> => block.kind === "computer",
   );
@@ -766,6 +771,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           accessibilityActions={actionProps.accessibilityActions}
           onAccessibilityAction={actionProps.onAccessibilityAction}
         />
+      ))}
+      {emailReplyBlocks.map((block) => (
+        <EmailReplyCard key={block.draftId} block={block} />
       ))}
       {computerBlocks.map((block, index) => (
         <ComputerCard

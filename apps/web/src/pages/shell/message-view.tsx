@@ -16,6 +16,7 @@ import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
+import { EmailReplyCard } from "../../components/EmailReplyCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
 import { ComputerCard } from "../../components/ComputerCard";
@@ -471,6 +472,13 @@ export const MessageView = memo(function MessageView({
                     {block.status === "archived" ? <Trans>archived</Trans> : <Trans>deleted</Trans>}
                   </span>
                 )}
+              </div>
+            );
+          }
+          if (block.kind === "email_reply") {
+            return (
+              <div key={i} className="flex justify-start">
+                <EmailReplyCard block={block} />
               </div>
             );
           }

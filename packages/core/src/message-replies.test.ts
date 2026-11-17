@@ -192,6 +192,29 @@ describe("previewMessageText", () => {
 
   const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
 
+  it("names a ready email reply draft", () => {
+    expect(
+      previewMessageText(
+        {
+          role: "bot",
+          blocks: [
+            {
+              kind: "email_reply",
+              draftId: "draft-1",
+              from: "ops@mail.example.com",
+              to: ["clinic@example.com"],
+              cc: [],
+              subject: "Re: Training enquiry",
+              body: "Hi",
+              status: "ready",
+            },
+          ],
+        },
+        labels,
+      ),
+    ).toBe("The reply draft is ready…");
+  });
+
   it("joins text, reading bot Markdown as plain text", () => {
     expect(
       previewMessageText(

@@ -184,6 +184,19 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
   }),
   z.object({
+    /** A saved email draft opened for review. Edits belong to the draft, not a second copy. */
+    kind: z.literal("email_reply"),
+    draftId: z.string().min(1).max(64),
+    from: z.string().max(320),
+    inReplyTo: z.string().max(500).optional(),
+    to: z.array(z.string().max(320)).max(10),
+    cc: z.array(z.string().max(320)).max(10),
+    subject: z.string().max(500),
+    body: z.string().max(20_000),
+    status: z.enum(["ready", "sent", "discarded"]),
+    approval: z.enum(["needs_approval", "send_once"]).optional(),
+  }),
+  z.object({
     kind: z.literal("choice"),
     question: z.string(),
     subtitle: z.string().optional(),
