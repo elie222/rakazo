@@ -224,6 +224,7 @@ export function createUserDeviceAccess(deps: {
     changes.set(origin, (changes.get(origin) ?? 0) + 1);
     const save = (consentSaves.get(origin) ?? Promise.resolve()).then(() =>
       saveDeviceConsent(deps.userDataDir, origin, saved).catch(async (error) => {
+        if (choice === "allowed" && consent.get(origin) === saved) consent.delete(origin);
         // An earlier "allowed" left on disk would be honoured on the next launch.
         if (choice === "declined")
           await rm(deviceFile(deps.userDataDir, origin, ".consent"), { force: true }).catch(
@@ -252,13 +253,17 @@ export function createUserDeviceAccess(deps: {
   }
 
   async function authorize(origin: string) {
+    await consentSaves.get(origin);
     if (consent.get(origin)?.consent === "declined") return false;
     if (isAllowed(origin)) return true;
     const seen = changes.get(origin);
     const answer = await ask(origin);
     // Turned off, revoked, or already answered while the prompt was open.
-    if (changes.get(origin) !== seen) return isAllowed(origin);
-    await decide(origin, answer ? "allowed" : "declined").catch(() => undefined);
+    if (changes.get(origin) !== seen) {
+      await consentSaves.get(origin);
+      return isAllowed(origin);
+    }
+    await decide(origin, answer ? "allowed" : "declined");
     if (answer && current === origin && isAllowed(origin) && deps.prepareAccess)
       await bestEffort("prepare computer app control", deps.prepareAccess());
     return answer && current === origin && isAllowed(origin);

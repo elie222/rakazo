@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -581,27 +582,36 @@ app.whenReady().then(async () => {
   const prepareComputerAccess = createComputerPermissionSetup({
     platform: process.platform,
     permissions: screenPermissions,
-    showSetup: async () => {
+    showSetup: async (readyForRestart) => {
       const options: Electron.MessageBoxOptions = {
         type: "info",
         title: t("Mac app control"),
-        message: t("Set up Mac app control"),
-        detail: t(
-          "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.",
-        ),
-        buttons: [t("Open System Settings"), t("Restart Rakazo"), t("Not Now")],
+        message: readyForRestart
+          ? t("Restart Rakazo to finish setup")
+          : t("Set up Mac app control"),
+        detail: readyForRestart
+          ? undefined
+          : t(
+              "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.",
+            ),
+        buttons: readyForRestart
+          ? [t("Restart Rakazo"), t("Not Now")]
+          : [t("Open System Settings"), t("Restart Rakazo"), t("Not Now")],
         defaultId: 0,
-        cancelId: 2,
+        cancelId: readyForRestart ? 1 : 2,
         noLink: true,
       };
       const win = desktop.mainWindow;
       const { response } = await (win && !win.isDestroyed()
         ? dialog.showMessageBox(win, options)
         : dialog.showMessageBox(options));
+      if (readyForRestart) return response === 0 ? "restart" : "later";
       return response === 0 ? "settings" : response === 1 ? "restart" : "later";
     },
-    openSettings: () =>
-      shell.openExternal("x-apple.systempreferences:com.apple.preference.security"),
+    openSettings: async () => {
+      await shell.openExternal("x-apple.systempreferences:com.apple.preference.security");
+      await once(app, "browser-window-focus");
+    },
     restart: () => {
       desktop.quitting = true;
       app.relaunch();

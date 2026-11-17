@@ -7,7 +7,7 @@ type SetupAction = "settings" | "restart" | "later";
 export function createComputerPermissionSetup(deps: {
   platform: NodeJS.Platform;
   permissions: ScreenPermissionApi;
-  showSetup: () => Promise<SetupAction>;
+  showSetup: (readyForRestart: boolean) => Promise<SetupAction>;
   openSettings: () => Promise<unknown>;
   restart: () => void;
 }) {
@@ -23,15 +23,19 @@ export function createComputerPermissionSetup(deps: {
     if (!screen)
       await bestEffort("request Mac screen permission", deps.permissions.requestScreenCapture());
 
-    // System Settings stays in front; the guide waits in Rakazo for the person to return.
+    let readyForRestart = false;
     for (;;) {
-      const action = await deps.showSetup();
+      const action = await deps.showSetup(readyForRestart);
       if (action === "later") return;
       if (action === "restart") {
         deps.restart();
         return;
       }
+      // Resolves only when the person returns to Rakazo.
       await deps.openSettings();
+      const accessibility = deps.permissions.isTrustedAccessibilityClient(false);
+      const screen = deps.permissions.getMediaAccessStatus("screen") === "granted";
+      readyForRestart = accessibility && screen;
     }
   }
 

@@ -217,6 +217,49 @@ describe("remote computer access", () => {
     },
   );
 
+  it.each(["settings", "request"] as const)(
+    "does not offer setup or authorize access when saving consent from %s fails",
+    async (source) => {
+      const prepareAccess = vi.fn(async () => undefined);
+      const { access, clients } = setup({ prepareAccess });
+      await access.select(origin);
+      await access.pair();
+      const failure = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+      vi.mocked(setupStore.writePrivateFile).mockRejectedValueOnce(failure);
+      const request =
+        source === "settings" ? access.setAllowed(origin, true) : clients[0]!.authorize();
+      await expect(request).rejects.toBe(failure);
+      expect(prepareAccess).not.toHaveBeenCalled();
+      expect(access.state(origin)?.allowed).toBe(false);
+      expect(await readDeviceConsent(userData, origin)).toBeNull();
+    },
+  );
+
+  it("refuses requests sharing an approval when its consent write fails", async () => {
+    const answer = deferred<boolean>();
+    const written = deferred<void>();
+    const confirm = vi.fn(() => answer.promise);
+    const prepareAccess = vi.fn(async () => undefined);
+    const { access, clients } = setup({ confirm, prepareAccess });
+    await access.select(origin);
+    await access.pair();
+    vi.mocked(setupStore.writePrivateFile)
+      .mockClear()
+      .mockImplementationOnce(() => written.promise);
+    const first = clients[0]!.authorize();
+    const second = clients[0]!.authorize();
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    answer.resolve(true);
+    await vi.waitFor(() => expect(setupStore.writePrivateFile).toHaveBeenCalledOnce());
+    const failure = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+    const refused = expect(first).rejects.toBe(failure);
+    written.reject(failure);
+    await refused;
+    expect(await second).toBe(false);
+    expect(prepareAccess).not.toHaveBeenCalled();
+    expect(access.state(origin)?.allowed).toBe(false);
+  });
+
   it("refuses a pending request when access is revoked during permission setup", async () => {
     const ready = deferred<void>();
     const prepareAccess = vi.fn(() => ready.promise);

@@ -47,13 +47,33 @@ describe("computer permission setup", () => {
     const showSetup = vi.fn(async () => actions[showSetup.mock.calls.length - 1]!);
     const { deps, prepare } = setup({ showSetup });
     await prepare();
-    expect(deps.permissions.isTrustedAccessibilityClient.mock.calls).toEqual([[false], [true]]);
+    expect(deps.permissions.isTrustedAccessibilityClient.mock.calls).toEqual([
+      [false],
+      [true],
+      [false],
+    ]);
     expect(deps.permissions.requestScreenCapture).toHaveBeenCalledOnce();
     expect(deps.permissions.requestScreenCapture.mock.invocationCallOrder[0]).toBeLessThan(
       showSetup.mock.invocationCallOrder[0]!,
     );
     expect(deps.openSettings).toHaveBeenCalledOnce();
     expect(deps.restart).toHaveBeenCalledOnce();
+  });
+
+  it("waits for a return from Settings, then offers only the remaining restart step", async () => {
+    const returned = deferred<void>();
+    const showSetup = vi
+      .fn(async (_readyForRestart: boolean) => "settings" as "settings" | "later")
+      .mockResolvedValueOnce("settings")
+      .mockResolvedValue("later");
+    const { deps, prepare } = setup({ showSetup, openSettings: () => returned.promise });
+    const request = prepare();
+    await vi.waitFor(() => expect(showSetup).toHaveBeenCalledExactlyOnceWith(false));
+    deps.permissions.isTrustedAccessibilityClient.mockReturnValue(true);
+    deps.permissions.getMediaAccessStatus.mockReturnValue("granted");
+    returned.resolve();
+    await request;
+    expect(showSetup.mock.calls).toEqual([[false], [true]]);
   });
 
   it("does not request a permission that is already granted", async () => {
