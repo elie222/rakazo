@@ -40,11 +40,10 @@ describePostgres("a deactivated account's work (PostgreSQL)", () => {
 
   async function person(): Promise<Identity> {
     const { userId, spaceId, botId, threadId } = await runAsSystem("deactivation fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address: `deactivation-${randomUUID()}@rakazo.test` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, {
+        provider: "email",
+        address: `deactivation-${randomUUID()}@rakazo.test`,
+      }),
     );
     const identity = { userId, spaceId, botId, threadId };
     identities.push(identity);

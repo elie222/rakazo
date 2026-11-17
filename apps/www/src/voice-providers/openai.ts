@@ -1,26 +1,35 @@
-import type { VoiceProvider } from "./types";
 import {
-  CHARS_PER_HOUR,
-  OPENAI_MINI_TTS,
-  PRICING_SOURCES,
-  RATES,
-  VOICE_DOC,
-  WORKLOAD,
-  WORKLOAD_COST,
   aboutTotal,
+  CHARS_PER_HOUR,
   count,
   homepage,
+  OPENAI_MINI_TTS,
+  PRICING_SOURCES,
   perHourOfSpeech,
   priceVersus,
+  RATES,
   speechHourCost,
   usd,
+  VOICE_DOC,
   voicePriceTable,
   voiceWorkloadTable,
+  WORKLOAD,
+  WORKLOAD_COST,
   withPricingSources,
 } from "./shared";
+import type { VoiceProvider } from "./types";
 
 const WORKLOAD_SHOWN = ["openai", "elevenlabs", "fish", "cartesia", "selfHosted"] as const;
-const COMPARED = ["openai", "openaiTts1", "elevenlabs", "cartesia", "fish", "deepgram", "google", "selfHosted"] as const;
+const COMPARED = [
+  "openai",
+  "openaiTts1",
+  "elevenlabs",
+  "cartesia",
+  "fish",
+  "deepgram",
+  "google",
+  "selfHosted",
+] as const;
 
 const TRANSCRIBE = RATES.openaiTranscribeMinute;
 const MINI_TTS_HOUR = RATES.openaiMiniTtsMinute * 60;
@@ -97,11 +106,19 @@ export const openai: VoiceProvider = {
           },
           {
             topic: "`gpt-4o-mini-transcribe` (Rakazo uses this)",
-            cells: ["Transcription", "February 26, 2027", "`gpt-transcribe` or `gpt-live-transcribe`"],
+            cells: [
+              "Transcription",
+              "February 26, 2027",
+              "`gpt-transcribe` or `gpt-live-transcribe`",
+            ],
           },
           {
             topic: "`whisper-1`, `gpt-4o-transcribe`",
-            cells: ["Transcription", "February 26, 2027", "`gpt-transcribe` or `gpt-live-transcribe`"],
+            cells: [
+              "Transcription",
+              "February 26, 2027",
+              "`gpt-transcribe` or `gpt-live-transcribe`",
+            ],
           },
         ],
         note: "From [OpenAI's deprecations page](https://developers.openai.com/api/docs/deprecations), checked November 2026.",
@@ -118,18 +135,21 @@ export const openai: VoiceProvider = {
         rows: [
           {
             topic: "`gpt-4o-mini-tts`",
-            cells: [
-              MINI_TTS_TOKENS,
-              `About ${OPENAI_MINI_TTS.perHour}`,
-            ],
+            cells: [MINI_TTS_TOKENS, `About ${OPENAI_MINI_TTS.perHour}`],
           },
           {
             topic: "`tts-1`",
-            cells: [`${usd(RATES.openaiTts1)} per 1M characters`, perHourOfSpeech(RATES.openaiTts1)],
+            cells: [
+              `${usd(RATES.openaiTts1)} per 1M characters`,
+              perHourOfSpeech(RATES.openaiTts1),
+            ],
           },
           {
             topic: "`tts-1-hd`",
-            cells: [`${usd(RATES.openaiTts1Hd)} per 1M characters`, perHourOfSpeech(RATES.openaiTts1Hd)],
+            cells: [
+              `${usd(RATES.openaiTts1Hd)} per 1M characters`,
+              perHourOfSpeech(RATES.openaiTts1Hd),
+            ],
           },
           {
             topic: "`gpt-realtime-2.1-mini`",
@@ -152,7 +172,10 @@ export const openai: VoiceProvider = {
         "Rakazo calls OpenAI with your key, so OpenAI bills you and Rakazo adds nothing. The voice key is stored separately from any OpenAI key you use for models, but both draw on the same OpenAI account if you use the same project.",
         `${WORKLOAD} On OpenAI that is about ${usd(WORKLOAD_COST.openai.speech)} of speech and ${usd(WORKLOAD_COST.openai.transcription)} of transcription: ${aboutTotal("openai").toLowerCase()} a month, ${CHEAPEST_HOSTED ? "the cheapest hosted option in Rakazo" : "among the cheaper hosted options"}, until the shutdown.`,
       ],
-      table: voiceWorkloadTable("One bot, 30 minutes of speech and 30 of transcription a day", WORKLOAD_SHOWN),
+      table: voiceWorkloadTable(
+        "One bot, 30 minutes of speech and 30 of transcription a day",
+        WORKLOAD_SHOWN,
+      ),
     },
     {
       heading: "OpenAI TTS vs ElevenLabs and other voice APIs",
@@ -170,7 +193,7 @@ export const openai: VoiceProvider = {
         "Talk instead of typing. Hold the mic in the composer, speak, and let go to send. When Rakazo transcribes on the server, as it does in a phone browser or the desktop app, it uses `gpt-4o-mini-transcribe`.",
         "Hear replies. Choose **Speak this reply** on any message, or turn on **Read replies aloud** in a bot's settings. Replies are spoken with `gpt-4o-mini-tts`.",
         "Call a bot. Choose **Call** at the top of a chat to talk in real time. You can cut in while the bot is speaking, and the transcript stays in the chat.",
-        "Get called. Ask \"call me when the drafts are ready\" and the bot rings you. A bot may also call if you've missed the same reminder several times.",
+        'Get called. Ask "call me when the drafts are ready" and the bot rings you. A bot may also call if you\'ve missed the same reminder several times.',
         "Give each bot its own voice. Pick from OpenAI's 13 voices per bot, so different bots are easy to tell apart.",
         "Send voice notes from chat apps. A voice note sent to a bot through Telegram, for example, is transcribed before the bot reads it. See [messaging apps](/docs/messaging-apps/).",
       ],
@@ -219,13 +242,11 @@ export const openai: VoiceProvider = {
   faq: [
     {
       question: "How much does OpenAI text to speech cost?",
-      answer:
-        `As of November 2026, \`tts-1\` costs ${usd(RATES.openaiTts1)} and \`tts-1-hd\` ${usd(RATES.openaiTts1Hd)} per million characters. \`gpt-4o-mini-tts\` costs ${usd(RATES.openaiMiniTtsTextIn)} per million text tokens in and ${usd(RATES.openaiMiniTtsAudioOut)} per million audio tokens out, which OpenAI used to estimate at about ${perMinute(RATES.openaiMiniTtsMinute)} a minute, roughly ${OPENAI_MINI_TTS.perHour} an hour. There is no free tier.`,
+      answer: `As of November 2026, \`tts-1\` costs ${usd(RATES.openaiTts1)} and \`tts-1-hd\` ${usd(RATES.openaiTts1Hd)} per million characters. \`gpt-4o-mini-tts\` costs ${usd(RATES.openaiMiniTtsTextIn)} per million text tokens in and ${usd(RATES.openaiMiniTtsAudioOut)} per million audio tokens out, which OpenAI used to estimate at about ${perMinute(RATES.openaiMiniTtsMinute)} a minute, roughly ${OPENAI_MINI_TTS.perHour} an hour. There is no free tier.`,
     },
     {
       question: "How much does the Whisper API cost?",
-      answer:
-        `Whisper and \`gpt-4o-transcribe\` cost ${perMinute(TRANSCRIBE.gpt4o)} a minute (${usd(RATES.openaiWhisperHour)} an hour), \`gpt-4o-mini-transcribe\` ${perMinute(TRANSCRIBE.mini)} a minute, and the newer \`gpt-transcribe\` ${perMinute(TRANSCRIBE.gpt)} a minute. Whisper and the gpt-4o transcription models shut down on February 26, 2027.`,
+      answer: `Whisper and \`gpt-4o-transcribe\` cost ${perMinute(TRANSCRIBE.gpt4o)} a minute (${usd(RATES.openaiWhisperHour)} an hour), \`gpt-4o-mini-transcribe\` ${perMinute(TRANSCRIBE.mini)} a minute, and the newer \`gpt-transcribe\` ${perMinute(TRANSCRIBE.gpt)} a minute. Whisper and the gpt-4o transcription models shut down on February 26, 2027.`,
     },
     {
       question: "Is gpt-4o-mini-tts being deprecated?",
@@ -244,8 +265,7 @@ export const openai: VoiceProvider = {
     },
     {
       question: "OpenAI vs ElevenLabs for voice agents?",
-      answer:
-        `Both speak and transcribe in Rakazo. Per hour of speech, OpenAI is ${priceVersus(MINI_TTS_HOUR, speechHourCost(RATES.elevenlabsFlash))} ElevenLabs Flash v2.5, around ${OPENAI_MINI_TTS.perHour} against ${perHourOfSpeech(RATES.elevenlabsFlash)}, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.`,
+      answer: `Both speak and transcribe in Rakazo. Per hour of speech, OpenAI is ${priceVersus(MINI_TTS_HOUR, speechHourCost(RATES.elevenlabsFlash))} ElevenLabs Flash v2.5, around ${OPENAI_MINI_TTS.perHour} against ${perHourOfSpeech(RATES.elevenlabsFlash)}, and offers a fixed set of voices. [ElevenLabs](/voice-providers/elevenlabs/) sounds more natural, lets you use voices you clone, and isn't affected by OpenAI's 2027 shutdown.`,
     },
     {
       question: "Can I use a self-hosted Whisper server instead?",
@@ -255,18 +275,24 @@ export const openai: VoiceProvider = {
   ],
   sources: withPricingSources(
     [
-    {
-      label: "OpenAI, text to speech",
-      href: "https://developers.openai.com/api/docs/guides/text-to-speech",
-    },
-    { label: "OpenAI, deprecations", href: "https://developers.openai.com/api/docs/deprecations" },
-    PRICING_SOURCES.openai,
-    { label: "OpenAI, your data", href: "https://developers.openai.com/api/docs/guides/your-data" },
-    {
-      label: "OpenAI community, TTS shutdown email",
-      href: "https://community.openai.com/t/tts-shutdown-email-tts-1-gpt-4o-mini-tts-jan-6-2027-isnt-on-the-deprecations-page/1402731",
-    },
-    VOICE_DOC,
+      {
+        label: "OpenAI, text to speech",
+        href: "https://developers.openai.com/api/docs/guides/text-to-speech",
+      },
+      {
+        label: "OpenAI, deprecations",
+        href: "https://developers.openai.com/api/docs/deprecations",
+      },
+      PRICING_SOURCES.openai,
+      {
+        label: "OpenAI, your data",
+        href: "https://developers.openai.com/api/docs/guides/your-data",
+      },
+      {
+        label: "OpenAI community, TTS shutdown email",
+        href: "https://community.openai.com/t/tts-shutdown-email-tts-1-gpt-4o-mini-tts-jan-6-2027-isnt-on-the-deprecations-page/1402731",
+      },
+      VOICE_DOC,
     ],
     { prices: COMPARED, workload: WORKLOAD_SHOWN },
   ),

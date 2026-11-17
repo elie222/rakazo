@@ -7,20 +7,22 @@ import { queryClient } from "./query";
 
 /**
  * A read for a screen: it paints what was last seen, and reads again each time the screen gains
- * focus and each time the app comes back to the foreground with the screen open.
+ * focus and each time the app comes back to the foreground with the screen open. A form whose
+ * draft a new read would replace passes `onForeground: false` and reads again on focus only.
  */
 export function useScreenQuery<T>(
   read: { queryKey: DataTag<QueryKey, T, Error>; queryFn: QueryFunction<T> },
-  { enabled = true } = {},
+  { enabled = true, onForeground = true } = {},
 ) {
   const query = useQuery({ ...read, enabled }, queryClient);
   const { refetch } = query;
   const foreground = useAppForeground();
+  const awake = onForeground ? foreground : true;
   useFocusEffect(
     useCallback(() => {
       // A read already in flight, such as the one opening the screen starts, is joined.
-      if (enabled && foreground) void refetch({ cancelRefetch: false });
-    }, [enabled, foreground, refetch]),
+      if (enabled && awake) void refetch({ cancelRefetch: false });
+    }, [enabled, awake, refetch]),
   );
   return query;
 }

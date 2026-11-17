@@ -43,11 +43,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
   });
   beforeEach(async () => {
     identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address: `stop-${randomUUID()}` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address: `stop-${randomUUID()}` }),
     );
     transaction = vi.fn((...args: unknown[]) => Reflect.apply(prisma.$transaction, prisma, args));
     const jobs = {
@@ -73,7 +69,6 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
       sandbox: sandbox as never,
       provision: vi.fn(),
       openSignup: false,
-      signupPolicy: { signupsEnabled: undefined, signupAllowlist: undefined },
     });
     handle = (event) => runAsSystem("test inbound", () => inbound(event));
   });
@@ -165,11 +160,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
 
     // An active person's group does not invite them either.
     const friend = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "test", address: `friend-${randomUUID()}` },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "test", address: `friend-${randomUUID()}` }),
     );
     try {
       await handle({

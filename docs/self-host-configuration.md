@@ -59,13 +59,13 @@ CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
-`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run or an unanswered
-question may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
+`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
 thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
 anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
 takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
-queued runs after 4 hours.
+queued runs after 4 hours. A question the bot asks stays open until someone answers it, unless its
+run holds a login or code it took only for itself: that run still stops at the expiry.
 
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
@@ -169,6 +169,12 @@ through a transaction pooler. It defaults to `DATABASE_URL`.
 `GRAPHILE_WORKER_CONCURRENCY` (default `4`) caps concurrent deliveries from the older interactive
 job queue during rolling upgrades. New agent runs dispatch straight from Postgres and do not take
 those slots.
+
+`RUN_DRAIN_ENABLED=true` lets a stopping worker end the turns it is running, for up to five
+minutes, before it hands them back; otherwise it hands them back at once and the next worker
+repeats the model call that was in flight. `docker-compose.prod.yml` turns it on. Turn it on only
+where a stopping worker is left alone for longer than that, as Compose's `stop_grace_period` does:
+a worker killed sooner leaves a run mid-turn waiting for its lease to expire.
 
 ## API and worker memory
 

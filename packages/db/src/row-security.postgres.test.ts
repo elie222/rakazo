@@ -398,6 +398,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
           data: {
             spaceId: t.spaceId,
             userId: t.userId,
+            connectorId: "composio",
             provider: "p",
             displayName: "d",
             status: "connected",
@@ -887,6 +888,21 @@ describePostgres("row-level security (PostgreSQL)", () => {
         (p) => p.qual !== "( SELECT app_rls_bypass() AS app_rls_bypass)" || p.with_check !== null,
       ),
     ).toEqual([]);
+  });
+
+  it("keeps the caller's temporary schema last in every owner-rights function", async () => {
+    const functions = await owner.prisma.$queryRaw<
+      Array<{ name: string; config: string[] | null; publicExecute: boolean }>
+    >`
+      SELECT p.proname AS name, p.proconfig AS config,
+        has_function_privilege('public', p.oid, 'EXECUTE') AS "publicExecute"
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE p.prosecdef AND n.nspname NOT IN ('pg_catalog', 'information_schema')`;
+    expect(functions.length).toBeGreaterThan(5);
+    expect(
+      functions.filter((f) => !f.config?.some((c) => /^search_path=.*\bpg_temp$/.test(c))),
+    ).toEqual([]);
+    expect(functions.filter((f) => f.publicExecute).map((f) => f.name)).toEqual(["app_rls_bypass"]);
   });
 
   it("lets a system step inside a tenant transaction across tenants and back", async () => {

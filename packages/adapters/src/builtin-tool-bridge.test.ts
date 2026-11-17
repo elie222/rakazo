@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  CORE_BUILTIN_TOOL_NAMES,
-  FIND_TOOL,
-  findTools,
-  partitionTools,
-  USE_TOOL,
-} from "./builtin-tool-bridge.js";
+import { FIND_TOOL, USE_TOOL } from "./builtin.tool-definition.js";
+import { CORE_BUILTIN_TOOL_NAMES, findTools, partitionTools } from "./builtin-tool-bridge.js";
 import { describeToolActivity } from "./pi-runtime-tools.js";
 import { BUILTIN_AGENT_TOOL_NAMES, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
@@ -128,5 +123,39 @@ describe("built-in tool bridge", () => {
     expect(
       describeToolActivity(USE_TOOL, { name: "create_space", arguments: { name: "Finance" } }),
     ).toBe("Creating space: Finance");
+  });
+});
+
+describe("bridge tool definitions", () => {
+  it("renders find_tool with the deferred names by area, and use_tool", () => {
+    const tool = (name: string) => ({ name, description: name, inputSchema: { type: "object" } });
+    const { listed } = partitionTools([tool("shell"), tool("list_secrets"), tool("render_plot")]);
+    expect(listed.slice(1)).toEqual([
+      {
+        name: "find_tool",
+        description:
+          "Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
+        inputSchema: {
+          type: "object",
+          properties: {
+            names: { type: "array", items: { type: "string" }, maxItems: 5 },
+            query: { type: "string", maxLength: 200, description: "Words describing the task" },
+          },
+        },
+        readOnly: true,
+      },
+      {
+        name: "use_tool",
+        description: "Run a built-in tool whose parameters find_tool returned in this turn.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            arguments: { type: "object", description: "Arguments matching its parameters" },
+          },
+          required: ["name", "arguments"],
+        },
+      },
+    ]);
   });
 });

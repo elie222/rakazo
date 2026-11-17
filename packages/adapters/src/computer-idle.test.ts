@@ -14,7 +14,6 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { boatError, FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   ABANDONED_SUSPEND_CLAIM_MS,
   BACKGROUND_WORK_LAUNCH,
@@ -34,8 +33,13 @@ import {
   unbilledComputerMaxActiveMs,
 } from "./computer-idle.js";
 import { BrowserStillRunningError } from "./computer-screens.js";
-import { e2bCreateOptions } from "./e2b-sandbox.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
+import {
+  boatError,
+  FakeBoatApi,
+  fakeBoatProvider,
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { e2bCreateOptions } from "./providers/computer/e2b/e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   beforeEach(() => {
@@ -397,33 +401,6 @@ describe("sandbox idle", () => {
     });
     expect(harness.events.append).toHaveBeenCalledWith(
       expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
-    );
-  });
-
-  it("clears a stranded legacy execution binding so an idle computer can suspend", async () => {
-    const harness = idleHarness();
-    harness.prisma.run.findFirst.mockResolvedValue(null);
-    // A pre-lease release left this binding; its run ended and nothing reclaims it.
-    harness.computer.executionRunId = "run-ended";
-    harness.prisma.run.findUnique.mockResolvedValue({ status: "cancelled" });
-    // Like the real database, the suspension claim refuses a computer still bound.
-    const claim = harness.prisma.computer.updateMany;
-    harness.prisma.computer.updateMany = vi.fn(async (args) => {
-      if (
-        args.where.executionRunId !== undefined &&
-        args.where.executionRunId !== harness.computer.executionRunId
-      ) {
-        return { count: 0 };
-      }
-      return claim(args);
-    });
-
-    await sleepComputerIfIdle(harness.deps, harness.computer.id);
-
-    expect(harness.computer.executionRunId).toBeNull();
-    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
-    expect(harness.prisma.computer.updateMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ state: "suspended" }) }),
     );
   });
 
@@ -1998,8 +1975,6 @@ function idleHarness(
     controlUserId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    executionRunId: null as string | null,
-    executionBotId: null,
     runningSince: options.runningSince ?? null,
     homeRevisionAt: options.homeRevisionAt ?? null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -2045,7 +2020,6 @@ function idleHarness(
       findFirst: vi.fn(async ({ where }) =>
         options.runSinceSave && where.updatedAt ? { id: "later-run" } : null,
       ),
-      findUnique: vi.fn(async () => null as { status: string } | null),
       findMany: vi
         .fn()
         .mockResolvedValue(options.takeoverRequestedAt ? [{ id: "waiting-for-user" }] : []),

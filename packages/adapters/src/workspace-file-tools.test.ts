@@ -1,4 +1,5 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
@@ -208,5 +209,33 @@ describe("readFileFromTool ranges", () => {
     })) as ReadFileResult;
     expect(result.error).toContain("past the end");
     expect(result.totalLines).toBe(3);
+  });
+});
+
+describe("readFileFromTool size limit", () => {
+  function failingWorkspace(error: Error) {
+    const { workspace } = fileWorkspace("");
+    const sandbox = {
+      readFile: async () => {
+        throw error;
+      },
+    } as unknown as SandboxProvider;
+    return { sandbox, workspace };
+  }
+
+  it("tells the model a file over the limit is too large for its context", async () => {
+    const { sandbox, workspace } = failingWorkspace(new SandboxFileTooLargeError(1024));
+    expect(await readFileFromTool(sandbox, workspace, { path: "logs/huge.log" })).toEqual({
+      error: "file is too large for model context",
+      path: "logs/huge.log",
+    });
+  });
+
+  it("lets a computer failure that only mentions a size fail the tool call", async () => {
+    const failure = new Error("command output exceeds 1024 bytes");
+    const { sandbox, workspace } = failingWorkspace(failure);
+    await expect(readFileFromTool(sandbox, workspace, { path: "logs/huge.log" })).rejects.toBe(
+      failure,
+    );
   });
 });

@@ -2,6 +2,7 @@
 
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -30,15 +31,21 @@ let container: HTMLDivElement;
 let root: Root;
 let state: ComputerState;
 let codes = 0;
-let screenUrlFactory: () => string = () =>
-  `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
-const screenUrl = vi.fn(async () => ({ url: screenUrlFactory() }));
+type ScreenAnswer = { url: string; singleUseSignIn?: { screen: string } };
+/** What the server answers for a screen whose sign-in works once: it says so beside the URL. */
+const singleUseScreen = (signIn: string, view: "view" | "control" = "view"): ScreenAnswer => ({
+  url: `embedded-screen://desktop?code=${signIn}&view_only=${view === "view"}`,
+  singleUseSignIn: { screen: `desktop-1:${view}` },
+});
+const nextSingleUseScreen = () => singleUseScreen(`code-${++codes}`);
+let screenAnswer: () => ScreenAnswer = nextSingleUseScreen;
+const screenUrl = vi.fn(async () => screenAnswer());
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
-    panel: "computer",
+    panel: "settings",
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
   });
@@ -55,7 +62,7 @@ function Harness() {
   ));
 }
 
-const code = () => /auth_code=([^&]+)/.exec(state.screenUrl ?? "")?.[1] ?? null;
+const code = () => /[?&]code=([^&]+)/.exec(state.screenUrl ?? "")?.[1] ?? null;
 
 async function read() {
   await act(async () => {
@@ -75,8 +82,7 @@ async function report(rakazoScreen: string) {
 beforeEach(async () => {
   vi.useFakeTimers();
   codes = 0;
-  screenUrlFactory = () =>
-    `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=code-${++codes}&view_only=true`;
+  screenAnswer = nextSingleUseScreen;
   screenUrl.mockClear();
   vi.stubGlobal(
     "fetch",
@@ -87,6 +93,8 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(<Harness />));
+  // The screen is read only while the full computer window is open.
+  await act(async () => state.setComputerOpen(true));
 });
 
 afterEach(() => {
@@ -96,7 +104,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("shows a Wuying screen's failure and waits for Retry rather than spend another code", async () => {
+it("shows a single-use screen's failure and waits for Retry rather than spend another code", async () => {
   await read();
   expect(code()).toBe("code-1");
   await report("connecting");
@@ -110,7 +118,7 @@ it("shows a Wuying screen's failure and waits for Retry rather than spend anothe
   expect(container.querySelector("iframe")).toBeNull();
 });
 
-it("keeps a live Wuying frame's code, and reconnects every drop with a fresh code", async () => {
+it("keeps a live single-use frame's code, and reconnects every drop with a fresh code", async () => {
   await read();
   await report("connected");
   await read();
@@ -134,7 +142,7 @@ it("keeps a live Wuying frame's code, and reconnects every drop with a fresh cod
   expect(screenUrl).toHaveBeenCalledTimes(4);
 });
 
-it("shows a Wuying screen's error only after its reloads stop connecting", async () => {
+it("shows a single-use screen's error only after its reloads stop connecting", async () => {
   await read();
   await report("connected");
   await report("disconnected");
@@ -150,13 +158,74 @@ it("shows a Wuying screen's error only after its reloads stop connecting", async
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
 });
 
-it("never caches a Wuying login code", async () => {
+it("never caches a single-use screen URL", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
 });
 
+it("replaces a live single-use frame once the server names another screen", async () => {
+  await read();
+  await report("connected");
+  screenAnswer = () => singleUseScreen("takeover", "control");
+  await read();
+  expect(code()).toBe("takeover");
+});
+
+it("treats a screen as single-use on the server's word, whatever its URL looks like", async () => {
+  let tickets = 0;
+  screenAnswer = () => ({
+    url: `https://screens.example/session?ticket=${++tickets}`,
+    singleUseSignIn: { screen: "desktop-1:view" },
+  });
+  const ticket = () => new URL(state.screenUrl ?? "").searchParams.get("ticket");
+  await read();
+  expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+  // Each frame loads exactly one sign-in.
+  expect(state.screenFrameKey).toContain(state.screenUrl);
+  await report("connected");
+  await read();
+  expect(ticket()).toBe("1");
+  // A drop comes back through a fresh read, never by loading the spent sign-in again.
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(ticket()).toBe("3");
+  // Once the reconnects run out, the error waits for Retry rather than spend another sign-in.
+  await report("failed");
+  for (const wait of [2_000, 4_000]) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(wait);
+    });
+    await report("failed");
+  }
+  expect(state.screenLoadError).toBe("Could not connect to the computer screen");
+  await read();
+  expect(state.screenUrl).toBeNull();
+});
+
+it("reloads a dropped screen the server did not call single-use, whatever its URL looks like", async () => {
+  screenAnswer = () => ({ url: nextSingleUseScreen().url });
+  await read();
+  expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBe(state.screenUrl);
+  expect(state.screenFrameKey).not.toContain(state.screenUrl);
+  await report("connected");
+  await read();
+  expect(code()).toBe("code-2");
+  const frameKey = state.screenFrameKey;
+  await report("connected");
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  // The same URL loads again in a new frame; no fresh read is spent on it.
+  expect(code()).toBe("code-2");
+  expect(state.screenFrameKey).not.toBe(frameKey);
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+});
+
 it("reconnects a proxied screen whose reload raced a restart, without the error", async () => {
-  screenUrlFactory = () => "/novnc/session/view/1.restart/vnc.html";
+  screenAnswer = () => ({ url: "/novnc/session/view/1.restart/vnc.html" });
   await read();
   await report("connected");
   // The screen restarts under the viewer: the proxy closes the socket, the app reloads the
@@ -176,7 +245,7 @@ it("reconnects a proxied screen whose reload raced a restart, without the error"
 });
 
 it("shows a proxied screen's error only after its reloads stop connecting", async () => {
-  screenUrlFactory = () => "/novnc/session/view/1.stuck/vnc.html";
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stuck/vnc.html" });
   await read();
   await report("connected");
   await report("disconnected");
@@ -199,8 +268,8 @@ it("keeps one reconnect while its screen read is still pending", async () => {
   let release: (() => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
-        release = () => resolve({ url: screenUrlFactory() });
+      new Promise<ScreenAnswer>((resolve) => {
+        release = () => resolve(screenAnswer());
       }),
   );
   screenUrl.mockImplementationOnce(async () => {
@@ -250,8 +319,8 @@ it("reconnects again after its read ends on an already rejoined screen", async (
   let release: (() => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
-        release = () => resolve({ url: screenUrlFactory() });
+      new Promise<ScreenAnswer>((resolve) => {
+        release = () => resolve(screenAnswer());
       }),
   );
   await report("disconnected");
@@ -278,13 +347,8 @@ it("reconnects again after its read ends on an already rejoined screen", async (
 it("shows the error when a reconnect read never settles", async () => {
   await read();
   await report("connected");
-  let settle: ((value: { url: string }) => void) | undefined;
-  screenUrl.mockImplementationOnce(
-    () =>
-      new Promise<{ url: string }>((resolve) => {
-        settle = resolve;
-      }),
-  );
+  const settle = deferred<ScreenAnswer>();
+  screenUrl.mockImplementationOnce(() => settle.promise);
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -299,7 +363,7 @@ it("shows the error when a reconnect read never settles", async () => {
   // An answer that arrives after the deadline does not commit: the screen keeps waiting
   // for Retry.
   await act(async () => {
-    settle?.({ url: screenUrlFactory() });
+    settle.resolve(screenAnswer());
   });
   expect(code()).toBeNull();
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
@@ -308,7 +372,7 @@ it("shows the error when a reconnect read never settles", async () => {
 it("leaves a reconnected screen showing when its hung read runs out of time", async () => {
   await read();
   await report("connected");
-  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -321,7 +385,7 @@ it("leaves a reconnected screen showing when its hung read runs out of time", as
   });
   expect(state.screenLoadError).toBeNull();
   // A later drop reconnects again.
-  screenUrl.mockImplementationOnce(async () => ({ url: screenUrlFactory() }));
+  screenUrl.mockImplementationOnce(async () => screenAnswer());
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -334,7 +398,7 @@ it("leaves a reconnected screen showing when its hung read runs out of time", as
 it("keeps a newer read's answer when the hung reconnect read runs out of time", async () => {
   await read();
   await report("connected");
-  screenUrl.mockImplementationOnce(() => new Promise<{ url: string }>(() => undefined));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
   await report("disconnected");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -345,11 +409,11 @@ it("keeps a newer read's answer when the hung reconnect read runs out of time", 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(14_000);
   });
-  const takeoverUrl = `wuying://desktop?desktop_id=ecd-1&region_id=cn-hangzhou&auth_code=takeover&view_only=false`;
-  let answerB: ((value: { url: string }) => void) | undefined;
+  const takeover = singleUseScreen("takeover", "control");
+  let answerB: ((value: ScreenAnswer) => void) | undefined;
   screenUrl.mockImplementationOnce(
     () =>
-      new Promise<{ url: string }>((resolve) => {
+      new Promise<ScreenAnswer>((resolve) => {
         answerB = (value) => resolve(value);
       }),
   );
@@ -361,9 +425,9 @@ it("keeps a newer read's answer when the hung reconnect read runs out of time", 
     await vi.advanceTimersByTimeAsync(1_000);
   });
   await act(async () => {
-    answerB?.({ url: takeoverUrl });
+    answerB?.(takeover);
   });
-  expect(state.screenUrl).toBe(takeoverUrl);
+  expect(state.screenUrl).toBe(takeover.url);
   expect(state.screenLoadError).toBeNull();
 });
 
@@ -379,10 +443,10 @@ async function reportFrom(frame: HTMLIFrameElement, rakazoScreen: string) {
 }
 
 it("keeps the replaced screen over its successor until that one connects", async () => {
-  screenUrlFactory = () => proxied("view", "v1");
+  screenAnswer = () => ({ url: proxied("view", "v1") });
   await read();
   const viewFrame = container.querySelector("iframe")!;
-  screenUrlFactory = () => proxied("control", "c1");
+  screenAnswer = () => ({ url: proxied("control", "c1") });
   await read();
   let frames = [...container.querySelectorAll("iframe")];
   expect(frames).toHaveLength(2);
@@ -452,7 +516,7 @@ it("still reads the screen when the refresh after this tab's release fails", asy
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -476,6 +540,8 @@ it("still reads the screen when the refresh after this tab's release fails", asy
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   await act(async () => {
     await controls.releaseComputer();
@@ -499,7 +565,7 @@ it("reads the new screen beside the thread refresh after this tab releases contr
     controls = useComputerControls({
       rpc: { computer: { release, screenUrl } } as never,
       state,
-      panel: "computer",
+      panel: "settings",
       active: undefined,
       bots: [],
       botsRef: { current: [] },
@@ -521,6 +587,8 @@ it("reads the new screen beside the thread refresh after this tab releases contr
       </>,
     ),
   );
+  // Mounting the controls closes the window, as switching bots does; open it again.
+  await act(async () => state.setComputerOpen(true));
   screenUrl.mockClear();
   let released!: Promise<void>;
   await act(async () => {
@@ -672,13 +740,8 @@ it("takes control when a view-only boot is already in progress", async () => {
 });
 
 it("ignores a second take while the first control request is pending", async () => {
-  let finish!: (value: { leaseId: string; expiresAt: string }) => void;
-  const takeover = vi.fn(
-    () =>
-      new Promise<{ leaseId: string; expiresAt: string }>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  const finish = deferred<{ leaseId: string; expiresAt: string }>();
+  const takeover = vi.fn(() => finish.promise);
   const { takeControl } = await renderTakingControl(takeover);
   let first!: Promise<boolean>;
   await act(async () => {
@@ -690,7 +753,7 @@ it("ignores a second take while the first control request is pending", async () 
   expect(takeover).toHaveBeenCalledTimes(1);
   expect(state.isOwnControlEvent("bot-1", "computer.takeover.granted", "lease-1")).toBe(true);
   await act(async () => {
-    finish({ leaseId: "lease-1", expiresAt: "" });
+    finish.resolve({ leaseId: "lease-1", expiresAt: "" });
     await first;
   });
 });

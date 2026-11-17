@@ -17,12 +17,11 @@ import {
 } from "@rakazo/core";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { readableGutters } from "../../lib/adaptive-layout";
-import { rpc } from "../../lib/api";
 import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
@@ -34,6 +33,8 @@ import { cronLabels } from "../../lib/cron";
 import { useUiLocale } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
 import { useChatOnScreen } from "../../lib/page-card-detail";
+import { rpcQuery } from "../../lib/query";
+import { useScreenQuery } from "../../lib/screen-query";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
@@ -83,6 +84,8 @@ import { useThreadRunError } from "./thread-run-error";
 function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
 }
+
+const noAgentSkills: AgentSkillCatalogEntry[] = [];
 
 /**
  * The chat screen. Hook order is effect order: the snapshot, scroll, sync and send hooks run their
@@ -162,28 +165,9 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       : undefined;
   const history = useThreadSnapshot();
   const { snap, composingBots, showingSaved } = history;
-  const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [uploadConfig, setUploadConfig] = useState<{
-    maxUploadSizeBytes?: number;
-    maxAttachmentsPerMessage?: number;
-  }>();
-  const [needsModel, setNeedsModel] = useState<boolean>();
   // Re-read on focus so returning from Models settings updates unsent missing-model messages.
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      void rpc("me")
-        .then((me) => {
-          if (cancelled) return;
-          setUploadConfig(me);
-          setNeedsModel(me.needsModel);
-        })
-        .catch(() => undefined);
-      return () => {
-        cancelled = true;
-      };
-    }, []),
-  );
+  const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
+  const needsModel = uploadConfig?.needsModel;
 
   const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
     useThreadBots({
@@ -224,12 +208,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const visibleMessages = transcript.visibleMessages;
   const newestPages = useMemo(() => newestPageCards(visibleMessages), [visibleMessages]);
   const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
+  // The group's members in its order, once the chat or its group list has loaded them; the
+  // title seats the inbox's copy until then.
+  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        groupMemberNames: groupMembers?.map((member) => member.name),
         bots: mentionBots.map((bot) => ({
           id: bot.id,
           name: bot.name,
@@ -247,7 +235,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         connectors: mentionConnectors,
         cronLabels: cronLabels(locale),
       }),
-    [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
+    [
+      groupId,
+      groupMembers,
+      inGroup,
+      locale,
+      mentionBots,
+      mentionConnectors,
+      mentionGroups,
+      mentionRoutines,
+    ],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
@@ -263,9 +260,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     snap && (!showingSaved || error)
       ? snap.run?.status
       : (titleBot?.threadStatus ?? snap?.run?.status);
-  // The group's members in its order, once the chat or its group list has loaded them; the
-  // title seats the inbox's copy until then.
-  const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
   // Only reply text being written replaces the footer; earlier sentences above a tool call don't.
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
@@ -301,11 +295,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     showingSaved,
   });
 
-  useEffect(() => {
-    void rpc("agentSkills/list")
-      .then(setAgentSkills)
-      .catch(() => setAgentSkills([]));
-  }, []);
+  const agentSkills: AgentSkillCatalogEntry[] =
+    useScreenQuery(rpcQuery("agentSkills/list"), { onForeground: false }).data ?? noAgentSkills;
 
   const scroll = useThreadListScroll({
     history,

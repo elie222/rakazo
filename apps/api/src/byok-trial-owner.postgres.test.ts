@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -17,7 +18,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "./account-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
-import { watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
+import { expireCheckoutLease, watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -218,14 +219,6 @@ class FlakyCancelEmulator extends BillingEmulator {
     if (this.failCancellation) throw new Error("provider unavailable");
     await super.cancelCustomerSubscriptions(customerId);
   }
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 /** Holds the own-key checkout call until the test releases it. */
@@ -442,10 +435,7 @@ dbTests("own-key trial hold lifecycle", () => {
     const older = service.selectFunding(owner.first.actor, "byok");
     await syncing;
     // The older request's provider reads outlast its lease, and a newer request takes it over.
-    await prisma.billingAccount.updateMany({
-      where: { organizationId: owner.first.organizationId },
-      data: { checkoutLeaseExpiresAt: new Date(0) },
-    });
+    await expireCheckoutLease(prisma, owner.first.organizationId);
     await service.selectFunding(owner.first.actor, "byok");
     const first = await customerOf(owner.first.organizationId);
     expect(provider.byokCheckouts.get(first)?.trialDays).toBe(TRIAL_DAYS);
@@ -505,14 +495,10 @@ dbTests("own-key trial hold lifecycle", () => {
           .query(
             `SELECT 1 FROM pg_stat_activity
               WHERE application_name = 'expiry' AND wait_event_type = 'Lock'
-                AND query LIKE 'UPDATE%billing_accounts%'`,
+                AND query LIKE '%billing_accounts%'`,
           )
           .then((result) => result.rowCount);
-      expiryWrite = asSystem(expiry.prisma)
-        .billingAccount.updateMany({
-          where: { organizationId: owner.first.organizationId },
-          data: { checkoutLeaseExpiresAt: new Date(0) },
-        })
+      expiryWrite = expireCheckoutLease(asSystem(expiry.prisma), owner.first.organizationId)
         // A failure here shows as a wrong lease below; teardown waits for it either way.
         .catch(() => undefined);
       const newer = service.selectFunding(owner.first.actor, "byok");

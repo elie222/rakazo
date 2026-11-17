@@ -1,7 +1,15 @@
-import { SIGNUP_ATTRIBUTION_COOKIE, SIGNUP_SURFACE_HEADER } from "@rakazo/contracts";
+import {
+  PARTNER_CLICK_COOKIE,
+  SIGNUP_ATTRIBUTION_COOKIE,
+  SIGNUP_SURFACE_HEADER,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { rememberSignupAttribution } from "./browser-signup-attribution.js";
-import { signupAttributionFromCookie, signupAttributionFromHeaders } from "./signup-attribution.js";
+import { rememberPartnerClick, rememberSignupAttribution } from "./browser-signup-attribution.js";
+import {
+  partnerClickFromHeaders,
+  signupAttributionFromCookie,
+  signupAttributionFromHeaders,
+} from "./signup-attribution.js";
 
 function browser(href: string, referrer = "") {
   let cookie = "";
@@ -140,5 +148,32 @@ describe("signup acquisition", () => {
       },
     });
     expect(() => rememberSignupAttribution(page)).not.toThrow();
+  });
+});
+
+describe("partner link clicks", () => {
+  it("keeps the latest click for the whole site, and reads it back at signup", () => {
+    const page = browser("https://www.example.com/pricing?via_click=first_1");
+    rememberPartnerClick(page, "via_click");
+    expect(page.writes[0]).toContain(`${PARTNER_CLICK_COOKIE}=first_1;`);
+    expect(page.writes[0]).toContain("Domain=example.com");
+    page.location.href = "https://www.example.com/?via_click=second_2";
+    rememberPartnerClick(page, "via_click");
+    expect(partnerClickFromHeaders(new Headers({ cookie: page.document.cookie }))).toBe("second_2");
+  });
+
+  it("ignores pages without a click and values that are not click ids", () => {
+    for (const href of [
+      "https://example.com/",
+      "https://example.com/?via_click=",
+      "https://example.com/?via_click=a%3Bb",
+    ]) {
+      const page = browser(href);
+      rememberPartnerClick(page, "via_click");
+      expect(page.writes).toHaveLength(0);
+    }
+    expect(
+      partnerClickFromHeaders(new Headers({ cookie: `${PARTNER_CLICK_COOKIE}=bad value` })),
+    ).toBeUndefined();
   });
 });

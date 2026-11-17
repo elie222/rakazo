@@ -1,4 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { runAsSystem } from "./row-security.js";
 
@@ -10,9 +11,9 @@ export class IsolationError extends Error {
 }
 
 /** Unique (spaceId, userId, name) collision when renaming a bot section. */
-export class BotSectionNameConflictError extends Error {
+export class BotSectionNameConflictError extends ClientError {
   constructor(message = "Section name already used") {
-    super(message);
+    super("CONFLICT", message);
     this.name = "BotSectionNameConflictError";
   }
 }

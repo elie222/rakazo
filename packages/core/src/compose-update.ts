@@ -29,7 +29,7 @@ export const IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG";
 export const PREVIOUS_IMAGE_TAG_ENV = "RAKAZO_IMAGE_TAG_PREVIOUS";
 
 /**
- * Matches the `name:` pinned in `infra/compose/docker-compose.prod.yml`. Used when Compose has not
+ * The `name:` pinned in `infra/compose/docker-compose.prod.yml`. Used when Compose has not
  * injected `COMPOSE_PROJECT_NAME` (it does, into running services) and no dedicated override is set.
  */
 export const DEFAULT_COMPOSE_PROJECT_NAME = "rakazo-prod";

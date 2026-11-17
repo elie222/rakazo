@@ -4,12 +4,30 @@ import type {
   ManagedConnectorProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { IntegrationProviderConfig, IntegrationProviderId } from "@rakazo/contracts";
-import { IntegrationProviderConfigSchema, IntegrationProviderIdSchema } from "@rakazo/contracts";
+import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import * as z from "zod";
 import { ComposioConnector } from "./composio-connector.js";
 import { credentialDigest } from "./credential-digest.js";
 import { PipedreamConnector } from "./pipedream-connector.js";
+
+/** Each provider this build has, with the credentials it takes. */
+const IntegrationProviderConfigSchema = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("composio"), apiKey: z.string().trim().min(1).max(16384) }),
+  z.object({
+    provider: z.literal("pipedream"),
+    clientId: z.string().trim().min(1).max(512),
+    clientSecret: z.string().trim().min(1).max(16384),
+    projectId: z.string().trim().min(1).max(512),
+    environment: z.enum(["production", "development"]).default("production"),
+  }),
+]);
+type IntegrationProviderConfig = z.infer<typeof IntegrationProviderConfigSchema>;
+type IntegrationProviderId = IntegrationProviderConfig["provider"];
+const INTEGRATION_PROVIDER_IDS = IntegrationProviderConfigSchema.options.map(
+  (option) => option.shape.provider.value,
+);
 
 const PLUGIN_SLUG_PROVIDER: IntegrationProviderId = "composio";
 
@@ -42,7 +60,13 @@ export class IntegrationProviderSettings {
       : new PipedreamConnector({ ...config, identitySecret: this.identitySecret });
   }
 
-  async configured(id: IntegrationProviderId): Promise<boolean> {
+  /** Whether this build has an integration provider with that id. */
+  has(id: string): id is IntegrationProviderId {
+    return (INTEGRATION_PROVIDER_IDS as string[]).includes(id);
+  }
+
+  async configured(id: string): Promise<boolean> {
+    if (!this.has(id)) return false;
     return (
       Boolean(
         await this.prisma.integrationProviderConfig.findUnique({
@@ -53,13 +77,14 @@ export class IntegrationProviderSettings {
     );
   }
 
-  async resolve(id: IntegrationProviderId): Promise<ManagedConnectorProvider | undefined> {
+  async resolve(id: string): Promise<ManagedConnectorProvider | undefined> {
     return (await this.prepare(id)).provider;
   }
 
   async prepare(
-    id: IntegrationProviderId,
+    id: string,
   ): Promise<{ provider: ManagedConnectorProvider | undefined; ref: string | null }> {
+    if (!this.has(id)) return { provider: undefined, ref: null };
     const row = await this.prisma.integrationProviderConfig.findUnique({ where: { id } });
     if (!row) {
       this.cache.delete(id);
@@ -88,7 +113,13 @@ export class IntegrationProviderSettings {
     }
   }
 
-  async save(config: IntegrationProviderConfig, context: AdapterContext): Promise<void> {
+  async save(submitted: SubmittedConfig, context: AdapterContext): Promise<void> {
+    if (!this.has(submitted.provider))
+      throw new ClientError("BAD_REQUEST", "Unknown integration provider");
+    const parsed = IntegrationProviderConfigSchema.safeParse(submitted);
+    // The schema's own message could repeat a credential.
+    if (!parsed.success) throw new ClientError("BAD_REQUEST", "Could not verify these credentials");
+    const config = parsed.data;
     const adapter = this.create(config);
     try {
       // Exercises authenticated access before replacing working credentials.
@@ -124,14 +155,12 @@ export class IntegrationProviderSettings {
   }
 
   providers(): ManagedConnectorProvider[] {
-    return IntegrationProviderIdSchema.options.map(
-      (id) => new ConfiguredIntegrationProvider(id, this),
-    );
+    return INTEGRATION_PROVIDER_IDS.map((id) => new ConfiguredIntegrationProvider(id, this));
   }
 
   /** Warm catalogs for env- and DB-configured providers. Fire-and-forget. */
   warmDirectories(): void {
-    for (const id of IntegrationProviderIdSchema.options) {
+    for (const id of INTEGRATION_PROVIDER_IDS) {
       void this.resolve(id)
         .then((provider) => provider?.warmDirectory?.())
         .catch(() => undefined);

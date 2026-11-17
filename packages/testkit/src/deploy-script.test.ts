@@ -9,7 +9,10 @@ const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.
 const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
-const WORKERS = "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}}";
+const RESTART_POLICIES =
+  "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}";
+const DRAIN_SIGNAL =
+  'docker inspect --format {{index .Config.Labels "org.rakazo.run-drain-signal"}}';
 const startBeside = (service: string) => [
   `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
   `${COMPOSE} ps --all --quiet ${service}`,
@@ -17,40 +20,53 @@ const startBeside = (service: string) => [
 ];
 const rolloutSteps = (revision: string) => [
   // The image the running API uses, restored if the deploy fails.
-  `${COMPOSE} ps --quiet api`,
+  `${COMPOSE} ps --all --quiet api`,
+  `${RESTART_POLICIES} api-old`,
   "docker inspect --format {{.Image}} api-old",
   `${COMPOSE} config --quiet`,
   `${COMPOSE} config`,
   `${COMPOSE} build --build-arg GIT_SHA=${revision}`,
-  // No worker is still draining from an earlier deploy.
+  // No worker or API is still draining from an earlier deploy.
   `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
+  `${RESTART_POLICIES} worker-old`,
+  `${COMPOSE} ps --all --quiet api`,
+  `${RESTART_POLICIES} api-old`,
   // Only this container gets the database owner login; the old API keeps serving meanwhile.
   `${COMPOSE} config --services`,
   `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
-  ...["api", "web"].flatMap((service) => [
-    `${COMPOSE} ps --all --quiet ${service}`,
-    ...startBeside(service),
-    `docker stop --time 30 ${service}-old`,
-    `docker rm ${service}-old`,
-  ]),
+  // The old API stops taking requests and lets its chat turns end instead of being stopped.
+  `${COMPOSE} ps --all --quiet api`,
+  `${RESTART_POLICIES} api-old`,
+  `${COMPOSE} ps --all --quiet api`,
+  ...startBeside("api"),
+  `${DRAIN_SIGNAL} api-old`,
+  "docker update --restart no api-old",
+  "docker kill --signal SIGUSR2 api-old",
+  `${COMPOSE} ps --all --quiet web`,
+  ...startBeside("web"),
+  "docker stop --time 30 web-old",
+  "docker rm web-old",
   // The old worker is told to finish its jobs instead of being stopped.
   `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
+  `${RESTART_POLICIES} worker-old`,
   `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old`,
+  `${RESTART_POLICIES} worker-old`,
   ...startBeside("worker"),
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
-  `${COMPOSE} config --services`,
-  `${COMPOSE} up -d --no-deps --remove-orphans api`,
+  `${COMPOSE} up -d --no-deps --remove-orphans web`,
 ];
-// After a healthy deploy, the deploy waits for the old worker to finish and removes it.
+// After a healthy deploy, the deploy waits for the old worker and API to finish and removes them.
 const finishDraining = [
   `${COMPOSE} ps --all --quiet worker`,
-  `${WORKERS} worker-old worker-new`,
+  `${RESTART_POLICIES} worker-old worker-new`,
   "docker stop worker-old",
   "docker rm worker-old",
+  `${COMPOSE} ps --all --quiet api`,
+  `${RESTART_POLICIES} api-old api-new`,
+  "docker wait api-old",
+  "docker stop --time 30 api-old",
+  "docker rm api-old",
 ];
 const temporaryDirectories: string[] = [];
 
@@ -93,7 +109,7 @@ function rollout(commands: string[]) {
       (line) =>
         / (config|build|up|ps) /.test(`${line} `) ||
         line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=") ||
-        /^docker (inspect|stop|rm|update|kill) /.test(line),
+        /^docker (inspect|stop|rm|update|kill|wait) /.test(line),
     );
 }
 
@@ -137,8 +153,10 @@ if [[ "$*" == *" config --services" && -n "\${MIGRATE_LISTED_FIRST:-}" ]]; then
   echo migrate
   sleep 0.2
   echo api
+  echo web
 elif [[ "$*" == *" config --services" ]]; then
   echo api
+  echo web
   [[ "$revision" == "\${NO_MIGRATE_REVISION:-}" ]] || echo migrate
 fi
 if [[ "$*" == *" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS="* && ( -n "\${FAIL_MIGRATE:-}" || "$revision" == "\${NO_MIGRATE_REVISION:-}" ) ]]; then exit 1; fi
@@ -146,12 +164,15 @@ if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
 # Containers as "<name> <restart policy> <state>", named after their service. Each rolled service
-# starts with one, --scale adds new ones, and EXTRA_WORKER adds a worker an earlier deploy drained.
+# starts with one, --scale adds new ones, and EXTRA_WORKER and EXTRA_API add one an earlier deploy
+# drained.
 containers="$COMMAND_LOG.containers"
 if [[ ! -e "$containers" ]]; then
   : >"$containers"
-  [[ -n "\${FRESH:-}" ]] || printf '%s unless-stopped running\n' api-old web-old worker-old >"$containers"
+  [[ -z "\${STOPPED_API:-}" ]] || echo "api-stopped unless-stopped exited" >"$containers"
+  [[ -n "\${FRESH:-}" ]] || printf '%s unless-stopped running\n' api-old web-old worker-old >>"$containers"
   [[ -z "\${EXTRA_WORKER:-}" ]] || echo "worker-older no \${EXTRA_WORKER}" >>"$containers"
+  [[ -z "\${EXTRA_API:-}" ]] || echo "api-older no \${EXTRA_API}" >>"$containers"
 fi
 service="\${*: -1}"
 if [[ "$*" == *" ps --all --quiet "* ]]; then
@@ -176,8 +197,14 @@ fi
 if [[ "$1" == kill && -n "\${DRAIN_EXITS:-}" ]]; then
   for name in "\${@:4}"; do sed -i.bak "s/^$name \\([^ ]*\\) .*/$name \\1 exited/" "$containers"; done
 fi
+if [[ "$1" == inspect && "$*" == *run-drain-signal* ]]; then
+  echo "\${API_DRAIN_SIGNAL-SIGUSR2}"
+  exit 0
+fi
 if [[ "$1" == inspect && "$*" == *RestartPolicy* ]]; then
-  for name in "\${@:4}"; do grep "^$name " "$containers"; done
+  for name in "\${@:4}"; do
+    grep "^$name " "$containers" | awk '{ print $1, $2, ($3 == "exited" ? "false" : "true") }'
+  done
   exit 0
 fi
 if [[ "$1" == inspect ]]; then echo "\${CONTAINER_HEALTH:-running healthy}"; fi
@@ -364,9 +391,17 @@ describe("production deploy script", () => {
     ]);
     expect(commands).toContain(`docker tag sha256:previous ${APP_IMAGE}`);
     expect(deploy.commands()).toContainEqual(
-      expect.stringMatching(/ up -d --no-deps --remove-orphans api @ first$/),
+      expect.stringMatching(/ up -d --no-deps --remove-orphans web @ first$/),
     );
-    expect(commands.slice(-2)).toEqual(["docker stop worker-old", "docker rm worker-old"]);
+    expect(commands.slice(-7)).toEqual([
+      "docker stop worker-old",
+      "docker rm worker-old",
+      `${COMPOSE} ps --all --quiet api`,
+      `${RESTART_POLICIES} api-old api-new`,
+      "docker wait api-old",
+      "docker stop --time 30 api-old",
+      "docker rm api-old",
+    ]);
   });
 
   it("rebuilds the previous revision when the running image is unknown", () => {
@@ -404,7 +439,7 @@ describe("production deploy script", () => {
         `docker tag ${published(next)} ${APP_IMAGE}`,
         `docker rmi ${published(next)}`,
       ]);
-      const up = commands.indexOf(`${COMPOSE} up -d --no-deps --remove-orphans api`);
+      const up = commands.indexOf(`${COMPOSE} up -d --no-deps --remove-orphans web`);
       expect(up).toBeGreaterThan(pull);
       expect(commands.slice(up + 1)).toEqual([
         "curl https://app.example.test/health",
@@ -570,6 +605,9 @@ describe("production deploy script", () => {
       "docker stop worker-old worker-new",
       "docker rm worker-old worker-new",
       `${COMPOSE} up -d --no-deps --wait worker`,
+      // The failed release's API let its turns end meanwhile; the rollback waits for it last.
+      "docker stop --time 30 api-new",
+      "docker rm api-new",
     ]);
   });
 
@@ -581,10 +619,12 @@ describe("production deploy script", () => {
     const migrate = commands.indexOf(
       `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
     );
-    expect(commands.slice(migrate - 4, migrate)).toEqual([
-      `${WORKERS} worker-old worker-older`,
+    expect(commands.slice(migrate - 6, migrate)).toEqual([
+      `${RESTART_POLICIES} worker-old worker-older`,
       "docker stop worker-older",
       "docker rm worker-older",
+      `${COMPOSE} ps --all --quiet api`,
+      `${RESTART_POLICIES} api-old`,
       `${COMPOSE} config --services`,
     ]);
   });
@@ -599,6 +639,77 @@ describe("production deploy script", () => {
     expect(removed).toBeGreaterThan(replaced);
     expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
     expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+  });
+
+  it("stops an API whose image names no drain signal as before", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ API_DRAIN_SIGNAL: "" }).status).toBe(0);
+    const commands = rollout(deploy.commands());
+    const retired = commands.indexOf(`${DRAIN_SIGNAL} api-old`);
+    expect(commands.slice(retired + 1, retired + 3)).toEqual([
+      "docker stop --time 30 api-old",
+      "docker rm api-old",
+    ]);
+    expect(commands.some((line) => line.startsWith("docker kill --signal SIGUSR2"))).toBe(false);
+    expect(commands.some((line) => line.startsWith("docker wait"))).toBe(false);
+  });
+
+  it("waits for an API an earlier deploy left draining before migrating", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ EXTRA_API: "running" }).status).toBe(0);
+    const commands = rollout(deploy.commands());
+    const migrate = commands.indexOf(
+      `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
+    );
+    expect(commands.slice(migrate - 5, migrate)).toEqual([
+      `${RESTART_POLICIES} api-old api-older`,
+      "docker wait api-older",
+      "docker stop --time 30 api-older",
+      "docker rm api-older",
+      `${COMPOSE} config --services`,
+    ]);
+    // The image to roll back to is the serving API's, not the draining one's.
+    expect(commands.slice(0, 3)).toEqual([
+      `${COMPOSE} ps --all --quiet api`,
+      `${RESTART_POLICIES} api-old api-older`,
+      "docker inspect --format {{.Image}} api-old",
+    ]);
+  });
+
+  it("rolls back to the serving API's image, not a stopped one's", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ STOPPED_API: "1" }).status).toBe(0);
+    expect(rollout(deploy.commands()).slice(0, 3)).toEqual([
+      `${COMPOSE} ps --all --quiet api`,
+      `${RESTART_POLICIES} api-stopped api-old`,
+      "docker inspect --format {{.Image}} api-old",
+    ]);
+  });
+
+  it("hands back the turns of an API a rollback finds draining before it scales up", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "unhealthy");
+    expect(deploy.run({ FAIL_HEALTH: "1", DRAIN_EXITS: "1" }).status).toBe(1);
+    const commands = rollout(deploy.commands());
+    const drained = commands.indexOf("docker kill --signal SIGUSR2 api-old");
+    const removed = commands.indexOf("docker rm api-old");
+    const restored = commands.lastIndexOf(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale api=2 api`,
+    );
+    expect(drained).toBeGreaterThan(-1);
+    expect(commands.slice(drained, removed + 1)).toContain("docker stop --time 30 api-old");
+    expect(restored).toBeGreaterThan(removed);
+    // The failed release's API lets its turns end too, and the rollback waits for it.
+    expect(commands.slice(restored)).toEqual(
+      expect.arrayContaining([
+        "docker kill --signal SIGUSR2 api-new",
+        "docker wait api-new",
+        "docker rm api-new",
+      ]),
+    );
   });
 
   it("starts the configured number of API and worker containers beside the old ones", () => {
@@ -618,7 +729,7 @@ describe("production deploy script", () => {
     expect(commands.slice(apiStarted + 2, apiStarted + 5)).toEqual([
       health("api-new"),
       health("api-newx"),
-      "docker stop --time 30 api-old",
+      `${DRAIN_SIGNAL} api-old`,
     ]);
     expect(commands).toContain(`${COMPOSE} up -d --no-deps --no-recreate --scale web=2 web`);
     const workerStarted = commands.indexOf(
@@ -654,6 +765,7 @@ describe("production deploy script", () => {
     const commands = rollout(deploy.commands());
     expect(commands).toContain("docker rm --force api-new");
     expect(commands).not.toContain("docker stop --time 30 api-old");
+    expect(commands).not.toContain("docker kill --signal SIGUSR2 api-old");
     expect(deploy.head()).toBe(deploy.first);
   });
 

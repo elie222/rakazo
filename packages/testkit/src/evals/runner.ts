@@ -10,11 +10,14 @@ import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rak
 import {
   ACTIVE_RUN_STATUSES,
   attachmentComputerPath,
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
   isTerminal,
   splitToolHistory,
 } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import { createThreadEvents } from "@rakazo/db";
+import { createThreadEvents, readJsonColumn, storedMessageBlocks } from "@rakazo/db";
+import { z } from "zod";
 import type { HostedApp } from "../apps/mcp-host.js";
 import { hostOverMcp } from "../apps/mcp-host.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
@@ -959,10 +962,10 @@ export async function runTrial(
           await prisma.message.findMany({
             where: { runId, role: "bot" },
             orderBy: { seq: "asc" },
-            select: { blocks: true },
+            select: { id: true, blocks: true },
           })
         ).flatMap((message) =>
-          (message.blocks as MessageBlock[]).flatMap((block) =>
+          storedMessageBlocks(message).flatMap((block) =>
             block.kind === "bot_message_sent" && block.toBotId === peer?.id ? [block.text] : [],
           ),
         );
@@ -974,7 +977,7 @@ export async function runTrial(
       if ("wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
-          select: { blocks: true },
+          select: { id: true, blocks: true },
         });
         const observed = realtime.events.filter((event) => event.runId === runId);
         routineRuns.push({
@@ -985,7 +988,7 @@ export async function runTrial(
               select: { userId: true },
             }),
           ),
-          messages: messages.map((m) => m.blocks as RoutineEvidence["messages"][number]),
+          messages: messages.map((m) => storedMessageBlocks(m)),
           progress: observed
             .filter((event) => event.type === "thread.progress")
             .map((event) => event.payload),
@@ -1002,6 +1005,73 @@ export async function runTrial(
       // the product's own fixed notices, never a bare status code from an explanation.
       if (/unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText))
         throw new EvalFailure("provider", lastText);
+    }
+    let delegation: Evidence["delegation"];
+    if (scenario.delegation) {
+      if (!handles.awaitIdle)
+        throw new EvalFailure("harness", "Delegation evals require executor draining");
+      await withinDeadline(handles.awaitIdle(), deadline);
+      const helpers = await prisma.run.findMany({
+        where: { botId, trigger: BACKGROUND_HELPER_TRIGGER, delegatedFromRunId: { in: runIds } },
+        select: { id: true, status: true },
+      });
+      const results = await prisma.run.findMany({
+        where: {
+          botId,
+          trigger: HELPER_RESULT_TRIGGER,
+          delegatedFromRunId: { in: helpers.map((r) => r.id) },
+        },
+        select: { id: true, status: true },
+      });
+      const snapshot = await rpc<{
+        messages: Array<{ runId?: string | null; blocks: MessageBlock[] }>;
+      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      delegation = {
+        helpers: await Promise.all(
+          helpers.map(async (helper) => ({
+            status: helper.status,
+            calls: await (async () => {
+              const completions = await prisma.event.findMany({
+                where: { runId: helper.id, type: "agent.tool.completed" },
+                select: { id: true, payload: true },
+              });
+              return (handles?.toolCallObservations ?? [])
+                .filter((call) => call.runId === helper.id)
+                .map((call) => ({
+                  name: call.name,
+                  args: call.args,
+                  succeeded: completions.some((event) => {
+                    const payload = readJsonColumn(
+                      z.object({
+                        executionId: z.string().optional(),
+                        name: z.string().optional(),
+                        outcome: z.string().optional(),
+                      }),
+                      event.payload,
+                      { table: "events", column: "payload", id: event.id },
+                      { fallback: {} },
+                    );
+                    return (
+                      call.executionId !== undefined &&
+                      payload.executionId === call.executionId &&
+                      payload.name === call.name &&
+                      payload.outcome === "succeeded"
+                    );
+                  }),
+                }));
+            })(),
+          })),
+        ),
+        results: results.map((run) => ({
+          status: run.status,
+          text: snapshot.messages
+            .filter((message) => message.runId === run.id)
+            .flatMap((message) =>
+              message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])),
+            )
+            .join("\n"),
+        })),
+      };
     }
     const files: Evidence["files"] = {};
     for (const path of scenario.files ?? []) {
@@ -1059,6 +1129,7 @@ export async function runTrial(
         : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(delegation ? { delegation } : {}),
       ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
@@ -1099,6 +1170,7 @@ export async function runTrial(
       Object.entries({
         ...files,
         "final-response": lastText,
+        ...(delegation ? { delegation: JSON.stringify(delegation) } : {}),
         ...(scenario.history && replies.length > 1
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
@@ -1320,7 +1392,7 @@ async function deliverPeerMessage(
     { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
     peer,
     { bot_id: targetBotId, message: text, intent: "request" },
-    { allowTerminalSource: true },
+    { returnFrom: "ended" },
   );
   if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
 }
@@ -1335,11 +1407,11 @@ async function deliveredBySubject(
   if (!ids.length) return [];
   const messages = await prisma.message.findMany({
     where: { threadId: { in: ids } },
-    select: { blocks: true },
+    select: { id: true, blocks: true },
     orderBy: { seq: "asc" },
   });
   return messages.flatMap((message) => {
-    const blocks = message.blocks as MessageBlock[];
+    const blocks = storedMessageBlocks(message);
     const sent = blocks.find(
       (block) =>
         (block.kind === "bot_message_received" || block.kind === "handoff") &&

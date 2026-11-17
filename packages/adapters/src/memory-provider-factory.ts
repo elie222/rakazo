@@ -1,38 +1,12 @@
 import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { MemoryProviderDescriptor } from "@rakazo/contracts";
+import { settingsFieldProblem, visibleSettingsFields } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import {
-  createHindsightProvider,
-  HINDSIGHT_PROVIDER_ID,
-  hindsightRequiresPrivateEndpoint,
-  parseRecallBanks,
-  prepareHindsightConnection,
-} from "./hindsight-memory-provider.js";
-import {
-  createHonchoProvider,
-  HONCHO_PROVIDER_ID,
-  honchoRequiresPrivateEndpoint,
-  prepareHonchoConnection,
-} from "./honcho-memory-provider.js";
-import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
-import { normalizeSerenityEndpoint } from "./serenity-client.js";
-import {
-  classifySerenityConnectionSettings,
-  createSerenityProvider,
-  prepareSerenityConnection,
-  SERENITY_PROVIDER_ID,
-  serenityRequiresPrivateEndpoint,
-} from "./serenity-memory-provider.js";
+import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
+import { knownMemoryProvider, memoryProviders } from "./memory-providers.js";
 
-export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
-
-import {
-  createSupermemoryProvider,
-  decodeLegacySupermemoryCredentials,
-  prepareSupermemoryConnection,
-  SUPERMEMORY_PROVIDER_ID,
-  supermemoryRequiresPrivateEndpoint,
-} from "./supermemory-memory-provider.js";
+export { MemoryProviderPrivateEndpointRequiredError } from "./providers/memory/serenity/serenity-memory-provider.js";
 
 export interface MemoryProviderConnectionInput {
   provider: string;
@@ -57,114 +31,65 @@ export interface MemoryProviderResolver {
   resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null>;
 }
 
-interface MemoryProviderAdapter {
-  requiresPrivateEndpoint(settings: Record<string, string>): boolean;
-  /** Async trust classification (e.g. DNS) without probing credentials. */
-  classifySettings?(settings: Record<string, string>): Promise<Record<string, string>>;
-  /** Recheck persisted endpoint settings before their credentials are decrypted. */
-  revalidate?(settings: Record<string, string>): Promise<void>;
-  prepare(
-    settings: Record<string, string>,
-    credentials: Record<string, string>,
-    options?: { allowPrivateEndpoint?: boolean },
-  ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }>;
-  create(
-    settings: Record<string, string>,
-    credentials: Record<string, string>,
-    connectionVersion?: string,
-  ): SemanticMemoryProvider;
-  decodeLegacyCredentials?(plaintext: string): Record<string, string> | null;
-  /**
-   * Everything the stored credentials can reach with these settings, normalized as prepare
-   * saves it. When this changes, the stored credentials must not follow.
-   */
-  credentialTarget(settings: Record<string, string>): string;
+function memoryProviderAdapter(provider: string): MemoryProviderDefinition {
+  const adapter = knownMemoryProvider(provider);
+  if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
+  return adapter;
 }
 
-/** Cloud, or the self-hosted server's base URL. */
-function serviceTarget(settings: Record<string, string>, defaultMode?: "cloud"): string {
-  const mode = settings.mode ?? defaultMode;
-  if (mode === "cloud") return "cloud";
-  // Clients drop trailing slashes, so they name the same server.
-  return `${mode ?? ""} ${settings.baseUrl?.trim().replace(/\/+$/, "") ?? ""}`;
+/** Every provider's settings form, in the order a Space picks from; the first is offered first. */
+export function memoryProviderDescriptors(): MemoryProviderDescriptor[] {
+  return Object.entries(memoryProviders).map(
+    ([
+      id,
+      {
+        settings: { displayName, fields },
+      },
+    ]) => ({
+      id,
+      displayName,
+      fields,
+    }),
+  );
 }
 
-function serenityTarget(settings: Record<string, string>): string {
-  const endpoint = settings.endpoint?.trim() ?? "";
-  try {
-    return normalizeSerenityEndpoint(endpoint);
-  } catch {
-    return endpoint;
+/** One line naming a saved connection, or nothing for a provider this build does not have. */
+export function memoryProviderConnectionLabel(
+  provider: string,
+  settings: Record<string, string>,
+): string | undefined {
+  return knownMemoryProvider(provider)?.settings.connectionLabel(settings);
+}
+
+/**
+ * Refuses settings the provider's form would not send. Settings no field names are left to the
+ * provider, and so are secrets: only it knows whether a key is needed where it connects.
+ */
+export function assertMemoryProviderSettings(
+  provider: string,
+  settings: Record<string, string>,
+): void {
+  const { fields } = memoryProviderAdapter(provider).settings;
+  for (const field of visibleSettingsFields(fields, settings)) {
+    if (field.kind === "secret") continue;
+    const problem = settingsFieldProblem(field, settings);
+    if (!problem) continue;
+    if (problem.message) throw new Error(problem.message);
+    if (problem.rule === "required") throw new Error(`${field.key} is required`);
+    if (problem.rule === "length") throw new Error(`${field.key} is the wrong length`);
+    throw new Error(`${field.key} is not one of its choices`);
   }
 }
 
-function honchoTarget(settings: Record<string, string>): string {
-  // The key can reach other workspaces and peers, so those are part of what it reaches.
-  return JSON.stringify([
-    serviceTarget(settings, "cloud"),
-    settings.workspaceId?.trim() ?? "",
-    settings.userPeerId?.trim() ?? "",
-  ]);
-}
-
-function hindsightTarget(settings: Record<string, string>): string {
-  // The key can read other banks, so the banks recalled are part of what it reaches.
-  const recallBanks = parseRecallBanks(settings.recallBanks).sort();
-  return JSON.stringify([serviceTarget(settings, "cloud"), recallBanks]);
-}
-
-const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
-  [
-    SUPERMEMORY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: supermemoryRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareSupermemoryConnection,
-      create: createSupermemoryProvider,
-      decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
-      credentialTarget: (settings: Record<string, string>) => serviceTarget(settings),
-    },
-  ],
-  [
-    SERENITY_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: serenityRequiresPrivateEndpoint,
-      classifySettings: classifySerenityConnectionSettings,
-      prepare: (
-        settings: Record<string, string>,
-        credentials: Record<string, string>,
-        options?: { allowPrivateEndpoint?: boolean },
-      ) => prepareSerenityConnection(settings, credentials, undefined, options),
-      create: createSerenityProvider,
-      credentialTarget: serenityTarget,
-    },
-  ],
-  [
-    HONCHO_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: honchoRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareHonchoConnection,
-      create: createHonchoProvider,
-      credentialTarget: honchoTarget,
-    },
-  ],
-  [
-    HINDSIGHT_PROVIDER_ID,
-    {
-      requiresPrivateEndpoint: hindsightRequiresPrivateEndpoint,
-      revalidate: revalidateLocalServiceSettings,
-      prepare: prepareHindsightConnection,
-      create: createHindsightProvider,
-      credentialTarget: hindsightTarget,
-    },
-  ],
-]);
-
-function memoryProviderAdapter(provider: string): MemoryProviderAdapter {
-  const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
-  if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
-  return adapter;
+/** The stored settings an edit carries over because no field of the form holds them. */
+export function keptMemoryProviderSettings(
+  provider: string,
+  stored: Record<string, string>,
+): Record<string, string> {
+  const kept = memoryProviderAdapter(provider).settings.keptSettings ?? [];
+  return Object.fromEntries(
+    kept.flatMap((key) => (stored[key] === undefined ? [] : [[key, stored[key]]])),
+  );
 }
 
 /** Adapters classify their settings; callers enforce the deployment trust boundary. */

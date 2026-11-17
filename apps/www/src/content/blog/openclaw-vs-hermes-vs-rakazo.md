@@ -1,5 +1,6 @@
 ---
 title: "OpenClaw vs Hermes Agent vs Rakazo: which is simplest to run?"
+ogTitle: "OpenClaw vs Hermes Agent vs Rakazo"
 description: "Rakazo, OpenClaw, and Hermes Agent are open source and can run on your hardware. The simplest one is the product shape you actually want: chat, a gateway, or a desktop agent."
 published: "2026-10-07"
 updated: "2026-10-07"
@@ -106,7 +107,7 @@ Models include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an Open
 
 Optional connectors exist for Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark. They are not how you talk to the bot. The web, Electron, and Expo apps are.
 
-There is no seat fee for the software. You pay for models, machines, and any remote computer you enable. Image pull time is not a fixed number. The [self-host guide](/self-hosted-ai-agent/) is the command list, and the [longer install note](/blog/self-host-an-ai-agent/) says what the ten-minute title does and does not mean.
+There is no seat fee for the software. You pay for models, machines, and any remote computer you enable. Image pull time is not a fixed number. The [self-hosted AI agent guide](/self-hosted-ai-agent/) is the command list, and the [longer install note](/blog/self-host-an-ai-agent/) covers what the short install does and does not include.
 
 ## OpenClaw
 

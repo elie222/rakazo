@@ -43,6 +43,7 @@ import {
   transcriptCanSnapAfterFrame,
   transcriptIsNearEnd,
 } from "../../lib/transcript-scroll";
+import { useEventListener } from "../../lib/use-event-listener";
 import type { useBrowserNotifications } from "./use-browser-notifications";
 import type { ComputerState } from "./use-computer";
 import type { ThreadState } from "./use-thread-state";
@@ -152,13 +153,16 @@ export function useThreadSync({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const readerScrollEpoch = useRef(0);
   const pendingSnaps = useRef(new Set<number>());
-  useEffect(() => {
-    const onScroll = (event: Event) => {
+  useEventListener(
+    document,
+    "scroll",
+    (event) => {
       if (event.target === messageScroll.current) readerScrollEpoch.current += 1;
-    };
-    document.addEventListener("scroll", onScroll, true);
+    },
+    true,
+  );
+  useEffect(() => {
     return () => {
-      document.removeEventListener("scroll", onScroll, true);
       readerScrollEpoch.current += 1;
       for (const frame of pendingSnaps.current) window.cancelAnimationFrame(frame);
       pendingSnaps.current.clear();

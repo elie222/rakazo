@@ -617,4 +617,26 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain("[file: setup.exe (unavailable)]");
     expect(sent.prompt).not.toContain("[file: d.png (unavailable)]");
   });
+
+  it("leaves a saved message's files alone when the row holds them in another shape", async () => {
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({ id: "a-1", ...attachment, size: 1 }),
+    );
+    const { post, saveEmail } = setup({
+      storeAttachment,
+      message: email({
+        attachments: [{ name: "a.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1]) }],
+      }),
+    });
+    await post();
+    const row = (await saveEmail.mock.results[0]?.value) as { attachments: unknown };
+    // A kept file whose artifact is stored as something else is not a file that was only named.
+    const stored = [{ name: "a.pdf", artifactId: 7, mimeType: "application/pdf", size: 1 }];
+    row.attachments = stored;
+
+    await post();
+
+    expect(storeAttachment).toHaveBeenCalledTimes(1);
+    expect(row.attachments).toBe(stored);
+  });
 });

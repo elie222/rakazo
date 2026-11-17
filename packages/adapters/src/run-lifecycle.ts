@@ -7,11 +7,12 @@ import {
   isTerminal,
   nextFence,
   redactSecrets,
+  truncatePlainText,
   userRunError,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { databaseOutage, retryWhileDatabaseUnavailable, spaceTakesWork } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
@@ -162,6 +163,9 @@ export async function renewRunLease(
 /** Consecutive setup failures, including this one, after which a run fails instead of retrying. */
 export const RUN_SETUP_FAILURE_LIMIT = 8;
 
+/** The most of a setup failure's reason an attempt keeps; the log line has the whole error. */
+export const RUN_SETUP_FAILURE_REASON_MAX = 2_000;
+
 /** A paused turn's pending tool is not offered right now, such as while the user's own computer is offline. */
 export class PausedTurnToolsUnavailableError extends Error {
   constructor() {
@@ -174,7 +178,8 @@ export class PausedTurnToolsUnavailableError extends Error {
 
 /**
  * Setup failures in a row before the current attempt. Busy-computer and database waits are
- * setup_failed attempts without an error; they neither count nor break the streak.
+ * setup_failed attempts without an error; they neither count nor break the streak. Any error
+ * text counts: an earlier release wrote one fixed text where this one writes the reason.
  */
 export async function setupFailureStreak(prisma: PrismaClient, runId: string): Promise<number> {
   const recent = await prisma.attempt.findMany({
@@ -269,9 +274,11 @@ export async function writeComputerRunRequeue(
     leaseOwner: workerId,
     leaseFence: fence,
   };
+  // With no retry timer a queued run is due now.
+  const queuedWakeAt = retryAt ?? new Date();
   const releasedHold = {
     status: "queued" as const,
-    wakeAt: retryAt,
+    wakeAt: queuedWakeAt,
     error,
     leaseOwner: null,
     leaseExpiresAt: null,
@@ -284,12 +291,10 @@ export async function writeComputerRunRequeue(
     data: releasedHold,
   });
   if (preserve.count === 1) return true;
+  const requeue = computerRunRequeueData(resumeCheckpoint, error, heldForTakeover);
   const planned = await deps.prisma.run.updateMany({
     where: { ...whereLease, checkpoint: null },
-    data: {
-      ...computerRunRequeueData(resumeCheckpoint, error, heldForTakeover),
-      wakeAt: releasedHold.wakeAt,
-    },
+    data: { ...requeue, wakeAt: requeue.status === "queued" ? queuedWakeAt : retryAt },
   });
   if (planned.count === 1) return true;
   const retried = await deps.prisma.run.updateMany({
@@ -326,7 +331,6 @@ export async function requeueInterruptedRun(
       error: null,
       leaseOwner: null,
       leaseExpiresAt: null,
-      // Set, so the legacy retry trigger does not hold it back as a failed setup.
       wakeAt,
     },
   });
@@ -429,7 +433,7 @@ export async function claimRun(
       leaseOwner: workerId,
       leaseFence: fence,
     },
-    data: { status: "running" },
+    data: { status: "running", computerUseStartedAt: null },
   });
   if (started.count !== 1) return undefined;
   return { fence, current };
@@ -471,13 +475,20 @@ export async function retryRunSetup(
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
     setupError instanceof VaultKeyUnavailableError;
+  // Named here, not left to the log context, so the line is found by run wherever it is written.
+  const runFields = {
+    "run.id": runId,
+    "space.id": run.spaceId,
+    "thread.id": run.threadId,
+    "bot.id": run.botId,
+  };
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (databaseDown) {
     // Logged by the outage.
   } else if (providerOutage || !plan.leaseValid) {
-    getLogger().warn("run setup failed", { error: reportedSetupError });
+    getLogger().warn("run.setup_failed", { ...runFields, error: reportedSetupError });
   } else if (!computerBusy) {
-    getLogger().error("run setup failed", reportedSetupError);
+    getLogger().error("run.setup_failed", reportedSetupError, runFields);
   }
   // Every write below is fenced by this attempt's lease, so each may wait out a failover.
   const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
@@ -524,7 +535,9 @@ export async function retryRunSetup(
         where: { id: attempt.id },
         data: {
           status: "setup_failed",
-          error: retryForever ? null : "Run setup failed; retrying",
+          error: retryForever
+            ? null
+            : truncatePlainText(setupMessage, RUN_SETUP_FAILURE_REASON_MAX),
           finishedAt: new Date(),
         },
       }),
@@ -572,7 +585,10 @@ export async function finishRunAttempt(
         .releaseScreen?.(computerUse.screenRelease.computer, releaseContext)
         .catch(() => undefined);
     }
-    await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+    await bestEffort(
+      "release computer execution lease",
+      releaseComputerExecutionLease(deps.prisma, computerLease),
+    );
     // A stopping process requeues this run instead, and a run handed back after a database
     // outage resumes here; either must keep its turn.
     if (!deps.shutdownSignal?.aborted && !lease.handedBack) {

@@ -1,8 +1,10 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
@@ -12,6 +14,7 @@ import {
 } from "./pi-openai-compatible-provider.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { normalizePiUsage, observedPiStream, usageReportingFetch } from "./pi-usage.js";
+import type { RejectedProviderRequest } from "./provider-request-shape.js";
 
 const model: Model<Api> = {
   provider: "openrouter",
@@ -203,17 +206,11 @@ describe("Pi usage accounting", () => {
     }
   }, 30000);
   it("persists a generation id before exposing the first SSE chunk", async () => {
-    let release = () => {};
-    let entered = () => {};
-    const waiting = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const durable = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const waiting = deferred();
+    const durable = deferred();
     const onRequestId = vi.fn(async () => {
-      entered();
-      await durable;
+      waiting.resolve();
+      await durable.promise;
     });
     const fields = new Set<keyof AgentUsage>();
     const wrapped = usageReportingFetch(
@@ -230,9 +227,9 @@ describe("Pi usage accounting", () => {
       exposed = true;
       return text;
     });
-    await waiting;
+    await waiting.promise;
     expect(exposed).toBe(false);
-    release();
+    durable.resolve();
     await read;
     expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
     expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
@@ -330,11 +327,10 @@ describe("Pi usage accounting", () => {
   });
 
   it("settles a thrown provider call before exposing the terminal event", async () => {
-    let finishSettlement = () => {};
-    const settlement = new Promise<void>((resolve) => {
-      finishSettlement = resolve;
-    });
-    const afterCall = vi.fn(async (_reservation: string, _usage: AgentUsage | null) => settlement);
+    const settlement = deferred();
+    const afterCall = vi.fn(
+      async (_reservation: string, _usage: AgentUsage | null) => settlement.promise,
+    );
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -354,7 +350,7 @@ describe("Pi usage accounting", () => {
     for (let index = 0; index < 4; index++) await Promise.resolve();
     expect(afterCall).toHaveBeenCalledOnce();
     expect(terminalSeen).toBe(false);
-    finishSettlement();
+    settlement.resolve();
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
@@ -832,6 +828,46 @@ describe("Pi usage accounting", () => {
       server.close();
       await once(server, "close");
     }
+  });
+  it("records a rejected request's body as sent, after every rewrite on the way out", async () => {
+    const sent: string[] = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return new Response('{"detail":"Bad Request"}', { status: 400 });
+    });
+    const streamSimple = (_model: Model<Api>, _context: Context, options?: SimpleStreamOptions) => {
+      const stream = new AssistantMessageEventStream();
+      void (async () => {
+        const body = { model: "fixture", messages: [{ role: "user", content: "test" }] };
+        await options?.onPayload?.(body, model);
+        const response = await options!.fetch!("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        await options?.onResponse?.({ status: response.status, headers: {} }, model);
+      })();
+      return stream;
+    };
+    const rejections: (RejectedProviderRequest | undefined)[] = [];
+    observedPiStream(
+      { streamSimple } as unknown as Models,
+      model,
+      { messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      { fetch: fetcher, transport: "sse" },
+      () => {},
+      undefined,
+      { operationKind: "answer", userId: "user-fixture" },
+      { onRejectedRequest: (rejection) => rejections.push(rejection) },
+    );
+    await vi.waitFor(() => expect(rejections).toHaveLength(1));
+    expect(JSON.parse(sent[0]!)).toMatchObject({ user: "user-fixture" });
+    expect(rejections).toEqual([
+      expect.objectContaining({
+        status: 400,
+        transport: "sse",
+        sent: { bytes: Buffer.byteLength(sent[0]!), contentEncoding: "identity" },
+      }),
+    ]);
   });
   it("preserves an injected compatible fetch, its pinned dispatcher, and raw usage", async () => {
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {

@@ -5,6 +5,7 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { notifyRealtime } from "./event-stream.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import type { RunLease } from "./messages.js";
+import { publishSpaceChange } from "./space-changes.js";
 import { draftRecordingsOfLeaseInTransaction } from "./teaching-recordings.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
 
@@ -65,6 +66,7 @@ export async function pauseRunForTakeover(
         leaseOwner: null,
         leaseExpiresAt: null,
         checkpoint: released ? run.checkpoint : null,
+        ...(released ? { wakeAt: new Date() } : {}),
       },
     });
     if (paused.count !== 1) return null;
@@ -108,6 +110,7 @@ export async function pauseRunForTakeover(
   if (committed.seq !== null) {
     await notifyRealtime(realtime, committed.threadId, committed.seq);
   }
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   return committed.continuationRunId ? { continuationRunId: committed.continuationRunId } : true;
 }
 
@@ -163,6 +166,7 @@ export async function answerTakeoverRequest(
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  await publishSpaceChange(realtime, input.spaceId, "runs");
   return true;
 }
 

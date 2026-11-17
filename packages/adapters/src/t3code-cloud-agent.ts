@@ -13,6 +13,7 @@ import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter
 import { z } from "zod";
 import type { RemoteMcpOptions } from "./remote-mcp.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
+import { CLOUD_AGENT_OPEN_PR } from "./wakes.prompt.js";
 
 const readSchema = z.object({
   thread: z.object({
@@ -80,7 +81,6 @@ const INVALID = new Set([
   "runtime_mode_escalation_denied",
   "interaction_mode_escalation_denied",
 ]);
-const OPEN_PR = "When you finish, open a pull request with your changes.";
 // Between two runs the next one waits only a moment. A wait this long, which also covers clock
 // drift between the two machines, is a hold.
 const HOLD_MS = 60_000;
@@ -143,7 +143,7 @@ export class T3CodeCloudAgentProvider implements CloudAgentProvider {
     const launch = {
       title,
       ...target,
-      message: request.openPr ? `${request.prompt}\n\n${OPEN_PR}` : request.prompt,
+      message: request.openPr ? `${request.prompt}\n\n${CLOUD_AGENT_OPEN_PR}` : request.prompt,
       clientRequestId: request.idempotencyKey,
     };
     // Threads start on T3 Code's default model; with none set, on the first model it offers.

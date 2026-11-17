@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { PluginSubmission } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -12,8 +13,12 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({ rpc: { marketplace: { review: api.review } } }));
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/rpc", () => {
+  const rpc = { marketplace: { review: api.review } };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
+vi.mock("../lib/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
     marketplace: {
       submissions: {
@@ -70,6 +75,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import type * as Query from "../lib/query";
 import { PluginSubmissionsPanel } from "./PluginSubmissionsPanel";
 
 const submission: PluginSubmission = {
@@ -168,12 +174,24 @@ it("shows the page a claim is for", async () => {
   expect(row?.textContent).not.toContain("Testing");
 });
 
-it("approves a submission", async () => {
-  await act(async () => button("Approve").click());
-  expect(api.review).toHaveBeenCalledWith({ id: submission.id, decision: "approve" });
+it("approves a submission once, holds both decisions meanwhile, then lists it again", async () => {
+  const reviewing = deferred<PluginSubmission>();
+  api.review.mockReturnValue(reviewing.promise);
+  await act(async () => {
+    button("Approve").click();
+    button("Approve").click();
+  });
+  expect(api.review.mock.calls).toEqual([[{ id: submission.id, decision: "approve" }]]);
+  expect(button("Approving…").disabled).toBe(true);
+  expect(button("Reject").disabled).toBe(true);
+
+  api.submissions.mockResolvedValue([]);
+  await act(async () => reviewing.resolve({ ...submission, status: "approved" }));
+  await vi.waitFor(() => expect(container.textContent).toContain("No submissions"));
+  expect(api.submissions).toHaveBeenCalledTimes(2);
 });
 
-it("shows why an approval failed", async () => {
+it("shows why an approval failed and offers both decisions again", async () => {
   api.review.mockRejectedValueOnce(
     new Error("Could not preview a supported plugin from this repository"),
   );
@@ -181,6 +199,28 @@ it("shows why an approval failed", async () => {
   expect(api.toastError).toHaveBeenCalledWith(
     "Could not preview a supported plugin from this repository",
   );
+  expect(button("Approve").disabled).toBe(false);
+  expect(button("Reject").disabled).toBe(false);
+  expect(api.submissions).toHaveBeenCalledTimes(1);
+});
+
+it("names the rejection when it fails without a reason of its own", async () => {
+  api.review.mockRejectedValueOnce("offline");
+  await act(async () => button("Reject").click());
+  const dialog = container.querySelector('[role="dialog"]');
+  if (!dialog) throw new Error("Missing reject dialog");
+  const field = dialog.querySelector("textarea");
+  if (!field) throw new Error("Missing reason");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+      field,
+      "No manifest",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("Reject", dialog).click());
+  expect(api.toastError).toHaveBeenCalledWith("Could not reject plugin");
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
 });
 
 it("rejects only with a reason and sends it", async () => {

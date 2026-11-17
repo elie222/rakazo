@@ -1,5 +1,5 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, COMPUTER_USING_RUNS, ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, computerUsingRuns, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   isUniqueViolation,
@@ -49,7 +49,7 @@ function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
       none: {
         OR: [
           // A background helper leaves its bot free, so it does not hold off the check-in.
-          { status: { in: [...ACTIVE_RUN_STATUSES] }, ...COMPUTER_USING_RUNS },
+          { status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
           {
             clientNonce: { startsWith: `${STRATEGIC_INITIATIVE_NONCE_PREFIX}:` },
             createdAt: { gt: new Date(now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) },

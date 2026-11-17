@@ -41,11 +41,7 @@ describePostgres("a reply's kept tool calls (PostgreSQL)", () => {
       }
     };
     const identity = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider: "sendblue", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider: "sendblue", address }),
     );
     ({ botId, threadId } = identity);
     actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false };

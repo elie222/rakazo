@@ -35,20 +35,22 @@ export async function deleteRunSecretsInTransaction(
   runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>,
 ): Promise<void> {
   if (runs.length === 0) return;
-  await tx.secret.deleteMany({
-    where: {
-      OR: runs.flatMap((run) => [
-        { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
-        { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
-        {
-          userId: run.userId,
-          spaceId: run.spaceId,
-          kind: { startsWith: runLoginKind(run.id, "") },
-        },
-      ]),
-    },
-  });
+  await tx.secret.deleteMany({ where: runSecretsWhere(runs) });
+}
+
+function runSecretsWhere(runs: ReadonlyArray<{ id: string; userId: string; spaceId: string }>) {
+  return {
+    OR: runs.flatMap((run) => [
+      { userId: run.userId, spaceId: run.spaceId, kind: runSecretKind(run.id) },
+      { userId: run.userId, spaceId: run.spaceId, kind: runCodeKind(run.id) },
+      { userId: run.userId, spaceId: run.spaceId, kind: runCodeSpentKind(run.id) },
+      {
+        userId: run.userId,
+        spaceId: run.spaceId,
+        kind: { startsWith: runLoginKind(run.id, "") },
+      },
+    ]),
+  };
 }
 
 /**
@@ -85,4 +87,14 @@ export async function clearEndedRunState(
     select: { id: true, userId: true, spaceId: true },
   });
   await deleteRunSecretsInTransaction(prisma, runs);
+}
+
+/** Whether a run still holds an answer, login or code it took only for itself. */
+export async function runHoldsOwnSecrets(
+  prisma: Pick<PrismaClient, "secret">,
+  run: { id: string; userId: string; spaceId: string },
+): Promise<boolean> {
+  return Boolean(
+    await prisma.secret.findFirst({ where: runSecretsWhere([run]), select: { id: true } }),
+  );
 }

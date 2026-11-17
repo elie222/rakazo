@@ -11,6 +11,7 @@ import {
   rememberOrganizationSpace,
   selectSpace,
 } from "./api-server";
+import { navigatorMounted } from "./navigator-mounted";
 import { queryClient, removeSpaceQueries, rpcQuery } from "./query";
 
 export type Organization = OrganizationList["organizations"][number];
@@ -73,9 +74,23 @@ export function refreshOrganizations(): Promise<void> {
   });
 }
 
+/** After the server says organizations may have changed: their list and any members list shown. */
+export function refreshOrganizationReads(): Promise<void> {
+  return queryClient.invalidateQueries({
+    predicate: ({ queryKey }) =>
+      queryKey.includes("organizations/list") || queryKey.includes("organizations/members/list"),
+  });
+}
+
 /** Organization rows with a check on the active one; none until there is a second. */
 export function organizationSwitchActions(list: OrganizationList | undefined): MenuAction[] {
   if (!list || list.organizations.length < 2) return [];
+  return organizationActions(list);
+}
+
+/** Every organization row, the active one checked, even when it is the only one. */
+export function organizationActions(list: OrganizationList | undefined): MenuAction[] {
+  if (!list) return [];
   const active = activeOrganization(list);
   return list.organizations.map((organization) => ({
     id: `${ORGANIZATION_ACTION_PREFIX}${organization.id}`,
@@ -94,6 +109,7 @@ export function organizationForAction(
 }
 
 function returnHome(): void {
+  if (!navigatorMounted()) return;
   if (router.canDismiss()) router.dismissAll();
   router.replace("/");
 }

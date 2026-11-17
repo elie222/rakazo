@@ -15,7 +15,7 @@ import {
   useOwnSpaces,
 } from "../components/integrations/space-availability";
 import { downloadArtifactBytes } from "../lib/artifact-open";
-import { useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 
 const NO_DOCS: MemoryDocument[] = [];
@@ -62,6 +62,12 @@ export function SpaceMemorySection() {
   );
 }
 
+type MemoryChange = { kind: "save" | "remove" | "download"; doc: MemoryDocument };
+
+function isConflict(error: unknown): boolean {
+  return error instanceof ORPCError && error.code === "CONFLICT";
+}
+
 function MemoryDocumentList({
   input,
   testId,
@@ -71,7 +77,6 @@ function MemoryDocumentList({
   testId: string;
   compact?: boolean;
 }) {
-  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -102,14 +107,64 @@ function MemoryDocumentList({
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
   const [conflicted, setConflicted] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [actionError, setError] = useState<string | null>(null);
-  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const change = useSave({
+    save: async ({ kind, doc }: MemoryChange, rpc) => {
+      if (kind === "download") {
+        const latest = (await fetchFresh(queryClient, list)).find((entry) => entry.id === doc.id);
+        if (!latest) throw new Error("Document unavailable");
+        downloadArtifactBytes(
+          latest.path.split("/").at(-1) ?? latest.path,
+          "text/markdown",
+          new TextEncoder().encode(latest.content),
+        );
+        return;
+      }
+      if (kind === "remove") {
+        await rpc.memory.remove({ documentId: doc.id });
+        await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
+        return;
+      }
+      const updated = await rpc.memory.update({
+        documentId: doc.id,
+        content: draft,
+        expectedRevision: loadedRevision,
+      });
+      await setDocs((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+    },
+    stale: ({ kind }) =>
+      kind === "download"
+        ? []
+        : [list.queryKey, ...(budgetOptions ? [budgetOptions.queryKey] : [])],
+    onSaved: (_saved, { kind }) => {
+      if (kind !== "download") closeDoc();
+    },
+    onFailed: async (failure, { kind }) => {
+      if (kind !== "save" || !isConflict(failure)) return;
+      setConflicted(true);
+      try {
+        await fetchFresh(queryClient, list);
+      } catch {
+        // Keep the draft and conflict state even if refreshing fails.
+      }
+    },
+  });
+  const busy = change.pending;
+  const actionError =
+    change.error && !(change.input?.kind === "save" && isConflict(change.error))
+      ? change.input?.kind === "remove"
+        ? t`Could not remove`
+        : change.input?.kind === "save"
+          ? t`Could not save`
+          : t`Could not load`
+      : null;
+  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
 
-  async function setDocs(update: (current: MemoryDocument[]) => MemoryDocument[]) {
-    await writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
-    if (budgetOptions) void queryClient.invalidateQueries({ queryKey: budgetOptions.queryKey });
+  /** What the save confirmed shows at once, even when the list cannot be read again. */
+  function setDocs(update: (current: MemoryDocument[]) => MemoryDocument[]) {
+    return writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
   }
 
   function openDoc(doc: MemoryDocument) {
@@ -117,7 +172,7 @@ function MemoryDocumentList({
     setConflicted(false);
     setOpenId(doc.id);
     setDraft(doc.content);
-    setError(null);
+    change.reset();
     setConfirmingDelete(false);
   }
 
@@ -127,72 +182,9 @@ function MemoryDocumentList({
     setConfirmingDelete(false);
   }
 
-  async function remove(doc: MemoryDocument) {
-    if (busy) return;
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await rpc.memory.remove({ documentId: doc.id });
-      await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
-      closeDoc();
-    } catch {
-      setError(t`Could not remove`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function save(doc: MemoryDocument) {
-    if (busy || conflicted) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await rpc.memory.update({
-        documentId: doc.id,
-        content: draft,
-        expectedRevision: loadedRevision,
-      });
-      await setDocs((current) =>
-        current.map((entry) => (entry.id === updated.id ? updated : entry)),
-      );
-      closeDoc();
-    } catch (err) {
-      if (err instanceof ORPCError && err.code === "CONFLICT") {
-        setConflicted(true);
-        try {
-          await fetchFresh(queryClient, list);
-        } catch {
-          // Keep the draft and conflict state even if refreshing fails.
-        }
-      } else {
-        setError(t`Could not save`);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function downloadDocument(doc: MemoryDocument) {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const latest = (await fetchFresh(queryClient, list)).find((entry) => entry.id === doc.id);
-      if (!latest) throw new Error("Document unavailable");
-      downloadArtifactBytes(
-        latest.path.split("/").at(-1) ?? latest.path,
-        "text/markdown",
-        new TextEncoder().encode(latest.content),
-      );
-    } catch {
-      setError(t`Could not load`);
-    } finally {
-      setBusy(false);
-    }
+  function remove(doc: MemoryDocument) {
+    if (confirmingDelete) change.run({ kind: "remove", doc });
+    else setConfirmingDelete(true);
   }
 
   if (compact && !memoryVisible && !error) return null;
@@ -244,7 +236,7 @@ function MemoryDocumentList({
                     render={<Button variant="ghost" size="icon-sm" />}
                     aria-label={t`Download`}
                     disabled={busy}
-                    onClick={() => downloadDocument(doc)}
+                    onClick={() => change.run({ kind: "download", doc })}
                   >
                     <Download className="size-4" />
                   </TooltipTrigger>
@@ -270,7 +262,7 @@ function MemoryDocumentList({
                       size="sm"
                       type="button"
                       disabled={busy || conflicted || draft === doc.content}
-                      onClick={() => void save(doc)}
+                      onClick={() => change.run({ kind: "save", doc })}
                     >
                       <Trans>Save</Trans>
                     </Button>
@@ -288,7 +280,7 @@ function MemoryDocumentList({
                         variant="ghost"
                         type="button"
                         disabled={busy}
-                        onClick={() => void remove(doc)}
+                        onClick={() => remove(doc)}
                         size="sm"
                         className="ml-auto text-destructive"
                       >

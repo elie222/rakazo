@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, ComputerReleaseReason, Me, Run, ThreadSnapshot } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import {
@@ -11,15 +12,16 @@ import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { computersAreUnavailable } from "../../components/ComputersUnavailableHint";
+import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { bootComputerOnce, embeddableScreenUrl } from "../../lib/computer-screen";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import {
   computerBusyWithRun,
-  computerPanelNeedsScreen,
   screenMissing,
   userHoldsComputerControl,
 } from "../../lib/thread-events";
+import { useEventListener } from "../../lib/use-event-listener";
 import { errorText } from "../../lib/user-error";
 import type { ComputerState } from "./use-computer";
 
@@ -93,26 +95,17 @@ export function useComputerControls({
     expectOwnControlEvent,
     forgetOwnControlEvent,
   } = state;
-  const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
-  const recoveryHoldTimer = useRef<number | undefined>(undefined);
-  const showComputerRecoveryHint = computersAreUnavailable(sandboxProvider) || keepComputerRecovery;
-  const releaseComputerRecovery = useCallback(() => {
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = undefined;
-    setKeepComputerRecovery(false);
-  }, []);
-  const holdComputerRecovery = useCallback(() => {
-    setKeepComputerRecovery(true);
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = window.setTimeout(() => {
-      recoveryHoldTimer.current = undefined;
-      setKeepComputerRecovery(false);
-    }, 4000);
-  }, []);
+  // A new object holds the hint for another four seconds; null lets it go.
+  const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
+  const showComputerRecoveryHint =
+    computersAreUnavailable(sandboxProvider) || recoveryHold !== null;
+  const releaseComputerRecovery = useCallback(() => setRecoveryHold(null), []);
+  const holdComputerRecovery = useCallback(() => setRecoveryHold({}), []);
+  useTimeout(releaseComputerRecovery, recoveryHold ? 4000 : null, recoveryHold);
   useEffect(() => {
-    if (panel !== "computer") releaseComputerRecovery();
+    // The recovery hint shows in the bot panel; leaving it lets the hint go.
+    if (panel !== "settings") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
-  useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   useEffect(() => {
@@ -120,7 +113,6 @@ export function useComputerControls({
   }, [computerBot?.id, screenUrl]);
   const computerBootEpoch = useRef(0);
   const controlRequests = useRef(new Set<string>());
-  const autoBooted = useRef<string | null>(null);
 
   async function bootComputer({
     botId: targetBotId,
@@ -211,38 +203,6 @@ export function useComputerControls({
   }
 
   useEffect(() => {
-    if (panel !== "computer") {
-      autoBooted.current = null;
-      return;
-    }
-    if (!active) return;
-    const botId = active.id;
-    // Opening the panel is a fresh try at a screen that failed.
-    screenAwaitsRetry.current = false;
-    let cancelled = false;
-    void (async () => {
-      // Refresh from the server first: a stale SSE "booting" snapshot would
-      // otherwise hide an RPC takeover.
-      const snap = await refreshThread(botId).catch(() => null);
-      if (cancelled || activeBotId.current !== botId) return;
-      const state = snap?.computer?.state;
-      const screen = state === "running" ? await refreshComputerScreen(botId) : null;
-      if (cancelled || activeBotId.current !== botId) return;
-      if (!computerPanelNeedsScreen(state, screen) || autoBooted.current === botId) return;
-      autoBooted.current = botId;
-      await bootComputer({
-        botId,
-        takeControl: false,
-        showProgress: false,
-        force: true,
-      }).catch(() => undefined);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [panel, active?.id]);
-
-  useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
     setComputerErrorFromScreen(false);
@@ -273,21 +233,15 @@ export function useComputerControls({
     }).catch(() => undefined);
   }, [computerBlockedByRun]);
 
-  useEffect(() => {
-    if (!computerOpen) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
-        setComputerOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [computerOpen]);
+  useEventListener(computerOpen ? window : null, "keydown", (event) => {
+    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+      setComputerOpen(false);
+  });
 
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
-    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
-      return;
+    if (!computerOpen || !heartbeatBotId || computer?.state !== "running") return;
     // Only a visible page checks in: a forgotten tab neither keeps the computer awake nor holds
     // control, which lapses about a minute and a half after it was hidden.
     const ping = () => {
@@ -307,24 +261,23 @@ export function useComputerControls({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", ping);
     };
-  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
+  }, [computerOpen, computerBot?.id, active?.id, computer?.state, hasControl]);
 
   // Control ends with the screen: closing it, switching chats, or leaving the page hands it back.
   // The server tells the holder their lease, from Take control or teaching alike; the hand back
   // names it, so a late one from an old page never ends newer control.
   const heldBotId = hasControl && computerOpen ? computerBot?.id : undefined;
   const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
+  const handBack = (botId: string, leaseId: string) =>
+    void rpc.computer
+      .release({ botId, leaseId }, { context: { keepalive: true } })
+      .catch(() => undefined);
+  useEventListener(heldBotId && heldLeaseId ? window : null, "pagehide", () => {
+    if (heldBotId && heldLeaseId) handBack(heldBotId, heldLeaseId);
+  });
   useEffect(() => {
     if (!heldBotId || !heldLeaseId) return;
-    const handBack = () =>
-      void rpc.computer
-        .release({ botId: heldBotId, leaseId: heldLeaseId }, { context: { keepalive: true } })
-        .catch(() => undefined);
-    window.addEventListener("pagehide", handBack);
-    return () => {
-      window.removeEventListener("pagehide", handBack);
-      handBack();
-    };
+    return () => handBack(heldBotId, heldLeaseId);
   }, [heldBotId, heldLeaseId]);
 
   // A control event says the screen is held but not by whom; the status read says, and gives the
@@ -449,7 +402,7 @@ export function useComputerControls({
     Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
     screenMissing({
       state: computer?.state,
-      kind: computer?.kind,
+      runsOnUserMachine: runsOnUserMachine(computer),
       booting,
       screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),
       embeddedUrl: embeddedScreenUrl,
@@ -492,6 +445,9 @@ export function useComputerControls({
             if (computer?.state === "running") {
               setComputerError(null);
               setComputerErrorFromScreen(false);
+              // The screen is read only while its window is open, so a retry from the panel opens it.
+              setComputerOpen(true);
+              computerVisible.current = true;
               void refreshComputerScreen(computerBot.id);
             } else
               void bootComputer({
@@ -506,10 +462,11 @@ export function useComputerControls({
         </Button>
       )}
       {computerBot &&
-      ((screenFailure && computer?.state === "running") ||
+      // A screen that will not load on a running computer offers Recover, never a Reset that
+      // wipes unsaved work; a failed computer offers whichever repair it has.
+      ((screenFailure && computer?.state === "running" && computer.canUpdate) ||
         (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
-          visibleRecover
           botId={computerBot.id}
           computer={computer}
           onChanged={async () => {
@@ -529,13 +486,13 @@ export function useComputerControls({
     ) : null;
   const computerPreviewScreen =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     computer?.state === "running" &&
     Boolean(embeddedScreenUrl) &&
     !computerScreenError;
   const showingRecoveryHint =
     !computerOpen &&
-    computer?.kind !== "desktop" &&
+    !runsOnUserMachine(computer) &&
     !computerPreviewScreen &&
     !computerScreenError &&
     showComputerRecoveryHint;

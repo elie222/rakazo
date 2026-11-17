@@ -54,8 +54,10 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await dialog.getByLabel("Title").fill(title);
   await dialog.getByLabel("Description").fill(description);
   const owner = dialog.getByLabel("Owner");
-  await expect(owner.locator("option", { hasText: "Planner" })).toHaveCount(1);
-  await owner.selectOption({ label: "Planner" });
+  await owner.click();
+  const planner = page.getByRole("option", { name: "Planner", exact: true });
+  await expect(planner).toHaveCount(1);
+  await planner.click();
   await dialog.getByRole("button", { name: "Create", exact: true }).click();
 
   await expect(dialog).toBeHidden();

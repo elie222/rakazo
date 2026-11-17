@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  machineCleanupJobKey,
   SandboxAllowanceUsedError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -18,9 +19,11 @@ import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
-  COMPUTER_USING_RUNS,
+  ClientError,
+  computerUsingRuns,
   isRetryableError,
   parseScreenLeaseId,
+  pollUntil,
   screenLeaseId,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -155,7 +158,7 @@ async function hasLiveForeignRunLease(
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },
       bot: { computerId },
-      ...COMPUTER_USING_RUNS,
+      ...computerUsingRuns(),
       leaseExpiresAt: { gt: new Date() },
       ...(exceptRunId ? { id: { not: exceptRunId } } : {}),
     },
@@ -164,9 +167,9 @@ async function hasLiveForeignRunLease(
   return live !== null;
 }
 
-export class ComputerBusyError extends Error {
+export class ComputerBusyError extends ClientError {
   constructor() {
-    super("Computer is busy");
+    super("CONFLICT", "Computer is busy");
     this.name = "ComputerBusyError";
   }
 }
@@ -459,7 +462,7 @@ export async function provisionComputer(
               botId: existing.homeKey,
               homePath,
               providerRef: existing.providerRef ?? undefined,
-              providerKind: existing.kind as ComputerRef["kind"],
+              providerKind: existing.kind,
               // A save from an older release has no time; the provider keeps its own state then.
               savedAt:
                 existing.homeRevision === "empty"
@@ -570,35 +573,42 @@ export async function provisionComputer(
     const continued =
       existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
-    const activated = await deps.prisma.computer.updateMany({
-      where: {
-        id: computerId,
-        state: "booting",
-        updatedAt: claimStamp,
-        ...previousRef,
-        maintenanceId: existing.maintenanceId ?? null,
-        ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
-      },
-      data: {
-        state: "running",
-        providerRef: ref.providerRef,
-        kind: ref.kind,
-        restorePending: false,
-        runningSince,
-        ...(!reconnecting
-          ? {
-              controlHolder: activeControl ? "user" : controlHolder,
-              ...(!activeControl
-                ? {
-                    controlLeaseId: null,
-                    controlUserId: null,
-                    controlLeaseExpiresAt: null,
-                    controlBotId: null,
-                  }
-                : {}),
-            }
-          : {}),
-      },
+    // One write stores the machine and leaves "booting", and the same transaction drops the
+    // record that would delete the machine later: from here the computer answers for it.
+    const activated = await deps.prisma.$transaction(async (tx) => {
+      const stored = await tx.computer.updateMany({
+        where: {
+          id: computerId,
+          state: "booting",
+          updatedAt: claimStamp,
+          ...previousRef,
+          maintenanceId: existing.maintenanceId ?? null,
+          ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+        },
+        data: {
+          state: "running",
+          providerRef: ref.providerRef,
+          kind: ref.kind,
+          restorePending: false,
+          runningSince,
+          ...(!reconnecting
+            ? {
+                controlHolder: activeControl ? "user" : controlHolder,
+                ...(!activeControl
+                  ? {
+                      controlLeaseId: null,
+                      controlUserId: null,
+                      controlLeaseExpiresAt: null,
+                      controlBotId: null,
+                    }
+                  : {}),
+              }
+            : {}),
+        },
+      });
+      if (stored.count === 1)
+        await deps.jobs.cancelIn(tx, machineCleanupJobKey(ref.kind, ref.providerRef));
+      return stored;
     });
     if (activated.count !== 1) {
       throw busy("activation_lost");
@@ -633,33 +643,41 @@ export async function provisionComputer(
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
     const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
+    // A machine that could not be rolled back stays the computer's, to be resumed or replaced.
+    const kept =
+      (!reconnecting || (unsafeStop && provisioned?.fresh === true)) && rollbackError
+        ? provisioned
+        : undefined;
     try {
-      await deps.prisma.computer.updateMany({
-        where: {
-          id: computerId,
-          state: "booting",
-          updatedAt: claimStamp,
-          ...previousRef,
-          maintenanceId: existing.maintenanceId ?? null,
-        },
-        data: {
-          state:
-            (reconnecting || rollbackError) && unsafeStop
-              ? "quarantined"
-              : reconnecting && !existing.restorePending && !incomplete
-                ? "running"
-                : "error",
-          ...((!reconnecting || (unsafeStop && provisioned?.fresh === true)) &&
-          rollbackError &&
-          provisioned
-            ? {
-                providerRef: provisioned.providerRef,
-                kind: provisioned.kind,
-                restorePending: replaces(provisioned),
-              }
-            : {}),
-          ...(incomplete ? { restorePending: true } : {}),
-        },
+      await deps.prisma.$transaction(async (tx) => {
+        const recorded = await tx.computer.updateMany({
+          where: {
+            id: computerId,
+            state: "booting",
+            updatedAt: claimStamp,
+            ...previousRef,
+            maintenanceId: existing.maintenanceId ?? null,
+          },
+          data: {
+            state:
+              (reconnecting || rollbackError) && unsafeStop
+                ? "quarantined"
+                : reconnecting && !existing.restorePending && !incomplete
+                  ? "running"
+                  : "error",
+            ...(kept
+              ? {
+                  providerRef: kept.providerRef,
+                  kind: kept.kind,
+                  restorePending: replaces(kept),
+                }
+              : {}),
+            ...(incomplete ? { restorePending: true } : {}),
+          },
+        });
+        // Stored, so its record goes too. One this write did not store keeps its record.
+        if (kept && recorded.count === 1)
+          await deps.jobs.cancelIn(tx, machineCleanupJobKey(kept.kind, kept.providerRef));
       });
     } catch (recordError) {
       throw new AggregateError(
@@ -822,6 +840,10 @@ export async function acquireDedicatedScreenLeaseFence(
       }
 
       await lockOwnedRun(tx, input);
+      await tx.run.update({
+        where: { id: input.runId },
+        data: { computerUseStartedAt: new Date() },
+      });
 
       // An unexpired holder owns the screen until release, pause, or expiry. Keep the
       // expired row so explicit release never resets the next worker's screen fence.
@@ -910,7 +932,18 @@ export async function acquireComputerExecutionLease(
       // Only the locked current worker claim may reclaim a live same-run lease.
       // API operations have no worker claim and may acquire only new or expired leases.
       const ownsRun = input.workerId !== undefined;
-      if (ownsRun) await lockOwnedRun(tx, input);
+      if (ownsRun) {
+        const assigned = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM bots WHERE id = ${input.botId}
+          AND "computerId" = ${input.computerId} AND "computerSwitching" = false
+        FOR UPDATE SKIP LOCKED`;
+        if (assigned.length !== 1) throw new ComputerBusyError();
+        await lockOwnedRun(tx, input);
+        await tx.run.update({
+          where: { id: input.runId },
+          data: { computerUseStartedAt: new Date() },
+        });
+      }
       const now = new Date();
       const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
       const [reclaimed] = await tx.computerExecutionLease.updateManyAndReturn({
@@ -973,6 +1006,42 @@ async function validateAcquiredComputerLease(
   )
     return lease;
   throw new ComputerBusyError();
+}
+
+/** Wait only for this bot's computer; model and connector work never acquires this lease. */
+export async function waitForRunComputerLease(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
+  signal: AbortSignal,
+): Promise<ComputerExecutionLease | null> {
+  const outcome = await pollUntil(
+    async () => {
+      signal.throwIfAborted();
+      try {
+        const bot = await prisma.bot.findUnique({
+          where: { id: input.botId },
+          select: { computerId: true, computerSwitching: true, archivedAt: true },
+        });
+        if (!bot || bot.archivedAt || bot.computerId !== input.computerId)
+          return { changed: true as const };
+        if (bot.computerSwitching) return undefined;
+        const lease = await acquireComputerExecutionLease(prisma, input);
+        return lease ?? (await acquireDedicatedScreenLeaseFence(prisma, input));
+      } catch (error) {
+        if (!(error instanceof ComputerBusyError) && !isRetryableError(error)) throw error;
+        return undefined;
+      }
+    },
+    {
+      intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5_000),
+      timeoutMs: Number.POSITIVE_INFINITY,
+      signal,
+      waitingFor: "the bot's computer",
+    },
+  );
+  if (outcome && "changed" in outcome)
+    throw new Error("The bot's computer changed; start the task again.");
+  return outcome;
 }
 
 export async function renewComputerExecutionLease(
@@ -1105,7 +1174,7 @@ export async function replaceComputer(
       where: {
         status: { in: [...ACTIVE_RUN_STATUSES] },
         bot: { computerId },
-        ...COMPUTER_USING_RUNS,
+        ...computerUsingRuns(),
       },
       select: { id: true },
     });
@@ -1187,7 +1256,7 @@ export async function replaceComputer(
           where: {
             status: { in: [...ACTIVE_RUN_STATUSES] },
             bot: { computerId },
-            ...COMPUTER_USING_RUNS,
+            ...computerUsingRuns(),
           },
           select: { id: true },
         });

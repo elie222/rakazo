@@ -86,7 +86,7 @@ describe("sent message mentions", () => {
     act(() =>
       root.render(
         <UserMentionsContext.Provider
-          value={{ targets: userMentionTargets(withMembers), onOpenBot }}
+          value={{ targets: userMentionTargets(withMembers, text), onOpenBot }}
         >
           <MessageCaption
             role={role}
@@ -159,6 +159,33 @@ describe("sent message mentions", () => {
     ]);
     expect(container.querySelector("[data-avatar]")).toBeNull();
     expect(container.querySelector("[data-symbol]")).not.toBeNull();
+  });
+
+  it.each(["@all please check", "@所有人 看下"])("shows %s as everyone", (text) => {
+    render(text);
+    expect(container.querySelector('[data-symbol="person.3"]')).not.toBeNull();
+    expect(container.querySelector("[data-avatar]")).toBeNull();
+  });
+
+  it("reads @All as a bot named All, the way the server wakes it", () => {
+    render("@All hi", "user", [...members, { botId: "bot-all", name: "All", color: "#000000" }]);
+    expect(container.querySelector('[data-avatar="bot-all"]')).not.toBeNull();
+    expect(container.querySelector("[data-symbol]")).toBeNull();
+  });
+
+  it.each(["npm i @all/pkg", "run `@all` here", "mail team@all.example"])(
+    "leaves %s plain, as it wakes nobody",
+    (text) => {
+      render(text);
+      expect(container.querySelector("[data-symbol]")).toBeNull();
+      expect(container.textContent).toBe(text);
+    },
+  );
+
+  it("draws a name that runs straight into Chinese text", () => {
+    render("请@Ada看下");
+    expect(container.querySelector('[data-avatar="bot-ada"]')).not.toBeNull();
+    expect(container.textContent).toBe("请Ada看下");
   });
 
   it("leaves a name two members share as plain text", () => {

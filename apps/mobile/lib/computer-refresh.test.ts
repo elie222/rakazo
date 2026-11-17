@@ -1,16 +1,8 @@
 import type { ComputerStatus } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createComputerRefresh, SCREEN_URL_RENEW_MS } from "./computer-refresh";
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 const running = { state: "running", controlHolder: "none" } as ComputerStatus;
 const stopped = { state: "stopped", controlHolder: "none" } as ComputerStatus;
 const controlled = { state: "running", controlHolder: "user" } as ComputerStatus;

@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { z } from "zod";
 import { FAKE_VIDEO_BASE64 } from "./fake-media-assets.js";
 import type { ResolveHostname } from "./web-ssrf.js";
@@ -207,9 +207,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       context.signal.throwIfAborted();
       if (error instanceof MediaGenerationError) throw error;
       throw new MediaGenerationError(
-        error instanceof Error && error.message.includes("too large")
-          ? "output_limit"
-          : "provider_failure",
+        error instanceof ResponseTooLargeError ? "output_limit" : "provider_failure",
       );
     }
   }

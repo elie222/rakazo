@@ -1,20 +1,18 @@
 ---
 import { getCollection, render } from "astro:content";
 import type { CollectionEntry } from "astro:content";
-import type { BlogCategory } from "../../blog/indexability";
-import {
-  BLOG_CATEGORIES,
-  CATEGORY_LABEL,
-  categoryIsIndexed,
-  categoryPath,
-} from "../../blog/indexability";
-import { formatPostDate, isoDate } from "../../blog/format";
-import { blogPostStructuredData } from "../../blog/structured-data";
+import type { BlogCategory } from "../../blog/categories";
+import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
+import { categoryIsIndexed } from "../../blog/indexability";
+import { BLOG_AUTHOR_PERSON, formatPostDate, isoDate } from "../../blog/format";
+import { sortPosts } from "../../blog/markdown";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import FaqList from "../../components/FaqList.astro";
 import SiteFrame from "../../components/SiteFrame.astro";
-import { blogOgId, ogPublicPath } from "../../og-pages";
+import { blogOgId } from "../../blog/og";
+import { ogPublicPath } from "../../og-pages";
 import { SITE_URL } from "../../site";
+import { blogPostStructuredData } from "../../structured-data";
 
 type Props =
   | { kind: "post"; post: CollectionEntry<"blog"> }
@@ -50,9 +48,7 @@ if (props.kind === "post") {
   category = props.category;
 }
 
-const posts = (await getCollection("blog")).sort(
-  (a, b) => b.data.updated.getTime() - a.data.updated.getTime(),
-);
+const posts = sortPosts(await getCollection("blog"));
 const categoryPosts = category ? posts.filter((entry) => entry.data.category === category) : [];
 const indexed = category ? categoryIsIndexed(category) : true;
 const toc = [
@@ -76,8 +72,9 @@ const structuredData = post
       published: isoDate(post.data.published),
       updated: isoDate(post.data.updated),
       image,
-      categoryLabel: CATEGORY_LABEL[post.data.category],
-      categoryUrl: new URL(categoryPath(post.data.category), SITE_URL).toString(),
+      category: categoryIsIndexed(post.data.category)
+        ? { name: CATEGORY_LABEL[post.data.category], path: categoryPath(post.data.category) }
+        : undefined,
     })
   : undefined;
 ---
@@ -89,7 +86,12 @@ const structuredData = post
       description={post.data.description}
       structuredData={structuredData}
       ogImage={ogPublicPath(blogOgId(post.id))}
-      ogType="article"
+      articleMeta={{
+        published: post.data.published,
+        modified: post.data.updated,
+        authorUrl: BLOG_AUTHOR_PERSON.url,
+      }}
+      markdownAlternate={`/blog/${post.id}.md`}
     >
       <p class="alt-crumb">
         <a href="/blog/">Blog</a>

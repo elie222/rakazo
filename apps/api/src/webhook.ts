@@ -3,10 +3,10 @@ import { hasValidBearerToken } from "@rakazo/core";
 import type { Hono } from "hono";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
 import { readBoundedBody } from "./http-body.js";
+import { formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
-  formatWebhookPrompt,
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
@@ -18,9 +18,8 @@ export {
   githubEventName,
   hasValidGithubSignature,
 } from "./github-webhook.js";
+export { formatUntrustedDeliveryPayload, formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 export {
-  formatUntrustedDeliveryPayload,
-  formatWebhookPrompt,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
   type WebhookDeps,

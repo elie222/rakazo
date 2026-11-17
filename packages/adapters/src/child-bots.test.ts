@@ -24,6 +24,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import type { createRepos, PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -416,13 +417,10 @@ describe("destroyBot", () => {
 
     expect(transaction).toHaveBeenCalledOnce();
     expect(releaseComputers).toHaveBeenCalledWith({
-      where: {
-        OR: [{ controlBotId: "bot-1" }, { executionBotId: "bot-1" }],
-      },
+      where: { controlBotId: "bot-1" },
       data: expect.objectContaining({
         controlHolder: "none",
         controlBotId: null,
-        executionBotId: null,
       }),
     });
     expect(executeRaw).toHaveBeenCalledOnce();
@@ -619,7 +617,7 @@ describe("destroyBot", () => {
       const cancelTasks = vi.fn().mockResolvedValue({ count: 1 });
       const deleteExecutionLeases = vi.fn().mockResolvedValue({ count: 1 });
       const expireExecutionLeases = vi.fn().mockResolvedValue({ count: 1 });
-      const clearExecution = vi.fn().mockResolvedValue({ count: 1 });
+      const updateComputers = vi.fn().mockResolvedValue({ count: 1 });
       const queryRaw = vi.fn().mockResolvedValue([{ id: "group-1" }, { id: "group-2" }]);
       const activeGroupRuns = [
         {
@@ -706,7 +704,7 @@ describe("destroyBot", () => {
             deleteMany: deleteExecutionLeases,
             updateMany: expireExecutionLeases,
           },
-          computer: { updateMany: clearExecution },
+          computer: { updateMany: updateComputers },
           $executeRaw: preservePersonal,
           botDeletion: { create: vi.fn() },
           bot: { delete: vi.fn() },
@@ -783,14 +781,6 @@ describe("destroyBot", () => {
         data: { expiresAt: new Date(0) },
       });
       expect(deleteExecutionLeases).toHaveBeenCalledWith({ where: { botId: "bot-1" } });
-      expect(clearExecution).toHaveBeenCalledWith({
-        where: { executionRunId: { in: ["group-run"] } },
-        data: {
-          executionRunId: null,
-          executionBotId: null,
-          executionLeaseExpiresAt: null,
-        },
-      });
       expect(cancel.mock.calls).toEqual([["run:group-run"]]);
       expect(releaseScreen).toHaveBeenCalledTimes(1);
       expect(releaseScreen).toHaveBeenCalledWith(
@@ -1683,15 +1673,12 @@ describe("destroyBot", () => {
   it("reports deletion success when the in-computer folder cleanup never finishes", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      let markStarted: () => void = () => undefined;
-      const cleanupStarted = new Promise<void>((resolve) => {
-        markStarted = resolve;
-      });
+      const cleanupStarted = deferred();
       let commandSignal: AbortSignal | undefined;
       // Never finishes and ignores aborts, like a wedged provider call.
       const execute = vi.fn((_computer: unknown, _request: CommandRequest, commandContext) => {
         commandSignal = (commandContext as AdapterContext).signal;
-        markStarted();
+        cleanupStarted.resolve();
         return (async function* () {
           await new Promise(() => undefined);
           yield { type: "exit" as const, code: 0 };
@@ -1725,7 +1712,7 @@ describe("destroyBot", () => {
         context,
         { deleteMemories: true },
       );
-      await cleanupStarted;
+      await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(10_000);
 
       await expect(deleting).resolves.toEqual({ removedGroupIds: [] });
@@ -2017,6 +2004,66 @@ describe("destroyBot", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each(["boxd", "railway"])(
+    "removes the deleted bot's folder and profile from a stopped %s Team Computer's stored home",
+    async (kind) => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-stored-home-"));
+      try {
+        const home = new LocalAgentHomeStore(root);
+        const teamHome = home.pathFor("team-workspace-1");
+        await seedFile(teamHome, "bots/bot-1/private.txt", "stored-gone");
+        await seedFile(teamHome, "bots/bot-2/private.txt", "stored-keep");
+        await seedProfile(teamHome, "bot-1", "stored-gone");
+        await seedProfile(teamHome, "bot-2", "stored-keep");
+        const execute = vi.fn();
+        const team = {
+          id: "team-computer",
+          homeKey: "team-workspace-1",
+          kind,
+          providerRef: "machine-1",
+          scope: "team",
+          state: "stopped",
+        };
+
+        await destroyBot(
+          {
+            prisma: deletionPrisma(team),
+            sandbox: {
+              releaseScreen: vi.fn().mockResolvedValue(undefined),
+              execute,
+            } as unknown as SandboxProvider,
+            home,
+            jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+          },
+          {
+            id: "bot-1",
+            spaceId: "workspace-1",
+            userId: "user-1",
+            name: "Researcher",
+            archivedAt: null,
+            computerId: team.id,
+          },
+          context,
+          { deleteMemories: true },
+        );
+
+        expect(execute).not.toHaveBeenCalled();
+        await expect(access(path.join(teamHome, "bots", "bot-1"))).rejects.toThrow();
+        await expect(
+          access(path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"))),
+        ).rejects.toThrow();
+        await expect(readFile(path.join(teamHome, "bots/bot-2/private.txt"), "utf8")).resolves.toBe(
+          "stored-keep",
+        );
+        await expect(readFile(profileCookies(teamHome, "bot-2"), "utf8")).resolves.toBe(
+          "stored-keep",
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("unlinks a symlinked bot folder instead of following it into another bot's folder", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-folder-symlink-"));

@@ -264,6 +264,9 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
       this.invalidate(ref);
     }
   }
+  isRemote(ref: string): boolean {
+    return ref.startsWith(INFISICAL_REF_PREFIX);
+  }
   redact(_value: string): string {
     return "[redacted]";
   }

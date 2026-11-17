@@ -176,6 +176,9 @@ export class EncryptedSecretStore extends SecretChanges implements SecretStore {
   async delete(ref: string, _context: SecretContext): Promise<void> {
     this.changed(ref);
   }
+  isRemote(_ref: string): boolean {
+    return false;
+  }
 
   redact(value: string): string {
     return value

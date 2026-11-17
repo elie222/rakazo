@@ -43,6 +43,7 @@ import {
   currentApiBase,
   rpc,
   selectedSpaceId,
+  subscribeAiConsentGranted,
   subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
@@ -66,8 +67,9 @@ import {
 import { OpenPageContext } from "../lib/message-mentions";
 import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useNavigatorMounted } from "../lib/navigator-mounted";
 import { useNotificationResponses } from "../lib/open-notification";
-import { clearQueries } from "../lib/query";
+import { clearQueries, resetRpcQueries } from "../lib/query";
 import { useReferral } from "../lib/referral";
 import {
   getCachedRemoteImagesEnabled,
@@ -111,6 +113,7 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+subscribeAiConsentGranted(() => void resetRpcQueries("aiConsent/status"));
 registerSessionDiskCache((sameAccount) => {
   if (!sameAccount) return clearLastBot();
 });
@@ -285,6 +288,7 @@ function LayoutContent() {
   const canInvite = Boolean(useReferral());
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
+  useNavigatorMounted(ready);
   useNotificationResponses(ready);
   const callSession = useSyncExternalStore(
     subscribeSessionGeneration,

@@ -228,19 +228,11 @@ export async function runComputerReplace(
     });
   }
   const manualRunId = `${mode}:${randomUUID()}`;
-  let lease: ComputerExecutionLease | null;
-  try {
-    lease = await acquireComputerExecutionLease(deps.prisma, {
-      computerId: bot.computer.id,
-      runId: manualRunId,
-      botId: bot.id,
-    });
-  } catch (error) {
-    if (error instanceof ComputerBusyError) {
-      throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-    }
-    throw error;
-  }
+  const lease = await acquireComputerExecutionLease(deps.prisma, {
+    computerId: bot.computer.id,
+    runId: manualRunId,
+    botId: bot.id,
+  });
   try {
     await replaceComputer(
       deps,
@@ -255,11 +247,6 @@ export async function runComputerReplace(
       { handBackIdleTakeover: true },
     );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
-  } catch (error) {
-    if (error instanceof ComputerBusyError) {
-      throw new ORPCError("CONFLICT", { message: "Computer is busy" });
-    }
-    throw error;
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }
@@ -281,9 +268,7 @@ export async function expireStaleComputerControl(
     // Holder "none" with a surviving lease id is a revoke that failed mid-expiry;
     // retry it so the row does not sit busy forever.
     if (computer.controlLeaseId) {
-      await expireComputerControl(deps, computer.id, computer.controlLeaseId).catch(
-        () => undefined,
-      );
+      await expireStaleLease(deps, computer.id, computer.controlLeaseId);
       return true;
     }
     return false;
@@ -291,10 +276,26 @@ export async function expireStaleComputerControl(
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {
-    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
+    await expireStaleLease(deps, computer.id, leaseId);
     return true;
   }
-  return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
+  return clearInactiveUserComputerControl(deps.prisma, computer.id);
+}
+
+/**
+ * The read that found the stale lease still answers, and every later read retries it, so a failure
+ * here is a warning. The lease's expiry job reports a failure that is not a provider outage.
+ */
+async function expireStaleLease(deps: RouterDeps, computerId: string, leaseId: string) {
+  try {
+    await expireComputerControl(deps, computerId, leaseId);
+  } catch (error) {
+    getLogger().warn("stale computer control expiry failed", {
+      "computer.id": computerId,
+      "control.lease.id": leaseId,
+      error,
+    });
+  }
 }
 
 export async function computerScreenContext(

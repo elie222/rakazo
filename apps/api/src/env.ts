@@ -1,21 +1,19 @@
 import { readFileSync } from "node:fs";
 import type {
   ApnsVoipConfig,
-  PhotonProjectCredentials,
-  TelegramBotCredentials,
+  MessagingEnvironmentValues,
+  SandboxProviderOptions,
 } from "@rakazo/adapters";
 import {
   apnsVoipConfig,
-  boatApiKeyFromEnv,
-  boatApiUrlFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
-  photonProjectsFromEnv,
+  messagingEnvFromProcess,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
-  telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
 import { socialAuthFromFields } from "@rakazo/auth";
@@ -39,7 +37,7 @@ export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapt
 /** Where a local development stack serves the web client. */
 const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
 
-export interface AppEnv {
+export interface AppEnv extends MessagingEnvironmentValues {
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -108,14 +106,8 @@ export interface AppEnv {
   deploymentModelConfigured: boolean;
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
-  e2bApiKey: string | undefined;
-  novitaApiKey: string | undefined;
-  sandboxTemplate: string | undefined;
-  daytonaApiKey: string | undefined;
-  daytonaApiUrl: string | undefined;
-  daytonaTarget: string | undefined;
-  boatApiKey: string | undefined;
-  boatApiUrl: string | undefined;
+  /** Every computer provider's options, read through the provider's own environment bindings. */
+  sandboxOptions: SandboxProviderOptions;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -123,10 +115,6 @@ export interface AppEnv {
   pipedreamClientSecret: string | undefined;
   pipedreamProjectId: string | undefined;
   pipedreamEnvironment: "development" | "production";
-  sendblueApiKeyId: string | undefined;
-  sendblueApiSecret: string | undefined;
-  sendblueSigningSecret: string | undefined;
-  sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
@@ -142,35 +130,14 @@ export interface AppEnv {
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
+  /** Reports signups and plan payments to the affiliate program; off when unset. */
+  dubApiKey: string | undefined;
   emailEmulator: boolean;
   billingEmulator: boolean;
   /** A/B tests this deployment runs, by key; none by default. */
   experiments: string | undefined;
   slackClientId?: string;
   slackClientSecret?: string;
-  slackBotToken: string | undefined;
-  slackSigningSecret: string | undefined;
-  teamsAppId?: string;
-  teamsAppPassword?: string;
-  teamsAppTenantId?: string;
-  whatsappAccessToken: string | undefined;
-  whatsappPhoneNumberId: string | undefined;
-  whatsappAppSecret: string | undefined;
-  whatsappVerifyToken: string | undefined;
-  telegramBotToken: string | undefined;
-  telegramWebhookSecret: string | undefined;
-  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
-  telegramBots?: TelegramBotCredentials[];
-  larkAppId: string | undefined;
-  larkAppSecret: string | undefined;
-  larkVerificationToken: string | undefined;
-  larkEncryptKey: string | undefined;
-  larkDomain: string | undefined;
-  photonProjectId: string | undefined;
-  photonProjectSecret: string | undefined;
-  photonWebhookSecret: string | undefined;
-  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
-  photonProjects?: PhotonProjectCredentials[];
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
@@ -196,6 +163,17 @@ export interface AppEnv {
     | undefined;
   /** Crisp chat on the paywall, for the hosted service; self-hosted installs leave it unset. */
   crispWebsiteId?: string | null;
+  /** DEMO_ACCOUNT_EMAIL and DEMO_ACCOUNT_PASSWORD, published to sign-in; only for throwaway demo servers. */
+  demoAccount?: { email: string; password: string } | null;
+}
+
+/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
+export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEnv {
+  return {
+    ...env,
+    ...overrides,
+    sandboxOptions: { ...env.sandboxOptions, ...overrides.sandboxOptions },
+  };
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -259,6 +237,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
+  let sandboxOptions: SandboxProviderOptions | undefined;
   return {
     passwordAuth,
     breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
@@ -276,6 +255,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
+    ...messagingEnvFromProcess(source),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
     apiHost: source.API_HOST ?? "127.0.0.1",
     trustedProxies: (source.TRUSTED_PROXIES ?? "")
@@ -313,14 +293,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
-    e2bApiKey: source.E2B_API_KEY,
-    novitaApiKey: source.NOVITA_API_KEY,
-    sandboxTemplate: source.SANDBOX_TEMPLATE,
-    daytonaApiKey: source.DAYTONA_API_KEY,
-    daytonaApiUrl: source.DAYTONA_API_URL,
-    daytonaTarget: source.DAYTONA_TARGET,
-    boatApiKey: boatApiKeyFromEnv(source),
-    boatApiUrl: boatApiUrlFromEnv(source),
+    // Read on first use, so a malformed computer setting stops only the services that build one.
+    get sandboxOptions() {
+      sandboxOptions ??= sandboxProviderOptionsFromEnv(source);
+      return sandboxOptions;
+    },
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
@@ -328,10 +305,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
-    sendblueApiKeyId: optional(source.SENDBLUE_API_KEY_ID),
-    sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
-    sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
-    sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
@@ -345,32 +318,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
+    dubApiKey: optional(source.DUB_API_KEY),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
     experiments: optional(source.EXPERIMENTS),
     billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
-    slackBotToken: optional(source.SLACK_BOT_TOKEN),
-    slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
-    teamsAppId: optional(source.TEAMS_APP_ID),
-    teamsAppPassword: optional(source.TEAMS_APP_PASSWORD),
-    teamsAppTenantId: optional(source.TEAMS_APP_TENANT_ID),
-    whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
-    whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
-    whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
-    whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
-    telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
-    telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
-    telegramBots: telegramBotsFromEnv(source),
-    larkAppId: optional(source.LARK_APP_ID),
-    larkAppSecret: optional(source.LARK_APP_SECRET),
-    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
-    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
-    larkDomain: optional(source.LARK_DOMAIN),
-    photonProjectId: optional(source.PHOTON_PROJECT_ID),
-    photonProjectSecret: optional(source.PHOTON_PROJECT_SECRET),
-    photonWebhookSecret: optional(source.PHOTON_WEBHOOK_SECRET),
-    photonProjects: photonProjectsFromEnv(source),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
@@ -390,6 +343,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     crispWebsiteId: parseCrispWebsiteId(source.CRISP_WEBSITE_ID),
+    demoAccount: demoAccountFromEnv(source),
   };
 }
 
@@ -505,4 +459,10 @@ function androidCertFingerprints(value: string | undefined): string[] {
     }
     return hex.toUpperCase().match(/../g)!.join(":");
   });
+}
+
+function demoAccountFromEnv(source: NodeJS.ProcessEnv) {
+  const email = optional(source.DEMO_ACCOUNT_EMAIL);
+  const password = source.DEMO_ACCOUNT_PASSWORD;
+  return email && password ? { email, password } : null;
 }

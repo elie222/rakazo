@@ -396,10 +396,7 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     const owner = await system.user.create({
       data: { id: randomUUID(), name: "Olive", email: "olive@example.test", emailVerified: true },
     });
-    const personal = await bootstrapUserSpace(system, owner, {
-      signupsEnabled: "true",
-      signupAllowlist: "",
-    });
+    const personal = await bootstrapUserSpace(system, owner);
     const { organizationId } = await system.space.findUniqueOrThrow({
       where: { id: personal.spaceId },
     });

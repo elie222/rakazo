@@ -1,8 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
 import type { RefObject } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ComputerScreenResult } from "../../lib/computer-screen";
 import {
   createScreenRefocus,
   embeddableScreenUrl,
@@ -12,7 +14,6 @@ import {
   probeScreenStatus,
   proxiedScreenCapability,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
-  sameEmbeddedComputerScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -20,6 +21,7 @@ import {
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { screenReadLoaded } from "../../lib/thread-events";
+import { useEventListener } from "../../lib/use-event-listener";
 
 // Caps the per-bot computer cache so a long session that opens many distinct bots
 // over time doesn't accumulate one entry per bot forever.
@@ -28,6 +30,8 @@ const COMPUTER_CACHE_LIMIT = 20;
 const OWN_CONTROL_EVENT_MS = 10_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
+/** A screen URL beside what the server said of its sign-in, so the two never drift apart. */
+type Screen = Pick<ComputerScreenResult, "url" | "singleUseSignIn">;
 
 /** The computer shown beside the chat or full screen, and its screen. */
 export function useComputerState({
@@ -69,8 +73,14 @@ export function useComputerState({
     >(),
   );
   const ownAnswers = useRef(new Map<string, number>());
-  const [screenUrl, setScreenUrl] = useState<string | null>(null);
-  const screenUrlRef = useRef(screenUrl);
+  const [screen, setScreen] = useState<Screen>({ url: null });
+  const screenUrl = screen.url;
+  const screenRef = useRef(screen);
+  // A caller holding only a URL shows a cached screen or none; the shown URL keeps its sign-in.
+  const setScreenUrl = useCallback(
+    (url: string | null) => setScreen((current) => (current.url === url ? current : { url })),
+    [],
+  );
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
@@ -90,11 +100,11 @@ export function useComputerState({
   // and the page reports its own state; nothing past "loading" by the timeout means it stalled.
   const [screenFrame, setScreenFrame] = useState<HTMLIFrameElement | null>(null);
   const [screenLoadError, setScreenLoadError] = useState<string | null>(null);
-  // An error that replaced the screen waits for Retry rather than spending another login code.
+  // An error that replaced the screen waits for Retry rather than spending another sign-in.
   const screenErrorShown = useRef(false);
   // Synced before the frame's unmount cleanup runs, from committed renders only.
   useLayoutEffect(() => {
-    screenUrlRef.current = screenUrl;
+    screenRef.current = screen;
     // A screen-read error stays hidden while a frame still shows the screen.
     screenErrorShown.current = Boolean(
       screenLoadError || (computerError && !computerErrorFromScreen),
@@ -135,21 +145,20 @@ export function useComputerState({
     setShownScreen({ botId: frameBotId, url: screenUrl });
   }
   useEffect(() => {
-    if (!heldScreen) return;
-    if (screenLoadError) {
-      setHeldScreen(null);
-      return;
-    }
-    const timer = setTimeout(() => setHeldScreen(null), SCREEN_FRAME_LOAD_TIMEOUT_MS);
-    return () => clearTimeout(timer);
+    if (heldScreen && screenLoadError) setHeldScreen(null);
   }, [heldScreen, screenLoadError]);
+  useTimeout(
+    () => setHeldScreen(null),
+    heldScreen && !screenLoadError ? SCREEN_FRAME_LOAD_TIMEOUT_MS : null,
+    heldScreen,
+  );
   useEffect(() => {
     setHeldScreen(null);
   }, [computerOpen, panel]);
-  // The Wuying URL a mounted frame signed in with, until its session ends. Reads keep it rather
-  // than replace it, since each fresh login code signs the frame's session out.
-  const liveWuyingUrl = useRef<string | null>(null);
-  // A failed Wuying screen waits for Retry rather than spending another login code.
+  // The single-use URL a mounted frame signed in with, until its session ends. Reads keep it
+  // rather than replace it, since each fresh sign-in ends the frame's session.
+  const liveSingleUseUrl = useRef<string | null>(null);
+  // A failed single-use screen waits for Retry rather than spending another sign-in.
   const screenAwaitsRetry = useRef(false);
   // Typing goes back into a reconnected screen that had the keyboard when it dropped.
   const screenRefocus = useRef(createScreenRefocus());
@@ -165,18 +174,25 @@ export function useComputerState({
     const url = embeddableScreenUrl(screenUrl);
     if (!isProxiedScreenUrl(url)) return;
     let cancelled = false;
-    const fallback = t`Could not connect to the computer screen`;
-    void probeScreen(url, fallback).then((error) => {
+    void probeScreen(url, t`Could not connect to the computer screen`).then((error) => {
       if (!cancelled && error && !screenFrameReported.current) setScreenLoadError(error);
     });
-    const timer = setTimeout(() => {
-      if (!cancelled && !screenFrameReported.current) setScreenLoadError(fallback);
-    }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [screenFrame, screenUrl]);
+  // A new frame or screen URL starts the wait again.
+  const screenLoad = useMemo(() => ({}), [screenFrame, screenUrl]);
+  useTimeout(
+    () => {
+      if (!screenFrameReported.current)
+        setScreenLoadError(t`Could not connect to the computer screen`);
+    },
+    screenFrame && isProxiedScreenUrl(embeddableScreenUrl(screenUrl))
+      ? SCREEN_FRAME_LOAD_TIMEOUT_MS
+      : null,
+    screenLoad,
+  );
   useEffect(() => {
     if (!screenFrame) return;
     const fallback = t`Could not connect to the computer screen`;
@@ -208,14 +224,14 @@ export function useComputerState({
       if (message.rakazoScreen === "connected") screenConnected = true;
       else if (message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected")
         screenConnected = false;
-      const wuying = Boolean(screenUrl?.startsWith("wuying:"));
-      if (wuying && message.rakazoScreen === "connected") {
-        // The SDK can rejoin by itself, and a fresh read would sign that session out again.
+      const singleUse = Boolean(screen.singleUseSignIn);
+      if (singleUse && message.rakazoScreen === "connected") {
+        // The screen page can rejoin by itself, and a fresh read would end that session again.
         clearTimeout(reconnect);
         // A reconnected screen releases a retry it kept queued; a read already out holds
         // until it completes or runs out of time.
         if (!reconnectReadOut) reconnectPending = false;
-        liveWuyingUrl.current = screenUrl;
+        liveSingleUseUrl.current = screenUrl;
       }
       if (
         message.rakazoScreen === "connected" &&
@@ -225,11 +241,11 @@ export function useComputerState({
         screenFrame.contentWindow?.postMessage({ rakazoScreenFocus: true }, "*");
       }
       const ended = message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected";
-      if (wuying && ended) {
-        // A Wuying login code works once, so a dropped session, such as one another viewer took
-        // over, comes back only through a fresh read; remounting would replay the spent code.
+      if (singleUse && ended) {
+        // The sign-in works once, so a dropped session, such as one another viewer took over,
+        // comes back only through a fresh read; remounting would replay the spent sign-in.
         // A hidden tab leaves the session to the viewer who took it.
-        liveWuyingUrl.current = null;
+        liveSingleUseUrl.current = null;
         if (
           document.visibilityState === "visible" &&
           screenReconnect().report(message.rakazoScreen) === "reconnect"
@@ -326,14 +342,14 @@ export function useComputerState({
     };
   }, [screenFrame, screenUrl]);
   useEffect(() => {
-    // Each Wuying frame is keyed by its URL, so it loads exactly one login code.
-    const frameUrl = screenUrlRef.current;
-    if (!screenFrame || !frameUrl?.startsWith("wuying:")) return;
-    liveWuyingUrl.current = frameUrl;
+    // Each single-use frame is keyed by its URL, so it loads exactly one sign-in.
+    const { url: frameUrl, singleUseSignIn } = screenRef.current;
+    if (!screenFrame || !frameUrl || !singleUseSignIn) return;
+    liveSingleUseUrl.current = frameUrl;
     return () => {
-      if (liveWuyingUrl.current === frameUrl) liveWuyingUrl.current = null;
-      // A frame replaced by a fresh code leaves that code alone.
-      if (screenUrlRef.current !== frameUrl) return;
+      if (liveSingleUseUrl.current === frameUrl) liveSingleUseUrl.current = null;
+      // A frame replaced by a fresh sign-in leaves that one alone.
+      if (screenRef.current.url !== frameUrl) return;
       setScreenUrl(null);
       if (screenErrorShown.current) {
         screenAwaitsRetry.current = true;
@@ -347,27 +363,19 @@ export function useComputerState({
       }
     };
   }, [screenFrame]);
+  const viewport = computerOpen ? window.visualViewport : null;
+  const syncViewport = () => {
+    if (viewport) setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
+  };
   useEffect(() => {
-    if (!computerOpen) {
-      setComputerViewport(null);
-      return;
-    }
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const sync = () => {
-      setComputerViewport({ height: viewport.height, offsetTop: viewport.offsetTop });
-    };
-    sync();
-    viewport.addEventListener("resize", sync);
-    viewport.addEventListener("scroll", sync);
-    return () => {
-      viewport.removeEventListener("resize", sync);
-      viewport.removeEventListener("scroll", sync);
-    };
+    if (computerOpen) syncViewport();
+    else setComputerViewport(null);
   }, [computerOpen]);
+  useEventListener(viewport, "resize", syncViewport);
+  useEventListener(viewport, "scroll", syncViewport);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "computer" || computerOpen;
+  computerVisible.current = computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 
@@ -417,30 +425,33 @@ export function useComputerState({
         read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
-      commit: (screen) => {
+      commit: (answer) => {
         setScreenUrlLoadedBotId(
           computerRef.current?.botId === id &&
             screenReadLoaded(issuedState, computerRef.current.state)
             ? id
             : null,
         );
-        setScreenUrl((current) => {
+        setScreen((current) => {
+          // A failed single-use screen waits for Retry, and a connected one keeps the sign-in it
+          // holds while the server still names the same screen.
           if (
-            screen.url?.startsWith("wuying:") &&
+            answer.singleUseSignIn &&
             (screenAwaitsRetry.current ||
-              (current === liveWuyingUrl.current &&
-                sameEmbeddedComputerScreen(current, screen.url)))
+              (current.url === liveSingleUseUrl.current &&
+                current.singleUseSignIn?.screen === answer.singleUseSignIn.screen))
           )
             return current;
-          return screen.url;
+          if (current.url === answer.url) return current;
+          return { url: answer.url, singleUseSignIn: answer.singleUseSignIn };
         });
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
-        if (screen.error || computerErrorFromScreenRef.current) {
-          setComputerError(screen.error);
-          setComputerErrorFromScreen(Boolean(screen.error));
+        if (answer.error || computerErrorFromScreenRef.current) {
+          setComputerError(answer.error);
+          setComputerErrorFromScreen(Boolean(answer.error));
         }
-        // A Wuying login code works once, so a cached one could only sign in as a spent code.
-        cacheComputerFor(id, { screenUrl: screen.url?.startsWith("wuying:") ? null : screen.url });
+        // A cached single-use URL could only sign in with a spent code.
+        cacheComputerFor(id, { screenUrl: answer.singleUseSignIn ? null : answer.url });
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
@@ -555,8 +566,8 @@ export function useComputerState({
     computerErrorFromScreen,
     setComputerErrorFromScreen,
     setScreenFrame,
-    // A fresh Wuying code changes only the URL fragment, which would not reload the frame.
-    screenFrameKey: screenUrl?.startsWith("wuying:")
+    // A fresh single-use sign-in may change only the URL fragment, which would not reload the frame.
+    screenFrameKey: screen.singleUseSignIn
       ? `${screenFrameKey}:${screenUrl}`
       : `${screenFrameKey}:${screenGeneration}`,
     heldScreen,

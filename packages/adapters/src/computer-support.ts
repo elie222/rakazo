@@ -12,7 +12,7 @@ export function toComputerRef(computer: {
   return {
     id: computer.providerRef,
     botId: computer.homeKey,
-    kind: computer.kind as ComputerRef["kind"],
+    kind: computer.kind,
     providerRef: computer.providerRef,
   };
 }
@@ -62,11 +62,22 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
+/**
+ * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
+ * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
+ */
+export class WorkspacePathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspacePathError";
+  }
+}
+
 export function normalizeWorkspacePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const segments = normalized.split("/").filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Path escapes the computer workspace");
+    throw new WorkspacePathError("Path escapes the computer workspace");
   }
   return segments.join("/");
 }
@@ -149,7 +160,7 @@ export function resolveBotUploadPath(
   ) {
     return normalized;
   }
-  throw new Error("Path escapes the bot workspace");
+  throw new WorkspacePathError("Path escapes the bot workspace");
 }
 
 export function displayBotWorkspacePath(

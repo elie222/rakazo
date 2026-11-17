@@ -1,3 +1,4 @@
+import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import { HistoryReadInputSchema, HistorySearchInputSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { memoryTools, withoutBlankFields } from "./run-tools-memory.js";
@@ -56,3 +57,35 @@ it.each(["Provider-generated context", ""])(
     expect(ctx.state.tainted).toBe(Boolean(text));
   },
 );
+
+describe("saving shared memory over a newer revision", () => {
+  const save = (failure: Error) => {
+    const finish = vi.fn((result: unknown) => result);
+    const ctx = {
+      runId: "run-1",
+      thread: { id: "thread-1" },
+      context: {},
+      deps: {
+        memory: {
+          read: vi.fn(async () => ({ documents: [{ revision: 1 }] })),
+          commit: vi.fn().mockRejectedValue(failure),
+        },
+      },
+    };
+    return memoryTools.save_shared_memory!(
+      ctx as never,
+      { args: { path: "team.md", content: "new" }, finish } as never,
+    );
+  };
+
+  it("tells the bot to read again", async () => {
+    await expect(save(new MemoryRevisionConflictError())).resolves.toEqual({
+      error: MEMORY_REVISION_CONFLICT_ERROR,
+    });
+  });
+
+  it("lets another failure through, even one quoting the conflict", async () => {
+    const failure = new Error(MEMORY_REVISION_CONFLICT_ERROR);
+    await expect(save(failure)).rejects.toBe(failure);
+  });
+});

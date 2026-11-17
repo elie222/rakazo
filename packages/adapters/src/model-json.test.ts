@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { parseModelJson } from "./model-json.js";
+import { outermostJsonObject, parseModelJson } from "./model-json.js";
 
 const Verdict = z.object({ pass: z.boolean(), reason: z.string() });
 
@@ -21,5 +21,19 @@ describe("parseModelJson", () => {
     '```json\n{"pass": true, "reason": "ok"',
   ])("rejects %j", (text) => {
     expect(parseModelJson(text, Verdict)).toBeUndefined();
+  });
+});
+
+describe("outermostJsonObject", () => {
+  it("spans the first open brace to the last close brace", () => {
+    expect(outermostJsonObject('a {"b": {"c": 1}} d } e')).toBe('{"b": {"c": 1}} d }');
+    expect(outermostJsonObject("} {")).toBeUndefined();
+    expect(outermostJsonObject("none")).toBeUndefined();
+  });
+
+  it("stays fast on many unclosed braces", () => {
+    const started = performance.now();
+    expect(outermostJsonObject("{".repeat(200_000))).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

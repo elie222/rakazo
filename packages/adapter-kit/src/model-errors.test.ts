@@ -517,3 +517,16 @@ describe("sign-in retry requests", () => {
     expect(isTransientModelError(error)).toBe(false);
   });
 });
+
+describe("status codes in long messages", () => {
+  it("reads a status after spacing and a separator", () => {
+    expect(isModelCredentialRejected("status code =  401 invalid api key")).toBe(true);
+  });
+
+  it("stays fast on long runs of spacing after a status word", () => {
+    const started = performance.now();
+    isTransientModelError(`status${"\t".repeat(50_000)}x`);
+    isModelCredentialRejected(`http status${"\t".repeat(50_000)}x`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

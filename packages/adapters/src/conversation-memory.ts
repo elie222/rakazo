@@ -13,6 +13,7 @@ import {
   loadMessageAuthor,
   loadMessageAuthors,
   partialReplyClientNonce,
+  storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
@@ -58,6 +59,7 @@ const MAX_CONVERSATION_MESSAGE_CHARS = 8_000;
 const EXCERPT_MARKER = " […]";
 
 type SaidMessage = {
+  id: string;
   seq: number;
   blocks: unknown;
   createdAt: Date;
@@ -85,7 +87,7 @@ function excerpt(text: string, max: number): string {
 function capConversationWindow(messages: SaidMessage[]): SaidMessage[] {
   const newestFirst = messages
     .map((message) => {
-      const text = conversationText(message.blocks);
+      const text = conversationText(message);
       return {
         ...message,
         text: { ...text, content: excerpt(text.content, MAX_CONVERSATION_MESSAGE_CHARS) },
@@ -121,18 +123,19 @@ function capConversationWindow(messages: SaidMessage[]): SaidMessage[] {
 
 type ReceivedBotMessage = Extract<MessageBlock, { kind: "bot_message_received" }>;
 
-function receivedBotMessage(blocks: unknown): ReceivedBotMessage | undefined {
-  return (blocks as MessageBlock[]).find(
-    (block): block is ReceivedBotMessage => block.kind === "bot_message_received",
-  );
+function receivedBotMessage(blocks: MessageBlock[]): ReceivedBotMessage | undefined {
+  return blocks.find((block): block is ReceivedBotMessage => block.kind === "bot_message_received");
 }
 
 /**
  * Step and page ids, approval drafts and secret cards are not conversation. A message another bot
  * sent this bot is that bot's words.
  */
-function conversationText(blocks: unknown): { content: string; speaker?: string } {
-  const list = blocks as MessageBlock[];
+function conversationText(message: { id: string; blocks: unknown }): {
+  content: string;
+  speaker?: string;
+} {
+  const list = storedMessageBlocks(message);
   const received = receivedBotMessage(list);
   if (received) return { content: received.text.trim(), speaker: received.fromBotName };
   return { content: messageBlocksText(list).trim() };
@@ -228,7 +231,7 @@ export async function retainRunConversation(
     deps.prisma.message.findMany({
       where: { runId: run.id, threadId: run.threadId, role: "bot" },
       orderBy: { seq: "asc" },
-      select: { seq: true, blocks: true, createdAt: true, clientNonce: true },
+      select: { id: true, seq: true, blocks: true, createdAt: true, clientNonce: true },
     }),
     deps.prisma.bot.findUnique({
       where: { id: run.botId },
@@ -263,7 +266,10 @@ export async function retainRunConversation(
   const selected = capConversationWindow(said);
   // Keep different people's words separate instead of attributing the whole turn to its starter.
   const humans = selected.filter(
-    (message) => message.role === "user" && !receivedBotMessage(message.blocks) && !message.speaker,
+    (message) =>
+      message.role === "user" &&
+      !receivedBotMessage(storedMessageBlocks(message)) &&
+      !message.speaker,
   );
   const authorIds = [
     ...new Set([
@@ -284,11 +290,11 @@ export async function retainRunConversation(
   const turns: SemanticMemoryConversationTurn[] = [];
   let previousSpeakerIdentity: string | undefined;
   for (const message of selected) {
-    const text = message.text ?? conversationText(message.blocks);
+    const text = message.text ?? conversationText(message);
     if (!text.content) continue;
     const speaker = message.speaker ?? text.speaker;
     const timestamp = message.createdAt.toISOString();
-    const sender = receivedBotMessage(message.blocks);
+    const sender = receivedBotMessage(storedMessageBlocks(message));
     const speakerIdentity =
       message.role === "assistant"
         ? `bot:${run.botId}`
@@ -538,6 +544,7 @@ async function groupWindow(
     orderBy: { seq: "desc" },
     take: MAX_CONVERSATION_MESSAGES,
     select: {
+      id: true,
       seq: true,
       role: true,
       blocks: true,

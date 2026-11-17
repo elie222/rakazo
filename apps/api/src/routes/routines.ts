@@ -3,12 +3,15 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   finishRoutineHandover,
   parseRoutineWatch,
+  RoutineWatchError,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
 } from "@rakazo/adapters";
+import type { Actor, RoutineWatch } from "@rakazo/contracts";
 import { canonicalPiProviderId, ROUTINE_TRIGGER_REQUIRED } from "@rakazo/contracts";
 import {
+  ClientError,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
@@ -30,6 +33,20 @@ import {
   routineTestTarget,
 } from "../routines.js";
 import type { RouterContext } from "./context.js";
+
+/** A watch the caller wrote that cannot be checked is theirs to fix; anything else is a fault. */
+async function assertRoutineWatch(
+  watch: RoutineWatch,
+  actor: Actor,
+  bot: { id: string; computer?: { scope: string } | null },
+): Promise<void> {
+  await validateRoutineWatch({}, watch, { ...actor, botId: bot.id }, bot.computer).catch(
+    (error: unknown) => {
+      if (error instanceof RoutineWatchError) throw new ClientError("BAD_REQUEST", error.message);
+      throw error;
+    },
+  );
+}
 
 export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
@@ -64,20 +81,7 @@ export function routinesRoutes(ctx: RouterContext) {
       create: authed.routines.create.handler(async ({ context, input }) => {
         assertRoutineSchedule(input);
         const bot = await repos.getBot(context.actor, input.botId);
-        if (input.watch) {
-          try {
-            await validateRoutineWatch(
-              {},
-              input.watch,
-              { ...context.actor, botId: bot.id },
-              bot.computer,
-            );
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Invalid change trigger.",
-            });
-          }
-        }
+        if (input.watch) await assertRoutineWatch(input.watch, context.actor, bot);
         if (input.emailSenders) {
           await assertEmailTrigger(deps.prisma, deps.env.inboundEmailDomain, bot.id);
         }
@@ -142,20 +146,7 @@ export function routinesRoutes(ctx: RouterContext) {
           await assertRoutineModel(deps, context.actor, { modelProvider, modelId }, codexCatalog);
         }
         const watch = input.watch === undefined ? parseRoutineWatch(existing.watch) : input.watch;
-        if (input.watch) {
-          try {
-            await validateRoutineWatch(
-              {},
-              input.watch,
-              { ...context.actor, botId: bot.id },
-              bot.computer,
-            );
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Invalid change trigger.",
-            });
-          }
-        }
+        if (input.watch) await assertRoutineWatch(input.watch, context.actor, bot);
         const watchChanged =
           input.watch !== undefined &&
           stableStringify(input.watch) !== stableStringify(parseRoutineWatch(existing.watch));
@@ -296,9 +287,9 @@ export function routinesRoutes(ctx: RouterContext) {
                   select: { id: true },
                 })
               ) {
-                throw new ORPCError("CONFLICT", { message: "Routine changed; retry." });
+                throw new ClientError("CONFLICT", "Routine changed; retry.");
               }
-              throw new ORPCError("NOT_FOUND");
+              throw new ClientError("NOT_FOUND", "Not Found");
             }
             throw error;
           });
@@ -346,18 +337,13 @@ export function routinesRoutes(ctx: RouterContext) {
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
         const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
         const { threadId } = target;
-        // The previous release stored the key without the user id; a retry still replays it.
-        const keys = input.clientNonce
-          ? [
-              routineTestRunNonce(context.actor, input.clientNonce),
-              `routine-test:${input.clientNonce}`,
-            ]
-          : [];
-        const nonce = keys[0];
+        const nonce = input.clientNonce
+          ? routineTestRunNonce(context.actor, input.clientNonce)
+          : undefined;
         const findExisting = async () =>
-          keys.length
+          nonce
             ? deps.prisma.run.findFirst({
-                where: { threadId, userId: context.actor.userId, clientNonce: { in: keys } },
+                where: { threadId, userId: context.actor.userId, clientNonce: nonce },
                 select: { id: true },
               })
             : null;

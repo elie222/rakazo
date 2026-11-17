@@ -17,6 +17,7 @@ import {
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import { resolveEncryptionKey } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { answerRunInput, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
@@ -559,20 +560,14 @@ describeIntegration("reusable credential lifecycle", () => {
       password: "fake-race-import-pass",
     };
     // Holds the member's vault lock, so both imports reach it and wait there.
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let held = () => {};
-    const locked = new Promise<void>((resolve) => {
-      held = resolve;
-    });
+    const gate = deferred();
+    const locked = deferred();
     const holder = db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 FROM "space_members" WHERE "spaceId" = ${seeded.me.spaceId} AND "userId" = ${seeded.me.userId} FOR UPDATE`;
-      held();
-      await gate;
+      locked.resolve();
+      await gate.promise;
     });
-    await locked;
+    await locked.promise;
     const imports = ["First", "Second"].map((title) =>
       rpc<{ added: number; skipped: { duplicate: number } }>(seeded.cookie, "vault/import", {
         rows: [{ ...row, title }],
@@ -590,7 +585,7 @@ describeIntegration("reusable credential lifecycle", () => {
       );
     } finally {
       // Also when the wait fails, so the lock never outlives the test.
-      release();
+      gate.resolve();
       await holder;
     }
     const results = await Promise.all(imports);
@@ -718,22 +713,16 @@ describeIntegration("reusable credential lifecycle", () => {
     const row = () => db.vaultCredential.findFirst({ where: { userId: seeded.me.userId } });
     const before = await row();
     // The owner's Block holds its transaction open after writing, until `commit` is called.
-    let commit = () => {};
-    let written = () => {};
-    const held = new Promise<void>((resolve) => {
-      written = resolve;
-    });
-    const gate = new Promise<void>((resolve) => {
-      commit = resolve;
-    });
+    const held = deferred();
+    const gate = deferred();
     const owner = new Proxy(handles.prisma, {
       get: (target, key) =>
         key === "$transaction"
           ? (fn: (tx: unknown) => Promise<unknown>) =>
               target.$transaction(async (tx) => {
                 const result = await fn(tx);
-                written();
-                await gate;
+                held.resolve();
+                await gate.promise;
                 return result;
               })
           : Reflect.get(target, key),
@@ -741,7 +730,7 @@ describeIntegration("reusable credential lifecycle", () => {
     const blocking = runAsTenant(seeded.me, () =>
       relabelVaultItem(owner, seeded.me, saved.name, edit),
     );
-    await held;
+    await held.promise;
     let settled = false;
     const removal = runAsTenant(seeded.me, () =>
       forgetBotSecret(handles.prisma, { ...seeded.me, botId: seeded.bot.id }, saved.name),
@@ -751,7 +740,7 @@ describeIntegration("reusable credential lifecycle", () => {
     // Without the vault lock in the Block, the removal would read the item as allowed and delete it.
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(settled).toBe(false);
-    commit();
+    gate.resolve();
     await blocking;
     // Told what it would be of a missing item, and the item stays.
     expect(await removal).toEqual({ removed: false });
@@ -899,20 +888,14 @@ describeIntegration("reusable credential lifecycle", () => {
     const destination = { ...login, name: saved.name };
     for (const change of ["", OTHER_TEST_KEY]) {
       // A login card's answer reads the login, then waits before its transaction opens.
-      let release = () => {};
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let prepared = () => {};
-      const read = new Promise<void>((resolve) => {
-        prepared = resolve;
-      });
+      const gate = deferred();
+      const read = deferred();
       const held = new Proxy(handles.prisma, {
         get: (target, key) =>
           key === "$transaction"
             ? async (fn: (tx: unknown) => Promise<unknown>) => {
-                prepared();
-                await gate;
+                read.resolve();
+                await gate.promise;
                 return target.$transaction(fn as never);
               }
             : Reflect.get(target, key),
@@ -926,13 +909,13 @@ describeIntegration("reusable credential lifecycle", () => {
           plaintext: JSON.stringify({ fields }),
         }),
       );
-      await read;
+      await read.promise;
       // Meanwhile the owner clears or rotates the key.
       await rpc(seeded.cookie, "vault/put", {
         destination,
         value: JSON.stringify({ fields, otp: change }),
       });
-      release();
+      gate.resolve();
       await answer;
       const revealed = await runAsTenant(seeded.me, () =>
         revealBotSecret({

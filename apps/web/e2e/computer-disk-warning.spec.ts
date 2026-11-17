@@ -1,6 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "./helpers";
 
 test("a nearly full computer offers to clean up its disk", async ({ page }, testInfo) => {
   await signup(page, `disk-warning-${Date.now()}@rakazo.test`, "password12", "Disk Warning");
@@ -31,7 +31,7 @@ test("a nearly full computer offers to clean up its disk", async ({ page }, test
     await route.continue();
   });
   await page.reload();
-  await openBotPanelTab(page, "Computer");
+  await openBotPanel(page);
   const warning = page.getByTestId("computer-disk-warning");
   await expect(warning).toContainText("Computer is 93% full");
   await captureScreenshot(page, testInfo, "computer-disk-warning");

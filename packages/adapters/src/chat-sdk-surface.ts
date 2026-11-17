@@ -15,10 +15,11 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { trimEndChars } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
-import { getLarkTextParts } from "./lark/text-parts.js";
+import { getLarkTextParts } from "./providers/messaging/lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -166,6 +167,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   private readonly byProvider = new Map<string, MountedPlatform>();
   private sink: ((event: MessagingInboundEvent) => Promise<void>) | undefined;
   private initialized: Promise<void> | undefined;
+  private receiving = true;
 
   constructor(platforms: MessagingPlatform[], options: { userName?: string } = {}) {
     if (platforms.length === 0) throw new Error("ChatSdkMessagingSurface needs >=1 platform");
@@ -390,6 +392,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await this.ensureInitialized();
   }
 
+  /** Stops getUpdates polling; a send that starts the surface later leaves it stopped. */
+  async stopReceiving(): Promise<void> {
+    // A start still in flight stops polling itself once it finishes.
+    this.receiving = false;
+    await this.stopPollingAdapters();
+  }
+
   /**
    * Stop Telegram getUpdates before exit. Chat.shutdown() only calls
    * adapter.disconnect(), which Telegram does not implement.
@@ -409,7 +418,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!this.initialized) {
       const chats = [...this.byProvider.values()].map(({ chat }) => chat.initialize());
       this.initialized = Promise.all(chats).then(
-        () => undefined,
+        async () => {
+          if (!this.receiving) await this.stopPollingAdapters();
+        },
         async (error: unknown) => {
           try {
             // Telegram may already be polling if another platform's
@@ -610,7 +621,7 @@ function plainTextWithLinks(message: Message, lark: boolean): string {
       // Markdown drops spaces at a fragment boundary; preserve them when the
       // next structured item is on the same row.
       if (last?.type === "paragraph" && !trailing && parts[index + 1]?.literal)
-        trailing = value.match(/[ \t]+$/)?.[0] ?? "";
+        trailing = value.slice(trimEndChars(value, " \t").length);
       // A heading followed by a code row has the same paragraph separation as
       // a heading followed by ordinary text in the SDK's plain-text renderer.
       const headingBreak =

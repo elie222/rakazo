@@ -1,9 +1,11 @@
 import type { MessagingInstallProvider, SecretStore } from "@rakazo/adapter-kit";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
 import { MessagingInstallations } from "./messaging-installations.js";
+import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 
 const actor: Actor = {
   spaceId: "space-a",
@@ -11,7 +13,8 @@ const actor: Actor = {
   email: "fake@example.test",
   isDeploymentOwner: false,
 };
-function fixture() {
+/** `remote` is whether the secret store keeps credentials elsewhere, as a hosted one does. */
+function fixture(remote = true) {
   let session: {
     id: string;
     provider: string;
@@ -60,8 +63,13 @@ function fixture() {
       }),
     },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 1 })) },
-    $transaction: vi.fn(async (fn) => fn(prisma)),
+    $transaction: vi.fn(async (fn) => {
+      const result = await fn(prisma);
+      if (lostAfterCommit) throw lostAfterCommit;
+      return result;
+    }),
   };
+  let lostAfterCommit: Error | undefined;
   const provider = {
     provider: "slack",
     authorizeUrl: (state: string) => `https://slack.com/install?state=${state}`,
@@ -75,15 +83,22 @@ function fixture() {
     put: vi.fn(async () => ({ ciphertext: "sealed-token" })),
     load: vi.fn(async () => "fake-token"),
     delete: vi.fn(async () => undefined),
+    isRemote: () => remote,
   } as unknown as SecretStore;
-  const cleanupJobs = { enqueue: vi.fn(async () => undefined) };
+  const cleanup = fakeCleanupJobs();
   return {
-    cleanupJobs,
+    cleanup,
+    /** The worker's attempt at every queued cleanup. */
+    runCleanupJobs: () => cleanup.runQueued({ prisma: prisma as unknown as PrismaClient, secrets }),
+    /** The next transaction commits, but the process never gets past it. */
+    loseProcessAfterCommit: () => {
+      lostAfterCommit = new Error("process lost after commit");
+    },
     manager: new MessagingInstallations(
       prisma as unknown as PrismaClient,
       secrets,
       provider,
-      cleanupJobs,
+      cleanup.jobs,
     ),
     prisma,
     provider,
@@ -200,7 +215,7 @@ it("disconnects only the user's own installation, from any of their spaces", asy
     },
   });
   expect(f.getInstallation()).toBeNull();
-  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", "installation-a");
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", stored("installation-a"));
 });
 it("does not load credentials after the installation owner loses membership", async () => {
   const f = fixture();
@@ -227,7 +242,7 @@ it("removes an old secret reference after a successful reconnect", async () => {
     ciphertext: "replacement",
   });
   await f.manager.complete(actor, await begin(f), "code");
-  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", id);
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", stored(id));
   expect(f.getInstallation()?.ciphertext).toBe("replacement");
 });
 
@@ -236,7 +251,8 @@ it("removes an unreferenced secret if persisting an installation fails", async (
   const state = await begin(f);
   f.prisma.messagingInstallation.create.mockRejectedValueOnce(new Error("write failed"));
   await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("write failed");
-  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", expect.any(String));
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", stored(expect.any(String)));
+  expect(f.cleanup.queued.size).toBe(0);
 });
 
 it("does not delete a credential when a write committed before a transport error", async () => {
@@ -248,6 +264,7 @@ it("does not delete a credential when a write committed before a transport error
   });
   await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("response lost");
   expect(f.secrets.delete).not.toHaveBeenCalled();
+  expect(f.cleanup.queued.size).toBe(0);
 });
 
 it("disconnects installations and deletes their secret references before destroying a bot", async () => {
@@ -265,7 +282,7 @@ it("disconnects installations and deletes their secret references before destroy
   expect(f.prisma.messagingInstallation.findMany).toHaveBeenCalledWith({
     where: { botId: "bot-a", spaceId: actor.spaceId, userId: actor.userId },
   });
-  expect(f.secrets.delete).toHaveBeenCalledWith("remote-reference", "install-a");
+  expect(f.secrets.delete).toHaveBeenCalledWith("remote-reference", stored("install-a"));
 });
 
 it("keeps a completed reconnect successful when external cleanup needs a retry", async () => {
@@ -276,12 +293,9 @@ it("keeps a completed reconnect successful when external cleanup needs a retry",
   vi.mocked(f.secrets.delete).mockRejectedValueOnce(new Error("secret store unavailable"));
   await expect(f.manager.complete(actor, await begin(f), "code")).resolves.toBeUndefined();
   expect(f.getInstallation()?.ciphertext).toBe("new-ref");
-  expect(f.cleanupJobs.enqueue).toHaveBeenCalledWith(
-    expect.objectContaining({
-      name: "messaging.credential-cleanup",
-      payload: { installationId: id, ref: "sealed-token" },
-    }),
-  );
+  expect(f.cleanup.cleanups()).toEqual([{ ...credential(id, "sealed-token"), due: true }]);
+  await f.runCleanupJobs();
+  expect(f.secrets.delete).toHaveBeenLastCalledWith("sealed-token", stored(id));
 });
 
 it("keeps a completed disconnect successful when external cleanup needs a retry", async () => {
@@ -291,7 +305,133 @@ it("keeps a completed disconnect successful when external cleanup needs a retry"
   vi.mocked(f.secrets.delete).mockRejectedValueOnce(new Error("secret store unavailable"));
   await expect(f.manager.remove(actor, id)).resolves.toBeUndefined();
   expect(f.getInstallation()).toBeNull();
-  expect(f.cleanupJobs.enqueue).toHaveBeenCalledWith(
-    expect.objectContaining({ payload: { installationId: id, ref: "sealed-token" } }),
+  expect(f.cleanup.cleanups()).toEqual([{ ...credential(id, "sealed-token"), due: true }]);
+  await f.runCleanupJobs();
+  expect(f.secrets.delete).toHaveBeenCalledTimes(2);
+});
+
+it("records the cleanup with the disconnect and removes it once the credential is deleted", async () => {
+  const f = fixture();
+  await f.manager.complete(actor, await begin(f), "code");
+  const id = f.getInstallation()!.id as string;
+  await f.manager.remove(actor, id);
+  expect(f.cleanup.jobs.enqueueIn).toHaveBeenCalledWith(
+    f.prisma,
+    expect.objectContaining({
+      name: "secret.cleanup",
+      payload: credential(id, "sealed-token"),
+      availableAt: expect.any(Date),
+    }),
   );
+  expect(f.cleanup.jobs.enqueueIn.mock.invocationCallOrder[0]).toBeLessThan(
+    vi.mocked(f.secrets.delete).mock.invocationCallOrder[0]!,
+  );
+  expect(f.cleanup.queued.size).toBe(0);
+});
+
+it("deletes a disconnected credential from the job when the process is lost after the commit", async () => {
+  const f = fixture();
+  await f.manager.complete(actor, await begin(f), "code");
+  const id = f.getInstallation()!.id as string;
+  f.loseProcessAfterCommit();
+  await expect(f.manager.remove(actor, id)).rejects.toThrow("process lost after commit");
+  expect(f.getInstallation()).toBeNull();
+  expect(f.secrets.delete).not.toHaveBeenCalled();
+  expect(f.cleanup.cleanups()).toEqual([{ ...credential(id, "sealed-token"), due: false }]);
+  await f.runCleanupJobs();
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", stored(id));
+});
+
+it("deletes a replaced credential from the job when the process is lost after the commit", async () => {
+  const f = fixture();
+  await f.manager.complete(actor, await begin(f), "code");
+  const id = f.getInstallation()!.id as string;
+  vi.mocked(f.secrets.put).mockResolvedValueOnce({ id, ref: "new-ref", ciphertext: "new-ref" });
+  f.loseProcessAfterCommit();
+  await expect(f.manager.complete(actor, await begin(f), "code")).rejects.toThrow(
+    "process lost after commit",
+  );
+  // The new credential was saved after all, so only the one it replaced is cleaned up.
+  expect(f.getInstallation()?.ciphertext).toBe("new-ref");
+  expect(f.secrets.delete).not.toHaveBeenCalled();
+  expect(f.cleanup.cleanups()).toEqual([{ ...credential(id, "sealed-token"), due: false }]);
+  await f.runCleanupJobs();
+  expect(f.secrets.delete).toHaveBeenCalledTimes(1);
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", stored(id));
+});
+
+it("never deletes a credential an installation holds again, directly or from the job", async () => {
+  const f = fixture();
+  await f.manager.complete(actor, await begin(f), "code");
+  const installation = { ...f.getInstallation()! };
+  const id = installation.id as string;
+  // The installation is back, holding the same credential, before the direct attempt reads it.
+  f.prisma.messagingInstallation.deleteMany.mockImplementationOnce(async () => ({ count: 1 }));
+  await f.manager.remove(actor, id);
+  expect(f.secrets.delete).not.toHaveBeenCalled();
+  expect(f.cleanup.queued.size).toBe(0);
+
+  f.loseProcessAfterCommit();
+  f.prisma.messagingInstallation.deleteMany.mockImplementationOnce(async () => ({ count: 1 }));
+  await expect(f.manager.remove(actor, id)).rejects.toThrow("process lost after commit");
+  expect(f.cleanup.queued.size).toBe(1);
+  await f.runCleanupJobs();
+  expect(f.secrets.delete).not.toHaveBeenCalled();
+});
+
+it("copies no sealed credential into a job when the store keeps it in the row", async () => {
+  const f = fixture(false);
+  await f.manager.complete(actor, await begin(f), "code");
+  const id = f.getInstallation()!.id as string;
+  vi.mocked(f.secrets.put).mockResolvedValueOnce({ id, ref: "new-ref", ciphertext: "new-ref" });
+  await f.manager.complete(actor, await begin(f), "code");
+  vi.mocked(f.secrets.delete).mockRejectedValueOnce(new Error("notification failed"));
+  await expect(f.manager.remove(actor, id)).resolves.toBeUndefined();
+  expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", id);
+  expect(f.secrets.delete).toHaveBeenCalledWith("new-ref", id);
+  expect(f.cleanup.jobs.enqueue).not.toHaveBeenCalled();
+  expect(f.cleanup.jobs.enqueueIn).not.toHaveBeenCalled();
+});
+
+function credential(installationId: string, ref: string) {
+  return { kind: "messaging_installation", recordId: installationId, ref };
+}
+
+/** What a remote store is given to find the entry: the record it was written for. */
+function stored(recordId: unknown) {
+  return expect.objectContaining({ recordId });
+}
+it("refuses a link that cannot finish as one the person can act on", async () => {
+  const f = fixture();
+  await expect(f.manager.complete(actor, "forged", "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+  const state = await begin(f);
+  f.setInstallation({
+    id: "other",
+    spaceId: "space-b",
+    userId: "user-b",
+    botId: "bot-b",
+    ciphertext: "other-secret",
+  });
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+});
+it("refuses a workspace another space installed first", async () => {
+  const f = fixture();
+  const state = await begin(f);
+  f.prisma.messagingInstallation.create.mockRejectedValueOnce(
+    Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+  );
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBeInstanceOf(
+    MessagingInstallRefusedError,
+  );
+});
+it("keeps a failure to save the installation a fault", async () => {
+  const f = fixture();
+  const state = await begin(f);
+  const outage = new Error("Authorization expired: connection reset");
+  f.prisma.messagingInstallation.create.mockRejectedValueOnce(outage);
+  await expect(f.manager.complete(actor, state, "code")).rejects.toBe(outage);
 });

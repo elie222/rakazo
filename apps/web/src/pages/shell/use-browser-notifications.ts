@@ -10,7 +10,9 @@ import {
 import { computerUpdates } from "../../lib/computer-updates";
 import { followStream } from "../../lib/follow-stream";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
+import { organizationsChanged } from "../../lib/organizations";
 import type { RpcClient } from "../../lib/rpc";
+import { isReadChangeKind, spaceChanged } from "../../lib/space-changes";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -123,7 +125,9 @@ export function useBrowserNotifications(
       (signal) => rpc.notifications.subscribe(undefined, { signal }),
       (frame) => {
         if (frame.type === "roster") rosterRef.current?.changed();
+        else if (frame.type === "organizations") void organizationsChanged();
         else if (frame.type === "computerUpdates") computerUpdates.signalled();
+        else if (isReadChangeKind(frame.type)) void spaceChanged(frame.type);
         else if (frame.alert) show(frame.alert);
       },
     );

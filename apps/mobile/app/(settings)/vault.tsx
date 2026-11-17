@@ -24,6 +24,7 @@ import {
   vaultBotsNote,
   vaultImportProblemLines,
   vaultImportText,
+  vaultOwnSpaceNote,
   vaultSaveNotice,
 } from "@rakazo/i18n/vault";
 import { useQuery } from "@tanstack/react-query";
@@ -102,6 +103,12 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   );
   const listQuery = useQuery(listRead, queryClient);
   const { refetch: refetchList } = listQuery;
+  const overrides = useQuery(
+    { ...rpcQuery("spaceSettings/overrides"), enabled: scope === "account" },
+    queryClient,
+  );
+  const { refetch: refetchOverrides } = overrides;
+  const ownVault = scope === "account" && Boolean(overrides.data?.includes("credentials"));
   // Null until the first read lands.
   const items = listQuery.data ?? null;
   const loadError = listQuery.error
@@ -142,7 +149,8 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     useCallback(() => {
       setError(null);
       void refetchList();
-    }, [refetchList]),
+      if (scope === "account") void refetchOverrides();
+    }, [refetchList, refetchOverrides, scope]),
   );
 
   useEffect(() => {
@@ -153,22 +161,6 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     void rpc("vault/activity", { scope, name: opened })
       .then((list) => {
         if (current) setUses({ key: `${scope}:${opened}`, list });
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [opened, rpc, scope]);
-
-  // Whether this Space keeps its own vault, so an opened account item says its bots can't use it.
-  const [ownVault, setOwnVault] = useState(false);
-  useEffect(() => {
-    setOwnVault(false);
-    if (!opened || scope !== "account") return;
-    let current = true;
-    void rpc("spaceSettings/overrides")
-      .then((overrides) => {
-        if (current) setOwnVault(overrides.includes("credentials"));
       })
       .catch(() => undefined);
     return () => {
@@ -476,6 +468,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             onRetry={() => {
               setError(null);
               void refetchList();
+              if (scope === "account") void refetchOverrides();
             }}
           />
         ) : null}
@@ -521,6 +514,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             ]}
           />
         ) : null}
+        {ownVault ? <Text style={styles.note}>{vaultOwnSpaceNote()}</Text> : null}
         {items && items.length === 0 ? (
           <Text style={styles.empty}>{t`Nothing saved yet.`}</Text>
         ) : null}
@@ -641,6 +635,7 @@ function createStyles() {
     screen: { flex: 1, backgroundColor: native.groupedPage },
     content: { width: "100%", padding: 20, gap: 16, paddingBottom: 40 },
     error: { color: tokens.destructive, fontSize: 14 },
+    note: { color: native.secondaryLabel, fontSize: 14 },
     empty: { color: native.secondaryLabel, fontSize: 15, textAlign: "center", paddingVertical: 24 },
     add: { flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-end", padding: 8 },
     addLabel: { color: native.label, fontSize: 17 },

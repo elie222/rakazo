@@ -1,5 +1,6 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor, ChatAlert } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
@@ -46,22 +47,20 @@ describe("notifications.subscribe", () => {
 
   it("interleaves roster signals with alerts on the same stream", async () => {
     const controller = new AbortController();
-    let signalRoster!: () => void;
+    const roster = deferred();
     const followChatAlerts = vi.fn(async function* (
       _userId: string,
       _spaceId: string,
       signal: AbortSignal,
     ) {
-      await new Promise<void>((resolve) => {
-        signalRoster = resolve;
-      });
+      await roster.promise;
       yield alert;
       await new Promise((resolve) => signal.addEventListener("abort", resolve));
     });
     const followRosterChanges = vi.fn(async function* () {
       yield;
-      signalRoster();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      roster.resolve();
+      await flush();
       yield;
     });
     const client = createRouterClient(
@@ -83,7 +82,7 @@ describe("notifications.subscribe", () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const followChatAlerts = vi.fn(async function* () {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
       yield alert;
     });
     const followRosterChanges = vi.fn(async function* (): AsyncGenerator<void> {

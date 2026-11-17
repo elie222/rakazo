@@ -5,11 +5,12 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
   modelConnectOption,
-  openBotPanelTab,
+  openBotSettings,
   openModelConnection,
   openUserSettings,
   pickReopenedModel,
@@ -267,11 +268,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
     await page.getByRole("button", { name: "Use a found model" }).click();
     const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
-    await discoveredModels.selectOption("");
+    await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
+    await chooseOption(discoveredModels, "Other model…");
     await expect(page.getByLabel("Model id")).toBeVisible();
     await page.getByRole("button", { name: "Find models" }).click();
-    await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
+    await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
     await expect(page.getByText("Found 2 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
@@ -349,32 +350,24 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await saved.getByRole("button", { name: "Back", exact: true }).click();
     await expect(saved).toBeHidden();
     await page.getByRole("button", { name: "Close model settings" }).click();
-    await openBotPanelTab(page, "Advanced");
+    await openBotSettings(page);
     const settings = page.getByTestId("bot-settings");
-    // The Model select sits inside its wrapping <label>, so the label text includes
-    // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
-    const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
-    await expect(botModel.locator("option")).toContainText([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
-    await botModel.selectOption(`openai-compatible::${LOCAL_MODEL_ID}`);
-    // Native select popups are outside Playwright's screenshots. Render the
-    // same options as an expanded native list for the CI screenshot, then restore.
-    // An expanded select is a listbox, so keep a role-independent handle.
-    const botModelSelect = settings.locator(`[id="${await botModel.getAttribute("id")}"]`);
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = select.options.length;
-      select.style.height = "auto";
-    });
-    await botModelSelect.scrollIntoViewIfNeeded();
+    // The model row names the model in use and opens the list; each change saves at once.
+    await settings.getByRole("button", { name: /^Model/ }).click();
+    const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
+    await expect(localModel).toBeVisible();
+    await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    await botModelSelect.evaluate((select: HTMLSelectElement) => {
-      select.size = 0;
-      select.style.removeProperty("height");
-    });
-    await settings.getByRole("combobox", { name: "Thinking", exact: true }).selectOption("high");
+    const modelSaved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+    );
+    await localModel.click();
+    await modelSaved;
+    await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await settings.getByRole("button", { name: "Save", exact: true }).click();
+    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
@@ -422,6 +415,13 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
+  // The connection's page offers sign-in only because it expired; rename and disconnect end it.
+  await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
+  const connection = page.getByTestId("model-provider-page");
+  await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "model-connection-page");
 });
 
 test("a refused private model server names the setting that allows it", async ({

@@ -3,6 +3,7 @@
 import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -29,7 +30,12 @@ const { rpc, spaceRpc } = vi.hoisted(() => {
   });
   return { rpc: client(), spaceRpc: client() };
 });
-vi.mock("../lib/rpc", () => ({ rpc }));
+vi.mock("../lib/rpc", () => ({
+  rpc,
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+  selectedSpaceId: () => null,
+}));
 // A card's editor lists the vault's saved contacts; these cards need none.
 vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
 
@@ -540,15 +546,17 @@ it("shows what a sign-in approval types besides the login, above its two answers
 it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
-      <ChoiceCard
-        botId="bot"
-        block={{
-          kind: "choice",
-          question: "Which city?",
-          options: [{ id: "paris", letter: "A", label: "Paris" }],
-        }}
-        onBotChanged={async () => {}}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <ChoiceCard
+          botId="bot"
+          block={{
+            kind: "choice",
+            question: "Which city?",
+            options: [{ id: "paris", letter: "A", label: "Paris" }],
+          }}
+          onBotChanged={async () => {}}
+        />
+      </QueryClientProvider>,
     ),
   );
   const option = button("AParis")!;

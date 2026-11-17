@@ -1,4 +1,6 @@
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrowserNotificationApi,
@@ -228,20 +230,18 @@ describe("browser notifications", () => {
   });
 
   it("allows a later send gesture to retry a dismissed permission prompt", async () => {
-    let resolvePermission: ((permission: "default") => void) | undefined;
-    const requestPermission = vi.fn(
-      () =>
-        new Promise<"default">((resolve) => {
-          resolvePermission = resolve;
-        }),
-    );
+    let resolvePermission: Deferred<"default"> | undefined;
+    const requestPermission = vi.fn(() => {
+      resolvePermission = deferred();
+      return resolvePermission.promise;
+    });
     const api: BrowserNotificationApi = { permission: "default", requestPermission };
 
     requestBrowserNotificationPermission(api);
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(1);
 
-    resolvePermission?.("default");
+    resolvePermission?.resolve("default");
     await Promise.resolve();
     requestBrowserNotificationPermission(api);
     expect(requestPermission).toHaveBeenCalledTimes(2);
