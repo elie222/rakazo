@@ -412,6 +412,27 @@ it("reads the log again when the window regains focus, so a lost permission show
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
 });
 
+it("keeps Export off while a later read of an already loaded log has failed", async () => {
+  api.events.mockResolvedValueOnce({ events: [event("e1")], nextCursor: null });
+  await open();
+  const exportButton = () =>
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Export",
+    ) as HTMLButtonElement;
+  expect(exportButton().disabled).toBe(false);
+
+  api.events.mockRejectedValue(new Error("Boom"));
+  await act(async () => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+  });
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Boom"),
+  );
+  expect(container.querySelector('[data-testid="audit-log"] li')).not.toBeNull();
+  expect(exportButton().disabled).toBe(true);
+});
+
 it("sends a reader refused while loading an older page back too, and keeps Export off after a failed load", async () => {
   api.events
     .mockResolvedValueOnce({ events: [event("e2")], nextCursor: "e2" })

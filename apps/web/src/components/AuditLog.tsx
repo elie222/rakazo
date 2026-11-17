@@ -97,7 +97,7 @@ export function AuditLog({
         trailing={
           <Button
             variant="outline"
-            disabled={download.isPending || !log.data || refused}
+            disabled={download.isPending || !log.data || log.isError || refused}
             onClick={() => download.mutate()}
           >
             <Trans>Export</Trans>
