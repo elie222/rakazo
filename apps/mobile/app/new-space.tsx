@@ -2,17 +2,17 @@ import { useLingui } from "@lingui/react/macro";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
-import { NativeActionButton } from "../components/native-action-button";
-import { cancelHeaderOptions } from "../components/sheet-header";
-import { selectSpace } from "../lib/api-server";
-import { hapticSuccess } from "../lib/haptics";
-import { native, useMobileTokens } from "../lib/native";
-import { refreshOrganizations } from "../lib/organizations";
-import { useSave } from "../lib/query";
-import { isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
-import { ACCOUNT_SETTINGS } from "../lib/settings-target";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { cancelHeaderOptions } from "../components/native/sheet-header";
+import { selectSpace } from "../lib/api/api-server";
+import { errorText } from "../lib/api/user-error";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { hapticSuccess } from "../lib/native/haptics";
+import { native, useMobileTokens } from "../lib/native/native";
+import { useSave } from "../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
+import { isSearchInboxSession, searchInboxSession } from "../lib/search/search-inbox";
+import { refreshOrganizations } from "../lib/spaces/organizations";
 
 export default function NewSpace() {
   const sideInsets = useSideInsets();

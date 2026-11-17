@@ -22,42 +22,46 @@ test("computer maintenance shows durable background progress and failure recover
   await page.route("**/rpc/computer/updates", (route) =>
     route.fulfill({ json: { json: updates } }),
   );
-  // The mocked list never signals a change, so the app polls it as it does without live signals.
+  // The app re-reads the list only when the live stream signals. With the stream turned away,
+  // nothing does, so each change below is shown by opening the page again.
   await page.route("**/rpc/notifications/subscribe", (route) =>
     route.fulfill({
       status: 404,
       json: { json: { defined: false, code: "NOT_FOUND", status: 404, message: "Not found" } },
     }),
   );
+  const reopen = async (next: ComputerUpdate[], button: RegExp) => {
+    updates = next;
+    await page.reload();
+    await page.getByRole("button", { name: button }).click();
+    await expect(dialog).toBeVisible();
+  };
   await page.route("**/rpc/computer/recover", (route) => {
     updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
     return route.fulfill({ json: { json: updates[0] } });
   });
-  // An update started elsewhere, such as from the phone, shows its progress here too.
-  updates = [updating];
-  await page.reload();
   const dialog = page.getByTestId("computer-update-dialog");
-  await page.getByRole("button", { name: /Updating Team Computer/ }).click();
-  await expect(dialog).toBeVisible();
+  // An update started elsewhere, such as from the phone, shows its progress here too.
+  await reopen([updating], /Updating Team Computer/);
   await expect(dialog.getByRole("heading")).toHaveText("Updating Team Computer");
   await expect(dialog.locator('[aria-current="step"]')).toHaveText("Restoring your workspace");
   await captureScreenshot(page, testInfo, "computer-update-progress");
   await dialog.getByRole("button", { name: "Continue in Background" }).click();
   await expect(dialog).not.toBeVisible();
   await captureScreenshot(page, testInfo, "computer-update-background");
-  await page.reload();
-  await page.getByRole("button", { name: /Updating Team Computer/ }).click();
-  await expect(dialog).toBeVisible();
-  updates = [{ ...updating, status: "interrupted" }];
+  await reopen([{ ...updating, status: "interrupted" }], /Update failed/);
   await expect(
     dialog.getByText("Recovery is unavailable until the previous operation has stopped."),
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-update-interrupted");
   // Older wire flags cannot expose a server lock-release control in the app.
-  updates = [{ ...updating, status: "interrupted", canReleaseReservation: true }];
+  await reopen(
+    [{ ...updating, status: "interrupted", canReleaseReservation: true }],
+    /Update failed/,
+  );
   await expect(dialog.getByRole("button", { name: "Release computer", exact: true })).toBeHidden();
-  updates = [{ ...updating, status: "failed" }];
+  await reopen([{ ...updating, status: "failed" }], /Update failed/);
   await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");
@@ -65,6 +69,7 @@ test("computer maintenance shows durable background progress and failure recover
   await expect(dialog.getByRole("heading")).toHaveText("Recovering Team Computer");
   await captureScreenshot(page, testInfo, "computer-recovery-progress");
   updates = [];
-  await expect(dialog).not.toBeVisible();
+  await page.reload();
+  // A signalled re-read closing the open dialog is covered by the computer-updates unit tests.
   await expect(page.getByRole("button", { name: /Recovering Team Computer/ })).toHaveCount(0);
 });

@@ -75,6 +75,7 @@ x-app-environment: &app-environment # Runtime
   LOG_LEVEL:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -576,7 +577,7 @@ services:
     # takes most of the worker's CPU.
     command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
@@ -685,6 +686,8 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     logging: *logging
     user: root
@@ -697,9 +700,11 @@ services:
       # Keep interpolation optional so deployments that do not enable this profile need no token.
       # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
       RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       # `-p` is available to Compose interpolation but is not injected into containers unless it is
       # declared here. The sidecar must target the project the operator actually started.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}

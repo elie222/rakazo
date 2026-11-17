@@ -50,6 +50,7 @@ import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
 import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
 import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
 import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
 import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { hasOpenDialog } from "../lib/has-open-dialog";
@@ -74,6 +75,7 @@ import { ChatFindBar } from "./shell/chat-find-bar";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import { Composer } from "./shell/composer";
+import { ComposerModelPicker } from "./shell/composer-model-picker";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
 import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
@@ -114,6 +116,7 @@ import { useTeaching } from "./shell/use-teaching";
 import { useThreadState } from "./shell/use-thread-state";
 import { useThreadSync } from "./shell/use-thread-sync";
 import type { SettingsSection } from "./shell-overlay";
+import { TimezonePrompt } from "./TimezonePrompt";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -198,6 +201,7 @@ function SpaceShell() {
   const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
   const enterToSend = composerEnterToSendPreference.use();
+  const showComposerModel = composerModelPickerPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
@@ -425,7 +429,6 @@ function SpaceShell() {
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const rosterSignals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer,
@@ -475,6 +478,7 @@ function SpaceShell() {
     else if (active) read.markBotReadIfVisible(active.id);
   }, [openChatWoke]);
   const {
+    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,
@@ -594,6 +598,7 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
     beginSpaceSwitch: roster.beginSpaceSwitch,
+    startChatRead,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -974,6 +979,23 @@ function SpaceShell() {
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} onMeUpdated={setBootstrapMe} />
       ) : null}
+      {userId && bootstrapMe ? (
+        <TimezonePrompt
+          key={userId}
+          userId={userId}
+          timezone={bootstrapMe.timezone}
+          onSaved={(me, adopted) =>
+            setBootstrapMe((prev) =>
+              // An adoption only fills an empty zone, so it never replaces a newer pick.
+              !prev
+                ? me
+                : adopted && prev.timezone != null
+                  ? prev
+                  : { ...prev, timezone: me.timezone },
+            )
+          }
+        />
+      ) : null}
       <ShellSidebar
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
@@ -1079,7 +1101,11 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={chatColumnRef}
+          data-finding={findOpen || undefined}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (
@@ -1185,6 +1211,20 @@ function SpaceShell() {
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
               sendColors={userBubble}
+              modelPicker={
+                showComposerModel && active && !inGroup ? (
+                  <ComposerModelPicker
+                    bot={active}
+                    disabled={Boolean(recordingSkill)}
+                    onConnect={() => openSettings("models")}
+                    onSaved={(updated) =>
+                      setBots((current) =>
+                        current.map((bot) => (bot.id === updated.id ? updated : bot)),
+                      )
+                    }
+                  />
+                ) : undefined
+              }
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               running={composerRunning}
               disabled={Boolean(recordingSkill)}

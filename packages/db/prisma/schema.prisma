@@ -103,7 +103,7 @@ model User {
   agentSecrets               AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
-  pushToken                   PushToken?
+  pushRegistrations           PushRegistration[]
   callPushDevices             CallPushDevice[]
   workActivityTokens          WorkActivityToken[]
   workActivityStartTokens     WorkActivityStartToken[]
@@ -151,19 +151,21 @@ model Session {
   @@map("session")
 }
 
-/// One current device registration per account, matching the notification API contract.
+/// One row per signed-in device; a device token belongs to one account at a time.
 /// No session FK: password changes delete a session before the replacement is created.
-model PushToken {
-  userId String @id
+model PushRegistration {
+  userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ciphertext String
   tokenDigest String @unique
   sessionId String
+  ciphertext String
   /// "android_sender" when the installed Android build renders data-only sender pushes.
   presentation String?
   updatedAt DateTime @updatedAt
 
-  @@map("push_tokens")
+  @@id([userId, tokenDigest])
+  @@index([sessionId])
+  @@map("push_registrations")
 }
 
 /// Encrypted call registrations per installation. Legacy message push remains compatible.
@@ -1732,7 +1734,7 @@ model Connection {
   spaceId     String
   space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   userId      String
-  connectorId String   @default("composio")
+  connectorId String
   provider    String
   displayName String
   status      String
@@ -1918,7 +1920,7 @@ model HomeDeletionNotice {
   @@map("home_deletion_notices")
 }
 
-/// One holder at a time for long work across processes. `withLease` in packages/db/src/leases.ts
+/// One holder at a time for long work across processes. `withLease` in packages/db/src/database/leases.ts
 /// is the only writer. A release deletes its row; `fence` comes from `leases_fence_seq`, so a key's
 /// next holder always outranks every earlier one.
 model Lease {
@@ -1947,7 +1949,7 @@ model ComputerRun {
   startedAt  DateTime
   /// Null while running. When the end was not seen as it happened, this is when it was detected.
   endedAt    DateTime?
-  /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
+  /// How it ended; see `ComputerRunEnd` in packages/db/src/computers/computer-runs.ts.
   endReason  String?
   /// When Rakazo last saw this stretch running: at its start and at each idle check.
   lastSeenAt DateTime?

@@ -415,6 +415,13 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
+  // The connection's page offers sign-in only because it expired; rename and disconnect end it.
+  await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
+  const connection = page.getByTestId("model-provider-page");
+  await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "model-connection-page");
 });
 
 test("a refused private model server names the setting that allows it", async ({

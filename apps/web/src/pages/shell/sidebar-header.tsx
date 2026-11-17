@@ -8,6 +8,10 @@ import type { Panel } from "../../lib/right-panel-state";
 import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
 
+// A size class, since the Button sizes any svg without one to 16px.
+const ICON = "size-4.5";
+const STROKE = 1.75;
+
 export function SidebarHeader({
   mini = false,
   createMenuOpen,
@@ -42,76 +46,88 @@ export function SidebarHeader({
   const { t } = useLingui();
   const hasWindowChrome = Boolean(desktopBridge());
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
+  // In the icon rail the actions stack, so a label above or below covers its neighbour.
+  const labelSide = mini ? "inline-end" : undefined;
+  // In the rail the buttons share the bot tiles' box, so hover shapes line up.
+  const railTile = mini ? "size-12 rounded-xl" : "";
+  const toggle = (
+    <IconTooltip label={toggleLabel} side={labelSide}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={`app-no-drag hidden text-muted-foreground md:inline-flex ${railTile}`}
+        aria-label={toggleLabel}
+        data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
+        onClick={() => setBotsSidebarCollapsedPref(!mini)}
+      >
+        {mini ? (
+          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+        ) : (
+          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+        )}
+      </Button>
+    </IconTooltip>
+  );
   return (
     <div
-      className={`app-drag flex items-center ${mini ? `flex-col gap-2 px-0 pb-2 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-[18px] pb-3 pt-4"}`}
+      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
     >
-      {!mini || hasWindowChrome ? <WindowChrome /> : null}
-      <div className={`relative flex items-center ${mini ? "flex-col gap-0.5" : "gap-1"}`}>
-        {onSearch ? (
-          <IconTooltip label={t`Search`}>
+      <div className={`flex items-center ${mini ? "flex-col gap-2" : "gap-2"}`}>
+        {hasWindowChrome ? <WindowChrome /> : null}
+        {toggle}
+      </div>
+      {/* Fits beside the macOS window controls at the narrowest sidebar width. */}
+      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-0.5"}`}>
+        {onSearch && !mini ? (
+          <IconTooltip label={t`Search`} side={labelSide}>
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               aria-label={t`Search`}
               aria-pressed={searchOpen}
               data-testid="sidebar-search-trigger"
               onClick={onSearch}
               className="app-no-drag text-muted-foreground"
             >
-              <Search size={15} strokeWidth={1.8} aria-hidden="true" />
+              <Search className={ICON} strokeWidth={STROKE} aria-hidden="true" />
             </Button>
           </IconTooltip>
         ) : null}
-        <IconTooltip label={t`Activity`}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t`Activity`}
-            aria-pressed={activityMode}
-            data-activity-mode={activityMode ? "on" : "off"}
-            onClick={toggleActivityMode}
-            className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-          >
-            {/* A filled bell marks Activity on, so on and hovered never look alike. */}
-            <Bell
-              size={15}
-              strokeWidth={1.8}
-              fill={activityMode ? "currentColor" : "none"}
-              aria-hidden="true"
-            />
-          </Button>
-        </IconTooltip>
-        <IconTooltip label={toggleLabel}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="app-no-drag hidden text-muted-foreground md:inline-flex"
-            aria-label={toggleLabel}
-            data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
-            onClick={() => setBotsSidebarCollapsedPref(!mini)}
-          >
-            {mini ? (
-              <PanelLeftOpen size={15} strokeWidth={1.8} aria-hidden="true" />
-            ) : (
-              <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
-            )}
-          </Button>
-        </IconTooltip>
+        {mini ? null : (
+          <IconTooltip label={t`Activity`} side={labelSide}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t`Activity`}
+              aria-pressed={activityMode}
+              data-activity-mode={activityMode ? "on" : "off"}
+              onClick={toggleActivityMode}
+              className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+            >
+              {/* A filled bell marks Activity on, so on and hovered never look alike. */}
+              <Bell
+                className={ICON}
+                strokeWidth={STROKE}
+                fill={activityMode ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+            </Button>
+          </IconTooltip>
+        )}
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
-          <IconTooltip label={t`Create`}>
+          <IconTooltip label={t`Create`} side={labelSide}>
             <PopoverTrigger
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
-                  className="app-no-drag text-muted-foreground"
+                  size="icon"
+                  className={`app-no-drag text-muted-foreground ${railTile}`}
                 />
               }
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
             >
-              <Plus size={15} strokeWidth={1.8} aria-hidden="true" />
+              <Plus className={ICON} strokeWidth={STROKE} aria-hidden="true" />
             </PopoverTrigger>
           </IconTooltip>
           {/* Unmount with the state change so the panel it opens never coexists with the menu. */}
