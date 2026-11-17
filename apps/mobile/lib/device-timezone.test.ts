@@ -65,7 +65,7 @@ it("remembers Keep for that device zone and asks again in another", async () => 
   lastPrompt().press("Keep");
   expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
     "rakazo.timezone-kept.user-1",
-    "Asia/Tokyo",
+    JSON.stringify({ device: "Asia/Tokyo", account: "Europe/London" }),
   );
 
   resetDeviceTimezoneForTests();
@@ -81,4 +81,19 @@ it("remembers Keep for that device zone and asks again in another", async () => 
 it("does not ask for a session that is no longer shown", async () => {
   await checkDeviceTimezone("user-1", "Europe/London", () => false);
   expect(Alert.alert).not.toHaveBeenCalled();
+});
+
+it("retries an adoption that failed", async () => {
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  await expect(checkDeviceTimezone("user-1", null, active)).rejects.toThrow("offline");
+  await checkDeviceTimezone("user-1", null, active);
+  expect(rpc).toHaveBeenCalledTimes(2);
+});
+
+it("switches nothing once the session that asked is gone", async () => {
+  let shown = true;
+  await checkDeviceTimezone("user-1", "Europe/London", () => shown);
+  shown = false;
+  lastPrompt().press("Switch");
+  expect(rpc).not.toHaveBeenCalled();
 });

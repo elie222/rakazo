@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
-import { deviceTimezoneStep, localTimezone, timeZonePlace } from "@rakazo/core";
+import type { KeptTimezone } from "@rakazo/core";
+import { deviceTimezoneStep, localTimezone, parseKeptTimezone, timeZonePlace } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { Alert } from "react-native";
 import { rpc } from "./api";
@@ -7,16 +8,24 @@ import { errorText } from "./user-error";
 
 const keptKey = (userId: string) => `rakazo.timezone-kept.${userId}`;
 
-/** The device zone each account was kept for on this device, once read this launch. */
-const kept = new Map<string, string | null>();
+/** Each account's Keep on this device, once read this launch. */
+const kept = new Map<string, KeptTimezone | null>();
 /** Accounts whose empty zone this launch already filled, so each poll does not send it again. */
 const adopted = new Set<string>();
 let asking = false;
 
-async function keptZone(userId: string): Promise<string | null> {
+function parseStored(raw: string | null): KeptTimezone | null {
+  try {
+    return raw ? parseKeptTimezone(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function keptZone(userId: string): Promise<KeptTimezone | null> {
   const known = kept.get(userId);
   if (known !== undefined) return known;
-  const saved = await SecureStore.getItemAsync(keptKey(userId)).catch(() => null);
+  const saved = parseStored(await SecureStore.getItemAsync(keptKey(userId)).catch(() => null));
   kept.set(userId, saved);
   return saved;
 }
@@ -37,18 +46,27 @@ export async function checkDeviceTimezone(
   if (accountZone === undefined || asking) return;
   const device = localTimezone();
   const step = deviceTimezoneStep(device, accountZone, await keptZone(userId));
+  // The read above can outlive the session: a write now would land on the next account.
+  if (step === null || asking || !isActive()) return;
   if (step === "adopt") {
     if (adopted.has(userId)) return;
     adopted.add(userId);
-    await rpc("preferences/adoptTimezone", { timezone: device });
+    try {
+      await rpc("preferences/adoptTimezone", { timezone: device });
+    } catch (error) {
+      // The next load tries again.
+      adopted.delete(userId);
+      throw error;
+    }
     return;
   }
-  if (step !== "ask" || asking || !isActive()) return;
+  if (accountZone === null) return;
   asking = true;
+  const answer: KeptTimezone = { device, account: accountZone };
   const keep = () => {
     asking = false;
-    kept.set(userId, device);
-    void SecureStore.setItemAsync(keptKey(userId), device).catch(() => undefined);
+    kept.set(userId, answer);
+    void SecureStore.setItemAsync(keptKey(userId), JSON.stringify(answer)).catch(() => undefined);
   };
   const place = timeZonePlace(device);
   Alert.alert(t`Switch to ${place} time?`, undefined, [
@@ -57,6 +75,10 @@ export async function checkDeviceTimezone(
       text: t`Switch`,
       isPreferred: true,
       onPress: () => {
+        if (!isActive()) {
+          asking = false;
+          return;
+        }
         rpc("preferences/update", { timezone: device })
           .catch((error: unknown) =>
             Alert.alert(errorText(error, t`Couldn't update your timezone`)),

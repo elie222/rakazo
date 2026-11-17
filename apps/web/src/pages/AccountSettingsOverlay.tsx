@@ -174,7 +174,7 @@ export function GeneralSettingsPanels({
     // A zone picked by hand answers the device's prompt too, so it does not ask right after.
     onSaved: (_, next) => {
       if (queryUserId && !sameTimeZone(next, deviceTimezone))
-        keepTimezone(queryUserId, deviceTimezone);
+        keepTimezone(queryUserId, { device: deviceTimezone, account: next });
     },
   });
   const timezonePending = timezoneSave.pending;

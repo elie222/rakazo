@@ -82,7 +82,9 @@ it("switches the account to the device zone", async () => {
 it("remembers Keep for this device zone and asks again once the device moves", async () => {
   await show("Europe/London");
   await act(async () => button("Keep")?.click());
-  expect(keptTimezones.get()).toEqual({ "user-1": "Asia/Tokyo" });
+  expect(keptTimezones.get()).toEqual({
+    "user-1": { device: "Asia/Tokyo", account: "Europe/London" },
+  });
   await vi.waitFor(() => expect(prompt()).toBeNull());
   expect(rpc.preferences.update).not.toHaveBeenCalled();
 

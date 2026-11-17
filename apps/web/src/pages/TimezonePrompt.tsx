@@ -36,8 +36,12 @@ export function TimezonePrompt({
   const [device, setDevice] = useState(localTimezone);
   const kept = keptTimezones.use()[userId] ?? null;
   const step = timezone === undefined ? null : deviceTimezoneStep(device, timezone, kept);
+  // Bumped on each return so a failed adoption is tried again.
+  const [returns, setReturns] = useState(0);
   const recheck = () => {
-    if (document.visibilityState === "visible") setDevice(localTimezone());
+    if (document.visibilityState !== "visible") return;
+    setDevice(localTimezone());
+    setReturns((count) => count + 1);
   };
   useEventListener(window, "focus", recheck);
   useEventListener(document, "visibilitychange", recheck);
@@ -51,17 +55,20 @@ export function TimezonePrompt({
 
   const adoptedFor = useRef<string | null>(null);
   const adopt = useEffectEvent(() => {
+    if (adoptedFor.current === userId) return;
+    adoptedFor.current = userId;
     // Only fills an empty zone, so it never replaces a choice; a failure leaves bots on UTC.
     void rpc.preferences
       .adoptTimezone({ timezone: device })
       .then(onSaved)
-      .catch(() => {});
+      .catch(() => {
+        // The next focus or visit tries again.
+        adoptedFor.current = null;
+      });
   });
   useEffect(() => {
-    if (step !== "adopt" || adoptedFor.current === userId) return;
-    adoptedFor.current = userId;
-    adopt();
-  }, [step, userId]);
+    if (step === "adopt") adopt();
+  }, [step, returns]);
 
   if (step !== "ask") return null;
   const place = timeZonePlace(device);
@@ -69,7 +76,8 @@ export function TimezonePrompt({
     <AlertDialog
       open
       onOpenChange={(open) => {
-        if (!open && !switchZone.pending) keepTimezone(userId, device);
+        if (!open && !switchZone.pending && timezone)
+          keepTimezone(userId, { device, account: timezone });
       }}
     >
       <AlertDialogContent data-testid="timezone-prompt">

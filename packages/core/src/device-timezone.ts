@@ -21,19 +21,28 @@ export function timeZonePlace(zone: string): string {
   return (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
 }
 
+/** A "Keep" answer: the account zone the user kept while the device was in `device`. */
+export type KeptTimezone = { device: string; account: string };
+
 /**
  * What an app does about the device's zone: `adopt` it for an account that has none, `ask`
- * before moving an account set to another zone, or nothing. `kept` is the device zone the
- * user last chose to keep the account's zone for, so they are asked again only once the
- * device moves to yet another zone.
+ * before moving an account set to another zone, or nothing. A Keep holds only for the device
+ * zone and account zone it was given for, so the user is asked again once either changes.
  */
 export function deviceTimezoneStep(
   device: string,
   account: string | null,
-  kept: string | null,
+  kept: KeptTimezone | null,
 ): "adopt" | "ask" | null {
   if (account === null) return "adopt";
   if (sameTimeZone(account, device)) return null;
-  if (kept !== null && sameTimeZone(kept, device)) return null;
+  if (kept && sameTimeZone(kept.device, device) && sameTimeZone(kept.account, account)) return null;
   return "ask";
+}
+
+/** A stored Keep, or null for anything else. */
+export function parseKeptTimezone(value: unknown): KeptTimezone | null {
+  if (!value || typeof value !== "object") return null;
+  const { device, account } = value as Record<string, unknown>;
+  return typeof device === "string" && typeof account === "string" ? { device, account } : null;
 }
