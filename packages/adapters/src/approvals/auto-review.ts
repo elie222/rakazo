@@ -23,6 +23,7 @@ import {
   buildAutoReviewPrompt,
   truncateReviewText,
 } from "./auto-review.prompt.js";
+import { decisionModel, includedDecisionModel } from "./decision-models.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_ARGS_CHARS = 8_000;
@@ -95,6 +96,7 @@ export function resolveAutoReviewProviderKind(
  */
 export function resolveAutoReviewChecker(
   env: NodeJS.ProcessEnv = process.env,
+  included = false,
 ): AutoReviewChecker | null {
   const kind = resolveAutoReviewProviderKind(env);
   if (kind === "jev") {
@@ -113,6 +115,11 @@ export function resolveAutoReviewChecker(
     return { provider: overrideProvider, model: overrideModel };
   }
 
+  if (included && !overrideProvider && !overrideModel) {
+    const model = includedDecisionModel(env);
+    if (model) return { provider: model.provider, model: model.id };
+  }
+
   const localIds = localModelIds(env);
   if (localIds[0]) {
     return { provider: LOCAL_PROVIDER_ID, model: localIds[0]! };
@@ -129,15 +136,18 @@ export function resolveAutoReviewChecker(
  */
 export function isAutoReviewCheckerConfigured(input: {
   env?: NodeJS.ProcessEnv;
+  checker?: AutoReviewChecker;
   hasUserCredentialForProvider?: (provider: string) => boolean;
 }): boolean {
   const env = input.env ?? process.env;
-  const checker = resolveAutoReviewChecker(env);
+  const checker = input.checker ?? resolveAutoReviewChecker(env);
   if (!checker) return false;
   if (checker.provider === JEV_AUTO_REVIEW_PROVIDER) return Boolean(typesafeApiKey(env));
   if (checker.provider === SCRIPTED_AUTO_REVIEW_PROVIDER) return true;
   if (checker.provider === LOCAL_PROVIDER_ID) return localModelIds(env).length > 0;
 
+  const decision = decisionModel(checker.provider, checker.model);
+  if (decision?.deploymentApiKey(env)) return true;
   const deployment = resolveDeploymentModel(env);
   if (checker.provider === deployment.provider && deployment.configured) return true;
   if (env.OPENROUTER_API_KEY?.trim() && checker.provider === "openrouter") return true;

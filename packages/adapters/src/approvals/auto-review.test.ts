@@ -645,3 +645,24 @@ describe("runAutoReviewJudge timeout", () => {
     expect(seen?.aborted).toBe(true);
   });
 });
+
+describe("included approval default", () => {
+  it("selects a decision model with deployment auth, without changing self-hosted defaults", () => {
+    const env = {
+      OPENROUTER_API_KEY: "fake-key",
+      PI_DEFAULT_PROVIDER: "openrouter",
+      PI_DEFAULT_MODEL: "reasoning-fixture",
+    };
+    expect(resolveAutoReviewChecker(env, true)).toEqual({
+      provider: "openrouter",
+      model: "typesafe/jev-1.14",
+    });
+    expect(resolveAutoReviewChecker(env, false)?.model).toBe("reasoning-fixture");
+    expect(
+      resolveAutoReviewChecker(
+        { ...env, RAKAZO_AUTO_REVIEW_PROVIDER: "custom", RAKAZO_AUTO_REVIEW_MODEL: "checker" },
+        true,
+      ),
+    ).toEqual({ provider: "custom", model: "checker" });
+  });
+});
