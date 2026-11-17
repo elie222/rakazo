@@ -97,9 +97,12 @@ function QuestionField({
         autoCapitalize={field.type === "text" && !field.format ? "sentences" : "none"}
         keyboardType={
           field.type === "number"
-            ? field.integer
-              ? "number-pad"
-              : "decimal-pad"
+            ? // The number pads have no minus key on iOS.
+              field.minimum === undefined || field.minimum < 0
+              ? "numbers-and-punctuation"
+              : field.integer
+                ? "number-pad"
+                : "decimal-pad"
             : field.format
               ? KEYBOARDS[field.format]
               : "default"

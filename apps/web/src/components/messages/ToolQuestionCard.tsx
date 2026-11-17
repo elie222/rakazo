@@ -75,7 +75,13 @@ function QuestionField({
           }
           required={field.required}
           disabled={disabled}
-          value={value === undefined ? "" : String(value)}
+          value={
+            field.type === "text" && field.format === "date-time"
+              ? localDateTime(value)
+              : value === undefined
+                ? ""
+                : String(value)
+          }
           {...(field.type === "number"
             ? { min: field.minimum, max: field.maximum, step: field.integer ? 1 : "any" }
             : { minLength: field.minLength, maxLength: field.maxLength })}
@@ -169,4 +175,14 @@ export function ToolQuestionCard({
       )}
     </BuiCard>
   );
+}
+
+/** A date-time as the browser's local picker shows it; a default with an offset shows too. */
+function localDateTime(value: string | boolean | undefined): string {
+  if (typeof value !== "string" || value === "") return "";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return value;
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return "";
+  const local = new Date(time.getTime() - time.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
