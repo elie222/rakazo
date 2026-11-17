@@ -2,14 +2,14 @@ import type { Actor } from "@rakazo/contracts";
 import type * as Database from "@rakazo/db";
 import { settleSpeech } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import type { VoiceDeps } from "../voice.js";
+import type { VoiceDeps } from "../calls/voice.js";
 import {
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   synthesizeVoice,
   transcribeVoice,
-} from "../voice.js";
+} from "../calls/voice.js";
 import { deploymentVoiceFromEnv } from "./deployment-config.js";
 
 vi.mock("@rakazo/db", async (original) => ({

@@ -2,7 +2,7 @@ import type { VoiceUsage } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { admitSpeech, settleSpeech } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import type { VoiceDeps } from "../voice.js";
+import type { VoiceDeps } from "../calls/voice.js";
 
 export async function withSpeechCost<T extends { usage?: VoiceUsage; providerRequestId?: string }>(
   deps: Pick<VoiceDeps, "prisma" | "env">,

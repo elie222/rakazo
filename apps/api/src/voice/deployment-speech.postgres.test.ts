@@ -1,8 +1,8 @@
 import type { Actor } from "@rakazo/contracts";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { VoiceDeps } from "../voice.js";
-import { effectiveVoiceStatus, synthesizeVoice, transcribeVoice } from "../voice.js";
+import type { VoiceDeps } from "../calls/voice.js";
+import { effectiveVoiceStatus, synthesizeVoice, transcribeVoice } from "../calls/voice.js";
 import { deploymentVoiceFromEnv } from "./deployment-config.js";
 
 const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
