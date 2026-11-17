@@ -107,6 +107,15 @@ export function toolEventsFromArg(
   return { ok: true, on: { webhook, git, chat, email } };
 }
 
+/** Whether a tool's `on` turns any event on; one it cannot read saves nothing, so asks none. */
+export function asksRoutineEvents(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false;
+  const parsed = toolEventsFromArg(value);
+  if ("error" in parsed) return false;
+  const { webhook, git, chat, email } = parsed.on;
+  return Boolean(webhook || git || chat || email);
+}
+
 /**
  * The routine events a bot's `on` asks for, checked against what the bot can receive. Webhook,
  * Git and email deliveries run as the bot's creator and a chat message as the person who linked

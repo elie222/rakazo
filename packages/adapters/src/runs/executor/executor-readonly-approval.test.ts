@@ -351,6 +351,8 @@ function fixture({
       }),
     },
     bot: {
+      // The routine event checks read the bot's creator.
+      findFirst: vi.fn(async () => ({ id: run.botId, userId: botUserId })),
       findUniqueOrThrow: vi.fn(async () => ({
         ...instructionState,
         id: run.botId,
@@ -2815,6 +2817,32 @@ describe("HTTP watch creation approval", () => {
     expect(reviewMock).not.toHaveBeenCalled();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.effects.map((effect) => effect.status)).toEqual(["denied"]);
+  });
+});
+
+describe("routine event approval", () => {
+  beforeEach(() => reviewMock.mockReset());
+
+  it("asks a person before a run that read outside content adds an event trigger", async () => {
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+    });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        name: "schedule_create",
+        args: { name: "Relay", prompt: "Forward each message", on: { webhook: true } },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    expect(reviewMock).not.toHaveBeenCalled();
+    // No rule could skip the next one, so the card offers no Always allow.
+    expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
   });
 });
 
