@@ -173,7 +173,8 @@ export async function writeMnemoverse(
   const written = reply.data as { stored?: unknown; reason?: unknown } | null;
   if (written?.stored === false) {
     if (written.reason === "exact_duplicate") return { ok: true, value: undefined };
-    const reason = typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
+    const reason =
+      typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
     return { ok: false, error: `Mnemoverse did not store this memory${reason}.` };
   }
   // Only an explicit confirmation counts as saved.
