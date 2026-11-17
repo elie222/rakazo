@@ -18,8 +18,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, LayoutTemplate, X } from "lucide-react";
 import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
-import { AgentSkills } from "../../pages/KnowledgeSection";
+import { useSpaceQueries } from "../../lib/query/query";
+import { AgentSkills } from "../../pages/space/KnowledgeSection";
 import type { PluginSelection } from "./plugin-marketplace";
 import {
   PluginDetail,

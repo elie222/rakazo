@@ -10,10 +10,10 @@
   "apps/mobile/lib/thread/thread-sync.ts": 2,
   "apps/web/src/components/call/IncomingCall.tsx": 1,
   "apps/web/src/components/teach/TeachCaptureOverlay.tsx": 7,
-  "apps/web/src/lib/preload-recovery.ts": 1,
-  "apps/web/src/pages/shell/chat-context.tsx": 1,
-  "apps/web/src/pages/shell/composer-error.tsx": 2,
-  "apps/web/src/pages/shell/use-computer-controls.tsx": 2,
-  "apps/web/src/pages/shell/use-computer.tsx": 5,
-  "apps/web/src/pages/shell/use-space-roster.ts": 1
+  "apps/web/src/lib/platform/preload-recovery.ts": 1,
+  "apps/web/src/pages/shell/chat/chat-context.tsx": 1,
+  "apps/web/src/pages/shell/composer/composer-error.tsx": 2,
+  "apps/web/src/pages/shell/computer/use-computer-controls.tsx": 2,
+  "apps/web/src/pages/shell/computer/use-computer.tsx": 5,
+  "apps/web/src/pages/shell/sidebar/use-space-roster.ts": 1
 }

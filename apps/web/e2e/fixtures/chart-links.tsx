@@ -1,8 +1,8 @@
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { createRoot } from "react-dom/client";
-import { ChartBlockView } from "../../src/pages/shell/message-cards";
-import { bubbleFrameWidth } from "../../src/pages/shell/transcript";
+import { ChartBlockView } from "../../src/pages/shell/chat/message-cards";
+import { bubbleFrameWidth } from "../../src/pages/shell/chat/transcript";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
