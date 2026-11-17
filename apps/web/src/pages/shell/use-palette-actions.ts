@@ -14,8 +14,8 @@ import {
 import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
 import { useSettingsNavItems } from "../settings/settings-nav";
-import type { SettingsSection, ShellOverlay } from "../shell-overlay";
 import type { CommandPaletteAction } from "./command-palette";
+import type { SettingsSection, ShellOverlay } from "./shell-overlay-url";
 
 /** What the command menu offers: create, connect, settings sections, and appearance. */
 export function usePaletteActions({

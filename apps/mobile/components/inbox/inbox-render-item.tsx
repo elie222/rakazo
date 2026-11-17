@@ -19,8 +19,8 @@ import type { NativeRowMenu } from "../native/native-row";
 import { NativeRow } from "../native/native-row";
 import { NativeSymbol } from "../native/native-symbol";
 import { DragSafePressable } from "../ui/drag-safe-pressable";
-import { createHomeStyles } from "./home-styles";
 import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionToggle } from "./inbox-rows";
+import { createInboxStyles } from "./inbox-styles";
 
 // Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
 // sheet.
@@ -38,7 +38,7 @@ export function InboxListFooter({
   createHint: boolean;
   archivedCount: number;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const router = useRouter();
   return (
@@ -70,7 +70,7 @@ function HeadingWithMenu({
   appearance: ResolvedAppearance;
   children: (press: HeadingPress) => ReactNode;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const row = space ? styles.spaceHeading : styles.sectionHeadingRow;
   const plain = <View style={row}>{children({})}</View>;
   if (!menu) return Platform.OS === "ios" ? <NativeRow>{plain}</NativeRow> : plain;
@@ -153,7 +153,7 @@ function SpaceHeading({
   menu?: HeadingMenu;
   appearance: ResolvedAppearance;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   return (
     <HeadingWithMenu space menu={menu} appearance={appearance}>
@@ -291,7 +291,7 @@ export function useInboxRenderItem({
   spaceRecoveryId: string | null;
   toggleCollapsed: (key: string) => void;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const router = useRouter();
   return useCallback(

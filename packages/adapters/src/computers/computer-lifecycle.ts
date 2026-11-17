@@ -1348,6 +1348,14 @@ export async function replaceComputer(
         // A gone sandbox has nothing left to checkpoint; the replacement restores
         // the last recorded revision instead of failing the whole replacement.
         if (exported || (!isSandboxGoneError(error) && mode !== "recover")) throw error;
+        getLogger().warn("computer.checkpoint_skipped", {
+          "computer.id": computerId,
+          "bot.id": botId,
+          action: mode,
+          "error.type": error instanceof Error ? error.name : "UnknownFailure",
+          homeRevisionAt: existing.homeRevisionAt,
+          reason: isSandboxGoneError(error) ? "sandbox_gone" : "checkpoint_failed",
+        });
       }
       if (revision !== undefined) {
         const recorded = await deps.prisma.computer.updateMany({

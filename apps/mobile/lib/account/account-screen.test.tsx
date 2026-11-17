@@ -310,7 +310,7 @@ vi.mock("../appearance/appearance", () => ({
   mobileTokens: () => ({}),
   setAppearancePreference: vi.fn(),
 }));
-vi.mock("../inbox/archived-chats", () => ({
+vi.mock("../inbox/archived/archived-chats", () => ({
   archivedChatCounts: () => ({ bots: 0, groups: 0 }),
   loadArchivedChats: vi.fn(async () => ({ bots: [], groups: [] })),
 }));
@@ -368,17 +368,17 @@ vi.mock("../spaces/organizations", () => ({
 vi.mock("../notifications/push", () => ({ registerPushToken: vi.fn() }));
 vi.mock("../auth/returning-user", () => ({ forgetSignedIn: vi.fn() }));
 vi.mock("../query/queued-save", () => ({ createQueuedSave: () => ({ save: vi.fn() }) }));
-vi.mock("../settings/remote-images-preference", () => ({
+vi.mock("../preferences/remote-images-preference", () => ({
   getCachedRemoteImagesEnabled: () => true,
   setRemoteImagesPreference: vi.fn(),
   subscribeRemoteImages: () => () => undefined,
 }));
-vi.mock("../settings/response-streaming", () => ({
+vi.mock("../preferences/response-streaming", () => ({
   getCachedResponseStreamingEnabled: () => true,
   setResponseStreamingPreference: vi.fn(),
   subscribeResponseStreaming: () => () => undefined,
 }));
-vi.mock("../inbox/section-name-prompt", () => ({ promptSectionName: vi.fn() }));
+vi.mock("../inbox/sections/section-name-prompt", () => ({ promptSectionName: vi.fn() }));
 vi.mock("../auth/sso", () => ({ continueWithSso: vi.fn() }));
 const trusted = vi.hoisted(() => ({
   sites: [] as string[],

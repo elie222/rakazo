@@ -6,7 +6,7 @@ import type { SavedChatsScope } from "../inbox/saved-chats";
 import {
   getCachedResponseStreamingEnabled,
   subscribeResponseStreaming,
-} from "../settings/response-streaming";
+} from "../preferences/response-streaming";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
 import type { PinnedThreadWindow } from "./thread-window";

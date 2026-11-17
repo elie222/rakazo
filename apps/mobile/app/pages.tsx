@@ -8,12 +8,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useTextEditDialog } from "../components/bots/profile-edit-dialog";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { LongPressMenu } from "../components/ui/long-press-menu";
 import { rpc } from "../lib/api/api";
-import { formatActivityRelativeTime } from "../lib/home/activity";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
 import { usePagedPages } from "../lib/pages/use-paged-pages";
 

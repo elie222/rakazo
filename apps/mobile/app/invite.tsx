@@ -9,8 +9,8 @@ import { ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { NativeSymbol } from "../components/native/native-symbol";
+import { useReferral } from "../lib/billing/referral";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native/native";
-import { useReferral } from "../lib/spaces/referral";
 
 const AVATAR_SIZES = [44, 52, 64, 52, 44];
 

@@ -1655,10 +1655,11 @@ export interface AutoReviewRequest {
    */
   newSite?: boolean;
   /**
-   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
-   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   * A save to the bot's memory or skills after the run took in outside content. The bot reads
+   * both as trusted context in every later run, so the saved text is judged as a standing
+   * instruction.
    */
-  memoryWrite?: boolean;
+  savedContextWrite?: boolean;
 }
 
 export interface AutoReviewResult {

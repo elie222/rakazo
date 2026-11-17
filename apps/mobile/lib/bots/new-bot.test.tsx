@@ -36,7 +36,7 @@ vi.mock("../api/api", () => ({
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("../inbox/inbox-changes", () => ({ openChatFromInbox: () => false }));
-vi.mock("../home/create-inbox-bot", () => ({ createInboxBot, askForModelBeforeFirstBot }));
+vi.mock("../inbox/create-inbox-bot", () => ({ createInboxBot, askForModelBeforeFirstBot }));
 vi.mock("../native/native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },

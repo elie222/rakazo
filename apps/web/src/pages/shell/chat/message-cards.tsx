@@ -7,7 +7,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../../components/ai/primitives";
 import { ErrorNotice } from "../../../components/ErrorNotice";
-import { OptionRow } from "../../../components/settings/OptionRow";
+import { OptionRow } from "../../../components/messages/OptionRow";
 import { connectMcpOauth } from "../../../lib/integrations/mcp-connect";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { chartViewport } from "../../../lib/pages/chart-viewport";

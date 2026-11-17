@@ -146,10 +146,10 @@ vi.mock("../../space/KnowledgeSection", () => ({
   KnowledgeSection: () => <h3>Memory and skills</h3>,
 }));
 
-import { InstructionSettings } from "../../../components/settings/InstructionSettings";
 import { spaceQueries } from "../../../lib/query/query";
 import { rpc } from "../../../lib/query/rpc";
 import { BotSettings } from "./bot-panel";
+import { InstructionSettings } from "./instruction-settings";
 
 const longInstructions = "I".repeat(4_000);
 

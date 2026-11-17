@@ -28,7 +28,7 @@ vi.mock("../../lib/query/rpc", () => ({
   selectedSpaceId: () => null,
 }));
 vi.mock("../../lib/locale/relative-time", () => ({ formatRelativeTime: () => "5m ago" }));
-vi.mock("../WindowChrome", () => ({ WindowChrome: () => null }));
+vi.mock("../../components/WindowChrome", () => ({ WindowChrome: () => null }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), "");
