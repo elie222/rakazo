@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { SecretCleanup } from "./secret-cleanup.js";
 import { finishSecretCleanup, recordSecretCleanup, secretCleanupJobKey } from "./secret-cleanup.js";
+import holderColumns from "./secret-holder-columns.json" with { type: "json" };
 import { GraphileJobPublisher } from "./wakeup.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
@@ -115,5 +116,41 @@ describePostgres("secret cleanup (PostgreSQL)", () => {
 
     await finishSecretCleanup(deps, cleanup);
     expect(await queued()).toEqual([]);
+  });
+
+  it("keeps a written entry until a row of any kind holds none of it, reading every Space", async () => {
+    const handlers = createBackgroundJobHandlers({
+      prisma: db.prisma,
+      secretStore: store,
+    } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+    const written = (ref: string): SecretCleanup => ({ kind: "store_write", recordId: ref, ref });
+    const runJob = (job: SecretCleanup) =>
+      runAsSystem("background job secret.cleanup", () => handlers["secret.cleanup"](job));
+    const secretRef = `remote:written-secret-${suffix}`;
+    const walletRef = `remote:written-wallet-${suffix}`;
+    const orphanRef = `remote:written-orphan-${suffix}`;
+    await asSystem(owner.prisma).secret.create({
+      data: { id: `written-${suffix}`, userId, kind: "computer-provider", ciphertext: secretRef },
+    });
+    await asSystem(owner.prisma).paymentWallet.create({
+      data: { userId, provider: "fake", status: "connected", ciphertext: walletRef },
+    });
+    store.delete.mockClear();
+
+    await runJob(written(secretRef));
+    await runJob(written(walletRef));
+    expect(store.delete).not.toHaveBeenCalled();
+    await runJob(written(orphanRef));
+    expect(store.delete).toHaveBeenCalledWith(
+      orphanRef,
+      expect.objectContaining({ recordId: orphanRef }),
+    );
+
+    const columns = await owner.prisma.$queryRaw<Array<{ name: string }>>`
+      SELECT table_name || '.' || column_name AS name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND column_name ILIKE '%cipher%'`;
+    expect(columns.map(({ name }) => name).sort()).toEqual(
+      [...holderColumns.checked, ...holderColumns.neverRemote].sort(),
+    );
   });
 });

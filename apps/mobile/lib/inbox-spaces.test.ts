@@ -25,8 +25,6 @@ vi.mock("./api-server", () => ({
   adoptDeletedSpaceFallback: vi.fn(),
   selectSpace: vi.fn(),
 }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
   selectedSpaceId: vi.fn(),

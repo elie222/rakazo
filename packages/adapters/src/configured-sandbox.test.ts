@@ -8,7 +8,7 @@ import {
   loadComputerProviderSelection,
   parseStoredComputerSettings,
 } from "./configured-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 
 class TestDesktop {
   readonly calls: string[] = [];
@@ -398,7 +398,7 @@ it("keeps computers the primary started as another of its kinds on the primary",
 
 vi.mock(
   "./computer-provider-registry.js",
-  () => import("./fake-computer-settings.test-support.js"),
+  () => import("./providers/computer/fake/fake-computer-settings.test-support.js"),
 );
 
 it("bills a kind only the primary runs the way the primary does", async () => {

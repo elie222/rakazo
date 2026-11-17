@@ -5,6 +5,7 @@ import { createBrowserProvider } from "./browser-provider-factory.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { createPaidServiceProvider } from "./paid-services-factory.js";
+import { holdRoutineRunForConversation } from "./routine-conversation.js";
 import { assembleRunTurn } from "./run-assembly.js";
 import type { RunExecutorServices } from "./run-attempt.js";
 import { claimRunAttempt, findContinuableRun, holdRun, releaseRunHold } from "./run-attempt.js";
@@ -76,7 +77,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       const run = await findContinuableRun(baseDeps, endRunConnectorState, runId);
       if (!run) return;
       const claim = await claimRunAttempt(baseDeps, run, workerId);
-      if (!claim) return;
+      if (!claim) {
+        await holdRoutineRunForConversation(baseDeps, run);
+        return;
+      }
       const hold = holdRun(baseDeps, claim);
       try {
         // Durable run ownership and its heartbeat now carry recovery. Model,

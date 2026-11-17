@@ -3,29 +3,35 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { fakeCli, removeFakeClis } from "./apple-container-sandbox.test-support.js";
+import { toComputerRef } from "./computer-support.js";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
-} from "./boat-sandbox.test-support.js";
-import { fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
-import { toComputerRef } from "./computer-support.js";
-import { emulatedCreateOS } from "./createos-sandbox.test-support.js";
-import { emulatedDaytona } from "./daytona-sandbox.test-support.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { emulatedDockerSupervisor } from "./docker-sandbox.test-support.js";
-import { E2BSandboxProvider } from "./e2b-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { emulatedIncus } from "./incus-sandbox.test-support.js";
-import { emulatedInstabox } from "./instabox-sandbox.test-support.js";
-import { emulatedKubernetes } from "./kubernetes-sandbox.test-support.js";
-import { emulatedNovita, fakeNovita } from "./novita-sandbox.test-support.js";
-import { emulatedRailway } from "./railway-sandbox.test-support.js";
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { fakeBoxdProvider } from "./providers/computer/boxd/boxd-sandbox.test-support.js";
+import { emulatedCreateOS } from "./providers/computer/createos/createos-sandbox.test-support.js";
+import { emulatedDaytona } from "./providers/computer/daytona/daytona-sandbox.test-support.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
+import { emulatedDockerSupervisor } from "./providers/computer/docker/docker-sandbox.test-support.js";
+import { E2BSandboxProvider } from "./providers/computer/e2b/e2b-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
+import { emulatedIncus } from "./providers/computer/incus/incus-sandbox.test-support.js";
+import { emulatedInstabox } from "./providers/computer/instabox/instabox-sandbox.test-support.js";
+import { emulatedKubernetes } from "./providers/computer/kubernetes/kubernetes-sandbox.test-support.js";
+import {
+  fakeCli,
+  removeFakeClis,
+} from "./providers/computer/local-vm/apple-container-sandbox.test-support.js";
+import {
+  emulatedNovita,
+  fakeNovita,
+} from "./providers/computer/novita/novita-sandbox.test-support.js";
+import { emulatedRailway } from "./providers/computer/railway/railway-sandbox.test-support.js";
+import { FakeWuyingDesktop } from "./providers/computer/wuying/wuying-sandbox.test-support.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 import type { KnownSandboxKind } from "./sandbox-kind-capabilities.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
-import { FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
 let restoreFetch: () => void;
 let supervisor: Awaited<ReturnType<typeof emulatedDockerSupervisor>>;

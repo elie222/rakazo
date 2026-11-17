@@ -1,14 +1,12 @@
 {
   "apps/api/src/billing.ts": 1,
-  "apps/api/src/router.ts": 3,
-  "apps/desktop/src/renderer-assets.ts": 3,
-  "apps/web/src/preview-middleware.ts": 3,
-  "apps/web/src/screen-proxy.ts": 1,
+  "apps/desktop/src/main/renderer-assets.ts": 3,
+  "apps/web/server/preview-middleware.ts": 3,
+  "apps/web/server/screen-proxy.ts": 1,
   "packages/adapter-kit/src/types.ts": 1,
   "packages/contracts/src/content-security-policy.ts": 1,
   "packages/core/src/action-approval.ts": 8,
   "packages/core/src/node/screen-capability.ts": 1,
   "packages/core/src/node/shutdown-signals.ts": 1,
-  "packages/core/src/teach-recording.ts": 1,
-  "packages/db/prisma/schema.prisma": 1
+  "packages/core/src/teach-recording.ts": 1
 }

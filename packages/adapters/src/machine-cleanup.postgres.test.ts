@@ -19,9 +19,9 @@ import {
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computer-lifecycle.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { machineCleanupRecords, retryMachineCleanup } from "./machine-cleanup.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
 import { recordUnreferencedMachine } from "./sandbox-cleanup.js";
 import { GraphileJobPublisher } from "./wakeup.js";
 

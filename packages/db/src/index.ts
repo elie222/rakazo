@@ -38,6 +38,7 @@ export * from "./events.js";
 export * from "./expire-stuck-run.js";
 export * from "./external-conversations.js";
 export * from "./groups.js";
+export * from "./history-retention.js";
 export * from "./history-retrieval.js";
 export * from "./json-column.js";
 export * from "./leases.js";
@@ -79,6 +80,7 @@ export {
   claimSteering,
   createPendingSteeringRun,
   discardAnsweredSteering,
+  handQueuedRunToWorkingRun,
 } from "./thread-steering.js";
 export * from "./thread-takeover.js";
 export * from "./transaction-retry.js";

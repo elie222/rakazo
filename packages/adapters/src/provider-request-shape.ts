@@ -1,4 +1,5 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { fetchForRequest } from "./undici-fetch.js";
 
 /**
  * The shape of a model request a provider rejected, safe to log: key names, counts, part types,
@@ -11,6 +12,10 @@ export interface RejectedProviderRequest {
   model: string;
   status: number;
   requestId?: string;
+  /** The transport the request asked for. A captured rejection is always an HTTP response. */
+  transport: string;
+  /** How the HTTP body went out, when the request passed through a fetch the capture can wrap. */
+  sent?: { bytes?: number; contentEncoding: string };
   body?: ProviderRequestShape;
 }
 
@@ -318,9 +323,19 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
   onRejected: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void,
 ): O {
   let payload: unknown;
-  const { onPayload, onResponse } = options;
+  let sent: RejectedProviderRequest["sent"];
+  const { onPayload, onResponse, fetch: fetcher } = options;
   return {
     ...options,
+    // Some adapters reject a custom fetch, so only one already given is wrapped.
+    ...(fetcher
+      ? {
+          fetch: ((input, init) => {
+            sent = describeSentBody(input, init);
+            return fetchForRequest(fetcher, init)(input, init);
+          }) as typeof fetch,
+        }
+      : {}),
     onPayload: async (body, model) => {
       const replaced = await onPayload?.(body, model);
       payload = replaced ?? body;
@@ -340,6 +355,8 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
             model: model.id,
             status: response.status,
             ...(requestId ? { requestId } : {}),
+            transport: options.transport ?? "auto",
+            ...(sent ? { sent } : {}),
             body: summarizeProviderRequest(payload),
           },
           model,
@@ -347,6 +364,27 @@ export function withRejectedRequestCapture<O extends SimpleStreamOptions>(
       } else if (response.status >= 200 && response.status < 300) onRejected(undefined, model);
       return onResponse?.(response, model);
     },
+  };
+}
+
+function bodyBytes(body: unknown): number | undefined {
+  if (typeof body === "string") return Buffer.byteLength(body);
+  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return body.byteLength;
+  if (body instanceof Blob) return body.size;
+  return undefined;
+}
+
+/** The body's size on the wire and its content encoding, never its content or other headers. */
+function describeSentBody(
+  input: Parameters<typeof fetch>[0],
+  init: Parameters<typeof fetch>[1],
+): NonNullable<RejectedProviderRequest["sent"]> {
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}));
+  const encoding = headers.get("content-encoding");
+  const bytes = bodyBytes(init?.body);
+  return {
+    ...(bytes === undefined ? {} : { bytes }),
+    contentEncoding: encoding ? (token(encoding) ?? "other") : "identity",
   };
 }
 

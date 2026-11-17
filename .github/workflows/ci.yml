@@ -171,7 +171,7 @@ jobs:
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
       - name: Script tests
-        run: node --test scripts/lazy-vendors.test.mjs scripts/checks/*.test.mjs scripts/release/*.test.mjs
+        run: node --test scripts/lazy-vendors.test.mjs scripts/checks/*.test.mjs scripts/release/*.test.mjs scripts/exploratory-qa/*.test.mjs
 
   # Four runners finish the unit suite before the Web E2E shards, which set the pull request's
   # finish time; more runners only add per-job setup and queue for the account's runner limit. A
@@ -236,7 +236,7 @@ jobs:
             .agents/skills/translate/catalog-gaps.test.ts \
             infra/updater/src/compose-env.test.ts \
             packages/adapters/src/builtin-skills.test.ts \
-            packages/adapters/src/lark-lazy-loading.test.ts \
+            packages/adapters/src/providers/messaging/lark/lark-lazy-loading.test.ts \
             packages/page-kit/src/kit/labels.test.tsx \
             packages/testkit/src/eas-pnpm-version.test.ts \
             packages/testkit/src/ios-screenshot-catalog.test.ts)
@@ -292,12 +292,12 @@ jobs:
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-command.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-paths.test.ts packages/adapters/src/providers/computer/desktop/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/main/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
-        run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
+        run: pnpm exec vitest run apps/desktop/src/main/host-screen.windows.test.ts
       - name: Native computer in headless Electron
-        run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
+        run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/main/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
           electron_config_cache: ${{ runner.temp }}/electron-cache

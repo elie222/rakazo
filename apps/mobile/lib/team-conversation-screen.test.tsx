@@ -15,9 +15,6 @@ const back = vi.fn();
 const alert = vi.hoisted(() => vi.fn());
 const navigation = vi.hoisted(() => ({ options: {} as Record<string, unknown> }));
 const route = vi.hoisted(() => ({ conversationId: "room-1" }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://app.example.test",

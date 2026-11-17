@@ -10,9 +10,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChangeUndo } from "../components/change-undo";
 
 const { rpc, alert } = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",

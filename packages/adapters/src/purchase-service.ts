@@ -16,6 +16,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { PurchaseCardField } from "@rakazo/contracts";
 import { PurchaseIdInput, PurchaseRequestInput } from "@rakazo/contracts";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { Purchase } from "@rakazo/db";
 import { recordPayment, releasePayment } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -24,8 +25,10 @@ import type { PaymentWalletDeps } from "./payment-wallets.js";
 import { withPaymentWalletCredential } from "./payment-wallets.js";
 import {
   cleanUpUnsavedSecret,
+  PROVIDER_BEFORE_SAVE_MS,
   purchaseCardRecordId,
   purchaseTokenRecordId,
+  savedSecretIn,
 } from "./secret-cleanup.js";
 import { releaseUnpaidPurchase, spendingRefusalError } from "./spending-gate.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
@@ -263,18 +266,23 @@ export async function createPurchase(
   if (refusal) return { error: spendingRefusalError(refusal) };
   let snapshot: PurchaseSnapshot;
   try {
-    // The idempotency key makes a replay after a crash reuse the same remote purchase.
+    // The idempotency key makes a replay after a crash or timeout reuse the same remote purchase.
+    // The deadline keeps a sealed request copy's cleanup from running before the row saves.
+    const signal = deadlineSignal(PROVIDER_BEFORE_SAVE_MS, context.signal);
     snapshot = await withPurchaseWallet(deps, provider, context, (credential) =>
-      provider.createPurchase(
-        credential,
-        {
-          credential: request.credential,
-          amount: request.amount,
-          currency: request.currency,
-          reason: request.reason,
-          idempotencyKey: context.operationId,
-        },
-        context,
+      withAbort(
+        provider.createPurchase(
+          credential,
+          {
+            credential: request.credential,
+            amount: request.amount,
+            currency: request.currency,
+            reason: request.reason,
+            idempotencyKey: context.operationId,
+          },
+          { ...context, signal },
+        ),
+        signal,
       ),
     );
   } catch (error) {
@@ -290,8 +298,9 @@ export async function createPurchase(
     where: { id: run.threadId },
     select: { historyCompactionGeneration: true },
   });
-  const purchase = ownedReplay(
-    await deps.prisma.purchase.upsert({
+  const cleanupDeps = { secrets: deps.secretStore, jobs: deps.jobs };
+  const saved = await deps.prisma.$transaction(async (tx) => {
+    const row = await tx.purchase.upsert({
       where: { operationKey: context.operationId },
       update: {},
       create: {
@@ -318,9 +327,12 @@ export async function createPurchase(
         // The bot learns this status from the result; only later changes wake it.
         wokenStatus: snapshot.status,
       },
-    }),
-    context,
-  );
+    });
+    if (request.requestCiphertext && row.requestCiphertext === request.requestCiphertext)
+      await savedSecretIn(cleanupDeps, tx, request.requestCiphertext);
+    return row;
+  });
+  const purchase = ownedReplay(saved, context);
   if (purchase.nextPollAt) await enqueuePurchasePoll(deps, purchase.id, purchase.nextPollAt);
   return purchaseView(purchase, snapshot.card);
 }
@@ -480,17 +492,23 @@ export async function sealOnce(
   const card = column === "cardCiphertext";
   const recordId = card ? purchaseCardRecordId(purchase.id) : purchaseTokenRecordId(purchase.id);
   const stored = await deps.secretStore.put(plaintext, context, { recordId });
-  const saved = await deps.prisma.purchase
-    .updateMany({
-      where: { id: purchase.id, [column]: null },
-      data: { [column]: stored.ciphertext },
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
+  const saved = await deps.prisma
+    .$transaction(async (tx) => {
+      const updated = await tx.purchase.updateMany({
+        where: { id: purchase.id, [column]: null },
+        data: { [column]: stored.ciphertext },
+      });
+      if (updated.count) await savedSecretIn(cleanupDeps, tx, stored.ciphertext);
+      return updated;
     })
     .catch(() => ({ count: 0 }));
   if (!saved.count)
-    await cleanUpUnsavedSecret(
-      { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs },
-      { kind: card ? "purchase_card" : "purchase_token", recordId, ref: stored.ciphertext },
-    );
+    await cleanUpUnsavedSecret(cleanupDeps, {
+      kind: card ? "purchase_card" : "purchase_token",
+      recordId,
+      ref: stored.ciphertext,
+    });
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */

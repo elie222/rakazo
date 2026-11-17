@@ -119,7 +119,7 @@ export function OrganizationMembersSettings({
               invite.reset();
             }}
           />
-          <Button type="submit" disabled={invite.pending || !email.trim()}>
+          <Button type="submit" size="lg" disabled={invite.pending || !email.trim()}>
             <Trans>Invite</Trans>
           </Button>
         </form>
