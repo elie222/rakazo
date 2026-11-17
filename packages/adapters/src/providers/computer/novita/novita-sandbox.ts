@@ -7,7 +7,11 @@ import type {
   RemoteDesktopSdk,
 } from "../../../remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { isSandboxGoneError, SandboxUnsafeStopError } from "../../../sandbox-errors.js";
+import {
+  isSandboxGoneError,
+  SandboxUnsafeStopError,
+  sandboxStoppedError,
+} from "../../../sandbox-errors.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -139,6 +143,7 @@ export function novitaSdk(
     connectRunning: async (id) => wrap(await runningNovitaDesktop(await api(), id)),
     keepAlive: async (id, options) => (await api()).sandbox.setTimeout(id, options.timeoutMs),
     isRunning: async (id) => (await (await api()).sandbox.getInfo(id)).state === "running",
+    isStopped: async (id) => (await (await api()).sandbox.getInfo(id)).state === "paused",
     pause: async (id) => pauseNovitaComputer(await api(), id),
     kill: async (id) => destroyNovitaComputer(await api(), id, safetyPause),
   };
@@ -148,7 +153,7 @@ export function novitaSdk(
 export async function runningNovitaDesktop(api: NovitaApi, id: string): Promise<NovitaDesktop> {
   const info = await api.getFullInfo(id);
   if (info.state !== "running")
-    throw new Error("Novita computer is paused; start it before using it");
+    throw sandboxStoppedError("Novita computer is paused; start it before using it");
   if (info.sandboxId !== id || typeof info.envdVersion !== "string")
     throw new Error("Invalid Novita computer identity");
   try {
@@ -156,7 +161,7 @@ export async function runningNovitaDesktop(api: NovitaApi, id: string): Promise<
   } catch (error) {
     const current = await api.getFullInfo(id);
     if (current.state !== "running")
-      throw new Error("Novita computer is paused; start it before using it");
+      throw sandboxStoppedError("Novita computer is paused; start it before using it");
     if (isSandboxGoneError(error))
       throw new Error("Novita computer is present but its idle timeout could not be extended");
     throw error;

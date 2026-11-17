@@ -16,7 +16,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { computerUsingRuns, QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createGroupRepos,
@@ -39,7 +39,11 @@ import { BrowserStillRunningError } from "./computer-screens.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
-import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
+import {
+  isSandboxDamagedError,
+  isSandboxGoneError,
+  isSandboxStoppedError,
+} from "./sandbox-errors.js";
 import { sandboxKindCapabilities, sandboxKindsWhere } from "./sandbox-kind-capabilities.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -562,6 +566,15 @@ export async function sleepComputerIfIdle(
       return;
     }
   } catch (error) {
+    if (isSandboxStoppedError(error)) {
+      // The provider paused it by itself, keeping its disk; saving it would mean starting it.
+      // The next start resumes that disk, newer than the last save.
+      await recordProviderStopped(deps, computer, {
+        state: "suspending",
+        updatedAt: checkpointedAt,
+      });
+      return;
+    }
     if (isSandboxGoneError(error)) {
       // Nothing is left to checkpoint or stop. Retrying would fail the same way every idle
       // window, so clear the dead ref and let the next use boot from the last saved revision.
@@ -731,15 +744,35 @@ async function suspendStoppedComputer(
   if (!deps.sandbox.isStopped || !savedAt) return false;
   if (!(await deps.sandbox.isStopped(ref, ctx).catch(() => false))) return false;
   if (await changedSinceSave(deps.prisma, computer, savedAt)) return false;
+  return recordProviderStopped(deps, computer, {
+    state: computer.state,
+    updatedAt: computer.updatedAt,
+    executionLeases: await noBlockingExecutionLease(deps.prisma, computer.id, new Date()),
+  });
+}
+
+/**
+ * Marks suspended a computer its provider stopped by itself, keeping its reference so the next
+ * start resumes the same disk. `claim` is the row as last read; false when it has since changed.
+ */
+export async function recordProviderStopped(
+  deps: {
+    prisma: PrismaClient;
+    events: ThreadEvents;
+    jobs: JobPublisher;
+  },
+  computer: {
+    id: string;
+    spaceId: string;
+    kind: string;
+    providerRef: string | null;
+    runningSince?: Date | null;
+    controlLeaseId: string | null;
+  },
+  claim: Prisma.ComputerWhereInput,
+): Promise<boolean> {
   const suspended = await deps.prisma.computer.updateMany({
-    where: {
-      id: computer.id,
-      state: computer.state,
-      maintenanceId: null,
-      providerRef: computer.providerRef,
-      updatedAt: computer.updatedAt,
-      executionLeases: await noBlockingExecutionLease(deps.prisma, computer.id, new Date()),
-    },
+    where: { id: computer.id, maintenanceId: null, providerRef: computer.providerRef, ...claim },
     data: {
       state: "suspended",
       runningSince: null,

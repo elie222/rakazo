@@ -18,6 +18,25 @@ export function isSandboxGoneError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * The provider paused or stopped the computer by itself (its own idle pause), keeping its disk.
+ * It is not gone: callers record it as stopped, and the next start resumes it. Adapters report it
+ * by throwing an error named `SandboxStoppedError`.
+ */
+export function isSandboxStoppedError(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (current.name === "SandboxStoppedError") return true;
+  }
+  return false;
+}
+
+/** An error `isSandboxStoppedError` recognizes. */
+export function sandboxStoppedError(message: string, options?: ErrorOptions): Error {
+  const error = new Error(message, options);
+  error.name = "SandboxStoppedError";
+  return error;
+}
+
 /** An error `isSandboxGoneError` recognizes, so callers replace the computer. */
 export function sandboxNotFoundError(message: string, options?: ErrorOptions): Error {
   const error = new Error(message, options);

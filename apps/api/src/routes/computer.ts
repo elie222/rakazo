@@ -13,6 +13,7 @@ import {
   endTeachingWithLease,
   ensureComputerWorkspaceLayout,
   isSandboxGoneError,
+  isSandboxStoppedError,
   provisionComputer,
   queueComputerUpdate,
   rateLimitEnds,
@@ -725,7 +726,8 @@ export function computerRoutes(ctx: RouterContext) {
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
-            if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);
+            if (isSandboxGoneError(error) || isSandboxStoppedError(error))
+              return clearGoneSandbox(deps, computer, error);
             getLogger().warn("computer.preview_failed", { error });
             return null;
           });

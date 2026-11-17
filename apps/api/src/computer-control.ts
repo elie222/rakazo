@@ -13,6 +13,8 @@ import {
   hasActiveComputerControl,
   holdsUserControl,
   isSandboxGoneError,
+  isSandboxStoppedError,
+  recordProviderStopped,
   releaseComputerControlLease,
   releaseComputerExecutionLease,
   replaceComputer,
@@ -318,13 +320,25 @@ export async function computerScreenContext(
  * The provider killed this sandbox (idle timeout) while the row still says running. Clear the
  * dead ref so the UI offers a boot instead of 500ing, and rethrow anything else. Leave any
  * active control lease alone: expireComputerControl owns that release (provider screen-control,
- * events, takeover continuation).
+ * events, takeover continuation). A sandbox the provider only paused by itself keeps its ref:
+ * it is marked suspended, and the next start resumes it.
  */
 export async function clearGoneSandbox(
   deps: RouterDeps,
-  computer: { id: string; providerRef: string | null; runningSince?: Date | null },
+  computer: {
+    id: string;
+    spaceId: string;
+    kind: string;
+    providerRef: string | null;
+    runningSince?: Date | null;
+    controlLeaseId: string | null;
+  },
   error: unknown,
 ): Promise<null> {
+  if (isSandboxStoppedError(error)) {
+    await recordProviderStopped(deps, computer, { state: "running" });
+    return null;
+  }
   if (!isSandboxGoneError(error)) throw error;
   getLogger().warn(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, { error });
   const cleared = await deps.prisma.computer.updateMany({

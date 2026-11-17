@@ -40,6 +40,7 @@ import {
   fakeBoatProvider,
 } from "./providers/computer/boat/boat-sandbox.test-support.js";
 import { e2bCreateOptions } from "./providers/computer/e2b/e2b-sandbox.js";
+import { sandboxStoppedError } from "./sandbox-errors.js";
 
 describe("sandbox idle", () => {
   beforeEach(() => {
@@ -830,6 +831,22 @@ describe("sandbox idle", () => {
     vi.spyOn(Date, "now").mockReturnValue(now + 60 * 60 * 1000);
     await sweep();
     expect(findMany).toHaveBeenCalledOnce();
+  });
+
+  it("marks suspended a computer its provider paused by itself, keeping it for the next start", async () => {
+    const paused = sandboxStoppedError("instabox computer is paused; start it before using it");
+    const harness = idleHarness({ exportError: paused });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.computer.providerRef).toBe("computer");
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.events.append).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
+    );
   });
 
   it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {
