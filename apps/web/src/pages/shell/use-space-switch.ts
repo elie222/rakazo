@@ -1,4 +1,3 @@
-import { abortableDelay } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
@@ -143,8 +142,6 @@ export function useOpenSpaceChat({
         if (action === "commit") return true;
         discardPrimedBootstrap(primed);
         if (action !== "reload") return false;
-        // Leave the view-transition update before starting a full navigation.
-        await abortableDelay(0);
         return current() && reload();
       };
       const endSwitch = beginSpaceSwitch(current);

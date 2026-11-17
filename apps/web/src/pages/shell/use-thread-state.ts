@@ -13,10 +13,12 @@ export type PinnedAround = {
 };
 
 /** The open chat's snapshot, the bot data loaded with it, and where its loaded history stands. */
-export function useThreadState() {
-  const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
-  const snapshotRef = useRef<ThreadSnapshot | null>(null);
+export function useThreadState(initial: ThreadSnapshot | null = null) {
   const streamResponses = responseStreamingPreference.use();
+  const [snapshot, setSnapshot] = useState(() =>
+    withLiveStreamingProgress(initial, streamResponses),
+  );
+  const snapshotRef = useRef(initial);
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
   const [routines, setRoutines] = useState<Routine[]>([]);

@@ -169,7 +169,7 @@ test("narrow desktop keeps the chat width when both panels are open", async ({
   await openBotPanel(page);
   const panel = page.getByTestId("side-panel");
   await expect(panel).toHaveCSS("position", "absolute");
-  const chat = page.locator('[data-space-switch="main"]');
+  const chat = page.getByRole("main");
   await expect(chat).toHaveCSS("width", "320px");
   await expect(panel).toHaveCSS("width", "320px");
   await captureScreenshot(page, testInfo, "sidebar-narrow-panel-overlay");

@@ -28,16 +28,14 @@ test("opening a bot in another space switches in place, without a page reload", 
   await expect(page.getByRole("button", { name: /Scout/ }).first()).toBeVisible();
 
   // A reload would drop this marker; an in-place switch keeps it. The observer
-  // records any moment the sidebar lost its bots while the screen was not being
-  // held by the switch's transition, which is the blank flash people see.
+  // records any moment the sidebar lost its bots, which is the blank flash people see.
   await page.evaluate(() => {
     const w = window as unknown as { spaceSwitchMarker?: boolean; visibleBlanks?: number };
     w.spaceSwitchMarker = true;
     w.visibleBlanks = 0;
     new MutationObserver(() => {
       const sidebar = document.querySelector('[data-testid="bots-sidebar"]');
-      const held = document.documentElement.classList.contains("rk-space-switching");
-      if (!sidebar?.textContent?.includes("Scout") && !held) w.visibleBlanks! += 1;
+      if (!sidebar?.textContent?.includes("Scout")) w.visibleBlanks! += 1;
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   });
   await page.getByRole("button", { name: /Scout/ }).first().click();

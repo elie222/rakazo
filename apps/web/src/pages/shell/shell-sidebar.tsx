@@ -155,7 +155,6 @@ export function ShellSidebar({
         collapsible={isMobile ? "none" : "icon"}
         side={document.documentElement.dir === "rtl" ? "right" : "left"}
         data-testid="bots-sidebar"
-        data-space-switch="sidebar"
         inert={isMobile && !mobileOpen ? true : undefined}
         aria-hidden={isMobile && !mobileOpen ? true : undefined}
         data-bots-sidebar-density={density}

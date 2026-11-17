@@ -63,7 +63,7 @@ import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
-import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
+import { useSpaceEpoch } from "../lib/space-switch";
 import { toolActivityPreference } from "../lib/tool-activity-preference";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { errorText } from "../lib/user-error";
@@ -195,7 +195,10 @@ function SpaceShell() {
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
   }, [userId]);
   const search = useSidebarSearch({ rpc, navigate });
-  const thread = useThreadState();
+  // A seeded chat is in the first render, so the shell never paints without its conversation.
+  const thread = useThreadState(
+    botId && !groupId && seed?.thread?.botId === botId ? seed.thread : null,
+  );
   const { snapshot } = thread;
   const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
@@ -686,7 +689,6 @@ function SpaceShell() {
       markAfterPaint("rk:renderer:thread-painted");
     }
     if (shellReady) {
-      markShellReady();
       markOnce("rk:renderer:shell-ready");
       markAfterPaint("rk:renderer:shell-painted");
     }
@@ -1069,7 +1071,6 @@ function SpaceShell() {
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main
-        data-space-switch="main"
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
