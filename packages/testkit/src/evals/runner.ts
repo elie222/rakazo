@@ -3,6 +3,7 @@ import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/a
 import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
+  handoffToGroupBot,
   MessagingTeamChatEmulator,
   messageBot,
 } from "@rakazo/adapters";
@@ -633,6 +634,22 @@ export async function runTrial(
             where: { id: runId },
             select: { sourceMessageId: true },
           }));
+      } else if ("fromMember" in step) {
+        const memberId = group?.memberIds.get(step.fromMember);
+        if (!group || !memberId)
+          throw new EvalFailure("harness", "A fromMember step needs a group member");
+        runId = (await deliverPeerMessage(
+          prisma,
+          handles.jobs,
+          { id: memberId, name: step.fromMember },
+          botId,
+          step.text,
+          group.id,
+        ))!;
+        ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
+          where: { id: runId },
+          select: { sourceMessageId: true },
+        }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(
@@ -751,7 +768,11 @@ export async function runTrial(
           .slice(stepIndex + 1)
           .some(
             (next) =>
-              "ask" in next || "slack" in next || "wakeRoutine" in next || "fromPeer" in next,
+              "ask" in next ||
+              "slack" in next ||
+              "wakeRoutine" in next ||
+              "fromPeer" in next ||
+              "fromMember" in next,
           )
       )
         setupRunIds.add(runId);
@@ -1133,6 +1154,13 @@ export async function runTrial(
       ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
+      ...(group
+        ? {
+            groupProgressEvents: await prisma.event.count({
+              where: { threadId: group.threadId, type: "thread.progress" },
+            }),
+          }
+        : {}),
       routineRuns,
       peerExchanges,
       ...(deliveries.length ? { deliveries } : {}),
@@ -1350,8 +1378,8 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
 }
 
 /**
- * Speak as the peer through message_bot's own delivery, so the subject wakes exactly as it
- * would from a teammate. The peer's turn is fixture setup: no model is paid to write its words.
+ * Speak as a teammate through message_bot or a group handoff, so the subject wakes
+ * through the product delivery path. The peer's turn is fixture setup: no model is paid to write its words.
  */
 async function deliverPeerMessage(
   prisma: EvalApp["prisma"],
@@ -1359,6 +1387,7 @@ async function deliverPeerMessage(
   peer: { id: string; name: string },
   targetBotId: string,
   text: string,
+  groupId?: string,
 ) {
   const { spaceId, userId, thread } = await prisma.bot.findUniqueOrThrow({
     where: { id: peer.id },
@@ -1382,11 +1411,28 @@ async function deliverPeerMessage(
       botId: peer.id,
       threadId: thread.id,
       taskId: task.id,
-      status: "completed",
+      status: groupId ? "running" : "completed",
       trigger: "user",
-      completedAt: new Date(),
+      completedAt: groupId ? null : new Date(),
     },
   });
+  if (groupId) {
+    try {
+      const sent = await handoffToGroupBot(
+        { prisma, events: createThreadEvents(prisma), jobs },
+        { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
+        groupId,
+        { bot_id: targetBotId, message: text },
+      );
+      if (!sent.ok) throw new EvalFailure("harness", `Group handoff failed: ${sent.error}`);
+      return sent.runId;
+    } finally {
+      await prisma.run.update({
+        where: { id: run.id },
+        data: { status: "completed", completedAt: new Date() },
+      });
+    }
+  }
   const sent = await messageBot(
     { prisma, events: createThreadEvents(prisma), jobs },
     { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },

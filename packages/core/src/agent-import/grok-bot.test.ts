@@ -1,4 +1,4 @@
-import { GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { GrokBot } from "./index.js";
 import {
@@ -310,7 +310,7 @@ describe("a Grok Bot as an import plan", () => {
 });
 
 it("rejects oversized collections before allocating import names", () => {
-  for (const field of ["skills", "apps", "memories", "routines"]) {
+  for (const field of ["skills", "apps", "routines"]) {
     const source = JSON.stringify({
       bots: [{ name: "Example", [field]: Array(101).fill({ name: "same" }) }],
     });
@@ -318,6 +318,50 @@ it("rejects oversized collections before allocating import names", () => {
   }
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ bots: Array(101).fill({ name: "same" }) })),
+  ).toThrow(GrokBotExportError);
+});
+
+it("bounds memories by the size of the document they become, not by count", () => {
+  const memories = Array.from({ length: 300 }, (_, index) => `Fact ${index}.`);
+  const userFacts = Array.from({ length: 150 }, (_, index) => `About me ${index}.`);
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({ bots: [{ name: "Example", memories, user_facts: userFacts }] }),
+  );
+  expect([bot!.memories.length, bot!.userFacts.length]).toEqual([300, 150]);
+  const parsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+  ]);
+  if ("error" in parsed) throw new Error(parsed.error);
+  expect(parsed.memory.find((item) => item.path === "MEMORY.md")!.content).toContain("- Fact 299.");
+
+  // Measured after repeats are dropped: thirty copies of one long memory fit.
+  const repeated = Array.from({ length: 30 }, () => "x".repeat(4_000));
+  const [once] = readGrokBotExportJson(
+    JSON.stringify({ bots: [{ name: "Example", memories: repeated }] }),
+  );
+  const onceParsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(once!) },
+  ]);
+  if ("error" in onceParsed) throw new Error(onceParsed.error);
+  expect(onceParsed.memory).toHaveLength(1);
+
+  const oversized = Array.from({ length: 30 }, (_, index) => `${index} ${"x".repeat(4_000)}`);
+  expect(() =>
+    readGrokBotExportJson(JSON.stringify({ bots: [{ name: "Example", memories: oversized }] })),
+  ).toThrow(GrokBotExportError);
+  // A pasted reply full of repeats is re-sent with each entry once, within the upload limit.
+  const longRepeats = Array.from({ length: 300 }, () => "y".repeat(4_000));
+  const [pasted] = parseGrokBotExport(
+    JSON.stringify({ bots: [{ name: "Example", memories: longRepeats }] }),
+  );
+  const resent = grokBotExportJson(pasted!);
+  expect(pasted!.memories).toHaveLength(1);
+  expect(resent.length).toBeLessThan(GROK_BOT_EXPORT_MAX_LENGTH);
+  expect(readGrokBotExportJson(resent)[0]!.memories).toHaveLength(1);
+  // Too many entries to fit are refused before any document is built.
+  const many = Array.from({ length: 25_001 }, (_, index) => String(index));
+  expect(() =>
+    readGrokBotExportJson(JSON.stringify({ bots: [{ name: "Example", memories: many }] })),
   ).toThrow(GrokBotExportError);
 });
 

@@ -6,6 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { combineSignals } from "./connector-safety.js";
@@ -366,6 +367,11 @@ export class McpSession {
   private remoteFetch?: SafeRemoteFetch;
   private connected = false;
   private connecting?: Promise<void>;
+  /** The session's last tool list, reused until the server's `ttlMs` runs out (for the life
+   * of the session when it sends none) or it announces `tools/list_changed`. */
+  private toolList?: { result: ListToolsResult; freshUntil: number };
+  /** Bumped by `tools/list_changed`, so a listing already in flight is not cached. */
+  private toolListVersion = 0;
 
   constructor(options: McpClientOptions = {}) {
     this.clientOptions = options;
@@ -373,10 +379,15 @@ export class McpSession {
   }
 
   private newClient(): Client {
-    return createMcpClient(
+    const client = createMcpClient(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
       this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
     );
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      this.toolList = undefined;
+      this.toolListVersion += 1;
+    });
+    return client;
   }
 
   async connectRemote(
@@ -482,9 +493,24 @@ export class McpSession {
     }
   }
 
-  async listTools(options?: { signal?: AbortSignal }): Promise<ListToolsResult> {
+  /** `refresh` skips the cached list, e.g. to check the server is still reachable. */
+  async listTools(options?: {
+    signal?: AbortSignal;
+    refresh?: boolean;
+  }): Promise<ListToolsResult & { cached?: true }> {
     this.assertConnected();
-    return { tools: await listMcpTools(this.client, { signal: options?.signal }) };
+    const cached = this.toolList;
+    if (cached && this.open && !options?.refresh && Date.now() < cached.freshUntil)
+      return { ...cached.result, cached: true };
+    const version = this.toolListVersion;
+    const { tools, ttlMs } = await listMcpTools(this.client, { signal: options?.signal });
+    const result = { tools };
+    if (version === this.toolListVersion)
+      this.toolList = {
+        result,
+        freshUntil: ttlMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + ttlMs,
+      };
+    return result;
   }
 
   async callTool(

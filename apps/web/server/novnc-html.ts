@@ -75,7 +75,10 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
  * soon as it runs and then follows noVNC's connection classes (which Rakazo's own embed page
  * sets as well) and its status bar.
  */
-export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) {
+export function injectNovncStorageShim(
+  html: string,
+  { viewOnly = false }: { viewOnly?: boolean } = {},
+) {
   // The app shows the screen's state itself, and noVNC's status bar names the provider's host.
   // Its side panel only has controls to offer while the user has control.
   const chrome = `<style>#noVNC_status{display:none!important}${
@@ -122,11 +125,56 @@ export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) 
       data.rakazoScreenFocus !== true
     )
       return;
-    const canvas = document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
+    const canvas = canvasOf();
     try {
       canvas?.focus();
     } catch {}
   });
+  // The mobile app types through window.rakazoComputerKeyboard and treats its presence as "ready".
+  // Rakazo's own embed page installs that bridge itself, in the same run that builds the canvas; a
+  // stock noVNC page has none, so the app's keys would wait for it forever. This one hands keys to
+  // noVNC's canvas, where its keyboard handler sends them. noVNC builds the canvas before it
+  // connects and ignores keys until then, so on a page that sets noVNC's connection classes the
+  // bridge waits for "connected"; on one that never does it waits for the canvas. It never
+  // replaces a bridge the page defined.
+  const canvasOf = () => document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
+  const KEYS = { Escape: "Escape", Tab: "Tab", Return: "Enter", Backspace: "Backspace", ArrowLeft: "ArrowLeft", ArrowUp: "ArrowUp", ArrowRight: "ArrowRight", ArrowDown: "ArrowDown" };
+  const installKeys = (connected, classed) => {
+    if (!connected && classed) return;
+    if (${viewOnly} || window.__rakazoNativeKeys !== true || window.rakazoComputerKeyboard || !canvasOf()) return;
+    const tap = (key, code, control) => {
+      const canvas = canvasOf();
+      if (!canvas) return;
+      const send = (type, name, id) =>
+        canvas.dispatchEvent(new window.KeyboardEvent(type, { key: name, code: id, bubbles: true, cancelable: true }));
+      if (control) send("keydown", "Control", "ControlLeft");
+      send("keydown", key, code);
+      send("keyup", key, code);
+      if (control) send("keyup", "Control", "ControlLeft");
+    };
+    const named = (name, control) => {
+      const key = KEYS[name];
+      if (key) tap(key, key, control);
+    };
+    window.rakazoComputerKeyboard = {
+      run(command) {
+        if (!command || typeof command !== "object") return;
+        const control = command.control === true;
+        if (command.type === "key") named(command.name, control);
+        else if (command.type === "backspace") {
+          const count = Number(command.count);
+          if (Number.isInteger(count) && count > 0) for (let i = 0; i < Math.min(count, 500); i += 1) named("Backspace", false);
+        } else if ((command.type === "text" || command.type === "char") && typeof command.text === "string") {
+          let pending = control;
+          for (const character of command.text) {
+            if (character === "\\n" || character === "\\r") named("Return", pending);
+            else tap(character, "", pending);
+            pending = false;
+          }
+        }
+      },
+    };
+  };
   let last = "";
   // Pages that never set noVNC's classes (older Rakazo embed images) still build their viewer
   // canvas, which is as far as they can be followed.
@@ -141,6 +189,7 @@ export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) 
       root.classList.contains("noVNC_connecting") || root.classList.contains("noVNC_reconnecting");
     const connected = root.classList.contains("noVNC_connected");
     if (connecting || connected) classed = true;
+    installKeys(connected, classed);
     const state = connected
       ? "connected"
       : failure !== null || statusError

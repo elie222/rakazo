@@ -272,6 +272,25 @@ describe("tool-choice grading", () => {
     ).toBe(false);
   });
 
+  it("sends the final reply to the judge with what it must convey", () => {
+    const base = {
+      id: "x",
+      area: "help",
+      kind: "guard",
+      prompt: "Who reads your memory?",
+    } as const;
+    const scenario = toolChoiceEvalCase({
+      ...base,
+      purpose: "p",
+      expect: { replyMeans: "Says its own memory is private." },
+    });
+    const input = scenario.judge!(evidence({ text: "Only I read my notes." }));
+    expect(input.evidence).toEqual({
+      request: "Who reads your memory?",
+      reply: { text: "Only I read my notes.", expected: "Says its own memory is private." },
+    });
+  });
+
   it("calibrates the judge against passing and failing references", () => {
     expect(new Set(TOOL_CHOICE_JUDGE_CALIBRATION.map((c) => c.pass))).toEqual(
       new Set([true, false]),

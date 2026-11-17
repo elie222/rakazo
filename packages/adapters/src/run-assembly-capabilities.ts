@@ -46,6 +46,7 @@ import type { RunExecutorServices, RunHold } from "./run-attempt.js";
 import { lazyRunComputer } from "./run-computer.js";
 import { APPROVED_EFFECT_REPLAY_ORDER } from "./run-effects.js";
 import {
+  BOT_DIRECTORY_LIMIT,
   COMPUTER_USE_INSTRUCTION,
   desktopGuardShellInstruction,
   dockerComputerToolInstruction,
@@ -688,6 +689,20 @@ export async function selectRunTools(
         }),
       )),
   );
+  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
+  const teammates = conversationThread.groupId
+    ? []
+    : await deps.prisma.bot.findMany({
+        where: {
+          spaceId: run.spaceId,
+          archivedAt: null,
+          id: { not: bot.id },
+          thread: { isNot: null },
+        },
+        select: { id: true, name: true, description: true },
+        orderBy: { createdAt: "asc" },
+        take: BOT_DIRECTORY_LIMIT,
+      });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
@@ -715,6 +730,7 @@ export async function selectRunTools(
         ? [...(bot.disabledBuiltinTools ?? []), "handoff_to_bot"]
         : bot.disabledBuiltinTools,
       fleetManagement: bot.fleetManagement,
+      hasTeammates: teammates.length > 0,
       followUpFromUser: sourceMessage?.role === "user",
       userComputer: userComputerShell,
       userComputerScreen,
@@ -786,6 +802,7 @@ export async function selectRunTools(
   });
   const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
   return {
+    teammates,
     strategicBuiltins,
     connectorTools,
     trustLoaders,
