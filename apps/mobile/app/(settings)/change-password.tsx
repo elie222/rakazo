@@ -11,14 +11,14 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { changePassword } from "../../lib/api-auth";
-import { mobileTokens } from "../../lib/appearance";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { endCallBeforeSessionEnd } from "../../lib/call-session";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { changePassword } from "../../lib/auth/api-auth";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
 
 export default function ChangePassword() {
   const call = useContext(CallKeyboardContext);

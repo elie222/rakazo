@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import type Docker from "dockerode";
@@ -22,6 +22,7 @@ import {
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
+  computerBrowserProxyPacMatches,
   computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
@@ -39,6 +40,7 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import {
+  computerBrowserProxyPacUrl,
   computerComputeGpus,
   computerDns,
   computerMounts,
@@ -262,6 +264,8 @@ app.post("/computers", async (c) => {
           computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
           computerLocaleMatches(info.Config.Env, locale) &&
+          // And the bot browser's proxy auto-config.
+          computerBrowserProxyPacMatches(info.Config.Env, computerBrowserProxyPacUrl) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -326,6 +330,7 @@ app.post("/computers", async (c) => {
           dns: computerDns,
           mounts: computerMounts,
           computeGpus: computerComputeGpus,
+          browserProxyPacUrl: computerBrowserProxyPacUrl,
           locale,
         });
         let container: Docker.Container | undefined;
@@ -618,8 +623,7 @@ app.post("/computers/:id/browser", async (c) => {
     ])
     .safeParse(await c.req.json());
   // Refused here, before anything reaches the computer: the caller learns by this code alone that
-  // nothing ran, and may keep a one-time code for another try. Keep in step with the adapters'
-  // INVALID_BROWSER_REQUEST.
+  // nothing ran, and may keep a one-time code for another try.
   if (!parsed.success) {
     return c.json(
       { ok: false, code: "invalid_browser_request", error: "Invalid page browser request" },

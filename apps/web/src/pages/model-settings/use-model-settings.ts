@@ -21,16 +21,12 @@ import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import {
-  loadStoredModelAuth,
-  runModelConnectionPreflight,
-} from "../../lib/model-connection-preflight";
-import { useSpaceQueries } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { errorText } from "../../lib/user-error";
+import { providerDisplayName } from "../../lib/models/localized-provider-hint";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { useSpaceQueries } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { errorText } from "../../lib/query/user-error";
 import { useModelConnectionForm } from "./use-model-connection-form";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
@@ -104,7 +100,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     probeModels,
     provider,
     resetOpenAiCompatibleProbe,
-    runPreflight,
     selected,
     setApiKey,
     setError,
@@ -340,27 +335,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     );
   }
 
-  async function testOAuthConnection() {
-    if (!selected) return;
-    await runPreflight("sign-in", async (stillCurrent) => {
-      const stored = await loadStoredModelAuth(
-        selected.provider,
-        () => rpc.models.credentials(),
-        selected.id,
-        credentialIdRef.current,
-      );
-      if (!stillCurrent()) return undefined;
-      const result = await runModelConnectionPreflight({
-        authKind: "oauth",
-        provider: selected.provider,
-        ...stored,
-      });
-      return result.ok
-        ? { success: t`A subscription credential is stored securely.` }
-        : { failure: result.failure };
-    });
-  }
-
   // settingsOnly saves a connected catalog provider's gateway ids without touching
   // the key field; key replacement stays on its own button.
   async function connectKey({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
@@ -514,7 +488,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     settingsDirty,
     submitOAuthCode,
     subscriptionSignIn,
-    testOAuthConnection,
     usingServerCredentials,
   };
 }

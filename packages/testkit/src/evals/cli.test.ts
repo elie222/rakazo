@@ -29,7 +29,7 @@ it("lists eval cases without importing a generated database client or runtime ad
     { encoding: "utf8", timeout: 20_000 },
   );
   expect(output).toContain("workspace-memory-isolation:");
-  expect(output.trim().split("\n")).toHaveLength(16);
+  expect(output.trim().split("\n")).toHaveLength(18);
 });
 
 it("records explicit not-run reasons without live execution", async () => {

@@ -197,7 +197,7 @@ export function nextSort(
   return null;
 }
 
-// Matches the .rk-table-cell-text max-width so min-width never outgrows it.
+// The .rk-table-cell-text max-width, so min-width never outgrows it.
 const MAX_WIDTH_CHARS = 60;
 
 /** ch-based min-width per column from the longest cell, capped. */

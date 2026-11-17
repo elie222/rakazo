@@ -26,17 +26,20 @@ vi.mock("../../lib/bootstrap", () => ({
 vi.mock("../../lib/bootstrap-target", () => ({
   initialBootstrapTarget: () => ({ botId: "target" }),
 }));
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   getSnapshot: state.call,
   isLeavingSession: state.leavingSession,
 }));
-vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/auth/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../../lib/query/query", () => ({
   queryClient: { getQueryData: state.cached },
   spaceSeedKey: () => [],
 }));
-vi.mock("../../lib/rpc", () => ({ selectedSpaceId: () => "old-space", selectSpace: state.select }));
-vi.mock("../../lib/tts", () => ({ speaker: { stop: state.stop } }));
+vi.mock("../../lib/query/rpc", () => ({
+  selectedSpaceId: () => "old-space",
+  selectSpace: state.select,
+}));
+vi.mock("../../lib/calls/tts", () => ({ speaker: { stop: state.stop } }));
 vi.mock("../../lib/space-switch", async (importOriginal) => ({
   ...(await importOriginal<typeof SpaceSwitch>()),
   remountShellForSpace: state.remount,

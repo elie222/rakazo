@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
-import { ImageArtifactViewer } from "../components/image-artifact-viewer";
-import type { MobileArtifactTarget } from "../lib/artifact-open";
+import { ImageArtifactViewer } from "../components/media/image-artifact-viewer";
+import type { MobileArtifactTarget } from "../lib/artifacts/artifact-open";
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";

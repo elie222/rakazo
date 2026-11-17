@@ -11,13 +11,16 @@ import {
 } from "@rakazo/ui-web";
 import {
   BookOpen,
+  Building2,
   Check,
+  ChevronRight,
   Download,
   FolderOpen,
   Gauge,
   Link2,
   LogOut,
   Plug,
+  Plus,
   ScrollText,
   Settings,
   Smartphone,
@@ -26,7 +29,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Organization } from "../lib/organizations";
+import type { Organization } from "../lib/auth/organizations";
 import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
 
@@ -56,6 +59,7 @@ type Props = {
   organizations?: Organization[];
   activeOrganizationId?: string | null;
   onSwitchOrganization?: (organization: Organization) => void;
+  onCreateOrganization?: () => void;
 };
 
 // Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
@@ -88,6 +92,7 @@ export function SidebarFooter({
   organizations = [],
   activeOrganizationId,
   onSwitchOrganization,
+  onCreateOrganization,
 }: Props) {
   const { t } = useLingui();
   const update = useSidebarUpdate();
@@ -124,7 +129,7 @@ export function SidebarFooter({
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-sidebar-accent text-body font-medium text-foreground outline-none hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
@@ -155,26 +160,12 @@ export function SidebarFooter({
                 <p className="truncate text-label text-muted-foreground">{email}</p>
               ) : null}
             </div>
-            {organizations.length > 1 ? (
-              <>
-                {organizations.map((organization) => {
-                  const active = organization.id === activeOrganizationId;
-                  return (
-                    <Button
-                      key={organization.id}
-                      variant="ghost"
-                      aria-current={active ? "true" : undefined}
-                      className="h-9 w-full justify-between gap-2.5 font-normal"
-                      onClick={() => onSwitchOrganization?.(organization)}
-                    >
-                      <span className="min-w-0 truncate">{organization.name}</span>
-                      {active ? <Check aria-hidden="true" strokeWidth={1.75} /> : null}
-                    </Button>
-                  );
-                })}
-                <div className="my-1 border-t border-border" />
-              </>
-            ) : null}
+            <OrganizationRow
+              organizations={organizations}
+              activeOrganizationId={activeOrganizationId}
+              onSwitch={onSwitchOrganization}
+              onCreate={onCreateOrganization}
+            />
             {mini ? (
               <Button
                 variant="ghost"
@@ -295,15 +286,22 @@ export function SidebarFooter({
       </Popover>
       {!mini ? (
         <Button
-          variant="outline"
+          variant="secondary"
           ref={pillRef}
           onClick={onIntegrations}
-          className="h-9 min-w-0 flex-1 justify-between bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          className="h-9 min-w-0 flex-1 justify-between"
         >
-          <span ref={labelRef} className="min-w-0 truncate">
-            <Trans>Connect apps</Trans>
+          <span ref={labelRef} className="flex min-w-0 items-center gap-2">
+            <Plug className="text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+            <span className="truncate">
+              <Trans>Connect apps</Trans>
+            </span>
           </span>
-          <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
+          <AppMarkStack
+            marks={logos.slice(0, markCount)}
+            // The secondary button's surface, at rest and on hover.
+            ringClassName="ring-secondary group-hover/button:ring-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]"
+          />
         </Button>
       ) : null}
       {update.available ? (
@@ -320,5 +318,75 @@ export function SidebarFooter({
         </IconTooltip>
       ) : null}
     </div>
+  );
+}
+
+/** The organization in use; its submenu switches to another or starts a new one. */
+function OrganizationRow({
+  organizations,
+  activeOrganizationId,
+  onSwitch,
+  onCreate,
+}: {
+  organizations: Organization[];
+  activeOrganizationId?: string | null;
+  onSwitch?: (organization: Organization) => void;
+  onCreate?: () => void;
+}) {
+  const active = organizations.find((organization) => organization.id === activeOrganizationId);
+  if (!active) return null;
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger
+          openOnHover
+          delay={100}
+          data-testid="organization-menu-trigger"
+          render={
+            <Button variant="ghost" className="h-9 w-full justify-start gap-2.5 font-normal" />
+          }
+        >
+          <Building2 className="text-muted-foreground" strokeWidth={1.75} />
+          <span className="min-w-0 truncate">{active.name}</span>
+          <ChevronRight className="ms-auto text-muted-foreground" strokeWidth={1.75} />
+        </PopoverTrigger>
+        <PopoverContent
+          side="right"
+          align="start"
+          sideOffset={4}
+          className="max-h-(--available-height) w-60 gap-0 overflow-y-auto p-1 *:shrink-0"
+        >
+          {organizations.map((organization) => {
+            const current = organization.id === active.id;
+            return (
+              <Button
+                key={organization.id}
+                variant="ghost"
+                aria-current={current ? "true" : undefined}
+                className="h-9 w-full justify-between gap-2.5 font-normal"
+                onClick={() => onSwitch?.(organization)}
+              >
+                <span className="min-w-0 truncate">{organization.name}</span>
+                {current ? <Check aria-hidden="true" strokeWidth={1.75} /> : null}
+              </Button>
+            );
+          })}
+          {onCreate ? (
+            <>
+              <div className="my-1 border-t border-border" />
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onCreate}
+              >
+                <Plus className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>New organization</Trans>
+              </Button>
+            </>
+          ) : null}
+        </PopoverContent>
+      </Popover>
+      <div className="my-1 border-t border-border" />
+    </>
   );
 }

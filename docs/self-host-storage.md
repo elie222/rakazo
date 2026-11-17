@@ -6,8 +6,26 @@ may be.
 ## Data directory
 
 `DATA_DIR` (`/data` in the Compose files, `./data` in a source checkout) holds uploaded and
-generated files, bot homes and caches. The API and worker must share it and it must persist. Bot
-homes and new artifacts can live in [object storage](#bot-homes-in-object-storage) instead.
+generated files, bot homes and caches. By default the API and worker must share it and it must
+persist. Bot homes and new artifacts can live in [object storage](#bot-homes-in-object-storage)
+instead.
+
+**With object storage from the first start**, nothing under `DATA_DIR` needs to be shared or to
+survive a restart, so each API and worker replica can use its own scratch directory (a Pod's
+`emptyDir`, for example), except for Docker computers, described below the table:
+
+| Path                                           | What it holds with object storage                                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `homes/`, `home-revisions/`, `home-downloads/` | A cache of bot homes, downloaded again when missing or older than the bucket.                                                               |
+| `staging/`                                     | Scratch for saves, removed at startup. It needs free space for the largest home you want saved.                                             |
+| `mcp-packages/`                                | Packages each process installs on first use; set `MCP_PACKAGES_DIR` to put them elsewhere.                                                  |
+| `artifacts/`, `push-tokens/`                   | Nothing new. Only an install that started without object storage has files here; see [shared storage migration](#shared-storage-migration). |
+| `pi-sessions/`                                 | Only with `PI_SESSION_RECORDING=true`. Each process keeps its own files, so leave it off or share the directory.                            |
+
+Docker computers mount their cached home straight from the Docker host's `DATA_DIR/homes`, so the
+API and worker that start them need that directory on the same host. Remote computer providers,
+including Kubernetes with `OBJECT_STORAGE_BUCKET` set, copy the workspace through the server and
+need no shared directory.
 
 ## Content encryption
 

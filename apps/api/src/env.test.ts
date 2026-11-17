@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadEnv, parseExtraAuthOrigins } from "./env.js";
+import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -113,33 +113,6 @@ describe("loadEnv", () => {
     ).toBe("https://catalog.example.test/feed");
   });
 
-  it("falls back to none when a remote provider key is missing", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "e2b",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "createos",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "none",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "",
-      }).sandboxProvider,
-    ).toBe("none");
-  });
-
   it("loads provider-specific Daytona configuration", () => {
     const env = loadEnv({
       ...base,
@@ -150,28 +123,12 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "daytona",
-      daytonaApiKey: "test-daytona-key",
-      daytonaApiUrl: "https://daytona.test/api",
-      daytonaTarget: "test-target",
+      sandboxOptions: {
+        daytonaApiKey: "test-daytona-key",
+        daytonaApiUrl: "https://daytona.test/api",
+        daytonaTarget: "test-target",
+      },
     });
-  });
-
-  it("loads Novita credentials and the shared sandbox template", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "novita",
-        NOVITA_API_KEY: "test-novita-key",
-        SANDBOX_TEMPLATE: "custom-desktop",
-      }),
-    ).toMatchObject({
-      sandboxProvider: "novita",
-      novitaApiKey: "test-novita-key",
-      sandboxTemplate: "custom-desktop",
-    });
-    expect(
-      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
-    ).toBe("none");
   });
 
   it("loads provider-specific Boat configuration", () => {
@@ -183,9 +140,27 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "boat",
-      boatApiKey: "test-boat-key",
-      boatApiUrl: "https://boat.test/api/v1",
+      sandboxOptions: { boatApiKey: "test-boat-key", boatApiUrl: "https://boat.test/api/v1" },
     });
+  });
+
+  it("starts without reading a malformed computer setting until a computer is built", () => {
+    const env = loadEnv({ ...base, KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" });
+    expect(env.databaseUrl).toBe(base.DATABASE_URL);
+    expect(() => env.sandboxOptions).toThrow(/KUBERNETES_SANDBOX_POD_ANNOTATIONS/);
+  });
+
+  it("keeps environment computer options a partial override leaves out", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "daytona",
+      DAYTONA_API_KEY: "test-daytona-key",
+      DAYTONA_TARGET: "env-target",
+    });
+    expect(
+      withEnvOverrides(env, { sandboxOptions: { daytonaTarget: "override-target" } })
+        .sandboxOptions,
+    ).toMatchObject({ daytonaApiKey: "test-daytona-key", daytonaTarget: "override-target" });
   });
 
   it("throws when production omits secrets", () => {

@@ -63,8 +63,10 @@ import {
   withHostComputerScreen,
   withRunWorker,
   withSecretPersistence,
+  withSecretWriteAhead,
 } from "@rakazo/adapters";
-import { abortableDelay, resolveSupervisorToken } from "@rakazo/core";
+import { abortableDelay } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -79,6 +81,7 @@ import {
   pushSessionExpiresAt,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import { bestEffort, SERVICE_NAMES } from "@rakazo/logging";
@@ -109,6 +112,8 @@ async function main() {
   let { prisma } = created;
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   // Set once push delivery is configured below; thread changes before then have no cards.
   let workActivities: WorkActivities | undefined;
   // Every thread change this process commits also updates its users' live status cards.
@@ -119,11 +124,15 @@ async function main() {
     }),
     (threadId) => workActivities?.threadChanged(threadId),
   );
-  const secrets = await createWorkerSecretStore(process.env, realtime);
+  // The queue is built from this client below; a secret written or dropped before then gets no
+  // backup.
+  let secretCleanupJobs: JobPublisher | undefined;
+  const secrets = withSecretWriteAhead(
+    await createWorkerSecretStore(process.env, realtime),
+    () => secretCleanupJobs,
+  );
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  // The queue is built from this client below; a secret dropped before then gets no retry.
-  let secretCleanupJobs: JobPublisher | undefined;
   prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);

@@ -17,12 +17,12 @@ import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/a
 import { normalizeRunError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostCredentialSource, resolveDeploymentModel } from "../../deployment-model.js";
-import { knownModelImageInput, modelAcceptsImageInput } from "../../model-vision.js";
-import { listPiCatalog } from "../../pi-models.js";
-import { resolveRuntimeModel } from "../../pi-runtime-models.js";
-import { scopedRuntimeModels } from "../../pi-runtime-scope.js";
-import { normalizePiUsage } from "../../pi-usage.js";
+import { hostCredentialSource, resolveDeploymentModel } from "../../models/deployment-model.js";
+import { knownModelImageInput, modelAcceptsImageInput } from "../../models/model-vision.js";
+import { listPiCatalog } from "../../runtime/pi/models/pi-models.js";
+import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
+import { scopedRuntimeModels } from "../../runtime/pi/pi-runtime-scope.js";
+import { normalizePiUsage } from "../../runtime/pi/usage/pi-usage.js";
 import {
   PERSONAL_CLI_BILLING_REFUSAL,
   PERSONAL_CLI_SHARED_REFUSAL,
@@ -544,7 +544,8 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     const cli = fakeClaude(scenario);
     const controller = new AbortController();
     const running = run(hello, { signal: controller.signal });
-    await vi.waitFor(() => expect(cli.started()).toBe(true));
+    // hang-auth records on the second launch, after the version probe: two process starts.
+    await vi.waitFor(() => expect(cli.started()).toBe(true), { timeout: 10_000 });
     controller.abort();
     expect((await running).message.stopReason).toBe("aborted");
     expect(await cli.survived()).toBe(false);

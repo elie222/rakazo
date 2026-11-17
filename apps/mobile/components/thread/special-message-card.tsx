@@ -12,15 +12,15 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileBot, MobileSnapshot } from "../../lib/mobile-types";
-import { useResolvedAppearance } from "../../lib/native";
-import type { UserBubble } from "../../lib/user-bubble";
-import { withUserBubble } from "../../lib/user-bubble";
-import { BotMention } from "../bot-mention";
-import { NativeActionButton } from "../native-action-button";
-import { NativeSymbol } from "../native-symbol";
+import type { MobileBot, MobileSnapshot } from "../../lib/api/mobile-types";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { UserBubble } from "../../lib/messages/user-bubble";
+import { withUserBubble } from "../../lib/messages/user-bubble";
+import { useResolvedAppearance } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { BotMention } from "../messages/bot-mention";
+import { NativeActionButton } from "../native/native-action-button";
+import { NativeSymbol } from "../native/native-symbol";
 import type { MessageActionProps } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
 
@@ -76,7 +76,12 @@ function HelperMessageCard({
   const helperChevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${helperRotation.value}deg` }],
   }));
-  const [stopping, setStopping] = useState(false);
+  // The card settles from the chat's events once the helper stops, so a stop that went through
+  // stays busy until then.
+  const stop = useSave({
+    save: (input: NonNullable<typeof stopHelper>, send) => send("threads/stopHelper", input),
+    closesScreen: true,
+  });
   const running = special.status === "running";
   const { stopped, failed, body } = helperCardState(special);
   return (
@@ -180,13 +185,9 @@ function HelperMessageCard({
           label={t`Stop`}
           prominence="secondary"
           size="compact"
-          busy={stopping}
+          busy={stop.pending}
           style={{ marginHorizontal: 16, marginBottom: 14 }}
-          onPress={() => {
-            setStopping(true);
-            // The card settles from the chat's events once the helper stops.
-            rpc("threads/stopHelper", stopHelper).catch(() => setStopping(false));
-          }}
+          onPress={() => stop.run(stopHelper)}
         />
       ) : null}
       {subagentOpen && body ? (
