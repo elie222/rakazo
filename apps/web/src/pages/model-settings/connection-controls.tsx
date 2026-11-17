@@ -1,13 +1,12 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
-import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
+import { ModelSignInProgress } from "../../components/ModelSignInProgress";
 import { CompatibleKeyField } from "./compatible-key-field";
-
 import type { ModelSettingsState } from "./use-model-settings";
 
 export function ConnectionControls({
@@ -104,118 +103,16 @@ export function ConnectionControls({
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
         <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
           {oauth ? (
-            <div className="w-full rounded-xl border border-border px-4 py-3">
-              {oauth.mode === "auth-url" ? (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    <Trans>
-                      Sign in at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-foreground underline"
-                      >
-                        {new URL(oauth.verificationUri).hostname}
-                      </a>
-                      , then paste the code here.
-                    </Trans>
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Input
-                      value={pasteCode}
-                      onChange={(e) => setPasteCode(e.target.value)}
-                      aria-label={t`Authorization code`}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="text-foreground md:text-body-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!pasteCode.trim()}
-                      onClick={() => void submitOAuthCode()}
-                    >
-                      <Trans>Submit</Trans>
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the link expires in about # minute."
-                      other="Waiting for sign-in — the link expires in about # minutes."
-                    />
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    {popupBlocked ? (
-                      <Trans>
-                        Open{" "}
-                        <a
-                          href={oauth.verificationUri}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground underline"
-                        >
-                          {oauth.verificationUri.replace(/^https:\/\//, "")}
-                        </a>{" "}
-                        and enter this code:
-                      </Trans>
-                    ) : (
-                      <Trans>
-                        A sign-in tab opened at{" "}
-                        <a
-                          href={oauth.verificationUri}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground underline"
-                        >
-                          {oauth.verificationUri.replace(/^https:\/\//, "")}
-                        </a>
-                        . Enter this code there — this window keeps waiting:
-                      </Trans>
-                    )}
-                  </p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
-                      {oauth.userCode}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyOAuthCode(oauth.userCode)}
-                    >
-                      {codeCopied ? (
-                        <Check size={14} strokeWidth={1.8} aria-hidden="true" />
-                      ) : (
-                        <Copy size={14} strokeWidth={1.8} aria-hidden="true" />
-                      )}
-                      {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the code expires in about # minute."
-                      other="Waiting for sign-in — the code expires in about # minutes."
-                    />
-                  </p>
-                </>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-2 -ml-2 text-muted-foreground"
-                onClick={() => cancelOAuthAttempt()}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
+            <ModelSignInProgress
+              oauth={oauth}
+              pasteCode={pasteCode}
+              setPasteCode={setPasteCode}
+              submitOAuthCode={submitOAuthCode}
+              popupBlocked={popupBlocked}
+              codeCopied={codeCopied}
+              copyOAuthCode={copyOAuthCode}
+              cancelOAuthAttempt={cancelOAuthAttempt}
+            />
           ) : (
             <Button
               type="button"

@@ -8,12 +8,13 @@ import {
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker } from "../../components/menu-picker";
+import { DisclosureRow } from "../../components/model-connection-fields";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { mobileTokens } from "../../lib/appearance";
@@ -27,6 +28,7 @@ import {
   saveWaitSoundEnabled,
 } from "../../lib/call-sounds";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
+import { closeModelConnection, openModelConnection } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
 import type { SettingsTarget } from "../../lib/settings-target";
@@ -84,6 +86,7 @@ export default function VoiceSettings() {
   const params = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(params.spaceId), [params.spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
+  const router = useRouter();
   const scope = target.scope;
   const deviceSettings = scope === "account";
   const sideInsets = useSideInsets();
@@ -103,6 +106,8 @@ export default function VoiceSettings() {
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
+  // The provider whose API key form is unfolded below its model connection choices.
+  const [keyFormProvider, setKeyFormProvider] = useState<string | null>(null);
   // The connection fields as last rendered, read when a connect finishes.
   const connection = useRef({
     speechModel,
@@ -361,17 +366,43 @@ export default function VoiceSettings() {
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
-  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+  const { linked, canConnect, modelConnections, modelSignIn } = voiceConnectionForm({
     entry: selected,
     credential,
     apiKey,
     baseUrl,
   });
+  const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
+  const showKeyForm = !offersModelConnection || keyFormProvider === provider;
 
-  async function connect() {
-    if (!selected || !canConnect) return;
+  // The Models sign-in this screen opened, which connects voice once it saves a connection.
+  const signInRequest = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (signInRequest.current) closeModelConnection(signInRequest.current);
+    },
+    [],
+  );
+
+  function signIn() {
+    if (!selected) return;
+    if (signInRequest.current) closeModelConnection(signInRequest.current);
+    const requestId = openModelConnection({
+      provider: selected.id,
+      credentialId: null,
+      makeDefault: false,
+      target,
+      onSignedIn: (credentialId) => void connect(credentialId),
+    });
+    signInRequest.current = requestId;
+    router.push({ pathname: "/model-connection", params: { requestId } });
+  }
+
+  /** Connects with the typed key, or through one of the account's model connections. */
+  async function connect(modelCredentialId?: string) {
+    if (!selected || !(modelCredentialId || canConnect)) return;
     // What this connect carries; anything typed after this point was not saved.
-    const sentApiKey = apiKey;
+    const sentApiKey = modelCredentialId ? "" : apiKey;
     const sentSttApiKey = sttApiKey;
     const sent = connection.current;
     setPending("connect");
@@ -382,6 +413,7 @@ export default function VoiceSettings() {
         provider: selected.id,
         scope,
         apiKey: sentApiKey.trim(),
+        modelCredentialId,
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
@@ -623,7 +655,31 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            {keyless || linked ? null : (
+            {modelConnections.map(({ id, label }) => (
+              <NativeActionButton
+                key={id}
+                disabled={pending !== null}
+                label={t`Use ${label}`}
+                onPress={() => void connect(id)}
+              />
+            ))}
+            {modelSignIn ? (
+              <NativeActionButton
+                disabled={pending !== null}
+                label={modelSignIn}
+                onPress={signIn}
+              />
+            ) : null}
+            {offersModelConnection ? (
+              <DisclosureRow
+                label={t`Or paste an API key`}
+                expanded={showKeyForm}
+                onPress={() =>
+                  setKeyFormProvider((current) => (current === provider ? null : provider))
+                }
+              />
+            ) : null}
+            {keyless || linked || !showKeyForm ? null : (
               <TextInput
                 accessibilityLabel={t`API key`}
                 autoCapitalize="none"
@@ -634,7 +690,7 @@ export default function VoiceSettings() {
                 // The key belongs to this address, so a refresh must not swap it.
                 onChangeText={edit("baseUrl", setApiKey)}
                 placeholder={
-                  selfHosted || keyOptional
+                  selfHosted
                     ? t`Optional`
                     : credential
                       ? t`Paste a replacement key`
@@ -704,7 +760,7 @@ export default function VoiceSettings() {
                 ) : null}
               </>
             ) : null}
-            {(keyless && credential) || linked ? null : (
+            {(keyless && credential) || linked || !showKeyForm ? null : (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={

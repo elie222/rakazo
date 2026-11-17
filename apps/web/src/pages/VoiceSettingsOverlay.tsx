@@ -19,6 +19,7 @@ import {
   DialogClose,
   DialogContent,
   DialogTitle,
+  Disclosure,
   Field,
   FieldLabel,
   Input,
@@ -28,10 +29,13 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ModelSignInProgress } from "../components/ModelSignInProgress";
 import { useCallSession } from "../lib/call-session";
+import { useCopyText } from "../lib/copy-text";
 import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { speaker } from "../lib/tts";
+import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 
 export function VoiceSettingsOverlay({
@@ -121,8 +125,28 @@ export function VoiceSettingsOverlay({
   const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // With a model connection on offer, the key form stays folded until asked for.
+  const [keyShownFor, setKeyShownFor] = useState<string | null>(null);
+  const [codeCopied, copyOAuthCode] = useCopyText();
+  // The Models sign-in saves a model connection, which this provider's voice then uses.
+  const signIn = useModelOAuthSignIn({
+    onClearError: () => setError(null),
+    onError: setError,
+    onFinished: async (controller, credentialId) => {
+      // Models lists the new connection too; nothing signals it, so its reads go stale here.
+      void queryClient.invalidateQueries({ queryKey: queries.models.credentials.queryKey() });
+      void queryClient.invalidateQueries({ queryKey: queries.models.list.queryKey() });
+      if (!controller.signal.aborted) await connect(credentialId);
+    },
+  });
+  const signingIn = signIn.oauthPending || signIn.oauth !== null;
 
   const busy = pending !== null;
+
+  // Opening the fold swaps the summary for the form, so focus moves to the key field.
+  useEffect(() => {
+    if (keyShownFor) document.getElementById(apiKeyId)?.focus();
+  }, [keyShownFor, apiKeyId]);
 
   useEffect(() => {
     return () => onBusyChange?.(false);
@@ -246,19 +270,22 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+  const { linked, canConnect, modelConnections, modelSignIn } = voiceConnectionForm({
     entry: selected,
     credential,
     apiKey,
     baseUrl,
   });
+  const keyFolded =
+    (modelConnections.length > 0 || Boolean(modelSignIn)) && keyShownFor !== selected?.id;
 
-  async function connectKey() {
-    if (!selected || !canConnect) return;
+  /** Connects with the key form, or through the account's model connection when given one. */
+  async function connect(modelCredentialId?: string) {
+    if (!selected || (!modelCredentialId && !canConnect)) return;
     setError(null);
     setNotice(null);
     // What this connect carries; anything typed after this point was not saved.
-    const sentApiKey = apiKey;
+    const sentApiKey = modelCredentialId ? "" : apiKey;
     const sentSttApiKey = sttApiKey;
     const sent = connection.current;
     markPending("connect");
@@ -269,6 +296,7 @@ export function VoiceSettingsOverlay({
           scope,
           provider: selected.id,
           apiKey: sentApiKey.trim(),
+          ...(modelCredentialId ? { modelCredentialId } : {}),
           // The server drops this voice when the address or speech model really changed.
           voiceId: voiceId || undefined,
           ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
@@ -446,7 +474,7 @@ export function VoiceSettingsOverlay({
           <OptionSelect
             id={providerSelectId}
             value={provider}
-            disabled={busy}
+            disabled={busy || signingIn}
             options={catalog.map((entry) => ({
               value: entry.id,
               label: credentials.some((cred) => cred.provider === entry.id)
@@ -470,6 +498,64 @@ export function VoiceSettingsOverlay({
         <>
           {managesConnection ? (
             <>
+              {modelConnections.length || modelSignIn ? (
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  {signIn.oauth ? (
+                    <ModelSignInProgress
+                      oauth={signIn.oauth}
+                      pasteCode={signIn.pasteCode}
+                      setPasteCode={signIn.setPasteCode}
+                      submitOAuthCode={signIn.submitOAuthCode}
+                      popupBlocked={signIn.popupBlocked}
+                      codeCopied={codeCopied}
+                      copyOAuthCode={copyOAuthCode}
+                      cancelOAuthAttempt={signIn.cancelOAuthAttempt}
+                    />
+                  ) : modelSignIn ? (
+                    <Button
+                      type="button"
+                      disabled={busy || signIn.oauthPending}
+                      onClick={() =>
+                        void signIn.startSubscriptionSignIn({
+                          provider: selected.id,
+                          credentialId: null,
+                          makeDefault: false,
+                        })
+                      }
+                    >
+                      {!signIn.oauthPending ? (
+                        modelSignIn
+                      ) : pending === "connect" ? (
+                        <Trans>Connecting…</Trans>
+                      ) : (
+                        <Trans>Starting…</Trans>
+                      )}
+                    </Button>
+                  ) : (
+                    modelConnections.map(({ id, label }) => (
+                      <Button
+                        key={id}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void connect(id)}
+                      >
+                        {t`Use ${label}`}
+                      </Button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+              {keyFolded ? (
+                // Only the summary shows here; opening it swaps in the key form below.
+                <Disclosure
+                  className="mt-5 text-body-sm leading-[1.5] text-muted-foreground"
+                  open={false}
+                  onOpenChange={() => setKeyShownFor(selected.id)}
+                  summary={<Trans>Or paste an API key</Trans>}
+                >
+                  {null}
+                </Disclosure>
+              ) : null}
               {selfHosted ? (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={baseUrlId}>
@@ -489,7 +575,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless || linked ? null : (
+              {keyless || linked || keyFolded ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -505,7 +591,7 @@ export function VoiceSettingsOverlay({
                       setApiKey(event.target.value);
                     }}
                     placeholder={
-                      selfHosted || keyOptional
+                      selfHosted
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -588,12 +674,12 @@ export function VoiceSettingsOverlay({
                   ) : null}
                 </>
               ) : null}
-              {(keyless && credential) || linked ? null : (
+              {(keyless && credential) || linked || keyFolded ? null : (
                 <Button
                   type="button"
                   className="mt-3"
-                  disabled={busy || !canConnect}
-                  onClick={() => void connectKey()}
+                  disabled={busy || signingIn || !canConnect}
+                  onClick={() => void connect()}
                 >
                   {/* A keyless option has nothing to connect; choosing it turns voice on. */}
                   {pending === "connect" ? (

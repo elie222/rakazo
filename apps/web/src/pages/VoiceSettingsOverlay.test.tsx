@@ -18,6 +18,17 @@ const voice = vi.hoisted(() => ({
   setSpeechModel: vi.fn(),
 }));
 
+const models = vi.hoisted(() => ({
+  beginOAuth: vi.fn(),
+  completeOAuth: vi.fn(),
+  finishOAuth: vi.fn(),
+  cancelOAuth: vi.fn(),
+  submitOAuthCode: vi.fn(),
+  // Read keys for the Models data a sign-in here makes stale.
+  credentials: vi.fn(),
+  list: vi.fn(),
+}));
+
 const { speak, activeCall } = vi.hoisted(() => ({
   speak: vi.fn(async () => undefined),
   activeCall: { current: null as { phase: string } | null },
@@ -25,17 +36,23 @@ const { speak, activeCall } = vi.hoisted(() => ({
 vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
 vi.mock("../lib/call-session", () => ({ useCallSession: () => activeCall.current }));
 vi.mock("../lib/rpc", () => ({
-  rpc: { voice },
-  rpcForSpace: () => ({ voice }),
-  createSpaceRpc: () => ({ voice }),
+  rpc: { voice, models },
+  rpcForSpace: () => ({ voice, models }),
+  createSpaceRpc: () => ({ voice, models }),
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + String(values[index - 1]) + part);
+  return {
+    useLingui: () => ({ t }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+    Plural: ({ one, other, value }: { one: string; other: string; value: number }) =>
+      (value === 1 ? one : other).replace("#", String(value)),
+  };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { Disclosure, OptionSelect, useCopyText } = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -48,12 +65,14 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogClose: Container,
     DialogContent: Container,
     DialogTitle: Container,
+    Disclosure,
     Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
       <label htmlFor={htmlFor}>{children}</label>
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
+    useCopyText,
   };
 });
 
@@ -1165,6 +1184,7 @@ it("connects a keyless provider without asking for a key", async () => {
 
 describe("a provider the account's model connection can authenticate", () => {
   const xai = { id: "xai", name: "xAI", description: "", transcribe: true };
+  const linkedCredential = { ...fish, provider: "xai", voiceId: "eve", hasKey: false };
   const type = async (input: HTMLInputElement, value: string) => {
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -1174,6 +1194,10 @@ describe("a provider the account's model connection can authenticate", () => {
   };
   const button = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll("button")].find((entry) => entry.textContent === text);
+  const click = async (target: HTMLElement | undefined) => {
+    if (!target) throw new Error("Missing button");
+    await act(async () => target.click());
+  };
 
   async function open(catalogEntry: object, credentials: object[] = []) {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -1187,9 +1211,7 @@ describe("a provider the account's model connection can authenticate", () => {
       voiceId: "",
     });
     voice.voices.mockReset().mockResolvedValue([{ id: "eve", label: "Eve" }]);
-    voice.connect
-      .mockReset()
-      .mockResolvedValue({ ...fish, provider: "xai", voiceId: "eve", hasKey: false });
+    voice.connect.mockReset().mockResolvedValue(linkedCredential);
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -1206,46 +1228,172 @@ describe("a provider the account's model connection can authenticate", () => {
       async close() {
         await act(async () => root.unmount());
         container.remove();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
       },
     };
   }
 
-  it("connects with an empty key through the model connection", async () => {
-    const { container, close } = await open({ ...xai, modelConnection: true });
+  it("connects through the account's model connection it names", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelConnections: [{ id: "cred-model-1", label: "SuperGrok" }],
+    });
     try {
-      const key = labelledInput(container, "API key");
-      expect(key.placeholder).toBe("Optional");
-      expect(button(container, "Connect")?.disabled).toBe(false);
-      // A typed key still has to look like one.
-      await type(key, "short");
-      expect(button(container, "Connect")?.disabled).toBe(true);
-      await type(key, "   ");
-      await act(async () => button(container, "Connect")!.click());
+      // The server lists the linked connection from now on.
+      voice.credentials.mockResolvedValue([linkedCredential]);
+      await click(button(container, "Use SuperGrok"));
       expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ provider: "xai", apiKey: "" }),
+        expect.objectContaining({
+          scope: "account",
+          provider: "xai",
+          apiKey: "",
+          modelCredentialId: "cred-model-1",
+        }),
+      );
+      await vi.waitFor(() => expect(container.textContent).toContain("Connected xAI."));
+      // Linked: the connection is all there is; no key to show or replace.
+      expect(button(container, "Use SuperGrok")).toBeUndefined();
+      expect(button(container, "Disconnect")).toBeTruthy();
+    } finally {
+      await close();
+    }
+  });
+
+  it("connects through whichever of several model connections is chosen", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelConnections: [
+        { id: "cred-model-1", label: "SuperGrok" },
+        { id: "cred-model-2", label: "Work xAI" },
+      ],
+    });
+    try {
+      expect(button(container, "Use SuperGrok")).toBeTruthy();
+      await click(button(container, "Use Work xAI"));
+      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ apiKey: "", modelCredentialId: "cred-model-2" }),
       );
     } finally {
       await close();
     }
   });
 
-  it("still requires a key when the account has no model connection", async () => {
+  it("signs in through Models and connects voice to the saved connection", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelSignIn: "Sign in with Subscription",
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    let complete!: (value: { status: "ready" }) => void;
+    models.beginOAuth.mockReset().mockResolvedValue({
+      mode: "device-code",
+      loginId: "login-1",
+      verificationUri: "https://example.test/device",
+      userCode: "ABCD-1234",
+      expiresInSeconds: 300,
+    });
+    models.completeOAuth.mockReset().mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    models.finishOAuth.mockReset().mockResolvedValue({ id: "cred-model-new" });
+    models.cancelOAuth.mockReset().mockResolvedValue(undefined);
+    try {
+      await click(button(container, "Sign in with Subscription"));
+      expect(models.beginOAuth).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ provider: "xai", credentialId: null, makeDefault: false }),
+        expect.anything(),
+      );
+      // The same panel Models shows waits for the sign-in.
+      expect(container.textContent).toContain("ABCD-1234");
+      expect(voice.connect).not.toHaveBeenCalled();
+      voice.credentials.mockResolvedValue([linkedCredential]);
+      await act(async () => complete({ status: "ready" }));
+      await vi.waitFor(() =>
+        expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            provider: "xai",
+            apiKey: "",
+            modelCredentialId: "cred-model-new",
+          }),
+        ),
+      );
+      expect(models.finishOAuth).toHaveBeenCalledExactlyOnceWith(
+        { loginId: "login-1" },
+        expect.anything(),
+      );
+      await vi.waitFor(() => expect(container.textContent).toContain("Connected xAI."));
+      expect(button(container, "Sign in with Subscription")).toBeUndefined();
+      expect(button(container, "Disconnect")).toBeTruthy();
+    } finally {
+      await close();
+    }
+  });
+
+  it("shows a failed sign-in in the form", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelSignIn: "Sign in with Subscription",
+    });
+    models.beginOAuth.mockReset().mockRejectedValue(new Error("Sign-in is unavailable."));
+    try {
+      await click(button(container, "Sign in with Subscription"));
+      await vi.waitFor(() => expect(container.textContent).toContain("Sign-in is unavailable."));
+      expect(voice.connect).not.toHaveBeenCalled();
+    } finally {
+      await close();
+    }
+  });
+
+  it("folds the key form behind Or paste an API key and still connects a typed key", async () => {
+    const { container, close } = await open({
+      ...xai,
+      modelSignIn: "Sign in with Subscription",
+    });
+    try {
+      expect(() => labelledInput(container, "API key")).toThrow();
+      expect(button(container, "Connect")).toBeUndefined();
+      await click(
+        [...container.querySelectorAll("button")].find((entry) =>
+          entry.textContent?.startsWith("Or paste an API key"),
+        ),
+      );
+      const key = labelledInput(container, "API key");
+      expect(key.placeholder).toBe("Paste your API key");
+      expect(document.activeElement).toBe(key);
+      expect(button(container, "Connect")?.disabled).toBe(true);
+      await type(key, "  xai-key-123  ");
+      await click(button(container, "Connect"));
+      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ provider: "xai", apiKey: "xai-key-123" }),
+      );
+      expect(voice.connect.mock.calls[0]?.[0]).not.toHaveProperty("modelCredentialId");
+    } finally {
+      await close();
+    }
+  });
+
+  it("shows the key form as before when there is no model connection to offer", async () => {
     const { container, close } = await open(xai);
     try {
       expect(labelledInput(container, "API key").placeholder).toBe("Paste your API key");
       expect(button(container, "Connect")?.disabled).toBe(true);
+      expect(container.textContent).not.toContain("Or paste an API key");
     } finally {
       await close();
     }
   });
 
   it("offers only Disconnect once linked to the model connection", async () => {
-    const { container, close } = await open({ ...xai, modelConnection: true }, [
-      { ...fish, provider: "xai", voiceId: "eve", hasKey: false },
-    ]);
+    const { container, close } = await open(
+      { ...xai, modelConnections: [{ id: "cred-model-1", label: "SuperGrok" }] },
+      [linkedCredential],
+    );
     try {
       expect(container.textContent).not.toContain("API key");
+      expect(button(container, "Use SuperGrok")).toBeUndefined();
       expect(button(container, "Replace key")).toBeUndefined();
       expect(button(container, "Connect")).toBeUndefined();
       expect(button(container, "Disconnect")).toBeTruthy();

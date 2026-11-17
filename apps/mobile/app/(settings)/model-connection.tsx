@@ -207,7 +207,7 @@ export default function ModelConnection() {
     onSaved: adoptSavedCredential,
     modelId,
     load,
-    finishConnecting,
+    finishConnecting: finishSignIn,
     publishFeedback,
     clearFeedback,
   });
@@ -452,6 +452,17 @@ export default function ModelConnection() {
     });
     if (next) router.replace(next);
     else router.back();
+    return true;
+  }
+
+  /** A sign-in opened for another screen continues there with the saved connection. */
+  async function finishSignIn(
+    connectedModelId: string,
+    connectedCredentialId: string,
+  ): Promise<boolean> {
+    if (!request?.onSignedIn) return finishConnecting(connectedModelId, connectedCredentialId);
+    request.onSignedIn(connectedCredentialId);
+    router.back();
     return true;
   }
 

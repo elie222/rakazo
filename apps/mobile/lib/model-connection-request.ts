@@ -17,6 +17,11 @@ export type ModelConnectionRequest = {
    * May return the screen to continue in, such as the slot's picker for this connection.
    */
   onConnected?: (choice: ModelRoleChoice) => Promise<Href | undefined>;
+  /**
+   * Set when a subscription sign-in continues in the screen that opened this one: it gets the
+   * saved connection's id, and the sign-in returns there.
+   */
+  onSignedIn?: (credentialId: string) => void;
 };
 
 /** Connecting checks the key and a test request with the provider, which a slow one can stretch past the default RPC timeout. */
