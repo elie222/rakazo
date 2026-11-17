@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  isRealSandboxProvider,
   openBotPanel,
   rpc,
   signup,
@@ -74,6 +75,58 @@ test(
     await expect(page.getByRole("alert")).toHaveCount(0);
   },
 );
+
+test("a screen failure offers restarting just this bot's screen", async ({ page }, testInfo) => {
+  // Only the docker and fake kinds declare the restart; the real providers named by
+  // isRealSandboxProvider do not show the button.
+  test.skip(isRealSandboxProvider(), "the restart is not offered on this provider");
+  await signup(page, `screen-restart-${Date.now()}@rakazo.test`, "password12", "Screen Restart");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc(page, "computer/boot", { botId });
+  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
+    state: "running",
+  });
+  await page.route("**/rpc/computer/screenUrl", (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          defined: false,
+          code: "CONFLICT",
+          status: 409,
+          message: "The computer screen is temporarily busy. Retry in a moment.",
+        },
+      }),
+    }),
+  );
+  await openBotPanel(page);
+  await page.getByTestId("computer-preview").getByTestId("computer-preview-open").click();
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: "Restart screen", exact: true })
+    .click();
+  const restart = page.getByRole("alertdialog");
+  await expect(restart).toContainText("Restart screen?");
+  await expect(restart).toContainText("Closes this bot's browser. Its saved sign-ins stay.");
+  await captureScreenshot(page, testInfo, "computer-full-screen-restart-confirm");
+  // The server refuses while the bot's first run is still queued, which would make this flaky;
+  // the real call is covered by the journey test. Here the dialog flow is what matters.
+  const status = await rpc<{ state: string }>(page, "computer/status", { botId });
+  const restarted: Array<string | null> = [];
+  await page.route("**/rpc/computer/restartScreen", (route) => {
+    restarted.push(route.request().postData());
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: status }),
+    });
+  });
+  await restart.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(restart).toHaveCount(0);
+  expect(restarted).toHaveLength(1);
+  expect(restarted[0]).toContain(botId);
+});
 
 test(
   "a running computer without a screen URL offers recovery",

@@ -5,6 +5,7 @@ import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   anotherPersonHoldsControl,
+  BrowserStoppedReleaseError,
   ComputerBusyError,
   clearInactiveUserComputerControl,
   controlLeaseExpiresAt,
@@ -20,10 +21,11 @@ import {
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
+  toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor, ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns } from "@rakazo/core";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveComputerWork, toComputerStatus } from "./computer-status.js";
@@ -176,12 +178,16 @@ export async function answerComputerRequest(
   return waiting.id;
 }
 
-/** Keep this lease while its page checks in. Resolves whether it was still live to keep. */
+/**
+ * Keep this lease while its page checks in. Resolves whether it was still live to keep. `also` adds
+ * conditions the same update must meet, so a caller can refuse a renewal that raced something.
+ */
 export async function renewComputerControl(
   deps: ControlDeps,
   computerId: string,
   leaseId: string,
   expiresAt: Date,
+  also: Prisma.ComputerWhereInput = {},
 ): Promise<boolean> {
   const renewed = await deps.prisma.computer.updateMany({
     where: {
@@ -190,6 +196,7 @@ export async function renewComputerControl(
       controlLeaseId: leaseId,
       // A lapsed lease is being revoked; only a live one is renewed.
       controlLeaseExpiresAt: { gt: new Date() },
+      ...also,
     },
     data: { controlLeaseExpiresAt: expiresAt },
   });
@@ -247,6 +254,130 @@ export async function runComputerReplace(
       { handBackIdleTakeover: true },
     );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
+  } finally {
+    await releaseComputerExecutionLease(deps.prisma, lease);
+  }
+  return computerStatus(deps, context.actor, botId);
+}
+
+/** Prefix of the execution lease a screen restart holds, so takeover and Stop can tell it apart. */
+export const SCREEN_RESTART_RUN_PREFIX = "screen:";
+
+/**
+ * Matches a computer with no live restart lease on this bot. A takeover grant and Stop's claim
+ * require it, since nothing may take the screen or stop the computer under a restart.
+ */
+export function noScreenRestartLease(botId: string, now: Date) {
+  return {
+    executionLeases: {
+      none: { botId, runId: { startsWith: SCREEN_RESTART_RUN_PREFIX }, expiresAt: { gt: now } },
+    },
+  };
+}
+
+/**
+ * Whether a screen is running to restart. A computer that is stopped, in error or without a
+ * sandbox has none, so there is nothing to do, and the next boot starts a fresh one. A booting or suspending computer is reported as booting or running while it changes,
+ * so it is refused here instead of answering as though the restart had happened.
+ */
+function screenRunningOrRefuse(computer: { state: string; providerRef: string | null }): boolean {
+  if (computer.state === "booting" || computer.state === "suspending") {
+    throw new ClientError("CONFLICT", "The computer is starting or going to sleep. Try again soon");
+  }
+  return computer.state === "running" && Boolean(computer.providerRef);
+}
+
+/**
+ * Stop one Team bot's browser and screen without touching the shared computer or the other bots'
+ * screens. Its Chrome profile stays on disk, so the screen comes back signed in on the next read.
+ * Refused while the bot is working, or waiting on someone at its screen, so no run loses its page.
+ */
+export async function restartBotScreen(
+  deps: RouterDeps,
+  context: { actor: Actor },
+  botId: string,
+): Promise<ComputerStatus> {
+  const repos = createRepos(deps.prisma);
+  const bot = await repos.getBot(context.actor, botId);
+  const computer = bot.computer;
+  if (!computer) throw new IsolationError();
+  if (computer.scope !== "team") {
+    throw new ClientError("BAD_REQUEST", "Only a Team computer has a screen of its own to restart");
+  }
+  assertNotAnotherPersonsControl(computer, context.actor);
+  if (!screenRunningOrRefuse(computer)) return computerStatus(deps, context.actor, botId);
+  const releaseScreen = deps.sandbox.releaseScreen?.bind(deps.sandbox);
+  if (sandboxKindCapabilities(computer.kind).restartScreen !== true || !releaseScreen) {
+    throw new ClientError("BAD_REQUEST", "Restarting the screen is not available on this computer");
+  }
+  const refuseWhileWorking = async () => {
+    const working = await deps.prisma.run.findFirst({
+      where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
+      select: { id: true },
+    });
+    if (working) {
+      throw new ClientError("CONFLICT", "This bot is working or waiting. Stop it, then try again");
+    }
+  };
+  await refuseWhileWorking();
+
+  const manualRunId = `${SCREEN_RESTART_RUN_PREFIX}${randomUUID()}`;
+  // Held while the screen goes down, so a run of this bot cannot claim it half way.
+  // The run the person just stopped may still hold its lease for a moment; wait that out.
+  const lease = await acquireBootLease(deps.prisma, {
+    computerId: computer.id,
+    runId: manualRunId,
+    botId: bot.id,
+  });
+  try {
+    // Checked again under the lease: a run that began or paused for input after the first check
+    // is counted now. Runs that need the computer from here on wait behind our lease.
+    await refuseWhileWorking();
+    // Read the computer now that the lease is held: a Stop, a sleep or someone else taking the
+    // screen since the first read must not be torn down under. From here on, a takeover grant and
+    // Stop's claim both refuse while this lease is live (noScreenRestartLease), so the screen
+    // cannot be taken or the computer stopped meanwhile.
+    const readComputer = async () => {
+      const read = (await repos.getBot(context.actor, botId)).computer;
+      if (!read || read.id !== computer.id) {
+        throw new ClientError("CONFLICT", "The computer changed. Try again");
+      }
+      assertNotAnotherPersonsControl(read, context.actor);
+      return read;
+    };
+    let current = await readComputer();
+    // Control of this bot's screen ends first: a person's session must not outlive its browser.
+    if (holdsComputerControl(current, bot.id, context.actor)) {
+      await releaseComputerControl(deps, context.actor, current, bot.id);
+      current = await readComputer();
+    }
+    // A hand back that failed leaves this person's session on the screen about to close.
+    if (holdsComputerControl(current, bot.id, context.actor)) {
+      throw new ClientError("CONFLICT", "Could not end your control of the screen. Try again");
+    }
+    if (!screenRunningOrRefuse(current)) return computerStatus(deps, context.actor, botId);
+    try {
+      // No lease id on purpose: the slot still names the bot's last run, and a release that
+      // names another owner is refused as stale without stopping anything. The lease above is
+      // what keeps a newer run from taking the screen meanwhile.
+      await releaseScreen(toComputerRef(current), {
+        ...computerContext(context.actor, bot.id, "screen.restart"),
+        cancelRunWork: true,
+      });
+    } catch (error) {
+      // The browser stopped and only clearing its slot failed: the next read reuses the slot.
+      if (!(error instanceof BrowserStoppedReleaseError)) {
+        await clearGoneSandbox(deps, current, error);
+        // The sandbox was gone, so there was no screen to restart and nothing to count.
+        return computerStatus(deps, context.actor, botId);
+      }
+    }
+    // Counted once the provider answered the teardown. A refused request, or a provider that
+    // reports a sandbox as gone, is not; a provider that answers success for a missing sandbox is.
+    deps.analytics?.capture(context.actor.userId, {
+      name: "computer_repair_started",
+      action: "restartScreen",
+    });
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }
@@ -372,7 +503,9 @@ export async function takeComputerControl(
   if (holdsComputerControl(bot.computer, bot.id, actor)) {
     const expiresAt = controlLeaseExpiresAt();
     const leaseId = bot.computer.controlLeaseId!;
-    if (await renewComputerControl(deps, bot.computer.id, leaseId, expiresAt)) {
+    // A restart of this bot's screen may be ending this lease, so it is not renewed under it.
+    const renewal = noScreenRestartLease(bot.id, new Date());
+    if (await renewComputerControl(deps, bot.computer.id, leaseId, expiresAt, renewal)) {
       return { leaseId, expiresAt: expiresAt.toISOString() };
     }
     // The lease lapsed or was handed back meanwhile: take control afresh.
@@ -401,6 +534,8 @@ export async function takeComputerControl(
       maintenanceId: null,
       controlHolder: { not: "user" },
       controlLeaseId: null,
+      // A screen restart in progress is tearing this bot's screen down.
+      ...noScreenRestartLease(bot.id, new Date()),
     },
     data: {
       controlHolder: "user",
@@ -416,7 +551,8 @@ export async function takeComputerControl(
     // A second Take control from the holder, such as a double tap, keeps their lease.
     if (holdsComputerControl(current, bot.id, actor)) {
       const renewed = controlLeaseExpiresAt();
-      if (await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed)) {
+      const renewal = noScreenRestartLease(bot.id, new Date());
+      if (await renewComputerControl(deps, computerId, current.controlLeaseId!, renewed, renewal)) {
         return { leaseId: current.controlLeaseId!, expiresAt: renewed.toISOString() };
       }
     }

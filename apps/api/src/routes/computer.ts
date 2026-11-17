@@ -55,8 +55,10 @@ import {
   expireStaleComputerControl,
   holdsComputerControl,
   keepComputerAwake,
+  noScreenRestartLease,
   releaseComputerControl,
   renewComputerControl,
+  restartBotScreen,
   runComputerReplace,
   takeComputerControl,
   waitingTakeoverRun,
@@ -150,6 +152,8 @@ export function computerRoutes(ctx: RouterContext) {
             executionLeases: {
               none: { botId: { not: bot.id }, expiresAt: { gt: now } },
             },
+            // A screen restart of this bot is mid-teardown against this computer.
+            AND: [noScreenRestartLease(bot.id, now)],
           },
           data: { state: "suspending" },
         });
@@ -270,6 +274,9 @@ export function computerRoutes(ctx: RouterContext) {
         });
         return status;
       }),
+      restartScreen: authed.computer.restartScreen.handler(async ({ context, input }) =>
+        restartBotScreen(deps, context, input.botId),
+      ),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();

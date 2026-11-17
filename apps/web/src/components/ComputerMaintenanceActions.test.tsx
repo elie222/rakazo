@@ -31,7 +31,11 @@ vi.mock("./ConfirmDialog", () => ({
       </div>
     ) : null,
 }));
-const computer = vi.hoisted(() => ({ recover: vi.fn(), reset: vi.fn() }));
+const computer = vi.hoisted(() => ({
+  recover: vi.fn(),
+  reset: vi.fn(),
+  restartScreen: vi.fn(),
+}));
 vi.mock("../lib/rpc", () => {
   const rpc = { computer };
   return {
@@ -83,6 +87,75 @@ it("offers nothing while the computer is booting", async () => {
 it("hides the rows when the shared status belongs to another bot's computer", async () => {
   await render(status("bot-peer"));
   expect(labels()).toEqual([]);
+});
+
+it("offers Restart screen only for a running Team computer whose kind supports it", async () => {
+  await render(status("bot-settings", { mode: "team", canRestartScreen: true }));
+  expect(labels()).toEqual(["Recover computer", "Restart screen"]);
+
+  await render(status("bot-settings", { mode: "dedicated", canRestartScreen: true }));
+  expect(labels()).toEqual(["Recover computer"]);
+
+  await render(status("bot-settings", { mode: "team", state: "stopped", canRestartScreen: true }));
+  expect(labels()).toEqual(["Recover computer"]);
+
+  await render(status("bot-settings", { mode: "team" }));
+  expect(labels()).toEqual(["Recover computer"]);
+
+  await render(status("bot-peer", { mode: "team", canRestartScreen: true }));
+  expect(labels()).toEqual([]);
+});
+
+it("does not offer Restart screen while someone else controls the computer", async () => {
+  await render(
+    status("bot-settings", { mode: "team", canRestartScreen: true, controlledByOther: true }),
+  );
+  expect(labels()).toEqual(["Recover computer"]);
+});
+
+it("holds Restart screen while this bot is working", async () => {
+  await render(
+    status("bot-settings", { mode: "team", busyBotName: "Settings bot", canRestartScreen: true }),
+  );
+  const button = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Restart screen",
+  );
+  expect(button?.disabled).toBe(true);
+});
+
+it("holds Restart screen while this bot waits for a person to take over", async () => {
+  await render(
+    status("bot-settings", { mode: "team", takeoverRequested: true, canRestartScreen: true }),
+  );
+  const button = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Restart screen",
+  );
+  expect(button?.disabled).toBe(true);
+});
+
+it("restarts only this bot's screen, without recovering or resetting the computer", async () => {
+  computer.restartScreen.mockResolvedValueOnce({});
+  const onChanged = vi.fn(async () => {});
+  await render(status("bot-settings", { mode: "team", canRestartScreen: true }), onChanged);
+  await click("Restart screen");
+  await click("Confirm");
+  expect(computer.restartScreen).toHaveBeenCalledExactlyOnceWith({ botId: "bot-settings" });
+  expect(computer.recover).not.toHaveBeenCalled();
+  expect(computer.reset).not.toHaveBeenCalled();
+  expect(onChanged).toHaveBeenCalledOnce();
+  expect(host.querySelector('[data-testid="confirm"]')).toBeNull();
+});
+
+it("keeps the confirmation open with the reason when the screen restart is refused", async () => {
+  computer.restartScreen.mockRejectedValueOnce(
+    new Error("This bot is working or waiting. Stop it, then try again"),
+  );
+  await render(status("bot-settings", { mode: "team", canRestartScreen: true }));
+  await click("Restart screen");
+  await click("Confirm");
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "This bot is working or waiting. Stop it, then try again",
+  );
 });
 
 const recovery = { id: "update-recover", action: "recover" } as ComputerUpdate;

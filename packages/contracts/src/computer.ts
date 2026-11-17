@@ -44,6 +44,8 @@ export const ComputerStatusSchema = z.object({
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
   terminalAvailable: z.boolean(),
+  /** Set only when one bot's screen on this computer can be restarted on its own. */
+  canRestartScreen: z.boolean().optional(),
   /** True when the computer is the person's own machine, which has no remote screen to show. */
   runsOnUserMachine: z.boolean().optional(),
   /** Set only while the user should see that the disk is nearly full. */
