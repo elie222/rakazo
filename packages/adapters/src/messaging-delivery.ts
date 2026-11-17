@@ -397,13 +397,17 @@ export class MessagingDelivery {
           if (lane) lanes.push(lane);
         }
       } else if (run.trigger === "routine") {
-        // A routine that sends to chat answers its owner's linked chat when a run ends, never a
-        // question it waits on or an interim message, which the person could not answer there.
-        // Only a run in the bot's own thread: a routine aimed at a group's thread stays in the app.
+        // A routine that sends to chat answers its owner's linked chat when a run completes: the
+        // bot messages the run posted, interim ones included. A failed or cancelled run sends
+        // nothing, even an interim message it posted first, which would arrive with no sign of
+        // the failure; the app shows it. Never a question the run waits on, which the person could
+        // not answer there. Only a run in the bot's own thread: a routine aimed at a group's
+        // thread stays in the app. Runs a webhook, Git, email or message trigger starts are
+        // "webhook" runs without a routine, so they are not sent.
         if (
           run.routine?.sendToChat &&
           !options.progress &&
-          terminal &&
+          run.status === "completed" &&
           run.thread.botId === run.botId
         ) {
           const lane = await this.recordDirectRun(run, false);

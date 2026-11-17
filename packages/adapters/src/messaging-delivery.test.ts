@@ -1418,6 +1418,26 @@ describe("deliverRun for a routine", () => {
     },
   );
 
+  it.each(["failed", "cancelled"])(
+    "sends nothing for a %s run that posted a progress message first",
+    async (status) => {
+      const t = setup();
+      t.world.routines.set("routine-1", { sendToChat: true });
+      addRun(t.world, {
+        trigger: "routine",
+        routineId: "routine-1",
+        status,
+        replies: [text("m-1", "Checking 40 invoices")],
+      });
+      t.jobs.scheduled.set(messagingReplyJobKey("run-1"), messagingReplyJob("run-1"));
+
+      await t.delivery.deliverRun("run-1");
+
+      expect(requests(t)).toEqual([]);
+      expect(t.jobs.scheduled.has(messagingReplyJobKey("run-1"))).toBe(false);
+    },
+  );
+
   it("sends nothing for a reply that says there is nothing to report", async () => {
     const t = setup();
     t.world.routines.set("routine-1", { sendToChat: true });

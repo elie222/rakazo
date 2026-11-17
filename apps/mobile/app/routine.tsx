@@ -322,7 +322,10 @@ function RoutineEditor({
   // too: a chat linked on another device appears without leaving the screen. Without an answer,
   // no chat is offered.
   const messaging = useScreenQuery(rpcQuery("messaging/status")).data;
-  const chatLinked = Boolean(messaging?.identities.some((identity) => identity.botId === botId));
+  // A stored link counts only while the server can send to it.
+  const chatLinked = Boolean(
+    messaging?.enabled && messaging.identities.some((identity) => identity.botId === botId),
+  );
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
   // Triggers set up on web stay listed here so the person sees them and can remove them.

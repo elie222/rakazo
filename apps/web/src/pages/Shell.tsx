@@ -219,8 +219,13 @@ function SpaceShell() {
   }).data;
   const messagingSurfaceEnabled = messagingStatus?.enabled ?? false;
   const messagingProviders = messagingStatus?.providers ?? NO_PROVIDERS;
+  // Linked chats count only while the server can send to them: with messaging off, a stored link
+  // still lists but nothing leaves.
   const chatLinkedBotIds = useMemo(
-    () => messagingStatus?.identities.map((identity) => identity.botId) ?? NO_PROVIDERS,
+    () =>
+      messagingStatus?.enabled
+        ? messagingStatus.identities.map((identity) => identity.botId)
+        : NO_PROVIDERS,
     [messagingStatus],
   );
   const memoryConfigQuery = useQuery(queries.memory.providerConfig.queryOptions());

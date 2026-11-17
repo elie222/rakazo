@@ -26,10 +26,11 @@ Under **Advanced** you can give a routine its own **Model** and **Thinking** lev
 cheaper model for a simple daily check.
 
 If the bot is [linked to a chat app](./messaging-apps.md), **Advanced** also has **Send replies to my
-chat app**. Turn it on and the reply a run ends with is sent to you there, as well as appearing in
-the bot's chat. A run that fails or ends without a reply sends nothing; the app shows it. It goes
-only to your own linked chat with that bot, never to a group, and a "No changes" note from a change
-trigger stays in the app. Whoever edits a routine takes it over, so after someone else edits it
+chat app**. Turn it on and what a completed run says, its progress messages and its final reply, is
+sent to you there, as well as appearing in the bot's chat. A run that fails, is cancelled or ends
+without a reply sends nothing; the app shows it. It covers runs a schedule or **Run now** starts,
+not runs a webhook, Git, email or chat-message trigger starts. It goes only to your own linked chat
+with that bot, never to a group, and a "No changes" note from a change trigger stays in the app. Whoever edits a routine takes it over, so after someone else edits it
 the replies stay in the app. The switch is off by default, and a routine the bot creates in chat
 starts with it off.
 
