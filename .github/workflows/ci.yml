@@ -22,22 +22,24 @@ env:
   TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
 jobs:
-  # Pull requests skip suites their files cannot affect (see .github/scripts/changed-areas.sh); a
-  # job skipped by `if` still satisfies a required check. Main skips this job, and with it every
-  # job that needs it.
+  # Pull requests skip suites their files cannot affect (see .github/scripts/changed-areas.sh). A
+  # suite gated here never takes a runner, and a job skipped by `if` still satisfies a required
+  # check. Gates read `!= 'false'`, so main (which skips this job) and a failed classification run
+  # everything.
   changes:
     name: Changed areas
     if: github.event_name == 'pull_request'
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      web: ${{ steps.areas.outputs.web }}
-      e2e: ${{ steps.areas.outputs.e2e }}
       server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
+      web: ${{ steps.areas.outputs.web }}
+      e2e: ${{ steps.areas.outputs.e2e }}
+      www: ${{ steps.areas.outputs.www }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           # The merge commit's first parent is the base, so this diff is exactly what the PR adds.
@@ -47,31 +49,53 @@ jobs:
       - id: areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
 
+  # A marketing-site or docs change builds only the site.
   build:
     name: Production builds
     needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: incredibuild-ubuntu-latest
+    if: >-
+      !cancelled() && github.event_name == 'pull_request' &&
+      (needs.changes.outputs.web != 'false' || needs.changes.outputs.www != 'false')
+    runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      WEB: ${{ needs.changes.outputs.web != 'false' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+          electron: ${{ env.WEB }}
+          turbo: build
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Build the marketing site
+        if: env.WEB != 'true'
+        run: pnpm exec turbo build --filter=@rakazo/www
+      # The size budgets read the bundles this step just built, in a fraction of a second.
+      - run: pnpm build && node scripts/checks/bundle-size.mjs
+        if: env.WEB == 'true'
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
           BETTER_AUTH_SECRET: ci-build-auth-secret-at-least-32-characters
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - name: Save turbo build cache
+        if: success() && env.WEB == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Electron smoke
+        if: env.WEB == 'true'
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
       - name: Upload desktop setup screenshots
-        if: always()
+        if: always() && env.WEB == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-e2e-screenshots
@@ -84,44 +108,27 @@ jobs:
   # main always runs everything.
   static-checks:
     name: Lint and typecheck
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
       group: ci-checks-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-workspace
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+          turbo: ${{ github.event_name == 'pull_request' && 'check' || 'none' }}
       - name: Lint
         if: github.event_name == 'pull_request'
         run: pnpm lint
-      - name: Check translation catalogs are current
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      # Pull requests reuse main's typecheck results for packages whose inputs they leave unchanged.
-      # Main starts with an empty cache, so it typechecks everything before a deploy.
-      - name: Restore typecheck cache
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
-          restore-keys: turbo-check-
       - name: Typecheck
         if: steps.areas.outputs.all_packages != 'false'
         run: pnpm check
@@ -135,81 +142,126 @@ jobs:
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: .turbo/cache
-          key: turbo-check-${{ github.sha }}
+          key: turbo-check-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       - name: Host operations safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Preview startup tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 infra/preview/start.test.py
       - name: Codex subscription auth safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/codex-subscription-auth.test.py
       - name: Dependency update patch safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/dependency-update-patch.test.py
+      - name: Issue triage labeling tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/apply-issue-triage.test.py
+      - name: PR screenshot section tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/pr-screenshots.test.py
       - name: Changed-area classification tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
+      - name: Mobile OTA base selection tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/ota-base.test.py
       - name: App Store review submission tests
         if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
-      - name: Optional vendor SDKs load lazily
-        run: node --test scripts/lazy-vendors.test.mjs
+      - name: Script tests
+        run: node --test scripts/lazy-vendors.test.mjs scripts/checks/*.test.mjs scripts/release/*.test.mjs scripts/exploratory-qa/*.test.mjs
 
-  # The unit suite is CPU-bound, so three runners finish in about a third of the time.
+  # Four runners finish the unit suite before the Web E2E shards, which set the pull request's
+  # finish time; more runners only add per-job setup and queue for the account's runner limit. A
+  # shard the classification leaves out stops after checkout.
   unit-tests-shard:
-    name: Unit tests (${{ matrix.shard }}/3)
-    runs-on: incredibuild-ubuntu-latest
+    name: Unit tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     timeout-minutes: 20
     concurrency:
       group: ci-unit-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - id: unit
+        env:
+          SHARDS: ${{ steps.areas.outputs.unit_shards || '[1,2,3,4]' }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          echo "run=$(jq --argjson shard "$SHARD" 'index($shard) != null' <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
+          # A single selected shard runs every test itself rather than a quarter of them.
+          echo "whole=$(jq 'length == 1' <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-workspace
+        if: steps.unit.outputs.run == 'true'
       - run: pnpm db:generate
+        if: steps.unit.outputs.run == 'true'
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - name: Install age for the encrypted backup round trip
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
+        if: steps.unit.outputs.run == 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" \
+            "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP" age/age age/age-keygen
+          sudo install -m 755 "$RUNNER_TEMP/age/age" "$RUNNER_TEMP/age/age-keygen" /usr/local/bin/
       - name: Unit tests
-        if: steps.areas.outputs.all_packages != 'false'
-        run: pnpm run test --shard=${{ matrix.shard }}/3
+        if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages != 'false'
+        env:
+          WHOLE: ${{ steps.unit.outputs.whole }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [[ "$WHOLE" == true ]]; then pnpm run test; else pnpm run test --shard="$SHARD/4"; fi
       - name: Unit tests for affected packages
-        if: steps.areas.outputs.all_packages == 'false'
+        if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages == 'false'
         env:
           TURBO_SCM_BASE: HEAD^1
+          WHOLE: ${{ steps.unit.outputs.whole }}
         run: |
           affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
           mapfile -t packages < <(printf "%s" "$affected")
           # These read other packages' files without importing them, so the package graph misses them.
-          pnpm exec vitest run "${packages[@]}" \
+          targets=("${packages[@]}" \
+            .agents/skills/translate/catalog-gaps.test.ts \
             infra/updater/src/compose-env.test.ts \
-            packages/adapters/src/lark-lazy-loading.test.ts \
-            packages/testkit/src/ios-screenshot-catalog.test.ts \
-            --shard=${{ matrix.shard }}/3
+            packages/adapters/src/builtin-skills.test.ts \
+            packages/adapters/src/providers/messaging/lark/lark-lazy-loading.test.ts \
+            packages/page-kit/src/kit/labels.test.tsx \
+            packages/testkit/src/eas-pnpm-version.test.ts \
+            packages/testkit/src/ios-screenshot-catalog.test.ts)
+          # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
+          files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
+          if [[ "$WHOLE" == true ]] || (( files < 4 )); then
+            (( ${{ matrix.shard }} == 1 )) || exit 0
+            pnpm exec vitest run "${targets[@]}"
+          else
+            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/4
+          fi
 
   # The required check and the deploy gate, under one stable name.
   checks:
     name: Checks
     needs: [static-checks, unit-tests-shard]
     if: always()
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
 
+  # Desktop + its workspace deps only. A full-workspace install on Windows also links supervisor
+  # (dockerode → cpu-features) and spends about a minute on a node-gyp rebuild that fails without
+  # Visual Studio and is unused by these tests. Electron's binary is cached separately from the
+  # pnpm store.
   native-computer:
     name: Native computer (${{ matrix.os }})
     needs: changes
@@ -221,62 +273,66 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
       - name: Windows pnpm launcher test
         if: runner.os == 'Windows'
         run: node --test scripts/pnpm.test.mjs
-      - run: pnpm install --frozen-lockfile
+      - name: Worktree environment setup test
+        run: node --test scripts/setup-worktree.test.mjs
+      - uses: ./.github/actions/setup-workspace
+        with:
+          electron: "true"
+          filter: "@rakazo/desktop..."
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+          electron_config_cache: ${{ runner.temp }}/electron-cache
       - run: pnpm --filter @rakazo/desktop build
-      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/desktop-sandbox-command.test.ts packages/adapters/src/desktop-sandbox-paths.test.ts packages/adapters/src/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/host-computer.test.ts
+        env:
+          electron_config_cache: ${{ runner.temp }}/electron-cache
+      - run: pnpm exec vitest run packages/adapters/src/host-computer.test.ts packages/adapters/src/file-handle-path.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-command.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-paths.test.ts packages/adapters/src/providers/computer/desktop/desktop-workspace-cleanup.test.ts packages/adapters/src/computer-support.test.ts apps/desktop/src/main/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
-        run: pnpm exec vitest run apps/desktop/src/host-screen.windows.test.ts
+        run: pnpm exec vitest run apps/desktop/src/main/host-screen.windows.test.ts
       - name: Native computer in headless Electron
-        run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/host-computer.test.ts
+        run: pnpm --filter @rakazo/desktop exec electron ../../node_modules/vitest/vitest.mjs run --root ../.. packages/adapters/src/host-computer.test.ts apps/desktop/src/main/host-computer.test.ts
         env:
           ELECTRON_RUN_AS_NODE: "1"
+          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  # The suites are CPU-bound, so two runners finish in about half the time.
+  # Four runners finish the suites before the Web E2E shards, which set the pull request's finish
+  # time; more runners only add per-job setup and queue for the account's runner limit.
   test-integration-shard:
-    name: Postgres journeys (${{ matrix.shard }}/2)
-    runs-on: incredibuild-ubuntu-latest
+    name: Postgres journeys (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     concurrency:
       group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           fetch-depth: 2
       - id: areas
         if: github.event_name == 'pull_request'
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
+      - name: Start Postgres
         if: steps.areas.outputs.server != 'false'
-      - uses: actions/setup-node@v4
+        uses: ./.github/actions/start-postgres
+      - uses: ./.github/actions/setup-workspace
         if: steps.areas.outputs.server != 'false'
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - name: Wait for Postgres
         if: steps.areas.outputs.server != 'false'
-      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
+        run: bash .github/actions/start-postgres/wait.sh
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/4
         if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.
@@ -284,7 +340,7 @@ jobs:
     name: Postgres journeys
     needs: test-integration-shard
     if: always()
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.test-integration-shard.result }}" = success
 
@@ -292,22 +348,25 @@ jobs:
     name: Postgres upgrade
     needs: changes
     if: needs.changes.outputs.compose == 'true'
-    runs-on: incredibuild-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - run: bash infra/compose/upgrade-postgres.docker-test.sh
 
+  # Main leaves Web E2E to the nightly run. Gated inside the called workflow, so its "Web E2E"
+  # check always reports.
   test-e2e:
     name: Web E2E
     needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
-      # Skipped inside the called workflow so the required "Web E2E / Web E2E" check still reports.
-      skip: ${{ needs.changes.outputs.e2e != 'true' }}
+      e2e: ${{ needs.changes.outputs.e2e }}
+      www: ${{ needs.changes.outputs.www }}
 
   # Publishes sha-<commit> and edge alongside the checks, so the production deploy pulls the
   # image this run built instead of building on the production host.
@@ -322,6 +381,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    secrets:
+      LEGACY_GHCR_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}
 
   publish-mobile-update:
     name: Publish compatible mobile update
@@ -343,56 +404,29 @@ jobs:
         id: ota
         shell: bash
         env:
-          BEFORE_SHA: ${{ github.event.before }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # Compare against the commit installed builds already run, not just this push, so a
-          # change from a cancelled or skipped run is still published (or still blocks).
+          # change from a cancelled or skipped run is still published (or still blocks). Without
+          # a published update for the current runtime, the commit that introduced the runtime
+          # version anchors the diff, so a native change from an earlier push cannot escape it.
           runtime="$(jq -r .expo.version apps/mobile/app.json)"
           project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
           # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
-          # leave no body; neither may pass as "no published update", which would shrink the
-          # comparison to this push only and let an earlier native change escape the diff.
+          # leave no body; ota-base.sh must not read either as "no published update".
+          # Filter before limiting: updates for other runtimes must not hide this runtime's base.
           response="$(
             curl -fsS --max-time 30 https://api.expo.dev/graphql \
               -H "authorization: Bearer $EXPO_TOKEN" \
               -H "content-type: application/json" \
-              --data "$(jq -n --arg id "$project" '{
-                query: "query($id: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
-                variables: { id: $id }
+              --data "$(jq -n --arg id "$project" --arg runtime "$runtime" '{
+                query: "query($id: String!, $runtime: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50, filter: { runtimeVersions: [$runtime] }) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
+                variables: { id: $id, runtime: $runtime }
               }')"
           )" || response=""
-          published="$(
-            jq -er --arg runtime "$runtime" '
-              if has("errors") or (.data.app.byId | type) != "object" or
-                 (.data.app.byId | has("updateBranchByName") | not) then
-                error("no usable update data")
-              else
-                .data.app.byId.updateBranchByName
-                | if . == null then []
-                  elif (.updates | type) == "array" then .updates
-                  else error("malformed updates") end
-                | . as $updates
-                | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
-                | if $update == null and ($updates | length) >= 50 then
-                    error("update lookup is incomplete")
-                  elif $update == null then
-                    ""
-                  elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
-                    error("missing published commit")
-                  else
-                    $update.gitCommitHash
-                  end
-              end
-            ' <<<"$response"
-          )" || published="unknown"
-          # A published update this checkout has no object for cannot anchor the diff either.
-          if [[ -n "$published" && "$published" != "unknown" ]] &&
-            ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
-            published="unknown"
-          fi
-          if [[ "$published" == "unknown" ]]; then
+          decision="$(bash .github/scripts/ota-base.sh "$response")"
+          if [[ "$decision" == "unknown" ]]; then
             echo "::warning::Could not determine the last published update for runtime $runtime; not publishing this push."
             {
               echo "### Mobile OTA skipped"
@@ -402,21 +436,16 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [[ -n "$published" ]] && git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null; then
-            base="$published"
-          else
-            echo "::warning::No published update for runtime $runtime on main's history; comparing with the previous push only."
-            base="$BEFORE_SHA"
-          fi
-          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
+          if [[ -z "$decision" || "$decision" == "no-base" ]]; then
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "Found neither the last published update for runtime \`$runtime\` nor \`github.event.before\`, so this job will not publish a partial-range update."
+              echo "Found neither a published update for runtime \`$runtime\` on this history nor the commit that introduced the runtime version, so this job will not publish a partial-range update."
             } >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          base="$decision"
 
           # Every package the mobile app resolves, transitive ones included, from the lockfile.
           mobile_dependencies() {
@@ -428,73 +457,15 @@ jobs:
               apps/mobile \
               packages/chat-ui \
               packages/contracts \
-              packages/core
+              packages/core \
+              packages/logging \
+              packages/ui-tokens
           )
           if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
             files+=("pnpm-lock.yaml (mobile dependency tree)")
           fi
 
-          publish=false
-          blocked=()
-          for file in "${files[@]}"; do
-            # Tests, types, docs and device test flows never ship in the app.
-            case "$file" in
-              *.test.ts|*.test.tsx|*.test.js|*.d.ts|*.md|apps/mobile/.maestro/*|apps/mobile/e2e/*)
-                continue
-                ;;
-            esac
-
-            eligible=false
-            case "$file" in
-              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*)
-                case "$file" in
-                  *.ts|*.tsx) eligible=true ;;
-                esac
-                ;;
-              packages/chat-ui/src/*)
-                case "$file" in
-                  *.ts|*.tsx|*.css) eligible=true ;;
-                esac
-                ;;
-              packages/contracts/src/*|packages/core/src/*)
-                case "$file" in
-                  *.ts|*.tsx) eligible=true ;;
-                esac
-                ;;
-            esac
-
-            if [[ "$eligible" == true ]]; then
-              publish=true
-            else
-              blocked+=("$file")
-            fi
-          done
-
-          if (( ${#blocked[@]} > 0 )); then
-            publish=false
-            {
-              echo "### Mobile OTA skipped"
-              echo
-              echo "Since \`${base:0:9}\`, the last update installed builds run, these native-sensitive files changed:"
-              echo
-              printf -- '- `%s`\n' "${blocked[@]}"
-              echo
-              echo "Ship new iOS and Android builds, or publish by hand once the JavaScript is confirmed safe on the current builds."
-            } >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$publish" == true ]]; then
-            {
-              echo "### Mobile OTA eligible"
-              echo
-              echo "Since \`${base:0:9}\`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "### No mobile OTA needed"
-              echo
-              echo "Nothing in the shipped mobile bundle changed since \`${base:0:9}\`."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${files[@]}" | node scripts/release/mobile-ota.mjs "$base" "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT"
 
       - name: Require Expo automation token
         if: steps.ota.outputs.publish == 'true'
@@ -506,20 +477,13 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: steps.ota.outputs.publish == 'true'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.ota.outputs.publish == 'true'
         with:
           node-version: 24
           cache: pnpm
-      - name: Set up Expo
-        if: steps.ota.outputs.publish == 'true'
-        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
-        with:
-          eas-version: latest
-          packager: pnpm
-          token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         if: steps.ota.outputs.publish == 'true'
         run: pnpm install --frozen-lockfile
@@ -530,6 +494,7 @@ jobs:
         if: steps.ota.outputs.publish == 'true'
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
@@ -557,7 +522,7 @@ jobs:
             echo "Sentry uploads require SENTRY_ORG and SENTRY_PROJECT." >&2
             exit 1
           fi
-          eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
+          pnpm exec eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
           if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
             # The SDK uploader only warns when there are no source maps; fail instead.
             if [[ -z "$(find dist -type f -name '*.map' -print -quit)" ]]; then
@@ -567,7 +532,7 @@ jobs:
             SENTRY_URL="${SENTRY_URL:-https://sentry.io/}" pnpm exec sentry-expo-upload-sourcemaps dist
           fi
           check_current_main
-          eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
+          pnpm exec eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-

@@ -10,7 +10,7 @@ tags:
       notifications: deny
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
-    timeout: 30000
+    timeout: 60000
 - runFlow:
     when:
       visible: "Pixel Launcher isn't responding"

@@ -186,7 +186,7 @@ export class PageBrowserSession {
       throw new FillRefused(
         card
           ? `The page is not on the merchant's site for this purchase. ${REOPEN_MERCHANT_SITE}`
-          : `The page is not on the site this login was saved for. ${REOPEN_SAVED_SITE}`,
+          : `This login is saved for ${saved.origin}; the page is on ${page.origin}. ${REOPEN_SAVED_SITE}`,
       );
     }
   }
@@ -305,19 +305,22 @@ export class PageBrowserSession {
             `This dropdown has no option for this saved field. Its options: ${describeChoices(options)}.`,
           );
         }
+        const hideChoice = this.loginFilled.has(el);
         if (!match) {
           throw new SettledStep(
-            `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win))}.`,
+            `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win, hideChoice))}.`,
           );
         }
         if (unavailable(win, match)) {
           throw new SettledStep(
-            `The option "${optionLabel(match)}" is disabled. Its options: ${describeOptions(optionsOf(el, win))}.`,
+            `The option "${optionLabel(match)}" is disabled. Its options: ${describeOptions(optionsOf(el, win, hideChoice))}.`,
           );
         }
         // The old choice goes: a multiple select would keep it otherwise.
         for (const option of el.options) option.selected = false;
         match.selected = true;
+        // Snapshots never show which option a saved login chose, whatever the page later does.
+        if (action.origin) this.loginFilled.add(el);
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
         return;
@@ -349,7 +352,9 @@ export class PageBrowserSession {
       const tag = node.tagName.toLowerCase();
       const entry: BrowserSnapshotNode = { ref, role, name, tag };
       if (value !== undefined) entry.value = value;
-      if (node instanceof win.HTMLSelectElement) entry.options = optionsOf(node, win);
+      if (node instanceof win.HTMLSelectElement) {
+        entry.options = optionsOf(node, win, this.loginFilled.has(node));
+      }
       elements.push(entry);
       const valuePart = value !== undefined ? ` value=${JSON.stringify(value)}` : "";
       const optionsPart = entry.options ? ` options: ${describeOptions(entry.options)}` : "";
@@ -396,11 +401,15 @@ function unavailable(win: DomWindow, option: HTMLOptionElement): boolean {
   return option.disabled || (group instanceof win.HTMLOptGroupElement && group.disabled);
 }
 
-function optionsOf(select: { options: Iterable<HTMLOptionElement> }, win: DomWindow) {
+function optionsOf(
+  select: { options: Iterable<HTMLOptionElement> },
+  win: DomWindow,
+  hideChoice = false,
+) {
   return [...select.options].map((option) => ({
     label: optionLabel(option),
     value: option.value,
-    ...(option.selected ? { selected: true } : {}),
+    ...(option.selected && !hideChoice ? { selected: true } : {}),
     ...(unavailable(win, option) ? { disabled: true } : {}),
   }));
 }

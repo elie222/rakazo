@@ -1,6 +1,13 @@
+import { i18n } from "@lingui/core";
+import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 import { afterEach, describe, expect, it } from "vitest";
-import { resetI18nForTests, t } from "./i18n";
+import { resetI18nForTests } from "./i18n";
 import { secretDestinationLabel, siteHost } from "./secret-destination";
+
+/** A catalog message in the active language, looked up as the compiled macro does. */
+function t(message: string) {
+  return i18n._({ id: generateMessageId(message), message });
+}
 
 describe("mobile credential destination label", () => {
   afterEach(() => {

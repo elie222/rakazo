@@ -5,6 +5,7 @@ import {
   currentBotMessageHop,
   loadBotMessageContext,
   messageBot,
+  reportBotMessageWait,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -30,6 +31,7 @@ function deps(
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
+    deletingSpace?: boolean;
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -43,12 +45,19 @@ function deps(
     );
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
+    space: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({ deletingAt: options.deletingSpace ? new Date() : null }),
+    },
     run: {
       findFirst: vi
         .fn()
         .mockResolvedValue(options.senderRunning === false ? null : { id: "run-1" }),
       findUnique: vi.fn().mockResolvedValue({ status: "running" }),
       create: vi.fn().mockResolvedValue({ id: "run-2" }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     bot: {
       findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
@@ -62,6 +71,11 @@ function deps(
     event: { create: vi.fn().mockResolvedValue({ seq: 7 }) },
     thread: { update: vi.fn().mockResolvedValue({}) },
   };
+  /** Each time a chat was marked unread for its Space's members. */
+  const unreadMarks = () =>
+    tx.$executeRaw.mock.calls.filter(([sql]) =>
+      (sql as TemplateStringsArray).join("?").includes("INSERT INTO thread_reads"),
+    );
   let transactionAttempts = 0;
   const prisma = {
     bot: {
@@ -93,6 +107,7 @@ function deps(
       "prisma" | "events" | "jobs"
     >,
     tx,
+    unreadMarks,
     enqueue,
     notify,
   };
@@ -101,6 +116,38 @@ function deps(
 describe("messaging another bot", () => {
   beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
   afterEach(() => vi.unstubAllEnvs());
+
+  it("starts no run for the target while the Space is being deleted", async () => {
+    const harness = deps({ deletingSpace: true });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "chart the q3 numbers",
+    });
+
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not deliver when multiple bots have the same exact name", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-first", name: "Reviewer", thread: { id: "thread-first" } },
+        { id: "bot-second", name: "Reviewer", thread: { id: "thread-second" } },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "Reviewer",
+      message: "review this",
+    });
+
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.notify).not.toHaveBeenCalled();
+  });
 
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
@@ -132,12 +179,36 @@ describe("messaging another bot", () => {
     expect(harness.notify).toHaveBeenCalledWith("thread-target", 7);
     expect(harness.notify).toHaveBeenCalledWith("thread-sender", 7);
     expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
-    expect(
-      harness.tx.thread.update.mock.calls.filter(
-        ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
-      ),
-    ).toHaveLength(0);
+    expect(harness.unreadMarks()).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts sent files on the recipient's message, and only the text in the sender's echo", async () => {
+    const harness = deps();
+    const file = {
+      kind: "file" as const,
+      artifactId: "artifact-zip",
+      name: "project.zip",
+      mimeType: "application/zip",
+      size: 19_000,
+    };
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      message: "deploy this",
+      files: [file],
+    });
+
+    expect(sent).toMatchObject({ ok: true });
+    const created = harness.tx.message.create.mock.calls.map(
+      ([call]) => (call as { data: { threadId: string; blocks: Array<{ kind: string }> } }).data,
+    );
+    expect(created.find((m) => m.threadId === "thread-sender")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_sent" }),
+    ]);
+    expect(created.find((m) => m.threadId === "thread-target")?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_received" }),
+      file,
+    ]);
   });
 
   it("marks a forced failure return unread on both sides", async () => {
@@ -163,10 +234,7 @@ describe("messaging another bot", () => {
       { forceUnread: true },
     );
 
-    const unreadWrites = harness.tx.thread.update.mock.calls.filter(
-      ([call]) => (call as { data?: { unread?: boolean } }).data?.unread === true,
-    );
-    expect(unreadWrites).toHaveLength(2);
+    expect(harness.unreadMarks()).toHaveLength(2);
   });
 
   it("tells the sender to continue independent work", async () => {
@@ -201,6 +269,15 @@ describe("messaging another bot", () => {
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
+  it("looks for the target only among active bots of the run's own Space", async () => {
+    const harness = deps();
+    await messageBot(harness.deps, run, sender, { bot_id: "bot-target", message: "hello" });
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { spaceId: run.spaceId, archivedAt: null } }),
+    );
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses an empty message", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
@@ -210,13 +287,17 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({ ok: false, error: "message is required" });
   });
 
-  it("rejects an oversized message instead of silently truncating it", async () => {
+  it("rejects an oversized message and points to files instead of splitting it", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
       bot_id: "bot-target",
       message: "x".repeat(8_001),
     });
-    expect(sent).toEqual({ ok: false, error: "message exceeds the 8000 character limit" });
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "message exceeds the 8000 character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.",
+    });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
@@ -285,10 +366,11 @@ describe("messaging another bot", () => {
       { ...run, sourceMessageId: "message-source" },
       sender,
       { bot_id: "bot-target", message: "finished", intent: "result" },
-      { allowTerminalSource: true },
+      { returnFrom: "ended" },
     );
     expect(sent.ok).toBe(true);
-    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    // The Space's lock, then both thread rows.
+    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(harness.tx.message.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -377,7 +459,7 @@ describe("messaging another bot", () => {
       { ...run, sourceMessageId: "message-source" },
       sender,
       { bot_id: "bot-target", message: "acknowledged", intent: "result" },
-      { allowTerminalSource: true },
+      { returnFrom: "ended" },
     );
     expect(sent.ok).toBe(false);
     expect(harness.tx.run.create).not.toHaveBeenCalled();
@@ -638,6 +720,10 @@ describe("hardening", () => {
     });
     expect(sent.ok).toBe(true);
     expect(harness.deps.prisma.$transaction).toHaveBeenCalledTimes(2);
+    // The retried delivery keeps the thread-lock budget.
+    expect(harness.deps.prisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 });
@@ -791,7 +877,7 @@ describe("automatic outcome return", () => {
 
     expect(returned).toBe(true);
     expect(harness.deps.prisma.bot.findFirst).toHaveBeenCalledWith({
-      where: { id: "bot-target", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { id: "bot-target", spaceId: run.spaceId, archivedAt: null },
       select: { id: true },
     });
     expect(harness.enqueue).not.toHaveBeenCalled();
@@ -803,5 +889,64 @@ describe("automatic outcome return", () => {
       },
       data: { botOutcomeReturnedAt: expect.any(Date) },
     });
+  });
+});
+
+describe("waiting on the user", () => {
+  const delegated = {
+    ...run,
+    sourceMessageId: "message-source",
+    trigger: "bot_message",
+  };
+  const request = {
+    kind: "bot_message_received",
+    fromBotId: "bot-target",
+    fromBotName: "Coordinator",
+    text: "research this",
+    hop: 6,
+    intent: "request",
+    returnToMessageId: "message-request",
+  };
+
+  it("tells the requesting bot right away, even at the hop limit", async () => {
+    const harness = deps({ hopBlocks: [request] });
+
+    await reportBotMessageWait(harness.deps, delegated, sender, "Which city?", "attempt-1");
+
+    expect(harness.tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: "waiting_input" }),
+      }),
+    );
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          threadId: "thread-target",
+          clientNonce: "bot-message:waiting:attempt-1",
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              intent: "status",
+              text: expect.stringContaining("Which city?"),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing when no bot is waiting on the run", async () => {
+    const harness = deps({ hopBlocks: [{ ...request, intent: "fyi" }] });
+
+    await reportBotMessageWait(
+      harness.deps,
+      { ...delegated, trigger: "user" },
+      sender,
+      "Which city?",
+      "attempt-1",
+    );
+    await reportBotMessageWait(harness.deps, delegated, sender, "Which city?", "attempt-2");
+
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 });

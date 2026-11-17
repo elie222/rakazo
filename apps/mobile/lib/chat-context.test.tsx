@@ -174,3 +174,12 @@ it("fails softly when a reply image cannot be fetched", async () => {
   expect(container.textContent).toBe("You: Photo");
   expect(container.querySelector("img")).toBeNull();
 });
+it("shows no quote on a message sent from an open page, but keeps one picked in the chat", () => {
+  const card = { role: "bot" as const, text: "Q3 plan", page: true as const };
+  act(() => root.render(<ReplyLine targetId="card" preview={card} author="Helper" />));
+  expect(container.textContent).toBe("");
+  act(() =>
+    root.render(<ReplyLine targetId="card" quote="Q3 plan" preview={card} author="Helper" />),
+  );
+  expect(container.textContent).toBe("Helper: Q3 plan");
+});

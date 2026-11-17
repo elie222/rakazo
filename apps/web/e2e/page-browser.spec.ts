@@ -43,7 +43,7 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -211,7 +211,7 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     const snapshot = async () => {
@@ -245,6 +245,73 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
   }
 });
 
+test("live page helper reads a checkout's order lines for the pay approval", async () => {
+  const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-order-"));
+  const server = http.createServer((_req, res) => {
+    res.setHeader("content-type", "text/html");
+    res.end(`<!doctype html><meta charset="utf-8"><title>Checkout</title>
+      <style>.row { display: flex; justify-content: space-between } aside { width: 320px }</style>
+      <header><a href="/cart">Cart · Socks $9.00</a></header>
+      <main>
+        <h1>Checkout</h1>
+        <label><input type="radio" name="ship" checked> Standard delivery $6.00</label>
+        <aside>
+          <h2>Order summary</h2>
+          <div class="row"><span>Bananas × 6</span><span>$3.00</span></div>
+          <div class="row"><span>Oat milk 1L <small>× 2</small></span><span>$8.40</span></div>
+          <div class="row" style="display: none"><span>Hidden gift</span><span>$1.00</span></div>
+          <div style="opacity: 0"><div class="row"><span>Faded gift</span><span>$2.00</span></div></div>
+          <div class="row" style="color: transparent"><span>Ink-free gift</span><span>$4.00</span></div>
+          <div class="row"><span>Subtotal</span><span>$11.40</span></div>
+          <div class="row"><span>Delivery</span><span>$6.00</span></div>
+          <div class="row"><strong>Total</strong><strong>$17.40</strong></div>
+        </aside>
+        <button>Place order</button>
+        <p>Recommended: Grapes 500g $4.00</p>
+      </main>`);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No fixture server");
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      ...BROWSER,
+      args: ["--remote-debugging-port=0"],
+    });
+    let port = "";
+    await expect(async () => {
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
+      expect(port).toMatch(/^\d+$/);
+    }).toPass({ timeout: 5_000 });
+    const page = context.pages()[0]!;
+    await page.goto(`http://127.0.0.1:${address.port}/checkout`);
+    // Enter on the screen asks the page what it shows: its final step, total and order lines.
+    const { stdout } = await execute(
+      "python3",
+      [helper, "purchase_check", JSON.stringify({ desktop: true, enter: true })],
+      { env: { ...process.env, RAKAZO_CDP_PORT: port }, timeout: 30_000 },
+    );
+    expect(JSON.parse(stdout)).toMatchObject({
+      ok: true,
+      purchase: {
+        label: "Place order",
+        amount: "$17.40",
+        items: [
+          { name: "Bananas × 6", amount: "$3.00" },
+          { name: "Oat milk 1L × 2", amount: "$8.40" },
+          { name: "Delivery", amount: "$6.00" },
+        ],
+      },
+    });
+  } finally {
+    await context?.close();
+    await rm(profile, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("live page helper reaches a form past the control limit by query or by scrolling to it", async () => {
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-long-"));
   const stories = Array.from(
@@ -269,7 +336,7 @@ test("live page helper reaches a form past the control limit by query or by scro
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -511,7 +578,7 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
@@ -534,8 +601,10 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
       return result;
     }
     const page = context.pages()[0]!;
-    await page.route("https://code.example.test/**", (route) =>
-      route.fulfill({
+    await page.route("https://code.example.test/**", async (route) => {
+      // A slow next page keeps the one that is leaving on screen while the keys are typed.
+      if (route.request().url().endsWith("/next")) await new Promise((r) => setTimeout(r, 500));
+      await route.fulfill({
         contentType: "text/html",
         body: route.request().url().endsWith("/done")
           ? "<title>Signed in</title>"
@@ -546,8 +615,8 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
               : route.request().url().endsWith("/next")
                 ? '<title>Next</title><input aria-label="Next" autofocus>'
                 : CODE_FIELDS,
-      }),
-    );
+      });
+    });
     const open = async () => {
       await page.goto("https://code.example.test/");
       await refresh();
@@ -819,7 +888,7 @@ test("live page helper types a purchase's card into a payment provider's frame o
     });
     let port = "";
     await expect(async () => {
-      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]!;
       expect(port).toMatch(/^\d+$/);
     }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {

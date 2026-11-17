@@ -1,6 +1,12 @@
 import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup, signupThroughForm } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openEmailSignIn,
+  signup,
+  signupThroughForm,
+} from "./helpers";
 
 test(
   "sign-up stays blank until session and sign-in options are ready",
@@ -38,7 +44,7 @@ test(
     await captureScreenshot(page, testInfo, "signup-options-pending");
 
     releaseCapabilities();
-    await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
     await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
     await captureScreenshot(page, testInfo, "signup-ready");
   },
@@ -104,7 +110,7 @@ test(
 );
 
 test(
-  "signed-out welcome fits a narrow phone and offers sign in",
+  "a new visitor opening the app lands on sign up, fits a narrow phone, and can switch to sign in",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
@@ -115,16 +121,23 @@ test(
     );
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto("/");
-    const main = page.getByRole("main");
-    await expect(main.getByRole("heading", { name: "Rakazo", level: 1 })).toBeVisible();
-    await expect(main.getByRole("button", { name: "Sign up", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-up$/);
+    await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 320);
-    await captureScreenshot(page, testInfo, "logged-out-welcome-phone");
-    await main.getByRole("link", { name: "Sign in", exact: true }).click();
+    await captureScreenshot(page, testInfo, "logged-out-sign-up-phone");
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/sign-in$/);
     await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   },
 );
+
+test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  // Where a refused SSO sign-in lands; password and code sign-in show the same text.
+  await page.goto("/sign-in?error=ACCOUNT_DEACTIVATED");
+  await expect(page.getByText("This account is deactivated")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
+});
 
 test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
@@ -132,7 +145,7 @@ test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await captureScreenshot(page, testInfo, "not-found");
   await page.getByRole("link", { name: "Go home" }).click();
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/sign-up$/);
 });
 
 test("logout protects bot deep links and sign-in restores the session", async ({
@@ -144,6 +157,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   const userName = "Auth Lifecycle";
 
   await page.goto("/sign-up");
+  await openEmailSignIn(page);
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
@@ -160,7 +174,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "36-account-menu");
 
@@ -190,20 +203,18 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
+  // Someone who has signed in here before reopens the app to sign in, not to a new account.
   await page.goto("/");
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
-  await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
-  await page.getByRole("button", { name: /Sign up/ }).click();
-  await expect(page).toHaveURL(/\/sign-up$/);
-  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
-  await page.goto("/");
-  await captureScreenshot(page, testInfo, "37-logged-out-welcome");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "37-logged-out-returning");
 
   await page.goto(protectedBotPath);
   await page.waitForURL((url) => url.pathname === "/sign-in");
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
+  await openEmailSignIn(page);
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
@@ -316,6 +327,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await page.getByRole("button", { name: "Log out" }).click();
+  await openEmailSignIn(page);
   await expect(page.getByRole("link", { name: "Forgot password?" })).toBeVisible();
   await page.getByRole("link", { name: "Forgot password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
@@ -370,6 +382,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Reset password" }).click();
   await expect(page.getByText("Password updated")).toBeVisible();
   await page.getByRole("link", { name: "Sign in" }).click();
+  await openEmailSignIn(page);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

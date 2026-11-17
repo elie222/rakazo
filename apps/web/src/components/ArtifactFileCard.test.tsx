@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -150,12 +151,8 @@ it("downloads independently before playback", async () => {
 it.each(["unmount", "change"])(
   "ignores pending bytes after %s and suppresses duplicate play",
   async (cleanup) => {
-    let resolve!: (bytes: Uint8Array) => void;
-    mocks.fetch.mockReturnValueOnce(
-      new Promise<Uint8Array>((done) => {
-        resolve = done;
-      }),
-    );
+    const bytes = deferred<Uint8Array>();
+    mocks.fetch.mockReturnValueOnce(bytes.promise);
     await act(async () => renderClip());
     const play = container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!;
     await act(async () => {
@@ -171,7 +168,7 @@ it.each(["unmount", "change"])(
         root = undefined;
       }
     });
-    await act(async () => resolve(new Uint8Array([1])));
+    await act(async () => bytes.resolve(new Uint8Array([1])));
     expect(mocks.create).not.toHaveBeenCalled();
     expect(container.querySelector("audio")).toBeNull();
   },
@@ -220,4 +217,86 @@ it("translates every size unit and rolls up instead of 1,024.0 KB or 1,536.0 MB"
     (el) => el.textContent,
   );
   expect(sizes).toEqual(["«512 B»", "«1 KB»", "«1 MB»", "«1.5 GB»", "«1.5 TB»"]);
+});
+
+it("previews plain text in the app instead of only offering a download", async () => {
+  mocks.fetch.mockResolvedValue(new TextEncoder().encode("1. Confirm the pricing page copy."));
+  await act(async () =>
+    root?.render(
+      <ArtifactFileCard
+        target={{ botId: "bot-1" }}
+        artifactId="notes-1"
+        name="notes.txt"
+        mimeType="text/plain"
+        size={33}
+      />,
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Preview notes.txt"]')?.click(),
+  );
+  await vi.waitFor(() =>
+    expect(document.body.querySelector("pre")?.textContent).toBe(
+      "1. Confirm the pricing page copy.",
+    ),
+  );
+});
+
+it("retries failed audio loads in place without duplicate requests", async () => {
+  const bytes = deferred<Uint8Array>();
+  mocks.fetch
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockRejectedValueOnce(new Error("still offline"))
+    .mockImplementationOnce(() => bytes.promise);
+  await act(async () => renderClip());
+  const play = () => container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await act(async () => play().click());
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(play()).not.toBeNull();
+    expect(play().disabled).toBe(false);
+  }
+  await act(async () => {
+    play().click();
+    play().click();
+  });
+  expect(mocks.fetch).toHaveBeenCalledTimes(3);
+  expect(play().disabled).toBe(true);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => bytes.resolve(new Uint8Array([1, 2, 3])));
+  expect(container.querySelector("audio")?.getAttribute("src")).toBe("blob:audio-preview");
+  expect(play()).toBeNull();
+  expect(mocks.create).toHaveBeenCalledTimes(1);
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+});
+
+it.each(["unmount", "change"])("ignores a rejected retry after %s", async (cleanup) => {
+  const late = deferred<Uint8Array>();
+  mocks.fetch
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockImplementationOnce(() => late.promise);
+  await act(async () => renderClip());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!.click(),
+  );
+  const retry = container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]');
+  expect(retry).not.toBeNull();
+  await act(async () => retry!.click());
+  await act(async () => {
+    if (cleanup === "change") renderClip("audio-2");
+    else {
+      root?.unmount();
+      root = undefined;
+    }
+  });
+  await act(async () => late.reject(new Error("late failure")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(mocks.create).not.toHaveBeenCalled();
+  if (cleanup === "change") {
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Play clip"]')!.click(),
+    );
+    expect(mocks.fetch).toHaveBeenLastCalledWith({ groupId: "group-1" }, "audio-2");
+    expect(container.querySelector("audio")).not.toBeNull();
+  }
 });

@@ -41,7 +41,8 @@ async function ico(input: Buffer, name: string, sizes: number[]) {
   let offset = header.length;
   frames.forEach((frame, index) => {
     const entry = 6 + index * 16;
-    header[entry] = header[entry + 1] = sizes[index] === 256 ? 0 : sizes[index];
+    const size = sizes[index] ?? 0;
+    header[entry] = header[entry + 1] = size === 256 ? 0 : size;
     header.writeUInt16LE(1, entry + 4);
     header.writeUInt16LE(32, entry + 6);
     header.writeUInt32LE(frame.length, entry + 8);
@@ -63,6 +64,11 @@ for (const app of ["web", "www"]) {
 }
 await mkdir(path("apps/www/public/brand"), { recursive: true });
 await png(rounded, "apps/www/public/brand/rakazo-mark.png", 256);
+// The site header shows the mark at 36px; 72px covers 2x screens.
+await sharp(rounded)
+  .resize(72, 72)
+  .webp({ quality: 90 })
+  .toFile(path("apps/www/public/brand/rakazo-mark-72.webp"));
 await png(rounded, "apps/mobile/assets/favicon.png", 128);
 await png(square, "apps/desktop/assets/icon.png", 1024);
 await ico(rounded, "apps/desktop/assets/icon.ico", [16, 32, 48, 64, 128, 256]);

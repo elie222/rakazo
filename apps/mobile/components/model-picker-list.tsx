@@ -1,9 +1,19 @@
+import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText } from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText, newestModelsFirst } from "@rakazo/core";
 import { useNavigation } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import type { ViewToken } from "react-native";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ListViewToken } from "react-native";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -13,9 +23,9 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { useContentBottomInset } from "../lib/content-bottom-inset";
 import { useFloatingHeaderInset } from "../lib/floating-header";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { useListSearch } from "../lib/use-list-search";
@@ -23,6 +33,11 @@ import { ListSearchInput } from "./list-search-input";
 import { Checkmark } from "./row-accessories";
 import { SettingsLabel, SettingsRow } from "./settings-group";
 import { TextOnlyMark } from "./text-only-mark";
+
+const newestChoicesFirst = (choices: ChatModelChoice[]) =>
+  newestModelsFirst(choices.map((choice) => ({ id: choice.modelId ?? "", choice }))).map(
+    (entry) => entry.choice,
+  );
 
 /** Searchable grouped model cells shared by chat and connection settings. */
 export function ModelPickerList({
@@ -44,9 +59,10 @@ export function ModelPickerList({
   /** A single-provider picker only needs vendor headings. */
   providerLabel?: string;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const headerInset = useFloatingHeaderInset();
@@ -58,16 +74,24 @@ export function ModelPickerList({
     retried: false,
     target: null as { sectionIndex: number; itemIndex: number; key: string } | null,
   });
-  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [retryingScroll, setRetryingScroll] = useState(false);
   const cancelInitialScroll = useCallback(() => {
     initialScroll.current.cancelled = true;
-    if (retry.current !== null) clearTimeout(retry.current);
+    setRetryingScroll(false);
   }, []);
-  useEffect(
-    () => () => {
-      if (retry.current !== null) clearTimeout(retry.current);
+  useTimeout(
+    () => {
+      const state = initialScroll.current;
+      if (!state.cancelled && state.target) {
+        list.current?.scrollToLocation({
+          sectionIndex: state.target.sectionIndex,
+          itemIndex: state.target.itemIndex,
+          viewPosition: 0.5,
+          animated: false,
+        });
+      }
     },
-    [],
+    retryingScroll ? 100 : null,
   );
   const rows = [
     ...(choices ?? []).map((choice) => ({ choice, connect: false })),
@@ -91,7 +115,7 @@ export function ModelPickerList({
     navigation.setOptions({
       headerSearchBarOptions: showSearch
         ? {
-            placeholder: t("Search"),
+            placeholder: t`Search`,
             hideWhenScrolling: false,
             hideNavigationBar: false,
             autoCapitalize: "none",
@@ -111,6 +135,8 @@ export function ModelPickerList({
       "",
     ).map((section) => ({
       ...section,
+      // The ungrouped section holds the default and saved choices, which stay first.
+      data: section.heading ? newestChoicesFirst(section.data) : section.data,
       connect: false,
       heading:
         providerLabel && section.heading === providerLabel
@@ -143,7 +169,7 @@ export function ModelPickerList({
 
   // Viewability is reported after layout, including when an async catalog arrives.
   const revealInitialSelection = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<ChatModelChoice>[] }) => {
+    ({ viewableItems }: { viewableItems: ListViewToken[] }) => {
       const state = initialScroll.current;
       if (
         !state.ready ||
@@ -177,21 +203,12 @@ export function ModelPickerList({
       list.current
         ?.getScrollResponder()
         ?.scrollTo({ y: averageItemLength * index, animated: false });
-      retry.current = setTimeout(() => {
-        if (!state.cancelled && state.target) {
-          list.current?.scrollToLocation({
-            sectionIndex: state.target.sectionIndex,
-            itemIndex: state.target.itemIndex,
-            viewPosition: 0.5,
-            animated: false,
-          });
-        }
-      }, 100);
+      setRetryingScroll(true);
     },
     [],
   );
 
-  const noMatchesMessage = emptyMessage ?? t("No matching models");
+  const noMatchesMessage = emptyMessage ?? t`No matching models`;
   const noMatches = choices !== null && sections.length === 0;
 
   // The search field keeps focus, so tell screen readers once when the results run out.
@@ -209,10 +226,10 @@ export function ModelPickerList({
       style={[styles.screen, sideInsets]}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: headerInset + 16, paddingBottom: insets.bottom + 72 },
+        { paddingTop: headerInset + 16, paddingBottom: contentBottomInset + 72 },
       ]}
       // Reserve the transparent bar explicitly: native search can drop its automatic inset.
-      automaticallyAdjustKeyboardInsets
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       contentInsetAdjustmentBehavior={headerInset > 0 ? "never" : "automatic"}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
@@ -235,7 +252,7 @@ export function ModelPickerList({
       ListHeaderComponent={
         Platform.OS === "android" && showSearch ? (
           <ListSearchInput query={query} setQuery={changeQuery} />
-        ) : null
+        ) : undefined
       }
       ListEmptyComponent={
         error || noMatches ? (
@@ -257,12 +274,12 @@ export function ModelPickerList({
             <SettingsRow
               accessibilityRole="button"
               accessibilityLabel={item.label}
-              accessibilityHint={item.images === false ? t("Can't read images") : undefined}
+              accessibilityHint={item.images === false ? t`Can't read images` : undefined}
               accessibilityState={{ selected }}
               onPress={() => onSelect(item)}
               title={item.title ?? item.label}
               detail={item.detail}
-              value={section.connect ? t("Connect") : undefined}
+              value={section.connect ? t`Connect` : undefined}
               chevron={section.connect ? "right" : undefined}
               trailing={
                 item.images === false || selected ? (

@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +34,7 @@ vi.mock("expo-file-system", () => {
     }
   }
   class File extends Node {
-    write(value: string) {
+    writeSync(value: string) {
       state.files.set(this.uri, value);
     }
     textSync() {
@@ -57,7 +59,6 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("react-native", () => ({ Image: { getSize: state.getSize } }));
 vi.mock("expo-sharing", () => ({ isAvailableAsync: vi.fn(), shareAsync: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (value: string) => value }));
 vi.mock("./session", () => ({
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
@@ -96,7 +97,7 @@ beforeEach(() => {
 describe("artifact preview caches", () => {
   it("keeps the large-payload download timeout and captured auth context", async () => {
     const api = await load();
-    await api.readMobileArtifactText(target, "art-1", "text/plain");
+    await api.audioArtifactUri(target, "art-1", "audio/mpeg");
     expect(state.rpc).toHaveBeenCalledWith(
       "artifacts/get",
       { ...target, artifactId: "art-1" },
@@ -126,7 +127,7 @@ describe("artifact preview caches", () => {
     expect(artifactFetches()).toBe(1);
   });
 
-  it("downloads previews, text, and attachments without persisted cache metadata", async () => {
+  it("downloads previews, audio, and attachments without persisted cache metadata", async () => {
     let api = await load();
     const stored = await api.imageArtifactPreview(target, "art-1", "image/png");
     vi.resetModules();
@@ -135,7 +136,7 @@ describe("artifact preview caches", () => {
     const fresh = await api.imageArtifactPreview(target, "art-1", "image/png");
     expect(fresh.uri).not.toBe(stored.uri);
     expect(fresh.size).toEqual(stored.size);
-    expect(await api.readMobileArtifactText(target, "art-2", "text/plain")).toBe("aGk=");
+    expect(await api.audioArtifactUri(target, "art-2", "audio/mpeg")).toEqual(expect.any(String));
     vi.mocked(Sharing.isAvailableAsync).mockResolvedValueOnce(true);
     await api.openMobileArtifact(target, "art-3", "attachment.pdf", "application/pdf");
     expect(Sharing.shareAsync).toHaveBeenCalledWith(expect.any(String), {
@@ -230,18 +231,16 @@ describe("artifact preview caches", () => {
 
   it("rejects a late old-account download without writing it", async () => {
     const api = await load();
-    let finish!: (value: { contentBase64: string }) => void;
-    state.rpc.mockImplementation(async (proc: string) =>
-      proc === "me"
-        ? { userId: state.userId }
-        : new Promise((resolve) => {
-            finish = resolve;
-          }),
-    );
+    let download: Deferred<{ contentBase64: string }> | undefined;
+    state.rpc.mockImplementation(async (proc: string) => {
+      if (proc === "me") return { userId: state.userId };
+      download = deferred();
+      return download.promise;
+    });
     const pending = api.imageArtifactUri(target, "art-1", "image/png");
-    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitFor(() => expect(download).toBeDefined());
     state.generation += 1;
-    finish({ contentBase64: "old-account" });
+    download!.resolve({ contentBase64: "old-account" });
     await expect(pending).rejects.toThrow("Artifact session changed");
     expect([...state.files.values()]).not.toContain("old-account");
   });

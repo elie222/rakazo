@@ -199,7 +199,7 @@ describe("screen stream identity", () => {
 });
 
 describe("computer copy", () => {
-  it("matches the web pane while booting, asleep, or in control", () => {
+  it("matches the web pane while booting or asleep, and names the computer while in control", () => {
     expect(previewPlaceholder("stopped", false, "Chief")).toBe("Computer is stopped");
     expect(previewPlaceholder("suspended", false, "Chief")).toBe(
       "Computer is asleep. Take control to wake it.",
@@ -214,9 +214,8 @@ describe("computer copy", () => {
           takeoverRequested: true,
         }),
         "Chief",
-        "bot-1",
       ),
-    ).toBe("You have control");
+    ).toBe("Team Computer");
     expect(
       controlLabel(
         computer({
@@ -225,7 +224,6 @@ describe("computer copy", () => {
           controlBotId: "other-bot",
         }),
         "Chief",
-        "bot-1",
       ),
     ).toBe("Team Computer");
     expect(
@@ -391,6 +389,19 @@ describe("screen page redirects and origin", () => {
     expect(fromScreenPage("null", screen, "https://elsewhere.example.test/")).toBe(false);
     expect(
       fromScreenPage("null", screen, "https://app.example.test/novnc/session/view/2.t/vnc.html"),
+    ).toBe(true);
+    expect(
+      fromScreenPage("null", screen, "https://app.example.test/novnc/session/view/1.t/embed.html"),
+    ).toBe(true);
+    expect(
+      fromScreenPage(
+        "null",
+        "https://app.example.test/novnc/session/control/1.t",
+        "https://app.example.test/novnc/session/control/1.t/vnc.html",
+      ),
+    ).toBe(true);
+    expect(
+      fromScreenPage("null", screen, "https://app.example.test/novnc/session/control/1.t/vnc.html"),
     ).toBe(false);
     expect(
       fromScreenPage(

@@ -1,24 +1,21 @@
 import { VoiceAccountError } from "@rakazo/adapter-kit";
+import { MAX_VOICE_AUDIO_BYTES } from "@rakazo/core";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CartesiaVoiceProvider } from "./cartesia-voice.js";
-import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
-import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
-import type * as MacOsVoice from "./macos-voice.js";
-import { OpenAIVoiceProvider } from "./openai-voice.js";
+import { CartesiaVoiceProvider } from "./providers/voice/cartesia/cartesia-voice.js";
+import { ElevenLabsVoiceProvider } from "./providers/voice/elevenlabs/elevenlabs-voice.js";
+import { FishAudioVoiceProvider } from "./providers/voice/fish-audio/fish-audio-voice.js";
+import type * as MacOsVoice from "./providers/voice/macos/macos-voice.js";
+import { OpenAIVoiceProvider } from "./providers/voice/openai/openai-voice.js";
 import {
   SCRIPTED_MPEG,
   SCRIPTED_TRANSCRIPT,
   SCRIPTED_VOICE_ID,
   ScriptedVoiceProvider,
-} from "./scripted-voice.js";
-import {
-  createVoiceProvider,
-  isVoiceProviderId,
-  listVoiceCatalog,
-  VOICE_CATALOG,
-} from "./voice-factory.js";
-import { MAX_SYNTHESIZED_AUDIO_BYTES, MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+} from "./providers/voice/scripted/scripted-voice.js";
+import { XaiVoiceProvider } from "./providers/voice/xai/xai-voice.js";
+import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
+import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
 
 const ctx = {
   operationId: "voice",
@@ -29,10 +26,10 @@ const ctx = {
 };
 
 const macOs = vi.hoisted(() => ({ available: false }));
-vi.mock("./macos-voice.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof MacOsVoice>()),
-  macOsSayAvailable: () => macOs.available,
-}));
+vi.mock("./providers/voice/macos/macos-voice.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof MacOsVoice>();
+  return { ...actual, macOsVoice: { ...actual.macOsVoice, available: () => macOs.available } };
+});
 
 const previousRuntime = process.env.AGENT_RUNTIME;
 
@@ -49,11 +46,12 @@ describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
-    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
+    expect(listVoiceCatalog({ allowPrivateEndpoint: true }).map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
       "fish-audio",
+      "xai",
       "openai-compatible",
     ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
@@ -61,6 +59,7 @@ describe("createVoiceProvider", () => {
       "openai",
       "cartesia",
       "fish-audio",
+      "xai",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
@@ -199,7 +198,7 @@ describe("ElevenLabsVoiceProvider", () => {
       provider.synthesize({ text: "Hi", voiceId: "abc", apiKey: "sk_test_key" }, ctx),
     ).rejects.toThrow(speaking);
     if (status === 401)
-      await expect(provider.verify("sk_test_key", ctx)).resolves.toEqual({
+      await expect(provider.verify("sk_test_key", ctx)).resolves.toMatchObject({
         ok: false,
         message: speaking,
       });
@@ -258,7 +257,9 @@ describe("CartesiaVoiceProvider", () => {
   // An unbounded /voices request returns the whole catalog, overruns the voice JSON read cap
   // and fails connecting the provider outright.
   it("bounds the voices request so the catalog cannot overrun the read cap", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] })));
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => new Response(JSON.stringify({ data: [] })));
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CartesiaVoiceProvider();
 
@@ -826,6 +827,7 @@ describe("hosted voice response limits", () => {
     ["OpenAI", () => new OpenAIVoiceProvider(), "alloy"],
     ["Cartesia", () => new CartesiaVoiceProvider(), "sonic"],
     ["Fish Audio", () => new FishAudioVoiceProvider(), "voice"],
+    ["xAI", () => new XaiVoiceProvider(), "eve"],
   ])(
     "rejects an oversized %s speech response before buffering it",
     async (_name, create, voiceId) => {
@@ -835,7 +837,7 @@ describe("hosted voice response limits", () => {
         vi.fn().mockResolvedValue({
           ok: true,
           headers: new Headers({
-            "content-length": String(MAX_SYNTHESIZED_AUDIO_BYTES + 1),
+            "content-length": String(MAX_VOICE_AUDIO_BYTES + 1),
           }),
           body: { cancel },
         }),

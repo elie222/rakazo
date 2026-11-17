@@ -60,6 +60,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             organization: process.env.SENTRY_ORG,
             project: process.env.SENTRY_PROJECT,
             url: process.env.SENTRY_URL,
+            // R8 obfuscates release Java and Kotlin, so upload its mapping to read native stacks.
+            experimental_android: {
+              enableAndroidGradlePlugin: true,
+              autoUploadProguardMapping: true,
+              uploadNativeSymbols: false,
+              includeNativeSources: false,
+            },
           },
         ],
       ],

@@ -1,4 +1,5 @@
 import { getLogger, monitoringUserId } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { MonitoringConfig } from "@rakazo/logging/monitoring";
 import { Hono } from "hono";
 import type { AppEnv } from "./env.js";
@@ -29,7 +30,7 @@ export function parseDsn(dsn: string): DsnTarget | undefined {
   } catch {
     return undefined;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (url.protocol !== "https:") return undefined;
   const segments = url.pathname.split("/").filter(Boolean);
   const projectId = segments.pop();
   if (!url.username || !projectId || !/^[\w-]+$/.test(projectId)) return undefined;
@@ -117,13 +118,16 @@ async function forwardEnvelope(
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);
     }
-    if (!upstream.ok)
+    if (!upstream.ok) {
       getLogger().warn("client error report forwarding rejected", {
         "http.status": upstream.status,
       });
+      markExpectedFailure();
+    }
     return new Response(null, { status: upstream.status, headers });
   } catch {
     getLogger().warn("client error report forwarding failed");
+    markExpectedFailure();
     return new Response(null, { status: 502 });
   }
 }

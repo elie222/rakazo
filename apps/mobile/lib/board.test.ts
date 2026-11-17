@@ -41,13 +41,11 @@ describe("boardSections", () => {
 
 describe("ticketStatusLabel", () => {
   it("names every status the way the board does", () => {
-    const t = (message: string) => message;
-
-    expect(ticketStatusLabel("todo", t)).toBe("To do");
-    expect(ticketStatusLabel("doing", t)).toBe("In progress");
-    expect(ticketStatusLabel("review", t)).toBe("In review");
-    expect(ticketStatusLabel("blocked", t)).toBe("Blocked");
-    expect(ticketStatusLabel("done", t)).toBe("Done");
-    expect(ticketStatusLabel("closed", t)).toBe("Won't do");
+    expect(ticketStatusLabel("todo")).toBe("To do");
+    expect(ticketStatusLabel("doing")).toBe("In progress");
+    expect(ticketStatusLabel("review")).toBe("In review");
+    expect(ticketStatusLabel("blocked")).toBe("Blocked");
+    expect(ticketStatusLabel("done")).toBe("Done");
+    expect(ticketStatusLabel("closed")).toBe("Won't do");
   });
 });

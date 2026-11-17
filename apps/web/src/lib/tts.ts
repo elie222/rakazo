@@ -30,6 +30,10 @@ interface SpeakOptions {
 }
 
 const IDLE: SpeechSnapshot = { status: "idle" };
+const SILENT_CLIP =
+  "data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+type PlaybackEnd = "ended" | "stopped" | "blocked" | "failed";
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
@@ -37,8 +41,9 @@ export class Speaker {
   private token = 0;
   private audio: HTMLAudioElement | null = null;
   private objectUrl: string | null = null;
-  private settlePlayback: ((finished: boolean) => void) | null = null;
+  private settlePlayback: ((end: PlaybackEnd) => void) | null = null;
   private request: AbortController | null = null;
+  private served: string | null = null;
 
   subscribe(fn: (s: SpeechSnapshot) => void): () => void {
     this.watchers.add(fn);
@@ -50,6 +55,11 @@ export class Speaker {
 
   get state(): SpeechSnapshot {
     return this.snapshot;
+  }
+
+  /** The voice the server used for the latest request, set only when it was not the one asked for. */
+  get substitutedVoice(): string | null {
+    return this.served;
   }
 
   private set(next: SpeechSnapshot) {
@@ -66,16 +76,28 @@ export class Speaker {
     this.token += 1;
     this.request?.abort();
     this.request = null;
-    if (this.settlePlayback) this.settlePlayback(false);
+    if (this.settlePlayback) this.settlePlayback("stopped");
     else this.teardownAudio();
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
+  }
+
+  unlock() {
+    if (this.settlePlayback) return;
+    const audio = this.element();
+    audio.src = SILENT_CLIP;
+    void audio.play().catch(() => undefined);
+  }
+
+  private element(): HTMLAudioElement {
+    this.audio ??= new Audio();
+    return this.audio;
   }
 
   private teardownAudio() {
     if (this.audio) {
       this.audio.pause();
-      this.audio.src = "";
-      this.audio = null;
+      this.audio.removeAttribute("src");
+      this.audio.load();
     }
     if (this.objectUrl) {
       URL.revokeObjectURL(this.objectUrl);
@@ -92,6 +114,7 @@ export class Speaker {
     const live = () => this.token === mine && !controller.signal.aborted;
     const spaceId = opts.spaceId ?? selectedSpaceId();
 
+    this.served = null;
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
     let utterances: string[];
     try {
@@ -137,11 +160,15 @@ export class Speaker {
         messageId: opts.messageId,
         caption: utterances[i],
       });
-      const finished = await this.play(rendered.blob, live);
-      if (!finished || !live()) {
-        if (live()) this.set(IDLE);
+      const end = await this.play(rendered.blob, live);
+      if (end !== "ended" || !live()) {
+        const failure =
+          live() && (end === "failed" || end === "blocked")
+            ? t`Could not play that clip.`
+            : undefined;
+        if (live()) this.set(failure ? { ...IDLE, error: failure } : IDLE);
         if (this.request === controller) this.request = null;
-        return;
+        return end === "blocked" ? undefined : failure;
       }
     }
     if (live()) this.set(IDLE);
@@ -195,6 +222,9 @@ export class Speaker {
         const body = await readVoiceError(res, deadline.signal);
         throw new Error(voiceAccountErrorText(body) ?? body.error ?? "");
       }
+      // A superseded request must not overwrite the voice of the one that replaced it.
+      const served = res.headers.get("x-voice-id");
+      if (served && served !== opts.voiceId && !signal.aborted) this.served = served;
       const bytes = await readVoiceAudio(res, deadline.signal);
       return new Blob([new Uint8Array(bytes)], {
         type: res.headers.get("content-type") ?? "audio/mpeg",
@@ -204,28 +234,34 @@ export class Speaker {
     }
   }
 
-  private play(blob: Blob, live: () => boolean): Promise<boolean> {
+  private play(blob: Blob, live: () => boolean): Promise<PlaybackEnd> {
     return new Promise((resolve) => {
-      if (!live()) return resolve(false);
+      if (!live()) return resolve("stopped");
       this.teardownAudio();
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      this.audio = audio;
+      const audio = this.element();
+      audio.src = url;
       this.objectUrl = url;
       let settled = false;
-      const done = (ok: boolean) => {
+      const done = (end: PlaybackEnd) => {
         if (settled) return;
         settled = true;
         audio.onended = null;
         audio.onerror = null;
         if (this.settlePlayback === done) this.settlePlayback = null;
-        if (this.audio === audio) this.teardownAudio();
-        resolve(ok);
+        this.teardownAudio();
+        resolve(end);
       };
       this.settlePlayback = done;
-      audio.onended = () => done(true);
-      audio.onerror = () => done(false);
-      audio.play().catch(() => done(false));
+      audio.onended = () => done("ended");
+      audio.onerror = () => done("failed");
+      audio
+        .play()
+        .catch((error: unknown) =>
+          done(
+            (error as { name?: unknown } | null)?.name === "NotAllowedError" ? "blocked" : "failed",
+          ),
+        );
     });
   }
 }

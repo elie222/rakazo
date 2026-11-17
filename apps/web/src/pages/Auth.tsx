@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { BOT_COLOR_LIST, signInProviders } from "@rakazo/contracts";
 import {
   credentialIssue,
   MAX_PASSWORD_LENGTH,
@@ -6,26 +7,47 @@ import {
   signupRequiresEmailVerification,
   suggestEmailCorrection,
 } from "@rakazo/core";
-import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
+import {
+  Button,
+  Input,
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  Label,
+  LogoAvatar,
+} from "@rakazo/ui-web";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { PasskeySignIn } from "../components/PasskeySignIn";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { PasskeySignIn, usePasskeySignIn } from "../components/PasskeySignIn";
+import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { desktopBridge } from "../lib/desktop";
 import { clearSpaceSelection } from "../lib/rpc";
+import { newAccountDestination, signInNext } from "../lib/sign-in-next";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
+import { WindowChrome } from "./WindowChrome";
 
 type AuthMode = "in" | "up" | "forgot";
 
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
+// off-scale: 16px below md stops iOS Safari zooming into a focused field.
+const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
 const CODE_LENGTH = 6;
-export const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
+export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const chooserPath = mode === "up" ? "/sign-up" : "/sign-in";
+  const emailStep = location.pathname === `${chooserPath}/email`;
+  const next = signInNext(searchParams.get("next"));
+  // Switching between sign-in and sign-up keeps where the person was going.
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -39,6 +61,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
+  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
@@ -51,14 +74,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
   const codeMode = useCode && !password;
   const codeStep = useCode && codeSent;
+  const providers = reset ? signInProviders(reset) : [];
+  const chooser = Boolean(
+    reset?.passwordAuth && providers.length > 0 && !emailStep && mode !== "forgot" && !codeStep,
+  );
+  // The chooser and the email step share a card. A server with no providers keeps today's form.
+  const presented = Boolean(
+    reset?.passwordAuth && providers.length > 0 && mode !== "forgot" && !sent && !codeStep,
+  );
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
+    ) : presented && mode === "in" ? (
+      <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
       <Trans>Sign in to Rakazo</Trans>
     ) : mode === "up" ? (
-      <Trans>Create your Rakazo</Trans>
+      <Trans>Create your account</Trans>
     ) : (
       <Trans>Reset your password</Trans>
     );
@@ -150,7 +183,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         return;
       }
       if (mode === "up" && signupRequiresEmailVerification(result.data)) {
-        setSearchParams({ verify: "email" });
+        setSearchParams({ verify: "email", ...(next ? { next } : {}) });
         return;
       }
       enterApp();
@@ -194,27 +227,44 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setPending(true);
   }
 
+  async function signInAsDemo(account: { email: string; password: string }) {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await authClient.signIn.email(account);
+      if (result.error) {
+        setError(authErrorText(result.error, t`Could not continue`));
+        return;
+      }
+      // Sign-up sends a signed-in user to new-account onboarding; the demo account already exists.
+      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
+      enterApp();
+    } catch {
+      setError(t`Could not reach the server`);
+    } finally {
+      if (!entering.current) setPending(false);
+    }
+  }
+
   function leaveCodeStep() {
     setCodeSent(false);
     setCode("");
     setError(null);
   }
 
-  async function signInWithSso() {
+  async function signInWithProvider(provider: string) {
     setError(null);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
           authClient.signIn.social({
             disableRedirect,
-            provider: "oidc",
-            newUserCallbackURL: callbackURL("/onboarding"),
-            callbackURL: callbackURL(
-              searchParams.get("next") === "/integrations/setup" ? "/integrations/setup" : "/app",
-            ),
+            provider,
+            newUserCallbackURL: callbackURL(newAccountDestination(next)),
+            callbackURL: callbackURL(next ?? "/app"),
             errorCallbackURL: callbackURL("/sign-in"),
           }),
-        ["/app", "/onboarding", "/integrations/setup", "/sign-in"],
+        ["/app", "/onboarding", "/integrations/setup", "/sign-in", ...(next ? [next] : [])],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
     } catch {
@@ -227,10 +277,32 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <AuthFrame onSubmit={submit} title={title}>
+    <AuthFrame
+      onSubmit={submit}
+      title={title}
+      surface={presented}
+      leading={
+        presented && emailStep ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setError(null);
+              if (location.state?.authChooser) navigate(-1);
+              else navigate(`${chooserPath}${nextQuery}`, { replace: true });
+            }}
+          >
+            <ChevronLeft />
+            <Trans>Back</Trans>
+          </Button>
+        ) : null
+      }
+    >
       {sent ? (
         <div className="w-full text-center">
-          <Link to="/sign-in" className="font-medium text-foreground">
+          <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
             <Trans>Back to sign in</Trans>
           </Link>
         </div>
@@ -250,22 +322,61 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
             </div>
           ) : null}
-          {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
-            <Button
-              type="button"
+          {!reset?.passwordAuth && mode !== "forgot" ? (
+            <SocialSignInButtons
+              providers={providers}
               disabled={pending}
-              className={submitClass}
-              onClick={() => void signInWithSso()}
-            >
-              <Trans>Continue with {reset.sso.name}</Trans>
-            </Button>
+              onPress={(providerId) => void signInWithProvider(providerId)}
+            />
           ) : null}
           {error && !reset?.passwordAuth ? (
-            <p role="alert" className="mt-3 text-sm text-destructive">
+            <p
+              role="alert"
+              className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+            >
               {error}
             </p>
           ) : null}
-          {reset?.passwordAuth ? (
+          {chooser ? (
+            <>
+              <SocialSignInButtons
+                providers={providers}
+                disabled={pending || passkey.pending}
+                onPress={(providerId) => void signInWithProvider(providerId)}
+                onEmail={() => {
+                  setError(null);
+                  navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
+                }}
+                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
+              />
+              {error ? (
+                <p
+                  role="alert"
+                  className="mx-auto mt-4 w-full max-w-sm text-center text-body-sm text-destructive"
+                >
+                  {error}
+                </p>
+              ) : null}
+              <p className="mt-8 text-center text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                )}
+              </p>
+            </>
+          ) : null}
+          {reset?.passwordAuth && !chooser ? (
             <>
               {mode === "up" && !codeStep ? (
                 <div className="mb-4 w-full">
@@ -301,7 +412,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                         <InputOTPSlot
                           key={index}
                           index={index}
-                          className="size-12 text-lg first:rounded-l-xl last:rounded-r-xl"
+                          className="size-12 text-heading3 first:rounded-l-xl last:rounded-r-xl"
                         />
                       ))}
                     </InputOTPGroup>
@@ -328,7 +439,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
-                    <p role="status" className="mt-2 text-sm text-warning">
+                    <p role="status" className="mt-2 text-body text-warning">
                       <Trans>
                         Did you mean{" "}
                         <button
@@ -363,7 +474,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     className={fieldClass}
                   />
                   {mode === "in" && reset?.passwordReset ? (
-                    <div className="mt-2 text-right text-sm">
+                    <div className="mt-2 text-right text-body">
                       <Link to="/forgot-password" className="font-medium text-foreground">
                         <Trans>Forgot password?</Trans>
                       </Link>
@@ -372,7 +483,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 </div>
               ) : null}
               {error ? (
-                <p role="alert" className="mt-3 w-full text-sm text-destructive">
+                <p role="alert" className="mt-3 w-full text-body text-destructive">
                   {error}
                 </p>
               ) : null}
@@ -396,11 +507,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               </Button>
               {mode === "in" && !codeStep ? (
                 <PasskeySignIn
+                  autoFillOnly={presented}
                   disabled={pending}
                   className={submitClass}
                   onSignedIn={enterApp}
                   onError={setError}
                 />
+              ) : null}
+              {reset?.demoAccount && mode !== "forgot" && !codeStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  disabled={pending}
+                  className={submitClass}
+                  onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
+                >
+                  <Trans>Sign in with demo account</Trans>
+                </Button>
               ) : null}
               {codeStep ? (
                 <Button
@@ -414,36 +538,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {reset.sso && mode !== "forgot" && !codeStep ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  disabled={pending}
-                  className="mt-3 text-muted-foreground"
-                  onClick={() => void signInWithSso()}
-                >
-                  <Trans>Continue with {reset.sso.name}</Trans>
-                </Button>
-              ) : null}
               {codeStep ? null : (
-                <p className="mt-8 text-muted-foreground">
+                <p className="mt-8 text-center text-muted-foreground">
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
-                      <Link to="/sign-up" className="font-medium text-foreground">
+                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
                         <Trans>Sign up</Trans>
                       </Link>
                     </>
                   ) : mode === "up" ? (
                     <>
                       <Trans>Already have an account?</Trans>{" "}
-                      <Link to="/sign-in" className="font-medium text-foreground">
+                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
                         <Trans>Sign in</Trans>
                       </Link>
                     </>
                   ) : (
-                    <Link to="/sign-in" className="font-medium text-foreground">
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
                       <Trans>Back to sign in</Trans>
                     </Link>
                   )}
@@ -496,7 +608,7 @@ export function PasswordResetPage() {
     <AuthFrame onSubmit={submit} title={<Trans>Choose a new password</Trans>}>
       {complete ? (
         <div role="status" className="w-full text-center">
-          <p className="text-lg">
+          <p className="text-heading3">
             <Trans>Password updated</Trans>
           </p>
           <Link to="/sign-in" className="mt-6 inline-block font-medium">
@@ -519,7 +631,7 @@ export function PasswordResetPage() {
             className="mt-4"
           />
           {error ? (
-            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+            <p role="alert" className="mt-3 w-full text-body text-destructive">
               {error}
             </p>
           ) : null}
@@ -542,25 +654,63 @@ export function PasswordResetPage() {
 
 export function AuthFrame({
   title,
+  surface = false,
+  leading,
   onSubmit,
   children,
 }: {
   title: React.ReactNode;
+  surface?: boolean;
+  leading?: React.ReactNode;
   onSubmit: (event: React.FormEvent) => void;
   children: React.ReactNode;
 }) {
+  const server = desktopBridge()?.server;
   return (
-    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
-      <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
+    <div
+      className="flex min-h-full flex-col bg-background text-foreground"
+      data-rakazo-surface="auth"
+    >
+      <div className="app-drag flex items-center gap-2 px-5 py-[18px]">
+        <WindowChrome />
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 pb-16">
+        <form
+          onSubmit={onSubmit}
+          className={
+            surface
+              ? "flex w-full max-w-[520px] flex-col rounded-3xl border border-border bg-card px-8 pt-8 pb-9 shadow-sm"
+              : "flex w-full max-w-[460px] flex-col items-center"
+          }
+        >
+          {leading ? <div className="mb-4 self-start">{leading}</div> : null}
+          <div className={surface ? "flex w-full flex-col items-center" : "contents"}>
+            <LogoAvatar
+              size={74}
+              avatarValue={BOT_COLOR_LIST.find((color) => color.id === "orange")?.hex}
+              motion={false}
+            />
+            <h1
+              aria-live="polite"
+              className={
+                surface
+                  ? "mt-5 mb-6 text-balance text-center text-display font-medium tracking-tight"
+                  : "mt-7 mb-9 text-balance text-center text-display font-medium tracking-tight"
+              }
+            >
+              {title}
+            </h1>
+          </div>
+          {children}
+        </form>
+      </div>
+      {server ? (
+        <div className="flex justify-center pb-6">
+          <Button type="button" variant="text" size="sm" onClick={() => void server.change()}>
+            <Trans>Change server</Trans>
+          </Button>
         </div>
-        <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
-          {title}
-        </h1>
-        {children}
-      </form>
+      ) : null}
     </div>
   );
 }

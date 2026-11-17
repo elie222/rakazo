@@ -7,6 +7,7 @@ import {
   sanitizeMonitoringBreadcrumb,
   sanitizeMonitoringEvent,
   scrubMonitoringText,
+  stripMonitoringUrl,
 } from "./monitoring.js";
 
 describe("client monitoring contract", () => {
@@ -137,6 +138,29 @@ describe("client monitoring contract", () => {
     expect(sanitizeMonitoringEvent({ user: undefined }, "raw-user").user).toEqual({
       ip_address: null,
     });
+  });
+
+  it("keeps a shared page's link out of reported URLs", () => {
+    expect(stripMonitoringUrl("https://app.example.com/p/q3-plan-Zm9vYmFy_-x?x=1")).toBe(
+      "https://app.example.com/p/[Redacted]",
+    );
+    expect(stripMonitoringUrl("/api/v1/pages/shared/Zm9vYmFy_-x")).toBe(
+      "/api/v1/pages/shared/[Redacted]",
+    );
+    expect(stripMonitoringUrl("https://app.example.com/app/p/page1")).toBe(
+      "https://app.example.com/app/p/page1",
+    );
+  });
+
+  it("keeps a shared page's link out of reported error text", () => {
+    const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    const error = new Error(`Could not load https://app.example.com/p/plan-${token}`);
+    error.stack = `Error: at fetch (/api/v1/pages/shared/${token})`;
+    error.cause = new Error(`retry /p/${token}`);
+    expect(JSON.stringify(sanitizedError(error), ["message", "stack", "cause"])).not.toContain(
+      token,
+    );
+    expect(scrubMonitoringText(`GET /p/${token} failed`)).toBe("GET /p/[Redacted] failed");
   });
 
   it("uses valid W3C headers shared by client errors and the API", () => {

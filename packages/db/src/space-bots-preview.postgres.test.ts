@@ -8,8 +8,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 import { createSpaceForMember } from "./spaces.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 /** Rows Postgres returned for one statement that reads `messages`. */
 interface MessageRead {
@@ -86,7 +85,6 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
   const provider = "sendblue";
   const stamp = String(Date.now()).slice(-7);
   const ownerAddress = `+1557${stamp}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let owner: { userId: string; spaceId: string };
@@ -105,7 +103,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       await db.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }),
     );
     owner = provisioned;
     actor = {
@@ -189,7 +187,12 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       });
       await prisma.thread.update({
         where: { id: created.threadId },
-        data: { nextMessageSeq: spec.count, unread: spec.unread },
+        data: {
+          nextMessageSeq: spec.count,
+          ...(spec.unread
+            ? { reads: { create: { spaceId: who.spaceId, userId: who.userId, unread: true } } }
+            : {}),
+        },
       });
     });
     return {
@@ -240,7 +243,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
   it("previews the newest message of each bot in another space and reads at most one message row per thread", async () => {
     const { result: listed, rowCount } = await messageRowsDuring("listSpaceBotsForSpaces", () =>
       runAsSystem("space navigation across the member's Spaces", () =>
-        createRepos(prisma).listSpaceBotsForSpaces(actor, [spaceB]),
+        createRepos(prisma).listSpaceBotsForSpaces([spaceB], owner.userId),
       ),
     );
     expect(
@@ -261,7 +264,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       "listSpaceBotsForSpaces empty",
       () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createRepos(prisma).listSpaceBotsForSpaces(actor, []),
+          createRepos(prisma).listSpaceBotsForSpaces([], owner.userId),
         ),
     );
     expect(result).toEqual([]);

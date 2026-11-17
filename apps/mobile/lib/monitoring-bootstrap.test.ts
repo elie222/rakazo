@@ -19,9 +19,12 @@ vi.mock("./api", () => {
   return {
     authHeaders: async () => ({ authorization: "Bearer fake-session" }),
     currentApiBase: () => state.storedBase,
-    loadApiBase: async () => state.storedBase,
     subscribeApiBase: state.subscribe,
   };
+});
+vi.mock("./api-server", () => {
+  if (state.importBroken) throw new Error("app import failed");
+  return { loadApiBase: async () => state.storedBase };
 });
 vi.mock("./session", () => ({
   currentSessionGeneration: () => 0,

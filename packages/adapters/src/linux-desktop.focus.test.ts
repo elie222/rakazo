@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AdapterContext, ComputerAction, ComputerRef } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +37,17 @@ const children: Array<{ kill: () => void }> = [];
 function writeExecutable(file: string, body: string) {
   writeFileSync(file, body);
   chmodSync(file, 0o755);
+}
+
+/**
+ * macOS assesses a new executable on its first run, which can outlast the launcher's 0.2s
+ * quick-failure window. Run a program that exits at once one time first so it is judged by its exit.
+ */
+function writeQuickExitExecutable(file: string, body: string) {
+  writeExecutable(file, body);
+  const warm = spawnSync(file, { cwd: root, env: { ...process.env, FOCUS_RECORDED: "/dev/null" } });
+  // A program that cannot run at all must fail here, not pass as one that exits at once.
+  if (warm.error) throw warm.error;
 }
 
 writeExecutable(
@@ -183,8 +195,34 @@ describe("provider focus command", () => {
     process.kill(pid, "SIGTERM");
   });
 
-  it("resolves a workspace-relative program when no window matches", async () => {
+  it("opens a workspace file as a tab in the screen's browser without waiting on a viewer", async () => {
+    // The image's xdg-open hands a file to a viewer and lives as long as it does.
     writeExecutable(
+      path.join(bin, "xdg-open"),
+      ["#!/bin/sh", 'printf "%s\\n" "$1" > "$FOCUS_RECORDED"', "exec sleep 8", ""].join("\n"),
+    );
+    writeFileSync(path.join(workspace, "shot.png"), "png");
+    const command = await focusCommand({ kind: "open", path: "shot.png" });
+    expect(command).toContain(
+      `nohup /tmp/rakazo/browser-launch-1 '${pathToFileURL(path.join(workspace, "shot.png")).href}'`,
+    );
+    const started = Date.now();
+    const result = runFocus(command);
+    expect(result.status, result.stderr).toBe(0);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(() => readFileSync(recorded, "utf8")).toThrow();
+  });
+
+  it("fails an open at once when the workspace file does not exist", async () => {
+    writeExecutable(path.join(bin, "xdg-open"), "#!/bin/sh\nexec sleep 8\n");
+    const command = await focusCommand({ kind: "open", path: "missing.png" });
+    const result = runFocus(command);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("does not exist");
+  });
+
+  it("resolves a workspace-relative program when no window matches", async () => {
+    writeQuickExitExecutable(
       path.join(workspace, "tool"),
       ["#!/bin/sh", 'pwd > "$FOCUS_RECORDED"', 'printf "%s\\n" "$*" >> "$FOCUS_RECORDED"', ""].join(
         "\n",
@@ -258,7 +296,7 @@ describe("provider focus command", () => {
 
   it("fails a focus URI when the launcher exits before the old window is raised", async () => {
     const failapp = path.join(bin, "failapp");
-    writeExecutable(failapp, "#!/bin/sh\nexit 1\n");
+    writeQuickExitExecutable(failapp, "#!/bin/sh\nexit 1\n");
     writeFileSync(windows, "0x00000004  0 4 failapp.Failapp host app\n");
     const command = await focusCommand({
       kind: "focus",

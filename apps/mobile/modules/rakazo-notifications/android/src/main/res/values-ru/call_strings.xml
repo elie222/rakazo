@@ -3,4 +3,6 @@
   <string name="rakazo_call_channel">Текущий звонок</string>
   <string name="rakazo_call_title">Звонок Rakazo</string>
   <string name="rakazo_call_text">Микрофон активен</string>
+  <string name="rakazo_call_answer">Ответить</string>
+  <string name="rakazo_call_decline">Отклонить</string>
 </resources>

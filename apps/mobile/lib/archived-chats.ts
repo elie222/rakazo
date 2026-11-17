@@ -1,5 +1,6 @@
-import type { ApiRequestContext, MobileBot, MobileGroup } from "./api";
+import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
+import type { MobileBot, MobileGroup } from "./mobile-types";
 
 /** Archived bots and groups load independently, so one failing list doesn't hide the other. */
 export async function loadArchivedChats(

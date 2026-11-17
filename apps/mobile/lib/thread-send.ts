@@ -1,19 +1,28 @@
+import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
-import { attachmentsForThread, newClientId, resolveComposerSendPlan } from "@rakazo/core";
+import {
+  applyThreadSendReceipt,
+  attachmentsForThread,
+  newClientId,
+  pageReply,
+  resolveComposerSendPlan,
+} from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { ThreadComposerHandle } from "../components/thread-composer";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "./api";
-import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "./api";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { findSwitchTarget } from "./bot-switch";
 import { chatSettingsRoute } from "./chat-settings-route";
+import { subscribeComposerOffer } from "./composer-offer";
 import { cancelFocusPrompt } from "./focus-prompt";
-import { useI18n } from "./i18n";
+import { hapticImpact, hapticSuccess } from "./haptics";
 import { resumeLiveNotifications } from "./live-notifications";
-import { currentSessionGeneration } from "./session";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "./mobile-types";
+import { takePageReply } from "./pages";
+import { currentSessionGeneration, loadSessionToken } from "./session";
 import { answerThreadMessage } from "./thread-answer";
 import type { useThreadAttachments } from "./thread-attachments";
 import type { SendAttempt, useThreadFeedback } from "./thread-feedback";
@@ -23,10 +32,11 @@ import type { ThreadListScroll } from "./thread-list-scroll";
 import { previewMessageText } from "./thread-message-text";
 import { prepareUnsentSends } from "./unsent-sends";
 import { errorText } from "./user-error";
+import { startWorkActivity } from "./work-activity";
 
 /**
- * What the chat sends: composer messages with their reply and attachments, retries, stopping
- * work, ask answers and reactions, and slash actions.
+ * What the chat sends: composer messages with their reply and attachments, retries, ask
+ * answers and reactions, and slash actions.
  */
 export function useThreadSend({
   botId,
@@ -64,7 +74,7 @@ export function useThreadSend({
   markCaughtUp: () => void;
   openBotChat: (target: MobileBot, ring: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const { pendingAttachments, setPendingAttachments, setAttachmentNotice, importingShare } =
@@ -74,7 +84,7 @@ export function useThreadSend({
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
-  const [sending, setSending] = useState(false);
+  const replyPage = useRef<{ id: string; title: string } | null>(null);
   const preparingSend = useRef(false);
 
   useEffect(() => {
@@ -82,9 +92,33 @@ export function useThreadSend({
     setReplyTarget(null);
     setReplyQuote(null);
     setQuoteTarget(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     setError(null);
   }, [threadKey]);
+
+  /** A reply tapped on one of this chat's pages lands in the composer unsent, about that page. */
+  const receivePageReply = useCallback(() => {
+    const handle = composerRef.current;
+    const reply = handle ? takePageReply(threadKey) : null;
+    if (!handle || !reply) return;
+    handle.addReply(reply.text);
+    // The page is what it answers now, not a message picked before the page opened.
+    setReplyTarget(null);
+    setReplyQuote(null);
+    replyPage.current = reply.page;
+  }, [threadKey]);
+  // An app card in this chat offers its text straight into the open composer.
+  useEffect(
+    () =>
+      threadKey
+        ? subscribeComposerOffer(threadKey, (text) => composerRef.current?.addReply(text))
+        : undefined,
+    [threadKey],
+  );
+  const composerEmptied = useCallback(() => {
+    replyPage.current = null;
+  }, []);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
@@ -109,7 +143,7 @@ export function useThreadSend({
     if (readOnly || importingShare.current) return;
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
-    if ((!initialBotTarget && !initialGroupTarget) || sending || preparingSend.current) return;
+    if ((!initialBotTarget && !initialGroupTarget) || preparingSend.current) return;
     const originThreadKey = initialGroupTarget ?? initialBotTarget;
     const submitted = composerRef.current?.snapshot();
     if (!submitted) return;
@@ -129,10 +163,11 @@ export function useThreadSend({
       return;
     }
     preparingSend.current = true;
+    hapticImpact();
     try {
       await prepareUnsentSends();
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     } finally {
       preparingSend.current = false;
@@ -147,23 +182,33 @@ export function useThreadSend({
     );
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+    // As on the web: a page's reply goes to its card here, or names the page when none is loaded.
+    const messages = history.snapRef.current?.messages ?? [];
+    const fromPage =
+      plan.shouldSend && !reroutedToGroup
+        ? pageReply(plan.trimmed, messages, replyPage.current, replyTarget?.id)
+        : { text: plan.trimmed };
+    const pageCard = messages.find((message) => message.id === fromPage.replyToMessageId);
     let attempt: SendAttempt;
     try {
       attempt = feedback.sendAttempt({
         originThreadKey: originThreadKey!,
-        displayText: submitted.promptText,
-        replyPreview: replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null),
+        displayText: fromPage.text === plan.trimmed ? submitted.promptText : fromPage.text,
+        replyPreview: pageCard
+          ? previewMessageText(pageCard)
+          : (replyQuote ?? (replyTarget ? previewMessageText(replyTarget) : null)),
         initialBotTarget,
         botTarget,
         groupTarget,
         reroutedToGroup,
-        plan,
+        plan: { ...plan, trimmed: fromPage.text },
         attachments,
-        replyTargetId: replyTarget?.id,
-        replyQuote,
+        replyTargetId: pageCard?.id ?? replyTarget?.id,
+        replyQuote: pageCard ? null : replyQuote,
+        fromPage: pageCard ? true : undefined,
       });
     } catch (error) {
-      Alert.alert(t("Failed to send message"), errorText(error));
+      Alert.alert(t`Failed to send message`, errorText(error));
       return;
     }
     composerRef.current?.reset();
@@ -172,6 +217,7 @@ export function useThreadSend({
     );
     setReplyTarget(null);
     setReplyQuote(null);
+    replyPage.current = null;
     setAttachmentNotice(null);
     followOwnSend();
     await deliver(attempt);
@@ -189,6 +235,14 @@ export function useThreadSend({
   function afterDelivered(attempt: SendAttempt) {
     const { initialBotTarget, botTarget, groupTarget, reroutedToGroup, plan } = attempt.payload;
     if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    const target = groupTarget ? { groupId: groupTarget } : botTarget ? { botId: botTarget } : null;
+    if (attempt.acceptedRun && target && attempt.spaceId) {
+      startWorkActivity({
+        title: mentionBotsRef.current?.find((bot) => bot.id === botTarget)?.name ?? "",
+        spaceId: attempt.spaceId,
+        target,
+      });
+    }
     const generation = currentSessionGeneration();
     const apiBase = currentApiBase();
     const spaceId = selectedSpaceId();
@@ -207,14 +261,23 @@ export function useThreadSend({
       !navigation.isFocused()
     )
       return;
+    hapticSuccess();
     if (reroutedToGroup && groupTarget) {
       router.push({
         pathname: "/group-thread",
-        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t("Group") },
+        params: { groupId: groupTarget, name: plan.rerouteGroupName ?? t`Group` },
       });
       return;
     }
     if (isCurrentTarget(botTarget, groupTarget)) {
+      // Show the accepted run right away, but only where a refresh follows: if the run already
+      // finished and its terminal event was missed, that refresh drops the queued run shown here.
+      if (botTarget && attempt.acceptedRun) {
+        const shown = history.snapRef.current;
+        const receipt = { botId: botTarget, ...attempt.acceptedRun };
+        const next = applyThreadSendReceipt(shown, receipt, history.terminalRunIds.current);
+        if (next !== shown) history.commitSnap(next);
+      }
       if (history.pinnedAroundRef.current) showLatest();
       void refresh().catch(() => undefined);
     }
@@ -223,36 +286,6 @@ export function useThreadSend({
   const afterDeliveredRef = useRef(afterDelivered);
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
-
-  async function stop() {
-    if (readOnly) return;
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || sending) return;
-    setSending(true);
-    try {
-      await rpc(
-        "threads/stop",
-        targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
-      );
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        Alert.alert(t("Failed to stop work"), errorText(err, t("Try again.")));
-      }
-      setSending(false);
-      return;
-    }
-    try {
-      await refresh();
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        const detail = errorText(err, t("Failed to refresh"));
-        setError(t("Work stopped, but the thread could not refresh: {detail}", { detail }));
-      }
-    } finally {
-      setSending(false);
-    }
-  }
 
   const answer = useCallback(
     (
@@ -263,14 +296,23 @@ export function useThreadSend({
       remember?: false,
     ) =>
       answerThreadMessage(
-        { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
         message,
         answer,
         fields,
         dismiss,
         remember,
       ),
-    [botId, groupId, readOnly],
+    [botId, groupId, readOnly, navigation],
   );
 
   async function react(message: MobileMessage, reaction: MessageReaction) {
@@ -292,7 +334,7 @@ export function useThreadSend({
       return true;
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return false;
-      Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
+      Alert.alert(t`Could not update reaction`, errorText(err, t`Try again.`));
       return false;
     }
   }
@@ -305,10 +347,10 @@ export function useThreadSend({
     setReplyQuote,
     quoteTarget,
     setQuoteTarget,
-    sending,
+    receivePageReply,
+    composerEmptied,
     send,
     retry,
-    stop,
     answer,
     react,
     runSlashAction,

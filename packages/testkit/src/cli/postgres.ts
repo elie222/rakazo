@@ -3,6 +3,11 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 const ATTEMPTS = 4;
 
+export type DisposablePostgres = {
+  getConnectionUri: () => string;
+  stop: () => Promise<unknown>;
+};
+
 /**
  * Every database URL the app and Prisma read, pointed at one disposable database.
  * Prisma migrates DATABASE_MIGRATION_URL first and reloads `.env`, so an inherited
@@ -12,8 +17,19 @@ export function disposableDatabaseEnv(url: string) {
   return { DATABASE_URL: url, DATABASE_MIGRATION_URL: url, REALTIME_DATABASE_URL: url };
 }
 
-/** A disposable Postgres; image registries rate-limit shared CI runners per minute, so pulls are retried. */
-export async function startPostgres(signal?: AbortSignal) {
+/**
+ * A disposable Postgres. CI can set CI_POSTGRES_URL to a workflow `services:` database that
+ * starts beside checkout and install; otherwise Testcontainers pulls and starts one.
+ * Image registries rate-limit shared CI runners per minute, so container pulls are retried.
+ */
+export async function startPostgres(signal?: AbortSignal): Promise<DisposablePostgres> {
+  const provided = process.env.CI_POSTGRES_URL?.trim();
+  if (provided) {
+    return {
+      getConnectionUri: () => provided,
+      stop: async () => {},
+    };
+  }
   for (let attempt = 1; ; attempt += 1) {
     try {
       // A throwaway database needs no crash safety; parallel suites need more connections.

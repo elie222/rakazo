@@ -5,19 +5,18 @@ import type {
   CredentialStore,
   OAuthCredential,
 } from "@earendil-works/pi-ai";
-import type {
-  AgentModelOAuthCredential,
-  ModelCredentialFailedState,
-  ModelCredentialRetireReason,
-} from "@rakazo/adapter-kit";
+import type { AgentModelOAuthCredential, AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import { getLogger } from "@rakazo/logging";
+import { withAbort } from "@rakazo/core";
+import type { RetireModelCredential } from "./pi-oauth.js";
 import {
+  isRetiredModelCredentialError,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   OAUTH_RECONNECT_REQUIRED_ERROR,
-  oauthCredentialAccountId,
+  oauthAccountChange,
   RetiredModelCredentialError,
   terminalOAuthRefreshErrorMarker,
+  tryRetireModelCredential,
 } from "./pi-oauth.js";
 
 export function toOAuthCredential(value: AgentModelOAuthCredential): OAuthCredential {
@@ -37,11 +36,10 @@ export class PiRuntimeCredentialStore implements CredentialStore {
     private readonly providerId: string,
     credential?: Credential,
     private readonly persistOAuth?: (credential: OAuthCredential) => Promise<void>,
-    private readonly retireOAuth?: (
-      reason: ModelCredentialRetireReason,
-      detail?: string,
-      failed?: ModelCredentialFailedState,
-    ) => Promise<boolean | undefined>,
+    private readonly retireOAuth?: RetireModelCredential,
+    private readonly refreshOAuth?: NonNullable<
+      NonNullable<AgentRunRequest["model"]["oauth"]>["refresh"]
+    >,
   ) {
     this.credential = credential;
     this.providerId = canonicalPiProviderId(providerId);
@@ -76,59 +74,60 @@ export class PiRuntimeCredentialStore implements CredentialStore {
     const operation = previous.then(async () => {
       options?.signal?.throwIfAborted();
       const current = this.credential;
+      if (this.refreshOAuth && current?.type === "oauth") {
+        // The stored-credential refresh owns the lock, re-read, write and retirement.
+        try {
+          const next = await this.refreshOAuth(current, async (stored, signal) => {
+            const refreshed = await withAbort(fn(toOAuthCredential(stored)), signal);
+            return refreshed?.type === "oauth" ? refreshed : undefined;
+          });
+          options?.signal?.throwIfAborted();
+          this.credential = toOAuthCredential(next);
+        } catch (error) {
+          if (isRetiredModelCredentialError(error)) this.credential = undefined;
+          throw error;
+        }
+        return this.credential;
+      }
       let next: Credential | undefined;
       try {
         next = await fn(current);
       } catch (error) {
         const marker = terminalOAuthRefreshErrorMarker(error);
-        if (marker && this.retireOAuth) {
-          // Await the retirement so the marker commits before this error surfaces: a
-          // detached write could race a catalog read or be dropped by worker shutdown.
-          try {
-            const retired = await this.retireOAuth(
-              "terminal-refresh-failure",
-              marker,
-              current?.type === "oauth" ? current : undefined,
-            );
-            if (retired) {
-              // The rejected access token must not stay available to a later read.
-              this.credential = undefined;
-              throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
-            }
-          } catch (retireError) {
-            if (retireError instanceof RetiredModelCredentialError) throw retireError;
-            getLogger().error("model credential retirement failed", retireError);
-          }
+        // Await the retirement so the marker commits before this error surfaces: a
+        // detached write could race a catalog read or be dropped by worker shutdown.
+        if (
+          marker &&
+          (await tryRetireModelCredential(
+            this.retireOAuth,
+            "terminal-refresh-failure",
+            marker,
+            current?.type === "oauth" ? current : undefined,
+          ))
+        ) {
+          // The rejected access token must not stay available to a later read.
+          this.credential = undefined;
+          throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
         }
         throw error;
       }
       options?.signal?.throwIfAborted();
       if (next !== undefined) {
         if (next.type === "oauth" && next !== current) {
-          const storedAccountId =
-            current?.type === "oauth" ? oauthCredentialAccountId(current) : undefined;
-          const refreshedAccountId = oauthCredentialAccountId(next);
-          if (storedAccountId && refreshedAccountId && storedAccountId !== refreshedAccountId) {
+          const stored = current?.type === "oauth" ? current : undefined;
+          const accountChange = oauthAccountChange(stored, next);
+          if (accountChange) {
             // The refresh belongs to a different account: retire the stored credential
-            // instead of persisting the new token. Fence on the stored state so a
-            // concurrent successful refresh is not deleted underneath it.
-            let deleted = false;
-            if (this.retireOAuth) {
-              try {
-                deleted =
-                  (await this.retireOAuth(
-                    "account-changed",
-                    `stored account ${storedAccountId}, refreshed account ${refreshedAccountId}`,
-                    current?.type === "oauth" ? current : undefined,
-                  )) === true;
-              } catch (retireError) {
-                // Leave it unmarked so the run can retry.
-                getLogger().error("model credential retirement failed", retireError);
-              }
-            }
-            // Fail the run permanently only when this call deleted the stored
-            // credential. A skipped delete means a newer credential survived.
-            if (deleted) {
+            // instead of persisting the new token. Fail the run permanently only when
+            // this call deleted it; a skipped delete means a newer credential survived.
+            if (
+              await tryRetireModelCredential(
+                this.retireOAuth,
+                "account-changed",
+                accountChange,
+                stored,
+              )
+            ) {
               this.credential = undefined;
               throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
             }

@@ -9,6 +9,10 @@ process creates them. No queue, scan, shared slot or notification sits between a
 due run and its start, so one slow or stuck run never delays another. A run due
 later starts from a timer in the process that scheduled it.
 
+Code that makes a run due calls `wakeRun` after its commit. A nudge that fails is
+logged and never fails the work that recorded the run; recovery starts the run from
+its row.
+
 Each start claims the run through the executor's atomic lease and fence checks, so
 however many API and worker processes run, a run executes once. Model streams and
 tools run independently after durable ownership and heartbeats are established.
@@ -16,7 +20,17 @@ tools run independently after durable ownership and heartbeats are established.
 A process that is shutting down or lacks memory headroom hands the run over: it
 publishes the run id on the realtime connection and a worker takes it. Shutdown
 requeues in-flight runs the same way, so the replacement process resumes them
-within moments of a deploy.
+within moments of a deploy. With `RUN_DRAIN_ENABLED`, a stopping worker first lets
+each run it is executing end its turn, for up to `RUN_DRAIN_MS`, because a turn cut
+off mid-step repeats its model call or tool call; it keeps renewing those leases and
+claims nothing new meanwhile. A turn that finishes a step while its process is
+stopping does not start another: it saves the turn, with the reply built so far, and
+hands the run back, and the next process resumes with the next model call; if that
+fails, the turn goes on where it is. A turn whose step was its last simply ends. A stopping API requeues its runs at once on SIGTERM. `deploy-main.sh`
+instead sends a replaced API the signal its image's `org.rakazo.run-drain-signal`
+label names: it closes its listener, so the proxy sends requests and live streams to
+the new API, and drains its runs the same way. A SIGTERM during that drain hands them
+back at once.
 
 Recovery is never on the path a new run takes. Each worker scans for runnable rows
 at startup and every five seconds and starts any it finds: a run whose process died,
@@ -43,13 +57,13 @@ existing dispatch and recovery behavior.
 Structured logs emit `run.execution_started`, `run.first_response`, and
 `run.finished`. Timing fields contain durations in milliseconds:
 
-| Field | Meaning |
-| --- | --- |
-| `run.pre_run_wait_ms` | Source message to run creation, including steering held behind earlier work. |
-| `run.queue_wait_ms` | Run creation to its first execution start. |
-| `run.first_response_ms` | Source message to first persisted visible reply text or reply card. |
-| `run.total_ms` | Source message to run completion or failure. |
-| `run.execution_wall_ms` | First execution start to completion, including retries and human waits. |
+| Field                   | Meaning                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `run.pre_run_wait_ms`   | Source message to run creation, including steering held behind earlier work. |
+| `run.queue_wait_ms`     | Run creation to its first execution start.                                   |
+| `run.first_response_ms` | Source message to first persisted visible reply text or reply card.          |
+| `run.total_ms`          | Source message to run completion or failure.                                 |
+| `run.execution_wall_ms` | First execution start to completion, including retries and human waits.      |
 
 These are run-level measurements. Multiple steering messages can share one run;
 its selected source message defines the timing origin. When a run has no source
@@ -82,10 +96,13 @@ A bounded pass cancels redundant marked timer rows with no attempts, effects,
 output, steering, checkpoint, or live computer ownership, preserving historical
 rows and terminal events. The `routine.coalesced` log records reuse without
 another `routine.fired` event.
-A timer run whose first start is more than 15 minutes after the most recent occurrence
+A timer run whose first start is at least 15 minutes after the most recent occurrence
 due by then (counted from the occurrence in its marker) tells the agent both
 times in the routine's timezone, so a catch-up after downtime can adapt instead
-of assuming it is still the scheduled time. Late runs are never skipped.
+of assuming it is still the scheduled time. Late runs are never skipped. The due time is
+recorded on the run at that first start, so a resume reuses it and a later schedule edit
+does not change it, and the routine's run history shows it ("Started 40m late").
+Already-started runs with no recorded lateness remain unlabelled on resume.
 Committed timer runs and their advanced schedules remain intact when publication
 fails. Recovery repairs delivery for every driver; a notification failure never
 rolls back work that another tick or dispatcher can already own.

@@ -13,6 +13,7 @@ export const LOCALES = [
   "he",
   "hi",
   "zh-tw",
+  "pl",
 ] as const;
 
 export type Locale = (typeof LOCALES)[number];
@@ -36,6 +37,7 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   he: "עברית",
   hi: "हिन्दी",
   "zh-tw": "繁體中文",
+  pl: "Polski",
 };
 
 export const LOCALE_OG: Record<Locale, string> = {
@@ -53,6 +55,7 @@ export const LOCALE_OG: Record<Locale, string> = {
   he: "he_IL",
   hi: "hi_IN",
   "zh-tw": "zh_TW",
+  pl: "pl_PL",
 };
 
 export const LOCALE_HTML_LANG: Record<Locale, string> = {
@@ -70,6 +73,7 @@ export const LOCALE_HTML_LANG: Record<Locale, string> = {
   he: "he",
   hi: "hi",
   "zh-tw": "zh-TW",
+  pl: "pl",
 };
 
 /** BCP 47 tags shared by page hreflang links and the sitemap. */
@@ -88,6 +92,7 @@ export const LOCALE_HREFLANG: Record<Locale, string> = {
   he: "he",
   hi: "hi",
   "zh-tw": "zh-TW",
+  pl: "pl-PL",
 };
 
 export function isLocale(value: string | undefined): value is Locale {

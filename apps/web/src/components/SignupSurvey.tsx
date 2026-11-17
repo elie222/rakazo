@@ -52,10 +52,10 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
         submit();
       }}
     >
-      <h1 className="text-[32px] font-medium text-foreground">
+      <h1 className="text-display font-medium text-foreground">
         <Trans>Welcome to Rakazo</Trans>
       </h1>
-      <p id={`${fieldId}-use`} className="mt-8 text-sm font-medium text-foreground">
+      <p id={`${fieldId}-use`} className="mt-8 text-body font-medium text-foreground">
         <Trans>How will you use Rakazo?</Trans>
       </p>
       <ToggleGroup
@@ -82,7 +82,7 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
         <>
           <label
             htmlFor={`${fieldId}-team-size`}
-            className="mt-6 block text-sm font-medium text-foreground"
+            className="mt-6 block text-body font-medium text-foreground"
           >
             <Trans>How big is your team?</Trans>
           </label>
@@ -97,7 +97,7 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
       ) : null}
       <label
         htmlFor={`${fieldId}-source`}
-        className="mt-6 block text-sm font-medium text-foreground"
+        className="mt-6 block text-body font-medium text-foreground"
       >
         <Trans>How did you hear about us?</Trans>
       </label>
@@ -110,7 +110,7 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
       />
       <label
         htmlFor={`${fieldId}-reason`}
-        className="mt-6 block text-sm font-medium text-foreground"
+        className="mt-6 block text-body font-medium text-foreground"
       >
         <Trans>What do you most want Rakazo to help with?</Trans>
       </label>

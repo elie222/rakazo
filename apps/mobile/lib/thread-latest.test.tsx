@@ -5,7 +5,7 @@ import { appendNewerThreadPage, leaveThreadWindow, openThreadWindow } from "@rak
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot } from "./mobile-types";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { ThreadScrollBehavior } from "./thread-scroll";
 import type { PinnedThreadWindow } from "./thread-window";

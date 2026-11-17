@@ -11,8 +11,6 @@ export const RELEASE_WATCH_GITHUB_TOOL_NAMES = [
   "GITHUB_GET_RELEASE",
 ] as const;
 
-export type ReleaseWatchGithubToolName = (typeof RELEASE_WATCH_GITHUB_TOOL_NAMES)[number];
-
 export type ReleaseWatchDiagnosis =
   | "ok"
   | "vague_routine_prompt"

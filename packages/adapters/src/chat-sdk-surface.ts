@@ -15,10 +15,11 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { trimEndChars } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
-import { Chat, isLinkNode, parseMarkdown, text, toPlainText, walkAst } from "chat";
-import { getLarkTextParts } from "./lark/text-parts.js";
+import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
+import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
+import { getLarkTextParts } from "./providers/messaging/lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -27,7 +28,34 @@ import { getLarkTextParts } from "./lark/text-parts.js";
 const webhookDrain = new AsyncLocalStorage<{
   pending: Promise<unknown>[];
   failedKeys: string[];
+  markdownChars: number;
 }>();
+
+/**
+ * Markdown parsing is superlinear on hostile text (unmatched emphasis, deep
+ * quotes), so past this many characters in one webhook the text stays literal.
+ */
+export const INBOUND_MARKDOWN_MAX_CHARS = 8_000;
+
+/** Bound the adapter's inbound text-to-markdown parsing per webhook; sends are untouched. */
+export function boundInboundMarkdown(adapter: Adapter): void {
+  const converter = (adapter as unknown as { formatConverter: { toAst(value: string): Root } })
+    .formatConverter;
+  const toAst = converter.toAst.bind(converter);
+  converter.toAst = (value) => {
+    const drain = webhookDrain.getStore();
+    if (!drain) return toAst(value);
+    drain.markdownChars += value.length;
+    if (drain.markdownChars <= INBOUND_MARKDOWN_MAX_CHARS) {
+      try {
+        return toAst(value);
+      } catch {
+        // Deep nesting overflows the parser's stack.
+      }
+    }
+    return root([paragraph([text(value)])]);
+  };
+}
 
 /** Inbound webhook bodies larger than this are rejected before parsing. */
 export const MESSAGING_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
@@ -67,8 +95,22 @@ export interface MessagingPlatform {
   redeliveryKeys?: (payload: unknown) => string[];
   /** Send errors that retrying cannot fix (unknown channel, blocked bot, revoked token). */
   isPermanentSendError?: (error: unknown) => boolean;
+  /**
+   * Posts with a key the vendor deduplicates on, for platforms whose API takes one, so a send
+   * repeated after a lost answer arrives once. `threadId` is the adapter's own.
+   */
+  postOnce?: (
+    threadId: string,
+    message: string | PostableMarkdown,
+    idempotencyKey: string,
+  ) => Promise<{ id: string }>;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
+  /**
+   * When the raw payload says its roster was current, when the platform reports
+   * a time for the event; null when it reports none, so no comparison happens.
+   */
+  rosterAt?: (raw: unknown) => Date | null;
   /**
    * Member departures one raw payload reports, for platforms that send
    * per-event leave notices instead of a roster (Telegram service messages).
@@ -125,6 +167,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   private readonly byProvider = new Map<string, MountedPlatform>();
   private sink: ((event: MessagingInboundEvent) => Promise<void>) | undefined;
   private initialized: Promise<void> | undefined;
+  private receiving = true;
 
   constructor(platforms: MessagingPlatform[], options: { userName?: string } = {}) {
     if (platforms.length === 0) throw new Error("ChatSdkMessagingSurface needs >=1 platform");
@@ -224,12 +267,17 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return this.dispatchWebhook(mounted, request);
   }
 
+  /**
+   * No Chat SDK adapter's post takes an abort signal, so a post that has started runs to its end
+   * (Slack and Sendblue clients bound it themselves). The signal stops a post that has not.
+   */
   async sendToThread(
     request: MessagingSendRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<MessagingSendResult> {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
+    context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
     // block; Photon's iMessage adapter renders it as native styled text. Keep
@@ -254,9 +302,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         ? { markdown: request.body }
         : request.body;
     try {
-      const sent = await mounted.chat
-        .thread(toAdapterThreadId(mounted, request.threadId))
-        .post(message);
+      const threadId = toAdapterThreadId(mounted, request.threadId);
+      const postOnce = mounted.platform.postOnce;
+      const sent =
+        postOnce && request.idempotencyKey && !attachment
+          ? await postOnce(
+              threadId,
+              markdown ? { markdown: request.body } : request.body,
+              request.idempotencyKey,
+            )
+          : await mounted.chat.thread(threadId).post(message);
       const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
       return { handle };
     } catch (error) {
@@ -337,6 +392,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await this.ensureInitialized();
   }
 
+  /** Stops getUpdates polling; a send that starts the surface later leaves it stopped. */
+  async stopReceiving(): Promise<void> {
+    // A start still in flight stops polling itself once it finishes.
+    this.receiving = false;
+    await this.stopPollingAdapters();
+  }
+
   /**
    * Stop Telegram getUpdates before exit. Chat.shutdown() only calls
    * adapter.disconnect(), which Telegram does not implement.
@@ -356,7 +418,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!this.initialized) {
       const chats = [...this.byProvider.values()].map(({ chat }) => chat.initialize());
       this.initialized = Promise.all(chats).then(
-        () => undefined,
+        async () => {
+          if (!this.receiving) await this.stopPollingAdapters();
+        },
         async (error: unknown) => {
           try {
             // Telegram may already be polling if another platform's
@@ -412,7 +476,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // only register the work via waitUntil. Drain that work before ACKing so
     // a vendor 200 cannot race ahead of provision/enqueue, and surface sink
     // failures as 5xx so the vendor retries.
-    const drain = { pending: [] as Promise<unknown>[], failedKeys: [] as string[] };
+    const drain = {
+      pending: [] as Promise<unknown>[],
+      failedKeys: [] as string[],
+      markdownChars: 0,
+    };
     const response = await webhookDrain.run(drain, async () => {
       const adapterResponse = await chat.webhooks[adapterName]!(forwarded, {
         waitUntil: (task) => {
@@ -455,6 +523,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const transport = platform.transport?.(message.raw) ?? null;
     const attachments = inboundAttachments(message);
     const departures = isDirect ? undefined : platform.departures?.(message.raw);
+    const rosterAt = isDirect ? undefined : (platform.rosterAt?.(message.raw) ?? undefined);
     const base: MessagingInboundMessage = {
       type: "message",
       provider: platform.provider,
@@ -469,6 +538,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
+      ...(rosterAt ? { rosterAt } : {}),
       content: [
         plainTextWithLinks(message, platform.provider === "lark"),
         ...(attachments.length
@@ -551,7 +621,7 @@ function plainTextWithLinks(message: Message, lark: boolean): string {
       // Markdown drops spaces at a fragment boundary; preserve them when the
       // next structured item is on the same row.
       if (last?.type === "paragraph" && !trailing && parts[index + 1]?.literal)
-        trailing = value.match(/[ \t]+$/)?.[0] ?? "";
+        trailing = value.slice(trimEndChars(value, " \t").length);
       // A heading followed by a code row has the same paragraph separation as
       // a heading followed by ordinary text in the SDK's plain-text renderer.
       const headingBreak =

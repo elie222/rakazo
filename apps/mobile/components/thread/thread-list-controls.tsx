@@ -1,6 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
 import type { ActivityMarkBot } from "../activity-mark";
 import { ActivityMark } from "../activity-mark";
 import { ScrollToBottomButton } from "../scroll-to-bottom-button";
@@ -15,14 +16,14 @@ export function ThreadWorkingFooter({
   label: string;
   atBottom: boolean;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   if (bots.length === 0) return null;
   return (
     <View
       accessibilityLabel={
         bots.length === 1
-          ? t("{name} is working", { name: bots[0]?.name ?? t("Agent") })
-          : t("{count} agents working", { count: bots.length })
+          ? t`${ph({ name: bots[0]?.name ?? t`Agent` })} is working`
+          : t`${ph({ count: bots.length })} agents working`
       }
       accessibilityRole="text"
       style={{ minHeight: 40, marginTop: 12, justifyContent: "center" }}
@@ -34,7 +35,7 @@ export function ThreadWorkingFooter({
 
 export function LoadEarlierButton({ loading, onPress }: { loading: boolean; onPress: () => void }) {
   const tokens = mobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <Pressable
       disabled={loading}
@@ -49,10 +50,10 @@ export function LoadEarlierButton({ loading, onPress }: { loading: boolean; onPr
       }}
     >
       {loading ? (
-        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
       ) : null}
       <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
-        {t("Load earlier messages")}
+        {t`Load earlier messages`}
       </Text>
     </Pressable>
   );
@@ -72,11 +73,11 @@ export function JumpToLatestButton({
   onPress: () => void;
 }) {
   const tokens = mobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <View style={{ position: "absolute", end: insetEnd, bottom: bottomInset + 12 }}>
       <ScrollToBottomButton
-        accessibilityLabel={unread ? t("Jump to latest, new messages") : t("Jump to latest")}
+        accessibilityLabel={unread ? t`Jump to latest, new messages` : t`Jump to latest`}
         onPress={onPress}
       />
       {unread ? (

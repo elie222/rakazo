@@ -1,6 +1,7 @@
 import { ActivityIndicator, Platform, Pressable, Text } from "react-native";
 import type { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens } from "../lib/native";
+import { actionPressHandler } from "../lib/native-control-actions";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
 import { androidRipple, withAlpha } from "../lib/ripple";
@@ -18,6 +19,7 @@ export function NativeActionButton({
   prominence = "primary",
   variant,
   fill,
+  align = "center",
   style,
   size = "default",
   icon,
@@ -25,6 +27,7 @@ export function NativeActionButton({
 }: NativeActionButtonProps) {
   const tokens = useMobileTokens();
   const inactive = disabled || busy;
+  const press = actionPressHandler(inactive, onPress);
   const stretches = actionFills(prominence, fill);
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
@@ -36,13 +39,7 @@ export function NativeActionButton({
           label: prominence === "destructive" ? tokens.destructive : tokens.link,
           border: undefined,
         }
-      : variant === "rectangular"
-        ? {
-            background: effectiveProminence === "primary" ? tokens.primary : tokens.card,
-            label: effectiveProminence === "primary" ? tokens.primaryForeground : tokens.foreground,
-            border: effectiveProminence === "primary" ? tokens.primary : tokens.foreground,
-          }
-        : buttonColors(effectiveProminence, stretches, tokens);
+      : buttonColors(effectiveProminence, stretches, tokens);
   return (
     <Pressable
       accessibilityActions={accessibilityActions}
@@ -53,25 +50,23 @@ export function NativeActionButton({
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
       android_ripple={androidRipple(withAlpha(colors.label, 0.2))}
-      onPress={onPress}
+      onPress={press}
       style={({ pressed }) => [
         {
           flexDirection: "row",
           gap: icon && label ? 6 : undefined,
           minHeight:
-            variant === "rectangular" || (variant === "text" && prominence === "destructive")
+            variant === "text" && prominence === "destructive"
               ? 44
               : variant === "text" || small || compact
                 ? undefined
                 : 48,
-          borderRadius: variant === "rectangular" ? 9 : 12,
+          borderRadius: 12,
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: align === "start" ? "flex-start" : "center",
           alignSelf: stretches ? "stretch" : "flex-start",
-          paddingHorizontal:
-            variant === "rectangular" ? 16 : variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
-          paddingVertical:
-            variant === "rectangular" ? 12 : variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
+          paddingHorizontal: variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
+          paddingVertical: variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,
           borderColor: colors.border,
@@ -92,26 +87,19 @@ export function NativeActionButton({
             <Text
               style={{
                 color: colors.label,
+                flexShrink: 1,
+                textAlign: align === "start" ? "left" : "center",
                 fontSize:
-                  variant === "rectangular"
-                    ? 15
-                    : variant === "text"
-                      ? 16
-                      : small
-                        ? 13
-                        : prominence === "quiet"
-                          ? 15
-                          : prominence === "plain"
-                            ? 17
-                            : 16,
-                fontWeight:
-                  variant === "rectangular"
-                    ? "600"
-                    : variant === "text"
-                      ? "500"
-                      : compact
-                        ? "400"
-                        : "600",
+                  variant === "text"
+                    ? 16
+                    : small
+                      ? 13
+                      : prominence === "quiet"
+                        ? 15
+                        : prominence === "plain"
+                          ? 17
+                          : 16,
+                fontWeight: variant === "text" ? "500" : compact ? "400" : "600",
               }}
             >
               {label}

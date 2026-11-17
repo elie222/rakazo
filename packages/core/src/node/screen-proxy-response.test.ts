@@ -5,6 +5,34 @@ import {
 } from "./screen-proxy-response.js";
 
 describe("screen proxy response isolation", () => {
+  it("removes connection-specific headers before enforcing the screen sandbox", () => {
+    const headers = safeScreenProxyResponseHeaders({
+      Connection: [
+        "keep-alive, Content-Security-Policy",
+        "X-Upstream-Hop, Access-Control-Allow-Origin",
+      ],
+      "keep-alive": "timeout=5",
+      "proxy-connection": "keep-alive",
+      "proxy-authenticate": "Basic realm=screen",
+      "proxy-authorization": "Basic fake-token",
+      te: "trailers",
+      trailer: "x-upstream-trailer",
+      "transfer-encoding": "chunked",
+      upgrade: "websocket",
+      "X-Upstream-Hop": "private-hop-value",
+      "content-security-policy": "sandbox allow-same-origin allow-scripts",
+      "content-type": "text/html",
+      "content-length": "123",
+    });
+    expect(headers).toEqual({
+      "content-type": "text/html",
+      "content-length": "123",
+      "content-security-policy": ["sandbox allow-scripts allow-pointer-lock"],
+      "access-control-allow-origin": "*",
+      "cache-control": "no-transform",
+    });
+  });
+
   it.each(["text/html", "application/xhtml+xml", "image/svg+xml", "text/javascript", undefined])(
     "sandboxes every response, including direct navigation with content type %s",
     (contentType) => {

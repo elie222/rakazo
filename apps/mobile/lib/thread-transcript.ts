@@ -7,8 +7,8 @@ import {
   shouldShowBotSenderName,
 } from "@rakazo/core";
 import { useMemo, useState } from "react";
-import type { MobileMessage } from "./api";
 import { applyLocalChoiceDismissals, hasVisibleMessagePresentation } from "./message-presentation";
+import type { MobileMessage } from "./mobile-types";
 
 /**
  * What the chat draws from its messages: peer replies folded under their marker until expanded,

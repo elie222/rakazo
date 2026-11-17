@@ -69,6 +69,9 @@ describe("openai-compatible URL policy", () => {
         );
       }
     }
+    expect(() => assertAllowedOpenAiCompatibleUrl("http://192.168.1.20:1234/v1")).toThrow(
+      "MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker",
+    );
   });
 
   it("blocks metadata and link-local endpoints even when private endpoints are allowed", () => {

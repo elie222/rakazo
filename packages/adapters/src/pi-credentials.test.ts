@@ -1,14 +1,15 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
+import { serializeModelSecret } from "./model-secret.js";
 import { PiRuntimeCredentialStore } from "./pi-credentials.js";
 import {
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   OAUTH_RECONNECT_REQUIRED_ERROR,
   RetiredModelCredentialError,
-  serializeModelSecret,
 } from "./pi-oauth.js";
 
 function credential(overrides: Partial<OAuthCredential> = {}): OAuthCredential {
@@ -99,11 +100,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("settles retirement before the refresh error surfaces", async () => {
-    let releaseRetire!: () => void;
-    const retireGate = new Promise<undefined>((resolve) => {
-      releaseRetire = () => resolve(undefined);
-    });
-    const retire = vi.fn(() => retireGate);
+    const retireGate = deferred<undefined>();
+    const retire = vi.fn(() => retireGate.promise);
     const store = new PiRuntimeCredentialStore("openai-codex", credential(), undefined, retire);
     const failure = new Error("OAuth refresh failed for openai-codex", {
       cause: new Error('OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}'),
@@ -126,7 +124,7 @@ describe("PiRuntimeCredentialStore", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(settled).toBe(false);
 
-    releaseRetire();
+    retireGate.resolve(undefined);
     await modification;
     expect(settled).toBe(true);
   });
@@ -245,11 +243,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("settles account-change retirement before the error surfaces", async () => {
-    let releaseRetire!: () => void;
-    const retireGate = new Promise<undefined>((resolve) => {
-      releaseRetire = () => resolve(undefined);
-    });
-    const retire = vi.fn(() => retireGate);
+    const retireGate = deferred<undefined>();
+    const retire = vi.fn(() => retireGate.promise);
     const store = new PiRuntimeCredentialStore(
       "openai-codex",
       credential({ accountId: "acct-a" }),
@@ -272,7 +267,7 @@ describe("PiRuntimeCredentialStore", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(settled).toBe(false);
 
-    releaseRetire();
+    retireGate.resolve(undefined);
     await modification;
     expect(settled).toBe(true);
   });
@@ -404,5 +399,35 @@ describe("PiRuntimeCredentialStore", () => {
 
     expect(persisted.map((entry) => entry.access)).toEqual(["new-access", "newer-access"]);
     expect(retire).not.toHaveBeenCalled();
+  });
+
+  it("ends a coordinated refresh when its time runs out and reports a cancelled one", async () => {
+    // The coordinated refresh hands over a signal that ends a provider call it is waiting on.
+    const storeFor = (signal: AbortSignal) =>
+      new PiRuntimeCredentialStore(
+        "openai-codex",
+        credential({ access: "old-access" }),
+        undefined,
+        undefined,
+        async (held, refresh) => (await refresh(held, signal)) ?? held,
+      );
+    const timeout = new AbortController();
+    const hanging = storeFor(timeout.signal).modify("openai-codex", () => new Promise(() => {}));
+    timeout.abort(new Error("refresh timed out"));
+    await expect(hanging).rejects.toThrow("refresh timed out");
+
+    // A run cancelled while the refresh ran does not report the refresh as done.
+    const cancel = new AbortController();
+    const store = storeFor(new AbortController().signal);
+    const cancelled = store.modify(
+      "openai-codex",
+      async () => {
+        cancel.abort(new Error("run cancelled"));
+        return credential({ access: "new-access" });
+      },
+      { signal: cancel.signal },
+    );
+    await expect(cancelled).rejects.toThrow("run cancelled");
+    expect(store.accessToken).toBe("old-access");
   });
 });

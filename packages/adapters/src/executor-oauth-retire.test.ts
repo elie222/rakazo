@@ -1,12 +1,21 @@
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRunExecutor } from "./executor.js";
+import { serializeModelSecret } from "./model-secret.js";
 import { modelCredentialAuthKindsForSpace } from "./model-selection.js";
-import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
+import { withSecretPersistence } from "./secret-persistence.js";
 
 const SCOPE = { userId: "user-1", spaceId: "ws-1" };
 const PROVIDER = "openai-codex";
 const MODEL_ID = "gpt-6-luna";
+
+type Hook = (input: {
+  model: string;
+  operation: string;
+  args: unknown;
+  query: (args: unknown) => Promise<unknown>;
+}) => Promise<unknown>;
 
 const stamp = new Date("2026-08-30T00:00:00.000Z");
 
@@ -73,9 +82,23 @@ function oauthPrisma() {
     userVoiceCredential: {
       count: vi.fn(async () => 0),
     },
+    $executeRaw: vi.fn(async () => 0),
+    // The row lock secret persistence takes before a write replaces a reference.
+    $queryRaw: vi.fn(async (query: { values: unknown[] }) =>
+      state.secrets
+        .filter((row) => query.values.flat().includes(row.id))
+        .map(({ id, ciphertext }) => ({ id, ciphertext })),
+    ),
     secret: {
+      findMany: vi.fn(async (args: { where: { id: string } }) =>
+        state.secrets.filter((row) => row.id === args.where.id).map(({ id }) => ({ id })),
+      ),
       findFirst: vi.fn(
         async (args: { where: { id: string }; select?: Record<string, boolean> }) =>
+          state.secrets.find((row) => row.id === args.where.id) ?? null,
+      ),
+      findUnique: vi.fn(
+        async (args: { where: { id: string } }) =>
           state.secrets.find((row) => row.id === args.where.id) ?? null,
       ),
       deleteMany: vi.fn(async (args: { where: { id: string } }) => {
@@ -91,7 +114,11 @@ function oauthPrisma() {
       }),
     },
   };
-  const prisma = {
+  const prisma: Record<string, unknown> & {
+    $transaction: (
+      callback: (txArg: Record<string, unknown>) => Promise<unknown>,
+    ) => Promise<unknown>;
+  } = {
     $transaction: vi.fn(async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)),
     userModelCredential: {
       findMany: vi.fn(async () => [...state.credentials]),
@@ -125,9 +152,39 @@ function oauthPrisma() {
         state.secrets.filter((row) => args.where.id.in.includes(row.id)),
       ),
       update: vi.fn(async () => null),
+      count: vi.fn(
+        async (args: { where: { ciphertext: string } }) =>
+          state.secrets.filter((row) => row.ciphertext === args.where.ciphertext).length,
+      ),
     },
-  } as unknown as PrismaClient;
-  return { prisma, state };
+    botSecret: { count: vi.fn(async () => 0) },
+    vaultCredential: { count: vi.fn(async () => 0) },
+    integrationProviderConfig: { count: vi.fn(async () => 0) },
+    // Routes each model call through the extension, as Prisma does, inside transactions too.
+    $extends: (extension: { query: { $allModels: { $allOperations: Hook } } }) =>
+      extend(prisma, extension.query.$allModels.$allOperations),
+  };
+  function extend(client: Record<string, unknown>, hook: Hook): Record<string, unknown> {
+    const extended: Record<string, unknown> = {
+      ...client,
+      $transaction: (callback: (txArg: unknown) => Promise<unknown>) =>
+        prisma.$transaction((txArg) => callback(extend(txArg, hook))),
+    };
+    for (const [name, delegate] of Object.entries(client)) {
+      if (name.startsWith("$")) continue;
+      extended[name] = Object.fromEntries(
+        Object.entries(delegate as Record<string, (args: unknown) => Promise<unknown>>).map(
+          ([operation, query]) => [
+            operation,
+            (args: unknown) =>
+              hook({ model: name[0]!.toUpperCase() + name.slice(1), operation, args, query }),
+          ],
+        ),
+      );
+    }
+    return extended;
+  }
+  return { prisma: prisma as unknown as PrismaClient, state };
 }
 
 function expiredOAuthPlaintext() {
@@ -163,10 +220,12 @@ function oauthExecutor(
       ciphertext: `sealed:${plaintext}`,
     })),
     delete: vi.fn(async () => undefined),
+    isRemote: () => false,
   };
   const executor = createRunExecutor({
     billingEnabled: false,
-    prisma,
+    // As the API and worker build it, so a replaced or unsaved copy is removed.
+    prisma: withSecretPersistence(prisma, secretStore as never),
     secretStore,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return { executor, secretStore };
@@ -206,7 +265,10 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     expect(marker).not.toContain("access-token");
     expect(marker).not.toContain("refresh-token");
     expect(JSON.parse(marker)).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 4096 });
-    expect(secretStore.delete).toHaveBeenCalledExactlyOnceWith("cipher-codex", "secret-codex");
+    expect(secretStore.delete).toHaveBeenCalledExactlyOnceWith(
+      "cipher-codex",
+      expect.objectContaining({ recordId: "secret-codex" }),
+    );
 
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(
       OAUTH_RECONNECT_REQUIRED_ERROR,
@@ -254,8 +316,9 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
   });
 
   it("keeps a credential a concurrent refresh already rewrote", async () => {
-    // The refresh raced a sibling run that persisted rotated tokens into the
-    // same secret row; the stale failure must not delete the newer material.
+    // A writer outside the refresh lock (a run persisting its own refresh) rotated
+    // the tokens while this refresh was failing; the stale failure must not delete
+    // the newer material.
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: "invalid_grant", error_description: "gone" }), {
@@ -266,6 +329,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     const { prisma, state } = oauthPrisma();
     const load = vi
       .fn()
+      .mockImplementationOnce(() => expiredOAuthPlaintext())
       .mockImplementationOnce(() => expiredOAuthPlaintext())
       .mockImplementation(() => rotatedOAuthPlaintext());
     const { executor, secretStore } = oauthExecutor(prisma, load);
@@ -282,7 +346,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     // The marker sealed for the skipped replacement is not left behind.
     expect(secretStore.delete).toHaveBeenCalledExactlyOnceWith(
       expect.stringMatching(/^sealed:.*reconnectRequired/),
-      "secret-codex",
+      expect.objectContaining({ recordId: "secret-codex" }),
     );
     const auth = await modelCredentialAuthKindsForSpace(
       prisma,

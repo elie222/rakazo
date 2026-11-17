@@ -8,8 +8,7 @@ import { createRepos } from "./repos.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("archived groups and their bots (PostgreSQL)", () => {
   const provider = "sendblue";
@@ -20,8 +19,6 @@ describePostgres("archived groups and their bots (PostgreSQL)", () => {
   let owner: { userId: string; spaceId: string };
   let actor: { userId: string; spaceId: string; email: string; isDeploymentOwner: boolean };
   let computers = 0;
-
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
 
   /** A bot on a computer of its own, so each live one counts toward the computer quota. */
   async function bot(name: string) {
@@ -68,7 +65,7 @@ describePostgres("archived groups and their bots (PostgreSQL)", () => {
       await db.pool.end();
     };
     owner = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address }, signup),
+      provisionMessagingIdentity(prisma, { provider, address }),
     );
     actor = { ...owner, email: "groups@example.test", isDeploymentOwner: false };
   });

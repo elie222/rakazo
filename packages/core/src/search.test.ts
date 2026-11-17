@@ -19,6 +19,24 @@ describe("search helpers", () => {
     ]);
   });
 
+  it.each(["`", "``", "```"])("excludes %s code delimiters and deduplicates links", (delimiter) => {
+    const url = "https://example.com/docs";
+    expect(extractLinksFromText(`${url} ${delimiter}${url}${delimiter}`)).toEqual([url]);
+  });
+
+  it("separates adjacent code links and preserves encoded backticks", () => {
+    expect(extractLinksFromText("`https://example.com/a``http://example.com/%60b`")).toEqual([
+      "https://example.com/a",
+      "http://example.com/%60b",
+    ]);
+  });
+
+  it("ignores a bare scheme before a code delimiter", () => {
+    expect(extractLinksFromText("`https://` https://example.com/a)https://`")).toEqual([
+      "https://example.com/a",
+    ]);
+  });
+
   it.each([
     "https://[2001:db8::1]/guide",
     "http://[::1]:8080/guide?q=search#part",
@@ -123,6 +141,14 @@ describe("search helpers", () => {
   it("builds a short snippet around the query", () => {
     const text = "alpha beta gamma delta epsilon zeta eta theta";
     expect(snippetAroundMatch(text, "gamma", 20)).toContain("gamma");
+  });
+
+  it("opens at a word instead of in the middle of one", () => {
+    const text =
+      "**Checklist** with *italic* and `code`.\n\nThe unique search phrase is marigold checklist.";
+    expect(snippetAroundMatch(text, "marigold")).toBe(
+      "…`code`.\n\nThe unique search phrase is marigold checklist.",
+    );
   });
 
   it("keeps the match after characters that expand when lowercased", () => {

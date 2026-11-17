@@ -10,15 +10,27 @@ import type {
   ProcessEvent,
   SandboxProvider,
   ScreenRequest,
+  SecretStore,
   TerminalRequest,
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { cancelComputerRunWork } from "./computer-idle.js";
+import { draftRecordingsOfLease, runAsSystem } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { cancelComputerRunWork, providerKeepsHome } from "./computer-idle.js";
+import { computerProviderDescriptor } from "./computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
-import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
+import {
+  ConfiguredSandbox,
+  loadComputerOwnerSettings,
+  loadComputerProviderSelection,
+} from "./configured-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import {
+  assertHostCommandsAllowed,
+  DesktopSandboxProvider,
+} from "./providers/computer/desktop/desktop-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
@@ -29,6 +41,38 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
 
 export async function createRunSandbox(
   kind: string,
+  opts: SandboxProviderOptions & {
+    prisma?: PrismaClient;
+    secrets?: Pick<SecretStore, "load" | "onChange">;
+  },
+): Promise<SandboxProvider> {
+  const base = await createBaseRunSandbox(kind, opts);
+  // With the database at hand, Settings can send computers elsewhere: an admin's choice for
+  // everyone, or an account's own provider.
+  if (!opts.prisma || !opts.secrets || kind === "desktop" || kind === "fake") return base;
+  const { prisma, secrets } = opts;
+  const configured = new ConfiguredSandbox(
+    base,
+    () => loadComputerProviderSelection(prisma, secrets, true),
+    {
+      onSecretChange: secrets.onChange?.bind(secrets),
+      loadOwn: (homeKey) => loadComputerOwnerSettings(prisma, secrets, homeKey, true),
+      createProvider: (settings) =>
+        createBaseRunSandbox(settings.provider, {
+          ...opts,
+          ...computerProviderDescriptor(settings.provider).verify(settings.values),
+        }),
+    },
+  );
+  // Startup never waits on the secret store or a saved provider: routing rereads them on first use.
+  await configured
+    .refresh()
+    .catch((error) => getLogger().warn("computer_provider.load_failed", { error }));
+  return configured;
+}
+
+async function createBaseRunSandbox(
+  kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
 ): Promise<SandboxProvider> {
   if (kind === "desktop") {
@@ -38,10 +82,30 @@ export async function createRunSandbox(
       hostRoots: [homedir()],
     });
   }
+  const prisma = opts.prisma;
   const primary = await createSandboxProvider(kind, {
     ...opts,
+    referenceInUse: prisma
+      ? async (computer) =>
+          (await runAsSystem("check whether another computer shares a provider resource", () =>
+            prisma.computer.count({
+              where: {
+                kind: computer.kind,
+                providerRef: computer.providerRef,
+                homeKey: { not: computer.botId },
+                // One still saving its workspace needs the desktop until it finishes.
+                state: { in: ["booting", "running", "suspending"] },
+              },
+            }),
+          )) > 0
+      : opts.referenceInUse,
     onUnsafeStop: opts.prisma
       ? async (providerRef) => {
+          // Quarantine ends any person's control; a recording made under it ends with it.
+          const held = await opts.prisma!.computer.findMany({
+            where: { kind, providerRef, controlLeaseId: { not: null } },
+            select: { spaceId: true, controlLeaseId: true },
+          });
           const quarantined = await opts.prisma!.computer.updateMany({
             where: { kind, providerRef },
             data: {
@@ -51,13 +115,16 @@ export async function createRunSandbox(
               controlFence: { increment: 1 },
               controlHolder: "none",
               controlLeaseId: null,
+              controlUserId: null,
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             },
           });
           if (quarantined.count === 0)
             throw new Error("Computer recovery requirement could not be recorded");
+          for (const { spaceId, controlLeaseId } of held) {
+            await draftRecordingsOfLease(opts.prisma!, { spaceId, leaseId: controlLeaseId! });
+          }
         }
       : opts.onUnsafeStop,
   });
@@ -97,6 +164,10 @@ export class HostAwareSandbox implements SandboxProvider {
     }
   }
 
+  ownsReference(computer: Pick<ComputerRef, "kind" | "providerRef">) {
+    return this.route(computer).ownsReference?.(computer) ?? true;
+  }
+
   describe() {
     return this.isolated.describe();
   }
@@ -107,7 +178,7 @@ export class HostAwareSandbox implements SandboxProvider {
 
   async provisionKind() {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.describe().id as ComputerRef["kind"];
+    return provider.describe().id;
   }
 
   async provision(
@@ -235,6 +306,10 @@ export class HostAwareSandbox implements SandboxProvider {
 
   billsWhileRunning(computer: Pick<ComputerRef, "kind">): boolean {
     return this.route(computer).billsWhileRunning?.(computer) ?? false;
+  }
+
+  keepsHome(computer: ComputerRef) {
+    return providerKeepsHome(this.route(computer), computer);
   }
 
   keepAlive(computer: ComputerRef) {

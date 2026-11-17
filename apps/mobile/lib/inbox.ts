@@ -1,3 +1,4 @@
+import { snoozeWakeDay } from "@rakazo/core";
 import { dateLocaleForUi } from "./i18n";
 
 const DAY_MS = 86_400_000;
@@ -26,6 +27,15 @@ export function formatThreadTime(iso: string, now = new Date()) {
     return date.toLocaleDateString(dateLocaleForUi(), { weekday: "long" });
   }
   return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+}
+
+/** When a snoozed chat wakes: the time today, the weekday within a week, or the date. */
+export function formatSnoozeWake(iso: string, now = new Date()) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const day = snoozeWakeDay(date, now);
+  return day ? `${date.toLocaleDateString(dateLocaleForUi(), day)} ${time}` : time;
 }
 
 function pad(value: number) {

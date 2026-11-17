@@ -38,6 +38,19 @@ it.skipIf(!databaseUrl)(
       });
       expect(signup.status).toBeLessThan(400);
       const cookie = sessionCookieHeader(signup);
+      // Signed out, only `health` is callable, so a large body is discarded unread.
+      const signedOut = await handles.app.request("/rpc/me", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: "session=forged" },
+        body: JSON.stringify({ json: { padding: "a".repeat(1024 * 1024) } }),
+      });
+      expect(signedOut.status).toBe(401);
+      const health = await handles.app.request("/rpc/health", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ json: {} }),
+      });
+      expect(health.status).toBe(200);
       const call = (procedure: string, json: unknown = {}) =>
         handles.app.request(`/rpc/${procedure}`, {
           method: "POST",

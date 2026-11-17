@@ -14,36 +14,31 @@ import {
   initialBotMemory,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
-import {
-  BACKGROUND_RUN_TRIGGERS,
-  displayName,
-  isBackgroundRunTrigger,
-  phoneCallSettings,
-  ringingCall,
-  userVisibleMessages,
-} from "@rakazo/core";
+import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
+import { botThreadPreviews } from "./bot-previews.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
-import { ensureComputerRecord, parseComputerMode } from "./computers.js";
+import {
+  ensureComputerRecord,
+  parseComputerMode,
+  resolveDefaultComputerMode,
+  teamComputerUserId,
+} from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
+import { isUniqueViolation } from "./prisma-errors.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import {
   activeRunSelection,
   previewFromBlocks,
   primaryActiveRun,
+  threadRunStatus,
   withLatestBotRuns,
 } from "./thread-listing.js";
+import { readStateFor, snoozedUntilFor, unreadFor } from "./thread-reads.js";
 import { withTransactionRetry } from "./transaction-retry.js";
-
-/** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
-const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
-
-function isUniqueViolation(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
-}
 
 function isBotCreateConflict(error: unknown, clientId?: string): boolean {
   if (!isUniqueViolation(error)) return false;
@@ -95,7 +90,7 @@ function mapBot(
     memoryScope: string | null;
     createdAt: Date;
     updatedAt: Date;
-    thread: { id: string; unread: boolean } | null;
+    thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
@@ -107,6 +102,7 @@ function mapBot(
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     fleetManagement?: boolean;
+    replyMode?: string;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
     spawnKey?: string | null;
@@ -134,7 +130,8 @@ function mapBot(
     pinned: bot.pinned,
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,
-    unread: bot.thread.unread,
+    unread: unreadFor(bot.thread),
+    snoozedUntil: snoozedUntilFor(bot.thread),
     parentBotId: bot.parentBotId,
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
     threadId: bot.thread.id,
@@ -154,6 +151,7 @@ function mapBot(
     crossSpaceCommunication: bot.crossSpaceCommunication ?? true,
     dailyCheckIns: bot.dailyCheckIns ?? true,
     fleetManagement: bot.fleetManagement ?? true,
+    replyMode: bot.replyMode === "messages" ? "messages" : "chat",
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     webhookConfigured: Boolean(bot.webhookSecretId),
@@ -167,12 +165,11 @@ export function createRepos(
   capabilities: { phoneCallsEnabled?: boolean; phoneCallRingSeconds?: number } = {},
 ) {
   async function listBotSectionsForSpaces(
-    actor: Actor,
     spaceIds: string[],
   ): Promise<Array<BotSection & { spaceId: string }>> {
     if (spaceIds.length === 0) return [];
     const sections = await prisma.botSection.findMany({
-      where: { spaceId: { in: spaceIds }, userId: actor.userId },
+      where: { spaceId: { in: spaceIds } },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     });
     return sections.map((section) => ({
@@ -185,12 +182,11 @@ export function createRepos(
     }));
   }
 
-  async function listSpaceBotsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceBot[]> {
+  async function listSpaceBotsForSpaces(spaceIds: string[], userId: string): Promise<SpaceBot[]> {
     if (spaceIds.length === 0) return [];
     const rows = await prisma.bot.findMany({
       where: {
         spaceId: { in: spaceIds },
-        userId: actor.userId,
         archivedAt: null,
       },
       select: {
@@ -204,12 +200,7 @@ export function createRepos(
         sectionId: true,
         updatedAt: true,
         parentBotId: true,
-        thread: {
-          select: {
-            id: true,
-            unread: true,
-          },
-        },
+        thread: { select: { id: true, reads: readStateFor(userId) } },
         runs: activeRunSelection,
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -228,10 +219,12 @@ export function createRepos(
         notifyOnFinish: bot.notifyOnFinish,
         pinned: bot.pinned,
         sectionId: bot.sectionId,
-        unread: bot.thread.unread,
+        unread: unreadFor(bot.thread),
+        snoozedUntil: snoozedUntilFor(bot.thread),
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: activeRun?.status ?? "idle",
+        threadStatus: threadRunStatus(bot.runs, bot.thread.id),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -240,7 +233,7 @@ export function createRepos(
 
   return {
     async listBotSections(actor: Actor): Promise<BotSection[]> {
-      return listBotSectionsForSpaces(actor, [actor.spaceId]);
+      return listBotSectionsForSpaces([actor.spaceId]);
     },
 
     listBotSectionsForSpaces,
@@ -256,7 +249,6 @@ export function createRepos(
               where: {
                 id: input.botId,
                 spaceId: actor.spaceId,
-                userId: actor.userId,
                 archivedAt: null,
               },
               select: { id: true },
@@ -265,35 +257,33 @@ export function createRepos(
               where: {
                 id: input.groupId,
                 spaceId: actor.spaceId,
-                userId: actor.userId,
                 archivedAt: null,
               },
               select: { id: true },
             });
         if (!target) throw new IsolationError();
 
-        const aggregate = await tx.botSection.aggregate({
-          where: { spaceId: actor.spaceId, userId: actor.userId },
-          _max: { position: true },
-        });
-        await tx.botSection.createMany({
-          data: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            name,
-            position: (aggregate._max.position ?? -1) + 1,
-          },
-          skipDuplicates: true,
-        });
-        const section = await tx.botSection.findUniqueOrThrow({
-          where: {
-            spaceId_userId_name: {
+        // Sections belong to the space: a name another member already used is the same section.
+        await lockSpaceForContentCreation(tx, actor);
+        const section =
+          (await tx.botSection.findFirst({
+            where: { spaceId: actor.spaceId, name },
+            orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+          })) ??
+          (await tx.botSection.create({
+            data: {
               spaceId: actor.spaceId,
               userId: actor.userId,
               name,
+              position:
+                ((
+                  await tx.botSection.aggregate({
+                    where: { spaceId: actor.spaceId },
+                    _max: { position: true },
+                  })
+                )._max.position ?? -1) + 1,
             },
-          },
-        });
+          }));
         if (input.botId) {
           await tx.bot.update({ where: { id: target.id }, data: { sectionId: section.id } });
         } else {
@@ -313,42 +303,37 @@ export function createRepos(
     },
 
     async updateBotSection(actor: Actor, input: { sectionId: string; name: string }) {
-      const existing = await prisma.botSection.findFirst({
-        where: {
-          id: input.sectionId,
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-        },
-      });
-      if (!existing) throw new IsolationError();
-      if (existing.name === input.name) {
-        return {
-          id: existing.id,
-          name: existing.name,
-          position: existing.position,
-          createdAt: existing.createdAt.toISOString(),
-          updatedAt: existing.updatedAt.toISOString(),
-        } satisfies BotSection;
-      }
-      try {
-        const section = await prisma.botSection.update({
+      const section = await prisma.$transaction(async (tx) => {
+        const existing = await tx.botSection.findFirst({
+          where: {
+            id: input.sectionId,
+            spaceId: actor.spaceId,
+          },
+        });
+        if (!existing) throw new IsolationError();
+        if (existing.name === input.name) return existing;
+        // Serializes with section creation so two members cannot both end up with one name.
+        await lockSpaceForContentCreation(tx, actor);
+        const taken = await tx.botSection.findFirst({
+          where: { spaceId: actor.spaceId, name: input.name, id: { not: existing.id } },
+          select: { id: true },
+        });
+        if (taken) throw new BotSectionNameConflictError();
+        return tx.botSection.update({
           where: { id: existing.id },
           data: { name: input.name },
         });
-        return {
-          id: section.id,
-          name: section.name,
-          position: section.position,
-          createdAt: section.createdAt.toISOString(),
-          updatedAt: section.updatedAt.toISOString(),
-        } satisfies BotSection;
-      } catch (error) {
-        if (isUniqueViolation(error)) throw new BotSectionNameConflictError();
-        throw error;
-      }
+      });
+      return {
+        id: section.id,
+        name: section.name,
+        position: section.position,
+        createdAt: section.createdAt.toISOString(),
+        updatedAt: section.updatedAt.toISOString(),
+      } satisfies BotSection;
     },
 
-    /** Delete one of the actor's sections; its bots and groups stay, unsectioned (FK SetNull). */
+    /** Delete one of the space's sections; its bots and groups stay, unsectioned (FK SetNull). */
     async deleteBotSection(actor: Actor, input: { sectionId: string }) {
       return prisma.$transaction(async (tx) => {
         // The row lock blocks concurrent moves into this section until the delete commits.
@@ -357,7 +342,6 @@ export function createRepos(
           FROM bot_sections
           WHERE id = ${input.sectionId}
             AND "spaceId" = ${actor.spaceId}
-            AND "userId" = ${actor.userId}
           FOR UPDATE
         `;
         if (locked.length !== 1) throw new IsolationError();
@@ -370,132 +354,60 @@ export function createRepos(
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
-      const bots = await withNewestThreadMessages(
+      const bots = await withLatestBotRuns(
         prisma,
-        await withLatestBotRuns(
-          prisma,
-          await prisma.bot.findMany({
-            where: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              archivedAt: options.archived ? { not: null } : null,
-            },
-            include: {
-              thread: true,
-              runs: activeRunSelection,
-              computer: { select: { scope: true } },
-            },
-            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-          }),
-        ),
-        SIDEBAR_PREVIEW_MESSAGE_WINDOW,
-      );
-      const callThreadIds = capabilities.phoneCallsEnabled
-        ? bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []))
-        : [];
-      const callMessages = callThreadIds.length
-        ? await prisma.message.findMany({
-            where: {
-              threadId: { in: callThreadIds },
-              createdAt: {
-                gt: new Date(
-                  Date.now() -
-                    (capabilities.phoneCallRingSeconds ??
-                      phoneCallSettings().phoneCallRingSeconds) *
-                      1000,
-                ),
-              },
-              role: "bot",
-              clientNonce: { startsWith: "call:", endsWith: ":request" },
-            },
-            orderBy: { seq: "desc" },
-            distinct: ["threadId"],
-            select: { threadId: true, role: true, blocks: true },
-          })
-        : [];
-      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
-      const candidateRunIds = [
-        ...new Set(
-          bots.flatMap((bot) =>
-            (bot.thread?.messages ?? []).flatMap((message) =>
-              message.runId ? [message.runId] : [],
-            ),
-          ),
-        ),
-      ];
-      const checkedRunIds = new Set<string>();
-      const peerRunIds = new Set<string>();
-      const backgroundRunIds = new Set<string>();
-      const classifyRunIds = async (ids: string[]) => {
-        const missing = ids.filter((id) => !checkedRunIds.has(id));
-        if (missing.length === 0) return;
-        const rows = await prisma.run.findMany({
+        await prisma.bot.findMany({
           where: {
-            id: { in: missing },
-            trigger: { in: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+            spaceId: actor.spaceId,
+            archivedAt: options.archived ? { not: null } : null,
           },
-          select: { id: true, trigger: true },
-        });
-        for (const row of rows) {
-          if (isBackgroundRunTrigger(row.trigger)) backgroundRunIds.add(row.id);
-          else peerRunIds.add(row.id);
-        }
-        for (const id of missing) checkedRunIds.add(id);
-      };
-      await classifyRunIds(candidateRunIds);
-      return Promise.all(
-        bots.map(async (bot) => {
-          let messages = bot.thread?.messages ?? [];
-          const updatedAt = rosterUpdatedAt(messages[0], bot.updatedAt);
-          let preview = "";
-          for (let attempt = 0; attempt < 5; attempt++) {
-            const windowRunIds = [
-              ...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : []))),
-            ].filter((runId) => !checkedRunIds.has(runId));
-            if (windowRunIds.length > 0) {
-              await classifyRunIds(windowRunIds);
-            }
-            const visible = userVisibleMessages(
-              messages.map((message) => ({
-                ...message,
-                blocks: message.blocks as MessageBlock[],
-                runId: message.runId ?? undefined,
-              })),
-              {
-                knownPeerRunIds: peerRunIds,
-                backgroundRunIds,
-                includeDelegatedReplyText: false,
-              },
-            );
-            for (const message of visible) {
-              preview = previewFromBlocks(message.blocks);
-              if (preview) break;
-            }
-            if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;
-            const oldest = messages[messages.length - 1];
-            if (!oldest) break;
-            messages = await prisma.message.findMany({
-              where: { threadId: bot.thread.id, seq: { lt: oldest.seq } },
-              orderBy: { seq: "desc" },
-              take: SIDEBAR_PREVIEW_MESSAGE_WINDOW,
-            });
-            if (messages.length === 0) break;
-          }
-          const activeRun = primaryActiveRun(bot.runs);
-          return mapBot(
-            bot,
-            preview,
-            activeRun?.status ?? "idle",
-            rosterRunErrorId(bot.thread?.runs[0], activeRun),
-            updatedAt,
-            ringingCall(
-              bot.thread && callsByThread.has(bot.thread.id)
-                ? [callsByThread.get(bot.thread.id)!]
-                : [],
-            ),
-          );
+          include: {
+            thread: { include: { reads: readStateFor(actor.userId) } },
+            runs: activeRunSelection,
+            computer: { select: { scope: true } },
+          },
+          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
         }),
       );
+      const threadIds = bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []));
+      const callMessages =
+        capabilities.phoneCallsEnabled && threadIds.length
+          ? await prisma.message.findMany({
+              where: {
+                threadId: { in: threadIds },
+                createdAt: {
+                  gt: new Date(
+                    Date.now() -
+                      (capabilities.phoneCallRingSeconds ??
+                        phoneCallSettings().phoneCallRingSeconds) *
+                        1000,
+                  ),
+                },
+                role: "bot",
+                clientNonce: { startsWith: "call:", endsWith: ":request" },
+              },
+              orderBy: { seq: "desc" },
+              distinct: ["threadId"],
+              select: { threadId: true, role: true, blocks: true },
+            })
+          : [];
+      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
+      const { previews, newestAt } = await botThreadPreviews(prisma, threadIds);
+      return bots.map((bot) => {
+        const threadId = bot.thread?.id;
+        const activeRun = primaryActiveRun(bot.runs);
+        const mapped = mapBot(
+          bot,
+          (threadId && previews.get(threadId)) || "",
+          activeRun?.status ?? "idle",
+          rosterRunErrorId(bot.thread?.runs[0], activeRun),
+          (threadId && newestAt.get(threadId)) || bot.updatedAt,
+          ringingCall(
+            threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : [],
+          ),
+        );
+        return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
+      });
     },
 
     listSpaceBotsForSpaces,
@@ -505,7 +417,6 @@ export function createRepos(
         where: {
           id: botId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
         include: { thread: true, computer: true },
@@ -524,8 +435,11 @@ export function createRepos(
         notifyOnFinish: boolean;
         dailyCheckIns?: boolean;
         fleetManagement?: boolean;
+        replyMode?: string;
         color?: string;
         avatarSet?: BotAvatarSet;
+        /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
+        avatarSetPinned?: boolean;
         avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -555,7 +469,6 @@ export function createRepos(
           where: {
             id: input.parentBotId,
             spaceId: actor.spaceId,
-            userId: actor.userId,
           },
         });
         if (!parent) throw new IsolationError();
@@ -568,6 +481,7 @@ export function createRepos(
           disabledBuiltinTools = parent.disabledBuiltinTools;
         }
       }
+      const computerMode = input.computerMode ?? resolveDefaultComputerMode();
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
@@ -583,27 +497,45 @@ export function createRepos(
             userId: actor.userId,
           });
           const positions = await tx.bot.aggregate({
-            where: { spaceId: actor.spaceId, userId: actor.userId },
+            where: { spaceId: actor.spaceId },
             _max: { position: true },
           });
-          const avatarSet = input.avatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET;
+          // A bot follows its owner's default set unless created with another, which pins it.
+          // Held until this bot commits, so a concurrent default change restyles it afterwards.
+          const [owner] = await tx.$queryRaw<{ botAvatarSet: string }[]>`
+            SELECT "botAvatarSet" FROM "user" WHERE id = ${actor.userId} FOR SHARE`;
+          const defaultSet = owner
+            ? resolveBotAvatarSet(owner.botAvatarSet)
+            : DEFAULT_NEW_BOT_AVATAR_SET;
+          const avatarSet = input.avatarSet ?? defaultSet;
           // Only Original balances existing looks; seeded logo colours need no roster read.
           const avatar = chooseBotAvatar(
             avatarSet === "organic"
               ? await tx.bot.findMany({
-                  where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+                  where: { spaceId: actor.spaceId, archivedAt: null },
                   select: { id: true, color: true },
                 })
               : [],
             input.color,
             { family: input.avatarFamily, avatarSet, id: input.id },
           );
-          const teamComputer = await ensureComputerRecord(tx, {
-            mode: "team",
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            kind,
-          });
+          const computer = await ensureComputerRecord(
+            tx,
+            computerMode === "dedicated"
+              ? {
+                  mode: computerMode,
+                  spaceId: actor.spaceId,
+                  userId: actor.userId,
+                  botId: avatar.id,
+                  kind,
+                }
+              : {
+                  mode: computerMode,
+                  spaceId: actor.spaceId,
+                  userId: await teamComputerUserId(tx, actor),
+                  kind,
+                },
+          );
           const created = await tx.bot.create({
             data: {
               id: avatar.id,
@@ -615,11 +547,13 @@ export function createRepos(
               notifyOnFinish: input.notifyOnFinish,
               dailyCheckIns: input.dailyCheckIns,
               fleetManagement: input.fleetManagement,
+              replyMode: input.replyMode,
               color: avatar.color,
               avatarSet,
+              avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
-              computerId: teamComputer.id,
+              computerId: computer.id,
               spawnKey,
               modelProvider,
               modelId,
@@ -641,16 +575,6 @@ export function createRepos(
               markUnread: false,
             });
           }
-          if (input.computerMode === "dedicated") {
-            const dedicated = await ensureComputerRecord(tx, {
-              mode: "dedicated",
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              botId: created.id,
-              kind,
-            });
-            await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
-          }
           await tx.browserProfile.create({
             data: {
               spaceId: actor.spaceId,
@@ -671,7 +595,7 @@ export function createRepos(
           await input.seed?.(tx, created.id);
           return tx.bot.findFirstOrThrow({
             where: { id: created.id },
-            include: { thread: true, computer: true },
+            include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
           });
         });
 
@@ -684,7 +608,7 @@ export function createRepos(
               spawnKey,
             },
           },
-          include: { thread: true, computer: true },
+          include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
         });
       };
 
@@ -696,7 +620,6 @@ export function createRepos(
         const existing = await findBySpawnKey();
         if (
           !existing ||
-          existing.userId !== actor.userId ||
           (input.id !== undefined && (existing.id !== input.id || existing.archivedAt))
         )
           throw error;
@@ -714,7 +637,7 @@ export function createRepos(
           } catch (retryError) {
             if (!isBotCreateConflict(retryError)) throw retryError;
             const winner = await findBySpawnKey();
-            if (!winner || winner.userId !== actor.userId || winner.archivedAt) throw retryError;
+            if (!winner || winner.archivedAt) throw retryError;
             bot = winner;
           }
         }
@@ -727,7 +650,6 @@ export function createRepos(
         const bots = await tx.bot.findMany({
           where: {
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -745,26 +667,31 @@ export function createRepos(
 
     async setBotComputer(actor: Actor, botId: string, mode: ComputerMode): Promise<Bot> {
       const bot = await prisma.bot.findFirst({
-        where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
+        where: { id: botId, spaceId: actor.spaceId },
         include: { computer: true },
       });
       if (!bot?.computer) throw new IsolationError();
       const kind = bot.computer.kind;
       // Keep ensure + bot link in one transaction so a capped quota lock covers
       // both steps (a computer row alone does not count until a live bot refs it).
+      // A private computer stays with the bot's creator, whoever in the space changes the mode;
+      // the team one is the Space's.
       const updated = await withTransactionRetry(() =>
         prisma.$transaction(async (tx) => {
           const computer = await ensureComputerRecord(tx, {
             mode,
             spaceId: actor.spaceId,
-            userId: actor.userId,
+            userId:
+              mode === "team"
+                ? await teamComputerUserId(tx, { spaceId: actor.spaceId, userId: bot.userId })
+                : bot.userId,
             botId,
             kind,
           });
           return tx.bot.update({
             where: { id: botId },
             data: { computerId: computer.id },
-            include: { thread: true, computer: true },
+            include: { thread: { include: { reads: readStateFor(actor.userId) } }, computer: true },
           });
         }),
       );

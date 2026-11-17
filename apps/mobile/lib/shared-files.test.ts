@@ -46,6 +46,7 @@ describe("shared files", () => {
     expect(result.failedFiles).toEqual([files[0]]);
     expect(result.skipped).toEqual([{ name: "0.png", reason: "could not read" }]);
     expect(result.attachments[0]?.previewUri).toBe("data:image/png;base64,YWJj");
+    expect(result.sources).toEqual([files[1]?.uri, files[2]?.uri]);
   });
   it("does not copy or read beyond the remaining attachment limit", async () => {
     const result = await readSharedFiles(files, 2);

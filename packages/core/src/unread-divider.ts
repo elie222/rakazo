@@ -1,22 +1,27 @@
-type DividerCandidate = { id: string; role: string; seq?: number };
+import type { MessageAuthor } from "@rakazo/contracts";
+import { messageUnreadFor } from "./message-replies.js";
+
+type DividerCandidate = { id: string; role: string; seq?: number; author?: MessageAuthor };
 
 /**
- * The message the "New" divider sits above: the first bot message after the seq the user
- * had read up to when the chat opened. Their own messages never start it, and it never sits
- * above the start of the chat, where there is nothing read to divide from. `olderCursor` is
- * the seq the loaded page starts at, hidden messages included (null once nothing older is
- * left); while the first unread seq is older than that, it waits.
- * `messages` are in reading order.
+ * The message the "New" divider sits above: the first message after the seq the user had read
+ * up to when the chat opened that is new to them, a bot's or another member's. Their own
+ * messages never start it, and it never sits above the start of the chat, where there is
+ * nothing read to divide from. `olderCursor` is the seq the loaded page starts at, hidden
+ * messages included (null once nothing older is left); while the first unread seq is older
+ * than that, it waits. `messages` are in reading order.
  */
 export function unreadDividerMessageId(
   messages: readonly DividerCandidate[],
   readUpToSeq: number | null,
   olderCursor: number | null,
+  meId?: string,
 ): string | null {
   if (readUpToSeq === null) return null;
   if (olderCursor !== null && olderCursor > readUpToSeq + 1) return null;
   const index = messages.findIndex(
-    (message) => message.role === "bot" && message.seq !== undefined && message.seq > readUpToSeq,
+    (message) =>
+      messageUnreadFor(message, meId) && message.seq !== undefined && message.seq > readUpToSeq,
   );
   if (index === -1 || (index === 0 && olderCursor === null)) return null;
   return messages[index]?.id ?? null;

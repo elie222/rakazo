@@ -18,15 +18,13 @@ describe("bots sidebar collapse preference", () => {
 
   it("reads and writes collapsed state", () => {
     const store = new Map<string, string>();
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-          store.set(key, value);
-        },
-        removeItem: (key: string) => {
-          store.delete(key);
-        },
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
       },
     });
     expect(readBotsSidebarCollapsed("user-1")).toBe(false);
@@ -41,11 +39,9 @@ describe("bots sidebar collapse preference", () => {
 describe("bots sidebar width preference", () => {
   it("remembers expanded widths independently for each user and clamps invalid limits", () => {
     const store = new Map<string, string>();
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => store.set(key, value),
-      },
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
     });
     try {
       expect(readBotsSidebarWidth("first")).toBe(316);
@@ -57,15 +53,18 @@ describe("bots sidebar width preference", () => {
       store.set(botsSidebarWidthStorageKey("first")!, "NaN");
       expect(readBotsSidebarWidth("first")).toBe(316);
       expect(maximumBotsSidebarWidth(768)).toBe(448);
-      expect(clampBotsSidebarWidth(480, 768)).toBe(448);
+      expect(clampBotsSidebarWidth(480, maximumBotsSidebarWidth(768))).toBe(448);
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
   it("allows resizing without storage access", () => {
-    vi.stubGlobal("window", {
-      get localStorage() {
+    vi.stubGlobal("localStorage", {
+      getItem() {
+        throw new Error("Storage unavailable");
+      },
+      setItem() {
         throw new Error("Storage unavailable");
       },
     });

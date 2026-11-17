@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,6 @@ describe("RakazoIntents", () => {
       ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
       ["lib/api.ts", "SPACE_KEY"],
       ["lib/last-bot.ts", "LAST_BOT_KEY"],
-      ["lib/last-bot.ts", "LAST_BOT_SPACE_KEY"],
       ["lib/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
@@ -54,6 +54,11 @@ describe("withAppIntents prebuild", () => {
       modResults: {
         hasFile: (file) => files.has(file),
         pbxTargetByName: (name) => (name === "RakazoWidgets" ? {} : undefined),
+        pbxNativeTargetSection: () => ({
+          "app-target": { name: "Rakazo" },
+          "app-target_comment": "Rakazo",
+          "widget-target": { name: '"RakazoWidgets"' },
+        }),
         pbxXCBuildConfigurationSection: () => ({ widget: { buildSettings: widgetSettings } }),
       },
     };
@@ -70,6 +75,7 @@ describe("withAppIntents prebuild", () => {
             cpSync: (...args) => copied.push(args.slice(0, 2)),
           };
         if (name === "node:path") return { join };
+        if (name === "./pbx-group") return createRequire(import.meta.url)("./pbx-group.js");
         if (name === "expo/config-plugins")
           return {
             withInfoPlist: (value, mod) => {
@@ -81,7 +87,10 @@ describe("withAppIntents prebuild", () => {
               XcodeUtils: {
                 getProjectName: () => "Rakazo",
                 addBuildSourceFileToGroup: (input) => {
-                  added.push(input);
+                  // Like the real helper, a file already in its group is skipped.
+                  const key = `${input.groupName}/${input.filepath}`;
+                  if (!files.has(key)) added.push(input);
+                  files.add(key);
                   files.add(input.filepath);
                 },
               },
@@ -102,7 +111,14 @@ describe("withAppIntents prebuild", () => {
       "Rakazo/RakazoIntents.swift",
       "Rakazo/VoiceMessageRecorder.swift",
       "Rakazo/VoiceMessageActivity.swift",
+      "RakazoWidgets.swift",
+      "WorkLiveActivity.swift",
+      "VoiceMessageActivity.swift",
+      "WorkActivityAttributes.swift",
     ]);
+    // An existing widget target still gets every source, in its own group and build phase.
+    expect(added.slice(3).every((input) => input.targetUuid === "widget-target")).toBe(true);
+    expect(added.slice(3).every((input) => input.groupName === "RakazoWidgets")).toBe(true);
     expect(widgetSettings).toMatchObject({
       CURRENT_PROJECT_VERSION: "7",
       MARKETING_VERSION: "2.0.0",

@@ -1,31 +1,40 @@
-/** UI preset only; saved connections use the OpenAI-compatible provider. */
-export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
+import { ConnectionSetupError } from "./connection-setup-error.js";
+import type { CompatibleEndpointPreset, ModelCatalogEntry } from "./model-connections.js";
 
-export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
+/** Every hosted service the catalog offers for compatible connections. */
+export function compatibleEndpointPresets(
+  catalog: readonly Pick<ModelCatalogEntry, "endpointPresets">[],
+): CompatibleEndpointPreset[] {
+  // Every compatible catalog entry carries the same presets: offer each address once.
+  const presets = catalog.flatMap((entry) => entry.endpointPresets ?? []);
+  return presets.filter(
+    (preset, index) => presets.findIndex((other) => other.baseUrl === preset.baseUrl) === index,
+  );
+}
+
+/** The offered hosted service at this address, if any. */
+export function matchCompatibleEndpointPreset(
+  presets: readonly CompatibleEndpointPreset[],
+  baseUrl: string | undefined,
+): CompatibleEndpointPreset | undefined {
+  let normalized: string;
   try {
-    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === OLLAMA_CLOUD_BASE_URL;
+    normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "");
   } catch {
-    return false;
+    return undefined;
   }
+  return presets.find((preset) => preset.baseUrl === normalized);
 }
 
-export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
-}
-
-export const OPENAI_COMPATIBLE_BASE_URL_HINT =
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
-
-/** Connect when base URL and model id are set. */
+/** Connect when base URL and model id are set, and a key when the endpoint needs one. */
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
+  keyRequired?: boolean;
 }): boolean {
   return Boolean(
-    input.baseUrl.trim() &&
-      input.modelId.trim() &&
-      (!isOllamaCloudBaseUrl(input.baseUrl) || input.apiKey?.trim()),
+    input.baseUrl.trim() && input.modelId.trim() && (!input.keyRequired || input.apiKey?.trim()),
   );
 }
 
@@ -44,13 +53,13 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new Error("Base URL must be an absolute HTTP(S) URL");
+    throw new ConnectionSetupError("Base URL must be an absolute HTTP(S) URL");
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Base URL must use http or https");
+    throw new ConnectionSetupError("Base URL must use http or https");
   }
   if (url.username || url.password) {
-    throw new Error("Base URL must not contain credentials");
+    throw new ConnectionSetupError("Base URL must not contain credentials");
   }
   let path = url.pathname.replace(/\/+$/, "") || "";
   const VERSION_SEGMENT = /^v\d+[a-z]*$/;

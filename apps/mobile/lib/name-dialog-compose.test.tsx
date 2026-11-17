@@ -4,7 +4,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 import ComposeNameDialog from "../components/name-dialog-compose";
 
 const capture = vi.hoisted(() => ({ field: vi.fn(), buttons: vi.fn(), host: vi.fn() }));
-vi.mock("../lib/i18n", () => ({ useI18n: () => ({ t: (value: string) => value }) }));
 vi.mock("../lib/native", () => ({ useResolvedAppearance: () => "dark" }));
 vi.mock("@expo/ui/jetpack-compose", () => {
   const slot = ({ children }: { children: ReactNode }) => children;

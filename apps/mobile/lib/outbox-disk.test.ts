@@ -1,6 +1,6 @@
 import { resolveComposerSendPlan } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
-import { OUTBOX_MAX_BYTES, outboxDisk } from "./outbox-disk";
+import { hasSavedUnsentSends, OUTBOX_MAX_BYTES, outboxDisk } from "./outbox-disk";
 import type { SendAttempt } from "./thread-feedback";
 import { OUTBOX_MAX_ENTRIES } from "./thread-feedback";
 
@@ -98,7 +98,7 @@ vi.mock("expo-file-system", () => {
       if (fails("delete", this.uri)) throw new Error("Delete failed");
       files.delete(this.uri);
     }
-    write(text: string) {
+    writeSync(text: string) {
       if (fails("write", this.uri)) throw new Error("No space left on device");
       files.set(this.uri, text);
     }
@@ -193,6 +193,15 @@ it("caps the persisted count and wipes every entry", () => {
   expect(outboxDisk.load(2, scope)).toHaveLength(OUTBOX_MAX_ENTRIES);
   outboxDisk.clear();
   expect(files.size).toBe(0);
+});
+it("reports a saved queue whoever owns it, and none once cleared", () => {
+  expect(hasSavedUnsentSends()).toBe(false);
+  outboxDisk.save([]);
+  expect(hasSavedUnsentSends()).toBe(false);
+  outboxDisk.save([attempt()]);
+  expect(hasSavedUnsentSends()).toBe(true);
+  outboxDisk.clear();
+  expect(hasSavedUnsentSends()).toBe(false);
 });
 it("treats corrupt storage as an empty outbox", () => {
   files.set("document/outbox/sends-v4.json", "{");
@@ -354,6 +363,22 @@ function loaded() {
   return outboxDisk.load(2, scope).map((a) => a.clientNonce);
 }
 
+it("reports a queue still in the earlier cache outbox until its move is marked complete", () => {
+  legacy("nonce-a");
+  // Before the first load moves it, for example when the session expired across the upgrade.
+  expect(hasSavedUnsentSends()).toBe(true);
+  files.set("document/outbox-legacy-done", "");
+  expect(hasSavedUnsentSends()).toBe(false);
+});
+it("reports the earlier cache outbox's backup index too", () => {
+  legacy("nonce-a");
+  files.set("cache/outbox/sends-v4.json.bak", files.get("cache/outbox/sends-v4.json")!);
+  files.delete("cache/outbox/sends-v4.json");
+  expect(hasSavedUnsentSends()).toBe(true);
+  // A readable index wins over a stale backup, as on load.
+  files.set("cache/outbox/sends-v4.json", "[]");
+  expect(hasSavedUnsentSends()).toBe(false);
+});
 it("moves an earlier cache outbox to documents", async () => {
   legacy("nonce-a");
   const [restored] = outboxDisk.load(2, scope);

@@ -1,9 +1,8 @@
 import { useSyncExternalStore } from "react";
-import type { AppStateStatus } from "react-native";
 import { AppState } from "react-native";
 
 /** iOS passes through "inactive" for system overlays; only a real background pauses work. */
-export function isForegroundState(state: AppStateStatus | null | undefined): boolean {
+export function isForegroundState(state: string | null | undefined): boolean {
   return state !== "background";
 }
 

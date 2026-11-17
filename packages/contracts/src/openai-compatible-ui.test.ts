@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  compatibleConnectionName,
-  isOllamaCloudBaseUrl,
+  compatibleEndpointPresets,
+  matchCompatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
-  OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
   savedCompatibleEndpointMatches,
 } from "./openai-compatible-ui.js";
+
+const PRESET_BASE_URL = "https://hosted.example.test/v1";
+const presets = [{ name: "Hosted", baseUrl: PRESET_BASE_URL }];
 
 describe("openAiCompatibleConnectReady", () => {
   it("allows a new connection with base URL and explicit model id", () => {
@@ -61,48 +63,54 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
   });
 });
 
-it("uses an ordinary compatible connection for the Ollama preset and requires its key", () => {
-  expect(OLLAMA_CLOUD_BASE_URL).toBe("https://ollama.com/v1");
-  expect(compatibleConnectionName(OLLAMA_CLOUD_BASE_URL, "OpenAI-compatible")).toBe("Ollama Cloud");
-  expect(compatibleConnectionName("https://other.test/v1", "OpenAI-compatible")).toBe(
-    "OpenAI-compatible",
+it("requires a key only when the endpoint needs one", () => {
+  const input = { baseUrl: PRESET_BASE_URL, modelId: "example-model" };
+  expect(openAiCompatibleConnectReady(input)).toBe(true);
+  expect(openAiCompatibleConnectReady({ ...input, keyRequired: true })).toBe(false);
+  expect(openAiCompatibleConnectReady({ ...input, keyRequired: true, apiKey: "fake-key" })).toBe(
+    true,
   );
-  const input = { baseUrl: OLLAMA_CLOUD_BASE_URL, modelId: "example-model" };
-  expect(openAiCompatibleConnectReady(input)).toBe(false);
-  expect(openAiCompatibleConnectReady({ ...input, apiKey: "fake-key" })).toBe(true);
+});
+
+it("collects the presets the catalog offers", () => {
+  expect(compatibleEndpointPresets([{}, { endpointPresets: presets }])).toEqual(presets);
+  // Several compatible entries carry the same presets; each address is offered once.
+  expect(
+    compatibleEndpointPresets([{ endpointPresets: presets }, { endpointPresets: presets }]),
+  ).toEqual(presets);
 });
 
 it.each([
-  "https://ollama.com",
-  "https://ollama.com/",
-  "https://ollama.com/v1/",
-  " HTTPS://OLLAMA.COM:443/?q=x ",
-])("recognizes normalized Ollama URL %s", (url) => {
-  expect(isOllamaCloudBaseUrl(url)).toBe(true);
+  "https://hosted.example.test",
+  "https://hosted.example.test/",
+  "https://hosted.example.test/v1/",
+  " HTTPS://HOSTED.EXAMPLE.TEST:443/?q=x ",
+])("matches the normalized preset URL %s", (url) => {
+  expect(matchCompatibleEndpointPreset(presets, url)?.name).toBe("Hosted");
 });
 it.each([
   undefined,
   "invalid",
-  "https://ollama.com.evil.test",
-  "https://ollama.com/v2",
-  "http://ollama.com",
-  "https://user:pass@ollama.com",
-])("rejects non-preset URL %s", (url) => {
-  expect(isOllamaCloudBaseUrl(url)).toBe(false);
+  "https://hosted.example.test.evil.test",
+  "https://hosted.example.test/v2",
+  "http://hosted.example.test",
+  "https://user:pass@hosted.example.test",
+])("matches no preset for %s", (url) => {
+  expect(matchCompatibleEndpointPreset(presets, url)).toBeUndefined();
 });
 
-it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+it.each(["https://hosted.example.test", "https://hosted.example.test/v1/"])(
   "matches equivalent saved endpoints: %s",
   (baseUrl) => {
-    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(true);
+    expect(savedCompatibleEndpointMatches(baseUrl, PRESET_BASE_URL)).toBe(true);
   },
 );
-it.each(["", "https://", "https://other.test", "https://ollama.com/v2"])(
+it.each(["", "https://", "https://other.test", "https://hosted.example.test/v2"])(
   "does not inherit credentials for %s",
   (baseUrl) => {
-    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(false);
+    expect(savedCompatibleEndpointMatches(baseUrl, PRESET_BASE_URL)).toBe(false);
   },
 );
 it("does not match a missing saved endpoint", () => {
-  expect(savedCompatibleEndpointMatches(OLLAMA_CLOUD_BASE_URL, undefined)).toBe(false);
+  expect(savedCompatibleEndpointMatches(PRESET_BASE_URL, undefined)).toBe(false);
 });

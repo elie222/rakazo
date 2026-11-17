@@ -57,7 +57,6 @@ async function render(
           onBoard={onBoard}
           onArtifacts={() => {}}
           onSettings={() => {}}
-          onUsage={() => {}}
           onLogOut={() => {}}
           signingOut={false}
           logOutError={null}
@@ -145,7 +144,6 @@ it("opens integrations and keeps the existing account actions and links", async 
     "Skills",
     "Artifacts",
     "Board",
-    "Usage",
     "Get the mobile app",
     "Docs",
     "Log out",
@@ -161,15 +159,13 @@ it("omits Board when unavailable", async () => {
   );
 });
 
-it("offers the existing Android download on Android", async () => {
+it("offers Google Play on Android", async () => {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
   await render();
   const mobile = [...document.querySelectorAll("a")].find(
     (link) => link.textContent === "Get the mobile app",
   )!;
-  expect(mobile.href).toBe(
-    "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk",
-  );
+  expect(mobile.href).toBe("https://play.google.com/store/apps/details?id=com.rakazo.app");
 });
 
 it("falls back when app artwork fails and accepts replacement artwork", async () => {
@@ -246,4 +242,85 @@ it("keeps at most three marks with the same tile and a missing-logo fallback", a
   expect(tiles).toHaveLength(3);
   expect(new Set(tiles.map((tile) => tile.className)).size).toBe(1);
   expect(tiles[1]!.textContent).toBe("N");
+});
+
+const personal = {
+  id: "org-personal",
+  name: "Personal",
+  defaultSpaceId: "s1",
+  spaceIds: ["s1"],
+  canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
+};
+const work = {
+  id: "org-work",
+  name: "Work",
+  defaultSpaceId: "s2",
+  spaceIds: ["s2"],
+  canManage: true,
+  role: "owner" as const,
+  memberCount: 1,
+};
+
+async function renderOrganizations(
+  organizations: (typeof personal)[],
+  onSwitchOrganization = vi.fn(),
+  onCreateOrganization = vi.fn(),
+) {
+  await act(async () =>
+    root.render(
+      <DesktopUpdatesProvider>
+        <SidebarFooter
+          name="Demo User"
+          initials="DU"
+          email="account@rakazo.test"
+          open
+          onOpenChange={() => {}}
+          onIntegrations={() => {}}
+          onSkills={() => {}}
+          onArtifacts={() => {}}
+          onSettings={() => {}}
+          onLogOut={() => {}}
+          signingOut={false}
+          logOutError={null}
+          organizations={organizations}
+          activeOrganizationId="org-personal"
+          onSwitchOrganization={onSwitchOrganization}
+          onCreateOrganization={onCreateOrganization}
+        />
+      </DesktopUpdatesProvider>,
+    ),
+  );
+  return [...document.querySelector('[data-slot="popover-content"]')!.querySelectorAll("button")];
+}
+
+async function openOrganizations() {
+  await act(async () =>
+    (document.querySelector('[data-testid="organization-menu-trigger"]') as HTMLElement).click(),
+  );
+  const menus = document.querySelectorAll('[data-slot="popover-content"]');
+  return [...menus[menus.length - 1]!.querySelectorAll("button")];
+}
+
+it("shows the active organization as one row, even when it is the only one", async () => {
+  const rows = await renderOrganizations([personal]);
+  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual(["Personal", "Settings"]);
+});
+
+it("lists organizations in a submenu with the active one checked, then New organization", async () => {
+  const onSwitch = vi.fn();
+  const onCreate = vi.fn();
+  const rows = await renderOrganizations([personal, work], onSwitch, onCreate);
+  expect(rows.map((row) => row.textContent).slice(0, 2)).toEqual(["Personal", "Settings"]);
+  const items = await openOrganizations();
+  expect(items.map((item) => item.textContent)).toEqual(["Personal", "Work", "New organization"]);
+  expect(items[0]!.getAttribute("aria-current")).toBe("true");
+  expect(items[0]!.querySelector("svg")).not.toBeNull();
+  expect(items[1]!.hasAttribute("aria-current")).toBe(false);
+  expect(items[1]!.querySelector("svg")).toBeNull();
+  await act(async () => items[1]!.click());
+  expect(onSwitch).toHaveBeenCalledWith(work);
+  await act(async () => items[2]!.click());
+  expect(onCreate).toHaveBeenCalled();
 });

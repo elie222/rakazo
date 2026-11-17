@@ -1,16 +1,18 @@
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
-import { sharedMemorySaveError } from "./builtin-tools.js";
+import { sharedMemorySaveError } from "./builtin.tool-definition.js";
 import { redactConnectorPayload } from "./connector-safety.js";
-import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
+import { MAX_RECALLED_MEMORIES } from "./history-compaction.prompt.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 
 /** Cross-chat history requires a surviving direct human request in this app thread. */
 export function historyMyChatsAllowed(
@@ -26,30 +28,49 @@ export function historyMyChatsAllowed(
   );
 }
 
+/**
+ * Models often fill optional fields they do not use with "" or null (botId: "", linkedRunId: "").
+ * No history field means anything when blank, so a blank field counts as not given.
+ */
+export function withoutBlankFields(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(
+      ([, value]) => value !== null && !(typeof value === "string" && !value.trim()),
+    ),
+  );
+}
+
 async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { deps, run } = ctx;
   const { name, args } = call;
   const crossChat =
     name === "search_history"
       ? args.scope === "my_chats"
-      : typeof args.threadId === "string" && args.threadId !== run.threadId;
+      : typeof args.threadId === "string" &&
+        args.threadId !== (ctx.source.conversationThreadId ?? run.threadId);
   // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
   const allowMyChats =
     crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
-    userId: run.userId,
-    threadId: run.threadId,
+    threadId: ctx.source.conversationThreadId ?? run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
     allowMyChats,
     searchAt: run.createdAt,
   };
-  const response =
-    name === "search_history"
-      ? await searchHistory(deps.prisma, scope, HistorySearchInputSchema.parse(args))
-      : await readHistory(deps.prisma, scope, HistoryReadInputSchema.parse(args));
+  const given = withoutBlankFields(args);
+  let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
+  if (name === "search_history") {
+    const parsed = HistorySearchInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await searchHistory(deps.prisma, scope, parsed.data);
+  } else {
+    const parsed = HistoryReadInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await readHistory(deps.prisma, scope, parsed.data);
+  }
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
@@ -59,6 +80,18 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
         "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
     });
   }
+  // Files the bot can now see are copied before its next computer tool.
+  ctx.computer.copyEarlierFiles(
+    response.messages.flatMap((message) =>
+      (message.attachments ?? []).map((file) => ({
+        kind: "file" as const,
+        artifactId: file.artifactId,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+      })),
+    ),
+  );
   return call.finish(redacted);
 }
 
@@ -96,8 +129,7 @@ export const memoryTools: ToolHandlers = {
         );
         return call.finish({ ok: true });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= 3) throw error;
+        if (!(error instanceof MemoryRevisionConflictError) || attempt >= 3) throw error;
       }
     }
   },
@@ -125,15 +157,15 @@ export const memoryTools: ToolHandlers = {
       );
       return call.finish({ ok: true, path: saved.path, revision: saved.revision });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save shared memory.";
-      if (message === MEMORY_REVISION_CONFLICT_ERROR) return call.finish({ error: message });
+      if (error instanceof MemoryRevisionConflictError)
+        return call.finish({ error: error.message });
       throw error;
     }
   },
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;
     const { args } = call;
-    return ctx.memory.semantic!.recall(
+    const response = await ctx.memory.semantic!.recall(
       {
         query: String(args.query ?? ""),
         scope: ctx.memory.scope!,
@@ -145,6 +177,27 @@ export const memoryTools: ToolHandlers = {
       },
       context,
     );
+    // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
+    if (response.ok && response.value.length > 0) {
+      await markReadOutsideContent(ctx);
+    }
+    return response;
+  },
+  async reflect_memory(ctx, call) {
+    const { bot, context } = ctx;
+    const { args } = call;
+    if (!ctx.memory.semantic?.reflect) {
+      return { error: "This memory provider cannot answer questions from memory." };
+    }
+    const response = await ctx.memory.semantic.reflect(
+      { query: String(args.query ?? ""), botId: bot.id },
+      context,
+    );
+    if (!response.ok) return response;
+    const text = response.value.trim();
+    // Reflection is provider-generated prose; it cannot attest that its answer is clean.
+    if (text) await markReadOutsideContent(ctx);
+    return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,
   read_history: readHistoryTool,

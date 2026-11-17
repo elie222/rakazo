@@ -25,6 +25,18 @@ export function routineRunAt(run: RoutineRun): string {
   return run.startedAt ?? run.createdAt;
 }
 
+/** How late a scheduled run started, in its largest whole unit; null when it started on time. */
+export function routineRunLateness(
+  run: RoutineRun,
+): { unit: "minutes" | "hours" | "days"; count: number } | null {
+  if (!run.lateSince || !run.startedAt) return null;
+  const minutes = Math.floor((Date.parse(run.startedAt) - Date.parse(run.lateSince)) / 60_000);
+  if (minutes < 60) return { unit: "minutes", count: minutes };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { unit: "hours", count: hours };
+  return { unit: "days", count: Math.floor(hours / 24) };
+}
+
 /** When a run happened, e.g. "Oct 25, 9:00 AM"; the year only shows outside the current one. */
 export function formatRoutineRunAt(run: RoutineRun, locale: string, now = new Date()): string {
   const at = new Date(routineRunAt(run));

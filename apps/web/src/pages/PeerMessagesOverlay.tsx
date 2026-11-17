@@ -1,7 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { BotAvatarSet } from "@rakazo/contracts";
-import { loadPeerHistory, peerConversations } from "@rakazo/core";
+import {
+  loadPeerHistory,
+  newestPageCards,
+  pageCardSuperseded,
+  peerConversations,
+} from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -15,12 +20,13 @@ import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
+import { PageBlockCard } from "../components/pages/PageBlockCard";
 import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { TRANSCRIPT_CONTENT_PADDING } from "../lib/transcript-layout";
 import { transcriptIsNearEnd } from "../lib/transcript-scroll";
-import { ArtifactImage } from "./shell/message-cards";
+import { ArtifactImage, ChartBlockView } from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
 
 /**
@@ -72,6 +78,12 @@ export function PeerMessagesOverlay({
     if (!history.data) return null;
     return peerConversations(history.data).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [history.data, peerBotId]);
+  const newestPages = newestPageCards(
+    (conversation?.messages ?? []).map((message) => ({
+      id: message.messageId,
+      blocks: message.blocks ?? [],
+    })),
+  );
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
@@ -102,7 +114,7 @@ export function PeerMessagesOverlay({
         >
           <div>{desktop ? <WindowChrome /> : null}</div>
           <DialogTitle
-            className="flex min-w-0 max-w-full items-center justify-self-center gap-2 rounded-full bg-muted px-4 py-2 text-[13px] font-medium"
+            className="flex min-w-0 max-w-full items-center justify-self-center gap-2 rounded-full bg-muted px-4 py-2 text-body-sm font-medium"
             dir="auto"
           >
             <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={20} />
@@ -135,7 +147,7 @@ export function PeerMessagesOverlay({
         {history.data !== undefined && history.isError && !history.isFetching ? (
           <div
             role="alert"
-            className="flex items-center justify-center gap-2 px-4 pt-3 text-[13px] text-destructive"
+            className="flex items-center justify-center gap-2 px-4 pt-3 text-body-sm text-destructive"
           >
             <Trans>Could not load this chat.</Trans>
             <Button variant="link" size="xs" onClick={() => void history.refetch()}>
@@ -144,11 +156,11 @@ export function PeerMessagesOverlay({
           </div>
         ) : null}
         {!historyReady ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <Spinner aria-label={t`Loading…`} />
           </div>
         ) : historyFailed ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <div className="flex flex-col items-center gap-3">
               <Trans>Could not load this chat.</Trans>
               <Button variant="outline" size="sm" onClick={() => void history.refetch()}>
@@ -157,7 +169,7 @@ export function PeerMessagesOverlay({
             </div>
           </div>
         ) : !conversation || conversation.messages.length === 0 ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
+          <div className="grid flex-1 place-items-center px-8 text-center text-body text-muted-foreground/80">
             <Trans>No messages with {peerBotName} yet.</Trans>
           </div>
         ) : (
@@ -177,18 +189,18 @@ export function PeerMessagesOverlay({
                   className={`flex ${sent ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                    className={`${peerMessage.blocks?.some((block) => block.kind === "page" || block.kind === "chart") ? "w-[552px]" : ""} max-w-[80%] rounded-2xl px-4 py-2.5 ${
                       sent ? "bg-accent" : "bg-muted"
                     }`}
                   >
                     <div
-                      className="mb-1 text-[12px] font-medium"
+                      className="mb-1 text-label font-medium"
                       style={{ color: sent ? botColor : peerBotColor }}
                       dir="auto"
                     >
                       {sent ? botName : peerBotName}
                     </div>
-                    <div className="text-[14.5px] leading-[1.5] text-foreground/90" dir="auto">
+                    <div className="text-body-lg leading-[1.5] text-foreground/90" dir="auto">
                       <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
                       {peerMessage.blocks?.map((block, index) =>
                         block.kind === "image" ? (
@@ -206,6 +218,20 @@ export function PeerMessagesOverlay({
                             name={block.name}
                             mimeType={block.mimeType}
                             size={block.size}
+                          />
+                        ) : block.kind === "chart" ? (
+                          <ChartBlockView
+                            key={index}
+                            name={block.name}
+                            spec={block.spec}
+                            data={block.data}
+                          />
+                        ) : block.kind === "page" ? (
+                          <PageBlockCard
+                            key={index}
+                            block={block}
+                            onOpen={onClose}
+                            updated={pageCardSuperseded(newestPages, peerMessage.messageId, block)}
                           />
                         ) : null,
                       )}

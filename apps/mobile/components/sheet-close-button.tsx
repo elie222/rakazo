@@ -1,14 +1,14 @@
+import { useLingui } from "@lingui/react/macro";
 import { Pressable } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
 export function SheetCloseButton({ onPress }: { onPress: () => void }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={t("Close")}
+      accessibilityLabel={t`Close`}
       onPress={onPress}
       hitSlop={7}
       style={{

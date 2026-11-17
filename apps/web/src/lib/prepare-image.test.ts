@@ -23,7 +23,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function photo(type = "image/jpeg", size = 100) {
-  return new File([new Uint8Array(size)], "photo", { type, lastModified: 123 });
+  return new File([type === "image/png" ? png(false) : new Uint8Array(size)], "photo", {
+    type,
+    lastModified: 123,
+  });
 }
 
 describe("prepareImage", () => {
@@ -123,4 +126,33 @@ describe("prepareImage", () => {
       if (failure !== "decode") expect(close).toHaveBeenCalledOnce();
     },
   );
+});
+
+function png(animated: boolean) {
+  const bytes = new Uint8Array(animated ? 61 : 41);
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+  if (animated) bytes.set([0, 0, 0, 8, 97, 99, 84, 76, 0, 0, 0, 2], 33);
+  bytes.set([0, 0, 0, 0, 73, 68, 65, 84], animated ? 53 : 33);
+  return bytes;
+}
+
+it.each([1700, 1000])("preserves APNG before decoding at %i pixels", async (width) => {
+  bitmap.mockResolvedValue({ width, height: 1000, close });
+  const file = new File([png(true)], "animated.png", { type: "image/png" });
+  expect(await prepareImage(file)).toBe(file);
+  expect(bitmap).not.toHaveBeenCalled();
+  expect(toBlob).not.toHaveBeenCalled();
+});
+it("retains PNG when header inspection fails", async () => {
+  const file = photo("image/png");
+  vi.spyOn(file, "slice").mockImplementation(() => {
+    throw new Error("read failed");
+  });
+  expect(await prepareImage(file)).toBe(file);
+  expect(bitmap).not.toHaveBeenCalled();
+});
+it("retains an inconclusive or malformed PNG header", async () => {
+  const file = new File([new Uint8Array(100)], "unknown.png", { type: "image/png" });
+  expect(await prepareImage(file)).toBe(file);
+  expect(bitmap).not.toHaveBeenCalled();
 });

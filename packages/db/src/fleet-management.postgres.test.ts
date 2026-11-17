@@ -7,8 +7,7 @@ import { createRepos } from "./repos.js";
 import { runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("bot fleetManagement (PostgreSQL)", () => {
   const provider = "sendblue";
@@ -40,11 +39,7 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
       await db.pool.end();
     };
     owner = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider, address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider, address }),
     );
   });
 

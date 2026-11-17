@@ -25,11 +25,17 @@ const imageLoads = vi.hoisted(
     [] as Array<(event: { nativeEvent: { source: { width: number; height: number } } }) => void>,
 );
 
+type TouchEvent = { nativeEvent: { pageX: number; pageY: number }; persist(): void };
+
 const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
     | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
     | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
+  onResponderGrant: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderMove: undefined as ((event: TouchEvent) => void) | undefined,
+  onResponderRelease: undefined as (() => void) | undefined,
+  onResponderTerminate: undefined as (() => void) | undefined,
   onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
 
@@ -53,7 +59,7 @@ vi.mock("react-native", async () => {
         children,
         style,
         onPress,
-        onLongPress: _onLongPress,
+        onLongPress,
         onAccessibilityAction: _onAccessibilityAction,
         ...rest
       } = props;
@@ -77,6 +83,18 @@ vi.mock("react-native", async () => {
           rest.onStartShouldSetResponder as typeof tableEvents.onStartShouldSetResponder;
         delete rest.onStartShouldSetResponder;
       }
+      if (tag === "rn-view" && typeof rest.onResponderGrant === "function") {
+        for (const key of [
+          "onResponderGrant",
+          "onResponderMove",
+          "onResponderRelease",
+          "onResponderTerminate",
+        ] as const) {
+          tableEvents[key] = rest[key] as never;
+          delete rest[key];
+        }
+        delete rest.onResponderTerminationRequest;
+      }
       if (tag === "rn-image" && typeof rest.onLoad === "function") {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
         delete rest.onLoad;
@@ -92,6 +110,7 @@ vi.mock("react-native", async () => {
         {
           ...rest,
           ...data,
+          onContextMenu: onLongPress,
           onClick:
             typeof onPress === "function"
               ? (event: { preventDefault(): void; stopPropagation(): void }) => {
@@ -151,6 +170,7 @@ vi.mock("react-native", async () => {
       "marginRight",
       "accessibilityElementsHidden",
       "importantForAccessibility",
+      "accessibilityRole",
     ]),
     get Text() {
       return reactNativeText.current;
@@ -191,6 +211,7 @@ vi.mock("react-native", async () => {
     Linking: linking,
     Alert: { alert },
     I18nManager: i18n,
+    useColorScheme: () => "dark",
     useWindowDimensions: () => windowSize,
   };
 });
@@ -208,11 +229,13 @@ import {
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
+  MarkdownLongPressContext,
   MermaidDiagramContext,
   markdownCodeBlocks,
   RemoteImagesContext,
   RemoteMarkdownImage,
 } from "./markdown.native";
+import { textBlocks } from "./native/linkified-text";
 
 const THREE_COLUMN_TABLE = `| Name | Status | Detail |
 | --- | --- | --- |
@@ -361,35 +384,126 @@ describe("native markdown tables", () => {
     container.remove();
   });
 
-  it.each([
-    ["ios", SIX_COLUMN_TABLE, 200, true],
-    ["ios", THREE_COLUMN_TABLE, 1000, false],
-    ["android", SIX_COLUMN_TABLE, 200, false],
-  ])(
-    "on %s, keeps the touch inside a table only when it is wider than the bubble",
-    async (os, table, width, claims) => {
+  describe.each(["ios", "android"])("on %s", (os) => {
+    it.each([
+      [
+        "wide table",
+        SIX_COLUMN_TABLE.replace("| A |", "| [A](https://example.com/docs) |"),
+        200,
+        true,
+      ],
+      ["fitting table", THREE_COLUMN_TABLE, 1000, false],
+      ["wide code", "```xml\nlong code line\n```", 200, true],
+      ["fitting code", "```xml\nshort\n```", 1000, false],
+    ])(
+      "claims overflowing content at touch start on a %s",
+      async (_case, markdown, width, overflows) => {
+        vi.useFakeTimers();
+        vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+        const platform = Platform as { OS: string };
+        const previousOS = platform.OS;
+        platform.OS = os;
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        const openMenu = vi.fn();
+        const touch = (pageX: number, pageY: number) => ({
+          nativeEvent: { pageX, pageY },
+          persist() {},
+        });
+        try {
+          await act(async () => {
+            root.render(
+              <Pressable onLongPress={os === "ios" ? undefined : openMenu}>
+                <MarkdownLongPressContext.Provider value={os === "ios" ? undefined : openMenu}>
+                  <ChatMarkdown>{markdown}</ChatMarkdown>
+                </MarkdownLongPressContext.Provider>
+              </Pressable>,
+            );
+          });
+          await act(async () => {
+            tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+            if (_case.includes("code")) tableEvents.onContentSizeChange?.(500, 40);
+          });
+
+          expect(tableEvents.onStartShouldSetResponder?.()).toBe(overflows);
+          const timersBeforeTouch = vi.getTimerCount();
+          if (overflows) expect(tableEvents.onResponderGrant?.(touch(100, 100))).toBeUndefined();
+          // iOS leaves long presses to the native context menu without a JS timer.
+          if (os === "ios") expect(vi.getTimerCount()).toBe(timersBeforeTouch);
+          vi.advanceTimersByTime(499);
+          expect(openMenu).not.toHaveBeenCalled();
+          vi.advanceTimersByTime(1);
+          vi.advanceTimersByTime(500);
+          expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
+          if (_case === "wide table") {
+            alert.mockClear();
+            linking.openURL.mockClear();
+            const link = container.querySelector<HTMLElement>("[data-accessibility-role='link']");
+            expect(link).not.toBeNull();
+            await act(async () => {
+              link?.click();
+            });
+            expect(alert).toHaveBeenCalledTimes(1);
+            const buttons = alert.mock.calls[0]?.[2];
+            await act(async () => {
+              buttons[1].onPress();
+            });
+            expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
+            expect(openMenu).toHaveBeenCalledTimes(overflows && os !== "ios" ? 1 : 0);
+          }
+
+          expect(
+            container.querySelector("rn-scroll-view")?.getAttribute("data-scroll-enabled"),
+          ).toBe(String(overflows));
+        } finally {
+          vi.useRealTimers();
+          platform.OS = previousOS;
+          await act(async () => {
+            root.unmount();
+          });
+          container.remove();
+        }
+      },
+    );
+  });
+
+  it.each(["move horizontally", "move vertically", "release", "terminate", "unmount"])(
+    "cancels a claimed long press on %s",
+    async (reason) => {
+      vi.useFakeTimers();
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-      const platform = Platform as { OS: string };
-      const previousOS = platform.OS;
-      platform.OS = os;
-      const container = document.createElement("div");
-      document.body.appendChild(container);
-      const root = createRoot(container);
+      const root = createRoot(document.createElement("div"));
+      const openMenu = vi.fn();
       try {
         await act(async () => {
-          root.render(<ChatMarkdown>{table}</ChatMarkdown>);
+          root.render(
+            <MarkdownLongPressContext.Provider value={openMenu}>
+              <ChatMarkdown>{SIX_COLUMN_TABLE}</ChatMarkdown>
+            </MarkdownLongPressContext.Provider>,
+          );
         });
         await act(async () => {
-          tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+          tableEvents.onLayout?.({ nativeEvent: { layout: { width: 200, height: 40 } } });
         });
-
-        expect(tableEvents.onStartShouldSetResponder?.()).toBe(claims);
+        tableEvents.onResponderGrant?.({ nativeEvent: { pageX: 100, pageY: 100 }, persist() {} });
+        vi.advanceTimersByTime(499);
+        if (reason.startsWith("move"))
+          tableEvents.onResponderMove?.({
+            nativeEvent: {
+              pageX: reason === "move horizontally" ? 106 : 100,
+              pageY: reason === "move vertically" ? 106 : 100,
+            },
+            persist() {},
+          });
+        if (reason === "release") tableEvents.onResponderRelease?.();
+        if (reason === "terminate") tableEvents.onResponderTerminate?.();
+        if (reason === "unmount") await act(async () => root.unmount());
+        vi.advanceTimersByTime(500);
+        expect(openMenu).not.toHaveBeenCalled();
       } finally {
-        platform.OS = previousOS;
-        await act(async () => {
-          root.unmount();
-        });
-        container.remove();
+        if (reason !== "unmount") await act(async () => root.unmount());
+        vi.useRealTimers();
       }
     },
   );
@@ -797,6 +911,110 @@ describe("native markdown code copy", () => {
   });
 });
 
+describe("native markdown re-renders", () => {
+  it("keeps a streaming reply's earlier blocks mounted as it grows", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const first = "First paragraph.\n\n```ts\nconst a = 1;\n```";
+    const paragraph = () =>
+      [...container.querySelectorAll("rn-text")].find(
+        (text) => text.textContent === "First paragraph.",
+      );
+    const codeLine = () =>
+      [...container.querySelectorAll("rn-text")].find(
+        (text) => text.textContent === "const a = 1;",
+      );
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{first}</ChatMarkdown>);
+    });
+    const before = [paragraph(), codeLine()];
+    expect(before.every(Boolean)).toBe(true);
+    for (const text of [`${first}\n\nMore`, `${first}\n\nMore text`]) {
+      await act(async () => {
+        root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+      });
+      expect([paragraph(), codeLine()].every((node, index) => node === before[index])).toBe(true);
+    }
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws each code line as one text with its tokens inside", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown colorScheme="light">{"```ts\nconst a = 1;\nreturn a;\n```"}</ChatMarkdown>,
+    );
+    const rows = new DOMParser()
+      .parseFromString(html, "text/html")
+      .querySelectorAll("rn-scroll-view rn-view[data-flex-direction='row']");
+    expect([...rows].map((row) => row.textContent)).toEqual(["const a = 1;", "return a;"]);
+    for (const row of rows) {
+      expect(row.children).toHaveLength(1);
+      expect(row.children[0]?.tagName.toLowerCase()).toBe("rn-text");
+      expect(row.children[0]?.querySelectorAll("rn-text").length).toBeGreaterThan(1);
+    }
+  });
+});
+
+describe("long user messages", () => {
+  const line = (index: number) => `Line ${index} ${"x".repeat(60)}`;
+
+  it("keeps a short message whole", () => {
+    expect(textBlocks("one\n\ntwo")).toEqual(["one\n\ntwo"]);
+  });
+
+  it.each([
+    ["plain lines", Array.from({ length: 200 }, (_, i) => line(i)).join("\n")],
+    [
+      "blank lines between paragraphs",
+      Array.from({ length: 120 }, (_, i) => line(i)).join("\n\n\n"),
+    ],
+    [
+      "leading and trailing blank lines",
+      `\n\n${Array.from({ length: 80 }, (_, i) => line(i)).join("\n")}\n\n`,
+    ],
+  ])("cuts %s at line breaks into pieces that join back exactly", (_case, text) => {
+    const blocks = textBlocks(text);
+    expect(blocks.length).toBeGreaterThan(1);
+    expect(blocks.join("\n")).toBe(text);
+    for (const block of blocks.slice(0, -1)) {
+      expect(block.endsWith("\n")).toBe(false);
+      expect(block.length).toBeLessThan(1100);
+    }
+  });
+
+  it("keeps a single long line whole", () => {
+    const text = "y".repeat(5000);
+    expect(textBlocks(text)).toEqual([text]);
+  });
+
+  it("draws a long message as stacked paragraphs with the same text and style", () => {
+    const text = Array.from({ length: 60 }, (_, i) => `${line(i)} https://example.com/${i}`).join(
+      "\n",
+    );
+    const html = renderToStaticMarkup(
+      <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link} palette={darkTokens}>
+        {text}
+      </LinkifiedText>,
+    );
+    const root = new DOMParser().parseFromString(html, "text/html").body.firstElementChild;
+    expect(root?.tagName.toLowerCase()).toBe("rn-view");
+    const paragraphs = [...(root?.children ?? [])];
+    expect(paragraphs.length).toBe(textBlocks(text).length);
+    for (const paragraph of paragraphs) {
+      expect(paragraph.tagName.toLowerCase()).toBe("rn-text");
+      expect(paragraph.getAttribute("data-color")).toBe(darkTokens.foreground);
+    }
+    expect(
+      paragraphs[0]?.querySelectorAll("[data-accessibility-role='link']").length,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe("native markdown code colours", () => {
   it.each([
     ["dark", darkTokens, themes.oneDark],
@@ -919,6 +1137,47 @@ describe("native markdown lists", () => {
     // 13 + 5 + 8: the dot ends where a one-digit number ends.
     expect(dots[0]?.parentElement?.getAttribute("data-margin-left")).toBe("13");
     expect(dots[0]?.parentElement?.getAttribute("data-margin-right")).toBe("8");
+  });
+
+  it("draws task list items as checkboxes instead of their [ ] and [x] text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [x] Draft the announcement\n- [ ] Collect quotes\n- plain"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("[x]");
+    expect(html).not.toContain("[ ]");
+    expect(html).toContain("Draft the announcement");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(2);
+    expect(html.match(/✓/g)).toHaveLength(1);
+    // Each task is one accessible element that reads its text with its state.
+    expect(html).toMatch(/accessible=""[^>]*accessibilityLabel="Draft the announcement"/);
+    // The plain item keeps its bullet.
+    expect(bulletDots(html)).toHaveLength(1);
+  });
+
+  it("draws a checkbox when the task text starts on the next line", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"- [x]\n  Ship it"}</ChatMarkdown>);
+    expect(html).not.toContain("[x]");
+    expect(html).toContain("Ship it");
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(1);
+  });
+
+  it("keeps each nested task's own checkbox state", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- [ ] Launch\n  - [x] Draft\n  - [ ] Review"}</ChatMarkdown>,
+    );
+    expect(html.match(/data-accessibility-role="checkbox"/g)).toHaveLength(3);
+    expect(html).toMatch(/accessibilityLabel="Launch"/);
+    expect(html).toMatch(/accessibilityLabel="Draft"/);
+  });
+
+  it("keeps escaped [x] and [ ] as literal text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- \\[x\\] done literally\n- \\[ \\] open literally"}</ChatMarkdown>,
+    );
+    expect(html).toContain("[x] done literally");
+    expect(html).toContain("[ ] open literally");
+    expect(html).not.toContain('data-accessibility-role="checkbox"');
+    expect(bulletDots(html)).toHaveLength(2);
   });
 
   it("draws the bullet dot in the list-marker colour", () => {
@@ -1970,5 +2229,43 @@ describe("native markdown diagrams", () => {
   it("leaves other fences and an empty mermaid fence as code", () => {
     expect(renderWithDiagrams("```ts\nconst a = 1;\n```")).not.toContain("<diagram-probe");
     expect(renderWithDiagrams("```mermaid\n\n```")).not.toContain("<diagram-probe");
+  });
+});
+
+describe("native markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const links = [...container.querySelectorAll<HTMLElement>("[data-accessibility-role='link']")];
+    expect(links.map((link) => link.textContent)).toEqual(["Duplex voice"]);
+    expect(links[0]!.querySelector("rn-view")).not.toBeNull();
+    expect(links[0]!.querySelector("[data-text-decoration-line='underline']")?.textContent).toBe(
+      "Duplex voice",
+    );
+    await act(async () => {
+      links[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    expect(linking.openURL).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalledWith(expect.anything(), "page:page_1", expect.anything());
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    });
+    expect(container.querySelector("[data-accessibility-role='link']")).toBeNull();
+    expect(container.textContent).toContain("See Duplex voice and x and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

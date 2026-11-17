@@ -1,6 +1,9 @@
 {
-  "platforms": ["android"],
+  "platforms": ["android", "apple"],
   "android": {
     "modules": ["com.rakazo.filedrop.RakazoFileDropModule"]
+  },
+  "apple": {
+    "modules": ["RakazoFileDropModule"]
   }
 }

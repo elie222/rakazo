@@ -1,4 +1,4 @@
-import type { MobileGroup, MobileSnapshot } from "./api";
+import type { MobileGroup, MobileSnapshot } from "./mobile-types";
 
 function equalValue(previous: unknown, next: unknown): boolean {
   if (Object.is(previous, next)) return true;

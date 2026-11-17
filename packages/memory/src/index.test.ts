@@ -1,4 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownMemoryStore } from "./index.js";
 
@@ -34,7 +35,6 @@ describe("memory store contract shape", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: {
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "bot",
         botId: "bot-1",
       },
@@ -55,7 +55,6 @@ describe("memory store contract shape", () => {
       where: {
         id: "memory-9",
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "bot",
         botId: "bot-1",
         path: "projects/retired.md",
@@ -73,11 +72,28 @@ describe("memory store contract shape", () => {
       where: {
         id: "missing",
         spaceId: "workspace-1",
-        userId: "user-1",
         scope: "user",
         botId: null,
         path: "projects/retired.md",
       },
     });
+  });
+});
+
+describe("saving over a newer revision", () => {
+  const store = (revision: number) => {
+    const tx = { memoryDocument: { findFirst: vi.fn().mockResolvedValue({ id: "m", revision }) } };
+    return new MarkdownMemoryStore({
+      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+    } as never);
+  };
+
+  it("refuses with a revision conflict the caller can recognise", async () => {
+    await expect(
+      store(3).commit(
+        { scope: "user", path: "facts.md", content: "new", expectedRevision: 2 },
+        context,
+      ),
+    ).rejects.toBeInstanceOf(MemoryRevisionConflictError);
   });
 });

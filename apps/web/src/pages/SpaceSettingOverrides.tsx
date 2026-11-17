@@ -1,26 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-} from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
-import { useSpaceQueries } from "../lib/query";
-import { useSpaceRpc } from "../lib/space-rpc";
+import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
@@ -37,13 +27,26 @@ export function SpaceSettingOverrides({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
-  const rpc = useSpaceRpc();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const overrides = useQuery(queries.spaceSettings.overrides.queryOptions());
-  const [pending, setPending] = useState<SpaceSetting | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState<SpaceSetting | null>(null);
+  const affectedReads: Record<SpaceSetting, QueryKey[]> = {
+    models: [queries.models.key(), queries.me.key()],
+    voice: [queries.voice.key()],
+    confirmations: [queries.approvalRules.key(), queries.autoReview.key()],
+    credentials: [queries.vault.key()],
+  };
+  const override = useSave({
+    save: async ({ setting, enabled }: { setting: SpaceSetting; enabled: boolean }, rpc) => {
+      const next = await rpc.spaceSettings.setOverride({ setting, enabled });
+      await writeSaved(queryClient, queries.spaceSettings.overrides.queryKey(), () => next);
+    },
+    // Reads that omit a scope get whichever copy applies, so they change with the override.
+    stale: ({ setting }) => affectedReads[setting],
+    onSaved: () => setConfirmingReset(null),
+    onFailed: () => setConfirmingReset(null),
+  });
   // A credential still saving would land in the vault a reset is deleting.
   const [vaultBusy, setVaultBusy] = useState(false);
 
@@ -86,31 +89,9 @@ export function SpaceSettingOverrides({
     },
   ];
 
-  async function setOverride(setting: SpaceSetting, enabled: boolean) {
-    if (pending) return;
-    setPending(setting);
-    setActionError(null);
-    try {
-      const next = await rpc.spaceSettings.setOverride({ setting, enabled });
-      await writeSaved(queryClient, queries.spaceSettings.overrides.queryKey(), () => next);
-      // Reads that omit a scope get whichever copy applies, so they change with the override.
-      const affected: Record<SpaceSetting, QueryKey[]> = {
-        models: [queries.models.key(), queries.me.key()],
-        voice: [queries.voice.key()],
-        confirmations: [queries.approvalRules.key(), queries.autoReview.key()],
-        credentials: [queries.vault.key()],
-      };
-      for (const queryKey of affected[setting]) void queryClient.invalidateQueries({ queryKey });
-    } catch (err) {
-      setActionError(errorText(err));
-    } finally {
-      setPending(null);
-    }
-  }
-
   if (overrides.data === undefined) {
     return overrides.isError ? (
-      <div role="alert" className="text-[12.5px] text-destructive">
+      <div role="alert" className="text-body-sm text-destructive">
         {errorText(overrides.error)}
         <Button variant="ghost" size="sm" onClick={() => void overrides.refetch()}>
           {t`Retry`}
@@ -133,7 +114,7 @@ export function SpaceSettingOverrides({
                   <>
                     <p>{label}</p>
                     {custom ? null : (
-                      <p className="text-[13px] text-muted-foreground">{t`Your defaults`}</p>
+                      <p className="text-body-sm text-muted-foreground">{t`Your defaults`}</p>
                     )}
                   </>
                 }
@@ -143,11 +124,11 @@ export function SpaceSettingOverrides({
                     size="sm"
                     className="rounded-full"
                     aria-label={custom ? t`Use defaults for ${label}` : t`Customize ${label}`}
-                    disabled={pending !== null || busy}
+                    disabled={override.pending || busy}
                     onClick={() =>
                       custom && resetConfirmation
                         ? setConfirmingReset(id)
-                        : void setOverride(id, !custom)
+                        : override.run({ setting: id, enabled: !custom })
                     }
                   >
                     {custom ? t`Use defaults` : t`Customize`}
@@ -160,37 +141,20 @@ export function SpaceSettingOverrides({
           );
         })}
       </SettingsGroup>
-      {actionError ? (
-        <p role="alert" className="text-[12.5px] text-destructive">
-          {actionError}
+      {override.error ? (
+        <p role="alert" className="text-body-sm text-destructive">
+          {errorText(override.error)}
         </p>
       ) : null}
       {confirmingReset && confirmTitle ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => {
-            if (!open && !pending) setConfirmingReset(null);
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
-              <AlertDialogDescription>{t`This can't be undone.`}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending !== null}>{t`Cancel`}</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending !== null}
-                onClick={() =>
-                  void setOverride(confirmingReset, false).then(() => setConfirmingReset(null))
-                }
-              >
-                {t`Delete`}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmDialog
+          onCancel={() => setConfirmingReset(null)}
+          title={confirmTitle}
+          description={t`This can't be undone.`}
+          busy={override.pending}
+          onConfirm={() => override.run({ setting: confirmingReset, enabled: false })}
+          confirmLabel={t`Delete`}
+        />
       ) : null}
     </div>
   );

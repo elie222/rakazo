@@ -66,16 +66,17 @@ export async function saveApprovalRule(
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${owner}:${rule.matchKind}:${value}`}, 0))::text AS "lock"
   `);
-  const others = { not: rule.effect };
-  // Compared here, not with Prisma's insensitive mode: that is ILIKE, where "_" is a wildcard.
-  const sameMatch = (rows: Array<{ id: string; matchValue: string }>) =>
-    rows.filter((row) => row.matchValue.toLowerCase() === value).map((row) => row.id);
-  const select = { id: true, matchValue: true } as const;
+  // One rule per match, whatever its effect or spelling. Compared here, not with Prisma's
+  // insensitive mode: that is ILIKE, where "_" is a wildcard.
+  const replaced = (rows: Array<{ id: string; effect: string; matchValue: string }>) =>
+    rows
+      .filter((row) => row.matchValue.toLowerCase() === value)
+      .filter((row) => row.effect !== rule.effect || row.matchValue !== rule.matchValue)
+      .map((row) => row.id);
+  const select = { id: true, effect: true, matchValue: true } as const;
   if (account) {
     const where = { userId: scope.userId, matchKind: rule.matchKind };
-    const ids = sameMatch(
-      await tx.userActionApprovalRule.findMany({ where: { ...where, effect: others }, select }),
-    );
+    const ids = replaced(await tx.userActionApprovalRule.findMany({ where, select }));
     await tx.userActionApprovalRule.deleteMany({ where: { id: { in: ids } } });
     const row = { userId: scope.userId, ...rule };
     return tx.userActionApprovalRule.upsert({
@@ -89,9 +90,7 @@ export async function saveApprovalRule(
     createdByUserId: scope.userId,
     matchKind: rule.matchKind,
   };
-  const ids = sameMatch(
-    await tx.actionApprovalRule.findMany({ where: { ...where, effect: others }, select }),
-  );
+  const ids = replaced(await tx.actionApprovalRule.findMany({ where, select }));
   await tx.actionApprovalRule.deleteMany({ where: { id: { in: ids } } });
   const row = { spaceId: scope.spaceId, createdByUserId: scope.userId, ...rule };
   return tx.actionApprovalRule.upsert({

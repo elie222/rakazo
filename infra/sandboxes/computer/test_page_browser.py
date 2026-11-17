@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -142,7 +143,12 @@ class FakeAgentBrowser:
         if command[:2] == ["is", "enabled"]:
             return {"enabled": command[2].lstrip("@") not in self.disabled}
         if name == "get" and command[1] == "box":
-            return self.boxes.get(command[2].lstrip("@"), {})
+            box = self.boxes.get(command[2].lstrip("@"), {})
+            # A list is the box as scrolling moves it: each read takes the next, and the last one stays.
+            if isinstance(box, list):
+                self.boxes[command[2].lstrip("@")] = box[1:] or box
+                return box[0]
+            return box
         if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
             return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
@@ -227,6 +233,23 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn("•", text)
         self.assertNotIn("value", next(el for el in result["elements"] if el["ref"] == "e3"))
         self.assertEqual(next(el for el in result["elements"] if el["ref"] == "e7")["value"], "checked")
+
+    def test_never_shows_which_option_a_saved_login_chose(self):
+        # The page reports the chosen option's value and label for a dropdown a saved login filled.
+        result, _ = self.snapshot(FakeAgentBrowser(state={"masked": ["fr", "France"]}))
+        self.assertIn('- combobox "Country" [expanded=false, ref=e4] options: "Choose", "France"\n', result["tree"])
+        self.assertNotIn("(selected)", result["tree"])
+        country = next(el for el in result["elements"] if el["ref"] == "e4")
+        self.assertNotIn("value", country)
+        self.assertEqual(country["options"], [{"label": "Choose", "value": "Choose"},
+                                              {"label": "France", "value": "France"}])
+        # Past the options a snapshot lists, the chosen one is not added back.
+        options = "".join(f'  - option "Year {n}" [{"selected, " if n == 432 else ""}ref=e{n + 10}]\n'
+                          for n in range(1, 1501))
+        result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}',
+                                                   state={"masked": ["Year 432"]}))
+        self.assertNotIn("Year 432", json.dumps(result))
+        self.assertEqual(len(result["elements"][0]["options"]), 100)
 
     def test_leaves_payment_frames_out_and_points_to_fill_card(self):
         result, _ = self.snapshot()
@@ -492,8 +515,12 @@ class FakePurchases:
         return {"url": "https://shop.example.test/pay", "title": "Pay"}
 
     def click(self, box, scrolled):
-        if box.get("ref") in FakePurchases.offscreen and not scrolled:
-            raise helper.Offscreen()
+        # A box below a 713-pixel viewport is out of view, and once scrolled to, what the page shows decides.
+        if box.get("ref") in FakePurchases.offscreen or box.get("y", 0) >= 713:
+            if not scrolled:
+                raise helper.Offscreen()
+            if box.get("y", 0) >= 713:
+                return FakePurchases.shows
         return box.get("pay")
 
     def signals(self, enter, deadline=float("inf"), frames=True):
@@ -569,6 +596,29 @@ class PurchaseTest(unittest.TestCase):
                 "label": "Pay\u200b  $5", "amount": "$5"}
         self.assertTrue(self.act([step], browser)["ok"])
 
+    def test_an_approved_click_is_refused_when_the_page_total_changed(self):
+        approved = {"kind": "click", "ref": "e8", "approved": True, "site": "shop.example.test",
+                    "label": "Pay $5", "amount": "$5"}
+        # The card showed no separate total and the page now shows one; then a total that grew.
+        for shown_total, page_total in (("", "$250"), ("$250", "$900")):
+            browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": page_total})
+            with self.subTest(shown=shown_total, page=page_total):
+                self.assertEqual(self.act([{**approved, "total": shown_total}], browser)["error"],
+                                 helper.PURCHASE_CHANGED)
+        browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$250"})
+        self.assertTrue(self.act([{**approved, "total": "$250"}], browser)["ok"])
+        # An API that sends no total is not held to one.
+        self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
+
+    def test_ambiguous_prices_never_authorize_a_purchase(self):
+        for key in ("amount", "total"):
+            buying = {**PAY, key: "?"}
+            step = {"approved": True, "site": "shop.example.test", **buying}
+            result = helper.purchase_refusal(step, "shop.example.test", buying, 0)
+            self.assertFalse(result["ok"])
+            self.assertNotIn("purchase", result)
+            self.assertIn("manually", result["error"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
@@ -599,6 +649,24 @@ class PurchaseTest(unittest.TestCase):
         self.assertEqual(self.act([{"kind": "click", "ref": "e8"}], browser)["error"], helper.PURCHASE_REFUSED)
         self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
 
+    def test_a_smooth_scroll_is_checked_where_it_stops_not_where_it_starts(self):
+        browser = FakeAgentBrowser()
+        note = {"ref": "e8", "x": 10, "width": 40, "height": 20}
+        browser.boxes["e8"] = [{**note, "y": y} for y in (1500, 1500, 900, 400, 100, 100)]
+        FakePurchases.shows = {**PAY, "reason": "payment_page", "label": "Pay using Gift Card"}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertIsNone(result["purchase"])
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_a_control_still_out_of_view_after_scrolling_asks_what_the_page_shows(self):
+        browser = FakeAgentBrowser()
+        browser.boxes["e8"] = {"ref": "e8", "x": 10, "y": 1500, "width": 40, "height": 20}
+        FakePurchases.shows = PAY
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertEqual(result["purchase"]["label"], PAY["label"])
+
     def test_purchase_check_names_the_clicks_that_would_buy_and_presses_nothing(self):
         browser = pays(FakeAgentBrowser(), "e7")
         result = page(browser).purchase_check({"actions": [
@@ -608,6 +676,21 @@ class PurchaseTest(unittest.TestCase):
                                   "title": "Pay", "purchase": {
             "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
         self.assertEqual(browser.actions(), [])
+
+    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "total": "$10"})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["amount"], "$5")
+        self.assertEqual(result["purchase"]["total"], "$10")
+
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"}, {"name": "Delivery", "amount": "$6.00"}]
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["items"], items)
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": []})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
 
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
@@ -669,6 +752,36 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(json.loads(printed.call_args.args[0]),
                              {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
                               "title": ""})
+
+
+class PurchaseSiteTest(unittest.TestCase):
+    """The world a check starts in, while the tab may be replacing its document."""
+
+    GONE = RuntimeError("Runtime.evaluate failed: {'code': -32000, 'message': 'Cannot find context with specified id'}")
+
+    def site(self, worlds):
+        """What site() answers, or raises, when world_in answers `worlds` in turn."""
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        with patch.object(secrets, "main_frame", return_value={"id": "top"}), \
+                patch.object(secrets, "world_in", side_effect=worlds) as world_in, \
+                patch.object(secrets, "eval_json", return_value="tickets.example.test"), \
+                patch.object(helper.time, "sleep"):
+            try:
+                return found.site(), world_in.call_count
+            except RuntimeError as error:
+                return error, world_in.call_count
+
+    def test_a_document_replaced_while_the_check_starts_is_read_again(self):
+        self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
+
+    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+        error, _ = self.site([self.GONE] * 10)
+        self.assertIs(error, self.GONE)
+
+    def test_another_failure_is_not_retried(self):
+        other = RuntimeError("Runtime.evaluate failed: too large")
+        self.assertEqual(self.site([other, 7]), (other, 1))
 
 
 class DesktopPurchaseTest(unittest.TestCase):
@@ -1089,6 +1202,28 @@ class AgentBrowserTest(unittest.TestCase):
         self.assertNotIn("private text", json.dumps(run.call_args.args))
         self.assertIn("private text", run.call_args.kwargs["input"])
         self.assertEqual(run.call_args.kwargs["cwd"], browser.home)
+
+    def test_replaces_its_settings_whole_while_another_call_reads_them(self):
+        # Every call on the computer, one per screen, writes the same settings file, and agent-browser
+        # refuses one it reads half written: the file another call has open must stay whole.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            config.write_text('{"before": true}', encoding="utf-8")
+            with config.open(encoding="utf-8") as reading:
+                helper.AgentBrowser(9223)
+                self.assertEqual(reading.read(), '{"before": true}')
+            self.assertEqual(config.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
+    def test_leaves_no_staged_settings_file_when_the_swap_fails(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            with patch.object(helper.os, "replace", side_effect=PermissionError("denied")):
+                with self.assertRaises(PermissionError):
+                    helper.AgentBrowser(9223)
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
 
     def test_refuses_a_browser_agent_browser_started_itself(self):
         launched = [{"success": True, "result": {"lifecycle": {"launched": True}}}]
@@ -1867,7 +2002,8 @@ class SavedLoginTest(unittest.TestCase):
 
     def test_a_field_in_another_site_s_frame_is_refused_and_its_own_site_s_is_filled(self):
         browser = LoginFrameBrowser(focus_in_frame=True)
-        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test"):
+        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test, and this login is "
+                                    "saved for https://portal.example.test,"):
             secrets.fill_focused(browser.client, "page", dict(self.STEP))
         self.assertEqual(browser.filled_in(), [])
         browser = LoginFrameBrowser(focus_in_frame=True, frame_check={"same": True})
@@ -1877,6 +2013,123 @@ class SavedLoginTest(unittest.TestCase):
             browser = LoginFrameBrowser(focus_in_frame=True, frame_check=check)
             with self.subTest(check=check), self.assertRaisesRegex(secrets.Refused, error):
                 secrets.fill_focused(browser.client, "page", dict(self.STEP))
+
+
+class FrameSocket:
+    """A socket that hands out its bytes a few at a time, as a network would."""
+
+    def __init__(self, data, step=1000):
+        self.data, self.step = bytearray(data), step
+
+    def recv(self, size):
+        taken = bytes(self.data[:min(size, self.step)])
+        del self.data[:len(taken)]
+        return taken
+
+    def settimeout(self, _):
+        pass
+
+
+def ws_frame(payload, mask=None):
+    n = len(payload)
+    header = bytearray([0x81])
+    mask_bit = 0x80 if mask else 0
+    if n < 126:
+        header.append(mask_bit | n)
+    elif n < 65536:
+        header += bytes([mask_bit | 126]) + n.to_bytes(2, "big")
+    else:
+        header += bytes([mask_bit | 127]) + n.to_bytes(8, "big")
+    if mask:
+        return bytes(header) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return bytes(header) + payload
+
+
+class CdpFrameTest(unittest.TestCase):
+    BIG = 3 * 1024 * 1024
+
+    def client(self, *frames):
+        client = secrets.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(b"".join(frames))
+        return client
+
+    def event(self, size):
+        return json.dumps({"method": "Network.requestWillBeSent", "params": {"url": "data:image/png;base64," + "A" * size}}).encode()
+
+    def test_an_oversized_event_is_skipped_and_the_next_message_is_read(self):
+        small = json.dumps({"method": "Page.loadEventFired", "params": {}}).encode()
+        for mask in (None, b"\x01\x02\x03\x04"):
+            with self.subTest(masked=bool(mask)):
+                client = self.client(ws_frame(self.event(self.BIG), mask), ws_frame(small, mask))
+                self.assertEqual(client._read_frame(), small)
+                self.assertEqual(len(client._buf), 0)
+
+    def test_a_skipped_frame_is_not_held_in_memory(self):
+        client = self.client(ws_frame(self.event(self.BIG)))
+        client._sock.data.extend(ws_frame(b"{}"))
+        peak = 0
+        original = client._drain
+
+        def drain():
+            nonlocal peak
+            original()
+            peak = max(peak, len(client._buf))
+        client._drain = drain
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertLess(peak, 128 * 1024)
+
+    def test_skipping_resumes_after_a_read_times_out(self):
+        small = b'{"method": "A"}'
+        client = self.client(ws_frame(self.event(self.BIG)), ws_frame(small))
+        real = client._sock
+        calls = [0]
+
+        class Flaky(FrameSocket):
+            def recv(self, size):
+                calls[0] += 1
+                if calls[0] % 7 == 0:
+                    raise socket.timeout()
+                return real.recv(size)
+        client._sock = Flaky(b"")
+        for _ in range(10000):
+            try:
+                self.assertEqual(client._read_frame(), small)
+                break
+            except socket.timeout:
+                continue
+        else:
+            self.fail("never finished")
+
+    def test_an_oversized_reply_fails_only_its_own_request(self):
+        for mask in (None, b"\x09\x08\x07\x06"):
+            with self.subTest(masked=bool(mask)):
+                reply = json.dumps({"id": 7, "result": {"data": "A" * self.BIG}}).encode()
+                client = self.client(ws_frame(reply, mask))
+                client._next_id = 7
+                with patch.object(secrets.os, "urandom", return_value=b"1234"), \
+                        patch.object(client, "_send"), self.assertRaisesRegex(RuntimeError, "Runtime.evaluate failed.*too large"):
+                    client.call("Runtime.evaluate", timeout_s=5)
+
+    def test_an_oversized_download_still_begins(self):
+        begin = json.dumps({"method": "Browser.downloadWillBegin", "params": {
+            "frameId": "F1", "guid": "0a1b-2c3d", "url": "data:text/csv;base64," + "A" * self.BIG,
+            "suggestedFilename": "export.csv"}}, separators=(",", ":")).encode()
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(ws_frame(begin) + ws_frame(b"{}"))
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(list(client.downloads), ["0a1b-2c3d"])
+
+    def test_an_oversized_navigation_counts_for_every_frame(self):
+        navigated = json.dumps({"method": "Page.frameNavigated", "params": {
+            "frame": {"id": "F1", "url": "data:text/html;base64," + "A" * self.BIG}}}, separators=(",", ":")).encode()
+        client = self.client(ws_frame(navigated), ws_frame(b"{}"))
+        before = client.navigations("S1", "F2")
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(client.navigations("S1", "F2"), before + 1)
+
+    def test_a_frame_just_under_the_limit_is_still_read(self):
+        payload = self.event(secrets.MAX_FRAME_BYTES - 200)
+        self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)
 
 
 class DownloadTest(unittest.TestCase):

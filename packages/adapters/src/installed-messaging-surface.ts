@@ -8,6 +8,7 @@ import type {
   MessagingSendRequest,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { MessagingSendError } from "./chat-sdk-surface.js";
 import { credentialDigest } from "./credential-digest.js";
 
 type CachedSurface = {
@@ -52,6 +53,9 @@ export class InstalledMessagingSurface implements MessagingSurface {
   }
   initialize() {
     return this.fallback?.initialize?.() ?? Promise.resolve();
+  }
+  stopReceiving() {
+    return this.fallback?.stopReceiving?.() ?? Promise.resolve();
   }
   async shutdown() {
     const cached = [...this.surfaces.values()];
@@ -168,13 +172,17 @@ export class InstalledMessagingSurface implements MessagingSurface {
     };
   }
 
+  /** A workspace that was removed, or is not this caller's, never takes a send: no retry helps. */
   private authorize(installation: MessagingInstallation | null, context: AdapterContext) {
     if (
       !installation ||
       installation.provider !== this.provider.provider ||
       (context.spaceId && installation.spaceId !== context.spaceId)
     )
-      throw new Error("Messaging workspace unavailable");
+      throw new MessagingSendError(new Error("Messaging workspace unavailable"), {
+        permanent: true,
+        retryAfterMs: null,
+      });
   }
 
   private async withSurface<T>(
@@ -239,6 +247,10 @@ function unScopeHandle(installation: MessagingInstallation, handle: string): str
   if (!handle.startsWith(prefix)) throw new Error("Messaging handle belongs to another workspace");
   return handle.slice(prefix.length);
 }
+/** A workspace user's address as inbound messages from that workspace carry it. */
+export function installationSenderAddress(workspaceId: string, userId: string): string {
+  return `${workspaceId}:${userId}`;
+}
 function scopeMessage(
   installation: MessagingInstallation,
   event: MessagingInboundMessage,
@@ -254,8 +266,10 @@ function scopeMessage(
     installationSpaceId: installation.spaceId,
     installationBotId: installation.botId,
     handle: `${installation.workspaceId}:${event.handle}`,
-    from: `${installation.workspaceId}:${event.from}`,
-    participants: event.participants.map((id) => `${installation.workspaceId}:${id}`),
+    from: installationSenderAddress(installation.workspaceId, event.from),
+    participants: event.participants.map((id) =>
+      installationSenderAddress(installation.workspaceId, id),
+    ),
     threadId: scopeThread(installation, event.threadId),
   };
 }

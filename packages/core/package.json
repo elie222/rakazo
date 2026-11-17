@@ -24,6 +24,11 @@
       "development": "./src/screen-reconnect.ts",
       "default": "./src/screen-reconnect.ts"
     },
+    "./test-async": {
+      "types": "./src/async.test-support.ts",
+      "development": "./src/async.test-support.ts",
+      "default": "./src/async.test-support.ts"
+    },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
       "development": "./src/node/load-root-env.ts",
@@ -35,9 +40,9 @@
       "default": "./src/node/shutdown-signals.ts"
     },
     "./node/approval-effect-key": {
-      "types": "./src/approval-effect-key.ts",
-      "development": "./src/approval-effect-key.ts",
-      "default": "./src/approval-effect-key.ts"
+      "types": "./src/node/approval-effect-key.ts",
+      "development": "./src/node/approval-effect-key.ts",
+      "default": "./src/node/approval-effect-key.ts"
     },
     "./node/screen-proxy-response": {
       "types": "./src/node/screen-proxy-response.ts",
@@ -48,6 +53,11 @@
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",
       "default": "./src/plot/plot-spec.ts"
+    },
+    "./plot-catalog": {
+      "types": "./src/plot/plot-catalog.ts",
+      "development": "./src/plot/plot-catalog.ts",
+      "default": "./src/plot/plot-catalog.ts"
     },
     "./node/desktop-runtime": {
       "types": "./src/node/desktop-runtime.ts",
@@ -64,10 +74,35 @@
       "development": "./src/egress.ts",
       "default": "./src/egress.ts"
     },
+    "./signup-attribution": {
+      "types": "./src/browser-signup-attribution.ts",
+      "development": "./src/browser-signup-attribution.ts",
+      "default": "./src/browser-signup-attribution.ts"
+    },
     "./query": {
       "types": "./src/query.ts",
       "development": "./src/query.ts",
       "default": "./src/query.ts"
+    },
+    "./node/prompt-source-version": {
+      "types": "./src/node/prompt-source-version.ts",
+      "development": "./src/node/prompt-source-version.ts",
+      "default": "./src/node/prompt-source-version.ts"
+    },
+    "./node/secrets-guard": {
+      "types": "./src/node/secrets-guard.ts",
+      "development": "./src/node/secrets-guard.ts",
+      "default": "./src/node/secrets-guard.ts"
+    },
+    "./node/screen-lease": {
+      "types": "./src/node/screen-lease.ts",
+      "development": "./src/node/screen-lease.ts",
+      "default": "./src/node/screen-lease.ts"
+    },
+    "./node/sandbox-command": {
+      "types": "./src/node/sandbox-command.ts",
+      "development": "./src/node/sandbox-command.ts",
+      "default": "./src/node/sandbox-command.ts"
     }
   },
   "scripts": {
@@ -75,14 +110,15 @@
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {
-    "@observablehq/plot": "0.6.17",
+    "@observablehq/plot": "0.6.19",
     "@rakazo/contracts": "workspace:*",
-    "@tanstack/query-core": "5.104.5",
+    "@rakazo/ui-tokens": "workspace:*",
+    "@tanstack/query-core": "5.107.1",
     "croner": "10.0.1",
-    "d3-dsv": "3.0.1",
+    "d3-dsv": "3.0.2",
     "dotenv": "17.4.2",
     "fflate": "0.8.3",
-    "hast-util-to-text": "4.0.2",
+    "hast-util-to-text": "4.0.3",
     "json5": "2.2.3",
     "mdast-util-to-hast": "13.2.1",
     "remark-gfm": "4.0.1",
@@ -95,6 +131,6 @@
     "@types/d3-dsv": "3.0.7",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

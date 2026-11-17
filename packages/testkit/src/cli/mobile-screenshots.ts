@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
@@ -12,9 +13,11 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
+import { callRequestClientNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
 import { sessionCookieHeader } from "../index.js";
+import { disposableDatabaseEnv } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -28,13 +31,23 @@ const DEVICE_CONTROL_PORT = 3111;
 const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
 const DEVICE_CONTROL_URL = `http://127.0.0.1:${DEVICE_CONTROL_PORT}`;
 const EXPAND_NOTIFICATIONS_URL = `${DEVICE_CONTROL_URL}/expand-notifications`;
+/** Files the native-features flow picks through the system photo and document pickers. */
+const PICKER_FILES = { image: "rakazo-fixture.png", pdf: "rakazo-fixture.pdf" };
 const WEB_ORIGIN = "http://127.0.0.1:5180";
 /** Flows to run, in order. A flow with a window runs on the emulator resized to it. */
 const FLOWS: { name: string; window?: { size: string; density: string } }[] = [
   { name: "screenshots" },
   { name: "notification-demo" },
+  // Needs the signed-in app the notification demo leaves behind; restores English itself.
+  { name: "ui-locale-zh-tw" },
+  { name: "keyboard-lifecycle" },
   // An unfolded foldable, about 750dp wide, where the chat list sits beside the open chat.
   { name: "split-view", window: { size: "1968x2184", density: "420" } },
+  // It creates and deletes a second organization in the shared fixture account.
+  { name: "organizations" },
+  // Native modules and system UI that release-build code shrinking could break. Last,
+  // because the messages, attachments, and calls it adds change what earlier flows match.
+  { name: "native-features" },
 ];
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
@@ -85,10 +98,11 @@ async function main() {
     hostname: "0.0.0.0",
     port: API_PORT,
   }) as Server;
-  const deviceControl = startDeviceControlServer();
+  const deviceControl = startDeviceControlServer(handles.app, handles.prisma, fixture);
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
+    await pushPickerFiles();
     for (const { name: flow, window } of process.env.MOBILE_KEYBOARD_ONLY === "true"
       ? [{ name: "keyboard-lifecycle", window: undefined }]
       : FLOWS) {
@@ -96,6 +110,7 @@ async function main() {
       let flowFailed = false;
       let flowError: unknown;
       try {
+        await settleApp();
         if (window) resizeEmulator(window.size, window.density);
         await runFlow(flow, fixture);
       } catch (error) {
@@ -127,6 +142,15 @@ async function main() {
     await handles.stop().catch(() => undefined);
     await rm(DATA_DIR, { recursive: true, force: true });
   }
+}
+
+/**
+ * Stop the app left by the previous flow and let Android finish removing its task. A flow
+ * that clears app data during that teardown has its fresh launch killed with the old task.
+ */
+async function settleApp() {
+  execFileSync("adb", ["shell", "am", "force-stop", "com.rakazo.app"], { stdio: "inherit" });
+  await new Promise((resolve) => setTimeout(resolve, 10_000));
 }
 
 function resizeEmulator(size: string, density: string) {
@@ -165,27 +189,56 @@ async function runFlow(flow: string, fixture: Awaited<ReturnType<typeof seedFixt
       "RAKAZO_NOTIFICATION_VIDEO=notification-demo",
       "-e",
       `RAKAZO_EXPAND_NOTIFICATIONS_URL=${EXPAND_NOTIFICATIONS_URL}`,
+      "-e",
+      `RAKAZO_DEVICE_CONTROL_URL=${DEVICE_CONTROL_URL}`,
       path.join(FLOW_DIR, `${flow}.yaml`),
     ],
     process.env,
   );
 }
 
-/** Maestro host-side helper: expand the Android shade without flaky status-bar swipes. */
-function startDeviceControlServer(): Server {
+/**
+ * Maestro host-side helpers for what a flow cannot do on the device itself: expand the
+ * Android shade without flaky status-bar swipes, share text in from another app, ring
+ * the user from the Researcher, and connect the scripted voice provider.
+ */
+function startDeviceControlServer(
+  app: App,
+  prisma: PrismaClient,
+  fixture: Awaited<ReturnType<typeof seedFixture>>,
+): Server {
+  const routes: Record<string, () => Promise<unknown>> = {
+    "/expand-notifications": () => adb(["shell", "cmd", "statusbar", "expand-notifications"]),
+    "/share-text": () =>
+      adb([
+        "shell",
+        "am start -a android.intent.action.SEND -t text/plain",
+        "--es android.intent.extra.TEXT 'Shared from another app'",
+        "-n com.rakazo.app/.MainActivity",
+      ]),
+    "/ring": () => ringFromResearcher(prisma, fixture),
+    "/connect-voice": () =>
+      rpc(app, fixture.cookie, "voice/connect", {
+        provider: "scripted",
+        apiKey: "fixture-voice-key",
+      }),
+  };
   const server = createServer((req, res) => {
-    if (req.method !== "GET" || req.url !== "/expand-notifications") {
+    const route = req.method === "GET" ? routes[req.url ?? ""] : undefined;
+    if (!route) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
       return;
     }
-    execFile(
-      "adb",
-      ["shell", "cmd", "statusbar", "expand-notifications"],
-      { timeout: 5_000 },
-      (error) => {
-        res.writeHead(error ? 500 : 200, { "content-type": "text/plain; charset=utf-8" });
-        res.end(error ? "Could not expand notifications" : "ok");
+    route().then(
+      () => {
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        res.end("ok");
+      },
+      (error: unknown) => {
+        console.error(`Device control ${req.url} failed`, error);
+        res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+        res.end("failed");
       },
     );
   });
@@ -193,10 +246,92 @@ function startDeviceControlServer(): Server {
   return server;
 }
 
-function configureEnvironment() {
+function adb(args: string[]) {
+  return new Promise<void>((resolve, reject) => {
+    execFile("adb", args, { timeout: 15_000 }, (error) => (error ? reject(error) : resolve()));
+  });
+}
+
+/** A ringing call request, as the bot's call_user tool writes it, without a model run. */
+async function ringFromResearcher(
+  prisma: PrismaClient,
+  fixture: Awaited<ReturnType<typeof seedFixture>>,
+) {
+  const callId = randomUUID();
+  await createThreadMessage(prisma, {
+    threadId: fixture.threadId,
+    role: "bot",
+    botId: fixture.botId,
+    clientNonce: callRequestClientNonce(callId),
+    blocks: [
+      {
+        kind: "call_request",
+        callId,
+        reason: "The fixture launch checklist changed.",
+        opening: "Hi, the launch checklist changed.",
+        status: "ringing",
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    ],
+  });
+}
+
+/** Put a small image and PDF where the system photo and document pickers list them. */
+async function pushPickerFiles() {
+  const dir = path.join(DATA_DIR, "picker");
+  await mkdir(dir, { recursive: true });
+  // A 1x1 PNG and a one-page PDF, generated so the repo carries no binary fixtures.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await writeFile(path.join(dir, PICKER_FILES.image), png);
+  await writeFile(path.join(dir, PICKER_FILES.pdf), onePagePdf("Rakazo fixture PDF"));
+  const targets = [
+    [PICKER_FILES.image, "/sdcard/Pictures"],
+    [PICKER_FILES.pdf, "/sdcard/Download"],
+  ] as const;
+  for (const [name, folder] of targets) {
+    execFileSync("adb", ["push", path.join(dir, name), `${folder}/${name}`], { stdio: "inherit" });
+    execFileSync(
+      "adb",
+      [
+        "shell",
+        `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://${folder}/${name}`,
+      ],
+      { stdio: "inherit" },
+    );
+  }
+}
+
+function onePagePdf(text: string) {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${`BT /F1 18 Tf 40 100 Td (${text}) Tj ET`.length} >>\nstream\nBT /F1 18 Tf 40 100 Td (${text}) Tj ET\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return body;
+}
+
+export function configureEnvironment() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for the isolated mobile screenshot fixture");
   }
+  // The fixture owns DATABASE_URL's database: Prisma migrates DATABASE_MIGRATION_URL first and
+  // reloads `.env`, so an inherited one must be overwritten, not deleted.
+  Object.assign(process.env, disposableDatabaseEnv(process.env.DATABASE_URL));
   Object.assign(process.env, {
     NODE_ENV: "test",
     WAKEUP_DRIVER: "memory",
@@ -214,6 +349,8 @@ function configureEnvironment() {
     DATA_DIR,
     SIGNUPS_ENABLED: "true",
     SIGNUP_ALLOWLIST: "",
+    // Incoming calls ring through the open app's call feed, so no push service is needed.
+    PHONE_CALLS_ENABLED: "true",
     CI: "1",
   });
 }
@@ -371,7 +508,13 @@ async function seedFixture(app: App, prisma: PrismaClient) {
     blocks: [{ kind: "text", text: "Update from Writer: The fixture launch note is drafted." }],
   });
 
-  return { botId: researcher.id, groupId: group.id, routineId: routine.id };
+  return {
+    botId: researcher.id,
+    groupId: group.id,
+    routineId: routine.id,
+    threadId: botThread.id,
+    cookie,
+  };
 }
 
 async function signup(app: App) {
@@ -420,7 +563,10 @@ async function waitForHealth(url: string, timeoutMs: number) {
   throw new Error(`Mobile screenshot API did not become ready: ${lastError}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Runs as a CLI, not when a test imports the module for its environment helpers.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

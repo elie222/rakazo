@@ -30,6 +30,29 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
+  it("marks a Space with guests on its header, even when it is the only one", () => {
+    const [header] = sidebarGroupsForSpaces(
+      [{ ...space("space-1", "Clients"), hasGuests: true }],
+      "",
+    );
+    expect(header).toMatchObject({ title: "Clients", hasGuests: true, showLock: false });
+    const [plain] = sidebarGroupsForSpaces([space("space-1", "Personal")], "");
+    expect(plain).toMatchObject({ hasGuests: false });
+    // A lone Space shown as its sections marks only the first of them.
+    const sectioned = {
+      ...space("space-1", "Clients"),
+      hasGuests: true,
+      bots: [{ ...chat("a", "Alpha"), sectionId: "s1" }],
+      botSections: [{ id: "s1", name: "Projects" }],
+    };
+    expect(
+      sidebarGroupsForSpaces([sectioned], "").map((group) => [group.title, group.hasGuests]),
+    ).toEqual([
+      ["Projects", true],
+      ["Unassigned", false],
+    ]);
+  });
+
   it("keeps an empty space with saved sections openable", () => {
     const empty = {
       ...space("space-2", "Support", { canRename: true, bots: [] }),
@@ -199,4 +222,28 @@ it("counts unread bots and groups from the sidebar across spaces", () => {
   input[0]!.bots[0]!.unread = true;
   expect(countUnreadChats(sidebarGroupsForSpaces(input, ""))).toBe(3);
   expect(countUnreadChats([])).toBe(0);
+});
+
+describe("snoozed chats", () => {
+  const now = Date.parse("2026-11-07T12:00:00Z");
+  const snoozed = { ...chat("later", "Later"), snoozedUntil: "2026-11-08T09:00:00.000Z" };
+  const woken = { ...chat("woken", "Woken"), snoozedUntil: "2026-11-07T09:00:00.000Z" };
+  const roster = (query: string) =>
+    sidebarGroupsForSpaces(
+      [space("s", "Home", { bots: [snoozed, woken, chat("plain", "Plain")] })],
+      query,
+      undefined,
+      now,
+    ).flatMap((section) => section.bots.map((item) => ({ id: item.id, woke: item.woke })));
+
+  it("leaves snoozed chats out of the list and marks woken ones", () => {
+    expect(roster("")).toEqual([
+      { id: "woken", woke: true },
+      { id: "plain", woke: false },
+    ]);
+  });
+
+  it("still finds a snoozed chat by search", () => {
+    expect(roster("later")).toEqual([{ id: "later", woke: false }]);
+  });
 });

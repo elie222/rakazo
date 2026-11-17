@@ -24,8 +24,6 @@ vi.mock("react-native", async () => {
   };
 });
 
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
-
 vi.mock("./native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
   useMobileTokens: () => ({ foreground: "foreground", mutedForeground: "muted" }),

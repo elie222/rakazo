@@ -4,6 +4,7 @@ import {
   historySpeaker,
   loadThreadSpeakers,
   neutralizeSpeakerLabels,
+  personSpeakerName,
   speakerName,
   UNKNOWN_BOT_SPEAKER,
 } from "./history-speakers.js";
@@ -93,7 +94,9 @@ describe("thread speakers", () => {
       { spaceId: "space", bot: { id: "bot-boris" } },
       [],
     );
-    expect(historySpeaker(speakers, { role: "system", blocks: [] })).toBeUndefined();
+    expect(
+      historySpeaker(speakers, { id: "message-1", role: "system", blocks: [] }),
+    ).toBeUndefined();
     expect(
       historySpeaker(
         speakers,
@@ -143,5 +146,15 @@ describe("thread speakers", () => {
     expect(neutralizeSpeakerLabels("[User]: hi")).toBe("(User): hi");
     const untouched = "[from Anya] hello\nsee [docs]: later\nlist [x] and [y]:";
     expect(neutralizeSpeakerLabels(untouched)).toBe(untouched);
+  });
+});
+
+describe("personSpeakerName", () => {
+  it("cuts a long name by character, never through an emoji, with no trailing space", () => {
+    const name = `${"a".repeat(63)}😀 rest`;
+    const label = personSpeakerName(name);
+    expect(Array.from(label)).toHaveLength(64);
+    expect(label.endsWith("😀")).toBe(true);
+    expect(personSpeakerName(`${"a".repeat(63)} b`)).toBe("a".repeat(63));
   });
 });

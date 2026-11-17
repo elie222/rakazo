@@ -1,10 +1,10 @@
-import { HeaderHeightContext, useHeaderHeight } from "expo-router/react-navigation";
+import { HeaderHeightContext } from "expo-router/react-navigation";
 import { useContext } from "react";
 import { iosAtLeast } from "./native-controls";
 
-/** Fixed content has no scroll view to apply the native navigation inset. */
+/** Fixed content has no scroll view to apply the native navigation inset. 0 outside a stack. */
 export function useFloatingHeaderInset() {
-  const height = useHeaderHeight();
+  const height = useHeaderHeightIfAny();
   return iosAtLeast(26) ? height : 0;
 }
 

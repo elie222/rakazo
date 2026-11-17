@@ -46,9 +46,26 @@ describe("semantic judge boundary", () => {
       await expect(
         judge({ rubric: "", evidence: {} }, new AbortController().signal),
       ).rejects.toThrow();
-      expect(abort).toHaveBeenCalledOnce();
+      expect(abort).toHaveBeenCalledTimes(2);
     },
   );
+
+  it("asks once more when the verdict cannot be read", async () => {
+    const replies = [
+      "The reply asks about the lease, so it passes.",
+      '{"pass":true,"reason":"Asks."}',
+    ];
+    const run = vi.fn(async function* (_request: AgentRunRequest) {
+      yield { type: "text", text: replies.shift()! } as AgentRuntimeEvent;
+    });
+    const runtime = { run, abort: vi.fn(async () => {}) } as unknown as AgentRuntime;
+    const judge = createEvalJudge(runtime, { provider: "fake", id: "judge" });
+    expect(await judge({ rubric: "", evidence: {} }, new AbortController().signal)).toEqual({
+      pass: true,
+      reason: "Asks.",
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
 
   it("keeps subject and judge prices under one spend cap", () => {
     const prices = {

@@ -1,9 +1,10 @@
 import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
 import { botColors, darkTokens } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
+import { createContext } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import type { MobileBot, MobileSnapshot } from "./api";
+import type { MobileBot, MobileSnapshot } from "./mobile-types";
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
@@ -32,6 +33,7 @@ vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
 vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
+  MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: () => null,
   withBlockMentions: <T,>(blocks: T) => blocks,
 }));
@@ -39,6 +41,8 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 vi.mock("../components/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
 }));
+vi.mock("../components/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/thread/mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({
   ComputerCard: ({ onOpen }: { onOpen: () => void }) => {
     onOpen();
@@ -52,6 +56,7 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
 vi.mock("../components/change-undo", () => ({
   ChangeUndo: () => null,
@@ -59,6 +64,7 @@ vi.mock("../components/change-undo", () => ({
 }));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 
@@ -75,7 +81,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}
@@ -119,7 +125,7 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
         actionProps={{}}
       />,
     );
-    const senderColor = resolvePersonaColorDef(id, color).light;
+    const senderColor = resolvePersonaColorDef(id, color).hex;
     expect(html).toContain(`color:${senderColor}`);
     for (const surface of [darkTokens.muted, darkTokens.background]) {
       expect(contrastRatio(senderColor, surface)).toBeGreaterThanOrEqual(3);
@@ -183,3 +189,38 @@ it("keeps the bot name when opening a computer without a sender label", () => {
   );
   expect(opened).toEqual([["bot-a", "Sender"]]);
 });
+
+it.each(["text", "image"] as const)(
+  "shows another person's %s message as received with their name",
+  (kind) => {
+    const render = (authorName?: string) =>
+      renderToStaticMarkup(
+        <Bubble
+          botId="bot-a"
+          bots={[]}
+          showBotSenderName={false}
+          authorName={authorName}
+          message={{
+            id: "message",
+            role: "user",
+            blocks: [
+              kind === "text"
+                ? { kind, text: "Hello" }
+                : { kind, artifactId: "picture", mimeType: "image/png", name: "Picture" },
+            ],
+          }}
+          actionProps={{}}
+        />,
+      );
+    const theirs = render("Ana");
+    expect(theirs).toContain(">Ana</span>");
+    expect(theirs).toContain(`background-color:${darkTokens.muted}`);
+    expect(theirs).not.toContain(`background-color:${darkTokens.chatUser}`);
+
+    const mine = render();
+    expect(mine).not.toContain("Ana");
+    expect(mine).not.toContain(`background-color:${darkTokens.muted}`);
+    // An inline image of one's own carries no bubble at all.
+    if (kind === "text") expect(mine).toContain(`background-color:${darkTokens.chatUser}`);
+  },
+);

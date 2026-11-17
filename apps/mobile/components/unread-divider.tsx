@@ -1,21 +1,21 @@
+import { useLingui } from "@lingui/react/macro";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet, Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 
 /** Marks where the messages the user hadn't seen yet begin. */
 export function UnreadDivider({ afterSeparator = false }: { afterSeparator?: boolean }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const line = [styles.line, { backgroundColor: tokens.unread }];
   return (
     <View
-      accessibilityLabel={t("New messages")}
+      accessibilityLabel={t`New messages`}
       accessible
       style={[styles.row, afterSeparator && { paddingTop: 0 }]}
     >
       <View style={line} />
-      <Text style={[styles.label, { color: tokens.unread }]}>{t("New")}</Text>
+      <Text style={[styles.label, { color: tokens.unread }]}>{t`New`}</Text>
       <View style={line} />
     </View>
   );

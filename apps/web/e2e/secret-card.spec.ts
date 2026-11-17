@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { BLOCKED_ITEM_ANSWER } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("renders masked secret card and saves without putting the value in chat", async ({
@@ -71,6 +72,21 @@ test("renders masked secret card and saves without putting the value in chat", a
   await expect(card.getByText("Could not submit this answer", { exact: true })).toBeVisible();
   await expect(page.getByText(secretValue)).toHaveCount(0);
   await expect(secretField).toHaveValue("");
+  await page.unroute("**/rpc/threads/answer");
+
+  // The owner blocked bots from this item while the card waited: the card says why, translated.
+  await page.route("**/rpc/threads/answer", (route) =>
+    route.fulfill({
+      status: 400,
+      json: {
+        json: { defined: false, code: "BAD_REQUEST", status: 400, message: BLOCKED_ITEM_ANSWER },
+      },
+    }),
+  );
+  await secretField.fill(secretValue);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(card.getByText(BLOCKED_ITEM_ANSWER, { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "secret-card-blocked");
   await page.unroute("**/rpc/threads/answer");
 
   await secretField.fill(secretValue);
@@ -344,12 +360,14 @@ test("keeps a website login password on one line", { tag: "@nightly" }, async ({
 }) => {
   const { card, loginAnswers } = await openSecretCard(page, "login", "show a login card");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await card.getByLabel("Username", { exact: true }).fill("someone");
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  const form = page.getByTestId("vault-editor");
+  await form.getByLabel("Username", { exact: true }).fill("someone");
   await page.evaluate(() => navigator.clipboard.writeText("pass-one\npass-two"));
-  await card.getByLabel("Password", { exact: true }).click();
+  await form.getByLabel("Password", { exact: true }).click();
   await page.keyboard.press("ControlOrMeta+v");
-  await expect(card.getByLabel("Password", { exact: true })).not.toHaveAttribute("readonly");
-  await card.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(form.getByLabel("Password", { exact: true })).not.toHaveAttribute("readonly");
+  await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect
     .poll(() => loginAnswers)
     .toEqual([
@@ -388,19 +406,21 @@ test("uses a login for this run only when Save to Vault is turned off on its car
     await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
   }
   await expect(card).toBeVisible({ timeout: 15_000 });
-  const saveToVault = card.getByRole("switch", { name: "Save to Vault" });
+  await card.getByRole("button", { name: "Add", exact: true }).click();
+  const form = page.getByTestId("vault-editor");
+  const saveToVault = form.getByRole("switch", { name: "Save to Vault" });
   await expect(saveToVault).toBeChecked();
-  await expect(card.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+  await expect(form.getByRole("button", { name: "Save", exact: true })).toBeVisible();
 
-  const username = card.getByLabel("Username", { exact: true });
+  const username = form.getByLabel("Username", { exact: true });
   const password = `fake-login-password-${stamp}`;
   await username.fill(`fake-user-${stamp}@example.test`);
-  await card.getByLabel("Password", { exact: true }).fill(password);
+  await form.getByLabel("Password", { exact: true }).fill(password);
   await saveToVault.click();
   await expect(saveToVault).not.toBeChecked();
   // Turning it off keeps what was typed.
   await expect(username).toHaveValue(`fake-user-${stamp}@example.test`);
-  const send = card.getByRole("button", { name: "Continue", exact: true });
+  const send = form.getByRole("button", { name: "Continue", exact: true });
   await expect(send).toBeEnabled();
   await captureScreenshot(page, testInfo, "login-card-save-off");
   await page.setViewportSize({ width: 390, height: 844 });

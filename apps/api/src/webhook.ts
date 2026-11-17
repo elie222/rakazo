@@ -1,36 +1,31 @@
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { hasValidBearerToken } from "@rakazo/core";
+import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
 import { readBoundedBody } from "./http-body.js";
+import { formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
-  formatWebhookPrompt,
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
+  webhookDeliveryResponse,
 } from "./webhook-inbound.js";
 
 export {
   formatGithubEventPrompt,
   githubEventName,
-  githubWebhookPath,
   hasValidGithubSignature,
 } from "./github-webhook.js";
+export { formatUntrustedDeliveryPayload, formatWebhookPrompt } from "./inbound-delivery.prompt.js";
 export {
-  formatUntrustedDeliveryPayload,
-  formatWebhookPrompt,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
   type WebhookDeps,
   type WebhookEvents,
   type WebhookTarget,
 } from "./webhook-inbound.js";
-
-export function webhookPath(botId: string): string {
-  return `/api/v1/bots/${botId}/webhook`;
-}
 
 export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
   const secretCache: WebhookSecretCache = new Map();
@@ -59,13 +54,12 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       return unauthorized();
     }
 
-    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
-    const eventPrompt = formatWebhookPrompt(payload);
-
     const webhookRoutines = await deps.prisma.routine.findMany({
       where: {
         botId: target.bot.id,
         spaceId: target.bot.spaceId,
+        // The delivery runs as the bot's creator, so only their own routines may ride on it.
+        userId: target.bot.userId,
         active: true,
         webhookEnabled: true,
       },
@@ -80,6 +74,12 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       orderBy: { updatedAt: "desc" },
       take: 5,
     });
+    if (webhookRoutines.length === 0) {
+      return c.json({ ok: true, ignored: true });
+    }
+
+    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const eventPrompt = formatWebhookPrompt(payload);
 
     // A payload id often names the resource, not the delivery, so only byte-identical retries collapse.
     const idempotencyKey =
@@ -90,8 +90,9 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       (typeof payload.id === "string" || typeof payload.event_id === "string" ? raw : "") ||
       undefined;
 
-    return c.json(
-      await deliverWebhookEvent(deps, target, {
+    return webhookDeliveryResponse(
+      c,
+      deliverWebhookEvent(deps, target, {
         prompt: eventPrompt,
         routines: webhookRoutines,
         source: "webhook",

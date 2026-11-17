@@ -1,22 +1,23 @@
-import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { SendblueAdapter } from "chat-adapter-sendblue";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
-import { Domain } from "./lark/thread-id.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
-  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
-  parseSendblueStatuses,
-  parseWhatsAppStatuses,
-  photonProjectsFromEnv,
   splitOutboundBody,
-  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
+import { Domain } from "./providers/messaging/lark/thread-id.js";
+import { photonProjectsFromEnv } from "./providers/messaging/photon/photon-messaging.js";
+import { parseSendblueStatuses } from "./providers/messaging/sendblue/sendblue-messaging.js";
+import { enrichSlackTeamRoom } from "./providers/messaging/slack/slack-messaging.js";
+import { telegramBotsFromEnv } from "./providers/messaging/telegram/telegram-messaging.js";
+import { parseWhatsAppStatuses } from "./providers/messaging/whatsapp/whatsapp-messaging.js";
 
 // Fake credentials: adapters are constructed offline, never called.
 const fullEnv: MessagingEnvironmentValues = {
@@ -408,6 +409,16 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("takes the roster's time from the message's send time", () => {
+    expect(sendblue.rosterAt!({ date_sent: "2026-11-04T10:01:00.000Z" })).toEqual(
+      new Date("2026-11-04T10:01:00.000Z"),
+    );
+    expect(sendblue.rosterAt!({ date_sent: "not-a-date" })).toBeNull();
+    expect(sendblue.rosterAt!({ date_sent: 42 })).toBeNull();
+    expect(sendblue.rosterAt!({})).toBeNull();
+    expect(sendblue.rosterAt!(null)).toBeNull();
+  });
+
   it("accepts only supported per-message transports", () => {
     for (const service of ["iMessage", "SMS", "RCS"]) {
       expect(sendblue.transport!({ service })).toBe(service);
@@ -420,6 +431,19 @@ describe("sendblue platform hooks", () => {
   it("derives deterministic provider-prefixed direct thread ids", () => {
     expect(sendblue.directThreadId!("+15551234567")).toMatch(/^sendblue:/);
     expect(sendblue.adapter.isDM?.(sendblue.directThreadId!("+15551234567"))).toBe(true);
+  });
+
+  it("encodes thread ids exactly as the Sendblue adapter does before it loads", () => {
+    const sdk = SendblueAdapter.prototype;
+    const direct = { fromNumber: "+15550009999", contactNumber: "+15551234567" };
+    const group = { fromNumber: "+15550009999", groupId: "group-1" };
+    expect(sendblue.directThreadId!(direct.contactNumber)).toBe(sdk.encodeThreadId(direct));
+    for (const data of [direct, group]) {
+      const threadId = sdk.encodeThreadId(data);
+      expect(sendblue.adapter.encodeThreadId(data)).toBe(threadId);
+      expect(sendblue.adapter.decodeThreadId(threadId)).toEqual(sdk.decodeThreadId(threadId));
+    }
+    expect(sendblue.adapter.isDM?.(sdk.encodeThreadId(group))).toBe(false);
   });
 });
 
@@ -538,12 +562,10 @@ describe("splitOutboundBody", () => {
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
   });
 
-  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
+  it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
-    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
-    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

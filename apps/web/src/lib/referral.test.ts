@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { captureReferral, claimStoredReferral } from "./referral";
+import { captureReferral, loadBillingStatus } from "./referral";
 import { rpc } from "./rpc";
 
 vi.mock("./rpc", () => ({
-  rpc: { billing: { claimReferral: vi.fn() } },
+  rpc: { billing: { status: vi.fn() } },
 }));
 
 describe("referral", () => {
-  const claimReferral = vi.mocked(rpc.billing.claimReferral);
+  const status = vi.mocked(rpc.billing.status);
   let storage: Map<string, string>;
 
   beforeEach(() => {
-    claimReferral.mockReset();
+    status.mockReset();
     storage = new Map();
     vi.stubGlobal("window", {
       localStorage: {
@@ -26,32 +26,45 @@ describe("referral", () => {
     vi.unstubAllGlobals();
   });
 
-  it("claims a code from the landing URL once", async () => {
-    claimReferral.mockResolvedValue({ ok: true });
+  it("sends a code from the landing URL with the first billing status only", async () => {
+    status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
     captureReferral("?ref=friend42");
 
-    await claimStoredReferral();
-    await claimStoredReferral();
+    await loadBillingStatus(rpc);
+    await loadBillingStatus(rpc);
 
-    expect(claimReferral).toHaveBeenCalledTimes(1);
-    expect(claimReferral).toHaveBeenCalledWith({ code: "friend42" });
+    expect(status).toHaveBeenNthCalledWith(1, { referralCode: "friend42" });
+    expect(status).toHaveBeenNthCalledWith(2, undefined);
   });
 
-  it("keeps the code for another try when the claim fails", async () => {
-    claimReferral.mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ ok: true });
+  it("keeps the code for another try when the request fails", async () => {
+    status
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
     captureReferral("?ref=friend42");
 
-    await claimStoredReferral();
-    await claimStoredReferral();
+    await expect(loadBillingStatus(rpc)).rejects.toThrow("offline");
+    await loadBillingStatus(rpc);
 
-    expect(claimReferral).toHaveBeenCalledTimes(2);
+    expect(status).toHaveBeenNthCalledWith(2, { referralCode: "friend42" });
   });
 
-  it("does nothing without a code", async () => {
-    captureReferral("?plans");
+  it("never sends a malformed code, which would make billing status fail", async () => {
+    status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
+    captureReferral(`?ref=${"x".repeat(65)}`);
+    storage.set("rakazo:referral", "bad code!");
 
-    await claimStoredReferral();
+    await loadBillingStatus(rpc);
 
-    expect(claimReferral).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(undefined);
+    expect(storage.has("rakazo:referral")).toBe(false);
+  });
+
+  it("asks for plain status without a code", async () => {
+    status.mockResolvedValue({} as Awaited<ReturnType<typeof rpc.billing.status>>);
+
+    await loadBillingStatus(rpc);
+
+    expect(status).toHaveBeenCalledWith(undefined);
   });
 });

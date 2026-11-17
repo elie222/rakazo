@@ -8,10 +8,19 @@ import {
 
 function transaction() {
   return {
-    thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1 }) },
+    thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, spaceId: "space-1" }) },
     run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
     message: { create: vi.fn().mockResolvedValue({ id: "message-1" }) },
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
   };
+}
+
+/** The statement that marked the chat unread for the Space's members, if any. */
+function unreadFanOut(tx: ReturnType<typeof transaction>) {
+  return tx.$executeRaw.mock.calls.find(([sql]) =>
+    (sql as TemplateStringsArray).join("?").includes("INSERT INTO thread_reads"),
+  );
 }
 
 describe("createThreadMessageInTransaction", () => {
@@ -23,9 +32,7 @@ describe("createThreadMessageInTransaction", () => {
       blocks: [{ kind: "steps", steps: [{ label: "Checked status", count: 1 }] }],
       markUnread: false,
     });
-    expect(silent.thread.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ unread: undefined }) }),
-    );
+    expect(unreadFanOut(silent)).toBeUndefined();
 
     const visible = transaction();
     await createThreadMessageInTransaction(visible as unknown as Prisma.TransactionClient, {
@@ -33,9 +40,27 @@ describe("createThreadMessageInTransaction", () => {
       role: "bot",
       blocks: [{ kind: "text", text: "Daily report ready" }],
     });
-    expect(visible.thread.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ unread: true }) }),
-    );
+    expect(unreadFanOut(visible)).toBeDefined();
+  });
+
+  it("marks a person's message unread for everyone else in the Space, not them", async () => {
+    const tx = transaction();
+    await createThreadMessageInTransaction(tx as unknown as Prisma.TransactionClient, {
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "Saturday works" }],
+      authorUserId: "user-a",
+    });
+    const [, ...values] = unreadFanOut(tx) ?? [];
+    expect(values).toEqual(["thread-1", -1, "space-1", "user-a"]);
+
+    const anonymous = transaction();
+    await createThreadMessageInTransaction(anonymous as unknown as Prisma.TransactionClient, {
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "From a webhook" }],
+    });
+    expect(unreadFanOut(anonymous)).toBeUndefined();
   });
 
   it("rejects a cancelled run unless the terminal echo opts in", async () => {

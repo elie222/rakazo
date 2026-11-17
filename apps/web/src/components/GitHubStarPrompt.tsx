@@ -55,7 +55,7 @@ function GitHubStarPrompt() {
       aria-label={t`Star on GitHub`}
       className="w-full rounded-xl border border-warning bg-popover p-3 text-popover-foreground shadow-lg"
     >
-      <p className="flex items-center gap-2 text-sm font-medium">
+      <p className="flex items-center gap-2 text-body font-medium">
         <Star aria-hidden className="size-4 fill-current text-warning" strokeWidth={1.75} />
         <Trans>Enjoying Rakazo?</Trans>
       </p>

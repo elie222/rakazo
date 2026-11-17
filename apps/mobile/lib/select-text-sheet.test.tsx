@@ -50,7 +50,6 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>

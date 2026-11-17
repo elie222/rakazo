@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { MODEL_CONTEXT_TOO_SMALL_ERROR, VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -204,6 +205,25 @@ describe("bounded context selection", () => {
     expect(selected.messages).toEqual([history[0], history[18], history[19]]);
     expect(selected.droppedMessages).toBe(17);
   });
+  it("keeps exchanges older than the recent ones while they fit the token allowance", () => {
+    const history = Array.from({ length: 20 }, (_, index) => user(`exchange ${index}`));
+    const select = (tokens?: number, protectedIndexes: number[] = []) =>
+      selectContext(history, {
+        budget,
+        strategy: "retrieval",
+        recentExchanges: 2,
+        protectedIndexes,
+        ...(tokens === undefined ? {} : { earlier: { before: 19, tokens } }),
+      }).messages;
+    expect(select()).toEqual(history.slice(18));
+    const some = select(200);
+    expect(some.length).toBeGreaterThan(2);
+    expect(some.length).toBeLessThan(20);
+    expect(some).toEqual(history.slice(-some.length));
+    expect(select(100_000)).toEqual(history);
+    // A protected summary at the start is not where the current request starts.
+    expect(select(100_000, [0])).toEqual(history);
+  });
   it("retains a warm useful prefix when budget allows, cold selection performs no summary work", () => {
     const history = Array.from({ length: 20 }, (_, index) => user(`exchange ${index}`));
     expect(
@@ -303,9 +323,10 @@ describe("bounded context selection", () => {
       subject: `subject ${index} `.repeat(20),
       messageText: `body ${index} `.repeat(400),
     }));
-    const startedAt = performance.now();
-    const shortened = shortenToolResultText(JSON.stringify({ data: { messages } }), 12_000);
-    expect(performance.now() - startedAt).toBeLessThan(3_000);
+    let shortened = "";
+    expectLinearTime(() => {
+      shortened = shortenToolResultText(JSON.stringify({ data: { messages } }), 12_000);
+    });
     const parsed = JSON.parse(shortened);
     expect(parsed.data.messages).toHaveLength(1000);
     expect(parsed.data.messages[999].messageId).toBe("m999");

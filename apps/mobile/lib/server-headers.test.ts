@@ -1,15 +1,11 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  authHeaders,
-  currentApiBase,
-  loadApiBase,
-  passwordResetCapabilities,
-  resetApiBase,
-  saveApiBase,
-} from "./api.js";
+import { authHeaders, currentApiBase } from "./api.js";
+import { passwordResetCapabilities } from "./api-auth.js";
+import { loadApiBase, resetApiBase, saveApiBase } from "./api-server.js";
 import { probeApiBase } from "./endpoint.js";
 import { fetchServer, serverHeaders, serverHeadersForUrl } from "./server-headers.js";
 

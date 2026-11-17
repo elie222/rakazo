@@ -106,6 +106,17 @@ function committedIndex() {
   if (previous) backup().moveSync(file(), { overwrite: true });
   return previous;
 }
+/** True when the saved index lists any unsent message, whoever owns it. Read errors propagate. */
+export function hasSavedUnsentSends(): boolean {
+  if ((committedIndex()?.length ?? 0) > 0) return true;
+  // Until a load marks its move complete, the earlier cache outbox still holds the queue.
+  if (!legacyRoot().exists || legacyDone().exists) return false;
+  // Like committedIndex, the backup counts only when the index is missing or corrupt.
+  const legacy =
+    readIndex(new File(legacyRoot(), "sends-v4.json")) ??
+    readIndex(new File(legacyRoot(), "sends-v4.json.bak"));
+  return (legacy?.length ?? 0) > 0;
+}
 function storedEntry(attempt: SendAttempt) {
   return {
     ...attempt,
@@ -139,7 +150,7 @@ export const outboxDisk: UnsentDisk = {
       attempt.payload.attachments.forEach((attachment, index) => {
         const target = attachmentFile(attempt.clientNonce, index);
         target.create();
-        target.write(attachment.contentBase64, { encoding: "base64" });
+        target.writeSync(attachment.contentBase64, { encoding: "base64" });
         attachment.previewUri = attachment.mimeType.startsWith("image/") ? target.uri : undefined;
       });
       for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
@@ -161,7 +172,7 @@ export const outboxDisk: UnsentDisk = {
       // A failed save can leave a partial index next to the committed backup; never set it aside over that backup.
       if (backup().exists) committedIndex();
       next.create({ overwrite: true });
-      next.write(text);
+      next.writeSync(text);
       // Moving over a file deletes it first, so set the committed index aside until the new one is in place.
       // A move points its source object at the destination, so each move gets a fresh destination.
       if (target.exists) target.moveSync(backup(), { overwrite: true });

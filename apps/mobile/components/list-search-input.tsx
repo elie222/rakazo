@@ -1,5 +1,5 @@
+import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, TextInput } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 
 export function ListSearchInput({
@@ -9,12 +9,12 @@ export function ListSearchInput({
   query: string;
   setQuery: (query: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   return (
     <TextInput
-      accessibilityLabel={t("Search")}
-      placeholder={t("Search")}
+      accessibilityLabel={t`Search`}
+      placeholder={t`Search`}
       placeholderTextColor={native.secondaryLabel}
       value={query}
       onChangeText={setQuery}

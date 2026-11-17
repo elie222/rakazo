@@ -20,12 +20,6 @@ const base: McpServerHealth = {
   toolCount: null,
   checkedAt: null,
 };
-/** The words a reader sees, with each element's text as its own word. */
-const visibleText = (html: string) =>
-  html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 const render = (health: Partial<McpServerHealth>) =>
   renderToStaticMarkup(<McpServerHealthLine health={{ ...base, ...health }} />);
 

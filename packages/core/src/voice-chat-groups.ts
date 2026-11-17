@@ -115,10 +115,12 @@ export function voiceChatSummary(group: VoiceChatGroup): string {
   const marker = group.marker?.blocks[0];
   const title = marker?.kind === "voice_call" ? marker.title.trim() : "";
   if (title) return title;
-  const reply = group.messages.find(
-    (message) => message.role === "bot" && message !== group.marker,
-  );
-  const spoken = reply ? speechFromBlocks(reply.blocks).trim() : "";
+  let spoken = "";
+  for (const message of group.messages) {
+    if (message.role !== "bot" || message === group.marker) continue;
+    spoken = speechFromBlocks(message.blocks).trim();
+    if (spoken) break;
+  }
   if (!spoken) return "";
   const end = spoken.search(/[.!?](\s|$)/u);
   const sentence = end === -1 ? spoken : spoken.slice(0, end + 1);

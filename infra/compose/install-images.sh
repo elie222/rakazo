@@ -2,7 +2,16 @@
 
 set -Eeuo pipefail
 
-DOWNLOAD_BASE="${RAKAZO_DOWNLOAD_BASE:-https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose}"
+# A pinned release gets its own Compose files. Like Compose, prefer the shell's tag over .env.
+image_tag="${RAKAZO_IMAGE_TAG-}"
+if [[ -z "${RAKAZO_IMAGE_TAG+x}" && -f .env ]]; then
+  image_tag=$(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?RAKAZO_IMAGE_TAG[[:space:]]*=[[:space:]]*[\"']?([^\"'#[:space:]]*).*/\2/p" .env | tail -n 1)
+fi
+download_ref=main
+if [[ "$image_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  download_ref="$image_tag"
+fi
+DOWNLOAD_BASE="${RAKAZO_DOWNLOAD_BASE:-https://raw.githubusercontent.com/elie222/rakazo/${download_ref}/infra/compose}"
 while [[ "$DOWNLOAD_BASE" == */ ]]; do
   DOWNLOAD_BASE="${DOWNLOAD_BASE%/}"
 done
@@ -249,8 +258,8 @@ create_env() {
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
         ;;
-      "SANDBOX_SUPERVISOR_TOKEN=")
-        printf 'SANDBOX_SUPERVISOR_TOKEN=%s\n' "$(openssl rand -hex 32)"
+      "SANDBOX_SUPERVISOR_TOKEN="|"RAKAZO_UPDATER_TOKEN=")
+        printf '%s=%s\n' "${line%%=*}" "$(openssl rand -hex 32)"
         ;;
       *)
         printf '%s\n' "$line"
@@ -325,7 +334,11 @@ YAML
 warn_unpassed_settings() {
   local key unpassed=""
   while IFS= read -r key; do
-    [[ "$key" == COMPOSE_* ]] || grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
+    # Deployment tooling consumes these; they are deliberately absent from container environments.
+    case "$key" in
+      COMPOSE_*|RAKAZO_IMAGE_TAG_PREVIOUS|RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS) continue ;;
+    esac
+    grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
   done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
   [[ -n "$unpassed" ]] || return 0
   echo "Warning: no container receives these .env settings:${unpassed}." >&2
@@ -368,6 +381,21 @@ configure_computer_egress() {
   printf '\nSANDBOX_COMPUTER_EGRESS=open\n' >>"$ENV_FILE"
   echo "Warning: bot computers can reach this host, its LAN and cloud metadata ($reason)." >&2
   echo "See Restricted computer egress in docs/self-host-docker-computers.md." >&2
+}
+
+remove_replaced_images() {
+  local ref repo id tag repos=" "
+  while IFS= read -r ref; do
+    repo="${ref%@*}"
+    [[ "${repo##*/}" != *:* ]] || repo="${repo%:*}"
+    repo="${repo#docker.io/}"
+    repos+="${repo#library/} "
+  done < <(docker compose --env-file "$ENV_FILE" "${compose_files[@]}" config --images 2>/dev/null)
+  [[ "$repos" != " " ]] || return 0
+  while read -r id repo tag; do
+    [[ "$tag" == "<none>" && "$repos" == *" ${repo} "* ]] || continue
+    docker image rm "$id" >/dev/null 2>&1 || true
+  done < <(docker image ls --no-trunc --format '{{.ID}} {{.Repository}} {{.Tag}}' 2>/dev/null)
 }
 
 for filename in "${required_files[@]}"; do
@@ -425,5 +453,6 @@ if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
 else
   docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
+remove_replaced_images
 
 echo "Rakazo is starting at http://127.0.0.1:5173"

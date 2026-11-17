@@ -9,16 +9,19 @@ export function parseAllowlist(raw: string | undefined): string[] {
 export function emailAllowed(email: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
   const normalized = email.trim().toLowerCase();
-  const domain = normalized.split("@")[1];
+  const parts = normalized.split("@");
+  const domain = parts.length === 2 ? parts[1] : undefined;
   return allowlist.some((entry) => {
     if (entry.startsWith("@")) return domain === entry.slice(1);
     return normalized === entry;
   });
 }
 
+export const MESSAGING_EMAIL_SUFFIX = "@messaging.invalid";
+
 /** Internal messaging users have no mailbox and cannot authenticate by email. */
 export function isMessagingEmail(email: string): boolean {
-  return email.trim().toLowerCase().endsWith("@messaging.invalid");
+  return email.trim().toLowerCase().endsWith(MESSAGING_EMAIL_SUFFIX);
 }
 
 /** A successful signup with an explicit null token awaits mailbox proof. */

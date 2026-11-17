@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootComputerOnce,
@@ -7,7 +8,6 @@ import {
   loadComputerScreen,
   probeScreen,
   probeScreenStatus,
-  sameWuyingScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -48,16 +48,11 @@ describe("computer screen requests", () => {
   it.each(["success", "failure"])(
     "ignores a stale %s after a newer screen failure",
     async (outcome) => {
-      let finish!: (screen: { url: string | null }) => void;
-      let fail!: (error: Error) => void;
-      const deferred = new Promise<{ url: string | null }>((resolve, reject) => {
-        finish = resolve;
-        fail = reject;
-      });
+      const screen = deferred<{ url: string | null }>();
       let current = 1;
       const commit = vi.fn();
       const stale = loadComputerScreen({
-        load: () => deferred,
+        load: () => screen.promise,
         isCurrent: () => current === 1,
         commit,
         fallbackError: "Could not connect",
@@ -71,8 +66,8 @@ describe("computer screen requests", () => {
         commit,
         fallbackError: "Could not connect",
       });
-      if (outcome === "success") finish({ url: "https://stale.example/vnc.html" });
-      else fail(new Error("Stale connection failed"));
+      if (outcome === "success") screen.resolve({ url: "https://stale.example/vnc.html" });
+      else screen.reject(new Error("Stale connection failed"));
       await expect(stale).resolves.toBeNull();
       expect(commit).toHaveBeenCalledExactlyOnceWith({
         url: null,
@@ -91,27 +86,32 @@ describe("computer screen requests", () => {
     });
     expect(commit).toHaveBeenCalledExactlyOnceWith({ url: null, error: "Could not connect" });
   });
-});
 
-describe("sameWuyingScreen", () => {
-  const screen = (code: string, viewOnly = "true", desktop = "ecd-1") =>
-    `wuying://desktop?desktop_id=${desktop}&region_id=cn-hangzhou&auth_code=${code}&view_only=${viewOnly}`;
-
-  it("keeps a connected Wuying screen when only its login code changes", () => {
-    expect(sameWuyingScreen(screen("a"), screen("b"))).toBe(true);
-    expect(sameWuyingScreen(screen("a"), screen("b", "false"))).toBe(false);
-    expect(sameWuyingScreen(screen("a"), screen("b", "true", "ecd-2"))).toBe(false);
-    expect(sameWuyingScreen(null, screen("b"))).toBe(false);
-    expect(sameWuyingScreen("http://127.0.0.1:5173/novnc/a", "http://127.0.0.1:5173/novnc/a")).toBe(
-      false,
-    );
+  it("hands on the server's word that a screen signs in once", async () => {
+    const commit = vi.fn();
+    await loadComputerScreen({
+      load: async () => ({
+        url: "https://screen.example/session",
+        singleUseSignIn: { screen: "desktop-1:view" },
+      }),
+      isCurrent: () => true,
+      commit,
+      fallbackError: "Could not connect",
+    });
+    expect(commit).toHaveBeenCalledExactlyOnceWith({
+      url: "https://screen.example/session",
+      singleUseSignIn: { screen: "desktop-1:view" },
+      error: null,
+    });
   });
 });
 
-describe("Wuying frame isolation", () => {
+describe("embedded frame isolation", () => {
   it("sandboxes the vendor page without same-origin access and uses frame state probing", () => {
     vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
-    const url = embeddableScreenUrl("wuying://desktop?auth_code=fake-once&desktop_id=ecd-fake");
+    const url = embeddableScreenUrl(
+      "embedded-screen://desktop?auth_code=fake-once&desktop_id=ecd-fake",
+    );
     expect(screenIframeSandbox(url)).toBe("allow-scripts allow-pointer-lock");
     expect(isProxiedScreenUrl(url)).toBe(true);
     vi.unstubAllGlobals();
@@ -129,12 +129,14 @@ describe("embeddableScreenUrl", () => {
     expect(embeddableScreenUrl("http://localhost:6080/vnc.html")).toBeNull();
   });
 
-  it("draws a Wuying desktop in the page that carries its Web SDK", () => {
+  it("draws an embedded desktop in the page that carries its Web SDK", () => {
     vi.stubGlobal("window", { location: { href: "http://localhost:5173/chat" } });
     expect(
-      embeddableScreenUrl("wuying://desktop?desktop_id=ecd-1&auth_code=once&view_only=true"),
+      embeddableScreenUrl(
+        "embedded-screen://desktop?desktop_id=ecd-1&auth_code=once&view_only=true",
+      ),
     ).toBe(
-      "http://localhost:5173/wuying/screen.html#desktop_id=ecd-1&auth_code=once&view_only=true",
+      "http://localhost:5173/computer-screen/screen.html#desktop_id=ecd-1&auth_code=once&view_only=true",
     );
   });
 
@@ -167,21 +169,11 @@ describe("screenIframeSandbox", () => {
   });
 });
 
-function pendingBoot() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 describe("computer boot ownership", () => {
   it("starts B independently and refuses a second A after switching A to B to A", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
-    const b = pendingBoot();
+    const a = deferred();
+    const b = deferred();
     const duplicate = vi.fn();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const second = bootComputerOnce(inFlight, "b", () => b.promise);
@@ -199,7 +191,7 @@ describe("computer boot ownership", () => {
 
   it("lets takeover proceed while a boot request is in flight", async () => {
     const inFlight = new Map<string, symbol>();
-    const boot = pendingBoot();
+    const boot = deferred();
     const first = bootComputerOnce(inFlight, "a", () => boot.promise);
     const duplicateBoot = vi.fn();
     const takeover = vi.fn();
@@ -214,7 +206,7 @@ describe("computer boot ownership", () => {
 
   it("allows a retry after failure", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
+    const a = deferred();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const rejected = expect(first).rejects.toThrow("Boot failed");
     a.reject(new Error("Boot failed"));
@@ -226,7 +218,7 @@ describe("computer boot ownership", () => {
 
   it("does not release a replacement owner's marker when an older request finishes", async () => {
     const inFlight = new Map<string, symbol>();
-    const a = pendingBoot();
+    const a = deferred();
     const first = bootComputerOnce(inFlight, "a", () => a.promise);
     const replacement = Symbol("replacement");
     inFlight.set("a", replacement);
@@ -388,12 +380,16 @@ describe("probeScreen", () => {
     );
   });
 
-  it("keeps cookies off non-http screen schemes, including a Wuying login URL", async () => {
+  it("keeps cookies off non-http screen schemes, including an embedded login URL", async () => {
     vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
-    const wuying = vi.fn(async () => response(200));
-    await probeScreen("wuying://desktop?desktop_id=ecd-1&auth_code=once", "fallback", wuying);
-    expect(wuying).toHaveBeenCalledWith(
-      "wuying://desktop?desktop_id=ecd-1&auth_code=once",
+    const embeddedScreen = vi.fn(async () => response(200));
+    await probeScreen(
+      "embedded-screen://desktop?desktop_id=ecd-1&auth_code=once",
+      "fallback",
+      embeddedScreen,
+    );
+    expect(embeddedScreen).toHaveBeenCalledWith(
+      "embedded-screen://desktop?desktop_id=ecd-1&auth_code=once",
       expect.objectContaining({ credentials: "omit" }),
     );
     const otherScheme = vi.fn(async () => response(200));
@@ -404,7 +400,8 @@ describe("probeScreen", () => {
     );
 
     const page = vi.fn(async () => response(200, "<html>"));
-    const screenPage = "https://app.example/wuying/screen.html#desktop_id=ecd-1&auth_code=once";
+    const screenPage =
+      "https://app.example/computer-screen/screen.html#desktop_id=ecd-1&auth_code=once";
     await expect(probeScreen(screenPage, "fallback", page)).resolves.toBeNull();
     expect(page).toHaveBeenCalledWith(
       screenPage,
@@ -480,10 +477,10 @@ describe("probeScreenStatus", () => {
       "https://screen.example/novnc/x",
       expect.objectContaining({ credentials: "omit" }),
     );
-    const wuying = vi.fn(async () => ({ status: 204, type: "basic" }) as Response);
-    await probeScreenStatus("wuying://desktop?auth_code=once", wuying);
-    expect(wuying).toHaveBeenCalledWith(
-      "wuying://desktop?auth_code=once",
+    const embeddedScreen = vi.fn(async () => ({ status: 204, type: "basic" }) as Response);
+    await probeScreenStatus("embedded-screen://desktop?auth_code=once", embeddedScreen);
+    expect(embeddedScreen).toHaveBeenCalledWith(
+      "embedded-screen://desktop?auth_code=once",
       expect.objectContaining({ credentials: "omit" }),
     );
   });

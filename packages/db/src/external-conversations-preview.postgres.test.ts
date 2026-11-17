@@ -10,8 +10,7 @@ import { createSpaceForMember } from "./spaces.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL ?? databaseUrl;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 /** Rows Postgres returned for one statement. */
 interface SqlRead {
@@ -111,7 +110,6 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
   const provider = "sendblue";
   const stamp = `${Date.now()}`;
   const ownerAddress = `+1558${stamp.slice(-7)}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let owner: PrismaClient;
   let close: () => Promise<void>;
@@ -139,7 +137,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       await ownerDb.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }),
     );
     userId = provisioned.userId;
     spaceA = provisioned.spaceId;
@@ -352,7 +350,15 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
           botId: input.botId,
           userId,
           updatedAt: input.updatedAt,
-          thread: { create: { spaceId: input.spaceId, userId, unread: input.unread } },
+          thread: {
+            create: {
+              spaceId: input.spaceId,
+              userId,
+              ...(input.unread
+                ? { reads: { create: { spaceId: input.spaceId, userId, unread: true } } }
+                : {}),
+            },
+          },
         },
         include: { thread: { select: { id: true } } },
       }),
@@ -380,7 +386,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       await runAsSystem("test fixture", () =>
         owner.thread.update({
           where: { id: threadId },
-          data: { nextMessageSeq: input.messageCount, unread: input.unread },
+          data: { nextMessageSeq: input.messageCount },
         }),
       );
     }
@@ -460,7 +466,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       "listForSpaces",
       () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createExternalConversationRepos(prisma).listForSpaces(actorA, [spaceA, spaceB]),
+          createExternalConversationRepos(prisma).listForSpaces([spaceA, spaceB], userId),
         ),
     );
     const perConversation = new Map<string, number>();
@@ -504,7 +510,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
     const { result, messageRowCount, messageStatements, externalRowCount, external } =
       await measured("listForSpaces empty", () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createExternalConversationRepos(prisma).listForSpaces(actorA, []),
+          createExternalConversationRepos(prisma).listForSpaces([], userId),
         ),
       );
     expect(result).toEqual([]);

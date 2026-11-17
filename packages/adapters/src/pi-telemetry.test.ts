@@ -6,9 +6,9 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
-  NodeTracerProvider,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { runWithLogContext } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
@@ -30,7 +30,9 @@ vi.mock("./pi-telemetry-otel.js", async (original) => ({
 const ids = { botId: "bot-fixture", runId: "run-fixture", routineId: "routine-fixture" };
 function setup(captureContent = false) {
   const output = new InMemorySpanExporter();
-  const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(output)] });
+  const provider = new TracerProvider({
+    spanProcessors: [new SimpleSpanProcessor({ exporter: output })],
+  });
   factory.mockReturnValue({
     context: otelPiContext(provider.getTracer("fixture"), captureContent),
     shutdown: () => provider.shutdown(),

@@ -8,6 +8,8 @@ describe("deriveMcpSlug", () => {
   it.each([
     ["!_-_LOCAL!", "local"],
     [`${"_".repeat(80)}local`, "local"],
+    ["local--", "local"],
+    [`a${"-".repeat(100_000)}b`, `a${"-".repeat(63)}`],
     ["9 Local", "9-local"],
     ["Local_MCP_", "local_mcp_"],
     ["Brex MCP Server!", "brex-mcp-server"],

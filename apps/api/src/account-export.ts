@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import type { AccountExportSource, PrismaClient } from "@rakazo/db";
 import {
+  accountDeactivated,
   parseComputerMode,
   readAccountExport,
   runAsTenant,
@@ -42,12 +43,13 @@ export const ACCOUNT_EXPORT_MAX_ARCHIVE_BYTES = 2 ** 32 - 64 * 1024 * 1024;
 /**
  * Streams a zip of `files` in order. Pull-based: the next file or chunk is read only when the
  * consumer wants more bytes, so at most one chunk of input is held in memory. Cancelling the
- * stream (a client abort) stops the file generator.
+ * stream or aborting `signal` (a client disconnect) stops the file generator and is not an error.
  */
 export function zipStream(
   files: AsyncIterable<ArchiveFile>,
-  maxBytes = ACCOUNT_EXPORT_MAX_ARCHIVE_BYTES,
+  options: { maxBytes?: number; signal?: AbortSignal } = {},
 ): ReadableStream<Uint8Array> {
+  const maxBytes = options.maxBytes ?? ACCOUNT_EXPORT_MAX_ARCHIVE_BYTES;
   const zip = new Zip();
   const output: Uint8Array[] = [];
   let finished = false;
@@ -78,24 +80,35 @@ export function zipStream(
     zip.end();
   }
   const producer = steps();
+  let cancelled = false;
   return new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
         try {
           while (!output.length && !finished) {
             const step = await producer.next();
+            // A cancel during this read ends the producer early; the client is gone.
+            if (cancelled) return;
             if (failure) throw failure;
             if (step.done && !finished) throw new Error("Zip ended without its last chunk");
           }
           if (failure) throw failure;
         } catch (error) {
-          getLogger().error("account.export.failed", error);
+          if (error === failure || (!cancelled && !options.signal?.aborted)) {
+            getLogger().error("account.export.failed", error);
+            throw error;
+          }
+          getLogger().warn("account.export.aborted", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          if (cancelled) return;
           throw error;
         }
         for (const chunk of output.splice(0)) controller.enqueue(chunk);
         if (finished && !output.length) controller.close();
       },
       async cancel() {
+        cancelled = true;
         await producer.return(undefined);
       },
     },
@@ -214,10 +227,13 @@ export function mountAccountExportRoute(
 ): void {
   app.get("/api/account/export", async (c) => {
     const userId = await deps.auth.consumeAccountExportToken(c.req.query("token") ?? "");
-    if (!userId) return c.text("Export link expired", 410, { "cache-control": "no-store" });
+    // A link issued just before the account was deactivated no longer downloads it.
+    if (!userId || (await accountDeactivated(deps.prisma, userId)))
+      return c.text("Export link expired", 410, { "cache-control": "no-store" });
     const now = new Date();
     const source = await readAccountExport(deps.prisma, userId);
-    const body = zipStream(accountArchiveFiles(source, deps, { signal: c.req.raw.signal, now }));
+    const signal = c.req.raw.signal;
+    const body = zipStream(accountArchiveFiles(source, deps, { signal, now }), { signal });
     return new Response(body, {
       headers: {
         "content-type": "application/zip",

@@ -21,14 +21,60 @@ Nothing crosses between spaces unless you allow it:
 - [Saved credentials](./bot-secrets.md), when the space keeps its own.
 - Skills a bot saves.
 
-Bots only talk to bots in the same space, unless you turn on **Allow cross-space bot communication**
-in a bot's settings.
+A bot messages your other bots only inside its own space. **Allow cross-space bot communication**
+in a bot's settings only affects bots linked to [chat apps](./messaging-apps.md); see
+[Bots asking other bots](./groups.md#bots-asking-other-bots).
 
 ## What follows you everywhere
 
 Your account settings apply in every space: [models](./models.md), [voice](./voice-and-calls.md),
 [approvals](./approvals.md) and your credentials vault. Skills, MCP servers and plugins you add are
 available in all your spaces too, unless you narrow them with **Available in**.
+
+## Share a space
+
+Open the space's **Settings** and choose **Invite** next to **Members**. A link is copied for you to
+send. It works once and expires after 7 days. To stop links you sent but nobody has used, choose
+**⋯** next to **Invite**, then **Cancel open invites** (on iOS and Android it is a row under the
+members list).
+
+Whoever opens the link sees what sharing means and chooses **Join**. They join that space only: it
+shows up in their space list next to their own spaces, and your other spaces stay private. They
+don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
+they do in the space, but never names their own vault items.
+
+Sharing is per space, not per bot: you can't share one bot and keep the others private. To give
+someone just one bot, create a [new space](#create-a-space), set the bot up there, and invite only
+them. The bot can't message your other bots, and they can't message it (with the chat-app exception
+described [above](#what-stays-inside-a-space)). **Duplicate** makes its copy in the same space, so
+set the new bot up again there.
+
+### What everyone shares
+
+- **Bots, chats, memory and routines.** Everyone sees and can change them, including chats that come
+  in through a chat app a member linked.
+- **The computer and its browser.** A shared space has one Team Computer. A site someone signs in to
+  there stays signed in for everyone, and the computer says so while you control it and on login
+  requests. One person drives the screen at a time; everyone else watches until they're done.
+- **Taught skills.** Everyone can use a skill someone taught, but only the person who taught it sees
+  the recording of what they typed.
+
+### What stays each person's own
+
+Each person keeps their own models, connected accounts, MCP servers, skills, vault and approval
+rules, and pays for their own runs. A bot uses the accounts of whoever messaged it, and only that
+person answers the questions it asks them. A routine runs with its owner's accounts; editing
+someone's routine makes it yours. A bot only offers to call the person who made it.
+
+### Leaving
+
+The owner can remove people, and anyone else can **Leave**. What a person who leaves made in the
+space, such as bots, chats and routines, passes to the owner, with routines paused. Their runs
+there stop, a screen they were controlling is freed, and their own credentials for that space are
+deleted. Tools they had made available in their other spaces move to one of those spaces.
+
+If the owner deletes their account, spaces in their own organization are deleted with it. A space
+in a team organization that carries on passes to its longest-standing full member instead.
 
 ## Customize one space
 

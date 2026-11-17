@@ -47,7 +47,8 @@ export function useReadAloud({
       autoSpoken.current = lastBot?.id ?? null;
       return;
     }
-    if (callBotId === active.id || !active.autoSpeak) {
+    // An active call owns the speaker; another chat's replies must not cut into it.
+    if (callBotId !== undefined || !active.autoSpeak) {
       autoSpoken.current = lastBot?.id ?? null;
       return;
     }
@@ -68,15 +69,19 @@ export function useReadAloud({
 
   const speakingMessageIdRef = useRef(speakingMessageId);
   speakingMessageIdRef.current = speakingMessageId;
+  const callBotIdRef = useRef(callBotId);
+  callBotIdRef.current = callBotId;
   const speakMessage = useCallback((message: ThreadMessage) => {
     if (speakingMessageIdRef.current === message.id) {
       speaker.stop();
       return;
     }
+    // An active call owns the speaker; a manual read must not cut into it.
+    if (callBotIdRef.current !== undefined) return;
     const text = speechFromBlocks(message.blocks);
     const id = message.botId ?? activeBotId.current;
     if (text && id) readAloud(text, { botId: id, messageId: message.id });
   }, []);
 
-  return { speakingMessageId, speakMessage };
+  return { speakingMessageId, speakMessage, callHoldsSpeaker: callBotId !== undefined };
 }

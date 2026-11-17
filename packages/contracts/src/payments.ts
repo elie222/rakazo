@@ -116,3 +116,49 @@ export const PaidRequestInput = z.union([
     }),
 ]);
 export type PaidRequestInput = z.infer<typeof PaidRequestInput>;
+
+/**
+ * Currencies a spending limit can be set in. Checkout pages name these unambiguously; a symbol
+ * another currency shares ($, £) is read as these, which only over-counts the cheaper currency.
+ */
+export const SPENDING_CURRENCIES = ["usd", "eur", "gbp", "ils"] as const;
+export type SpendingCurrency = (typeof SPENDING_CURRENCIES)[number];
+
+/** When spending starts again from zero. `none` counts from when the limit was set. */
+export const SpendingPeriodSchema = z.enum(["day", "week", "month", "none"]);
+export type SpendingPeriod = z.infer<typeof SpendingPeriodSchema>;
+
+/** The most a spending limit can be set to, in minor units. */
+export const MAX_SPENDING_LIMIT = 100_000_000;
+
+/** The most the user's bots may spend in a period, across every bot and Space. Minor units. */
+export const SpendingLimitSchema = z
+  .object({
+    amount: z.number().int().positive().max(MAX_SPENDING_LIMIT),
+    currency: z.enum(SPENDING_CURRENCIES),
+    period: SpendingPeriodSchema,
+  })
+  .strict();
+export type SpendingLimit = z.infer<typeof SpendingLimitSchema>;
+
+export const SpendingStatusSchema = z.object({
+  limit: SpendingLimitSchema.nullable(),
+  /** Spent in the limit's current period, in its currency; 0 without a limit. */
+  spent: z.number().int().nonnegative(),
+  /** Whether the setting is relevant yet: the user can pay, or already set a limit. */
+  shown: z.boolean(),
+});
+export type SpendingStatus = z.infer<typeof SpendingStatusSchema>;
+
+/** A payment a bot made with the user's approval. Minor units. */
+export const SpendingPaymentSchema = z.object({
+  id: z.string(),
+  /** The checkout's host. */
+  site: z.string(),
+  amount: z.number().int().positive(),
+  currency: z.string(),
+  /** Null once the bot is gone or out of the user's reach. */
+  botName: z.string().nullable(),
+  createdAt: IsoDate,
+});
+export type SpendingPayment = z.infer<typeof SpendingPaymentSchema>;

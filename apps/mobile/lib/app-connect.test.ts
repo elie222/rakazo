@@ -15,7 +15,7 @@ describe("appConnectPresentation", () => {
   it("renders an authorize control for pending app_connect blocks", () => {
     const view = appConnectPresentation(block);
     expect(view.showAuthorize).toBe(true);
-    expect(view.actionLabel).toBe("Authorize");
+    expect(view.actionLabel).toBe("Connect");
   });
 
   it("hides authorize once connected", () => {

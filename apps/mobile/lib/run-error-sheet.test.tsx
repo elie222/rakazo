@@ -11,6 +11,12 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../components/thread-
 import { runErrorActionLabel } from "./run-error-presentation";
 import { liveEndRunError } from "./thread-window";
 
+vi.mock("./haptics", () => ({
+  hapticImpact: vi.fn(),
+  hapticSelection: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
+
 const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 402, fontScale: 1 }),
@@ -48,16 +54,9 @@ vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
 vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => null }));
 vi.mock("./native", () => ({
-  native: {},
+  native: { fill: "native-fill" },
   useMobileTokens: () => ({ card: "token-card" }),
   useResolvedAppearance: () => "light",
-}));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    locale: "en",
-    t: (key: string, values?: Record<string, string>) =>
-      key.replace(/\{(\w+)\}/g, (_, name: string) => values?.[name] ?? name),
-  }),
 }));
 
 const details =
@@ -93,7 +92,7 @@ describe("run error recovery", () => {
     const onPress = vi.fn();
     const onClose = vi.fn();
     const node = mount(
-      createElement(RunErrorSheet, { details, onClose, action: { label: "Add Model", onPress } }),
+      createElement(RunErrorSheet, { details, onClose, action: { label: "Add model", onPress } }),
     );
     expect(node.textContent).toContain(
       "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.",
@@ -107,7 +106,7 @@ describe("run error recovery", () => {
           .find((button) => button.textContent === label)
           ?.click();
       });
-    click("Add Model");
+    click("Add model");
     expect(onPress).toHaveBeenCalledOnce();
     expect(node.textContent).not.toContain("Change model");
     click("Technical details");
@@ -128,7 +127,7 @@ describe("run error recovery", () => {
     "This connection's request limit is too small. Choose another model.",
     "The model hit its output limit before finishing its reply.",
   ])("offers model recovery without suggesting a key failure for %s", (details) => {
-    const label = runErrorActionLabel((key) => key, normalizeRunError(details));
+    const label = runErrorActionLabel(normalizeRunError(details));
     expect(label).toBe("Change model");
     const node = mount(
       createElement(RunErrorSheet, {
@@ -164,7 +163,7 @@ describe("run error recovery", () => {
 
 describe("inline error card", () => {
   it.each([
-    ["403: OpenRouter weekly key limit exceeded", "Add Model"],
+    ["403: OpenRouter weekly key limit exceeded", "Add model"],
     ["401: Unauthorized", "Replace key"],
     ["402: You have no credits remaining.", "Change model"],
     ["404: Model unavailable", "Change model"],
@@ -175,7 +174,7 @@ describe("inline error card", () => {
     const onDetails = vi.fn();
     function Notice() {
       const error = useRunError(details, false);
-      const actionLabel = error ? runErrorActionLabel((key) => key, error) : null;
+      const actionLabel = error ? runErrorActionLabel(error) : null;
       return createElement(ThreadErrorNotice, {
         error: null,
         summary: error?.summary ?? null,
@@ -185,7 +184,7 @@ describe("inline error card", () => {
       });
     }
     const node = mount(createElement(Notice));
-    for (const other of ["Add Model", "Replace key", "Change model"]) {
+    for (const other of ["Add model", "Replace key", "Change model"]) {
       expect(node.textContent?.includes(other)).toBe(other === label);
     }
     expect(node.textContent).toContain("Details");
@@ -204,7 +203,7 @@ describe("inline error card", () => {
         error: null,
         summary: error?.summary ?? null,
         resetAt: error?.resetAt,
-        action: { label: "Add Model", onPress: vi.fn() },
+        action: { label: "Add model", onPress: vi.fn() },
         onDetails: vi.fn(),
       });
     }
@@ -230,7 +229,7 @@ it.each([false, true])("keeps history fetch errors visible (provider failure: %s
         error: null,
         summary: visible?.summary ?? null,
         onDetails: vi.fn(),
-        action: visible ? { label: "Add Model", onPress: vi.fn() } : null,
+        action: visible ? { label: "Add model", onPress: vi.fn() } : null,
       }),
       createElement(ThreadFetchErrorNotice, {
         error: "Could not load newer messages",
@@ -240,7 +239,7 @@ it.each([false, true])("keeps history fetch errors visible (provider failure: %s
   );
   expect(node.textContent).toContain("Could not load newer messages");
   expect(node.textContent).not.toContain("weekly limit");
-  expect(node.textContent).not.toContain("Add Model");
+  expect(node.textContent).not.toContain("Add model");
   expect(node.textContent).not.toContain("Details");
 });
 
@@ -265,7 +264,7 @@ it("draws the error notice as a filled card without an outline", () => {
   mount(createElement(ThreadErrorNotice, { error: "Run failed", summary: null }));
   const card = viewProps.find((props) => props.accessibilityRole === "alert");
   const style = Object.assign({}, ...[card?.style].flat(2));
-  expect(style.backgroundColor).toBe("token-card");
+  expect(style.backgroundColor).toBe("native-fill");
   expect(style).not.toHaveProperty("borderWidth");
   expect(style).not.toHaveProperty("borderColor");
 });

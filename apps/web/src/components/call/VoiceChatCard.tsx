@@ -96,9 +96,9 @@ export function VoiceChatCard({
             )}
             aria-hidden="true"
           />
-          <span className="text-sm font-medium text-foreground">{title}</span>
+          <span className="text-body font-medium text-foreground">{title}</span>
           {detail ? (
-            <span className="truncate text-xs tabular-nums text-muted-foreground">{detail}</span>
+            <span className="truncate text-label tabular-nums text-muted-foreground">{detail}</span>
           ) : null}
           {expandable ? (
             <span
@@ -124,13 +124,13 @@ export function VoiceChatCard({
         ) : null}
       </div>
       {!open && summary ? (
-        <p className="truncate px-3 pb-2 text-sm text-muted-foreground" dir="auto">
+        <p className="truncate px-3 pb-2 text-body text-muted-foreground" dir="auto">
           {summary}
         </p>
       ) : null}
       <Collapsible open={open} className="contents">
         <CollapsibleContent className="flex flex-col">
-          <div className="space-y-1.5 px-3 pb-3 text-sm">
+          <div className="space-y-1.5 px-3 pb-3 text-body">
             {transcript.map((line) => {
               if (!line.text) {
                 return <span key={line.id} data-message-id={line.id} className="sr-only" />;

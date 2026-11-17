@@ -40,6 +40,10 @@ export type MeasuredCall = Partial<UsageMeasurement> & {
   operation?: string;
   id: string;
   costSource?: string | null;
+  /** The model that served the call, when known. A call to another model never uses the
+   * explicit pricing of the model an evaluation runs on. */
+  provider?: string;
+  modelId?: string;
 };
 export function validatePricing(value: unknown): EvalPricing {
   const p = value as EvalPricing;
@@ -93,6 +97,9 @@ export function measureCalls(
   calls: readonly MeasuredCall[],
   pricing?: EvalPricing,
   minimumCacheTokens?: number,
+  /** The only model `pricing` applies to; calls served by any other model fall back to
+   * their own provider-reported or catalog-estimated charge, and stay unknown without one. */
+  pricedModel?: { provider: string; modelId: string },
 ) {
   const unique = [...new Map(calls.map((c) => [c.id, c])).values()];
   const sum = (key: keyof UsageMeasurement): number | null =>
@@ -103,12 +110,14 @@ export function measureCalls(
     UsageMeasurement,
     "costUsd"
   >;
+  const ownCharge = (c: MeasuredCall) =>
+    c.costSource === "pi-catalog-estimate" && typeof c.costUsd === "number" ? c.costUsd : null; // Unknown catalog placeholders remain unavailable.
+  const otherModel = (c: MeasuredCall) =>
+    pricedModel !== undefined &&
+    (c.provider !== pricedModel.provider || c.modelId !== pricedModel.modelId);
   const priced = unique.map((c) => {
     if (c.costSource === "provider-reported" && typeof c.costUsd === "number") return c.costUsd;
-    if (!pricing)
-      return c.costSource === "pi-catalog-estimate" && typeof c.costUsd === "number"
-        ? c.costUsd
-        : null; // Unknown catalog placeholders remain unavailable.
+    if (!pricing || otherModel(c)) return ownCharge(c);
     if (
       [c.inputTokens, c.outputTokens, c.cacheReadTokens, c.cacheWriteTokens].some(
         (v) => typeof v !== "number",
@@ -182,7 +191,7 @@ export function measureCalls(
             : [
                 call.costSource === "provider-reported"
                   ? "provider-reported"
-                  : pricing
+                  : pricing && !otherModel(call)
                     ? "explicit-pricing-estimate"
                     : "pi-catalog-estimate",
               ],
@@ -197,7 +206,7 @@ export function measureCalls(
 /** Concurrency-safe reservations. This guard estimates spend; it is not a billing guarantee. */
 export class SpendBudget {
   private spent = 0;
-  private reservations = new Map<string, { estimate: number; pricing: EvalPricing }>();
+  private reservations = new Map<string, { estimate: number; pricing?: EvalPricing }>();
   private serial = 0;
   private unavailablePricing = false;
   constructor(
@@ -247,6 +256,22 @@ export class SpendBudget {
     this.reservations.set(id, { estimate, pricing });
     return id;
   }
+  /** Reserves a call to a model the eval has no per-token pricing for, at that model's own
+   * conservative cost bound; its provider-reported or catalog-estimated charge settles it. */
+  reserveCostBound(estimateUsd: number): string {
+    if (!Number.isFinite(estimateUsd) || estimateUsd < 0)
+      throw new Error("A conservative cost bound is required before inference");
+    if (
+      this.spent +
+        [...this.reservations.values()].reduce((n, v) => n + v.estimate, 0) +
+        estimateUsd >
+      this.capUsd
+    )
+      throw new Error("Eval spend cap would be exceeded");
+    const id = String(++this.serial);
+    this.reservations.set(id, { estimate: estimateUsd });
+    return id;
+  }
   settle(id: string, actualUsd: number | null) {
     const reservation = this.reservations.get(id);
     if (reservation === undefined) throw new Error("Unknown spend reservation");
@@ -259,7 +284,13 @@ export class SpendBudget {
   ) {
     const pricing = this.reservations.get(id)?.pricing;
     const priced = usage ? measureCalls([{ id, ...usage }], pricing).costUsd : null;
-    if (usage && typeof usage.cacheWrite1hTokens === "number" && usage.cacheWrite1hTokens > 0) {
+    // A bounded reservation has no per-token rates; its own bound already covers the write.
+    if (
+      pricing &&
+      usage &&
+      typeof usage.cacheWrite1hTokens === "number" &&
+      usage.cacheWrite1hTokens > 0
+    ) {
       const inputBuckets = [usage.inputTokens, usage.cacheReadTokens, usage.cacheWriteTokens];
       const promptTokens = inputBuckets.every((value) => typeof value === "number")
         ? inputBuckets.reduce<number>((sum, value) => sum + Number(value), 0)

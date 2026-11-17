@@ -24,6 +24,7 @@ appId: com.rakazo.app
 - tapOn:
     text: "Don't allow"
     optional: true
+# A new account answers the signup survey before the inbox.
 - extendedWaitUntil:
-    visible: "Account"
+    visible: "Account|.*How did you hear about us.*"
     timeout: 40000

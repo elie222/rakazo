@@ -1,5 +1,6 @@
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({ exec: vi.fn(), inspect: vi.fn(), stdin: [] as string[] }));
@@ -205,10 +206,7 @@ it.each([
 it("closes helper stdin when the request is cancelled", async () => {
   const stream = new PassThrough();
   const controller = new AbortController();
-  let started!: () => void;
-  const ready = new Promise<void>((resolve) => {
-    started = resolve;
-  });
+  const ready = deferred();
   const defaultExec = mock.exec.getMockImplementation()!;
   mock.exec.mockImplementation(async (options: { Cmd: string[]; AttachStdin?: boolean }) => {
     if (!options.Cmd.includes("/usr/local/bin/rakazo-page-browser")) return defaultExec(options);
@@ -216,7 +214,7 @@ it("closes helper stdin when the request is cancelled", async () => {
     return {
       start: async (options: { stdin: boolean }) => {
         expect(options.stdin).toBe(true);
-        started();
+        ready.resolve();
         return stream;
       },
       inspect: async () => ({ ExitCode: 130 }),
@@ -233,7 +231,7 @@ it("closes helper stdin when the request is cancelled", async () => {
     },
     body: JSON.stringify({ command: "act", actions: [{ kind: "click", ref: "test-ref" }] }),
   });
-  await ready;
+  await ready.promise;
   controller.abort();
   expect(await (await response).json()).toMatchObject({ ok: false, uncertain: true });
   expect(stream.destroyed).toBe(true);
@@ -600,5 +598,66 @@ describe("screen setup reuse", () => {
       ok: true,
     });
     expect(commands()).toEqual(["helper", "setup", "helper"]);
+  });
+});
+
+describe("a helper that refuses the command (exit 2)", () => {
+  function helperExits(code: number, stdout: string) {
+    mock.exec.mockImplementation(async (options: { Cmd: string[] }) => {
+      // Screen setup succeeds; only the page helper refuses.
+      const helper = options.Cmd.includes("/usr/local/bin/rakazo-page-browser");
+      return {
+        start: async () =>
+          Duplex.from({
+            readable: Readable.from([Buffer.from(helper ? stdout : "")]),
+            writable: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+          }),
+        inspect: async () => ({ ExitCode: helper ? code : 0 }),
+      };
+    });
+  }
+  const purchaseCheck = (id: string) =>
+    supervisorApp.request(`/computers/${id}/browser`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+        "x-rakazo-bot-id": "home",
+        "x-rakazo-space-id": "space",
+        "x-rakazo-screen-id": "first",
+        "x-rakazo-screen-lease-id": "run:1",
+      },
+      body: JSON.stringify({
+        command: "purchase_check",
+        desktop: true,
+        enter: false,
+        points: [{ x: 10, y: 10 }],
+        unplaced: false,
+      }),
+    });
+
+  it("passes on an older computer image's refusal of an unknown command", async () => {
+    // What rakazo-page-browser on an image from before purchase_check prints.
+    helperExits(
+      2,
+      JSON.stringify({
+        ok: false,
+        error: "unknown command: purchase_check",
+        fallback: "computer_act",
+      }),
+    );
+    expect(await (await purchaseCheck("computer-refusal")).json()).toEqual({
+      ok: false,
+      error: "unknown command: purchase_check",
+      fallback: "computer_act",
+    });
+  });
+
+  it("still reports an exit 2 without a refusal as unavailable", async () => {
+    helperExits(2, "Traceback (most recent call last):");
+    expect(await (await purchaseCheck("computer-refusal-garbled")).json()).toMatchObject({
+      ok: false,
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
   });
 });

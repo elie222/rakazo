@@ -1,6 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ScrollView, StyleSheet } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { routineRowDetail, routineRowLabel } from "../lib/routine";
 import { useSideInsets } from "../lib/side-insets";
@@ -26,7 +27,7 @@ export function RoutineList({
   onToggle,
   onDelete,
 }: RoutineListProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const sideInsets = useSideInsets();
@@ -39,8 +40,8 @@ export function RoutineList({
       <SettingsGroup>
         {routines.map((routine) => {
           const deletable = canDelete && routine.editable !== false;
-          const deleteLabel = t("Delete {name}", { name: routine.name });
-          const switchLabel = t("Active: {name}", { name: routine.name });
+          const deleteLabel = t`Delete ${ph({ name: routine.name })}`;
+          const switchLabel = t`Active: ${ph({ name: routine.name })}`;
           return (
             <SettingsRow
               key={routine.id}

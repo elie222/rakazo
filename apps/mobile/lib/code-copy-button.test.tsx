@@ -33,7 +33,6 @@ vi.mock("react-native", () => ({
     ),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock("../lib/i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("../lib/native", () => ({ useMobileTokens: () => ({ mutedForeground: "muted" }) }));
 vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios, android, color }: { ios: string; android: string; color: string }) =>

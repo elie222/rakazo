@@ -1,5 +1,6 @@
 import type {
   BillingByokCheckoutRequest,
+  BillingByokPlan,
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
@@ -18,7 +19,7 @@ import {
   parseStripeWebhook,
   pickBillingSubscription,
   signStripeWebhook,
-} from "./stripe-billing.js";
+} from "./providers/billing/stripe/stripe-billing.js";
 
 const WEBHOOK_SECRET = "billing-emulator-webhook-secret";
 const BYOK_PRICE_ID = "price_byok_emulated";
@@ -120,7 +121,11 @@ export class BillingEmulator implements BillingProvider {
     );
   }
 
-  async switchByokToYearly(customerId: string, subscriptionId: string, amountCents: number) {
+  async changeByokPlan(
+    customerId: string,
+    subscriptionId: string,
+    { from, to }: { from: BillingByokPlan; to: BillingByokPlan },
+  ) {
     const subscriptions = this.forCustomer(customerId);
     const plan = subscriptions.find((s) => s.subscriptionId === subscriptionId);
     if (
@@ -128,15 +133,20 @@ export class BillingEmulator implements BillingProvider {
       plan.priceId !== BYOK_PRICE_ID ||
       (plan.status !== "active" && plan.status !== "trialing") ||
       plan.cancelAtPeriodEnd ||
-      plan.byokInterval === "year" ||
+      plan.byokTier !== from.tier ||
+      plan.byokInterval !== from.interval ||
+      plan.byokPriceCents !== from.amountCents ||
       subscriptions.some((s) => s.creditAmountCents && holdsBillingSubscription(s.status))
     )
       return false;
-    plan.byokPriceCents = amountCents;
-    plan.byokInterval = "year";
-    if (plan.status === "trialing") return true;
+    plan.byokTier = to.tier;
+    plan.byokPriceCents = to.amountCents;
+    plan.byokInterval = to.interval;
+    if (plan.status === "trialing" || to.interval === from.interval) return true;
     plan.currentPeriodStartsAt = new Date(this.now());
-    plan.currentPeriodEndsAt = new Date(this.now() + 365 * 86400000);
+    plan.currentPeriodEndsAt = new Date(
+      this.now() + (to.interval === "year" ? 365 : 30) * 86400000,
+    );
     return true;
   }
 
@@ -172,6 +182,7 @@ export class BillingEmulator implements BillingProvider {
       byokPlan: true,
       byokPriceCents: checkout.amountCents,
       byokInterval: checkout.interval ?? "month",
+      byokTier: checkout.tier ?? "standard",
       cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
       seats: 1,
@@ -268,6 +279,17 @@ export class BillingEmulator implements BillingProvider {
     this.cancelAll(customerId);
   }
 
+  async expireOpenCheckouts(customerId: string) {
+    this.checkouts.delete(customerId);
+    this.byokCheckouts.delete(customerId);
+    this.creditCheckouts.delete(customerId);
+  }
+
+  /** The emulator takes no payments outside a customer. */
+  async customerForPayment(_paymentId: string): Promise<string | null> {
+    return null;
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(WEBHOOK_SECRET, rawBody, headers, this.now());
   }
@@ -325,9 +347,11 @@ export class BillingEmulator implements BillingProvider {
     return { body, headers };
   }
 
-  /** An open checkout goes too, so it cannot start a subscription afterwards. */
+  /** Open checkouts go too, so none can start a subscription or purchase afterwards. */
   private cancelAll(customerId: string) {
     this.checkouts.delete(customerId);
+    this.byokCheckouts.delete(customerId);
+    this.creditCheckouts.delete(customerId);
     for (const subscription of this.forCustomer(customerId)) {
       if (subscription.status === "canceled") continue;
       subscription.status = "canceled";

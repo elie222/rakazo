@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -66,6 +67,12 @@ describe("the updater compose service", () => {
 
   it("is opt-in because it grants root-equivalent Docker access", () => {
     expect(updater.profiles).toEqual(["updater"]);
+    expect(updater.environment?.RAKAZO_COMPUTER_IMAGE).toBe(
+      `\${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}`,
+    );
+    expect(updater.environment?.RAKAZO_AUTO_UPDATE_INTERVAL_HOURS).toBe(
+      interpolated("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS", "0"),
+    );
   });
 
   it("publishes nothing on the host", () => {
@@ -220,10 +227,14 @@ describe("the point-in-time recovery sidecar", () => {
 
   it("is tagged with a hash of what it is built from, so a deploy rebuilds it only on change", () => {
     const hash = createHash("sha256");
-    for (const file of ["Dockerfile.pitr", "pitr-agent.sh"]) {
+    for (const file of ["Dockerfile.pitr", "pitr-agent.sh", "apt-security.sh"]) {
       hash.update(readFileSync(path.join(composeDir, file)));
     }
     expect(pitr.image).toBe(`rakazo-pitr:${hash.digest("hex").slice(0, 16)}`);
+  });
+
+  it("runs the apt security helper smoke, including the copy equality check", () => {
+    execFileSync("bash", [path.join(composeDir, "apt-security.smoke.sh")], { stdio: "inherit" });
   });
 
   it("builds on the same pinned Postgres image as the database", () => {

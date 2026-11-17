@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
+import { CLAUDE_CODE_PROVIDER_ID } from "./cli-models/claude-code/provider.js";
 import {
+  catalogKnowsModel,
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
   knownModelImageInput,
@@ -38,6 +40,14 @@ describe("model vision gating for computer tools", () => {
     expect(modelAcceptsImageInput("openai-codex", "gpt-6.1-sol")).toBe(true);
   });
 
+  it("uses the CLI model lookup consistently for image capabilities", () => {
+    const provider = CLAUDE_CODE_PROVIDER_ID;
+    const id = "claude-sonnet-5-5";
+    expect(catalogKnowsModel(provider, id)).toBe(true);
+    expect(knownModelImageInput(provider, id)).toBe(true);
+    expect(modelAcceptsImageInput(provider, id)).toBe(true);
+  });
+
   it.each([
     ["openai", "gpt-4o-2099-01-01", true],
     ["openai-codex", "gpt-6-luna-latest", true],
@@ -57,7 +67,7 @@ describe("model vision gating for computer tools", () => {
     vi.stubEnv("PI_DEFAULT_MODEL", "");
     expect(resolveModelRefForVisionCheck("scripted", "scripted")).toEqual({
       provider: "openrouter",
-      id: "openai/gpt-6-luna",
+      id: "anthropic/claude-haiku-5.5",
     });
     expect(modelAcceptsImageInput("scripted", "scripted")).toBe(true);
 
@@ -70,7 +80,7 @@ describe("model vision gating for computer tools", () => {
   });
 
   it("follows the account catalog for a live Codex slug outside its sibling family", () => {
-    const id = "gpt-6.1-terra";
+    const id = "gpt-6.2-terra";
     const provider = CHATGPT_OAUTH_PROVIDER;
     const auth: CodexCatalogSpaceAuth = {
       byProvider: { [provider]: "oauth" },

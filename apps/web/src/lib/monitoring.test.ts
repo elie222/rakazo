@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sentry = vi.hoisted(() => ({
@@ -110,16 +111,14 @@ describe("browser monitoring", () => {
     // A malformed id is never sent, and a sign-out that lands first wins over a slow sign-in.
     await fresh.identifyMonitoringUser(true, respond({ dsn: "x", userId: "raw-user" }));
     expect(beforeSend({})).toEqual({ user: { ip_address: null } });
-    let release!: () => void;
+    const release = deferred();
     const slow = vi.fn(async () => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await release.promise;
       return new Response(JSON.stringify({ userId: PSEUDONYM }));
     }) as unknown as typeof fetch;
     const signingIn = fresh.identifyMonitoringUser(true, slow);
     await fresh.identifyMonitoringUser(false);
-    release();
+    release.resolve();
     await signingIn;
     expect(beforeSend({})).toEqual({ user: { ip_address: null } });
   });
@@ -299,7 +298,7 @@ describe("browser monitoring", () => {
     });
   });
 
-  it("drops gateway answers during a deploy and failures from code that is not the app's", async () => {
+  it("drops gateway answers during a deploy, chunks that did not load, and failures from code that is not the app's", async () => {
     vi.resetModules();
     const fresh = await import("./monitoring");
     await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
@@ -314,11 +313,28 @@ describe("browser monitoring", () => {
         "NotFoundError",
       ),
       "Object Not Found Matching Id:1, MethodName:update, ParamCount:4",
+      new TypeError("Importing a module script failed."),
+      new TypeError(
+        "Failed to fetch dynamically imported module: https://app.example.com/assets/Settings-abc123.js",
+      ),
+      new TypeError("error loading dynamically imported module: https://app.example.com/a.js"),
     ])
       expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
     expect(
       beforeSend({}, { originalException: Object.assign(new Error("Conflict"), { status: 409 }) }),
     ).toEqual({ user: { ip_address: null } });
+    const windowError = (mechanism: string) => ({
+      exception: {
+        values: [{ value: "ResizeObserver loop limit exceeded", mechanism: { type: mechanism } }],
+      },
+    });
+    expect(beforeSend(windowError("auto.browser.global_handlers.onerror"), {})).toBeNull();
+    expect(
+      beforeSend(windowError("auto.browser.global_handlers.onerror"), {
+        originalException: new Error("boom"),
+      }),
+    ).not.toBeNull();
+    expect(beforeSend(windowError("generic"), {})).not.toBeNull();
     expect(beforeSend({ message: "plain" }, { originalException: "plain" })).toEqual({
       message: "plain",
       user: { ip_address: null },

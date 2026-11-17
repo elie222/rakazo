@@ -74,6 +74,15 @@ describe("resolveSandboxProvider", () => {
     });
   });
 
+  it("keeps instabox when its API key is set", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "instabox" })).toBe("none");
+    const env = { SANDBOX_PROVIDER: "instabox", INSTABOX_API_KEY: "test-instabox-key" };
+    expect(resolveSandboxProvider(env)).toBe("instabox");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      instaboxApiKey: "test-instabox-key",
+    });
+  });
+
   it("keeps CreateOS when its API key is set", () => {
     expect(
       resolveSandboxProvider({
@@ -88,6 +97,22 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kubernetes", NODE_ENV: "production" })).toBe(
       "kubernetes",
     );
+  });
+
+  it("keeps Incus only when its address and client certificate are set", () => {
+    const configured = {
+      SANDBOX_PROVIDER: "incus",
+      INCUS_SANDBOX_URL: "https://incus.example.test:8443",
+      INCUS_SANDBOX_CLIENT_CERT: "test-cert",
+      INCUS_SANDBOX_CLIENT_KEY: "test-key",
+    };
+    expect(resolveSandboxProvider(configured)).toBe("incus");
+    for (const key of [
+      "INCUS_SANDBOX_URL",
+      "INCUS_SANDBOX_CLIENT_CERT",
+      "INCUS_SANDBOX_CLIENT_KEY",
+    ])
+      expect(resolveSandboxProvider({ ...configured, [key]: " " })).toBe("none");
   });
 
   it("falls back to none in production when Docker has no supervisor token", () => {
@@ -162,6 +187,33 @@ describe("sandboxProviderOptionsFromEnv", () => {
       kubernetesReadyTimeoutMs: 90_000,
     });
     expect(sandboxProviderOptionsFromEnv({}).kubernetesNamespace).toBeUndefined();
+  });
+
+  it("loads Incus settings and accepts certificates with escaped newlines", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        INCUS_SANDBOX_URL: " https://incus.example.test:8443 ",
+        INCUS_SANDBOX_CLIENT_CERT: "client-cert-line-1\\nclient-cert-line-2",
+        INCUS_SANDBOX_CLIENT_KEY: "client-key-line-1\nclient-key-line-2",
+        INCUS_SANDBOX_SERVER_CERT: "server-cert-line-1\\nserver-cert-line-2",
+        INCUS_SANDBOX_PROJECT: "rakazo",
+        INCUS_SANDBOX_COMPUTER_IMAGE: "ghcr.io/elie222/rakazo/computer:v1.2.3",
+        INCUS_SANDBOX_CPU_LIMIT: "1",
+        INCUS_SANDBOX_MEMORY_LIMIT: "1536MiB",
+        INCUS_SANDBOX_PROCESS_LIMIT: "1024",
+      }),
+    ).toMatchObject({
+      incusUrl: "https://incus.example.test:8443",
+      incusClientCert: "client-cert-line-1\nclient-cert-line-2",
+      incusClientKey: "client-key-line-1\nclient-key-line-2",
+      incusServerCert: "server-cert-line-1\nserver-cert-line-2",
+      incusProject: "rakazo",
+      incusComputerImage: "ghcr.io/elie222/rakazo/computer:v1.2.3",
+      incusCpuLimit: "1",
+      incusMemoryLimit: "1536MiB",
+      incusProcessLimit: "1024",
+    });
+    expect(sandboxProviderOptionsFromEnv({}).incusServerCert).toBeUndefined();
   });
 
   it("loads the Kubernetes home claim and its pod-affinity target", () => {

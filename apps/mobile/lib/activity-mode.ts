@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-/** Persisted Codex-style recency mode for home Now/Recent. Default off. */
+/** Persisted Codex-style recency mode for home activity sections. Default off. */
 export const ACTIVITY_MODE_KEY = "rakazo.activity-mode";
 
 export async function loadActivityMode(): Promise<boolean> {

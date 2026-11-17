@@ -1,14 +1,36 @@
-import { runContinueJob } from "@rakazo/adapter-kit";
-import { displayName } from "@rakazo/core";
+import { SandboxUnavailableError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import type { RunStatus } from "@rakazo/contracts";
+import {
+  assertTransition,
+  BACKGROUND_HELPER_TRIGGER,
+  displayName,
+  isTerminal,
+  nextFence,
+  redactSecrets,
+  truncatePlainText,
+  userRunError,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { databaseOutage, retryWhileDatabaseUnavailable, spaceTakesWork } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { sanitizedError } from "@rakazo/logging/monitoring";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { VaultKeyUnavailableError } from "./bot-secrets.js";
 import { sleepDeferReason } from "./computer-idle.js";
+import type { ComputerExecutionLease } from "./computer-lifecycle.js";
+import { ComputerBusyError, releaseComputerExecutionLease } from "./computer-lifecycle.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import {
+  routineClaimWaitsForConversation,
+  startRoutineRunsWaitingOn,
+} from "./routine-conversation.js";
+import type { RunComputerUseState, RunLeaseState } from "./run-context.js";
 import { notifyRun } from "./run-notifications.js";
 import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
-import { TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
+import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "./takeover-resume.js";
+import { wakeRun } from "./wake-run.js";
 
 /**
  * Avoid an expensive remote workspace export when a turn never touched the computer. A failed
@@ -88,11 +110,7 @@ export async function failRunBeforeTurn(
     error: message,
   });
   if (!failed) return false;
-  if (failed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(failed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, failed.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -103,7 +121,12 @@ export async function failRunBeforeTurn(
       { forceUnread: true },
     ).catch((error) => getLogger().error("bot message failure return", error));
   }
-  if (!failed.continuationRunId) {
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    // The chat that started the helper hears about its failure there, so it sends no push.
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
+      getLogger().error("background helper failure return", error),
+    );
+  } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(botName, "Bot")} failed`,
@@ -113,6 +136,14 @@ export async function failRunBeforeTurn(
     });
   }
   return true;
+}
+
+/** Starts the steered run that was waiting on this one, if any. */
+export async function enqueueSteeringContinuation(
+  deps: Pick<ExecutorDeps, "jobs">,
+  continuationRunId: string | null,
+): Promise<void> {
+  if (continuationRunId) await wakeRun(deps.jobs, continuationRunId);
 }
 
 export async function renewRunLease(
@@ -136,9 +167,23 @@ export async function renewRunLease(
 /** Consecutive setup failures, including this one, after which a run fails instead of retrying. */
 export const RUN_SETUP_FAILURE_LIMIT = 8;
 
+/** The most of a setup failure's reason an attempt keeps; the log line has the whole error. */
+export const RUN_SETUP_FAILURE_REASON_MAX = 2_000;
+
+/** A paused turn's pending tool is not offered right now, such as while the user's own computer is offline. */
+export class PausedTurnToolsUnavailableError extends Error {
+  constructor() {
+    super(
+      "A tool this paused task was using is not available, so it cannot continue. Start the task again.",
+    );
+    this.name = "PausedTurnToolsUnavailableError";
+  }
+}
+
 /**
  * Setup failures in a row before the current attempt. Busy-computer and database waits are
- * setup_failed attempts without an error; they neither count nor break the streak.
+ * setup_failed attempts without an error; they neither count nor break the streak. Any error
+ * text counts: an earlier release wrote one fixed text where this one writes the reason.
  */
 export async function setupFailureStreak(prisma: PrismaClient, runId: string): Promise<number> {
   const recent = await prisma.attempt.findMany({
@@ -187,7 +232,7 @@ export async function startNextWaitingRun(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
-  if (next) await deps.jobs.enqueue(runContinueJob(next.id));
+  if (next) await wakeRun(deps.jobs, next.id);
 }
 
 /** Open the model only while this worker still owns the running lease. */
@@ -233,9 +278,11 @@ export async function writeComputerRunRequeue(
     leaseOwner: workerId,
     leaseFence: fence,
   };
+  // With no retry timer a queued run is due now.
+  const queuedWakeAt = retryAt ?? new Date();
   const releasedHold = {
     status: "queued" as const,
-    wakeAt: retryAt,
+    wakeAt: queuedWakeAt,
     error,
     leaseOwner: null,
     leaseExpiresAt: null,
@@ -248,12 +295,10 @@ export async function writeComputerRunRequeue(
     data: releasedHold,
   });
   if (preserve.count === 1) return true;
+  const requeue = computerRunRequeueData(resumeCheckpoint, error, heldForTakeover);
   const planned = await deps.prisma.run.updateMany({
     where: { ...whereLease, checkpoint: null },
-    data: {
-      ...computerRunRequeueData(resumeCheckpoint, error, heldForTakeover),
-      wakeAt: releasedHold.wakeAt,
-    },
+    data: { ...requeue, wakeAt: requeue.status === "queued" ? queuedWakeAt : retryAt },
   });
   if (planned.count === 1) return true;
   const retried = await deps.prisma.run.updateMany({
@@ -267,15 +312,16 @@ export async function writeComputerRunRequeue(
 }
 
 /**
- * This worker is stopping and still owns the run. Queue it for another worker.
- * The row stays recoverable: no failure is recorded, and the lease does not keep
- * the next worker from claiming it.
+ * This worker stopped working on a run it still owns, because it is stopping or the database
+ * went away mid-turn. Queue it to start again. No failure is recorded, and the lease does not
+ * keep the next attempt from claiming it.
  */
-export async function requeueRunAfterShutdown(
+export async function requeueInterruptedRun(
   deps: ExecutorDeps,
   runId: string,
   workerId: string,
   fence: number,
+  wakeAt = new Date(),
 ): Promise<boolean> {
   const released = await deps.prisma.run.updateMany({
     where: {
@@ -289,13 +335,11 @@ export async function requeueRunAfterShutdown(
       error: null,
       leaseOwner: null,
       leaseExpiresAt: null,
-      wakeAt: null,
+      wakeAt,
     },
   });
   if (released.count !== 1) return false;
-  await deps.jobs
-    .enqueue(runContinueJob(runId))
-    .catch((error) => getLogger().error("shutdown run requeue", error));
+  await wakeRun(deps.jobs, runId, { at: wakeAt });
   return true;
 }
 
@@ -324,8 +368,286 @@ export async function requeueComputerRun(
     untilReleased ? null : retryAt,
   );
   if (!released || untilReleased) return;
-  await deps.jobs.enqueue({
-    ...runContinueJob(runId),
-    availableAt: retryAt,
+  await wakeRun(deps.jobs, runId, { at: retryAt });
+}
+
+/**
+ * Claims a due run for this worker under a new fence and marks it running. Undefined when the
+ * run is not due, another worker holds it, or its Space takes no new work.
+ */
+export async function claimRun(
+  deps: ExecutorDeps,
+  run: {
+    id: string;
+    spaceId: string;
+    botId: string;
+    trigger: string;
+    status: string;
+    checkpoint: string | null;
+    leaseFence: number;
+    startedAt: Date | null;
+    createdAt: Date;
+  },
+  workerId: string,
+) {
+  const fence = nextFence(run.leaseFence);
+  const now = new Date();
+  // A Space being deleted starts nothing; its runs wait for the deletion to end or be called
+  // off. Its lock comes before the run row, so a claim committing meanwhile is seen.
+  const leased = await deps.prisma.$transaction(async (tx) =>
+    !(await spaceTakesWork(tx, run.spaceId))
+      ? { count: 0 }
+      : tx.run.updateMany({
+          where: {
+            id: run.id,
+            ...continueRunClaimFence(run),
+            AND: [
+              { OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
+              routineClaimWaitsForConversation(run, now),
+            ],
+            OR: [
+              { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
+              {
+                status: { in: ["leased", "running"] },
+                leaseExpiresAt: { lte: now },
+              },
+            ],
+          },
+          data: {
+            status: "leased",
+            leaseOwner: workerId,
+            leaseFence: fence,
+            leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+            error: null,
+            checkpoint: null,
+            wakeAt: null,
+          },
+        }),
+  );
+  if (leased.count !== 1) return undefined;
+
+  const current = await deps.prisma.run.findUniqueOrThrow({
+    where: { id: run.id },
   });
+  if (
+    current.status === "queued" ||
+    current.status === "leased" ||
+    current.status === "waiting_input" ||
+    current.status === "waiting_takeover"
+  ) {
+    assertTransition(current.status as RunStatus, "running");
+  }
+  const started = await deps.prisma.run.updateMany({
+    where: {
+      id: run.id,
+      status: "leased",
+      leaseOwner: workerId,
+      leaseFence: fence,
+    },
+    data: { status: "running", computerUseStartedAt: null },
+  });
+  if (started.count !== 1) return undefined;
+  return { fence, current };
+}
+
+/**
+ * Setup failed before the run's turn: requeue it for another try, or fail it once setup has
+ * failed too many times in a row.
+ */
+export async function retryRunSetup(
+  deps: ExecutorDeps,
+  run: Parameters<typeof failRunBeforeTurn>[1],
+  attempt: { id: string; workerId: string; fence: number },
+  plan: {
+    resumeCheckpoint: TakeoverResumeCheckpoint | null;
+    heldForTakeover: boolean;
+    dispatchHandedOff: boolean;
+    leaseValid: boolean;
+    secrets: string[];
+  },
+  setupError: unknown,
+): Promise<void> {
+  const runId = run.id;
+  const { workerId, fence } = attempt;
+  const { resumeCheckpoint, heldForTakeover, dispatchHandedOff, secrets: runSecrets } = plan;
+  // An abort while stopping is not a setup failure, and must not spend the
+  // retry budget that eventually fails the run.
+  if (deps.shutdownSignal?.aborted) return;
+  const computerBusy = setupError instanceof ComputerBusyError;
+  // The outage logs itself once, and waiting it out is not a failed setup.
+  const databaseDown = databaseOutage.failed(setupError, "run setup");
+  const retryForever = computerBusy || databaseDown;
+  const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
+  const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
+  // An outage at the computer provider or the key manager, or a paused turn's tool going
+  // offline, is retried like any setup failure, but is not a Rakazo bug to report.
+  const providerOutage =
+    setupError instanceof SandboxUnavailableError ||
+    setupError instanceof SandboxUnresponsiveError ||
+    setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof VaultKeyUnavailableError;
+  // Named here, not left to the log context, so the line is found by run wherever it is written.
+  const runFields = {
+    "run.id": runId,
+    "space.id": run.spaceId,
+    "thread.id": run.threadId,
+    "bot.id": run.botId,
+  };
+  // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
+  if (databaseDown) {
+    // Logged by the outage.
+  } else if (providerOutage || !plan.leaseValid) {
+    getLogger().warn("run.setup_failed", { ...runFields, error: reportedSetupError });
+  } else if (!computerBusy) {
+    getLogger().error("run.setup_failed", reportedSetupError, runFields);
+  }
+  // Every write below is fenced by this attempt's lease, so each may wait out a failover.
+  const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
+    retryWhileDatabaseUnavailable(write, { source, signal: deps.shutdownSignal });
+  const priorFailures = retryForever
+    ? 0
+    : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
+  // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
+  // setup that fails every time would retry forever. End the run instead.
+  if (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1) {
+    const bot = await deps.prisma.bot.findUnique({
+      where: { id: run.botId },
+      select: { name: true },
+    });
+    await failRunBeforeTurn(
+      deps,
+      run,
+      bot?.name ?? "",
+      { attemptId: attempt.id, workerId, fence },
+      setupMessage,
+    );
+    return;
+  }
+  const retryDelay = providerOutage
+    ? providerOutageRetryDelay(priorFailures)
+    : computerRetryDelay(fence);
+  // One instant for the run and its wake-up job, so neither runs before the other.
+  const retryAt = new Date(Date.now() + retryDelay);
+  const released = await whileDatabaseDown("run requeue", () =>
+    writeComputerRunRequeue(
+      deps,
+      runId,
+      workerId,
+      fence,
+      resumeCheckpoint,
+      heldForTakeover,
+      retryForever ? null : "Run setup failed; retrying",
+      retryAt,
+    ),
+  );
+  if (released) {
+    await whileDatabaseDown("run requeue", () =>
+      deps.prisma.attempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: "setup_failed",
+          error: retryForever
+            ? null
+            : truncatePlainText(setupMessage, RUN_SETUP_FAILURE_REASON_MAX),
+          finishedAt: new Date(),
+        },
+      }),
+    );
+    if (retryForever || dispatchHandedOff) {
+      await wakeRun(deps.jobs, runId, { at: retryAt });
+      return;
+    }
+    throw new Error("Run setup failed; retrying", { cause: reportedSetupError });
+  }
+}
+
+/** Releases what an attempt held, however it ended, and lets the next waiting run start. */
+export async function finishRunAttempt(
+  deps: ExecutorDeps,
+  run: { id: string; botId: string; threadId: string },
+  attempt: { id: string; workerId: string; fence: number },
+  state: {
+    lease: RunLeaseState;
+    computerUse: RunComputerUseState;
+    computerLease: ComputerExecutionLease | null;
+  },
+  cleanup: { endRunConnectorState: (runId: string) => void; settleHelpers: () => Promise<void> },
+): Promise<void> {
+  const runId = run.id;
+  const { workerId, fence } = attempt;
+  const { lease, computerUse, computerLease } = state;
+  const { endRunConnectorState, settleHelpers } = cleanup;
+  // This attempt stopped working on the run. Whether it paused, lost the
+  // lease, was invalidated by the heartbeat or never finalised, the run
+  // row decides whether this worker's run-scoped state may end: a
+  // terminal run, or one another worker owns, never resumes here, while a
+  // paused or requeued run keeps its sessions for its next attempt. A
+  // successful finalisation already ended the state, and the terminal row
+  // this reads then only repeats that.
+  if (await runEndedForThisWorker(deps.prisma, { runId, leaseOwner: workerId })) {
+    endRunConnectorState(runId);
+  }
+  if (!lease.retainComputer) {
+    if (computerUse.screenRelease) {
+      const releaseContext = computerUse.screenRelease.keepWarm
+        ? { ...computerUse.screenRelease.context, keepScreenWarm: true }
+        : computerUse.screenRelease.context;
+      await deps.sandbox
+        .releaseScreen?.(computerUse.screenRelease.computer, releaseContext)
+        .catch(() => undefined);
+    }
+    await bestEffort(
+      "release computer execution lease",
+      releaseComputerExecutionLease(deps.prisma, computerLease),
+    );
+    // A stopping process requeues this run instead, and a run handed back after a database
+    // outage resumes here; either must keep its turn.
+    if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
+      await startNextWaitingRun(deps, run.botId, runId).catch((error) =>
+        getLogger().error("start next waiting run", error),
+      );
+    }
+  }
+  if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
+    await bestEffort(
+      "start routine runs waiting on the chat",
+      startRoutineRunsWaitingOn(deps, run),
+    );
+  }
+  if (deps.shutdownSignal?.aborted) {
+    // A renewal still in flight must not treat this release as a lost lease.
+    lease.completed = true;
+    await requeueInterruptedRun(deps, runId, workerId, fence).catch((error) =>
+      getLogger().error("shutdown run requeue", error),
+    );
+  }
+  await deps.prisma.attempt
+    .updateMany({
+      where: { id: attempt.id, status: "running" },
+      data: { status: "interrupted", finishedAt: new Date() },
+    })
+    .catch(() => undefined);
+  await settleHelpers();
+}
+
+/** Whether a run this attempt could not finalize is over for this worker: it
+ * reached a terminal state or another worker owns it, so its run-scoped state
+ * may end. A run re-claimed by this worker under a newer fence — recovered, or
+ * requeued after a pause — keeps its state for its next attempt. */
+export async function runEndedForThisWorker(
+  prisma: ExecutorDeps["prisma"],
+  input: { runId: string; leaseOwner: string },
+): Promise<boolean> {
+  try {
+    const run = await prisma.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true },
+    });
+    if (!run) return true;
+    if (isTerminal(run.status as RunStatus)) return true;
+    return run.leaseOwner !== null && run.leaseOwner !== input.leaseOwner;
+  } catch {
+    // Unknown keeps the state; the connector's idle bound still ends it.
+    return false;
+  }
 }

@@ -1,0 +1,25 @@
+appId: com.rakazo.app
+name: New account
+---
+# A hosted sign-up without a plan: the survey, then the paywall before the inbox.
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_FREE_EMAIL}
+- extendedWaitUntil:
+    visible: ".*How did you hear about us.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-signup-survey
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: ".*Put your bots to work.*"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-paywall
+- tapOn: "Yearly.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-paywall-yearly

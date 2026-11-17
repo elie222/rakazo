@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { canDeleteOrganization } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -10,17 +11,22 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import { CircleUserRound } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "../lib/auth";
+import { switchOrganization, useOrganizations } from "../lib/organizations";
+import { useQueryUserId } from "../lib/query";
+import { DeleteOrganizationDialog, removeOrganization } from "../pages/OrganizationSettingsPanel";
 import { DeleteAccountForm, hasDeleteRedirectError } from "./AccountAccess";
 
 /**
- * The way out before the app opens (plan choice, onboarding): log out or delete the account,
- * without reaching settings.
+ * The way out before the app opens (plan choice, onboarding): switch organization, delete an
+ * unwanted one, log out or delete the account, without reaching settings.
  */
 export function AccountMenu({
   disabled,
@@ -33,8 +39,14 @@ export function AccountMenu({
 }) {
   const { t } = useLingui();
   const email = authClient.useSession().data?.user.email;
+  const userId = useQueryUserId();
+  const { organizations, activeOrganizationId } = useOrganizations();
   // An SSO sign-in to confirm deletion returns here; reopen so its error is seen.
   const [deleting, setDeleting] = useState(hasDeleteRedirectError);
+  const [deletingOrganization, setDeletingOrganization] = useState(false);
+  const active = organizations.find((organization) => organization.id === activeOrganizationId);
+  const deletableOrganization =
+    active && canDeleteOrganization(organizations, active) ? active : null;
   return (
     <>
       <DropdownMenu>
@@ -61,6 +73,30 @@ export function AccountMenu({
               <DropdownMenuSeparator />
             </>
           ) : null}
+          {organizations.length > 1 ? (
+            <>
+              <DropdownMenuRadioGroup
+                value={activeOrganizationId}
+                onValueChange={(id) => {
+                  const organization = organizations.find((candidate) => candidate.id === id);
+                  if (organization && id !== activeOrganizationId)
+                    void switchOrganization(userId, organization);
+                }}
+              >
+                {organizations.map((organization) => (
+                  <DropdownMenuRadioItem key={organization.id} value={organization.id}>
+                    <span className="min-w-0 truncate">{organization.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          {deletableOrganization ? (
+            <DropdownMenuItem onClick={() => setDeletingOrganization(true)}>
+              <Trans>Delete organization</Trans>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={onLogOut}>
             <Trans>Log out</Trans>
           </DropdownMenuItem>
@@ -79,6 +115,13 @@ export function AccountMenu({
           <DeleteAccountForm open />
         </DialogContent>
       </Dialog>
+      {deletingOrganization && deletableOrganization ? (
+        <DeleteOrganizationDialog
+          organization={deletableOrganization}
+          onCancel={() => setDeletingOrganization(false)}
+          onConfirm={() => removeOrganization(deletableOrganization)}
+        />
+      ) : null}
     </>
   );
 }

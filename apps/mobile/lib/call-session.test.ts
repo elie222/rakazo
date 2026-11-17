@@ -1,10 +1,29 @@
-import { AiConsentBlocked, callIdFromClientNonce, INTERIM_BARGE_IN_MS } from "@rakazo/core";
+import type { AiConsentStatus, MessageBlock } from "@rakazo/contracts";
+import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
+import {
+  AiConsentBlocked,
+  CALL_FAREWELL_TIMEOUT_MS,
+  callIdFromClientNonce,
+  ensureAiDataConsent,
+  INTERIM_BARGE_IN_MS,
+} from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hapticImpact, hapticSuccess } from "./haptics";
+
+vi.mock("./haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
+
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
+  ECHO_GUARD_MS,
   ExpectedTurnFailure,
   endCall,
+  endCallBeforeSessionEnd,
   getSnapshot,
+  hangUp,
+  recordClip,
+  SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
   startCall,
   subscribe,
@@ -13,7 +32,9 @@ import {
 import type { SpeechRecognizer } from "./dictation";
 import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
 import { activateUiLocale, getActiveUiLocale } from "./i18n";
+import type { MobileSnapshot } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
+import { saveServerHeaders } from "./server-headers";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -23,6 +44,7 @@ import {
   saveSessionToken,
 } from "./session";
 import type { UiLocale } from "./ui-locale";
+import { ensureVoiceConsent, setDictationAudio } from "./voice";
 
 const device = vi.hoisted(() => ({ languageTag: "en-US", os: "ios" }));
 
@@ -35,9 +57,21 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+const files = vi.hoisted(() => ({ base64: async () => "" }));
+vi.mock("expo-file-system", () => ({
+  File: class {
+    async base64() {
+      return files.base64();
+    }
+    delete() {}
+  },
+  Paths: {},
+}));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
+  ensureVoiceConsent: vi.fn(async () => undefined),
+  setCallAudio: vi.fn(async () => undefined),
+  setDictationAudio: vi.fn(async () => undefined),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
 }));
@@ -57,17 +91,19 @@ const audio = vi.hoisted(() => ({
   record: vi.fn(),
   release: vi.fn(),
   setAudioMode: vi.fn(),
+  status: {} as { metering?: number },
+  uri: null as string | null,
 }));
 const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
-      uri = null;
+      uri = audio.uri;
       prepareToRecordAsync = () => audio.prepared;
       record = audio.record;
       stop = async () => undefined;
       release = audio.release;
-      getStatus = () => ({});
+      getStatus = () => audio.status;
     },
   },
   RecordingPresets: { HIGH_QUALITY: {} },
@@ -76,31 +112,32 @@ const expoAudioMock = vi.hoisted(() => () => ({
 vi.mock("expo-audio", () => expoAudioMock());
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
-  blockText: vi.fn(),
-  captureApiRequestContext: vi.fn(),
+  // The live session's context, so the production recorder's voice consent check can run.
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "https://api.test",
+    headers: {},
+    sessionGeneration: (await import("./session")).currentSessionGeneration(),
+  })),
   rpc: vi.fn(),
+}));
+vi.mock("./api-server", () => ({
+  configureSessionEndHangUp: vi.fn(),
+}));
+vi.mock("./api-live", () => ({
   subscribeThread: vi.fn(),
 }));
 
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
+const CALL_SESSION = {
+  category: "playAndRecord",
+  categoryOptions: ["mixWithOthers", "defaultToSpeaker", "allowBluetooth"],
+  mode: "default",
 };
 
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
+function idleThread(botId: string): MobileSnapshot {
+  return { threadId: "thread-1", botId, cursor: 0, olderCursor: null, run: null, messages: [] };
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-function fakes(opts: { onDevice?: boolean } = {}) {
+function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
   const recordings: Array<Deferred<CallClip | null>> = [];
   const signals: AbortSignal[] = [];
   const speeches: Array<Deferred<void>> = [];
@@ -108,8 +145,17 @@ function fakes(opts: { onDevice?: boolean } = {}) {
     async (_botId: string, _text: string, _clientNonce: string): Promise<string | undefined> =>
       "run-1",
   );
+  const answer = vi.fn(
+    async (
+      _botId: string,
+      _ask: { runId: string; messageId: string; answer: string },
+      _clientNonce: string,
+    ) => undefined,
+  );
+  const followUp = vi.fn(async (_botId: string, _text: string, _clientNonce: string) => undefined);
   const closeCall = vi.fn(async (_botId: string, _callId: string) => undefined);
   const unwatch = vi.fn();
+  let threadUpdate: (thread: MobileSnapshot) => void = () => undefined;
   let reply: (messageId: string, text: string, runId?: string) => void = () => undefined;
   let ended: (ended: CallEnded) => void = () => undefined;
   const spoken: string[] = [];
@@ -119,7 +165,11 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   });
   const cues: string[] = [];
   const waits: string[] = [];
+  const audioSession: boolean[] = [];
   const deps: CallDeps = {
+    audio: async (active) => {
+      audioSession.push(active);
+    },
     cue: async (cue) => {
       cues.push(cue);
     },
@@ -142,6 +192,8 @@ function fakes(opts: { onDevice?: boolean } = {}) {
     // The fake clip carries the words, so transcription is the identity.
     transcribe: async (clip) => clip.base64,
     send,
+    answer,
+    followUp,
     endCall: closeCall,
     speak: (_botId, text) => {
       spoken.push(text);
@@ -149,9 +201,12 @@ function fakes(opts: { onDevice?: boolean } = {}) {
       speeches.push(next);
       return next.promise;
     },
-    watch: (_botId, onReply, onCallEnded) => {
+    watch: (botId, onReply, onCallEnded, onThread) => {
       reply = onReply;
       ended = onCallEnded;
+      threadUpdate = onThread;
+      // The real watcher hands over the loaded thread first; the microphone waits for it.
+      if (opts.loadThread !== false) onThread(idleThread(botId));
       return unwatch;
     },
   };
@@ -159,6 +214,7 @@ function fakes(opts: { onDevice?: boolean } = {}) {
     deps,
     cues,
     waits,
+    audioSession,
     stopSpeaking,
     interim: (text: string) => handlers?.onInterim(text),
     hear: (text: string) => handlers?.onFinal(text),
@@ -167,8 +223,11 @@ function fakes(opts: { onDevice?: boolean } = {}) {
     speeches,
     spoken,
     send,
+    answer,
+    followUp,
     closeCall,
     unwatch,
+    thread: (thread: MobileSnapshot) => threadUpdate(thread),
     say: (text: string) =>
       recordings[recordings.length - 1]?.resolve({ base64: text, mimeType: "audio/m4a" }),
     replyWith: (messageId: string, text: string, runId?: string) => reply(messageId, text, runId),
@@ -179,6 +238,178 @@ function fakes(opts: { onDevice?: boolean } = {}) {
 afterEach(() => endCall());
 
 describe("mobile call session", () => {
+  it("confirms connection and explicit hang-up once, without buzzing for an absent or aborted call", async () => {
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    hangUp();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    hangUp();
+    hangUp();
+    expect(hapticImpact).toHaveBeenCalledTimes(1);
+    const opening = deferred<void>();
+    startCall({ botId: "bot-2", botName: "Bob" }, { ...fake.deps, cue: () => opening.promise });
+    endCall();
+    opening.resolve();
+    await flush();
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not confirm a connection when the remote farewell starts during its opening cue", async () => {
+    const fake = fakes();
+    const opening = deferred<void>();
+    const id = startCall(
+      { botId: "bot-1", botName: "Ada" },
+      { ...fake.deps, cue: () => opening.promise },
+    );
+    vi.mocked(hapticSuccess).mockClear();
+    fake.endedCall(id, "Goodbye.");
+    opening.resolve();
+    await flush();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    expect(fake.spoken).toEqual(["Goodbye."]);
+  });
+
+  it("keeps shared teardown and call replacement silent", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    startCall({ botId: "bot-2", botName: "Max" }, fake.deps);
+    await flush();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).toHaveBeenCalledOnce();
+    vi.mocked(hapticSuccess).mockClear();
+    endCall();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps remote termination silent", async () => {
+    const fake = fakes();
+    const id = startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
+    fake.endedCall(id);
+    expect(getSnapshot()).toBeNull();
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps a remote farewell timeout silent", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakes();
+      const id = startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await vi.advanceTimersByTimeAsync(0);
+      vi.mocked(hapticImpact).mockClear();
+      vi.mocked(hapticSuccess).mockClear();
+      fake.endedCall(id, "Talk soon.");
+      await vi.advanceTimersByTimeAsync(CALL_FAREWELL_TIMEOUT_MS);
+      expect(getSnapshot()).toBeNull();
+      expect(hapticImpact).not.toHaveBeenCalled();
+      expect(hapticSuccess).not.toHaveBeenCalled();
+    } finally {
+      endCall();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retains an answered incoming call's id through speech, messages and hang-up", async () => {
+    const fake = fakes();
+    const id = startCall(
+      { botId: "bot-1", botName: "Caller", answered: { callId: "incoming-1" } },
+      fake.deps,
+    );
+    expect(id).toBe("incoming-1");
+    await flush();
+    fake.say("Hello");
+    await flush();
+    expect(fake.send).toHaveBeenCalledWith("bot-1", "Hello", expect.stringContaining("incoming-1"));
+    endCall();
+    await flush();
+    expect(fake.closeCall).toHaveBeenCalledWith("bot-1", "incoming-1");
+  });
+
+  it("holds the call's audio session from pickup to hang-up", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.audioSession).toEqual([true]);
+    expect(fake.cues).toEqual(["start"]);
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "The task is ready.");
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(fake.audioSession).toEqual([true]);
+    endCall();
+    expect(fake.audioSession).toEqual([true, false]);
+  });
+
+  it("reports a call audio failure and still listens", async () => {
+    vi.mocked(reportMobileError).mockClear();
+    const fake = fakes();
+    const failure = new Error("audio session unavailable");
+    fake.deps.audio = async () => {
+      throw failure;
+    };
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(reportMobileError).toHaveBeenCalledWith(failure, "voice.microphone", {
+      source: "call-audio",
+    });
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("waits for the server hang-up before the sign-out continues", async () => {
+    const fake = fakes();
+    const closed = deferred<undefined>();
+    fake.closeCall.mockImplementation(() => closed.promise);
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    let finished = false;
+    const hangingUp = endCallBeforeSessionEnd().then(() => {
+      finished = true;
+    });
+    await flush();
+    expect(fake.closeCall).toHaveBeenCalledWith("bot-1", expect.any(String));
+    expect(finished).toBe(false);
+    closed.resolve(undefined);
+    await hangingUp;
+    expect(finished).toBe(true);
+  });
+
+  it("stops waiting for the hang-up once the sign-out window passes", async () => {
+    const fake = fakes();
+    const stuck = deferred<undefined>();
+    fake.closeCall.mockImplementation(() => stuck.promise);
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    vi.useFakeTimers();
+    try {
+      const hangingUp = endCallBeforeSessionEnd();
+      let finished = false;
+      void hangingUp.then(() => {
+        finished = true;
+      });
+      await vi.advanceTimersByTimeAsync(SIGN_OUT_HANG_UP_MS - 1);
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(finished).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      stuck.resolve(undefined);
+      await flush();
+    }
+  });
+
   it("starts listening for the bot on the call", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -201,6 +432,222 @@ describe("mobile call session", () => {
     expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: "how is the deploy going" });
   });
 
+  describe("answering what the bot is waiting on", () => {
+    const waitingOn = (
+      blocks: MobileSnapshot["messages"][number]["blocks"],
+      status = "waiting_input",
+    ): MobileSnapshot => ({
+      threadId: "thread-1",
+      botId: "bot-1",
+      cursor: 4,
+      olderCursor: null,
+      run: { id: "run-1", status },
+      messages: [{ id: "ask-1", runId: "run-1", role: "bot", blocks }],
+    });
+
+    it("answers the open question instead of sending a new message", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.thread(waitingOn([{ kind: "ask", text: "Ship it?", status: "pending" }]));
+      fake.say("yes");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.answer).toHaveBeenCalledWith(
+        "bot-1",
+        { runId: "run-1", messageId: "ask-1", answer: "yes" },
+        expect.stringMatching(/^call:/),
+      );
+      // Only the answered run's reply is spoken.
+      fake.replyWith("other", "Something else", "run-2");
+      fake.replyWith("reply", "Shipped.", "run-1");
+      expect(fake.spoken).toEqual(["Shipped."]);
+    });
+
+    it("speaks the answered run's reply even before the answer request returns", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      // An earlier spoken turn started run-0; the question belongs to run-1.
+      fake.send.mockResolvedValueOnce("run-0");
+      fake.say("start");
+      await flush();
+      const answered = deferred<undefined>();
+      fake.answer.mockReturnValueOnce(answered.promise);
+      fake.thread(waitingOn([{ kind: "ask", text: "Ship it?", status: "pending" }]));
+      fake.replyWith("start-reply", "Started.", "run-0");
+      fake.speeches[0]?.resolve();
+      await flush();
+      fake.say("yes");
+      await flush();
+      fake.replyWith("reply", "Shipped.", "run-1");
+      expect(fake.spoken).toEqual(["Started.", "Shipped."]);
+      answered.resolve(undefined);
+    });
+
+    it("speaks a follow-up's reply even before the follow-up request returns", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.send.mockResolvedValueOnce("run-0");
+      fake.say("start");
+      await flush();
+      const followed = deferred<undefined>();
+      fake.followUp.mockReturnValueOnce(followed.promise);
+      fake.thread(waitingOn([], "running"));
+      fake.replyWith("start-reply", "On it.", "run-0");
+      fake.speeches[0]?.resolve();
+      await flush();
+      fake.say("also check the tests");
+      await flush();
+      fake.replyWith("more", "Tests pass.", "run-5");
+      expect(fake.spoken).toEqual(["On it.", "Tests pass."]);
+      followed.resolve(undefined);
+    });
+
+    it("steers a run that is still working", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.thread(waitingOn([], "running"));
+      fake.say("also check the tests");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.followUp).toHaveBeenCalledWith(
+        "bot-1",
+        "also check the tests",
+        expect.stringMatching(/^call:/),
+      );
+    });
+
+    it("sends an approval to the screen and keeps listening", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.thread(
+        waitingOn([
+          {
+            kind: "ask",
+            text: "Send the email?",
+            status: "pending",
+            approvalEffectId: "effect-1",
+            actions: [
+              { id: "allow", label: "Allow" },
+              { id: "deny", label: "Deny" },
+            ],
+          },
+        ]),
+      );
+      fake.say("yes");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.answer).not.toHaveBeenCalled();
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        caption: "Approve or deny it on screen.",
+      });
+      expect(fake.recordings).toHaveLength(2);
+    });
+
+    it("ignores a snapshot from an ended call's watcher", async () => {
+      const fake = fakes();
+      const threadCallbacks: Array<(thread: MobileSnapshot) => void> = [];
+      const watch = fake.deps.watch;
+      fake.deps.watch = (botId, onReply, onEnded, onThread) => {
+        threadCallbacks.push(onThread);
+        return watch(botId, onReply, onEnded, onThread);
+      };
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      hangUp();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      const listening = fake.recordings.length;
+      threadCallbacks[0]?.(
+        waitingOn([{ kind: "ask", text: "Code?", input: "secret", status: "pending" }]),
+      );
+      expect(fake.signals.at(-1)?.aborted).toBe(false);
+      fake.say("hello");
+      await flush();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "hello", expect.stringMatching(/^call:/));
+      expect(fake.recordings.length).toBeGreaterThanOrEqual(listening);
+    });
+
+    it("tells the caller to enter a code when the thread loads with one pending", async () => {
+      const fake = fakes({ loadThread: false });
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      fake.thread(waitingOn([{ kind: "ask", text: "Code?", input: "secret", status: "pending" }]));
+      expect(fake.recordings).toHaveLength(0);
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
+    });
+
+    it("keeps the microphone shut until it knows whether the bot waits on a code", async () => {
+      const fake = fakes({ loadThread: false });
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      expect(fake.recordings).toHaveLength(0);
+      fake.thread(idleThread("bot-1"));
+      await flush();
+      expect(fake.recordings).toHaveLength(1);
+    });
+
+    it("keeps the microphone shut for a code another waiting run asks for", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      expect(fake.recordings).toHaveLength(1);
+      fake.thread({
+        threadId: "thread-1",
+        botId: "bot-1",
+        cursor: 5,
+        olderCursor: null,
+        run: { id: "run-1", status: "running" },
+        activeRuns: [
+          { id: "run-1", status: "running" },
+          { id: "run-2", status: "waiting_input" },
+        ],
+        messages: [
+          {
+            id: "code",
+            runId: "run-2",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Code?", input: "secret", status: "pending" }],
+          },
+        ],
+      });
+      expect(fake.signals[0]?.aborted).toBe(true);
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
+      fake.say("one two three");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.followUp).not.toHaveBeenCalled();
+    });
+
+    it("keeps the microphone shut while the bot waits on a code typed on screen", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await flush();
+      expect(fake.recordings).toHaveLength(1);
+      const secret = waitingOn([
+        { kind: "ask", text: "Code?", input: "secret", status: "pending" },
+      ]);
+      fake.thread(secret);
+      expect(fake.signals[0]?.aborted).toBe(true);
+      // The caller is told what to do without having to speak first.
+      expect(getSnapshot()?.caption).toBe("Hang up, then enter the code on screen.");
+      fake.say("one two three");
+      await flush();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.thread({ ...secret, run: { id: "run-1", status: "running" }, messages: [] });
+      await flush();
+      expect(fake.recordings).toHaveLength(2);
+      expect(getSnapshot()?.caption).toBe("");
+    });
+  });
+
   it("reports a failed turn unless the caption already explains it", async () => {
     vi.mocked(reportMobileError).mockClear();
     const fake = fakes();
@@ -220,6 +667,153 @@ describe("mobile call session", () => {
     fake.say("hello again");
     await flush();
     expect(reportMobileError).toHaveBeenCalledWith(unexpected, "voice.turn");
+  });
+
+  it("sends the saved server headers on the transcription request", async () => {
+    const server = "https://api.example.test";
+    await saveServerHeaders(server, { "x-proxy-token": "gate" });
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: "transcribed words" })),
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+    try {
+      const fake = fakes();
+      const { transcribe: _transcribe, ...deps } = fake.deps;
+      startCall(
+        {
+          botId: "bot-1",
+          botName: "Ada",
+          requestContext: {
+            apiBase: server,
+            headers: { authorization: "Bearer token" },
+            sessionGeneration: currentSessionGeneration(),
+          },
+        },
+        deps,
+      );
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${server}/api/voice/transcribe`);
+      const init = fetchImpl.mock.calls[0]?.[1];
+      expect(init?.redirect).toBe("error");
+      expect(new Headers(init?.headers).get("x-proxy-token")).toBe("gate");
+    } finally {
+      vi.unstubAllGlobals();
+      await saveServerHeaders(server, {});
+    }
+  });
+
+  describe("voice consent before a recorded clip is uploaded", () => {
+    const server = "https://api.example.test";
+    let allowed = false;
+    const prompt = vi.fn<(...args: unknown[]) => Promise<boolean>>();
+    const allow = vi.fn(async () => {
+      allowed = true;
+    });
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: "transcribed words" })),
+    );
+
+    beforeEach(() => {
+      allowed = false;
+      prompt.mockReset();
+      allow.mockClear();
+      fetchImpl.mockClear();
+      vi.mocked(reportMobileError).mockClear();
+      vi.stubGlobal("fetch", fetchImpl);
+      // The real disclosure flow, with the server's status and the user's answer faked.
+      vi.mocked(ensureVoiceConsent).mockImplementation(() =>
+        ensureAiDataConsent({
+          uses: ["voice"],
+          status: async (): Promise<AiConsentStatus> => ({
+            scope: "space",
+            version: "v1",
+            recipients: [{ key: "voice", name: "Voice", use: "voice", detail: "Audio", allowed }],
+          }),
+          prompt,
+          allow,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.mocked(ensureVoiceConsent).mockReset();
+    });
+
+    function ungreetedCall() {
+      const fake = fakes();
+      const { transcribe: _transcribe, ...deps } = fake.deps;
+      startCall(
+        {
+          botId: "bot-1",
+          botName: "Ada",
+          requestContext: {
+            apiBase: server,
+            headers: { authorization: "Bearer token" },
+            sessionGeneration: currentSessionGeneration(),
+          },
+        },
+        deps,
+      );
+      return fake;
+    }
+
+    it("holds the upload until the caller allows the recipient", async () => {
+      const answer = deferred<boolean>();
+      prompt.mockReturnValueOnce(answer.promise);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+
+      expect(prompt).toHaveBeenCalledOnce();
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      answer.resolve(true);
+      await flush();
+      await flush();
+      expect(allow).toHaveBeenCalledOnce();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
+
+    it("mutes without uploading when the caller refuses, as for speech", async () => {
+      prompt.mockResolvedValueOnce(false);
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(fake.send).not.toHaveBeenCalled();
+      expect(fake.recordings).toHaveLength(1);
+      expect(reportMobileError).not.toHaveBeenCalled();
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        muted: true,
+        caption: AI_CONSENT_REQUIRED,
+      });
+    });
+
+    it("uploads without asking again once the recipient is allowed", async () => {
+      allowed = true;
+      const fake = ungreetedCall();
+      await flush();
+      fake.say("spoken words");
+      await flush();
+      await flush();
+
+      expect(prompt).not.toHaveBeenCalled();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+    });
   });
 
   it("mutes after a consent refusal instead of reopening the microphone or resending", async () => {
@@ -298,6 +892,7 @@ describe("mobile call session", () => {
     const switchBot = vi.fn((text: string) =>
       text === "switch to Max" ? { name: "Max", ring } : undefined,
     );
+    vi.mocked(hapticImpact).mockClear();
     startCall({ botId: "bot-1", botName: "Ada", switchBot }, fake.deps);
     await flush();
     fake.say("switch to Max");
@@ -312,6 +907,7 @@ describe("mobile call session", () => {
     await flush();
     expect(ring).toHaveBeenCalledOnce();
     expect(getSnapshot()).toBeNull();
+    expect(hapticImpact).not.toHaveBeenCalled();
   });
 
   it("ignores replies throughout the hand-over cue and speech", async () => {
@@ -531,6 +1127,21 @@ describe("mobile call session", () => {
 
     expect(fake.recordings).toHaveLength(2);
     expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
+  });
+
+  it("checks on-device recognition once per call when the device has none", async () => {
+    const fake = fakes();
+    const dictate = vi.fn(fake.deps.dictate);
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...fake.deps, dictate });
+    await flush();
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+    fake.speeches[0]?.resolve();
+    await flush();
+
+    expect(fake.recordings).toHaveLength(2);
+    expect(dictate).toHaveBeenCalledOnce();
   });
 
   it("stops recording while muted", async () => {
@@ -975,6 +1586,7 @@ describe("mobile call speech locales", () => {
         isRecognitionAvailable: () => true,
         requestPermissionsAsync: async () => ({ granted: true }),
         getSupportedLocales: async () => ({ locales: IOS_LOCALES }),
+        getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
         addListener: (event, listener) => {
           listeners.set(event, listener as (payload: never) => void);
           return { remove: () => void listeners.delete(event) };
@@ -988,7 +1600,11 @@ describe("mobile call speech locales", () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(start).toHaveBeenCalledOnce();
-      expect.soft(start).toHaveBeenCalledWith({ lang, interimResults: true, continuous: true });
+      expect
+        .soft(start)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({ lang, interimResults: true, continuous: true }),
+        );
       listeners.get("result")?.({
         isFinal: false,
         results: [{ transcript: "status please" }],
@@ -1033,6 +1649,7 @@ describe("mobile call recognition recovery", () => {
       isRecognitionAvailable: () => true,
       requestPermissionsAsync: async () => ({ granted: true }),
       getSupportedLocales: async () => ({ locales: [] }),
+      getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
       addListener: (event, listener) => {
         listeners.set(event, listener as (payload: never) => void);
         return { remove: () => void listeners.delete(event) };
@@ -1046,6 +1663,11 @@ describe("mobile call recognition recovery", () => {
     fake.speeches[0]?.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(start).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iosCategory: CALL_SESSION,
+      }),
+    );
     return {
       ...fake,
       start,
@@ -1130,7 +1752,7 @@ describe("mobile call recognition recovery", () => {
     expect(fake.recordings).toHaveLength(0);
   });
 
-  it("falls back when the first start throws without reviving the failed session", async () => {
+  it("records one turn when the first start throws, then tries recognition again", async () => {
     const fake = await greetedCall(true, true);
     expect(fake.recordings).toHaveLength(1);
     fake.say("status please");
@@ -1139,10 +1761,35 @@ describe("mobile call recognition recovery", () => {
     fake.replyWith("message-1", "The task is ready.");
     await vi.advanceTimersByTimeAsync(0);
     expect(fake.recordings).toHaveLength(1);
+    expect(fake.start).toHaveBeenCalledOnce();
     fake.speeches[1]?.resolve();
     await vi.advanceTimersByTimeAsync(0);
+    expect(fake.recordings).toHaveLength(1);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps recording for the call once recognition fails twice in a row", async () => {
+    const fake = await greetedCall(true, true);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.start.mockImplementationOnce(() => {
+      throw new Error("recognizer unavailable");
+    });
+    fake.replyWith("message-1", "The task is ready.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.speeches[1]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.start).toHaveBeenCalledTimes(2);
     expect(fake.recordings).toHaveLength(2);
-    expect(fake.start).toHaveBeenCalledOnce();
+
+    fake.say("and the deploy");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.replyWith("message-2", "It shipped.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.speeches[2]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    expect(fake.recordings).toHaveLength(3);
   });
 
   it("falls back when restarting throws and keeps the new microphone open", async () => {
@@ -1220,7 +1867,7 @@ describe("mobile call recognition recovery", () => {
       expect(getSnapshot()).toMatchObject({
         phase: "listening",
         caption:
-          "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.",
+          "Allow speech recognition in Settings, or connect a voice provider that transcribes.",
       });
       expect(fake.start).toHaveBeenCalledOnce();
       expect(fake.recordings).toHaveLength(0);
@@ -1294,8 +1941,166 @@ describe("mobile call session on a timer", () => {
     expect(getSnapshot()).toBeNull();
   });
 
+  describe("Android echo guard and playback mic isolation", () => {
+    beforeEach(() => {
+      device.os = "android";
+    });
+    afterEach(() => {
+      device.os = "ios";
+    });
+
+    it("closes on-device dictation during playback and waits ECHO_GUARD_MS before reopening", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(false);
+
+      fake.hear("status please");
+      await tick();
+      fake.replyWith(
+        "message-1",
+        "I checked the staging deploy logs and all integration tests are green today.",
+      );
+      await tick();
+      expect(getSnapshot()?.phase).toBe("speaking");
+      // Playback did not open a new dictation session while speaking on Android.
+      expect(fake.signals).toHaveLength(1);
+      expect(fake.signals[0]?.aborted).toBe(true);
+
+      // Late interim or final events during Android playback must not barge in or reopen the mic.
+      fake.interim("unrelated noisy room chatter over speaker");
+      await tick(INTERIM_BARGE_IN_MS);
+      expect(fake.stopSpeaking).not.toHaveBeenCalled();
+      fake.hear("I checked the staging deploy logs and all integration tests are green");
+      await tick();
+      expect(fake.send).toHaveBeenCalledTimes(1);
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      await tick(1);
+      expect(getSnapshot()?.phase).toBe("listening");
+      expect(fake.signals).toHaveLength(2);
+      expect(fake.signals[1]?.aborted).toBe(false);
+    });
+
+    it("waits ECHO_GUARD_MS after playback before opening recording fallback on Android", async () => {
+      const fake = fakes();
+      startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.say("hello");
+      await tick();
+      fake.replyWith("message-1", "Hello there.");
+      await tick();
+      expect(fake.recordings).toHaveLength(1);
+
+      fake.speeches[0]?.resolve();
+      await tick(ECHO_GUARD_MS - 1);
+      expect(fake.recordings).toHaveLength(1);
+      expect(getSnapshot()?.phase).toBe("speaking");
+
+      await tick(1);
+      expect(fake.recordings).toHaveLength(2);
+      expect(getSnapshot()?.phase).toBe("listening");
+    });
+
+    it.each([false, true])(
+      "keeps the mic closed after a late send failure (guard: %s)",
+      async (duringGuard) => {
+        const fake = fakes({ onDevice: true });
+        const pending = deferred<string | undefined>();
+        fake.deps.send = () => pending.promise;
+        startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+        await tick();
+        fake.hear("hello");
+        await tick();
+        fake.replyWith("message-1", "Hello there.");
+        await tick();
+        if (duringGuard) {
+          fake.speeches[0]?.resolve();
+          await tick(200);
+        }
+        pending.reject(new Error("send disconnected"));
+        await tick();
+        expect(getSnapshot()?.phase).toBe("speaking");
+        expect(fake.signals).toHaveLength(1);
+        if (!duringGuard) fake.speeches[0]?.resolve();
+        await tick(ECHO_GUARD_MS);
+        expect(getSnapshot()?.phase).toBe("listening");
+        expect(fake.signals).toHaveLength(2);
+      },
+    );
+
+    it("handles mute and unmute cleanly across the Android echo guard window", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "Hi there.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      toggleMute();
+      await tick(ECHO_GUARD_MS);
+      // Guard transitions to listening while keeping the mic closed because muted is true.
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: true });
+      expect(fake.signals).toHaveLength(1);
+
+      toggleMute();
+      await tick();
+      expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
+      expect(fake.signals).toHaveLength(2);
+    });
+
+    it("cancels the pending Android echo guard on hang-up and on a follow-up reply", async () => {
+      const fake = fakes({ onDevice: true });
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.hear("hello");
+      await tick();
+      fake.replyWith("message-1", "First part.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(200);
+      // A second reply supersedes the pending guard immediately.
+      fake.replyWith("message-2", "Second part.");
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.signals).toHaveLength(1);
+
+      fake.speeches[1]?.resolve();
+      await tick(200);
+      endCall();
+      await tick(ECHO_GUARD_MS);
+      expect(getSnapshot()).toBeNull();
+      expect(fake.signals).toHaveLength(1);
+    });
+
+    it("hangs up immediately after a farewell on Android without waiting out the echo guard", async () => {
+      const fake = fakes({ onDevice: true });
+      const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+      await tick();
+      fake.endedCall(id, "Goodbye.");
+      await tick();
+
+      fake.speeches[0]?.resolve();
+      await tick(0);
+      expect(getSnapshot()).toBeNull();
+    });
+  });
+
   it("retries the first snapshot load instead of losing the feed", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     vi.mocked(rpc)
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
@@ -1314,7 +2119,8 @@ describe("mobile call session on a timer", () => {
   });
 
   it("stops the call feed when the server refuses it but keeps retrying a 503", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
     vi.mocked(rpc).mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
     vi.mocked(subscribeThread)
@@ -1329,6 +2135,8 @@ describe("mobile call session on a timer", () => {
 
     await tick(500);
     expect(subscribeThread).toHaveBeenCalledTimes(2);
+    // The feed already had a snapshot, and the refusal is permanent: the call ends.
+    expect(getSnapshot()).toBeNull();
     await tick(20_000);
     expect(subscribeThread).toHaveBeenCalledTimes(2);
     vi.mocked(rpc).mockReset();
@@ -1388,6 +2196,31 @@ describe("mobile call session on a timer", () => {
     expect(fake.closeCall).toHaveBeenCalledOnce();
   });
 
+  it("waits muted instead of recording when voice consent is refused without a greeting", async () => {
+    const fake = fakes();
+    const record = vi
+      .fn<CallDeps["record"]>()
+      .mockRejectedValueOnce(new AiConsentBlocked("voice consent denied"))
+      .mockImplementation(fake.deps.record);
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...fake.deps, record });
+    await tick();
+
+    expect(record).toHaveBeenCalledOnce();
+    expect(fake.recordings).toEqual([]);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "voice consent denied",
+    });
+    await tick(20_000);
+    expect(record).toHaveBeenCalledOnce();
+
+    toggleMute();
+    await tick();
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false });
+  });
+
   it("does not start speech again after consent refuse until the caller unmutes", async () => {
     const fake = fakes({ onDevice: true });
     fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
@@ -1423,7 +2256,8 @@ describe("mobile call session on a timer", () => {
   });
 
   it("reconnects the call feed when the live stream ends", async () => {
-    const { rpc, subscribeThread } = await import("./api");
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
     vi.mocked(rpc).mockResolvedValue({ cursor: 7, messages: [], run: null } as never);
     vi.mocked(subscribeThread).mockResolvedValue(undefined as never);
     const fake = fakes();
@@ -1437,6 +2271,146 @@ describe("mobile call session on a timer", () => {
     expect(vi.mocked(subscribeThread).mock.calls[1]?.[1]).toBe(7);
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
+  });
+
+  it("speaks the bot's reply without its tool activity, and listens again after activity alone", async () => {
+    const { rpc } = await import("./api");
+    const { subscribeThread } = await import("./api-live");
+    vi.mocked(rpc).mockResolvedValue(idleThread("bot-1") as never);
+    let push: Parameters<typeof subscribeThread>[2] = () => undefined;
+    vi.mocked(subscribeThread).mockImplementation(
+      (_target, _cursor, onEvent, signal) =>
+        new Promise((resolve) => {
+          push = onEvent;
+          signal.addEventListener("abort", () => resolve(undefined as never));
+        }),
+    );
+    const fake = fakes({ onDevice: true });
+    const { watch: _watch, ...deps } = fake.deps;
+    const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
+    await tick();
+    let seq = 0;
+    const message = (
+      messageId: string,
+      runId: string,
+      role: "user" | "bot",
+      blocks: MessageBlock[],
+    ) =>
+      push({
+        type: "thread.message.created",
+        seq: ++seq,
+        botId: "bot-1",
+        runId,
+        payload: { messageId, role, blocks, ...(role === "user" ? { callId: id } : {}) },
+      });
+    const shell: MessageBlock = { kind: "steps", steps: [{ label: "Shell", count: 1 }] };
+
+    fake.hear("Clean the build folder.");
+    await tick();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    message("turn-1", "run-1", "user", [{ kind: "text", text: "Clean the build folder." }]);
+    message("reply-1", "run-1", "bot", [
+      shell,
+      { kind: "progress", text: "Using shell", activity: true },
+    ]);
+    await tick();
+    expect(fake.spoken).toEqual([]);
+    expect(getSnapshot()?.phase).toBe("listening");
+
+    fake.send.mockResolvedValueOnce("run-2");
+    fake.hear("Is the build green?");
+    await tick();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    message("turn-2", "run-2", "user", [{ kind: "text", text: "Is the build green?" }]);
+    message("reply-2", "run-2", "bot", [
+      shell,
+      { kind: "text", text: "The build is green." },
+      { kind: "ask", text: "Should I deploy it?", status: "pending" },
+    ]);
+    await tick();
+    expect(fake.spoken).toEqual(["The build is green.\nShould I deploy it?"]);
+    vi.mocked(rpc).mockReset();
+    vi.mocked(subscribeThread).mockReset();
+  });
+});
+
+// Kept above the hang-up describe: its audio-import test resets modules, and the
+// production recorder does not work in this file after that reset.
+describe("mobile call recording without metering", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    audio.permission = Promise.resolve({ granted: true });
+    audio.prepared = Promise.resolve();
+    audio.record.mockClear();
+    audio.release.mockClear();
+    audio.setAudioMode.mockClear();
+    // A healthy recorder that never reports a level: pure silence is indistinguishable.
+    audio.status = {};
+    audio.uri = "file://silence.m4a";
+    files.base64 = async () => "c2lsZW5jZQ==";
+  });
+  afterEach(() => {
+    endCall();
+    vi.useRealTimers();
+    audio.status = {};
+    audio.uri = null;
+    files.base64 = async () => "";
+  });
+
+  it("switches recording on only for a dictated clip, never for a call turn", async () => {
+    vi.mocked(setDictationAudio).mockClear();
+    const { record: _record, ...deps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.record).toHaveBeenCalledOnce();
+    endCall();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(setDictationAudio).not.toHaveBeenCalled();
+    expect(audio.setAudioMode).not.toHaveBeenCalled();
+
+    const stopped = new AbortController();
+    const clip = recordClip(new AbortController().signal, stopped.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setDictationAudio).toHaveBeenCalledExactlyOnceWith(true);
+    stopped.abort();
+    await vi.advanceTimersByTimeAsync(200);
+    await clip;
+    expect(setDictationAudio).toHaveBeenLastCalledWith(false);
+  });
+
+  it("ends the clip before the cap and sends nothing for silence", async () => {
+    const fake = fakes();
+    const transcribe = vi.fn(async (clip: CallClip) => clip.base64);
+    const { record: _record, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...deps, transcribe });
+    await vi.advanceTimersByTimeAsync(0);
+    // The clip ends about a second in, well before the 30 s cap, and the next one starts.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(audio.record.mock.calls.length).toBeGreaterThan(1);
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(fake.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps speech from a recorder that reports its first level late", async () => {
+    const fake = fakes();
+    const transcribe = vi.fn(async () => "hello");
+    const { record: _record, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, { ...deps, transcribe });
+    await vi.advanceTimersByTimeAsync(0);
+    // A web recorder reports no level until it has started recording.
+    await vi.advanceTimersByTimeAsync(400);
+    audio.status = { metering: -10 };
+    await vi.advanceTimersByTimeAsync(600);
+    // Still the first recording: the late start did not end it.
+    expect(audio.record).toHaveBeenCalledTimes(1);
+    audio.status = { metering: -60 };
+    await vi.advanceTimersByTimeAsync(1_600);
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    // The recorder sends audio to the voice provider, so it asks before it opens.
+    expect(ensureVoiceConsent).toHaveBeenCalled();
   });
 });
 
@@ -1467,6 +2441,7 @@ describe("mobile call microphone after hang-up", () => {
         return next.promise;
       },
       getSupportedLocales: async () => ({ locales: [] }),
+      getAudioSessionCategoryAndOptionsIOS: () => CALL_SESSION,
       addListener: () => ({ remove: () => undefined }),
     });
     const { dictate: _first, ...firstDeps } = fakes().deps;
@@ -1534,17 +2509,11 @@ describe("mobile call microphone after hang-up", () => {
   it("does not ask for the microphone when the call ends during the audio import", async () => {
     vi.resetModules();
     const requestPermission = vi.fn(async () => ({ granted: true }));
-    let finishImport!: () => void;
-    let importStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      importStarted = resolve;
-    });
-    const pendingImport = new Promise<void>((resolve) => {
-      finishImport = resolve;
-    });
+    const started = deferred();
+    const pendingImport = deferred();
     vi.doMock("expo-audio", async () => {
-      importStarted();
-      await pendingImport;
+      started.resolve();
+      await pendingImport.promise;
       return {
         AudioModule: { requestRecordingPermissionsAsync: requestPermission },
         RecordingPresets: { HIGH_QUALITY: {} },
@@ -1555,9 +2524,9 @@ describe("mobile call microphone after hang-up", () => {
       const session = await import("./call-session");
       const { record: _record, ...deps } = fakes().deps;
       session.startCall({ botId: "bot-1", botName: "Ada" }, deps);
-      await started;
+      await started.promise;
       session.endCall();
-      finishImport();
+      pendingImport.resolve();
       await flush();
       expect(requestPermission).not.toHaveBeenCalled();
     } finally {
@@ -1604,6 +2573,8 @@ describe("mobile call on a session change", () => {
     startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
     await flush();
     expect(fake.signals).toHaveLength(1);
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
 
     const changing = change();
     // Before the new session is stored, so nothing of the call can reach it.
@@ -1613,6 +2584,8 @@ describe("mobile call on a session change", () => {
     expect(fake.stopSpeaking).toHaveBeenCalled();
     expect(fake.waits).toContain("release");
     await changing;
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it("does not start a call whose setup began before the session changed", async () => {
@@ -1655,12 +2628,16 @@ describe("mobile call on a session change", () => {
     const { send: _send, ...deps } = fake.deps;
     startCall({ botId: "bot-1", botName: "Ada" }, deps);
     await flush();
+    vi.mocked(hapticImpact).mockClear();
+    vi.mocked(hapticSuccess).mockClear();
     fake.say("hello");
     await flush();
 
     // A rejected session must not leave the microphone listening for the next turn.
     expect(getSnapshot()).toBeNull();
     expect(fake.signals.at(-1)?.aborted).toBe(true);
+    expect(hapticImpact).not.toHaveBeenCalled();
+    expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
   it("keeps a hang-up queued behind a send in flight on the call's own session", async () => {
@@ -1688,6 +2665,65 @@ describe("mobile call on a session change", () => {
         expect.objectContaining({ botId: "bot-1" }),
         { requestContext: expect.objectContaining({ sessionGeneration: callGeneration }) },
       ],
+    ]);
+  });
+
+  it("sends the hang-up while the session lasts when signing out during a call", async () => {
+    const { rpc } = await import("./api");
+    const fake = fakes();
+    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
+    const callGeneration = currentSessionGeneration();
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await flush();
+
+    await endCallBeforeSessionEnd();
+    await clearSessionToken();
+
+    expect(rpc).toHaveBeenCalledWith(
+      "threads/endCall",
+      { botId: "bot-1", callId: expect.any(String) },
+      { requestContext: expect.objectContaining({ sessionGeneration: callGeneration }) },
+    );
+  });
+
+  it("keeps a call's turns and hang-up on the Space it started in", async () => {
+    const { captureApiRequestContext, rpc } = await import("./api");
+    // The caller pins the Space at call start; the selection then moves to another
+    // organization's Space, which changes no session generation.
+    vi.mocked(captureApiRequestContext).mockImplementation(async () => ({
+      apiBase: "https://api.example.test",
+      headers: { "x-rakazo-space-id": "space-b" },
+      sessionGeneration: currentSessionGeneration(),
+    }));
+    const fake = fakes();
+    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
+    startCall(
+      {
+        botId: "bot-1",
+        botName: "Ada",
+        requestContext: {
+          apiBase: "https://api.example.test",
+          headers: { "x-rakazo-space-id": "space-a" },
+          sessionGeneration: currentSessionGeneration(),
+        },
+      },
+      deps,
+    );
+    await flush();
+    fake.say("hello");
+    await flush();
+    endCall();
+    await flush();
+
+    const sent = vi
+      .mocked(rpc)
+      .mock.calls.map(([path, , options]) => [
+        path,
+        options?.requestContext?.headers["x-rakazo-space-id"],
+      ]);
+    expect(sent).toEqual([
+      ["threads/send", "space-a"],
+      ["threads/endCall", "space-a"],
     ]);
   });
 });

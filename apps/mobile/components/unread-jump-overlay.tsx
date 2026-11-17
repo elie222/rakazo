@@ -1,15 +1,16 @@
-import type { ReactNode, RefObject } from "react";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
-  CellRendererProps,
   FlatList,
+  FlatListProps,
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
 import { StyleSheet, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
-import { useI18n } from "../lib/i18n";
 import type {
   InboxSignal,
   JumpDirection,
@@ -25,6 +26,10 @@ import {
   visibleRange,
 } from "../lib/offscreen-unreads";
 import { UNREAD_JUMP_PILL_HEIGHT, UnreadJumpPill } from "./unread-jump-pill";
+
+type CellRendererProps<Item> = ComponentProps<
+  NonNullable<FlatListProps<Item>["CellRendererComponent"]>
+>;
 
 const entering = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 const exiting = FadeOut.duration(160).reduceMotion(ReduceMotion.System);
@@ -51,7 +56,6 @@ export function useUnreadJumpPills<Item>({
   topInset: number;
   bottomInset: number;
 }) {
-  const { t } = useI18n();
   // Measured rows by key, so a row keeps its layout when rows above it come or go.
   const layouts = useRef(new Map<string, RowLayout>());
   // A jump to a row not measured yet scrolls to an estimate, then lands once the row lays out.
@@ -149,6 +153,7 @@ export function useUnreadJumpPills<Item>({
   // Replace FlatList's cell container to measure variable-height rows without extra wrappers.
   const CellRendererComponent = useMemo(
     () =>
+      // biome-ignore lint/correctness/noComponentHookFactories: memoized once and reads only refs, so cells never remount.
       function InboxCell({ cellKey, onLayout, style, children }: CellRendererProps<Item>) {
         return (
           <View
@@ -228,17 +233,46 @@ export function useUnreadJumpPills<Item>({
     );
   };
 
+  return {
+    listProps,
+    overlay: (
+      <UnreadJumpOverlay
+        pills={pills}
+        topInset={topInset}
+        bottomInset={bottomInset}
+        animateEntering={animateEntering}
+        onJump={jump}
+      />
+    ),
+  };
+}
+
+/** The pills themselves, over a list that counts its unread rows out of view above and below. */
+export function UnreadJumpOverlay({
+  pills,
+  topInset,
+  bottomInset,
+  animateEntering,
+  onJump,
+}: {
+  pills: { above?: JumpPill; below?: JumpPill };
+  topInset: number;
+  bottomInset: number;
+  animateEntering: boolean;
+  onJump: (direction: JumpDirection, pill: JumpPill) => void;
+}) {
+  const { t } = useLingui();
   const edge = (direction: JumpDirection, pill: JumpPill | undefined): ReactNode => {
     if (!pill) return null;
     const one = pill.count === 1;
     const label =
       pill.kind === "unread"
         ? one
-          ? t("1 unread")
-          : t("{count} unread", { count: pill.count })
+          ? t`1 unread`
+          : t`${ph({ count: pill.count })} unread`
         : one
-          ? t("Needs attention")
-          : t("{count} need attention", { count: pill.count });
+          ? t`Needs attention`
+          : t`${ph({ count: pill.count })} need attention`;
     return (
       <Animated.View
         key={direction}
@@ -254,24 +288,19 @@ export function useUnreadJumpPills<Item>({
         <UnreadJumpPill
           direction={direction}
           label={label}
-          accessibilityLabel={
-            direction === "above" ? t("{label}, above", { label }) : t("{label}, below", { label })
-          }
-          onPress={() => jump(direction, pill)}
+          accessibilityLabel={direction === "above" ? t`${label}, above` : t`${label}, below`}
+          onPress={() => onJump(direction, pill)}
         />
       </Animated.View>
     );
   };
 
-  return {
-    listProps,
-    overlay: (
-      <>
-        {edge("above", pills.above)}
-        {edge("below", pills.below)}
-      </>
-    ),
-  };
+  return (
+    <>
+      {edge("above", pills.above)}
+      {edge("below", pills.below)}
+    </>
+  );
 }
 
 const styles = StyleSheet.create({

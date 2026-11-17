@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ThreadSnapshot } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -135,6 +135,34 @@ describeAttachments("chat attachments", () => {
     });
     expect(Buffer.from(fetchedZip.contentBase64, "base64")).toEqual(zipBytes);
 
+    for (const [name, reportedTypes, expectedType] of [
+      [
+        "bundle.RAR",
+        ["application/vnd.rar", "application/x-rar-compressed", "application/octet-stream"],
+        "application/vnd.rar",
+      ],
+      [
+        "bundle.7Z",
+        ["application/x-7z-compressed", "application/x-7z", "application/octet-stream"],
+        "application/x-7z-compressed",
+      ],
+    ] as const) {
+      for (const mimeType of reportedTypes) {
+        const archive = await rpc<{ id: string; mimeType: string }>(
+          app,
+          cookie,
+          "artifacts/create",
+          {
+            botId: bot.id,
+            name,
+            mimeType,
+            contentBase64: Buffer.from("archive").toString("base64"),
+          },
+        );
+        expect(archive.mimeType).toBe(expectedType);
+      }
+    }
+
     const badMime = await raw(app, cookie, "artifacts/create", {
       botId: bot.id,
       name: "payload.exe",
@@ -199,7 +227,12 @@ describeAttachments("chat attachments", () => {
     )!;
     expect(reply.replyToMessageId).toBe(parent.id);
     expect(reply.replyQuote).toBe("Parent first line");
-    expect(reply.replyPreview).toEqual({ role: "user", text: "Parent first line" });
+    const me = await rpc<{ userId: string }>(app, cookie, "me");
+    expect(reply.replyPreview).toEqual({
+      role: "user",
+      author: { id: me.userId, name: "Reply User" },
+      text: "Parent first line",
+    });
     const event = await asSystem(botIntroHarness!.prisma).event.findFirst({
       where: {
         threadId: snapshot.threadId,
@@ -305,12 +338,12 @@ async function waitFor(
   botId: string,
   pred: (snap: ThreadSnapshot) => boolean,
 ) {
-  const start = Date.now();
-  let last: ThreadSnapshot | null = null;
-  while (Date.now() - start < 20_000) {
-    last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
-    if (pred(last)) return last;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+  return vi.waitFor(
+    async () => {
+      const last = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId });
+      if (pred(last)) return last;
+      throw new Error(`timeout waiting for thread: ${JSON.stringify(last)}`);
+    },
+    { timeout: 20_000, interval: 100 },
+  );
 }

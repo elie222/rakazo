@@ -3,23 +3,46 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { toComputerRef } from "./computer-support.js";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
-} from "./boat-sandbox.test-support.js";
-import { fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
-import { toComputerRef } from "./computer-support.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { emulatedNovita } from "./novita-sandbox.test-support.js";
+} from "./providers/computer/boat/boat-sandbox.test-support.js";
+import { fakeBoxdProvider } from "./providers/computer/boxd/boxd-sandbox.test-support.js";
+import { emulatedCreateOS } from "./providers/computer/createos/createos-sandbox.test-support.js";
+import { emulatedDaytona } from "./providers/computer/daytona/daytona-sandbox.test-support.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
+import { DockerSandboxProvider } from "./providers/computer/docker/docker-sandbox.js";
+import { emulatedDockerSupervisor } from "./providers/computer/docker/docker-sandbox.test-support.js";
+import { E2BSandboxProvider } from "./providers/computer/e2b/e2b-sandbox.js";
+import { FakeSandboxProvider } from "./providers/computer/fake/fake-sandbox.js";
+import { emulatedIncus } from "./providers/computer/incus/incus-sandbox.test-support.js";
+import { emulatedInstabox } from "./providers/computer/instabox/instabox-sandbox.test-support.js";
+import { emulatedKubernetes } from "./providers/computer/kubernetes/kubernetes-sandbox.test-support.js";
+import {
+  fakeCli,
+  removeFakeClis,
+} from "./providers/computer/local-vm/apple-container-sandbox.test-support.js";
+import {
+  emulatedNovita,
+  fakeNovita,
+} from "./providers/computer/novita/novita-sandbox.test-support.js";
+import { emulatedRailway } from "./providers/computer/railway/railway-sandbox.test-support.js";
+import { FakeWuyingDesktop } from "./providers/computer/wuying/wuying-sandbox.test-support.js";
+import { createSandboxProvider } from "./sandbox-factory.js";
+import type { KnownSandboxKind } from "./sandbox-kind-capabilities.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
-import { FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
 let restoreFetch: () => void;
-beforeAll(() => {
+let supervisor: Awaited<ReturnType<typeof emulatedDockerSupervisor>>;
+beforeAll(async () => {
   restoreFetch = routeFakeBoatDownloads();
+  supervisor = await emulatedDockerSupervisor();
 });
-afterAll(() => restoreFetch());
+afterAll(async () => {
+  restoreFetch();
+  await supervisor.close();
+});
 
 const ctx = {
   operationId: "1",
@@ -38,65 +61,101 @@ async function drain(provider: SandboxProvider, computer: ComputerRef) {
   return stdout;
 }
 
-describe("sandbox conformance", () => {
-  it("runs the same graphical command across fake, Boat, boxd, Novita, and desktop", async () => {
-    const fake = new FakeSandboxProvider();
-    const boat = fakeBoat();
-    const novita = emulatedNovita().provider();
-    const desktop = new DesktopSandboxProvider();
-    const boxd = fakeBoxdProvider();
-    const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
-    const b = await provisionPrepared(boat, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
-    const c = await provisionPrepared(desktop, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
-    const d = await provisionPrepared(novita, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
-    const e = await provisionPrepared(boxd, { botId: "bot-e", homePath: "/tmp/e" }, ctx);
-    expect(await drain(fake, a)).toContain("graphical-ok");
-    expect(await drain(boat, b)).toContain("graphical-ok");
-    expect(await drain(desktop, c)).toContain("graphical-ok");
-    expect(await drain(novita, d)).toContain("graphical-ok");
-    expect(await drain(boxd, e)).toContain("graphical-ok");
-    expect(new Set([a.id, b.id, c.id, d.id, e.id]).size).toBe(5);
-    await fake.destroy(a, ctx);
-    await boat.destroy(b, ctx);
-    await desktop.destroy(c, ctx);
-    await novita.destroy(d, ctx);
-    await boxd.destroy(e, ctx);
+/** An offline provider for the shared suite, or what a provider that cannot run computers does. */
+type SandboxConformanceFixture =
+  | {
+      provider(): SandboxProvider;
+      /** Files, screen actions and workspace export, beyond the lifecycle every provider runs. */
+      workspace: boolean;
+      /** Whether its emulated shell can show explicit unsets winning over the request's. */
+      unsetEnv: boolean;
+    }
+  | { refusesComputers: true };
+
+const temporaryRoots: string[] = [];
+function temporaryRoot() {
+  const root = mkdtempSync(path.join(tmpdir(), "rakazo-conformance-"));
+  temporaryRoots.push(root);
+  return root;
+}
+
+/** Keyed by every provider id, so a provider without an offline fixture fails typecheck. */
+const fixtures: Record<KnownSandboxKind, SandboxConformanceFixture> = {
+  none: { refusesComputers: true },
+  fake: { provider: () => new FakeSandboxProvider(), workspace: true, unsetEnv: true },
+  boat: { provider: () => fakeBoat(), workspace: true, unsetEnv: true },
+  boxd: { provider: () => fakeBoxdProvider(), workspace: true, unsetEnv: true },
+  novita: { provider: () => emulatedNovita().provider(), workspace: true, unsetEnv: true },
+  instabox: { provider: () => emulatedInstabox().provider(), workspace: true, unsetEnv: true },
+  desktop: {
+    provider: () => new DesktopSandboxProvider({ root: temporaryRoot() }),
+    workspace: true,
+    unsetEnv: true,
+  },
+  wuying: { provider: () => new FakeWuyingDesktop().provider(), workspace: true, unsetEnv: false },
+  e2b: {
+    // E2B and Novita share the remote desktop adapter, so one in-memory SDK serves both.
+    provider: () => new E2BSandboxProvider("test-e2b-key", fakeNovita().sdk),
+    workspace: true,
+    unsetEnv: true,
+  },
+  incus: { provider: () => emulatedIncus().provider, workspace: true, unsetEnv: true },
+  kubernetes: { provider: () => emulatedKubernetes().provider, workspace: true, unsetEnv: true },
+  createos: { provider: () => emulatedCreateOS().provider, workspace: false, unsetEnv: true },
+  docker: {
+    provider: () => new DockerSandboxProvider(supervisor.url, "test-supervisor-token"),
+    workspace: false,
+    unsetEnv: true,
+  },
+  daytona: { provider: () => emulatedDaytona().provider, workspace: true, unsetEnv: true },
+  railway: { provider: () => emulatedRailway().provider, workspace: false, unsetEnv: true },
+  "local-vm": { provider: () => fakeCli().provider, workspace: false, unsetEnv: false },
+};
+
+const running = Object.entries(fixtures).flatMap(([kind, fixture]) =>
+  "refusesComputers" in fixture ? [] : [{ kind, ...fixture }],
+);
+
+afterAll(() => {
+  removeFakeClis();
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe.each(running)("$kind sandbox conformance", (fixture) => {
+  it("provisions, runs a command, and treats a repeated destroy as success", async () => {
+    const provider = fixture.provider();
+    const computer = await provisionPrepared(
+      provider,
+      { botId: `${fixture.kind}-a`, homePath: `/tmp/${fixture.kind}-a` },
+      ctx,
+    );
+    expect(await drain(provider, computer)).toContain("graphical-ok");
+    await provider.destroy(computer, ctx);
+    await expect(provider.destroy(computer, ctx)).resolves.toBeUndefined();
   });
 
-  it("offers the same observation, action, and workspace contract across providers", async () => {
-    const providers: SandboxProvider[] = [
-      new FakeSandboxProvider(),
-      fakeBoat(),
-      fakeBoxdProvider(),
-      emulatedNovita().provider(),
-      new DesktopSandboxProvider(),
-      new FakeWuyingDesktop().provider(),
-    ];
-    for (const [index, provider] of providers.entries()) {
+  it.runIf(fixture.workspace)(
+    "offers the shared observation, action and workspace contract",
+    async () => {
+      const provider = fixture.provider();
       const computer = await provisionPrepared(
         provider,
-        { botId: `portable-${index}`, homePath: `/tmp/portable-${index}` },
+        { botId: `${fixture.kind}-portable`, homePath: `/tmp/${fixture.kind}-portable` },
         ctx,
       );
       await assertSandboxWorkspaceContract(provider, computer, ctx);
       await provider.destroy(computer, ctx);
-    }
-  });
+    },
+  );
 
-  it("explicit unsets win over inherited and request variables across providers", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-unset-env-"));
-    const providers: SandboxProvider[] = [
-      new FakeSandboxProvider(),
-      fakeBoat(),
-      fakeBoxdProvider(),
-      emulatedNovita().provider(),
-      new DesktopSandboxProvider({ root }),
-    ];
-    vi.stubEnv("RAKAZO_COMMAND_UNSET_TEST", "fake-host-value");
-    try {
-      for (const [index, provider] of providers.entries()) {
+  it.runIf(fixture.unsetEnv)(
+    "lets explicit unsets win over inherited and request variables",
+    async () => {
+      vi.stubEnv("RAKAZO_COMMAND_UNSET_TEST", "fake-host-value");
+      try {
+        const provider = fixture.provider();
         const computer = await provider.provision(
-          { botId: `unset-${index}`, homePath: "/unused" },
+          { botId: `${fixture.kind}-unset`, homePath: "/unused" },
           ctx,
         );
         const events = [];
@@ -112,13 +171,22 @@ describe("sandbox conformance", () => {
           events.push(event);
         expect(events).toEqual([{ type: "exit", code: 1 }]);
         await provider.destroy(computer, ctx);
+      } finally {
+        vi.unstubAllEnvs();
       }
-    } finally {
-      vi.unstubAllEnvs();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    },
+  );
+});
 
+it("refuses computers on a provider that has none", async () => {
+  for (const [kind, fixture] of Object.entries(fixtures)) {
+    if (!("refusesComputers" in fixture)) continue;
+    const provider = await createSandboxProvider(kind, {});
+    await expect(provider.provision({ botId: "b", homePath: "/unused" }, ctx)).rejects.toThrow();
+  }
+});
+
+describe("desktop sandbox", () => {
   it("desktop executor passes request env to the command", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-env-"));
     const desktop = new DesktopSandboxProvider({ root });
@@ -250,27 +318,6 @@ describe("sandbox conformance", () => {
     expect(events).toContainEqual({ type: "stderr", data: "command aborted\n" });
 
     await desktop.destroy(computer, ctx);
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it("treats a repeated destroy as success so a stale deletion retry is safe", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "rakazo-destroy-idempotent-"));
-    const providers: SandboxProvider[] = [
-      new FakeSandboxProvider(),
-      fakeBoat(),
-      fakeBoxdProvider(),
-      emulatedNovita().provider(),
-      new DesktopSandboxProvider({ root }),
-    ];
-    for (const [index, provider] of providers.entries()) {
-      const computer = await provisionPrepared(
-        provider,
-        { botId: `destroy-twice-${index}`, homePath: `/tmp/destroy-twice-${index}` },
-        ctx,
-      );
-      await provider.destroy(computer, ctx);
-      await expect(provider.destroy(computer, ctx)).resolves.toBeUndefined();
-    }
     rmSync(root, { recursive: true, force: true });
   });
 

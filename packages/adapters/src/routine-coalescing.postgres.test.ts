@@ -14,8 +14,7 @@ import { createRunExecutor } from "./executor.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 describePostgres("routine timer coalescing (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
@@ -25,11 +24,7 @@ describePostgres("routine timer coalescing (PostgreSQL)", () => {
     db = createDb(url!);
     system = asSystem(db.prisma);
     const provisioned = await runAsSystem("routine coalescing fixture", () =>
-      provisionMessagingIdentity(
-        db.prisma,
-        { provider: "email", address },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const { userId, spaceId, botId, threadId } = provisioned;
     identity = { userId, spaceId, botId, threadId };

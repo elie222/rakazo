@@ -1,5 +1,6 @@
+import { ClientError } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { withTransactionRetry } from "./transaction-retry.js";
+import { TransactionConflictError, withTransactionRetry } from "./transaction-retry.js";
 
 const conflict = (code: string) => Object.assign(new Error("transaction failed"), { code });
 const driverConflict = (originalCode: string) =>
@@ -13,6 +14,13 @@ describe("withTransactionRetry", () => {
     ["a Prisma write conflict or deadlock", conflict("P2034")],
     ["a Postgres deadlock", driverConflict("40P01")],
     ["a Postgres serialization failure", driverConflict("40001")],
+    [
+      "a serialization failure at commit, unwrapped",
+      Object.assign(new Error("TransactionWriteConflict"), {
+        name: "DriverAdapterError",
+        cause: { originalCode: "40001", kind: "TransactionWriteConflict" },
+      }),
+    ],
     [
       "a transaction that never started",
       Object.assign(
@@ -32,6 +40,15 @@ describe("withTransactionRetry", () => {
     const operation = vi.fn().mockRejectedValue(error);
 
     await expect(withTransactionRetry(operation)).rejects.toBe(error);
+    expect(operation).toHaveBeenCalledTimes(3);
+  });
+
+  it("runs a transaction that found its reads changed again, then answers a conflict", async () => {
+    const error = new TransactionConflictError("Changed while saving; retry");
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(withTransactionRetry(operation)).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(error).toBeInstanceOf(ClientError);
     expect(operation).toHaveBeenCalledTimes(3);
   });
 

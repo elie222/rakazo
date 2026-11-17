@@ -1,6 +1,9 @@
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import { Alert, Platform } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isComposeViewAvailable } from "./compose-available";
+import { showIOSActionSheet } from "./ios-action-sheet";
 import { presentMessageActionSheet } from "./message-action-sheet";
 import {
   dismissMessageActionSheet,
@@ -11,10 +14,10 @@ import {
 } from "./message-action-sheet-store";
 
 vi.mock("./compose-available", () => ({ isComposeViewAvailable: vi.fn(() => false) }));
+vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: vi.fn() }));
 
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
-  ActionSheetIOS: { showActionSheetWithOptions: vi.fn() },
   Alert: { alert: vi.fn() },
 }));
 
@@ -40,7 +43,7 @@ describe("native message action sheet", () => {
   it("preserves every iOS action, timestamp, appearance and cancellation", () => {
     Platform.OS = "ios";
     const actions = sheet();
-    const [options, select] = vi.mocked(ActionSheetIOS.showActionSheetWithOptions).mock.calls[0]!;
+    const [options, select] = vi.mocked(showIOSActionSheet).mock.calls[0]!;
     expect(options).toEqual({
       options: ["Reply", "React", "Speak", "Copy", "Cancel"],
       cancelButtonIndex: 4,
@@ -95,18 +98,16 @@ describe("native message action sheet", () => {
       const current = getMessageActionSheet()!;
       expect(current).toEqual({ actions, title: "12:34", colorScheme: "light", selected: 2 });
       expect(Alert.alert).not.toHaveBeenCalled();
-      let hidden!: () => void;
-      const hide = vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            hidden = resolve;
-          }),
-      );
+      let hidden!: Deferred;
+      const hide = vi.fn(() => {
+        hidden = deferred();
+        return hidden.promise;
+      });
       const selected = selectMessageActionSheet(current, 3, hide);
       await selectMessageActionSheet(current, 3, hide);
       expect(hide).toHaveBeenCalledOnce();
       expect(actions[3]!.onPress).not.toHaveBeenCalled();
-      hidden();
+      hidden.resolve();
       await selected;
       expect(getMessageActionSheet()).toBeNull();
       expect(actions[3]!.onPress).toHaveBeenCalledOnce();
@@ -139,7 +140,7 @@ describe("native message action sheet", () => {
     const unmount = mountMessageActionSheetHost();
     try {
       sheet();
-      expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledOnce();
+      expect(showIOSActionSheet).toHaveBeenCalledOnce();
       expect(isComposeViewAvailable).not.toHaveBeenCalled();
       expect(getMessageActionSheet()).toBeNull();
     } finally {

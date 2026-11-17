@@ -1,14 +1,14 @@
 import { randomInt } from "node:crypto";
 import type { BillingProvider } from "@rakazo/adapter-kit";
 import type { BillingStatus } from "@rakazo/contracts";
-import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   extendByokFreePeriod,
   FREE_MONTH_DAYS,
   hasBillingAccess,
-  Prisma,
+  isUniqueViolation,
   reconcileCreditPurchase,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -28,7 +28,7 @@ export function createReferrals(deps: {
   webOrigin: string;
 }) {
   const { prisma, provider } = deps;
-  const rewardCents = BYOK_MONTHLY_PRICE_CENTS;
+  const rewardCents = BYOK_TIERS.standard.monthlyPriceCents;
   const enabled = rewardCents !== null && Boolean(provider.grantBalanceCredit);
 
   async function codeFor(organizationId: string): Promise<string> {
@@ -93,14 +93,27 @@ export function createReferrals(deps: {
       return { url: `${deps.webOrigin}/sign-up?ref=${code}`, rewards };
     },
 
+    /** Whether the organization was invited and has not subscribed yet, so its trial is longer. */
+    async invited(organizationId: string) {
+      if (!enabled) return false;
+      const count = await prisma.referral.count({ where: { organizationId, outcome: null } });
+      return count > 0;
+    },
+
     /** Only before the organization's first subscription, so nobody claims after paying. */
-    async claim(organizationId: string, code: string) {
+    async claim(organizationId: string, code: string, userId: string) {
       if (!enabled) return;
       const [referrer, account] = await Promise.all([
         prisma.referralCode.findUnique({ where: { code } }),
         billingAccountForOrganization(prisma, organizationId),
       ]);
       if (!referrer || referrer.organizationId === organizationId || account?.subscribedAt) return;
+      // The friend's longer trial is a gift between people, so a code from an organization the
+      // claiming owner also belongs to earns nothing. Teammates two companies share do not count.
+      const self = await prisma.member.count({
+        where: { organizationId: referrer.organizationId, userId },
+      });
+      if (self > 0) return;
       await prisma.referral.createMany({
         data: [{ organizationId, referrerOrganizationId: referrer.organizationId }],
         skipDuplicates: true,
@@ -164,10 +177,6 @@ export function createReferrals(deps: {
       }
     },
   };
-}
-
-function isUniqueViolation(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 function newCode() {

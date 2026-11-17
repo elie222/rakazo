@@ -1,6 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import { MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,17 +12,19 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
-import { changePassword } from "../../lib/api";
+import { changePassword } from "../../lib/api-auth";
 import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
+import { endCallBeforeSessionEnd } from "../../lib/call-session";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function ChangePassword() {
+  const call = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -40,19 +43,21 @@ export default function ChangePassword() {
 
   function close() {
     if (router.canGoBack()) router.back();
-    else router.replace("/account");
+    else router.replace("/profile");
   }
 
   async function save() {
     if (!ready || submitting.current) return;
     if (newPassword !== confirmation) {
-      setError(t("Passwords do not match"));
+      setError(t`Passwords do not match`);
       return;
     }
     submitting.current = true;
     setPending(true);
     setError(null);
     try {
+      // Hang up while the session still exists, so the server records the call's end.
+      await endCallBeforeSessionEnd();
       await changePassword(currentPassword, newPassword);
       if (!mounted.current) return;
       setCurrentPassword("");
@@ -60,7 +65,7 @@ export default function ChangePassword() {
       setConfirmation("");
       close();
     } catch (cause) {
-      setError(errorText(cause, t("Could not change password")));
+      setError(errorText(cause, t`Could not change password`));
     } finally {
       submitting.current = false;
       setPending(false);
@@ -70,6 +75,7 @@ export default function ChangePassword() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <KeyboardAvoidingView
+        enabled={!call}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.screen}
       >
@@ -81,19 +87,19 @@ export default function ChangePassword() {
         >
           {[
             {
-              label: t("Current password"),
+              label: t`Current password`,
               value: currentPassword,
               onChange: setCurrentPassword,
               current: true,
             },
             {
-              label: t("New password"),
+              label: t`New password`,
               value: newPassword,
               onChange: setNewPassword,
               current: false,
             },
             {
-              label: t("Confirm password"),
+              label: t`Confirm password`,
               value: confirmation,
               onChange: setConfirmation,
               current: false,
@@ -125,7 +131,7 @@ export default function ChangePassword() {
           <NativeActionButton
             busy={pending}
             disabled={!ready}
-            label={t("Change password")}
+            label={t`Change password`}
             onPress={() => void save()}
           />
         </ScrollView>

@@ -7,6 +7,7 @@ import {
   matchesPluginQuery,
   matchesWordPrefixes,
   pluginCategory,
+  pluginSite,
 } from "./plugin-catalog.js";
 
 function entry(
@@ -97,11 +98,51 @@ describe("managedAppFor", () => {
     expect(managedAppFor(entry({ name: "google-calendar" }), apps)).toBe(apps[0]);
     expect(managedAppFor(entry({ name: "calcom", displayName: "Calcom" }), apps)).toBeUndefined();
   });
+
+  it("matches non-Latin names without colliding with unrelated apps", () => {
+    const apps = [
+      { name: "日历", slug: "calendar" },
+      { name: "笔记", slug: "notes" },
+    ];
+    expect(managedAppFor(entry({ name: "plugin", displayName: "笔 记" }), apps)).toBe(apps[1]);
+    expect(managedAppFor(entry({ name: "plugin", displayName: "相册" }), apps)).toBeUndefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "α\u0301" }), [{ name: "ά", slug: "a" }]),
+    ).toBeDefined();
+    expect(
+      managedAppFor(entry({ name: "plugin", displayName: "ος" }), [{ name: "ΟΣ", slug: "o" }]),
+    ).toBeDefined();
+  });
+
+  it("does not match empty, punctuation-only or emoji-only names", () => {
+    const apps = [{ name: "\u2708\uFE0F", slug: "calendar" }];
+    for (const displayName of ["", "---", "\u2615\uFE0F"]) {
+      expect(managedAppFor(entry({ name: "notes", displayName }), apps)).toBeUndefined();
+    }
+  });
 });
 
 describe("installedPluginParts", () => {
   it("reads chosen parts and treats older installs as complete", () => {
     expect(installedPluginParts({ parts: ["skills"] })).toEqual(["skills"]);
     expect(installedPluginParts({})).toEqual(["connector", "skills"]);
+  });
+});
+
+describe("pluginSite", () => {
+  it("uses the product's own site for an icon, never GitHub's", () => {
+    expect(pluginSite(entry({ name: "a", domains: ["cal.com/app"] }))).toBe("https://cal.com");
+    expect(pluginSite(entry({ name: "a", homepage: "https://sentry.io/for/ai" }))).toBe(
+      "https://sentry.io",
+    );
+    expect(pluginSite(entry({ name: "a", homepage: "https://github.com/acme/plugin" }))).toBeNull();
+    expect(
+      pluginSite(entry({ name: "a", homepage: "https://github.com./acme/plugin" })),
+    ).toBeNull();
+    expect(pluginSite(entry({ name: "a", homepage: "https://docs.github.com/acme" }))).toBeNull();
+    expect(pluginSite(entry({ name: "a", homepage: "https://notgithub.com/acme" }))).toBe(
+      "https://notgithub.com",
+    );
+    expect(pluginSite(entry({ name: "a", homepage: "not a url" }))).toBeNull();
   });
 });

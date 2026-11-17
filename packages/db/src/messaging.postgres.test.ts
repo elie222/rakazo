@@ -5,8 +5,7 @@ import { issueMessagingLinkCode, provisionMessagingIdentity } from "./messaging.
 import { asSystem, runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   const provider = "sendblue";
@@ -17,11 +16,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   // Production provisions from the inbound messaging webhook.
   const provision = (from: string) =>
     runAsSystem("messaging inbound", () =>
-      provisionMessagingIdentity(
-        prisma,
-        { provider, address: from },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      ),
+      provisionMessagingIdentity(prisma, { provider, address: from }),
     );
 
   afterAll(async () => {

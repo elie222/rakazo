@@ -45,7 +45,7 @@ export function BotCreatePicker({
         className="h-auto max-h-(--available-height) rounded-none border-0 bg-transparent p-0"
       >
         <label className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-          <span className="shrink-0 text-[13px] text-muted-foreground">
+          <span className="shrink-0 text-body-sm text-muted-foreground">
             <Trans>To:</Trans>
           </span>
           <input
@@ -53,7 +53,7 @@ export function BotCreatePicker({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t`Search`}
             aria-label={t`Search`}
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
         <CommandList className="flex min-h-0 max-h-none flex-col overflow-hidden p-1 [&>[cmdk-list-sizer]]:flex [&>[cmdk-list-sizer]]:min-h-0 [&>[cmdk-list-sizer]]:flex-col">

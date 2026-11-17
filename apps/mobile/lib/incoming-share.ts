@@ -1,3 +1,4 @@
+import type { Directory } from "expo-file-system";
 import { File, Paths } from "expo-file-system";
 import type { SharePayload } from "expo-sharing";
 import { clearSharedPayloads, getSharedPayloads } from "expo-sharing";
@@ -16,6 +17,56 @@ let copyId = 0;
 let pending: IncomingShare | null = null;
 let expiry: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
+
+/** The app group in app.json where the iOS share extension copies shared files. */
+export const IOS_SHARE_APP_GROUP = "group.com.rakazo.app";
+
+/** Only iOS builds that include the share extension have its container. */
+function iosShareContainer(): Directory | null {
+  if (Platform.OS !== "ios") return null;
+  try {
+    return Paths.appleSharedContainers[IOS_SHARE_APP_GROUP] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function supported() {
+  return Platform.OS === "android" || iosShareContainer() !== null;
+}
+
+/** The iOS extension hands over copies it made for us, so they are deleted once the share is
+ * done. Android hands over the sender's own URIs, which are never deleted. */
+export function releaseIncomingShareFiles(files: IncomingShare["files"]) {
+  const container = iosShareContainer();
+  if (!container) return;
+  // A file a newer share still needs stays; the extension reuses a file's name for its copy.
+  const kept = new Set(pending?.files.map((file) => file.uri));
+  for (const { uri } of files) {
+    if (kept.has(uri) || !uri.startsWith(container.uri)) continue;
+    try {
+      const file = new File(uri);
+      if (file.exists) file.delete();
+    } catch {
+      // Already gone; the next cold start sweeps anything left.
+    }
+  }
+}
+
+/** A cold start has no import in flight, so copies no new share names are leftovers. */
+function sweepIosShareContainer(keep: IncomingShare["files"]) {
+  const container = iosShareContainer();
+  if (!container) return;
+  const kept = new Set(keep.map((file) => new File(file.uri).name));
+  try {
+    // Hidden files belong to iOS: deleting the container's metadata makes it a new container.
+    for (const entry of container.list())
+      if (entry instanceof File && !entry.name.startsWith(".") && !kept.has(entry.name))
+        entry.delete();
+  } catch {
+    // Leftovers are retried on the next cold start.
+  }
+}
 
 function publish(share: IncomingShare | null) {
   clearTimeout(expiry);
@@ -44,17 +95,22 @@ export function hasIncomingShare() {
 }
 
 export function cancelIncomingShare() {
-  if (Platform.OS !== "android") return;
+  if (!supported()) return;
+  const dropped = pending;
   generation += 1;
   clearSharedPayloads();
   publish(null);
+  if (dropped) releaseIncomingShareFiles(dropped.files);
 }
 
 /** Called only by native-intent, so reopening without a share cannot revive old native data. */
 export function receiveIncomingShare(isShare: boolean, initial: boolean) {
-  if (Platform.OS !== "android") return;
+  if (!supported()) return;
   if (!isShare) {
-    if (initial) cancelIncomingShare();
+    if (initial) {
+      cancelIncomingShare();
+      sweepIosShareContainer([]);
+    }
     return;
   }
   const payloads = getSharedPayloads();
@@ -79,16 +135,22 @@ export function receiveIncomingShare(isShare: boolean, initial: boolean) {
     arrivedAt: Date.now(),
     generation: ++generation,
   };
+  const replaced = pending;
   publish(share.text || share.files.length ? share : null);
+  if (replaced) releaseIncomingShareFiles(replaced.files);
+  if (initial) sweepIosShareContainer(share.files);
 }
 
 /** Claim synchronously: a second chat/effect cannot take the same share. */
 export function takeIncomingShare(): IncomingShare | null {
-  if (Platform.OS !== "android") return null;
+  if (!supported()) return null;
   const share = pending;
   clearSharedPayloads();
   publish(null);
-  return share && Date.now() - share.arrivedAt < MAX_AGE_MS ? share : null;
+  if (!share) return null;
+  if (Date.now() - share.arrivedAt < MAX_AGE_MS) return share;
+  releaseIncomingShareFiles(share.files);
+  return null;
 }
 
 export function isIncomingShareCurrent(share: IncomingShare) {
@@ -97,7 +159,8 @@ export function isIncomingShareCurrent(share: IncomingShare) {
 
 /** Keep unreadable files available for another attempt, without replacing a newer share. */
 export function retryIncomingShare(share: IncomingShare) {
-  if (!pending && isIncomingShareCurrent(share)) publish(share);
+  if (!isIncomingShareCurrent(share)) releaseIncomingShareFiles(share.files);
+  else if (!pending) publish(share);
 }
 
 /** Only this newly allocated cache copy is ever deleted; never the sender's URI. */

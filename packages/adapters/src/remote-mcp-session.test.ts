@@ -1,3 +1,5 @@
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { callRemoteMcpTool, RemoteMcpSessionCache } from "./remote-mcp.js";
 
@@ -366,7 +368,7 @@ describe("run-scoped remote MCP sessions", () => {
   });
 
   it("keeps the session working after one call is aborted", async () => {
-    let release: (() => void) | undefined;
+    const release = deferred();
     let hangNext = true;
     const server = mcpServer(({ message, respond }) => {
       if (message.method === "tools/call") {
@@ -374,10 +376,9 @@ describe("run-scoped remote MCP sessions", () => {
           return respond({ result: { content: [{ type: "text", text: "done" }] } });
         }
         hangNext = false;
-        return new Promise<Response>((resolve) => {
-          release = () =>
-            resolve(respond({ result: { content: [{ type: "text", text: "late" }] } }));
-        }) as unknown as Response;
+        return release.promise.then(() =>
+          respond({ result: { content: [{ type: "text", text: "late" }] } }),
+        ) as unknown as Response;
       }
       return undefined;
     });
@@ -388,7 +389,7 @@ describe("run-scoped remote MCP sessions", () => {
     controller.abort();
     await expect(hanging).rejects.toThrow();
     // Let the late response for the cancelled request arrive before continuing.
-    release?.();
+    release.resolve();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     await expect(scopedCall(pool, "run-1 srv", server)).resolves.toMatchObject({
@@ -428,7 +429,7 @@ describe("run-scoped remote MCP sessions", () => {
     const base = statefulServer();
     let failNextPost = false;
     let writeArrived = false;
-    let finishWrite: (() => void) | undefined;
+    let finishWrite: Deferred | undefined;
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const request = new Request(input, init);
       if (request.method !== "POST") return base.fetch(input, init);
@@ -440,9 +441,8 @@ describe("run-scoped remote MCP sessions", () => {
       if (message.method === "tools/call" && message.params?.name === "write") {
         // A write whose committed response is still on the wire.
         writeArrived = true;
-        await new Promise<void>((resolve) => {
-          finishWrite = resolve;
-        });
+        finishWrite = deferred();
+        await finishWrite.promise;
       }
       return base.fetch(input, init);
     });
@@ -456,7 +456,7 @@ describe("run-scoped remote MCP sessions", () => {
     failNextPost = true;
     await expect(scopedCall(pool, "run-1 srv", server)).rejects.toThrow(/Could not reach/);
 
-    finishWrite?.();
+    finishWrite?.resolve();
     await expect(write).resolves.toMatchObject({ content: [{ text: "ok:session-1" }] });
     // Retired only after its last call landed, so the server saw the write once.
     await vi.waitFor(() => expect(server.deletes).toEqual(["session-1"]));
@@ -471,7 +471,7 @@ describe("run-scoped remote MCP sessions", () => {
   it("does not close a session that was used again while the reaper ran", async () => {
     const base = statefulServer();
     let holdDeleteArrived = false;
-    let releaseDelete: (() => void) | undefined;
+    let releaseDelete: Deferred | undefined;
     const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const request = new Request(input, init);
       if (
@@ -481,9 +481,8 @@ describe("run-scoped remote MCP sessions", () => {
       ) {
         // The first candidate's cleanup waits; the reaper awaits it.
         holdDeleteArrived = true;
-        await new Promise<void>((resolve) => {
-          releaseDelete = resolve;
-        });
+        releaseDelete = deferred();
+        await releaseDelete.promise;
       }
       return base.fetch(input, init);
     });
@@ -498,7 +497,7 @@ describe("run-scoped remote MCP sessions", () => {
     await vi.waitFor(() => expect(holdDeleteArrived).toBe(true));
     // Session-2 answers a new call while the reaper is still on session-1.
     await scopedCall(pool, "run-2 srv", server);
-    releaseDelete?.();
+    releaseDelete?.resolve();
 
     await expect(reaping).resolves.toBe(1);
     expect(server.deletes).toEqual(["session-1"]);

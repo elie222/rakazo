@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
 import { Challenge, Credential } from "mppx";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LinkWalletProvider } from "./link-wallet.js";
 import { EmulatorPaymentWalletProvider } from "./payment-wallet-emulator.js";
 
@@ -464,6 +464,26 @@ describe("Link wallet protocol", () => {
     const credential = result.status === "connected" ? result.credential : null;
     const expectedRefreshAt = Date.now() + 3600_000 - 60_000;
     expect(Math.abs(credential!.refreshAt!.getTime() - expectedRefreshAt)).toBeLessThan(5000);
+  });
+
+  it("does not read an oversized sign-in response", async () => {
+    const link = fakeLink();
+    let cancel: unknown;
+    const provider = new LinkWalletProvider({
+      fetch: async (input, init) => {
+        const response = await link.fetch(input, init);
+        const oversized = new Response(response.body, {
+          status: response.status,
+          headers: { "content-length": String(1024 * 1024 * 1024) },
+        });
+        cancel = vi.spyOn(oversized.body!, "cancel");
+        return oversized;
+      },
+    });
+    await expect(provider.beginConnect({ clientName: "Rakazo" }, ctx)).rejects.toThrow(
+      /^Link response is too large\.$/,
+    );
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("revokes the refresh token on disconnect", async () => {

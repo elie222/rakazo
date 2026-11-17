@@ -1,7 +1,8 @@
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret } from "./model-secret.js";
 import type { PiCatalogAuth, PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog } from "./pi-models.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import { CHATGPT_OAUTH_PROVIDER, parseModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 
 /** Codex models that ChatGPT Plus/Pro sign-in cannot call. API-key auth still can. */
 export const OPENAI_CODEX_CHATGPT_SUBSCRIPTION_EXCLUDED_MODEL_IDS = new Set([

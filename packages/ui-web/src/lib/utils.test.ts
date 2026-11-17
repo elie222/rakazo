@@ -6,6 +6,7 @@ describe("cn", () => {
     expect(cn("text-heading3 font-medium", "text-heading2 text-foreground")).toBe(
       "font-medium text-heading2 text-foreground",
     );
-    expect(cn("text-body1 text-muted-foreground")).toBe("text-body1 text-muted-foreground");
+    expect(cn("text-body text-muted-foreground")).toBe("text-body text-muted-foreground");
+    expect(cn("text-body-lg text-label")).toBe("text-label");
   });
 });

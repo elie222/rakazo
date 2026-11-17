@@ -1,10 +1,13 @@
 import type {
   BillingCancellationReason,
+  ByokTier,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
+  HistoryToolStep,
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
 export interface AdapterContext {
@@ -25,6 +28,17 @@ export interface AdapterContext {
   connectedConnections?: ConnectedConnector[];
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
   connectedProviders?: string[];
+}
+
+/**
+ * A provider machine no stored computer points at: one a start created and has not stored, or a
+ * snapshot build's. `provider` is the computer kind it would be stored under, and `machineId`
+ * the reference it would be stored as. `homeKey` names the computer it was created for.
+ */
+export interface UnreferencedMachine {
+  provider: string;
+  machineId: string;
+  homeKey?: string;
 }
 
 export interface ConnectedConnector {
@@ -148,6 +162,12 @@ export interface ScreenSession {
   /** Provider credentials for the server proxy only; never return these to clients. */
   headers?: Record<string, string>;
   url: string | null;
+  /**
+   * Set when the URL signs in with a code that works once and ends the session an earlier code
+   * opened. `screen` names what the URL shows apart from that code: two sessions with the same
+   * value show the same screen.
+   */
+  singleUseSignIn?: { screen: string };
   mimeType: string;
   close(): Promise<void>;
 }
@@ -250,6 +270,28 @@ export interface SnapshotRef {
   createdAt: string;
 }
 
+/**
+ * What every computer of one kind can do. A provider declares these once and they never vary by
+ * configuration, so shared code can read them from a stored kind without a provider instance.
+ */
+export interface SandboxKindCapabilities {
+  /** A person can open a shell on the computer. */
+  terminal: boolean;
+  /** The computer can be replaced by one on the current image, keeping its files. */
+  inPlaceUpdate: boolean;
+  /** Commands run in the host's own shell rather than bash on Linux. */
+  nativeShell: boolean;
+  /** The computer is the user's own machine, which costs nothing and owns its own lifetime. */
+  runsOnUserMachine: boolean;
+  screen: { width: number; height: number };
+  /** Whether the computer works in the server's home directory itself rather than a copy. */
+  serverHomeMount: "always" | "optional" | "never";
+  /** Only the server writes a Team Computer's stored home, so the server may edit it directly. */
+  serverOwnsStoredTeamHome: boolean;
+  /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
+  storedHomeIsBackup: boolean;
+}
+
 export interface SandboxCapabilities {
   graphical: boolean;
   pty: boolean;
@@ -268,8 +310,12 @@ export interface ConnectorTool {
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
+  /** What the person sees for a call, when the name the model uses would read badly. */
+  label?: string;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+  /** The `ui://` resource an MCP server shows this tool's result with (MCP Apps). */
+  appResourceUri?: string;
 }
 
 /**
@@ -288,8 +334,12 @@ export interface ConnectorRoute {
   toolName: string;
   resourceId?: string;
   resourceRevision?: string | number;
+  /** Authorized local connection selected by this tool. Never fall back to another account. */
+  connectionId?: string;
   /** Source label for lazy catalog name indexes. Never exposed as a model schema field. */
   catalogGroup?: string;
+  /** The `ui://` resource that shows this tool's result; see ConnectorApp. */
+  appResourceUri?: string;
 }
 
 export interface ConnectorCall {
@@ -298,11 +348,26 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** Read the tool's app after a successful call. Only a caller that shows it asks. */
+  withApp?: boolean;
+}
+
+/**
+ * An MCP server's app for one successful call (MCP Apps): HTML the client shows sandboxed with
+ * the call's input and result. Declared domains are already narrowed to the ones allowed.
+ */
+export interface ConnectorApp {
+  server: string;
+  html: string;
+  csp: { connectDomains?: string[]; resourceDomains?: string[] };
+  prefersBorder?: boolean;
 }
 
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
+  /** Follows the call's `result` when its tool has an app. */
+  | { type: "app"; app: ConnectorApp }
   | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
@@ -341,9 +406,16 @@ export interface MemorySearchResult {
   score: number;
 }
 
-/** A full-document save lost the race to another writer. The caller should read again. */
 export const MEMORY_REVISION_CONFLICT_ERROR =
   "Shared memory changed since it was read. Read the latest version and save again.";
+
+/** A full-document save lost the race to another writer. The caller should read again. */
+export class MemoryRevisionConflictError extends Error {
+  constructor() {
+    super(MEMORY_REVISION_CONFLICT_ERROR);
+    this.name = "MemoryRevisionConflictError";
+  }
+}
 
 export interface MemoryCommitRequest {
   scope: "bot" | "user";
@@ -389,6 +461,12 @@ export interface SemanticMemoryCapabilities {
   save: true;
   purgeHistory: true;
   sharedScope: true;
+  /** Recall before every run, not only once thread history is compacted. */
+  recallEachRun?: true;
+  /** Never recall before a run: the bot recalls only through its memory tools. */
+  recallOnRequestOnly?: true;
+  /** purgeHistory removes what was learned in a chat by thread, so clearing any chat calls it. */
+  purgesByThread?: true;
 }
 
 export interface SemanticMemoryResult {
@@ -401,6 +479,8 @@ export interface SemanticMemoryResult {
   provenance?: string;
   /** Provider entity/namespace the fact was recalled from, when scoped. */
   entity?: string;
+  /** Additional outside-source attribution. All semantic recall is derived data, even without this marker. */
+  external?: true;
 }
 
 export interface SemanticMemoryForgetRequest {
@@ -419,6 +499,8 @@ export type SemanticMemoryResponse<T = void> =
 
 export interface SemanticMemoryRecallRequest {
   query: string;
+  /** Automatic context excludes imported sources; explicit reads may include them. */
+  includeExternal?: boolean;
   scope: DurableMemoryScope;
   botId: string;
   /** Omit until a thread has compacted history; the provider can then skip that namespace. */
@@ -435,7 +517,43 @@ export interface SemanticMemorySaveRequest {
 
 export interface SemanticMemoryPurgeHistoryRequest {
   botId: string;
+  threadId: string;
   generations: number[];
+}
+
+export interface SemanticMemoryConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+  /** ISO 8601. */
+  timestamp: string;
+  /** Who said it, when not the person or this bot: another bot in a group chat or a bot message. */
+  speaker?: string;
+}
+
+/**
+ * The new messages of one finished turn; earlier turns were sent before. They are data for
+ * learning, including replies influenced by outside sources. Recalling the resulting knowledge
+ * must preserve derived provenance rather than granting it instruction authority.
+ */
+export interface SemanticMemoryConversationRequest {
+  botId: string;
+  botName: string;
+  userName: string;
+  /** The bot's own chat with its person, or a group chat with other bots. */
+  conversation: "direct" | "group";
+  /** The bot's effective memory scope; shared also pools the turn with the Space's other bots. */
+  scope: DurableMemoryScope;
+  threadId: string;
+  /** Thread history generation; purgeHistory with this threadId and generation removes it. */
+  generation: number;
+  runId: string;
+  turns: SemanticMemoryConversationTurn[];
+}
+
+/** Reflects over the bot's own memory only. */
+export interface SemanticMemoryReflectRequest {
+  query: string;
+  botId: string;
 }
 
 export type SemanticMemoryForgetResponse = SemanticMemoryResponse<{
@@ -458,7 +576,7 @@ export interface AgentSteeringMessage {
    * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
    * else, or no origin, is passed on as a neutral note.
    */
-  origin?: "user" | "member" | "messaging" | "webhook";
+  origin?: "user" | "member" | "messaging" | "webhook" | "routine";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
@@ -482,6 +600,8 @@ export interface AgentRunModel {
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
+  projectId?: string;
+  region?: string;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
@@ -503,6 +623,17 @@ export interface AgentRunModel {
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+    /**
+     * Refreshes the stored credential under the lock every refresh of it shares,
+     * calling `refresh` on the stored copy only if no other refresh already rotated it.
+     */
+    refresh?: (
+      held: AgentModelOAuthCredential,
+      refresh: (
+        stored: AgentModelOAuthCredential,
+        signal: AbortSignal,
+      ) => Promise<AgentModelOAuthCredential | undefined>,
+    ) => Promise<AgentModelOAuthCredential>;
     /** Drop the stored credential after a terminal provider rejection. */
     retire?: (
       reason: ModelCredentialRetireReason,
@@ -532,7 +663,10 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
-  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  /**
+   * Group threads and shared spaces: the label the model sees on the prompt, the same as on
+   * history ("User", or the person's name in a space several people share).
+   */
   promptSpeaker?: string;
   instructions: string;
   history: Array<{
@@ -541,11 +675,17 @@ export interface AgentRunRequest {
     role: "user" | "assistant" | "system";
     content: string;
     /**
-     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
-     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
-     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     * Who wrote this message when it is neither this bot nor the human of a personal direct chat:
+     * another bot's current name, or the person: "User", or their name in a space several people
+     * share. The runtime shows such a message to the model as a user turn that starts with
+     * "[speaker]: ".
      */
     speaker?: string;
+    /**
+     * This bot's own reply in order, its tool steps apart from its text, set when it used
+     * tools. A runtime that can replay tool calls reads it instead of `content`.
+     */
+    segments?: Array<{ text: string } | { steps: HistoryToolStep[] }>;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;
@@ -556,6 +696,8 @@ export interface AgentRunRequest {
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
+  /** Optional explicitly authenticated vision target for same-run computer mode. */
+  computerModel?: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
   fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id" | "connectionId">>;
   /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
@@ -565,7 +707,8 @@ export interface AgentRunRequest {
     connectionId?: string,
   ) => Promise<AgentRunModel>;
   /** Persist the selected backup against the active run lease before requesting it. */
-  onModelChange?: (provider: string, modelId: string) => Promise<void>;
+  /** `computerMode` is set when the switch enters computer mode rather than changing the run's model. */
+  onModelChange?: (provider: string, modelId: string, computerMode?: boolean) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
@@ -573,6 +716,12 @@ export interface AgentRunRequest {
   turnCheckpoint?: string;
   /** Cheap per-call capture; serialize only when persisting that call’s human pause. */
   onCheckpoint?: (capture: () => string, executionId: string) => Promise<void>;
+  /**
+   * Aborts when the process running the turn begins to stop. A runtime that supports it ends
+   * the turn at its next step boundary with a `yielded` event instead of starting another model
+   * call; one that does not keeps going until the turn ends or `signal` aborts.
+   */
+  yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
   resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
@@ -594,6 +743,12 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /**
+   * Known run secret values, live for the run. The runtime redacts them from a tool
+   * argument that is kept outside the tool call itself (the ask card's detail) before
+   * any copy of it is stored, recorded or replayed.
+   */
+  secrets?: readonly string[];
 }
 
 export interface ScriptedTurn {
@@ -624,6 +779,15 @@ export interface AgentUsage {
   pricingVersion?: string | null;
   pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
+  /** Our own count for a call that reached the provider but ended without a reported cost,
+   * deliberately low. `ifStopped` is a full count for an aborted call, priced at full rates when
+   * the user stopped its run, so stopping a call is never a discount.
+   */
+  countedTokens?: {
+    inputTokens: number;
+    outputTokens: number;
+    ifStopped?: { inputTokens: number; outputTokens: number };
+  } | null;
 }
 
 export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" | "compaction";
@@ -693,6 +857,13 @@ export type AgentRuntimeEvent =
       agentId?: string;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
+  /**
+   * The turn reached a step boundary after `yieldSignal` aborted. Every step so far is in
+   * `checkpoint`; a run resumed with it as `turnCheckpoint` continues with the next model call.
+   * The consumer calls `answer(true)` once it saved the turn and handed the run back, and the
+   * turn ends; `answer(false)` keeps the turn going here.
+   */
+  | { type: "yielded"; checkpoint: string; answer: (handedBack: boolean) => void }
   | {
       type: "subagent";
       agentId: string;
@@ -720,24 +891,33 @@ export interface VoiceInfo {
 export interface SpeechClip {
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
+  /** The voice actually used, when the provider substituted one for the requested voice. */
+  voiceId?: string;
 }
 
 export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+  /** The provider can filter its listed voices by language. */
+  languages?: boolean;
 }
 
 export interface VoiceVerifyResult {
   ok: boolean;
   message?: string;
+  /** Set when the provider refused the account, as a request with the key would be. */
+  code?: VoiceAccountErrorCode;
 }
 
 export interface VoiceSynthesizeRequest {
   text: string;
   voiceId: string;
   apiKey: string;
-  /** Connection speech model. Fish uses this, then `FISH_TTS_MODEL`, then s2.1-pro. */
+  /**
+   * Connection speech model, for providers whose catalog entry sets `speechModel`. Without
+   * one, each adapter uses its own default.
+   */
   model?: string;
   signal?: AbortSignal;
 }
@@ -764,17 +944,107 @@ export interface BackgroundJobPayloads {
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
+  /** Drop the run-only logins and codes of a run still waiting on someone after the expiry. */
+  "run.forget-secrets": { runId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
-  "history.compact": { threadId: string };
+  "history.compact": { threadId: string; userId?: string };
+  /** Retry a failed post-clear purge without relying on deleted thread/run rows. */
+  "memory.purge-history": {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    generations: number[];
+    connectionIdentity: string;
+  };
+  /**
+   * `messageIds`: what the person sent while the run worked, which the run also answered.
+   * `pending`: cleanup captured before submission. `unconfirmed` keeps checking through the
+   * cleanup window if the submission response was lost; otherwise poll the provider token until
+   * settled, or just retry the purge when no token is needed. Purge the captured generation if
+   * the chat was cleared. `checks` bounds the window. Captured source identifiers survive group
+   * deletion; connectionIdentity prevents a replacement from handling the old operation.
+   */
+  "memory.retain-turn": {
+    runId: string;
+    messageIds?: string[];
+    pending?: {
+      token?: string;
+      /** Submission may have started but its response was not durably handed off. */
+      unconfirmed?: true;
+      generation: number;
+      checks: number;
+      connectionIdentity: string;
+      source: { spaceId: string; userId: string; botId: string; threadId: string };
+    };
+  };
+  /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
+  "messaging.send": { outboundId: string };
+  /** Backup for recording and sending what an ended run said where its turn came from. */
+  "messaging.reply": { runId: string };
+  /**
+   * The previous release's outbox drain, drained by the new path.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.deliver": { runId?: string };
+  /**
+   * The previous release's interim-message mirror.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
+  "messaging.progress": { runId: string };
+  /**
+   * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
+   * held the reference and `recordId` its record, so the job can confirm the entry is still
+   * unreferenced. `ref` is the store's reference to a remote entry, never a value.
+   */
+  "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
+  /**
+   * The previous release's `secret.cleanup` for a messaging install.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /**
+   * Backup for removing an authorization a connection flow left at the provider with no local
+   * row. `ref` names one authorization request or account; without it, the app's accounts that
+   * no local row references.
+   */
+  "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
+  /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
+  "computer.machine-cleanup": UnreferencedMachine;
+  /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
+  "team_chat.engage": { externalMessageId: string };
+  /** Decide whether a conversation's unanswered team-chat messages need the bot. */
+  "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
   "purchase.poll": { purchaseId: string };
+  /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
+  "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
+
+/**
+ * What held a secret-store reference before it was replaced or dropped. `store_write` is an entry
+ * written before any record held it, which every record that can hold a reference may claim.
+ */
+export type SecretCleanupKind =
+  | "secret_row"
+  | "secret_tables"
+  | "messaging_installation"
+  | "deployment_computer_provider"
+  | "purchase_request"
+  | "purchase_card"
+  | "purchase_token"
+  | "payment_wallet"
+  | "store_write";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 
@@ -797,6 +1067,8 @@ export type BackgroundJob = {
     replaceLockedBefore?: Date;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
+    /** Jobs sharing a queue run one at a time, in order. */
+    queueName?: string;
   };
 }[BackgroundJobName];
 
@@ -805,10 +1077,17 @@ export interface BackgroundJobExecution {
   onRunStarted(): void;
 }
 
+/** Which try this is, for a handler that settles its work differently on the last one. */
+export interface BackgroundJobAttempt {
+  number: number;
+  max: number;
+}
+
 export type BackgroundJobHandlers = {
   [Name in BackgroundJobName]: (
     payload: BackgroundJobPayloads[Name],
     execution?: BackgroundJobExecution,
+    attempt?: BackgroundJobAttempt,
   ) => Promise<void>;
 };
 
@@ -823,6 +1102,11 @@ export type SecretContext = string | { recordId: string; signal?: AbortSignal };
 export interface SecretPutOptions {
   recordId?: string;
   ephemeral?: boolean;
+  /**
+   * A store that keeps entries remotely calls this with the new entry before writing it, and does
+   * not write when it rejects, so a backup can name the entry before it exists.
+   */
+  beforeWrite?: (entry: { recordId: string; ref: string }) => Promise<void>;
 }
 export type SecretChangeListener = (ref: string) => void;
 
@@ -833,11 +1117,19 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
+  /**
+   * Verified sender metadata. `avatar` is a bounded thumbnail at most 96px, base64 encoded;
+   * `avatarLarge` is the same drawing at up to 120px for devices that draw the sender larger
+   * than Android's 96px limit, when one fits the payload budget.
+   */
+  sender?: { botId: string; name: string; avatar?: string; avatarLarge?: string };
   kind: "completion" | "failure" | "help" | "takeover";
   title: string;
   body: string;
   botId: string;
   threadId: string;
+  /** The finished run, so a device that also polls for finished work does not alert twice. */
+  runId?: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
   /** Unread chats to show on the app icon, when the sender knows them. */
@@ -846,7 +1138,12 @@ export interface NotificationMessage {
 
 /** A product-authored transactional email, independent of its delivery vendor. */
 export interface TransactionalEmail {
-  to: string;
+  to: string | string[];
+  /** Sends as this address, such as a bot's own, instead of the provider's configured one. */
+  from?: string;
+  cc?: string[];
+  /** Where replies go, instead of the provider's configured reply-to address. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -914,6 +1211,12 @@ export interface MessagingInboundMessage {
   channelName: string | null;
   /** Group roster addresses when the platform reports them; often empty. */
   participants: string[];
+  /**
+   * When the platform says this roster was current, when it reports a time for
+   * the event; a roster older than the newest one already processed for the
+   * channel changes no membership.
+   */
+  rosterAt?: Date;
   /**
    * Member departures this event reports one at a time (Telegram service
    * messages on a platform that sends no roster): addresses that left or were
@@ -1134,6 +1437,8 @@ export type BrowserActStep =
       site?: string;
       label?: string;
       amount?: string;
+      /** The page's total the card showed beside the button, or empty when it showed none. */
+      total?: string;
     }
   /** Attaches computer files to a file input without opening a native file chooser. */
   | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
@@ -1202,6 +1507,16 @@ export interface BrowserPurchase {
   amount: string;
   /** Whether the amount is the one the button names or the total the page shows. */
   amountSource?: "button" | "page";
+  /** The total the page shows beside a button that names its own amount; older computers omit it. */
+  total?: string;
+  /** The order lines the page lists above its total, as page text; none when it lists none or is older. */
+  items?: BrowserPurchaseItem[];
+}
+
+/** An order line as the checkout page shows it, such as an item with its quantity, or delivery. */
+export interface BrowserPurchaseItem {
+  name: string;
+  amount: string;
 }
 
 export interface BrowserPurchaseCheckRequest {
@@ -1325,6 +1640,11 @@ export interface AutoReviewRequest {
    * tool results or inbound messages, so injected text cannot argue for the site.
    */
   newSite?: boolean;
+  /**
+   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
+   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   */
+  memoryWrite?: boolean;
 }
 
 export interface AutoReviewResult {
@@ -1355,9 +1675,23 @@ export interface BillingPrice {
 export interface BillingCreditPurchase {
   /** Stable provider payment identity, including any subsequent refund adjustment. */
   id: string;
+  /** Paid net of refunds and lost disputes; a reduction is final. */
   amountCents: number;
+  /** Part of `amountCents` an open payment dispute holds back; it returns if the dispute is won. */
+  disputedCents?: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
+}
+
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
 }
 
 export interface BillingCreditCheckoutRequest {
@@ -1371,6 +1705,8 @@ export interface BillingCreditCheckoutRequest {
 export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
   /** How often `amountCents` bills; monthly when omitted. */
   interval?: "month" | "year";
+  /** Standard when omitted. */
+  tier?: ByokTier;
   /** Omitted when the customer has already used its trial. */
   trialDays?: number;
 }
@@ -1395,10 +1731,19 @@ export interface BillingSubscriptionSnapshot {
   byokPriceCents?: number;
   /** The own-key plan's billing period. */
   byokInterval?: "month" | "year";
+  /** The own-key plan's tier, which the provider reports with the plan. */
+  byokTier?: ByokTier;
   /** Stable identity of the subscription's card across customers, when the provider has one. */
   cardFingerprint?: string;
   cancellationReason?: BillingCancellationReason;
   cancellationComment?: string;
+}
+
+/** One own-key plan: its tier, how often it bills, and what it bills each period. */
+export interface BillingByokPlan {
+  tier: ByokTier;
+  interval: "month" | "year";
+  amountCents: number;
 }
 
 export interface BillingCheckoutRequest {

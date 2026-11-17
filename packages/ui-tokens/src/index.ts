@@ -62,6 +62,16 @@ export type ColorTokens = {
   overlay: string;
   scrollbar: string;
   scrollbarHover: string;
+  /** The folded page icon a chat names a page with: its sheet, edge, fold and two text lines. */
+  pageIconSheet: string;
+  pageIconEdge: string;
+  pageIconFold: string;
+  pageIconLine: string;
+  pageIconLineSoft: string;
+  /** The rounded page tile on a page card's footer: fill, edge and its text lines. */
+  pageTile: string;
+  pageTileEdge: string;
+  pageTileLine: string;
 };
 
 export const darkTokens = {
@@ -106,6 +116,14 @@ export const darkTokens = {
   overlay: "rgba(0, 0, 0, 0.28)",
   scrollbar: "#1E2026",
   scrollbarHover: "#2E313A",
+  pageIconSheet: "#2C2C2E",
+  pageIconEdge: "#363638",
+  pageIconFold: "#3C3C3E",
+  pageIconLine: "#6F6F71",
+  pageIconLineSoft: "#616163",
+  pageTile: "#343434",
+  pageTileEdge: "#414141",
+  pageTileLine: "#626262",
 } as const satisfies ColorTokens;
 
 export const lightTokens = {
@@ -150,6 +168,14 @@ export const lightTokens = {
   overlay: "rgba(0, 0, 0, 0.19)",
   scrollbar: "#C8C8C4",
   scrollbarHover: "#A8A8A4",
+  pageIconSheet: "#E8E8EA",
+  pageIconEdge: "#D6D6DA",
+  pageIconFold: "#D0D0D4",
+  pageIconLine: "#8E8E93",
+  pageIconLineSoft: "#A1A1A6",
+  pageTile: "#ECECEE",
+  pageTileEdge: "#DADADD",
+  pageTileLine: "#A1A1A6",
 } as const satisfies ColorTokens;
 
 /** Web and Electron only: the primary fill's hover and disabled states. Mobile has no hover. */
@@ -165,12 +191,12 @@ export type WebColorTokens = ColorTokens & {
  * and selection are the ink at an opacity, so they read the same on every surface.
  */
 export const webDarkOverrides = {
-  background: "#161616",
-  dialog: "#1F1F1F",
+  background: "#0A0A0A",
+  dialog: "#161616",
   foreground: "#F5F5F5",
-  card: "#1F1F1F",
+  card: "#232323",
   cardForeground: "#F5F5F5",
-  popover: "#1F1F1F",
+  popover: "#232323",
   popoverForeground: "#F5F5F5",
   primary: "#F5F5F5",
   primaryHover: "#DBDBDB",
@@ -180,19 +206,19 @@ export const webDarkOverrides = {
   secondaryForeground: "#F5F5F5",
   chatUser: "#3E3E3E",
   chatUserForeground: "#F5F5F5",
-  muted: "#1F1F1F",
+  muted: "#232323",
   mutedForeground: "#F5F5F5A8",
   faintForeground: "#F5F5F58A",
-  accent: "#F5F5F50F",
+  accent: "#F5F5F51A",
   accentForeground: "#F5F5F5",
   destructive: "#FF6463",
   destructiveFill: "#CF2B35",
   border: "#F5F5F51A",
   input: "#F5F5F538",
   ring: "#1884FC",
-  sidebar: "#0E0E0E",
+  sidebar: "#0A0A0A",
   sidebarForeground: "#F5F5F5",
-  sidebarBorder: "#F5F5F51A",
+  sidebarBorder: "#F5F5F50F",
   sidebarAccent: "#F5F5F514",
   sidebarAccentForeground: "#F5F5F5",
   link: "#4D9BFF",
@@ -274,6 +300,111 @@ export const typeScale = {
  * accessibility sizes keep that size, so message bubbles, rows and cards keep their layout.
  */
 export const MAX_FONT_SCALE = 23 / typeScale.body.fontSize;
+
+/**
+ * The rising bars on the page icon, the same in both themes. The folded icon was measured from
+ * the chat chip; the card footer's tile draws them a little brighter.
+ */
+export const pageIconBars = ["#489D61", "#E7712E", "#BC3B3D", "#3E82F3"] as const;
+export const pageTileBars = ["#5AC078", "#E9993A", "#E87031", "#3E82F4"] as const;
+
+/**
+ * Bot-built pages: data series and status tones, a step deeper on white. Kept out of tokens.css
+ * because only the sandboxed page document uses them, never the app's own chrome.
+ */
+export const pageKitPalette = {
+  dark: {
+    c1: "#1084FE",
+    c2: "#FF9800",
+    c3: "#00BCA6",
+    c4: "#69D290",
+    c5: "#E76265",
+    rest: "#084382",
+    area: ".24",
+    other: "#777777",
+    negative: "#FF263C",
+    seq1: "#084382",
+    seq2: "#0C64C1",
+    seq3: "#1084FE",
+    seq4: "#459FFE",
+    seq5: "#80BEFE",
+    success: "#38D591",
+    warning: "#FFAF38",
+    danger: "#FF5667",
+    accent: "#459FFE",
+    accentDeep: "#80befe",
+    successDeep: "#78e2b4",
+    warningDeep: "#ffc878",
+    dangerDeep: "#ff8c98",
+    div1: "#FF5667",
+    div2: "#82131F",
+    div3: "#262626",
+    div4: "#084382",
+    div5: "#459FFE",
+    fillStrong: "rgba(119,119,119,.17)",
+    cardSurface: "#181818",
+    cardShadowNear: "#0006",
+    cardShadowFar: "#0000004d",
+    controlFill: "#7777772c",
+    controlHoverFill: "#77777747",
+    buttonFill: "#fafafa",
+    buttonHoverFill: "#d5d5d5",
+    buttonInk: "#141414",
+    optionFill: "#181818",
+    checkedFill: "#5a5a5a",
+  },
+  light: {
+    c1: "#1084FE",
+    c2: "#FF9800",
+    c3: "#00BCA6",
+    c4: "#009957",
+    c5: "#C21D2E",
+    rest: "#80BEFE",
+    area: ".16",
+    other: "#777777",
+    negative: "#FF263C",
+    seq1: "#80BEFE",
+    seq2: "#459FFE",
+    seq3: "#1084FE",
+    seq4: "#0C64C1",
+    seq5: "#084382",
+    // Tone inks are text too, so on white and on their own tint they hold 4.5:1.
+    success: "#006B3C",
+    warning: "#8A5100",
+    danger: "#B01A2A",
+    accent: "#0A58AB",
+    accentDeep: "#084382",
+    successDeep: "#00673a",
+    warningDeep: "#824e00",
+    dangerDeep: "#82131f",
+    div1: "#C21D2E",
+    div2: "#FF8C98",
+    div3: "#E8E8E8",
+    div4: "#80BEFE",
+    div5: "#0C64C1",
+    fillStrong: "rgba(119,119,119,.11)",
+    cardSurface: "#fcfcfc",
+    cardShadowNear: "#0000000f",
+    cardShadowFar: "#00000012",
+    controlFill: "#77777717",
+    controlHoverFill: "#77777726",
+    buttonFill: "#070707",
+    buttonHoverFill: "#2f2f2f",
+    buttonInk: "#fcfcfc",
+    optionFill: "#fcfcfc",
+    checkedFill: "#a5a5a5",
+  },
+  // The same in both themes: ink on colour, the print paper and shadows.
+  shared: {
+    onColor: "#fcfcfc",
+    onTone: "#121212",
+    onDeepTone: "#fff",
+    paper: "#fff",
+    mask: "#000",
+    tipShadow: "rgba(0,0,0,.18)",
+    dotShadow: "#00000059",
+  },
+} as const;
 
 /** The ink of a drawn bot's eyes, the same on every body colour and in both themes. */
 export const botEyeColor = "#101014";

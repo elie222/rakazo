@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { router } from "expo-router";
 import { Pressable } from "react-native";
@@ -9,8 +10,7 @@ import type { ChatTitleParams } from "./chat-header-title";
 import { ChatHeaderTitle } from "./chat-header-title";
 import { NativeSymbol } from "./native-symbol";
 import { trailingHeaderOptions } from "./sheet-header";
-import { threadHeaderRight } from "./thread-header-right";
-import { createThreadHeaderStyles } from "./thread-header-styles";
+import { openInvite, threadHeaderRight } from "./thread-header-right";
 
 /**
  * Whether the chat sits beside the chat list, whether that list is hidden, and whether a
@@ -23,12 +23,12 @@ export type ChatSplit = { split: boolean; inboxHidden: boolean; foldActive?: boo
  * has rendered: the title capsule, the right-side button and, beside the chat list, the
  * sidebar button. Everything is in the first native header, so the title sits at its final
  * place from the first frame of the push and is never re-laid out. The open chat feeds the
- * title its data and fills in the buttons' actions, without changing their shape.
+ * title its data without changing the buttons' shape.
  */
 export function chatRouteHeader(
-  route: { key: string; params?: object },
-  t: (text: string) => string,
+  route: { key?: string; params?: object },
   { split, inboxHidden, foldActive }: ChatSplit,
+  canInvite = false,
 ): NativeStackNavigationOptions {
   const params = (route.params ?? {}) as ChatTitleParams;
   const { groupId, botId } = params;
@@ -37,22 +37,18 @@ export function chatRouteHeader(
   return {
     headerTitleAlign: "center",
     ...threadEdgeOptions(),
-    headerTitle: () => <ChatHeaderTitle routeKey={route.key} params={params} />,
+    headerTitle: () => <ChatHeaderTitle routeKey={route.key ?? ""} params={params} />,
     ...threadHeaderRight({
       inGroup: Boolean(groupId),
       readOnly,
-      hasBot: Boolean(botId),
-      t,
       color,
-      rowStyle: createThreadHeaderStyles().headerActions,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-      onBotActions: () => undefined,
-      menuActions: [],
+      onInvite: canInvite && botId ? openInvite : undefined,
     }),
-    ...threadHeaderLeft({ split, inboxHidden, foldActive, t, color }),
+    ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),
     // An archived chat offers Restore; the open chat gives it its action.
-    ...(readOnly ? trailingHeaderOptions(t("Restore"), () => undefined) : {}),
+    ...(readOnly ? trailingHeaderOptions(t`Restore`, () => undefined) : {}),
   };
 }
 
@@ -61,9 +57,8 @@ export function threadHeaderLeft({
   split,
   inboxHidden,
   foldActive,
-  t,
   color,
-}: ChatSplit & { t: (text: string) => string; color: string }): NativeStackNavigationOptions {
+}: ChatSplit & { color: string }): NativeStackNavigationOptions {
   if (!split || foldActive) {
     // Folding back takes the list away, so the chat gets its back button again. Folded like
     // a book, the list stays beside the chat, so it needs neither.
@@ -73,7 +68,7 @@ export function threadHeaderLeft({
       ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
     };
   }
-  const label = inboxHidden ? t("Show chats") : t("Hide chats");
+  const label = inboxHidden ? t`Show chats` : t`Hide chats`;
   return {
     headerBackVisible: false,
     ...(iosAtLeast(26)

@@ -2,16 +2,26 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
 import { byteLength } from "./utf8.js";
 
-const SEMANTIC_MEMORY_TOOL_NAMES = new Set(["recall_memory", "save_memory", "forget_memory"]);
+const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
+  "recall_memory",
+  "save_memory",
+  "forget_memory",
+  "reflect_memory",
+]);
 
-/** `forget_memory` is offered only when the provider implements its optional forget verb. */
+/** `forget_memory` and `reflect_memory` are offered only when the provider implements that optional verb. */
 export function selectMemoryTools(
   tools: ConnectorTool[],
   semanticMemoryConfigured: boolean,
   semanticMemoryForgets: boolean,
+  semanticMemoryReflects: boolean,
 ): ConnectorTool[] {
   return semanticMemoryConfigured
-    ? tools.filter((tool) => semanticMemoryForgets || tool.name !== "forget_memory")
+    ? tools.filter(
+        (tool) =>
+          (semanticMemoryForgets || tool.name !== "forget_memory") &&
+          (semanticMemoryReflects || tool.name !== "reflect_memory"),
+      )
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
 

@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const updates = vi.hoisted(() => ({
@@ -27,7 +28,6 @@ const rn = vi.hoisted(() => {
 vi.mock("expo-updates", () => updates);
 vi.mock("react-native", () => rn);
 vi.mock("./api", () => ({ configureClientBuild: vi.fn() }));
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
 
 import { IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
@@ -43,8 +43,6 @@ afterEach(() => {
   updates.createdAt = new Date("2026-10-22T09:30:15Z");
   vi.clearAllMocks();
 });
-
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function pressUpdate() {
   const buttons = rn.Alert.alert.mock.calls.at(-1)?.[2] as Array<{ onPress: () => void }>;

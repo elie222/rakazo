@@ -1,29 +1,43 @@
 import { useLingui } from "@lingui/react/macro";
-import type { SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import type { BotAvatarSet, LabFeature, SpaceMemoryConfig } from "@rakazo/contracts";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { PlanUsage } from "../components/PlanUsage";
 import { SETTINGS_CONTENT_WIDTH, SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { VaultSettings } from "../components/VaultSettings";
+import { canChooseOwnComputer } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
+import type { RpcClient } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
+import { useEventListener } from "../lib/use-event-listener";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
   UpdatesSettingsPanel,
-  UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
+import { LabsSettingsPanel } from "./LabsSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
 import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
+import { UsageSettingsPanel } from "./UsageSettingsPanel";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 export function SettingsOverlay({
@@ -34,45 +48,59 @@ export function SettingsOverlay({
   onDeleteSpace,
   email,
   name,
-  usage,
-  onUsageOpen,
   section: requestedSection,
   onSectionChange,
   onNameSaved,
   timezone,
   onTimezoneChange,
+  botAvatarSet,
+  onBotAvatarSetChange,
   onAccountImported,
   onImportAgent,
+  labs,
+  labsAvailable,
+  onLabsChange,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
+  canConfigureComputers = false,
+  computerSettingsEnabled = false,
   messagingEnabled = false,
   paymentWalletProvider = null,
   memoryConfig,
   onMemoryConfigChange,
   onClose,
   onVoiceStatusMaybeChanged,
+  onLeftSpace,
+  shellRpc,
 }: {
   /** The space the Space page edits; it need not be the selected space. */
   space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   onOpenSpace?: (spaceId: string) => void;
-  onRenameSpace?: (spaceId: string, name: string) => Promise<void>;
+  onRenameSpace?: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
-  usage?: UsageSummary | null;
-  onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
-  onTimezoneChange: (timezone: string) => Promise<void>;
+  onTimezoneChange: (timezone: string, client: RpcClient) => Promise<void>;
+  botAvatarSet?: BotAvatarSet;
+  onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
+  labs: readonly LabFeature[];
+  /** The Labs features this account can switch; Labs is hidden when there are none. */
+  labsAvailable: readonly LabFeature[];
+  onLabsChange: (labs: LabFeature[], client: RpcClient) => Promise<void>;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
+  /** Admins choose where new computers run. */
+  canConfigureComputers?: boolean;
+  computerSettingsEnabled?: boolean;
   messagingEnabled?: boolean;
   /** The wallet this deployment lets bots spend from; none hides Wallet. */
   paymentWalletProvider?: { id: string; name: string } | null;
@@ -80,17 +108,28 @@ export function SettingsOverlay({
   onMemoryConfigChange: (config: SpaceMemoryConfig | null) => void;
   onClose: () => void;
   onVoiceStatusMaybeChanged?: () => void | Promise<void>;
+  /** After leaving a space, with the space the server moved this person to. */
+  onLeftSpace?: (spaceId: string, activeSpaceId: string) => void;
+  /** Pinned to the space this window shows; billing acts on it. */
+  shellRpc: RpcClient;
 }) {
   const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
-  const navRef = useRef<HTMLElement>(null);
+  // State, not a ref: the overflow watcher must follow the nav when it remounts.
+  const [nav, setNav] = useState<HTMLElement | null>(null);
   const [navOverflow, setNavOverflow] = useState({ previous: false, next: false });
   const usageRef = useRef<HTMLDivElement>(null);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
-  const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
-  const recoveryHoldTimer = useRef<number | undefined>(undefined);
-  const showComputer = keepComputerRecovery || computersAreUnavailable(sandboxProvider);
+  // A new object holds the hint for another four seconds; null lets it go.
+  const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
+  const keepComputerRecovery = recoveryHold !== null;
+  const showComputer =
+    computerSettingsEnabled &&
+    (canConfigureComputers ||
+      canChooseOwnComputer(sandboxProvider) ||
+      keepComputerRecovery ||
+      computersAreUnavailable(sandboxProvider));
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
@@ -98,38 +137,25 @@ export function SettingsOverlay({
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
-    (requestedSection === "updates" && !showUpdates)
+    (requestedSection === "updates" && !showUpdates) ||
+    (requestedSection === "labs" && labsAvailable.length === 0)
       ? "general"
       : requestedSection;
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
-  const spaceId = section === "space" ? (space?.id ?? null) : null;
-  const releaseComputerRecovery = useCallback(() => {
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = undefined;
-    setKeepComputerRecovery(false);
-  }, []);
-  const holdComputerRecovery = useCallback(() => {
-    setKeepComputerRecovery(true);
-    window.clearTimeout(recoveryHoldTimer.current);
-    recoveryHoldTimer.current = window.setTimeout(() => {
-      recoveryHoldTimer.current = undefined;
-      setKeepComputerRecovery(false);
-    }, 4000);
-  }, []);
+  const spaceId = section === "space" ? (space?.id ?? null) : undefined;
+  const releaseComputerRecovery = useCallback(() => setRecoveryHold(null), []);
+  const holdComputerRecovery = useCallback(() => setRecoveryHold({}), []);
+  useTimeout(releaseComputerRecovery, recoveryHold ? 4000 : null, recoveryHold);
 
   useEffect(() => {
     if (section !== "computer") releaseComputerRecovery();
   }, [section, releaseComputerRecovery]);
-  useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
 
   useEffect(() => {
-    if (section === "usage") {
-      onUsageOpen();
-      usageRef.current?.focus();
-    }
-  }, [section, onUsageOpen]);
+    if (section === "usage") usageRef.current?.focus();
+  }, [section]);
 
   const navItems = useSettingsNavItems({
     messaging: messagingEnabled,
@@ -137,18 +163,20 @@ export function SettingsOverlay({
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
+    labs: labsAvailable.length > 0,
   });
 
-  useEffect(() => {
-    const nav = navRef.current;
+  const measureNav = () => {
     if (!nav) return;
-    const measure = () => {
-      const offset = Math.abs(nav.scrollLeft);
-      setNavOverflow({
-        previous: offset > 1,
-        next: nav.scrollWidth - nav.clientWidth - offset > 1,
-      });
-    };
+    const offset = Math.abs(nav.scrollLeft);
+    setNavOverflow({
+      previous: offset > 1,
+      next: nav.scrollWidth - nav.clientWidth - offset > 1,
+    });
+  };
+  useEventListener(nav, "scroll", measureNav);
+  useEffect(() => {
+    if (!nav) return;
     const revealSection = () => {
       if (nav.scrollWidth > nav.clientWidth) {
         nav.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({
@@ -156,18 +184,15 @@ export function SettingsOverlay({
           inline: "nearest",
         });
       }
-      measure();
+      measureNav();
     };
     revealSection();
-    nav.addEventListener("scroll", measure);
     const observer =
       typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(revealSection);
     observer?.observe(nav);
-    return () => {
-      nav.removeEventListener("scroll", measure);
-      observer?.disconnect();
-    };
+    return () => observer?.disconnect();
   }, [
+    nav,
     section,
     showComputer,
     billingEnabled,
@@ -178,7 +203,6 @@ export function SettingsOverlay({
   ]);
 
   function scrollSections(direction: number) {
-    const nav = navRef.current;
     if (!nav) return;
     const rtl = getComputedStyle(nav).direction === "rtl";
     nav.scrollBy({ left: nav.clientWidth * 0.75 * direction * (rtl ? -1 : 1), behavior: "smooth" });
@@ -189,6 +213,9 @@ export function SettingsOverlay({
       ? (space?.name ?? t`Space`)
       : (navItems.find((item) => item.id === section)?.label ??
         (section === "general" ? t`General` : t`Settings`));
+
+  const sectionDescription =
+    section === "space" ? undefined : navItems.find((item) => item.id === section)?.description;
 
   const closeLabel =
     section === "models"
@@ -250,10 +277,10 @@ export function SettingsOverlay({
               <ChevronLeft className="rtl:rotate-180" />
             </Button>
             <nav
-              ref={navRef}
+              ref={setNav}
               data-testid="settings-nav"
               aria-label={t`Settings`}
-              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-3 md:w-[200px] md:shrink-0 md:flex-none md:flex-col md:overflow-y-auto md:border-e md:border-border md:px-3 md:py-4"
+              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-3 md:w-[200px] md:shrink-0 md:flex-none md:flex-col md:overflow-y-auto md:border-e md:border-border md:bg-sidebar md:px-3 md:py-4"
             >
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -267,7 +294,7 @@ export function SettingsOverlay({
                     aria-current={active ? "page" : undefined}
                     disabled={panelBusy}
                     onClick={() => onSectionChange(item.id)}
-                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                       active
                         ? "bg-accent text-accent-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -309,9 +336,16 @@ export function SettingsOverlay({
                     <ChevronLeft className="rtl:rotate-180" />
                   </Button>
                 ) : null}
-                <DialogTitle className="min-w-0 break-words text-heading2 font-medium text-foreground">
-                  {sectionTitle}
-                </DialogTitle>
+                <div className="min-w-0">
+                  <DialogTitle className="break-words text-heading2 font-medium text-foreground">
+                    {sectionTitle}
+                  </DialogTitle>
+                  {sectionDescription ? (
+                    <DialogDescription className="mt-1 text-body text-muted-foreground">
+                      {sectionDescription}
+                    </DialogDescription>
+                  ) : null}
+                </div>
               </div>
               <DialogClose
                 aria-label={closeLabel}
@@ -348,6 +382,8 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        botAvatarSet={botAvatarSet}
+                        onBotAvatarSetChange={onBotAvatarSetChange}
                         onAccountImported={onAccountImported}
                         onImportAgent={onImportAgent}
                       />
@@ -379,11 +415,17 @@ export function SettingsOverlay({
                     <SpaceSettingsPanel
                       key={space.id}
                       space={space}
-                      onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
+                      onRename={(name, client) =>
+                        onRenameSpace?.(space.id, name, client) ?? Promise.resolve()
+                      }
                       onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
+                      onLeft={(activeSpaceId) => onLeftSpace?.(space.id, activeSpaceId)}
                       onClose={requestClose}
                       onBusyChange={setVoiceBusy}
                     />
+                  ) : null}
+                  {section === "organization" ? (
+                    <OrganizationSettingsPanel onBusyChange={setVoiceBusy} />
                   ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                   {section === "vault" ? <VaultSettings scope="account" /> : null}
@@ -392,7 +434,10 @@ export function SettingsOverlay({
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
                   ) : null}
                   {section === "usage" ? (
-                    <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                    <>
+                      <PlanUsage />
+                      <UsageSettingsPanel panelRef={usageRef} />
+                    </>
                   ) : null}
                   {section === "computer" && showComputer ? (
                     <ComputerSettingsPanel
@@ -402,9 +447,20 @@ export function SettingsOverlay({
                         holdComputerRecovery();
                       }}
                       onRecoveryDismissed={releaseComputerRecovery}
+                      canConfigureComputers={canConfigureComputers}
+                      computerSettingsEnabled={computerSettingsEnabled}
                     />
                   ) : null}
-                  {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
+                  {section === "labs" ? (
+                    <LabsSettingsPanel
+                      labs={labs}
+                      available={labsAvailable}
+                      onLabsChange={onLabsChange}
+                    />
+                  ) : null}
+                  {section === "billing" && billingEnabled ? (
+                    <BillingSettingsPanel client={shellRpc} />
+                  ) : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                   {section === "models" ? (
                     <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />

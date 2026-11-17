@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { abortableDelay, anySignal, requestDeadline, withAbort } from "./async.js";
+import { abortableDelay, anySignal, deadlineSignal, requestDeadline, withAbort } from "./async.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -84,6 +84,29 @@ describe("withAbort", () => {
     await expect(withAbort(new Promise<never>(() => {}), signal, "Timed out")).rejects.toThrow(
       "Timed out",
     );
+  });
+});
+
+describe("deadlineSignal", () => {
+  const aborted = (signal: AbortSignal) =>
+    new Promise<unknown>((resolve) => {
+      signal.addEventListener("abort", () => resolve(signal.reason), { once: true });
+    });
+
+  it("aborts with the parent's reason when the parent aborts first", () => {
+    const parent = new AbortController();
+    const signal = deadlineSignal(20_000, parent.signal);
+    expect(signal.aborted).toBe(false);
+    parent.abort("stop");
+    expect(signal.reason).toBe("stop");
+  });
+
+  it("aborts with a TimeoutError once the time runs out, with or without a parent", async () => {
+    for (const parent of [new AbortController().signal, undefined]) {
+      await expect(aborted(deadlineSignal(1, parent))).resolves.toMatchObject({
+        name: "TimeoutError",
+      });
+    }
   });
 });
 

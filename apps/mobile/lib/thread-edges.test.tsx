@@ -16,7 +16,7 @@ vi.mock("react-native-screens/experimental", () => ({ ScrollViewMarker: () => nu
 
 afterEach(() => {
   Platform.OS = "ios";
-  Platform.Version = 26;
+  (Platform as { Version: number | string }).Version = 26;
 });
 
 describe("thread scroll edges", () => {
@@ -38,7 +38,7 @@ describe("thread scroll edges", () => {
   });
 
   it.each(["18.5", 25, 26, "26.1"])("floats the header on iOS %s", (version) => {
-    Platform.Version = version;
+    (Platform as { Version: number | string }).Version = version;
     expect(threadHeaderFloats()).toBe(true);
     expect(threadEdgeOptions()).toEqual({
       headerTransparent: true,

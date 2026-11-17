@@ -1,8 +1,9 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   AutomatedSenderPolicies,
   AutomatedSenderPolicyMode,
-  Bot,
-  ExternalConversation,
+  RpcInput,
 } from "@rakazo/contracts";
 import type { ListenMode } from "@rakazo/core";
 import {
@@ -14,64 +15,68 @@ import {
   withRollupHours,
   withSenderMode,
 } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { glassHeaderOptions } from "../../components/glass-title";
+import { useQuery } from "@tanstack/react-query";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useContext, useRef, useState } from "react";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { NativeSymbol } from "../../components/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
+import { CallKeyboardContext } from "../../lib/call-keyboard-context";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
+import { useScreenHeader } from "../../lib/screen-header";
 import { errorText } from "../../lib/user-error";
 
-/** Listening, guidance, and automated-sender handling for one team chat room. */
+/** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {
-  const { t } = useI18n();
+  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  // Keyed by room, so another room never starts from this one's unsaved edits.
+  return <RoomSettings key={conversationId} conversationId={conversationId} />;
+}
+
+function RoomSettings({ conversationId }: { conversationId: string }) {
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
+  const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  const [loaded, setLoaded] = useState<{ conversation: ExternalConversation; bot: Bot } | null>(
-    null,
+  const spacesQuery = useQuery(formRead(rpcQuery("spaces/list")), queryClient);
+  const botsQuery = useQuery(formRead(rpcQuery("bots/list")), queryClient);
+  const room = spacesQuery.data?.current.externalConversations.find(
+    (candidate) => candidate.id === conversationId,
   );
-  const [mode, setMode] = useState<ListenMode>("inherit");
-  const [rules, setRules] = useState<string | null>(null);
-  const [policies, setPolicies] = useState<AutomatedSenderPolicies>({});
+  const roomBot = botsQuery.data?.find((candidate) => candidate.id === room?.botId);
+  // A copy read for the room shown before this one is not what Save may start from.
+  const fresh = spacesQuery.isFetchedAfterMount && botsQuery.isFetchedAfterMount;
+  const loaded = fresh && room && roomBot ? { conversation: room, bot: roomBot } : null;
+  const ready = Boolean(loaded);
+  const failedRead = [spacesQuery, botsQuery].find((read) => read.isError && !read.isFetching);
+  const loadError = failedRead ? errorText(failedRead.error) : null;
+  // Each stays unset until edited, so what is shown and saved for the rest is what was read.
+  const [modeEdit, setMode] = useState<ListenMode>();
+  const [rulesEdit, setRules] = useState<string | null>();
+  const [policiesEdit, setPolicies] = useState<AutomatedSenderPolicies>();
   // Typed hours stay a draft until saved, so Save works while the field still has focus.
   const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const change = useSave({
+    save: (policy: RpcInput<"externalConversations/updatePolicy">, send) =>
+      send("externalConversations/updatePolicy", policy),
+    onSaved: () => router.back(),
+    closesScreen: true,
+    // Save sits in the header, so a failure needs to show where the person is looking.
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not save`)),
+  });
+  const saving = change.pending;
+  const saveRef = useRef(() => {});
+  const title = loaded ? loaded.conversation.displayName || t`External conversation` : "";
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([rpc("spaces/list"), rpc("bots/list")])
-      .then(([navigation, bots]) => {
-        const conversation = navigation.current.externalConversations.find(
-          (candidate) => candidate.id === conversationId,
-        );
-        const bot = bots.find((candidate) => candidate.id === conversation?.botId);
-        if (!active || !conversation || !bot) return;
-        setLoaded({ conversation, bot });
-        setMode(listenMode(conversation.teamChatAmbientEnabled));
-        setRules(conversation.teamChatRules);
-        setPolicies(conversation.automatedSenderPolicies);
-        setLoadError(null);
-      })
-      .catch((err) => {
-        if (active) setLoadError(errorText(err));
-      });
-    return () => {
-      active = false;
-    };
-  }, [attempt, conversationId]);
+  useScreenHeader({
+    title,
+    action: ready ? { label: t`Save`, busy: saving, onPress: () => saveRef.current() } : null,
+  });
 
   if (!loaded) {
     return loadError ? (
@@ -79,113 +84,109 @@ export default function TeamConversationSettings() {
         <LoadFailure
           message={loadError}
           onRetry={() => {
-            setLoadError(null);
-            setAttempt((count) => count + 1);
+            for (const read of [spacesQuery, botsQuery]) if (read.isError) void read.refetch();
           }}
         />
       </View>
     ) : null;
   }
   const { conversation, bot } = loaded;
+  const mode = modeEdit ?? listenMode(conversation.teamChatAmbientEnabled);
+  const rules = rulesEdit === undefined ? conversation.teamChatRules || null : rulesEdit;
+  const policies = policiesEdit ?? conversation.automatedSenderPolicies;
   const senders = roomAutomatedSenders(policies, conversation.automatedSenders);
   const listening = ambientValue(mode) ?? bot.teamChatAmbientEnabled;
+  const replyLabels: Record<Exclude<ListenMode, "inherit">, string> = {
+    listen: t`Every message`,
+    mentions: t`Mentions only`,
+  };
   const senderModeLabels: Record<AutomatedSenderPolicyMode, string> = {
-    ignore: t("Ignore"),
-    rollup: t("Group updates"),
-    action: t("Always act"),
-    user: t("Treat like a person"),
+    ignore: t`Ignore`,
+    rollup: t`Group updates`,
+    action: t`Always act`,
+    user: t`Treat like a person`,
   };
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await rpc("externalConversations/updatePolicy", {
-        externalConversationId: conversation.id,
-        teamChatAmbientEnabled: ambientValue(mode),
-        teamChatRules: rules,
-        automatedSenderPolicies: senders.reduce(
-          (current, sender) =>
-            hoursDrafts[sender.id] !== undefined && current[sender.id]?.mode === "rollup"
-              ? withRollupHours(current, sender, Number(hoursDrafts[sender.id]))
-              : current,
-          policies,
-        ),
-      });
-      router.back();
-    } catch (err) {
-      setError(errorText(err, t("Could not save")));
-    } finally {
-      setSaving(false);
-    }
-  }
+  saveRef.current = () =>
+    change.run({
+      externalConversationId: conversation.id,
+      teamChatAmbientEnabled: ambientValue(mode),
+      teamChatRules: rules,
+      automatedSenderPolicies: senders.reduce(
+        (current, sender) =>
+          hoursDrafts[sender.id] !== undefined && current[sender.id]?.mode === "rollup"
+            ? withRollupHours(current, sender, Number(hoursDrafts[sender.id]))
+            : current,
+        policies,
+      ),
+    });
 
   return (
-    <>
-      <Stack.Screen
-        options={glassHeaderOptions(conversation.displayName || t("External conversation"))}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
-        automaticallyAdjustKeyboardInsets
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        <SettingsGroup
-          label={t("Listening")}
-          footer={
-            listening
-              ? undefined
-              : t("{bot} will still respond to direct mentions.", { bot: bot.name })
-          }
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.content}
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
+      <SettingsGroup>
+        <MenuPickerMenu
+          label={t`Replies to`}
+          choices={[
+            { key: "inherit", label: t`Same as ${ph({ bot: bot.name })}` },
+            { key: "listen", label: replyLabels.listen },
+            { key: "mentions", label: replyLabels.mentions },
+          ]}
+          value={mode}
+          onChange={(next) => setMode(next as ListenMode)}
         >
-          <View style={styles.padded}>
-            <NativeSegmentedControl
-              accessibilityLabel={t("Listening")}
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "inherit", label: t("{bot} default", { bot: bot.name }) },
-                { value: "listen", label: t("Listen") },
-                { value: "mentions", label: t("Mentions only") },
-              ]}
+          <View>
+            <SettingsRow
+              accessibilityLabel={t`Replies to`}
+              accessibilityRole="button"
+              accessible
+              title={t`Replies to`}
+              value={replyLabels[listening ? "listen" : "mentions"]}
+              trailing={
+                <NativeSymbol
+                  android="chevron-expand"
+                  color={native.tertiaryLabel}
+                  ios="chevron.up.chevron.down"
+                  size={13}
+                />
+              }
             />
           </View>
-        </SettingsGroup>
-        <View>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>{t("Room guidance")}</Text>
-            {rules !== null ? (
-              <NativeActionButton
-                label={t("Use default guidance")}
-                prominence="quiet"
-                variant="text"
-                size="compact"
-                fill={false}
-                onPress={() => setRules(null)}
-              />
-            ) : (
-              <Text style={styles.hint}>{t("{bot} default", { bot: bot.name })}</Text>
-            )}
-          </View>
-          <TextInput
-            accessibilityLabel={t("Room guidance")}
-            value={rules ?? bot.teamChatRules}
-            onChangeText={setRules}
-            maxLength={4000}
-            multiline
-            placeholder={t("Engage when... Ignore...")}
-            placeholderTextColor={tokens.mutedForeground}
-            style={[styles.input, { color: tokens.foreground }]}
-          />
+        </MenuPickerMenu>
+      </SettingsGroup>
+      <View>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>{t`Instructions for this room`}</Text>
+          {rules !== null ? (
+            <NativeActionButton
+              label={t`Reset`}
+              prominence="quiet"
+              variant="text"
+              size="compact"
+              fill={false}
+              onPress={() => setRules(null)}
+            />
+          ) : null}
         </View>
-        <SettingsGroup
-          label={t("Automated senders")}
-          footer={
-            senders.length ? undefined : t("Automated senders will appear after they post here.")
-          }
-        >
+        <TextInput
+          accessibilityLabel={t`Instructions for this room`}
+          value={rules ?? ""}
+          // An emptied field follows the bot again, as it shows.
+          onChangeText={(text) => setRules(text || null)}
+          maxLength={4000}
+          multiline
+          placeholder={bot.teamChatRules || undefined}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[styles.input, { color: tokens.foreground }]}
+        />
+      </View>
+      {senders.length ? (
+        <SettingsGroup label={t`Automated senders`}>
           {senders.flatMap((sender) => {
             const policy = senderPolicy(policies, sender);
             const row = (
@@ -199,7 +200,7 @@ export default function TeamConversationSettings() {
                 value={policy.mode}
                 onChange={(next) =>
                   setPolicies((current) =>
-                    withSenderMode(current, sender, next as AutomatedSenderPolicyMode),
+                    withSenderMode(current ?? policies, sender, next as AutomatedSenderPolicyMode),
                   )
                 }
               >
@@ -227,11 +228,11 @@ export default function TeamConversationSettings() {
               row,
               <SettingsRow
                 key={`${sender.id}:rollup`}
-                title={t("Every")}
+                title={t`Every`}
                 trailing={
                   <View style={styles.hours}>
                     <TextInput
-                      accessibilityLabel={t("{sender} rollup hours", { sender: sender.name })}
+                      accessibilityLabel={t`${ph({ sender: sender.name })} rollup hours`}
                       keyboardType="number-pad"
                       value={hoursDrafts[sender.id] ?? String(policy.rollupHours ?? 6)}
                       onChangeText={(text) =>
@@ -239,28 +240,21 @@ export default function TeamConversationSettings() {
                       }
                       style={[styles.hoursInput, { color: tokens.foreground }]}
                     />
-                    <Text style={styles.hint}>{t("hours")}</Text>
+                    <Text style={styles.hint}>{t`hours`}</Text>
                   </View>
                 }
               />,
             ];
           })}
         </SettingsGroup>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <NativeActionButton
-          label={saving ? t("Saving…") : t("Save")}
-          disabled={saving}
-          onPress={() => void save()}
-        />
-      </ScrollView>
-    </>
+      ) : null}
+    </ScrollView>
   );
 }
 
 function createStyles() {
   return StyleSheet.create({
     content: { padding: 16, gap: 20 },
-    padded: { padding: 12 },
     labelRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -289,6 +283,5 @@ function createStyles() {
       textAlign: "right",
       fontSize: 16,
     },
-    error: { color: mobileTokens().destructive, padding: 12 },
   });
 }

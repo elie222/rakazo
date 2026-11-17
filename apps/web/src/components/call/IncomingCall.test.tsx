@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+
 import type { Bot } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,11 +25,15 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("../../lib/call-session", () => ({
   isLeavingSession: vi.fn(() => false),
+  prepareCallAudio: vi.fn(),
   startCall: vi.fn(),
   useCallSession: () => null,
 }));
 vi.mock("../../lib/rpc", () => ({
-  rpc: { threads: { answerCall: vi.fn(), declineCall: vi.fn(), endCall: vi.fn() } },
+  rpc: {
+    threads: { answerCall: vi.fn(), endCall: vi.fn() },
+    notifications: { declineIncomingCall: vi.fn() },
+  },
   selectedSpaceId: () => "space-1",
 }));
 
@@ -84,7 +90,7 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
   vi.clearAllMocks();
   vi.mocked(rpc.threads.answerCall).mockReset();
-  vi.mocked(rpc.threads.declineCall).mockReset();
+  vi.mocked(rpc.notifications.declineIncomingCall).mockReset();
   vi.mocked(rpc.threads.endCall).mockReset();
   vi.mocked(isLeavingSession).mockReturnValue(false);
   container = document.createElement("div");
@@ -124,7 +130,7 @@ it("notifies when a visible call's tab becomes hidden", () => {
   render([bot("call-1", start + 45_000)]);
   expect(notify).not.toHaveBeenCalled();
   visibility = "hidden";
-  act(() => vi.advanceTimersByTime(1000));
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
   expect(notify).toHaveBeenCalledOnce();
 });
 
@@ -145,26 +151,31 @@ it("closes the notification on expiry", () => {
   expect(close).toHaveBeenCalledOnce();
 });
 
-it.each(["CONFLICT", "SERVICE_UNAVAILABLE"])(
-  "handles %s without losing transient retries",
-  async (code) => {
-    vi.mocked(rpc.threads.answerCall).mockRejectedValueOnce({ code });
-    render([bot("call-1", start + 45_000)]);
-    await act(async () => {
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Answer")!
-        .click();
-    });
-    expect(Boolean(container.querySelector('[data-testid="incoming-call"]'))).toBe(
-      code !== "CONFLICT",
-    );
-    expect(close).toHaveBeenCalledTimes(code === "CONFLICT" ? 1 : 0);
-  },
-);
+it.each([
+  ["Answer", "CONFLICT"],
+  ["Answer", "SERVICE_UNAVAILABLE"],
+  ["Decline", "CONFLICT"],
+  ["Decline", "SERVICE_UNAVAILABLE"],
+])("handles a %s %s without losing transient retries", async (action, code) => {
+  vi.mocked(rpc.threads.answerCall).mockRejectedValueOnce({ code });
+  vi.mocked(rpc.notifications.declineIncomingCall).mockRejectedValueOnce({ code });
+  render([bot("call-1", start + 45_000)]);
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === action)!
+      .click();
+  });
+  expect(Boolean(container.querySelector('[data-testid="incoming-call"]'))).toBe(
+    code !== "CONFLICT",
+  );
+  expect(close).toHaveBeenCalledTimes(code === "CONFLICT" ? 1 : 0);
+});
 
 it.each(["Answer", "Decline"])("keeps a failed %s retryable", async (action) => {
   vi.mocked(rpc.threads.answerCall).mockRejectedValue(new Error("Connection failed"));
-  vi.mocked(rpc.threads.declineCall).mockRejectedValue(new Error("Connection failed"));
+  vi.mocked(rpc.notifications.declineIncomingCall).mockRejectedValue(
+    new Error("Connection failed"),
+  );
   render([bot("call-1", start + 45_000)]);
   const button = () =>
     [...container.querySelectorAll("button")].find((element) => element.textContent === action)!;
@@ -185,7 +196,7 @@ it.each(["Answer", "Decline"])(
     )!;
     await act(async () => button.click());
     expect(rpc.threads.answerCall).not.toHaveBeenCalled();
-    expect(rpc.threads.declineCall).not.toHaveBeenCalled();
+    expect(rpc.notifications.declineIncomingCall).not.toHaveBeenCalled();
   },
 );
 
@@ -199,12 +210,8 @@ it("keeps private call content out of notifications", () => {
 });
 
 it("hangs up an answer that lands after the call view is gone", async () => {
-  let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
-  vi.mocked(rpc.threads.answerCall).mockReturnValue(
-    new Promise((resolve) => {
-      deliver = resolve;
-    }),
-  );
+  const deliver = deferred<{ opening: string; reason: string }>();
+  vi.mocked(rpc.threads.answerCall).mockReturnValue(deliver.promise);
   vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
   const onAnswered = vi.fn();
   act(() =>
@@ -216,7 +223,7 @@ it("hangs up an answer that lands after the call view is gone", async () => {
       .click(),
   );
   act(() => root.render(null));
-  await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+  await act(async () => deliver.resolve({ opening: "Ready?", reason: "Review" }));
   expect(startCall).not.toHaveBeenCalled();
   expect(onAnswered).not.toHaveBeenCalled();
   expect(rpc.threads.endCall).toHaveBeenCalledWith(
@@ -226,12 +233,8 @@ it("hangs up an answer that lands after the call view is gone", async () => {
 });
 
 it("sends nothing for an answer that lands while the page reloads for another session", async () => {
-  let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
-  vi.mocked(rpc.threads.answerCall).mockReturnValue(
-    new Promise((resolve) => {
-      deliver = resolve;
-    }),
-  );
+  const deliver = deferred<{ opening: string; reason: string }>();
+  vi.mocked(rpc.threads.answerCall).mockReturnValue(deliver.promise);
   const onAnswered = vi.fn();
   act(() =>
     root.render(<IncomingCall bots={[bot("call-1", start + 45_000)]} onAnswered={onAnswered} />),
@@ -244,19 +247,15 @@ it("sends nothing for an answer that lands while the page reloads for another se
   act(() => root.render(null));
   // Another tab switched accounts: a hang-up now would carry the other user's cookie.
   vi.mocked(isLeavingSession).mockReturnValue(true);
-  await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+  await act(async () => deliver.resolve({ opening: "Ready?", reason: "Review" }));
   expect(rpc.threads.endCall).not.toHaveBeenCalled();
   expect(startCall).not.toHaveBeenCalled();
   expect(onAnswered).not.toHaveBeenCalled();
 });
 
 it("hangs up an answer that lands while a lazy route hides the call view", async () => {
-  let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
-  vi.mocked(rpc.threads.answerCall).mockReturnValue(
-    new Promise((resolve) => {
-      deliver = resolve;
-    }),
-  );
+  const deliver = deferred<{ opening: string; reason: string }>();
+  vi.mocked(rpc.threads.answerCall).mockReturnValue(deliver.promise);
   vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
   const onAnswered = vi.fn();
   const pendingRoute = new Promise<never>(() => undefined);
@@ -278,7 +277,7 @@ it("hangs up an answer that lands while a lazy route hides the call view", async
   );
   // Navigating to a lazy page hides the shell without unmounting it.
   act(() => root.render(view(true)));
-  await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+  await act(async () => deliver.resolve({ opening: "Ready?", reason: "Review" }));
   expect(startCall).not.toHaveBeenCalled();
   expect(onAnswered).not.toHaveBeenCalled();
   expect(rpc.threads.endCall).toHaveBeenCalledWith(

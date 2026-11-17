@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -7,14 +8,22 @@ import {
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
+  teamChatRunClientNonce,
+  teamChatRunFromOwner,
 } from "@rakazo/db";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { MessagingInstallations } from "./messaging-installations.js";
+import { SlackInstallProvider } from "./providers/messaging/slack/slack-install-provider.js";
+import type { SecretCleanup } from "./secret-cleanup.js";
+import { secretCleanupJobKey } from "./secret-cleanup.js";
+import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { EncryptedSecretStore } from "./secrets.js";
-import { SlackInstallProvider } from "./slack-install-provider.js";
+import { GraphileJobPublisher } from "./wakeup.js";
 
 const describePostgres =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 describePostgres("messaging workspace installation (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
@@ -26,7 +35,18 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       ok: true,
       access_token: "fake-install-token",
       team: { id: "T-TEST", name: "Example workspace" },
+      authed_user: { id: "U-INSTALLER" },
     }),
+  );
+  const encrypted = new EncryptedSecretStore("fake-test-encryption-key");
+  const installProvider = new SlackInstallProvider(
+    {
+      clientId: "fake-client",
+      clientSecret: "fake-client-secret",
+      signingSecret: "fake-signing-secret",
+      redirectUri: "https://app.example.test/callback",
+    },
+    fetcher,
   );
   const start = (index: number) =>
     runAsTenant(
@@ -44,11 +64,10 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
     };
     for (let i = 0; i < 2; i++) {
       const ids = await runAsSystem("messaging install fixtures", () =>
-        provisionMessagingIdentity(
-          prisma,
-          { provider: "install-test", address: `fake-sender-${i}` },
-          { signupsEnabled: "true", signupAllowlist: undefined },
-        ),
+        provisionMessagingIdentity(prisma, {
+          provider: "install-test",
+          address: `fake-sender-${i}`,
+        }),
       );
       actors.push({
         spaceId: ids.spaceId,
@@ -60,16 +79,9 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
     }
     manager = new MessagingInstallations(
       prisma,
-      new EncryptedSecretStore("fake-test-encryption-key"),
-      new SlackInstallProvider(
-        {
-          clientId: "fake-client",
-          clientSecret: "fake-client-secret",
-          signingSecret: "fake-signing-secret",
-          redirectUri: "https://app.example.test/callback",
-        },
-        fetcher,
-      ),
+      encrypted,
+      installProvider,
+      fakeCleanupJobs().jobs,
     );
   });
   afterAll(async () => {
@@ -98,6 +110,69 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       [],
     );
     expect((await manager.get("slack", "T-TEST"))?.credential).toBe("fake-install-token");
+  });
+
+  it("treats only the installer's own messages as the owner's", async () => {
+    const installation = await asSystem(prisma).messagingInstallation.findUniqueOrThrow({
+      where: { provider_workspaceId: { provider: "slack", workspaceId: "T-TEST" } },
+    });
+    expect(installation.ownerAddress).toBe("T-TEST:U-INSTALLER");
+    const conversation = await asSystem(prisma).externalConversation.create({
+      data: {
+        provider: "slack",
+        workspaceId: "T-TEST",
+        externalKey: `${installation.id}:C-GENERAL`,
+        conversationId: `slack~${installation.id}:C-GENERAL`,
+        spaceId: actors[0]!.spaceId,
+        botId: bots[0]!,
+        userId: actors[0]!.userId,
+      },
+    });
+    const message = (eventId: string, senderId: string, extra: object = {}) =>
+      asSystem(prisma).externalMessage.create({
+        data: {
+          externalConversationId: conversation.id,
+          providerEventId: eventId,
+          senderId,
+          senderName: "Fake sender",
+          content: "What do you remember?",
+          ...extra,
+        },
+      });
+    const fromOwner = (eventId: string) =>
+      runAsSystem("check team chat sender", () =>
+        teamChatRunFromOwner(prisma, {
+          externalConversationId: conversation.id,
+          sourceClientNonce: teamChatRunClientNonce("slack", eventId),
+        }),
+      );
+    const owner = await message("E-OWNER", "T-TEST:U-INSTALLER");
+    const coworker = await message("E-COWORKER", "T-TEST:U-COWORKER");
+    await message("E-APP", "T-TEST:U-INSTALLER", { senderIsBot: true });
+    await message("E-MIXED", "T-TEST:U-INSTALLER", {
+      batchContext: JSON.stringify({ prompt: "update", messageIds: [owner.id, coworker.id] }),
+    });
+    expect(await fromOwner("E-OWNER")).toBe(true);
+    expect(await fromOwner("E-COWORKER")).toBe(false);
+    expect(await fromOwner("E-APP")).toBe(false);
+    expect(await fromOwner("E-MIXED")).toBe(false);
+    expect(await fromOwner("E-MISSING")).toBe(false);
+  });
+
+  it("forgets the previous installer when a reconnect names nobody", async () => {
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        ok: true,
+        access_token: "fake-install-token-2",
+        team: { id: "T-TEST", name: "Example workspace" },
+      }),
+    );
+    const state = await start(0);
+    await manager.complete(actors[0]!, state, "code");
+    const installation = await asSystem(prisma).messagingInstallation.findUniqueOrThrow({
+      where: { provider_workspaceId: { provider: "slack", workspaceId: "T-TEST" } },
+    });
+    expect(installation.ownerAddress).toBeNull();
   });
 
   it("exposes personal link availability only to current space members without exposing installation ownership", async () => {
@@ -252,5 +327,73 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       0,
     );
     expect(await asSystem(prisma).bot.count({ where: { id: personal.id } })).toBe(1);
+  });
+  it("commits a disconnected credential's cleanup with the removal and deletes it from the job", async () => {
+    const actor = actors[0]!;
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+    const queue = new GraphileJobPublisher(pool);
+    const remove = vi.fn(async (_ref: string, _context: unknown) => undefined);
+    // A store that keeps credentials elsewhere, so each one must be deleted there.
+    const remote = { delete: remove, isRemote: () => true } as unknown as SecretStore;
+    const ref = `remote:messaging-cleanup-${randomUUID()}`;
+    const key = secretCleanupJobKey(ref);
+    const removing = new MessagingInstallations(prisma, remote, installProvider, {
+      enqueueIn: (tx, job) => queue.enqueueIn(tx, job),
+      // The direct attempt cannot hand over, as when the process stops right after the commit.
+      enqueue: async () => undefined,
+      cancel: (jobKey) => queue.cancel(jobKey),
+      cancelIn: (tx, jobKey) => queue.cancelIn(tx, jobKey),
+    });
+    try {
+      const installation = await asSystem(prisma).messagingInstallation.create({
+        data: {
+          provider: "slack",
+          workspaceId: "T-CLEANUP",
+          workspaceName: "Example workspace",
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId: bots[0]!,
+          ciphertext: ref,
+        },
+      });
+      const cleanup: SecretCleanup = {
+        kind: "messaging_installation",
+        recordId: installation.id,
+        ref,
+      };
+      const queued = async () =>
+        (
+          await pool.query<{ due: boolean }>(
+            "select run_at <= now() as due from graphile_worker._private_jobs where key = $1",
+            [key],
+          )
+        ).rows;
+      const handlers = createBackgroundJobHandlers({
+        prisma,
+        secretStore: remote,
+      } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+      const runJob = () =>
+        runAsSystem("background job secret.cleanup", () => handlers["secret.cleanup"](cleanup));
+
+      // While the installation holds the credential, a late retry leaves it alone.
+      await runJob();
+      expect(remove).not.toHaveBeenCalled();
+
+      remove.mockRejectedValueOnce(new Error("secret store unavailable"));
+      await removing.remove(actor, installation.id);
+      expect(
+        await asSystem(prisma).messagingInstallation.count({ where: { id: installation.id } }),
+      ).toBe(0);
+      expect(await queued()).toEqual([{ due: false }]);
+      await runJob();
+      expect(remove).toHaveBeenLastCalledWith(
+        ref,
+        expect.objectContaining({ recordId: installation.id }),
+      );
+    } finally {
+      await queue.cancel(key);
+      await queue.close();
+      await pool.end();
+    }
   });
 });

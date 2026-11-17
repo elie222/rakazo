@@ -39,6 +39,12 @@ model request, with zero retrieval tools, exactly three model calls and no
 compaction generation. This avoids paying another lookup for short originals
 without claiming that the live-model cost gate is already met.
 
+Retrieval, the default, treats the recent eight exchanges as a floor. Older
+exchanges stay while the conversation before the current request fits the same
+allowance, so a request that depends on an earlier decision without sounding
+like a question about the past still has it. The `history-session-*` cases cover
+this with one short synthetic working chat.
+
 The paging regression retrieves every one of 50 linked runs, 100 artifacts and
 30 outcome messages. It reconstructs a long original containing Unicode and
 newlines through exact text offsets. Complete backend JSON stays within 10,000

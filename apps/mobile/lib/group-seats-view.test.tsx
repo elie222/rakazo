@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { botEyeColor } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -46,6 +45,7 @@ vi.mock("react-native-svg", () => {
 vi.mock("../lib/native", () => ({
   native: { systemTertiaryLabel: "tertiary", fill: "fill" },
   useResolvedAppearance: () => "light",
+  useMobileTokens: () => ({ background: "#FFFFFF", foreground: "#141414" }),
 }));
 
 const member = (index: number) => ({
@@ -142,6 +142,7 @@ describe("GroupSeats", () => {
     const eyes = Array.from(container.querySelectorAll("svg-g[data-fill]"), (group) =>
       group.getAttribute("data-fill"),
     );
-    expect(eyes).toEqual([botEyeColor, botEyeColor]);
+    // Both bodies are pale, so their eyes stay dark on a light page, as on the bot's own avatar.
+    expect(eyes).toEqual(["#141414", "#141414"]);
   });
 });

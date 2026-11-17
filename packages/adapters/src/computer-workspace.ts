@@ -13,18 +13,54 @@ import type {
 } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
-import { parseScreenLeaseId } from "@rakazo/core";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
+import { parseScreenLeaseId } from "@rakazo/core/node/screen-lease";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
 import { isSandboxDamagedError } from "./sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Groups workspace files into transfer batches of at most `maxFiles` files and
+ * PORTABLE_TRANSFER_BATCH_BYTES, or one file when it alone is larger. The caller sends
+ * each batch `add` hands back, which may be empty, and finally what `take` returns.
+ */
+export class PortableFileBatcher<T> {
+  private files: T[] = [];
+  private bytes = 0;
+
+  constructor(
+    private readonly maxFiles: number,
+    private readonly size: (file: T) => number,
+  ) {}
+
+  /** Adds `file`, first handing back the current batch when `file` would overflow it. */
+  add(file: T): T[] | undefined {
+    const size = this.size(file);
+    const full =
+      this.files.length >= this.maxFiles || this.bytes + size > PORTABLE_TRANSFER_BATCH_BYTES
+        ? this.take()
+        : undefined;
+    this.files.push(file);
+    this.bytes += size;
+    return full;
+  }
+
+  /** The batch so far, leaving an empty one. */
+  take(): T[] {
+    const files = this.files;
+    this.files = [];
+    this.bytes = 0;
+    return files;
+  }
+}
 
 /** Disk a save leaves free for everything else on the data volume. */
 const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
@@ -32,11 +68,6 @@ const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
 /** Disk a file costs beyond its contents, so many small files still trigger the check. */
 const FILE_DISK_OVERHEAD_BYTES = 4096;
-
-/** Docker computers mount the server's home directory, whichever store keeps it. */
-export function mountsServerHome(kind: string) {
-  return kind === "docker";
-}
 
 /** The computer already reads and writes the server's home directory, so there is nothing to copy. */
 async function homeIsMounted(
@@ -46,11 +77,13 @@ async function homeIsMounted(
   context: AdapterContext,
 ) {
   if (!(home instanceof LocalAgentHomeStore)) return false;
-  if (mountsServerHome(computer.kind)) return true;
+  const { serverHomeMount } = sandboxKindCapabilities(computer.kind);
+  // An "always" computer mounts the server's home directory whichever store keeps it.
+  if (serverHomeMount === "always") return true;
   // Object-backed homes must hydrate and export even when a claim was configured.
   if (home.describe().id !== "local-fs") return false;
   return (
-    computer.kind === "kubernetes" && (await sandbox.hasMountedHome?.(computer, context)) === true
+    serverHomeMount === "optional" && (await sandbox.hasMountedHome?.(computer, context)) === true
   );
 }
 
@@ -252,6 +285,8 @@ async function removeDeletedBotFolders(
         names.slice(start, start + DELETED_BOT_FOLDER_BATCH),
         context,
       ).catch((error) => {
+        // The deadline's own warning covers a removal it cut short.
+        if (context.signal.aborted) return;
         getLogger().error("team bot folder cleanup", error);
       });
     }
@@ -407,7 +442,11 @@ export async function checkpointRunComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string | undefined> {
-  if (computerRecord.scope !== "team" || computer.kind === "docker") {
+  if (
+    computerRecord.scope !== "team" ||
+    sandboxKindCapabilities(computer.kind).serverHomeMount === "always" ||
+    (await homeIsMounted(deps.home, deps.sandbox, computer, context))
+  ) {
     return checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
   }
   const now = new Date();

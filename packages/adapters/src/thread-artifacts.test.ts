@@ -10,13 +10,65 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
-  currentTurnFilesInstruction,
+  createEarlierFileQueue,
   materializeCurrentTurnFiles,
+  materializeEarlierFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
+import {
+  currentTurnFilesInstruction,
+  recentThreadFilesInstruction,
+} from "./thread-artifacts.prompt.js";
 
 describe("current-turn thread files", () => {
+  it.each([
+    ["reports\\draft.pdf", undefined, "draft.pdf"],
+    ["reports/nested\\draft.pdf", undefined, "draft.pdf"],
+    ["reports\\nested/draft.pdf", undefined, "draft.pdf"],
+    ["reports/draft.pdf", undefined, "draft.pdf"],
+    ["draft.pdf", undefined, "draft.pdf"],
+    ["reports\\draft.pdf", "  ", "draft.pdf"],
+    ["reports\\draft.pdf", "  Custom report.pdf  ", "Custom report.pdf"],
+  ])("names attachment %s with override %s as %s", async (filePath, name, expectedName) => {
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(async ({ data }) => ({ id: "artifact", ...data })),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+    const put = vi.fn().mockResolvedValue({ id: "stored" });
+    const result = await attachWorkspaceFileToThread(
+      {
+        prisma: {
+          artifact,
+          $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+        } as unknown as PrismaClient,
+        artifacts: { put } as unknown as ArtifactStore,
+      },
+      {
+        spaceId: "space",
+        userId: "owner",
+        botId: "bot",
+        runId: "run",
+        filePath,
+        name,
+        bytes: new Uint8Array([1, 2, 3]),
+        operationId: "op",
+      },
+    );
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ name: expectedName, mimeType: "application/pdf" }),
+      expect.anything(),
+    );
+    expect(artifact.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ name: { equals: expectedName, mode: "insensitive" } }),
+      }),
+    );
+    expect(artifact.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: expectedName }) }),
+    );
+    expect(result.block).toMatchObject({ name: expectedName, mimeType: "application/pdf" });
+  });
   it("rejects generated output above a lower configured attachment limit before storage", async () => {
     const put = vi.fn();
     await expect(
@@ -218,6 +270,8 @@ describe("current-turn thread files", () => {
     ["audio/mp4", ".m4a"],
     ["application/pdf", ".pdf"],
     ["application/zip", ".zip"],
+    ["application/vnd.rar", ".rar"],
+    ["application/x-7z-compressed", ".7z"],
   ])(
     "copies %s attachments into the bot workspace and describes their paths",
     async (mimeType, extension) => {
@@ -488,6 +542,71 @@ describe("recent thread files", () => {
     ]);
   });
 
+  it.each([
+    [2, ["upload.png"]],
+    [3, []],
+  ])(
+    "lists an old upload only within the last 3 user turns, after %s text-only turns",
+    async (textTurns, listed) => {
+      const upload: MessageBlock = {
+        kind: "image",
+        artifactId: "upload",
+        name: "upload.png",
+        mimeType: "image/png",
+      };
+      const textIds = Array.from({ length: textTurns }, (_, i) => `text-${i}`);
+      const history = ["upload", ...textIds.flatMap((id) => [id, `reply-${id}`]), "current"].map(
+        (id) => ({ id, role: id.startsWith("reply-") ? "assistant" : "user" }),
+      );
+      const messages = [
+        { id: "upload", blocks: [upload] },
+        ...textIds.map((id) => ({ id, blocks: [{ kind: "text" as const, text: id }] })),
+      ];
+      const files = await materializeRecentThreadFiles(
+        {
+          prisma: {
+            artifact: {
+              findMany: vi.fn().mockResolvedValue([
+                {
+                  id: "upload",
+                  name: "upload.png",
+                  mimeType: "image/png",
+                  size: 3,
+                  storageKey: "stored-upload",
+                },
+              ]),
+            },
+          } as unknown as PrismaClient,
+          artifacts: {
+            get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+          } as unknown as ArtifactStore,
+          sandbox: {
+            readFile: vi.fn().mockRejectedValue(new Error("missing")),
+            writeFile: vi.fn().mockResolvedValue(undefined),
+          } as unknown as SandboxProvider,
+        },
+        history,
+        messages,
+        {
+          context: {
+            operationId: "run",
+            traceId: "run",
+            spaceId: "space",
+            userId: "user",
+            botId: "bot",
+            signal: new AbortController().signal,
+          },
+          computer: async () =>
+            ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+          computerMode: "team",
+          maxTurns: 3,
+          skipMessageId: "current",
+        },
+      );
+      expect(files.map((file) => file.name)).toEqual(listed);
+    },
+  );
+
   it("copies attachments from earlier turns the run is answering, skipping unreadable ones", async () => {
     const findMany = vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in[0] === "image-1"
@@ -562,5 +681,95 @@ describe("recent thread files", () => {
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
+  });
+});
+
+describe("files listed by history tools", () => {
+  it("marks the workspace dirty for a new copy so the run checkpoint keeps it", async () => {
+    const block = {
+      kind: "file" as const,
+      artifactId: "lease",
+      name: "lease.md",
+      mimeType: "text/markdown",
+      size: 5,
+    };
+    const writeFile = vi.fn();
+    const markWorkspaceDirty = vi.fn();
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([{ ...block, id: "lease", storageKey: "stored" }]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(new Uint8Array(5)) } as unknown as ArtifactStore,
+      sandbox: {
+        readFile: vi.fn().mockRejectedValue(new Error("missing")),
+        writeFile,
+      } as unknown as SandboxProvider,
+    };
+    const input = {
+      context: {
+        operationId: "run",
+        traceId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        signal: new AbortController().signal,
+      },
+      computer: async () => ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+      computerMode: "dedicated" as const,
+      markWorkspaceDirty,
+    };
+    const files = await materializeEarlierFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual(["attachments/lease.md"]);
+    expect(writeFile).toHaveBeenCalledOnce();
+    expect(markWorkspaceDirty).toHaveBeenCalledOnce();
+    // Recent-turn files are copied again on every computer start, so they stay out of it.
+    markWorkspaceDirty.mockClear();
+    await materializeRecentThreadFiles(
+      deps,
+      [{ id: "m", role: "user" }],
+      [{ id: "m", blocks: [block] }],
+      {
+        ...input,
+        maxTurns: 3,
+      },
+    );
+    expect(markWorkspaceDirty).not.toHaveBeenCalled();
+  });
+});
+
+describe("earlier file queue", () => {
+  const file = (artifactId: string) => ({
+    kind: "file" as const,
+    artifactId,
+    name: `${artifactId}.md`,
+    mimeType: "text/markdown",
+    size: 1,
+  });
+
+  it("keeps the newest listings, once each, and queues a file again after it was taken", () => {
+    const queue = createEarlierFileQueue(2);
+    queue.add([file("a"), file("b"), file("a")]);
+    queue.add([file("c")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a", "c"]);
+    expect(queue.take()).toEqual([]);
+    // Listing it again retries a copy that failed.
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
+  });
+
+  it("skips files already copied to this computer until a new one starts", () => {
+    const queue = createEarlierFileQueue();
+    queue.add([file("a"), file("b")]);
+    const taken = queue.take();
+    queue.copiedTo(taken, [
+      { name: "a.md", mimeType: "text/markdown", size: 1, path: "attachments/a.md" },
+    ]);
+    queue.add([file("a"), file("b")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["b"]);
+    queue.computerStarted();
+    queue.add([file("a")]);
+    expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
   });
 });

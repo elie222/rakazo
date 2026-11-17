@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Bot, Routine } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -73,12 +74,9 @@ afterEach(() => {
 it("keeps per-bot cache data and one-bot invalidation while batching the cold roster", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const f = fixture("space-a");
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const pending = deferred();
   f.batch.mockImplementationOnce(async ({ botIds }) => {
-    await pending;
+    await pending.promise;
     return [...botIds].reverse().map((botId) => ({ botId, routines: rows(botId, "space-a") }));
   });
   const root = createRoot(document.createElement("div"));
@@ -97,7 +95,7 @@ it("keeps per-bot cache data and one-bot invalidation while batching the cold ro
   expect(latest.composerMentionTargets.filter((target) => target.kind === "routine")).toMatchObject(
     [{ name: "Cached" }],
   );
-  release();
+  pending.resolve();
   await act(async () => {
     await vi.waitFor(() =>
       expect(queryClient.getQueryData(key("space-a", "bot-99"))).toEqual(rows("bot-99", "space-a")),

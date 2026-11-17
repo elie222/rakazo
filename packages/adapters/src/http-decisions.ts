@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import { z } from "zod";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import { decisionModel } from "./decision-models.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -59,7 +60,15 @@ export class HttpDecisionProvider implements DecisionProvider {
         : undefined,
     });
     let usage: AgentUsage | null = null;
+    const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
+    // Deliberately low, for a sent request whose usage never arrives.
+    const countedTokens = {
+      inputTokens: lowTextTokens(body),
+      outputTokens: 0,
+    };
+    let sent = false;
     try {
+      sent = true;
       const response = await (this.options.fetch ?? fetch)(
         this.provider === "openrouter"
           ? "https://openrouter.ai/api/alpha/decisions"
@@ -75,7 +84,11 @@ export class HttpDecisionProvider implements DecisionProvider {
           },
           body,
         },
-      );
+      ).catch((error: unknown) => {
+        // A connection failure the caller did not cause never reached the provider.
+        if (!context.signal.aborted) sent = false;
+        throw error;
+      });
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
@@ -102,6 +115,8 @@ export class HttpDecisionProvider implements DecisionProvider {
         outputTokens: parsed.usage?.output_tokens ?? null,
         costUsd: parsed.usage?.cost ?? null,
         costSource: parsed.usage?.cost === undefined ? null : "provider-reported",
+        pricingSnapshot,
+        ...(parsed.usage?.cost === undefined ? { countedTokens } : {}),
         providerRequestId: parsed.id ?? null,
         usageSource: "response",
         operationKind: "setup",
@@ -129,7 +144,26 @@ export class HttpDecisionProvider implements DecisionProvider {
             callId,
           });
       } finally {
-        if (reservation) await this.options.callObserver?.afterCall(reservation, usage);
+        if (reservation)
+          await this.options.callObserver?.afterCall(
+            reservation,
+            usage ??
+              (sent
+                ? {
+                    inputTokens: null,
+                    outputTokens: null,
+                    costUsd: null,
+                    operationKind: "setup",
+                    pricingSnapshot,
+                    countedTokens: context.signal.aborted
+                      ? {
+                          ...countedTokens,
+                          ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
+                        }
+                      : countedTokens,
+                  }
+                : null),
+          );
       }
     }
   }

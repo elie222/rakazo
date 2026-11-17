@@ -1,7 +1,7 @@
+import { useLingui } from "@lingui/react/macro";
 import type { ComputerMode } from "@rakazo/contracts";
 import { BOT_COMPUTER_MODES } from "@rakazo/contracts";
 import { Text, View } from "react-native";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { NativeSegmentedControl } from "./native-segmented-control";
 
@@ -16,7 +16,7 @@ export function ComputerModePicker({
   disabled?: boolean;
   plain?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   return (
     <View
@@ -34,16 +34,16 @@ export function ComputerModePicker({
               : { color: tokens.foreground, marginBottom: 12, fontSize: 16, fontWeight: "600" }
           }
         >
-          {t("Computer")}
+          {t`Computer`}
         </Text>
       ) : null}
       <NativeSegmentedControl
-        accessibilityLabel={t("Computer")}
+        accessibilityLabel={t`Computer`}
         disabled={disabled}
         onChange={onChange}
         options={BOT_COMPUTER_MODES.map((value) => ({
           value,
-          label: value === "team" ? t("Team") : t("Private"),
+          label: value === "team" ? t`Team` : t`Private`,
         }))}
         value={value}
       />

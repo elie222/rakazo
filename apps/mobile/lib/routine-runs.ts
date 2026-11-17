@@ -1,14 +1,12 @@
 import type { RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import { mergeRoutineRunPages, routineHistoryPage } from "@rakazo/core";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useIsFocused } from "expo-router";
 import { useCallback } from "react";
 import { queryClient, rpcQuery } from "./query";
+import { useSpaceChanges } from "./roster-signals";
 
-/** A shown history asks again this often, so a running routine's status settles. */
-export const ROUTINE_RUNS_POLL_MS = 15_000;
-
-/** A routine's runs, newest first, a page at a time; refreshed while the screen is shown. */
+/** A routine's runs, newest first, a page at a time; read on focus and whenever runs change. */
 export function useRoutineRuns(routineId: string) {
   const query = useInfiniteQuery(
     {
@@ -19,7 +17,6 @@ export function useRoutineRuns(routineId: string) {
         ) as Promise<RoutineHistory>,
       initialPageParam: null as RoutineRunCursor | null,
       getNextPageParam: (page: RoutineHistory) => page.nextCursor,
-      // The screen reads on focus and on a timer below.
       enabled: false,
     },
     queryClient,
@@ -27,12 +24,10 @@ export function useRoutineRuns(routineId: string) {
   const { refetch } = query;
   useFocusEffect(
     useCallback(() => {
-      if (!routineId) return;
-      void refetch();
-      const timer = setInterval(() => void refetch(), ROUTINE_RUNS_POLL_MS);
-      return () => clearInterval(timer);
+      if (routineId) void refetch();
     }, [routineId, refetch]),
   );
+  useSpaceChanges("runs", refetch, useIsFocused() && Boolean(routineId));
   return {
     runs: query.data ? mergeRoutineRunPages(query.data.pages) : null,
     failed: query.isError,

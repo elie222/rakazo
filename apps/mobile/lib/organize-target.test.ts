@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MobileSpace } from "./api";
 import { rpc } from "./api";
+import type { MobileSpace } from "./mobile-types";
 import { findOrganizeTarget } from "./organize-target";
 
 vi.mock("./api", () => ({

@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useNow, useTimeout } from "@rakazo/chat-ui/hooks";
 import { Button, cn } from "@rakazo/ui-web";
 import { ArrowUp, ChevronUp, Lock, Mic, Trash2 } from "lucide-react";
 import type { PointerEvent } from "react";
@@ -33,7 +34,9 @@ export function useHoldToTalk({
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [lift, setLift] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
+  // A new object shows the notice for another HINT_MS.
+  const [notice, setNotice] = useState<{ text: string } | null>(null);
+  useTimeout(() => setNotice(null), notice ? HINT_MS : null, notice);
   const recordingRef = useRef(recording);
   const onTextRef = useRef(onText);
   useEffect(() => {
@@ -42,13 +45,8 @@ export function useHoldToTalk({
   /** Dictation reported listening for this recording, so a later idle means it ended. */
   const started = useRef(false);
   const gesture = useRef<{ startY: number; startedAt: number } | null>(null);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showNotice = useCallback((text: string) => {
-    setNotice(text);
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setNotice(null), HINT_MS);
-  }, []);
+  const showNotice = useCallback((text: string) => setNotice({ text }), []);
 
   useEffect(
     () =>
@@ -70,8 +68,10 @@ export function useHoldToTalk({
 
   useEffect(
     () => () => {
-      if (noticeTimer.current) clearTimeout(noticeTimer.current);
-      if (recordingRef.current) dictation.stop("cancel");
+      // Words already on their way to the server were meant to be kept, so only a recording
+      // still listening is cancelled; `onText` decides where late words go.
+      if (recordingRef.current && dictation.state.status !== "transcribing")
+        dictation.stop("cancel");
     },
     [],
   );
@@ -118,14 +118,20 @@ export function useHoldToTalk({
     setRecording(next);
   }, []);
 
+  const startHandsFree = useCallback(() => {
+    if (disabled || recordingRef.current) return;
+    start(true);
+  }, [disabled, start]);
+
   return {
     recording,
     transcribing,
     transcript,
     lift,
-    notice,
+    notice: notice?.text ?? null,
     submit,
     cancel,
+    startHandsFree,
     buttonProps: {
       onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
         if (disabled || event.button !== 0 || recordingRef.current) return;
@@ -163,8 +169,7 @@ export function useHoldToTalk({
       },
       onClick: (event: { detail: number }) => {
         // detail 0 is a keyboard press; pointer presses are handled above.
-        if (event.detail !== 0 || disabled || recordingRef.current) return;
-        start(true);
+        if (event.detail === 0) startHandsFree();
       },
       onContextMenu: (event: { preventDefault: () => void }) => event.preventDefault(),
     },
@@ -172,11 +177,7 @@ export function useHoldToTalk({
 }
 
 function useSeconds(since: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow(500);
   return Math.max(0, Math.floor((now - since) / 1000));
 }
 
@@ -194,7 +195,7 @@ export function HoldToTalkStrip({ talk }: { talk: ReturnType<typeof useHoldToTal
   return (
     <div
       data-testid="hold-to-talk-strip"
-      className="flex min-h-6 min-w-0 flex-1 items-center gap-2.5 py-0.5 text-sm"
+      className="flex min-h-6 min-w-0 flex-1 items-center gap-2.5 py-0.5 text-body"
     >
       <span
         aria-hidden="true"
@@ -263,7 +264,7 @@ export function HoldToTalkControls({
       {talk.notice && !recording ? (
         <span
           role="status"
-          className="pointer-events-none absolute bottom-full end-0 mb-2 w-max max-w-64 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md"
+          className="pointer-events-none absolute bottom-full end-0 mb-2 w-max max-w-64 rounded-lg border border-border bg-card px-2.5 py-1.5 text-label text-foreground shadow-md"
         >
           {talk.notice}
         </span>

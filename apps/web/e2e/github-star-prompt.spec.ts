@@ -25,6 +25,8 @@ test("asks for a GitHub star after a few messages", async ({ page }, testInfo) =
   await page.reload();
   await composer.fill("And tomorrow?");
   await composer.press("Enter");
-  await expect(page.getByTestId("transcript").getByText("And tomorrow?")).toBeVisible();
+  await expect(
+    page.getByTestId("transcript").getByText("And tomorrow?", { exact: true }),
+  ).toBeVisible();
   await expect(prompt).toBeHidden();
 });

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
 import { i18n } from "@lingui/core";
 import type { ProductEvent, RoutineHistory, RoutineRun, ThreadSnapshot } from "@rakazo/contracts";
 import { runThreadSubscription } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -25,7 +27,10 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ i18n: { locale: "en" }, t: (parts: TemplateStringsArray) => parts.join("") }),
+  useLingui: () => ({
+    i18n: { locale: "en" },
+    t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
+  }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
@@ -41,6 +46,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import { queryClient, useSpaceQueries } from "../lib/query";
+import { spaceChanged } from "../lib/space-changes";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { useThreadSync } from "./shell/use-thread-sync";
 
@@ -52,6 +58,7 @@ const run: RoutineRun = {
   error: null,
   createdAt: "2026-01-02T12:00:00Z",
   startedAt: "2026-01-02T12:00:00Z",
+  lateSince: null,
   completedAt: "2026-01-02T12:01:22Z",
   messageId: "reply-1",
 };
@@ -100,17 +107,13 @@ async function mounted({
 }
 
 it("shows loading, then the latest runs as rows that open their chat", async () => {
-  let finish!: (value: RoutineHistory) => void;
-  routines.history.mockReturnValue(
-    new Promise<RoutineHistory>((resolve) => {
-      finish = resolve;
-    }),
-  );
+  const finish = deferred<RoutineHistory>();
+  routines.history.mockReturnValue(finish.promise);
   const view = await mounted();
   try {
     expect(view.container.querySelector('[role="status"][aria-label="Loading…"]')).not.toBeNull();
     expect(view.container.textContent).not.toContain("No runs yet");
-    await act(async () => finish(page([run, { ...run, id: "silent", messageId: null }])));
+    await act(async () => finish.resolve(page([run, { ...run, id: "silent", messageId: null }])));
     await view.settled(() => expect(view.rows()).toHaveLength(2));
     expect(routines.history.mock.calls[0]?.[0]).toEqual({ routineId: "routine-1", limit: 5 });
     expect(view.container.textContent).not.toContain("1m 22s");
@@ -127,45 +130,51 @@ it("shows loading, then the latest runs as rows that open their chat", async () 
   }
 });
 
-it("shows a genuine empty state and picks up a new run on the next poll", async () => {
-  vi.useFakeTimers();
+it("stays hidden until the first run and picks it up when runs change", async () => {
   routines.history
     .mockResolvedValueOnce(page([]))
     .mockResolvedValue(page([{ ...run, messageId: null }]));
-  const view = await mounted();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
-    expect(view.container.textContent).toContain("No runs yet");
-    await act(async () => vi.advanceTimersByTimeAsync(15_000));
-    expect(view.rows()).toHaveLength(1);
+    await view.settled(() =>
+      expect(view.container.querySelector('[data-testid="routine-run-history"]')).toBeNull(),
+    );
+    await act(async () => spaceChanged("runs", client));
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
     expect(view.container.querySelector("a")).toBeNull();
   } finally {
     await view.close();
   }
 });
 
-it("says when history could not load and recovers on the next poll", async () => {
-  vi.useFakeTimers();
+it("says when history could not load and recovers when runs change", async () => {
   routines.history.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(page([run]));
-  const view = await mounted();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
-    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not load run history",
+    await view.settled(() =>
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Could not load run history",
+      ),
     );
     expect(view.container.textContent).not.toContain("No runs yet");
-    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    await act(async () => spaceChanged("runs", client));
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
     expect(view.container.querySelector('[role="alert"]')).toBeNull();
-    expect(view.rows()).toHaveLength(1);
   } finally {
     await view.close();
   }
 });
 
-it("stops polling after a refused request", async () => {
+it("never reads again on a timer, nor when only routines change", async () => {
   vi.useFakeTimers();
-  routines.history.mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
-  const view = await mounted();
+  routines.history.mockResolvedValue(page([run]));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
   try {
     await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    await act(async () => spaceChanged("routines", client));
     expect(routines.history).toHaveBeenCalledTimes(1);
   } finally {
     await view.close();
@@ -213,6 +222,29 @@ it("says when older runs could not load and keeps what is shown", async () => {
     await view.close();
   }
 });
+it("says when a scheduled run started late, and only then", async () => {
+  routines.history.mockResolvedValue(
+    page([
+      { ...run, id: "minutes", lateSince: "2026-01-02T11:20:00Z" },
+      { ...run, id: "hours", lateSince: "2026-01-02T09:30:00Z" },
+      { ...run, id: "days", lateSince: "2025-12-30T12:00:00Z" },
+      { ...run, id: "on-time" },
+    ]),
+  );
+  const view = await mounted();
+  try {
+    await view.settled(() => expect(view.rows()).toHaveLength(4));
+    expect([...view.rows()].map((row) => row.textContent?.match(/Started \S+ late/)?.[0])).toEqual([
+      "Started 40m late",
+      "Started 2h late",
+      "Started 3d late",
+      undefined,
+    ]);
+  } finally {
+    await view.close();
+  }
+});
+
 it("opens a group run in its group thread", async () => {
   routines.history.mockResolvedValue(page([{ ...run, groupId: "group-1" }]));
   const view = await mounted();

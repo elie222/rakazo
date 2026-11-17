@@ -1,7 +1,7 @@
 import type * as db from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { chooseFocus, markAppConnected, promptFocus } from "./onboarding.js";
+import { chooseFocus, dismissFocus, markAppConnected, promptFocus } from "./onboarding.js";
 
 const posted = vi.hoisted(() => [] as Array<{ blocks: unknown[]; markUnread?: boolean }>);
 vi.mock("@rakazo/db", async (original) => ({
@@ -12,6 +12,8 @@ vi.mock("@rakazo/db", async (original) => ({
   }),
   appendEventInTransaction: vi.fn(async () => ({ seq: 1 })),
 }));
+// These transactions lock the thread row, which snapshot reads hold for up to 15s.
+const budget = { timeout: 20_000 };
 function fixture(catalog: unknown[]) {
   posted.length = 0;
   const tx = {
@@ -28,8 +30,9 @@ function fixture(catalog: unknown[]) {
     },
     events: { notify: vi.fn() },
     connectors: {
+      defaultConnectorId: "first-connector",
       managedProviders: () => [{ catalog: async () => catalog }],
-      managed: () => ({ catalog: async () => catalog }),
+      managed: vi.fn(() => ({ catalog: async () => catalog })),
     },
   } as unknown as Parameters<typeof chooseFocus>[0];
   const actor = {
@@ -51,6 +54,7 @@ describe("onboarding connection suggestions", () => {
     // The reply to the user's pick is read; suggestions after the catalog wait stay unread.
     expect(posted[0]?.markUnread).toBe(false);
     expect(posted.slice(1).every((message) => message.markUnread === true)).toBe(true);
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), budget);
   });
   it("uses the available connector and omits unavailable apps", async () => {
     const { deps, actor } = fixture([
@@ -86,6 +90,7 @@ describe("promptFocus", () => {
     expect(posted.flatMap((message) => message.blocks)).toContainEqual(
       expect.objectContaining({ kind: "choice" }),
     );
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), budget);
   });
 
   it("leaves the question to a bot whose creation intro is queued or running", async () => {
@@ -125,6 +130,32 @@ it("marks only the authorized connector when provider slugs collide", async () =
     where: { id: "cards" },
     data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
   });
+  expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), budget);
+});
+
+it("reads a request and a stored card that name no connector as the server's default", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "first-connector", slug: "slack", name: "Slack", connected: true },
+  ]);
+  const card = { kind: "app_connect", provider: "slack", name: "Slack", status: "pending" };
+  const other = { ...card, connectorId: "pipedream" };
+  tx.message.findMany = vi.fn(async () => [{ id: "cards", blocks: [card, other] }]) as never;
+  await markAppConnected(deps, actor, "bot", "slack", undefined);
+  expect(deps.connectors.managed).toHaveBeenCalledWith("first-connector");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "cards" },
+    data: { blocks: [{ ...card, status: "connected" }, other] },
+  });
+});
+
+it("dismisses the pending focus card under the thread-lock budget", async () => {
+  const { deps, actor, tx } = fixture([]);
+  await dismissFocus(deps, actor, "bot");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "choice" },
+    data: { blocks: [{ kind: "choice", answerId: expect.any(String) }] },
+  });
+  expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), budget);
 });
 
 it("does not trust a client's connected claim", async () => {
@@ -181,7 +212,7 @@ it("updates an accessible group thread and emits its normal update event", async
   await markAppConnected(deps, actor, "bot", "slack", "pipedream", "group-thread");
   expect(deps.prisma.chatGroup.findFirst).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: { id: "group", spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+      where: { id: "group", spaceId: actor.spaceId, archivedAt: null },
     }),
   );
   expect(tx.message.findMany).toHaveBeenCalledWith(
@@ -202,7 +233,7 @@ it("updates an accessible group thread and emits its normal update event", async
   expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
 });
 
-it("rejects another user's group even in the same space", async () => {
+it("rejects a group the space does not have", async () => {
   const { deps, actor, tx } = fixture([
     { connectorId: "pipedream", slug: "slack", connected: true },
   ]);
@@ -217,7 +248,7 @@ it("rejects another user's group even in the same space", async () => {
   ).rejects.toThrow();
   expect(tx.message.update).not.toHaveBeenCalled();
   expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith(
-    expect.objectContaining({ where: { id: "bot", spaceId: actor.spaceId, userId: actor.userId } }),
+    expect.objectContaining({ where: { id: "bot", spaceId: actor.spaceId } }),
   );
 });
 

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { act } from "react";
@@ -11,13 +13,14 @@ import { McpServersOverlay } from "./McpServersOverlay";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  create: vi.fn(),
   test: vi.fn(),
   update: vi.fn(),
   agents: vi.fn(),
 }));
 const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all } },
+  mcp: { servers: mocks, assignments: { all: access.all }, oauth: { disconnect: vi.fn() } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -129,8 +132,17 @@ vi.mock("@rakazo/ui-web", async () => {
     ],
     [
       "Input",
-      ({ id, value, placeholder }: { id?: string; value?: string; placeholder?: string }) =>
-        createElement("input", { id, value, placeholder, readOnly: true }),
+      ({
+        id,
+        value,
+        placeholder,
+        onChange,
+      }: {
+        id?: string;
+        value?: string;
+        placeholder?: string;
+        onChange?: () => void;
+      }) => createElement("input", { id, value, placeholder, onChange, readOnly: !onChange }),
     ],
     ["Textarea", () => null],
     [
@@ -185,6 +197,43 @@ function server(id: string, status = "unknown") {
     enabled: true,
   } as McpServer;
 }
+
+function oauthServer(id: string) {
+  return {
+    id,
+    name: id,
+    transport: "streamable_http",
+    endpoint: "https://provider.example.com/mcp",
+    oauthStatus: "connected",
+    health: { status: "ok" },
+    enabled: true,
+  } as McpServer;
+}
+
+it("disconnecting also empties the server's own sign-in browser", async () => {
+  const clear = vi.fn().mockResolvedValue(undefined);
+  window.rakazoDesktop = {
+    platform: "darwin",
+    mcpBrowser: { clear, onOAuthCallback: () => () => {} },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  mocks.list.mockReset().mockResolvedValue([oauthServer("Mobbin")]);
+  api.mcp.oauth.disconnect.mockReset().mockResolvedValue({ ok: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.textContent).toContain("Disconnect"));
+    const item = Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Disconnect",
+    );
+    await act(async () => item?.click());
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledWith("Mobbin"));
+    expect(api.mcp.oauth.disconnect).toHaveBeenCalledWith({ serverId: "Mobbin" });
+  } finally {
+    await act(async () => root.unmount());
+    delete window.rakazoDesktop;
+  }
+});
 
 it("offers stdio only where the deployment runs it, and still shows existing stdio servers", async () => {
   mocks.list
@@ -498,15 +547,15 @@ it("reopens with cached servers and refreshes them in the background", async () 
   await act(async () => first.unmount());
   await client.invalidateQueries();
 
-  let finish: (servers: McpServer[]) => void = () => undefined;
-  mocks.list.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  const finish = deferred<McpServer[]>();
+  mocks.list.mockImplementationOnce(() => finish.promise);
   const second = createRoot(host);
   try {
     await act(async () => second.render(overlay()));
     // Painted from the cache while the refresh is still out.
     expect(host.textContent).toContain("cached");
     expect(mocks.list).toHaveBeenCalledTimes(2);
-    await act(async () => finish([server("cached"), server("added")]));
+    await act(async () => finish.resolve([server("cached"), server("added")]));
     await vi.waitFor(() => expect(host.textContent).toContain("added"));
   } finally {
     await act(async () => second.unmount());
@@ -521,8 +570,8 @@ it("keeps a test result when an older list read lands after it", async () => {
   await act(async () => first.unmount());
   await client.invalidateQueries();
 
-  let finishRead: (servers: McpServer[]) => void = () => undefined;
-  mocks.list.mockImplementationOnce(() => new Promise((resolve) => (finishRead = resolve)));
+  const finishRead = deferred<McpServer[]>();
+  mocks.list.mockImplementationOnce(() => finishRead.promise);
   mocks.test.mockReset().mockResolvedValue(server("one", "ok"));
   const second = createRoot(host);
   try {
@@ -532,7 +581,7 @@ it("keeps a test result when an older list read lands after it", async () => {
     );
     await act(async () => testButton?.click());
     // The read started before the test and must not bring back its older health.
-    await act(async () => finishRead([server("one")]));
+    await act(async () => finishRead.resolve([server("one")]));
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     const cached = client
       .getQueryCache()
@@ -622,5 +671,92 @@ it("says when reopening could not refresh, while still showing the cached server
     expect(host.textContent).toContain("cached");
   } finally {
     await act(async () => second.unmount());
+  }
+});
+
+it("keeps the first server's form open until saving it has finished", async () => {
+  const created = {
+    ...server("docs"),
+    transport: "streamable_http",
+    endpoint: "https://mcp.example.test/mcp",
+    hasArgs: false,
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+  } as McpServer;
+  mocks.list.mockReset().mockResolvedValueOnce([]).mockResolvedValue([created]);
+  mocks.create.mockReset().mockResolvedValue(created);
+  mocks.test.mockReset().mockResolvedValue(created);
+  let releaseBots = () => {};
+  access.bots
+    .mockResolvedValueOnce([])
+    .mockImplementationOnce(() => new Promise((resolve) => (releaseBots = () => resolve([]))));
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const type = (selector: string, value: string) => {
+    const input = host.querySelector<HTMLInputElement>(selector)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const addServer = () =>
+    Array.from(host.querySelectorAll("button")).find((item) => item.textContent === "Add server");
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).not.toBeNull());
+    await act(async () => {
+      type("#mcp-name", "docs");
+      type("#mcp-endpoint", "https://mcp.example.test/mcp");
+    });
+    await act(async () => addServer()?.click());
+    const listed = () =>
+      client
+        .getQueryCache()
+        .getAll()
+        .some((query) => (query.state.data as McpServer[] | undefined)?.[0]?.id === "docs");
+    await vi.waitFor(() => expect(listed()).toBe(true));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    // The list arrives before the rest of the refresh; the form must not give way to it yet,
+    // or an "Add server" click there is undone when the save finishes.
+    expect(host.querySelector("#mcp-name")).not.toBeNull();
+
+    await act(async () => releaseBots());
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).toBeNull());
+    await act(async () => addServer()?.click());
+    await act(async () => {});
+    expect(host.querySelector<HTMLInputElement>("#mcp-name")?.value).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("links callback mismatches in MCP settings to the shared recovery guide", async () => {
+  mocks.list.mockReset().mockResolvedValue([
+    {
+      ...server("remote"),
+      transport: "streamable_http",
+      endpoint: "https://mcp.example.test/mcp",
+    },
+  ]);
+  vi.mocked(connectMcpOauth).mockRejectedValueOnce(
+    Object.assign(new Error("Sign-in configuration mismatch"), {
+      code: "MCP_OAUTH_REDIRECT_MISMATCH",
+    }),
+  );
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const connectButton = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Connect OAuth",
+    );
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(connectButton()).toBeDefined());
+    await act(async () => connectButton()?.click());
+    expect(host.querySelector('[role="alert"] a')?.getAttribute("href")).toBe(
+      "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
+    );
+    expect(connectButton()?.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
   }
 });

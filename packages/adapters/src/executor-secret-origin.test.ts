@@ -16,6 +16,7 @@ const COMPUTER: ComputerRef = {
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  waitForRunComputerLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => COMPUTER,
 }));
@@ -99,6 +100,7 @@ async function requestSecretWith(origin: string, extra: Record<string, unknown> 
   });
   const prisma = recordingPrisma(
     {
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: async () => run,
         findUniqueOrThrow: async () => run,

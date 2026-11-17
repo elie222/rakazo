@@ -6,8 +6,8 @@ import {
   TextButton,
   useNativeState,
 } from "@expo/ui/jetpack-compose";
+import { useLingui } from "@lingui/react/macro";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
-import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
 import type { NameDialogProps } from "./name-dialog";
 
@@ -19,7 +19,7 @@ export default function ComposeNameDialog({
   onSave,
   onClose,
 }: NameDialogProps) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const scheme = useResolvedAppearance();
   const tokens = tokensForAppearance(scheme);
   const value = useNativeState(draft);
@@ -41,7 +41,7 @@ export default function ComposeNameDialog({
         colors={{ containerColor: tokens.card, titleContentColor: tokens.foreground }}
       >
         <AlertDialog.Title>
-          <Text style={{ typography: "headlineSmall" }}>{t("Edit name")}</Text>
+          <Text style={{ typography: "headlineSmall" }}>{t`Edit name`}</Text>
         </AlertDialog.Title>
         <AlertDialog.Text>
           <OutlinedTextField
@@ -78,7 +78,7 @@ export default function ComposeNameDialog({
             }}
           >
             <OutlinedTextField.Label>
-              <Text>{t("Name")}</Text>
+              <Text>{t`Name`}</Text>
             </OutlinedTextField.Label>
             {error ? (
               <OutlinedTextField.SupportingText>
@@ -93,12 +93,12 @@ export default function ComposeNameDialog({
             enabled={!saving && !!draft.trim()}
             onClick={() => onSave(value.value)}
           >
-            <Text>{t("Save")}</Text>
+            <Text>{t`Save`}</Text>
           </TextButton>
         </AlertDialog.ConfirmButton>
         <AlertDialog.DismissButton>
           <TextButton colors={buttonColors} enabled={!saving} onClick={onClose}>
-            <Text>{t("Cancel")}</Text>
+            <Text>{t`Cancel`}</Text>
           </TextButton>
         </AlertDialog.DismissButton>
       </AlertDialog>

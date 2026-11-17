@@ -60,6 +60,22 @@ describe("approval rules", () => {
     expect(client.actionApprovalRule.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("replace every other rule for the same match, including case variants", async () => {
+    const client = confirmationsClient();
+    client.userActionApprovalRule.findMany.mockResolvedValueOnce([
+      { id: "same", effect: "always_allow", matchValue: "send" },
+      { id: "upper", effect: "always_allow", matchValue: "SEND" },
+      { id: "ask", effect: "require_approval", matchValue: "Send" },
+      { id: "other", effect: "always_allow", matchValue: "send_email" },
+    ]);
+
+    await saveApprovalRule(client.prisma, scope, rule);
+
+    expect(client.userActionApprovalRule.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["upper", "ask"] } },
+    });
+  });
+
   it("use the Space's own copy when it overrides confirmations", async () => {
     const client = confirmationsClient({ overridden: true });
 

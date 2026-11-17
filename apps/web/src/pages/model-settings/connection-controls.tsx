@@ -1,5 +1,4 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,14 +17,17 @@ export function ConnectionControls({
   beginSelectedSubscriptionSignIn,
   busy,
   cancelOAuthAttempt,
-  cloudflareRoutingReady,
+  routingReady,
   codeCopied,
   connectKey,
   copyOAuthCode,
   credential,
   gatewayId,
-  isCloudflare,
-  isCloudflareGateway,
+  projectId,
+  region,
+  needsRouting,
+  needsGateway,
+  needsProject,
   isOpenAiCompatible,
   oauth,
   oauthPending,
@@ -39,11 +41,12 @@ export function ConnectionControls({
   selected,
   setAccountId,
   setGatewayId,
+  setProjectId,
+  setRegion,
   setPasteCode,
   submitOAuthCode,
   subscriptionSignIn,
   testApiKeyConnection,
-  testOAuthConnection,
   updateApiKey,
 }: Pick<
   ModelSettingsState,
@@ -53,14 +56,17 @@ export function ConnectionControls({
   | "beginSelectedSubscriptionSignIn"
   | "busy"
   | "cancelOAuthAttempt"
-  | "cloudflareRoutingReady"
+  | "routingReady"
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
   | "credential"
   | "gatewayId"
-  | "isCloudflare"
-  | "isCloudflareGateway"
+  | "projectId"
+  | "region"
+  | "needsRouting"
+  | "needsGateway"
+  | "needsProject"
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
@@ -74,11 +80,12 @@ export function ConnectionControls({
   | "selected"
   | "setAccountId"
   | "setGatewayId"
+  | "setProjectId"
+  | "setRegion"
   | "setPasteCode"
   | "submitOAuthCode"
   | "subscriptionSignIn"
   | "testApiKeyConnection"
-  | "testOAuthConnection"
   | "updateApiKey"
 >) {
   const { t } = useLingui();
@@ -94,13 +101,13 @@ export function ConnectionControls({
   }, [keyShownFor]);
   return !isOpenAiCompatible ? (
     <>
-      {subscriptionSignIn ? (
+      {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
         <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
           {oauth ? (
             <div className="w-full rounded-xl border border-border px-4 py-3">
               {oauth.mode === "auth-url" ? (
                 <>
-                  <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
                     <Trans>
                       Sign in at{" "}
                       <a
@@ -121,7 +128,7 @@ export function ConnectionControls({
                       aria-label={t`Authorization code`}
                       autoComplete="off"
                       spellCheck={false}
-                      className="text-foreground md:text-[13px]"
+                      className="text-foreground md:text-body-sm"
                     />
                     <Button
                       type="button"
@@ -133,7 +140,7 @@ export function ConnectionControls({
                       <Trans>Submit</Trans>
                     </Button>
                   </div>
-                  <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
+                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
                     <Plural
                       value={Math.ceil(oauth.expiresInSeconds / 60)}
                       one="Waiting for sign-in — the link expires in about # minute."
@@ -143,7 +150,7 @@ export function ConnectionControls({
                 </>
               ) : (
                 <>
-                  <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
                     {popupBlocked ? (
                       <Trans>
                         Open{" "}
@@ -173,7 +180,7 @@ export function ConnectionControls({
                     )}
                   </p>
                   <div className="mt-2 flex items-center gap-3">
-                    <p className="font-mono text-[22px] tracking-[0.2em] text-foreground">
+                    <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
                       {oauth.userCode}
                     </p>
                     <Button
@@ -190,7 +197,7 @@ export function ConnectionControls({
                       {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
                     </Button>
                   </div>
-                  <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
+                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
                     <Plural
                       value={Math.ceil(oauth.expiresInSeconds / 60)}
                       one="Waiting for sign-in — the code expires in about # minute."
@@ -226,30 +233,13 @@ export function ConnectionControls({
               )}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy || preflightTesting || credential?.authKind !== "oauth"}
-            onClick={() => void testOAuthConnection()}
-          >
-            {modelPreflightTestingLabel(
-              preflightTesting && preflightTarget === "sign-in",
-              "sign-in",
-            )}
-          </Button>
-          {preflightTarget === "sign-in" ? (
-            <div className="w-full">
-              <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-            </div>
-          ) : null}
         </div>
       ) : null}
 
       {acceptsKey && keyFolded ? (
         // Only the summary shows here; opening it swaps in the key form below.
         <Disclosure
-          className="mt-5 text-[13px] leading-[1.5] text-muted-foreground"
+          className="mt-5 text-body-sm leading-[1.5] text-muted-foreground"
           open={false}
           onOpenChange={() => setKeyShownFor(selected?.provider ?? null)}
           summary={<Trans>Or paste an API key</Trans>}
@@ -258,32 +248,33 @@ export function ConnectionControls({
         </Disclosure>
       ) : acceptsKey ? (
         <div className="mt-5 first:mt-0">
-          {isCloudflare ? (
+          {needsRouting ? (
             <>
-              <label
-                className="block text-[13.5px] text-muted-foreground"
-                htmlFor="cloudflare-account-id"
-              >
-                <Trans>Account ID</Trans>
+              <label className="block text-body text-muted-foreground" htmlFor="model-account-id">
+                {needsProject ? <Trans>Project ID</Trans> : <Trans>Account ID</Trans>}
                 <Input
-                  id="cloudflare-account-id"
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
+                  id="model-account-id"
+                  value={needsProject ? projectId : accountId}
+                  onChange={(event) =>
+                    (needsProject ? setProjectId : setAccountId)(event.target.value)
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   className="mt-2 h-10 text-foreground"
                 />
               </label>
-              {isCloudflareGateway ? (
+              {needsGateway || needsProject ? (
                 <label
-                  className="mt-4 block text-[13.5px] text-muted-foreground"
-                  htmlFor="cloudflare-gateway-id"
+                  className="mt-4 block text-body text-muted-foreground"
+                  htmlFor="model-gateway-id"
                 >
-                  <Trans>Gateway ID</Trans>
+                  {needsProject ? <Trans>Region</Trans> : <Trans>Gateway ID</Trans>}
                   <Input
-                    id="cloudflare-gateway-id"
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
+                    id="model-gateway-id"
+                    value={needsProject ? region : gatewayId}
+                    onChange={(event) =>
+                      (needsProject ? setRegion : setGatewayId)(event.target.value)
+                    }
                     autoComplete="off"
                     spellCheck={false}
                     className="mt-2 h-10 text-foreground"
@@ -294,7 +285,7 @@ export function ConnectionControls({
           ) : null}
           {acceptsKey ? (
             <label
-              className={`block text-[13.5px] text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
+              className={`block text-body text-muted-foreground ${needsRouting ? "mt-4" : ""}`}
               htmlFor="model-api-key"
             >
               {credential?.hasKey ? (
@@ -324,17 +315,14 @@ export function ConnectionControls({
                 disabled={busy || preflightTesting || apiKey.trim().length < 8}
                 onClick={() => void testApiKeyConnection()}
               >
-                {modelPreflightTestingLabel(
-                  preflightTesting && preflightTarget === "api-key",
-                  "api-key",
-                )}
+                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
               </Button>
             ) : null}
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
+              disabled={busy || !routingReady || apiKey.trim().length < 8}
               onClick={() => void connectKey()}
             >
               {pending === "connect" ? (
@@ -353,7 +341,7 @@ export function ConnectionControls({
       ) : null}
 
       {selected?.auth === "oauth" && !subscriptionSignIn ? (
-        <p className="mt-5 text-[13px] leading-[1.5] text-muted-foreground first:mt-0">
+        <p className="mt-5 text-body-sm leading-[1.5] text-muted-foreground first:mt-0">
           <Trans>
             This subscription sign-in is not available in Rakazo yet. Use a deployment credential or
             choose another provider.
@@ -366,21 +354,21 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
-  baseUrl,
   busy,
   connectKey,
   credential,
+  endpointPreset,
   isOpenAiCompatible,
   openAiCompatibleReady,
   pending,
   updateApiKey,
 }: Pick<
   ModelSettingsState,
-  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
   | "credential"
+  | "endpointPreset"
   | "isOpenAiCompatible"
   | "openAiCompatibleReady"
   | "pending"
@@ -389,17 +377,20 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <CompatibleKeyField baseUrl={baseUrl} className="block text-[13.5px] text-muted-foreground">
+      <CompatibleKeyField
+        keyRequired={Boolean(endpointPreset)}
+        className="block text-body text-muted-foreground"
+      >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={isOllamaCloudBaseUrl(baseUrl)}
+          required={Boolean(endpointPreset)}
           placeholder={
-            isOllamaCloudBaseUrl(baseUrl)
-              ? t`Ollama API key`
-              : credential?.hasKey
-                ? t`Paste a replacement key`
+            credential?.hasKey
+              ? t`Paste a replacement key`
+              : endpointPreset
+                ? undefined
                 : t`Optional`
           }
           type="password"

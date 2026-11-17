@@ -1,28 +1,12 @@
 import { AppLocaleSchema } from "@rakazo/contracts";
 import { matchUiLocale } from "@rakazo/core";
+import { readableLocalStorage } from "./stored-preference";
 
 export const UI_LOCALES = AppLocaleSchema.options;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
 export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
-
-export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
-  en: "English",
-  de: "Deutsch",
-  ko: "한국어",
-  tr: "Türkçe",
-  hi: "हिन्दी",
-  "pt-BR": "Português (Brasil)",
-  "zh-CN": "简体中文",
-  "zh-TW": "繁體中文",
-  es: "Español",
-  ru: "Русский",
-  fr: "Français",
-  he: "עברית",
-  nl: "Nederlands",
-  ja: "日本語",
-};
 
 /** Normalize BCP-47 tags (`de-DE`, `ko-KR`, `pt-BR`, `zh-CN`, `es-ES`) to a supported UI locale, else `en`. */
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
@@ -69,9 +53,7 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
   const stored =
     options.stored !== undefined
       ? options.stored
-      : readStoredLocale(
-          options.storage ?? (typeof localStorage !== "undefined" ? localStorage : null),
-        );
+      : readStoredLocale(options.storage ?? readableLocalStorage());
   if (stored) return normalizeUiLocale(stored);
 
   const envDefault =
@@ -100,9 +82,7 @@ export function resolveUiLocale(options: ResolveUiLocaleOptions = {}): UiLocale 
 
 export function persistUiLocale(
   locale: UiLocale,
-  storage: Pick<Storage, "setItem"> | null = typeof localStorage !== "undefined"
-    ? localStorage
-    : null,
+  storage: Pick<Storage, "setItem"> | null = readableLocalStorage(),
 ): void {
   if (!storage) return;
   try {

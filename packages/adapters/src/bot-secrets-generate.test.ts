@@ -1,6 +1,6 @@
 import { GENERATED_SECRET_SYMBOLS, GeneratedSecretRules } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { generateBotSecret, loadBotCommandEnvironment, resolveLoginFill } from "./bot-secrets.js";
+import { generateBotSecret, loadCommandVariables, resolveLoginFill } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { generateSecretValue } from "./secret-generator.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -179,7 +179,7 @@ describe("generate_secret", () => {
       },
     });
     const { text: password } = await savedPassword(db);
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope)).toEqual({
+    expect((await loadCommandVariables(db.prisma, secretStore, scope)).env).toEqual({
       EXAMPLE_ACCOUNT_PASSWORD: password,
     });
     expect(redactions).toContain(password);
@@ -231,13 +231,13 @@ describe("generate_secret", () => {
       auth: { type: "command" },
       variable: "DB_PASSWORD",
     });
-    const { DB_PASSWORD } = await loadBotCommandEnvironment(db.prisma, secretStore, scope);
+    const { DB_PASSWORD } = (await loadCommandVariables(db.prisma, secretStore, scope)).env;
     expect(DB_PASSWORD).toMatch(/^[a-zA-Z0-9]{32}$/);
     expect(redactions).toContain(DB_PASSWORD);
     expect(await generate(db, { name: "db-password", type: "command" })).toEqual({
       result: expect.objectContaining({ error: expect.stringContaining("already saved") }),
     });
-    expect(await loadBotCommandEnvironment(db.prisma, secretStore, scope)).toEqual({
+    expect((await loadCommandVariables(db.prisma, secretStore, scope)).env).toEqual({
       DB_PASSWORD,
     });
   });

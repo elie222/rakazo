@@ -4,13 +4,13 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openBotPanelTab,
+  openBotPanel,
   rpc,
   signup,
 } from "./helpers";
 
 test(
-  "Korean webhook routine keeps technical field labels in English",
+  "Korean webhook routine keeps its URL and header value in English",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     const stamp = Date.now();
@@ -25,8 +25,8 @@ test(
     await page.getByRole("option", { name: "한국어", exact: true }).click();
     await page.getByRole("button", { name: "계정 설정 닫기" }).click();
 
-    await openBotPanelTab(page, "자동 실행");
-    await page.getByRole("button", { name: "자동 실행 만들기" }).click();
+    await openBotPanel(page);
+    await page.getByTestId("routine-create-button").click();
     await page.getByPlaceholder("이 루틴의 이름을 정하세요").fill("한국어 웹훅 확인");
     await page
       .getByPlaceholder("이 루틴이 실행될 때마다 무엇을 해야 하나요?")
@@ -35,9 +35,14 @@ test(
     await page.getByRole("menuitem", { name: "웹훅", exact: true }).click();
 
     await expect(page.getByText("웹훅이 실행될 때", { exact: true })).toBeVisible();
-    await expect(page.getByText("POST 대상")).toBeVisible();
-    await expect(page.getByText("key", { exact: true })).toBeVisible();
-    await expect(page.getByText("header")).toBeVisible();
+    await expect(page.getByText("저장 후 사용 가능", { exact: true })).toBeVisible();
+    const saved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+    );
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await saved;
+    await expect(page.getByRole("button", { name: "URL 복사", exact: true })).toBeVisible();
+    await expect(page.getByText(/^Authorization: Bearer /)).toBeVisible();
     await captureScreenshot(page, testInfo, "routine-webhook-ko");
   },
 );
@@ -48,9 +53,9 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await completeOnboarding(page);
   const botId = activeBotId(page);
 
-  await openBotPanelTab(page, "Routines");
-  await expect(page.getByRole("button", { name: "Test run" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Create Routine" }).click();
+  await openBotPanel(page);
+  await expect(page.getByRole("button", { name: "Run now" })).toHaveCount(0);
+  await page.getByTestId("routine-create-button").click();
   await page.locator("label:has-text('Name') input").fill("Daily verification");
   await page
     .locator("label:has-text('Instruction') textarea")
@@ -58,7 +63,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.getByRole("button", { name: "Add trigger" }).click();
   await page.getByRole("menuitem", { name: "On a schedule" }).hover();
   await page.getByRole("menuitem", { name: "Weekdays", exact: true }).click();
-  await expect(page.getByLabel("How often")).toHaveValue("Weekdays");
+  await expect(page.getByLabel("How often")).toHaveText("Weekdays");
   await captureScreenshot(page, testInfo, "32-routine-configured");
 
   const saved = page.waitForResponse(
@@ -67,7 +72,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.getByRole("button", { name: "Save" }).click();
   await saved;
   await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   const routine = page.getByRole("button", { name: /Daily verification/ });
   await expect(routine).toContainText("Weekdays at 9:00 AM");
   await captureScreenshot(page, testInfo, "33-routine-scheduled");
@@ -78,7 +83,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   );
   const runs = async () =>
     (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
-  await page.getByRole("button", { name: "Test run" }).click();
+  await page.getByRole("button", { name: "Run now" }).click();
   // The open editor's instruction already shows the marker text, so wait on the run itself
   // and read the marker from the bot reply the run recorded.
   await expect
@@ -97,7 +102,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.reload();
   await expect(reply).toBeVisible();
   await expect(reply).toContainText(/routine-run-now-ok/i);
-  await openBotPanelTab(page, "Routines");
+  await openBotPanel(page);
   await expect(page.getByRole("button", { name: /Daily verification/ })).toContainText(
     "Weekdays at 9:00 AM",
   );
@@ -162,7 +167,7 @@ test("a routine run that failed to start shows the error in Details", async ({
   // Details then opens without the slide transition, so the capture shows the whole error.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await openBotPanelTab(page, "Routines");
+  await openBotPanel(page);
   await page.getByRole("button", { name: /Nightly check/ }).click();
   const history = page.getByTestId("routine-run-history");
   await history.getByText("Details", { exact: true }).click();
@@ -195,6 +200,7 @@ test("run history links runs that replied and marks silent ones", async ({ page 
       error: null,
       createdAt: at,
       startedAt: at,
+      lateSince: null,
       completedAt: status === "running" ? null : at,
       messageId: null,
       ...extra,
@@ -210,7 +216,9 @@ test("run history links runs that replied and marks silent ones", async ({ page 
             run(1, "completed", { messageId: `message-${stamp}` }),
             run(2, "completed"),
             run(3, "failed", { error: "504: request timed out" }),
-            run(4, "completed"),
+            run(4, "completed", {
+              lateSince: new Date(Date.now() - (4 * 60 + 40) * minute).toISOString(),
+            }),
           ],
           nextCursor: null,
         },
@@ -219,7 +227,7 @@ test("run history links runs that replied and marks silent ones", async ({ page 
   );
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.reload();
-  await openBotPanelTab(page, "Routines");
+  await openBotPanel(page);
   await page.getByRole("button", { name: /Price watch/ }).click();
   const history = page.getByTestId("routine-run-history");
   await expect(history.getByRole("heading", { name: "Run history" })).toBeVisible();
@@ -231,6 +239,56 @@ test("run history links runs that replied and marks silent ones", async ({ page 
     `/app/${botId}?m=message-${stamp}`,
   );
   await expect(history.getByText("No reply", { exact: true })).toHaveCount(2);
+  await expect(rows.nth(4)).toContainText("Started 40m late");
+  await expect(history.getByText(/Started .* late/)).toHaveCount(1);
   await history.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "routine-run-history-states");
+});
+
+test("a webhook delivery stays out of the chat, like a scheduled run", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-delivery-${stamp}@rakazo.test`, "password12", "Delivery");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await rpc(page, "routines/create", {
+    botId,
+    name: "CRM sync",
+    prompt: "Add the new contact to the weekly list.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const delivered = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: {
+      event: "contact.created",
+      contact: { name: "Ada Lovelace", email: "ada@example.test", company: "Analytical" },
+    },
+  });
+  expect(delivered.ok()).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        // The delivery starts its run before the webhook answers, so no active run means done.
+        (await rpc<{ run?: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? "done",
+      { timeout: 30_000 },
+    )
+    .toMatch(/^(done|failed|cancelled|waiting_input)$/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  // The run's own output shows; the prompt the delivery woke it with never does.
+  const transcript = page.getByTestId("transcript");
+  // The chat has loaded: its first day heading is there.
+  await expect(transcript.getByRole("heading", { level: 3 }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "routine-webhook-delivery");
 });

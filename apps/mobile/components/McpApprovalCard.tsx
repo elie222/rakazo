@@ -1,11 +1,12 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { rpc } from "../lib/api";
-import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { useSave } from "../lib/query";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
@@ -41,11 +42,23 @@ export function McpApprovalCard({
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const [localStatus, setLocalStatus] = useState<"pending" | "connected" | "dismissed">("pending");
-  const [pendingAction, setPendingAction] = useState<"approve" | "dismiss" | null>(null);
+  const answer = useSave({
+    save: async (action: "approve" | "dismiss", send) => {
+      const input = { botId, serverId: block.serverId, threadId };
+      if (action === "approve") await send("mcp/assignments/approve", input);
+      else await send("mcp/assignments/dismiss", input);
+    },
+    onSaved: (_, action) => setLocalStatus(action === "approve" ? "connected" : "dismissed"),
+    onFailed: (reason, action) =>
+      Alert.alert(
+        action === "approve" ? t`Could not approve this server` : t`Could not complete action`,
+        errorText(reason, t`Please try again.`),
+      ),
+  });
   useEffect(() => {
     if (block.status === "connected" || block.status === "dismissed") return;
     setLocalStatus((current) =>
@@ -55,29 +68,13 @@ export function McpApprovalCard({
   const status = block.status && block.status !== "pending" ? block.status : localStatus;
   const summary = block.endpoint ?? `stdio (${block.transport})`;
 
-  async function submit(action: "approve" | "dismiss") {
-    if (readOnly || status !== "pending" || pendingAction !== null) return;
-    setPendingAction(action);
-    try {
-      if (action === "approve") {
-        await rpc("mcp/assignments/approve", { botId, serverId: block.serverId, threadId });
-      } else {
-        await rpc("mcp/assignments/dismiss", { botId, serverId: block.serverId, threadId });
-      }
-      setLocalStatus(action === "approve" ? "connected" : "dismissed");
-    } catch (reason) {
-      Alert.alert(
-        action === "approve" ? t("Could not approve this server") : t("Could not complete action"),
-        errorText(reason, t("Please try again.")),
-      );
-    } finally {
-      setPendingAction(null);
-    }
+  function submit(action: "approve" | "dismiss") {
+    if (!readOnly && status === "pending") answer.run(action);
   }
 
   return (
     <View
-      accessibilityLabel={t("Connect MCP server {name}", { name: block.name })}
+      accessibilityLabel={t`Connect MCP server ${ph({ name: block.name })}`}
       style={[styles.card, { backgroundColor: native.fill }]}
     >
       <View style={styles.header}>
@@ -90,7 +87,7 @@ export function McpApprovalCard({
             onAccessibilityAction={onAccessibilityAction}
             style={[styles.title, { color: tokens.foreground }]}
           >
-            {t("Connect MCP server {name}", { name: block.name })}
+            {t`Connect MCP server ${ph({ name: block.name })}`}
           </Text>
           <Text style={[styles.summary, { color: tokens.mutedForeground }]} numberOfLines={2}>
             {summary}
@@ -105,30 +102,30 @@ export function McpApprovalCard({
           }}
         >
           {status === "connected"
-            ? t("Connected.")
-            : t("Dismissed. Reconnect anytime from MCP settings.")}
+            ? t`Connected.`
+            : t`Dismissed. Reconnect anytime from MCP settings.`}
         </Text>
       ) : !readOnly ? (
         <>
           <Text style={[styles.description, { color: tokens.foreground }]}>
             {block.needsOAuth
-              ? t("Finish MCP authorization in the web app.")
-              : t("Approve this server to let your agent use its tools.")}
+              ? t`Finish MCP authorization in the web app.`
+              : t`Approve this server to let your agent use its tools.`}
           </Text>
           <View style={styles.actions}>
             {!block.needsOAuth ? (
               <NativeActionButton
-                label={t("Approve")}
+                label={t`Approve`}
                 fill={false}
-                disabled={pendingAction !== null}
-                onPress={() => void submit("approve")}
+                disabled={answer.pending}
+                onPress={() => submit("approve")}
               />
             ) : null}
             <NativeActionButton
-              label={t("Not now")}
+              label={t`Not now`}
               prominence="secondary"
-              disabled={pendingAction !== null}
-              onPress={() => void submit("dismiss")}
+              disabled={answer.pending}
+              onPress={() => submit("dismiss")}
             />
           </View>
         </>

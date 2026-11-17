@@ -6,8 +6,26 @@ may be.
 ## Data directory
 
 `DATA_DIR` (`/data` in the Compose files, `./data` in a source checkout) holds uploaded and
-generated files, bot homes and caches. The API and worker must share it and it must persist. Bot
-homes and new artifacts can live in [object storage](#bot-homes-in-object-storage) instead.
+generated files, bot homes and caches. By default the API and worker must share it and it must
+persist. Bot homes and new artifacts can live in [object storage](#bot-homes-in-object-storage)
+instead.
+
+**With object storage from the first start**, nothing under `DATA_DIR` needs to be shared or to
+survive a restart, so each API and worker replica can use its own scratch directory (a Pod's
+`emptyDir`, for example), except for Docker computers, described below the table:
+
+| Path                                           | What it holds with object storage                                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `homes/`, `home-revisions/`, `home-downloads/` | A cache of bot homes, downloaded again when missing or older than the bucket.                                                               |
+| `staging/`                                     | Scratch for saves, removed at startup. It needs free space for the largest home you want saved.                                             |
+| `mcp-packages/`                                | Packages each process installs on first use; set `MCP_PACKAGES_DIR` to put them elsewhere.                                                  |
+| `artifacts/`, `push-tokens/`                   | Nothing new. Only an install that started without object storage has files here; see [shared storage migration](#shared-storage-migration). |
+| `pi-sessions/`                                 | Only with `PI_SESSION_RECORDING=true`. Each process keeps its own files, so leave it off or share the directory.                            |
+
+Docker computers mount their cached home straight from the Docker host's `DATA_DIR/homes`, so the
+API and worker that start them need that directory on the same host. Remote computer providers,
+including Kubernetes with `OBJECT_STORAGE_BUCKET` set, copy the workspace through the server and
+need no shared directory.
 
 ## Content encryption
 
@@ -29,11 +47,11 @@ It never prints the key. Store a copy somewhere other than the server and its ba
 
 **The switch.** `CONTENT_ENCRYPTION=on|off` in `.env`:
 
-| Install | Unset means |
-| --- | --- |
-| Compose files, published images, Railway | `on` |
-| Desktop app, **This computer** | `off` (the computer's disk encryption covers it) |
-| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off` |
+| Install                                                                     | Unset means                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| Compose files, published images, Railway                                    | `on`                                             |
+| Desktop app, **This computer**                                              | `off` (the computer's disk encryption covers it) |
+| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off`                                            |
 
 With `off`, new content and files are stored readable, so you can query your own database
 directly and a lost key cannot lose them. Content encrypted earlier still reads with the key, so
@@ -68,8 +86,8 @@ New credentials use versioned AES-GCM with per-record salt and row-bound AAD. Le
 
 Each bot computer has a home: its files, logged-in browser profiles and CLI tokens. By default
 homes live under `DATA_DIR/homes` on the server. Set `OBJECT_STORAGE_BUCKET` to keep them in any
-S3-compatible bucket instead, so `DATA_DIR` is only a cache and API and worker hosts no longer need
-a shared disk for homes. Leave it unset to keep homes on local disk, as before.
+S3-compatible bucket or an Azure Blob Storage container instead, so `DATA_DIR` is only a cache and
+API and worker hosts no longer need a shared disk for homes. Leave it unset to keep homes on local disk, as before.
 The same connection also stores new artifacts; see [shared storage migration](#shared-storage-migration)
 for migrating existing files and push registrations.
 
@@ -79,10 +97,28 @@ OBJECT_STORAGE_ENDPOINT=https://storage.example.com
 OBJECT_STORAGE_REGION=us-east-1
 OBJECT_STORAGE_ACCESS_KEY_ID=replace-me
 OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
+# Optional: s3 (the default) or azure-blob, below.
+OBJECT_STORAGE_PROTOCOL=s3
 # Optional: a key prefix, when the bucket holds anything else.
 OBJECT_STORAGE_PREFIX=
 # Optional: true for services that address buckets in the path rather than the host name.
 OBJECT_STORAGE_PATH_STYLE=false
+```
+
+**Azure Blob Storage.** Azure Blob is not S3-compatible, so it has its own backend. Set
+`OBJECT_STORAGE_PROTOCOL=azure-blob` and reuse the same settings: the bucket is the container name,
+the access key ID is the storage account name and the secret access key is one of the account's
+access keys. `OBJECT_STORAGE_ENDPOINT` is optional and is the account URL, for example
+`http://127.0.0.1:10000/devstoreaccount1` for a local emulator or the account's URL in a sovereign
+cloud; it defaults to `https://<account>.blob.core.windows.net`. `OBJECT_STORAGE_REGION` and
+`OBJECT_STORAGE_PATH_STYLE` do not apply. The container must already exist. For the versioning and lifecycle
+advice below, use the account's blob versioning and lifecycle management.
+
+```env
+OBJECT_STORAGE_PROTOCOL=azure-blob
+OBJECT_STORAGE_BUCKET=rakazo-homes
+OBJECT_STORAGE_ACCESS_KEY_ID=mystorageaccount
+OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
 ```
 
 Only the API and worker read these settings. Bot computers never receive the credentials or
@@ -155,7 +191,7 @@ The same key must be configured on every API and worker replica. Registrations r
 bound to their authenticated session; deleting an account also deletes its registration.
 
 With `OBJECT_STORAGE_BUCKET` configured, new artifact contents use the existing
-S3-compatible connection alongside computer homes. Artifact contents are always encrypted
+object storage connection alongside computer homes. Artifact contents are always encrypted
 before upload using the space's content key and authenticated segments bound to the
 artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
 checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor

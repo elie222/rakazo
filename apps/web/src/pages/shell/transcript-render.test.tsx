@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import type { ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, useCallback, useMemo, useRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { rpc } from "../../lib/rpc";
 import { Transcript } from "./transcript";
 
 const messageRenders = vi.hoisted(() => new Map<string, number>());
@@ -12,9 +13,18 @@ const messageRenders = vi.hoisted(() => new Map<string, number>());
 vi.mock("./message-view", async () => {
   const { createElement, memo } = await import("react");
   return {
-    MessageView: memo(function MessageView({ message }: { message: { id: string } }) {
+    MessageView: memo(function MessageView({
+      message,
+      separateAnswers,
+    }: {
+      message: { id: string };
+      separateAnswers?: ReadonlySet<MessageBlock>;
+    }) {
       messageRenders.set(message.id, (messageRenders.get(message.id) ?? 0) + 1);
-      return createElement("div", { "data-testid": `message-${message.id}` });
+      return createElement("div", {
+        "data-testid": `message-${message.id}`,
+        "data-separate-answer": separateAnswers ? "linked" : undefined,
+      });
     }),
   };
 });
@@ -64,6 +74,7 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
   const artifactTarget = useMemo(() => ({ botId: "bot" }), []);
   const none = useMemo(() => new Set<string>(), []);
   const reply = useCallback(() => undefined, []);
+  const resolved = useCallback(async () => undefined, []);
   const quote = useCallback(() => undefined, []);
   const peer = useCallback(() => undefined, []);
   const refresh = useCallback(async () => undefined, []);
@@ -71,6 +82,7 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
   const react = useCallback(async () => undefined, []);
   return (
     <Transcript
+      rpc={rpc}
       scrollRef={scrollRef}
       scrollRequest={null}
       onScrollRequestHandled={reply}
@@ -105,8 +117,10 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
       onAddRoutine={quote}
       voiceReady={false}
       speakingMessageId={null}
+      callHoldsSpeaker={false}
       onSpeak={reply}
       onOpenComputer={reply}
+      onReleaseComputer={resolved}
     />
   );
 }
@@ -139,5 +153,66 @@ it.each([false, true])(
       act(() => root.render(<Host messages={[renamed, kept, live]} />));
       expect(messageRenders.get("kept")).toBe(2);
     }
+  },
+);
+
+it("redraws a page card's reply only when a newer card supersedes it", () => {
+  const card = (id: string, version: number): ThreadMessage => ({
+    ...message(id, ""),
+    botId: "bot",
+    blocks: [{ kind: "page", pageId: "page", version, title: "Plan" }],
+  });
+  const reply = { ...message("reply", "Here is the plan"), botId: "bot" };
+  const earlier = [card("card", 1), reply];
+  act(() => root.render(<Host messages={[...earlier, message("progress:run", "Draft")]} />));
+  act(() =>
+    root.render(<Host messages={[...earlier, message("progress:run", "Draft continues")]} />),
+  );
+  expect(messageRenders.has("card")).toBe(false);
+  expect(messageRenders.get("reply")).toBe(1);
+
+  act(() => root.render(<Host messages={[...earlier, card("card-2", 2)]} />));
+  expect(messageRenders.get("reply")).toBe(2);
+});
+
+it.each(["Build a plan", "👍"])(
+  "only marks a question's answer as repeated while its user message is visible (%s)",
+  (answer) => {
+    const question: ThreadMessage = {
+      ...message("question", ""),
+      blocks: [
+        {
+          kind: "ask",
+          text: "What next?",
+          status: "answered",
+          answer,
+          answerMessageId: "reply",
+        },
+      ],
+    };
+    const reply: ThreadMessage = {
+      ...message("reply", answer),
+      replyToMessageId: question.id,
+      role: "user",
+      seq: 2,
+    };
+    act(() => root.render(<Host messages={[question]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBeNull();
+    act(() => root.render(<Host messages={[question, reply]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBe("linked");
+    act(() => root.render(<Host messages={[question]} />));
+    expect(
+      container
+        .querySelector('[data-testid="message-question"]')
+        ?.getAttribute("data-separate-answer"),
+    ).toBeNull();
   },
 );

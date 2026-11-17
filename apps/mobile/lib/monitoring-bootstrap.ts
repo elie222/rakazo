@@ -20,7 +20,8 @@ export function startMobileMonitoring(): void {
 }
 
 async function attachSessionMonitoring(): Promise<void> {
-  const { authHeaders, currentApiBase, loadApiBase, subscribeApiBase } = await import("./api");
+  const { authHeaders, currentApiBase, subscribeApiBase } = await import("./api");
+  const { loadApiBase } = await import("./api-server");
   const { currentSessionGeneration, subscribeSessionGeneration } = await import("./session");
   let selectedBase: string | undefined;
   const configure = async () => {

@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import type { RunContext } from "./run-context.js";
@@ -157,23 +158,23 @@ describe("userComputerShell", () => {
     ]);
   });
 
-  it("returns a quiet long-running command early and keeps collecting its output", async () => {
-    let finish!: () => void;
-    const exited = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+  it("returns a quiet sign-in prompt early and keeps collecting its output", async () => {
+    const exited = deferred();
     vi.useFakeTimers();
     try {
       const { ctx, call, onShellStillRunning } = setup(async function* () {
-        yield { type: "stdout", data: "Enter code ABCD\n" };
-        await exited;
+        yield { type: "stdout", data: "Enter code ABCD-1234 at https://example.com/device\n" };
+        await exited.promise;
         yield { type: "exit", code: 0 };
       });
       const pending = userComputerShell(ctx, call({ command: "gh auth login" }));
       await vi.advanceTimersByTimeAsync(1_500);
-      expect(await pending).toMatchObject({ stdout: "Enter code ABCD\n", running: true });
+      expect(await pending).toMatchObject({
+        stdout: "Enter code ABCD-1234 at https://example.com/device\n",
+        running: true,
+      });
       expect(onShellStillRunning).toHaveBeenCalledOnce();
-      finish();
+      exited.resolve();
       await expect(onShellStillRunning.mock.calls[0]![0]).resolves.toMatchObject({ code: 0 });
     } finally {
       vi.useRealTimers();

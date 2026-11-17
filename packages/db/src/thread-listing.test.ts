@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { previewFromBlocks, primaryActiveRun } from "./thread-listing.js";
+import { previewFromBlocks, primaryActiveRun, threadRunStatus } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
+  it("skips malformed stored elements", () => {
+    expect(previewFromBlocks([null, { kind: "text", text: "Hi" }])).toBe("Hi");
+  });
+  it("shows nothing for a delivery, whose text is the bot's hidden prompt", () => {
+    expect(
+      previewFromBlocks([{ kind: "delivery" }, { kind: "text", text: 'Run routine "CRM sync":' }]),
+    ).toBe("");
+  });
   it("preserves literal URL paths in autolinks", () => {
     expect(previewFromBlocks([{ kind: "text", text: "Open <https://example.test/_draft_>" }])).toBe(
       "Open https://example.test/_draft_",
@@ -43,5 +51,16 @@ describe("primaryActiveRun", () => {
     const runs = statuses.map((status) => ({ status }));
     expect(primaryActiveRun(runs)?.status).toBe(expected);
     expect(primaryActiveRun([...runs].reverse())?.status).toBe(expected);
+  });
+});
+
+describe("threadRunStatus", () => {
+  it("reads only the runs in the given thread", () => {
+    const runs = [
+      { status: "running", threadId: "group-thread" },
+      { status: "queued", threadId: "own-thread" },
+    ];
+    expect(threadRunStatus(runs, "own-thread")).toBe("queued");
+    expect(threadRunStatus(runs.slice(0, 1), "own-thread")).toBe("idle");
   });
 });

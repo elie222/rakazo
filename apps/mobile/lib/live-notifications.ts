@@ -1,8 +1,9 @@
+import { t } from "@lingui/core/macro";
 import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
-import { getActiveUiLocale, t } from "./i18n";
+import { getActiveUiLocale } from "./i18n";
 import { serverHeaders } from "./server-headers";
 
 export interface LiveNotificationSettings {
@@ -122,7 +123,7 @@ export async function setLiveNotificationSettings(
   if (settings.liveConnection) {
     const existing = await Notifications.getPermissionsAsync();
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
-    if (!granted) throw new Error(t("Android blocked notifications."));
+    if (!granted) throw new Error(t`Android blocked notifications.`);
   }
   await nativeNotifications.setSettings(
     settings,
@@ -139,10 +140,10 @@ export async function resumeLiveNotifications(
   token: string,
   spaceId: string,
   mutedBotId?: string,
-): Promise<void> {
-  if (!nativeNotifications || !token) return;
+): Promise<boolean> {
+  if (!nativeNotifications || !token) return false;
   const parsed = normalizeApiBase(endpoint);
-  if (!parsed.ok || apiBaseWarning(parsed.url)) return;
+  if (!parsed.ok || apiBaseWarning(parsed.url)) return false;
   const headers = nativeServerHeaders(parsed.url);
   if (mutedBotId && nativeNotifications.resumeAfterMute) {
     await nativeNotifications.resumeAfterMute(
@@ -156,6 +157,7 @@ export async function resumeLiveNotifications(
   } else {
     await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale(), headers);
   }
+  return true;
 }
 
 /** The Android poller calls the server itself, so it needs the server's headers too. */

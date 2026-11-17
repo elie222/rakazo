@@ -2,7 +2,10 @@ import type { BillingProvider, BillingSubscriptionStatus } from "@rakazo/adapter
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { BillingEmulator } from "./billing-emulator.js";
-import { StripeBillingProvider, signStripeWebhook } from "./stripe-billing.js";
+import {
+  StripeBillingProvider,
+  signStripeWebhook,
+} from "./providers/billing/stripe/stripe-billing.js";
 import { StripeEmulator } from "./testing/stripe-emulator.js";
 
 const NOW = Date.UTC(2026, 0, 1);
@@ -162,6 +165,24 @@ for (const [name, create] of Object.entries(factories)) {
       });
     });
 
+    it("expires every open checkout of the customer", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_3b",
+      });
+      await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.expireOpenCheckouts(customerId);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
+      await harness.provider.expireOpenCheckouts(customerId);
+      await harness.provider.createCheckout({ customerId, seats: 2, ...urls });
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        status: "active",
+        seats: 2,
+      });
+    });
+
     it("is active immediately without a trial and returns null before any subscription", async () => {
       const harness = create();
       const { customerId } = await harness.provider.createCustomer({
@@ -281,5 +302,61 @@ describe("offline monthly credit renewals", () => {
     expect((await provider.getCustomerSubscription(customerId))?.currentPeriodEndsAt).toEqual(
       new Date(NOW + 3 * month),
     );
+  });
+});
+
+describe("offline checkout cancellation", () => {
+  it("expires every kind of open checkout session when canceling", async () => {
+    const provider = new BillingEmulator({ modelCredits: true, now });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const urls = {
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 2000, monthly: true, ...urls });
+    await provider.cancelCustomerSubscriptions(customerId);
+    expect(() => provider.completeByokCheckout(customerId)).toThrow();
+    expect(() => provider.completeCreditCheckout(customerId)).toThrow();
+    expect(await provider.listCreditPurchases(customerId)).toEqual([]);
+    expect(await provider.getCustomerSubscription(customerId)).toBeNull();
+  });
+});
+
+describe("offline own-key tiers", () => {
+  it("subscribes to a tier and moves to another only from the plan the caller saw", async () => {
+    const provider = new BillingEmulator({ modelCredits: true, now });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    await provider.createByokCheckout({
+      customerId,
+      amountCents: 4900,
+      tier: "pro",
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    });
+    const subscriptionId = provider.completeByokCheckout(customerId);
+    const subscribed = await provider.getCustomerSubscription(customerId);
+    expect(subscribed).toMatchObject({ byokTier: "pro", byokPriceCents: 4900 });
+    const pro = { tier: "pro", interval: "month", amountCents: 4900 } as const;
+    const max = { tier: "max", interval: "month", amountCents: 14900 } as const;
+    await expect(
+      provider.changeByokPlan(customerId, subscriptionId, { from: max, to: pro }),
+    ).resolves.toBe(false);
+    await expect(
+      provider.changeByokPlan(customerId, subscriptionId, { from: pro, to: max }),
+    ).resolves.toBe(true);
+    // The same interval keeps the period.
+    expect(await provider.getCustomerSubscription(customerId)).toMatchObject({
+      byokTier: "max",
+      byokPriceCents: 14900,
+      byokInterval: "month",
+      currentPeriodEndsAt: subscribed?.currentPeriodEndsAt,
+    });
   });
 });

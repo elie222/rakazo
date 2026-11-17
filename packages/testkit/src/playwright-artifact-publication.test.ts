@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -165,9 +166,58 @@ ${script}`;
     expect(existsSync(path.join(root, "overwrite.txt"))).toBe(false);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "links the immutable gallery on every current matching PR",
+    () => {
+      const root = temporaryDirectory();
+      const calls = path.join(root, "comments");
+      write(path.join(root, ".tmp/playwright-dashboard/screenshots/review.json"), "{}");
+      const step = workflow
+        .split("      - name: Link screenshot gallery from pull request\n")[1]
+        ?.split("\n  screenshot-source:")[0];
+      const script = step?.split("        run: |\n")[1]?.replace(/^ {10}/gm, "");
+      expect(script).toBeTruthy();
+      const mock = `gh() {
+  case "$*" in
+    *"/files?"*) printf '%s\\n' 'apps/web/src/example.tsx' ;;
+    *"--method POST"*) printf '%s %s\\n' "$*" "$(cat)" >> "$COMMENT_CALLS" ;;
+    *"/comments?"*) printf '%s\\n' '[[]]' ;;
+    *"/pulls/3"*) printf '%s\\n' 'open outdated' ;;
+    *"/pulls/"*) printf 'open %s\\n' "$SHA" ;;
+    *) return 1 ;;
+  esac
+}
+pnpm() { printf 'Gallery: %s\\n' "$PLAYWRIGHT_GALLERY_URL"; }
+${script}`;
+      execFileSync("bash", ["-eo", "pipefail", "-c", mock], {
+        env: {
+          ...process.env,
+          GITHUB_WORKSPACE: root,
+          GITHUB_REPOSITORY: "example/repo",
+          PLAYWRIGHT_PUBLIC_BASE_URL: "https://reports.example.invalid/playwright",
+          PRS: "[1,2,3]",
+          SHA: "a".repeat(40),
+          RUN_KEY: "200-1",
+          RUN_URL: "https://github.com/example/repo/actions/runs/200",
+          COMMENT_CALLS: calls,
+        },
+        stdio: "pipe",
+      });
+      const published = readFileSync(calls, "utf8");
+      expect(published).toContain("/issues/1/comments");
+      expect(published).toContain("/issues/2/comments");
+      expect(published).not.toContain("/issues/3/comments");
+      expect(published).toContain(
+        "https://reports.example.invalid/playwright/runs/200-1/screenshots/index.html",
+      );
+    },
+  );
+
   it.each(["pull_request", "schedule", "timed_out"])(
     "publishes %s through trusted code with fake storage and credentials",
     (scenario) => {
+      const vitestPath = path.join(repoRoot, "node_modules/vitest/vitest.mjs");
+      const originalVitest = realpathSync(vitestPath);
       const root = temporaryDirectory();
       const checkout = path.join(root, "checkout");
       const runnerTemp = path.join(root, "runner-temp");
@@ -181,6 +231,7 @@ ${script}`;
         "packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts",
         "packages/testkit/src/playwright-report-dashboard.ts",
         "packages/testkit/src/playwright-pr-screenshot-comment.ts",
+        "packages/testkit/src/screenshot-commit-marker.json",
         "packages/testkit/src/png-validation.ts",
       ];
       for (const file of trustedFiles) {
@@ -215,6 +266,11 @@ ${script}`;
         symlinkSync(path.join(repoRoot, directory), path.join(checkout, directory), "dir");
       }
       const bin = path.join(root, "bin");
+      write(
+        path.join(bin, "pnpm"),
+        '#!/bin/sh\n[ "$1" = exec ] && [ "$2" = tsx ] || exit 1\nshift 2\nexec "$TEST_NODE" --import tsx "$@"\n',
+      );
+      execFileSync("chmod", ["+x", path.join(bin, "pnpm")]);
       write(
         path.join(bin, "aws"),
         `#!/usr/bin/env python3
@@ -256,6 +312,7 @@ else:
         PLAYWRIGHT_REPORT_DIR: path.join(artifacts, "playwright-report"),
         PLAYWRIGHT_TEST_RESULTS_DIR: path.join(artifacts, "apps/web/test-results"),
         FAKE_STORAGE: storage,
+        TEST_NODE: process.execPath,
         ATTACK_MARKER: path.join(root, "executed-untrusted-code"),
       };
       execFileSync("bash", ["scripts/publish-playwright-report.sh"], {
@@ -263,6 +320,7 @@ else:
         env,
         stdio: "pipe",
       });
+      expect(realpathSync(vitestPath)).toBe(originalVitest);
       const published = path.join(storage, "playwright");
       const run = path.join(published, "runs/200-1");
       expect(existsSync(path.join(run, "report/index.html"))).toBe(!isPr);

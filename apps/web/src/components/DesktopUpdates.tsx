@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { DesktopUpdateState } from "@rakazo/contracts";
-import { Button, toast } from "@rakazo/ui-web";
+import { Button, SectionHeading, toast } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
@@ -15,36 +16,33 @@ function useDesktopUpdates() {
   const pending = useRef(false);
   const revision = useRef(0);
 
-  useEffect(() => {
+  // Each finished read schedules the next one, two seconds on.
+  const [nextRefresh, setNextRefresh] = useState<object | null>(null);
+  async function refresh() {
     if (!bridge) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function refresh() {
-      const started = revision.current;
-      try {
-        const next = await bridge!.state();
-        if (!stopped && started === revision.current && !pending.current) {
-          setState((current) =>
-            current &&
-            Object.entries(next).every(
-              ([key, value]) => current[key as keyof DesktopUpdateState] === value,
-            )
-              ? current
-              : next,
-          );
-        }
-      } catch {
-        // A disappearing bridge during shutdown should not interrupt the app.
-      } finally {
-        if (!stopped) timer = setTimeout(refresh, 2_000);
+    const started = revision.current;
+    try {
+      const next = await bridge.state();
+      if (started === revision.current && !pending.current) {
+        setState((current) =>
+          current &&
+          Object.entries(next).every(
+            ([key, value]) => current[key as keyof DesktopUpdateState] === value,
+          )
+            ? current
+            : next,
+        );
       }
+    } catch {
+      // A disappearing bridge during shutdown should not interrupt the app.
+    } finally {
+      setNextRefresh({});
     }
+  }
+  useEffect(() => {
     void refresh();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
   }, [bridge]);
+  useTimeout(() => void refresh(), bridge && nextRefresh ? 2_000 : null, nextRefresh);
 
   async function act(action: "check" | "install") {
     if (!bridge || pending.current) return;
@@ -142,7 +140,7 @@ function DesktopUpdatePrompt({ onLater }: { onLater: (version: string | null) =>
         </Button>
       </div>
       {error || state.message ? (
-        <p role="status" className="mt-2 text-sm">
+        <p role="status" className="mt-2 text-body">
           {error ?? state.message}
         </p>
       ) : null}
@@ -172,11 +170,11 @@ export function DesktopUpdateSection() {
       data-testid="desktop-update-settings"
       className="mt-5 rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-heading3 font-medium text-foreground">
+      <SectionHeading variant="heading">
         <Trans>Desktop app</Trans>
-      </h3>
+      </SectionHeading>
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">v{state.currentVersion}</span>
+        <span className="text-body text-muted-foreground">v{state.currentVersion}</span>
         <Button
           variant="outline"
           disabled={busy || downloading || state.phase === "checking"}
@@ -193,7 +191,7 @@ export function DesktopUpdateSection() {
           )}
         </Button>
       </div>
-      <p role="status" className="mt-2 text-sm text-muted-foreground">
+      <p role="status" className="mt-2 text-body text-muted-foreground">
         {error ??
           state.message ??
           (downloading ? (

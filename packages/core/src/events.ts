@@ -1,6 +1,13 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type {
+  HistoryToolStep,
+  MessageBlock,
+  ThreadMessage,
+  ToolHistory,
+  ToolStepCall,
+} from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
+import { payloadAuthor } from "./message-replies.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "./run-error.js";
 
 export function projectMessages(
@@ -81,6 +88,7 @@ export function projectMessages(
         role,
         blocks,
         botId: event.botId ?? undefined,
+        ...payloadAuthor(payload),
         runId: event.runId ?? undefined,
         createdAt,
       });
@@ -108,6 +116,7 @@ export function projectMessages(
       continue;
     }
     if (event.type === "agent.tool.called") {
+      if (!showsAsLiveStep(payload.name)) continue;
       const live = liveProjection(event, createdAt);
       live.blocks = reduceLiveMessageBlocks(live.blocks, {
         type: "tool",
@@ -143,13 +152,8 @@ export function projectMessages(
       });
       continue;
     }
-    if (
-      event.type === "run.completed" ||
-      event.type === "run.failed" ||
-      event.type === "run.cancelled"
-    ) {
-      clearLive(event);
-    }
+    // A run that ends or pauses for input or takeover is no longer working, as in the live reducer.
+    if (stopsRunHelpers(event)) clearLive(event);
   }
   let helpers = [...liveSubagents.values()];
   if (runs) {
@@ -177,6 +181,14 @@ export function projectMessages(
 }
 
 /** A pause ends the current helper execution, even when the run later resumes. */
+/**
+ * A question shows as its own card, and its call can be recorded after the run has already
+ * paused for the answer, so it never adds to the live "working" line.
+ */
+export function showsAsLiveStep(toolName: unknown): boolean {
+  return toolName !== "ask_user";
+}
+
 export function stopsRunHelpers(event: { type: string }): boolean {
   return (
     isRunTerminalEvent(event) ||
@@ -381,7 +393,105 @@ export function liveActivityLine(
   return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
-export type ToolStep = { label: string; count: number; note?: string };
+export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
+export type ToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][number];
+
+/**
+ * Records how each call ended on the step it shows as. `calls` lists every step a call made, in
+ * call order (a connector call can make several). If they stop lining up with the steps, the
+ * steps are returned as they were rather than credited to the wrong step.
+ */
+export function withToolStepOutcomes(
+  segments: readonly MessageBlock[],
+  calls: readonly {
+    label: string;
+    outcome: ToolStepOutcome | undefined;
+    /** The tool the call ran, and what it kept, when the call shows as its own step. */
+    tool?: string;
+    call?: ToolStepCall;
+  }[],
+): MessageBlock[] {
+  let next = 0;
+  const annotated: MessageBlock[] = [];
+  for (const block of segments) {
+    if (block.kind !== "steps") {
+      annotated.push(block);
+      continue;
+    }
+    const steps: HistoryToolStep[] = [];
+    for (const step of block.steps as HistoryToolStep[]) {
+      const outcomes: NonNullable<ToolStep["outcomes"]> = {};
+      const own = calls.slice(next, next + step.count);
+      next += step.count;
+      if (own.length < step.count || own.some((call) => call.label !== step.label))
+        return [...segments];
+      for (const call of own)
+        if (call.outcome) outcomes[call.outcome] = (outcomes[call.outcome] ?? 0) + 1;
+      const { outcomes: _previous, tool: _tool, calls: _calls, ...rest } = step;
+      // Calls are kept for a step only when every one of them was, all of the same tool.
+      const tool = own[0]?.tool;
+      const kept = own.flatMap((call) => (call.call ? [call.call] : []));
+      const replayable =
+        tool !== undefined &&
+        next <= TOOL_STEP_CALLS_KEPT &&
+        kept.length === step.count &&
+        own.every((call) => call.tool === tool);
+      steps.push({
+        ...rest,
+        ...(replayable ? { tool, calls: kept } : {}),
+        ...(Object.keys(outcomes).length > 0 ? { outcomes } : {}),
+      });
+    }
+    annotated.push({ ...block, steps });
+  }
+  return annotated;
+}
+
+/** Calls a reply keeps arguments and results for; a later turn replays no more than these. */
+export const TOOL_STEP_CALLS_KEPT = 40;
+
+/**
+ * Splits a reply's kept tool calls off its blocks: the blocks keep only what the UI shows, and
+ * the history (one entry per step, in order) is stored beside the message for later runs.
+ * Every message write goes through this, so no tool output reaches a client in the blocks.
+ */
+export function splitToolHistory(blocks: readonly MessageBlock[]): {
+  blocks: MessageBlock[];
+  toolHistory: ToolHistory | undefined;
+} {
+  const steps: ToolHistory["steps"] = [];
+  const shown = blocks.map((block): MessageBlock => {
+    if (block.kind !== "steps") return block;
+    return {
+      ...block,
+      steps: (block.steps as HistoryToolStep[]).map(({ tool, calls, ...step }) => {
+        steps.push(tool && calls?.length ? { tool, calls } : null);
+        return step;
+      }),
+    };
+  });
+  return { blocks: shown, toolHistory: steps.some(Boolean) ? { steps } : undefined };
+}
+
+/** The message's steps with the tool and calls its stored history keeps for them, for replay. */
+export function withToolHistory(
+  blocks: readonly MessageBlock[],
+  history: ToolHistory | undefined,
+): MessageBlock[] {
+  if (!history) return [...blocks];
+  let index = 0;
+  return blocks.map((block) =>
+    block.kind === "steps"
+      ? {
+          ...block,
+          steps: block.steps.map((step): HistoryToolStep => {
+            const kept = history.steps[index++];
+            return kept ? { ...step, tool: kept.tool, calls: kept.calls } : step;
+          }),
+        }
+      : block,
+  );
+}
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);
@@ -494,6 +604,17 @@ export function humanizeToolName(name: string): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
+/** "GMAIL_SEND_EMAIL" on Gmail's page reads as "Send email": the app is already the page title. */
+export function appToolLabel(name: string, appSlug: string): string {
+  const prefix = `${appSlug}_`.toLowerCase();
+  return humanizeToolName(name.toLowerCase().startsWith(prefix) ? name.slice(prefix.length) : name);
+}
+
+/** Reverses humanizeToolName for a typed name; rules match tool names ignoring case. */
+export function toolNameFromLabel(label: string): string {
+  return label.trim().replace(/\s+/g, "_");
+}
+
 export function progressMessageText(
   payload: Record<string, unknown> | undefined,
   previousText = "",
@@ -549,7 +670,7 @@ function protectedValues(secrets: Iterable<string>): string[] {
  * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
  * leave the rest readable; matches that only touch stay separate.
  */
-function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
+export function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
   // Count matches starting and ending at each offset rather than listing every match, so a value
   // that repeats or overlaps itself across a long text costs no more than two counters per offset.
   let starts: Int32Array | undefined;

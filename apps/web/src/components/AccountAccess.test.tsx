@@ -2,11 +2,12 @@
 import type { AccountSecurity } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import { createQueryRoot as createRoot } from "../lib/query-root.test-support";
+import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { AccountAccess, LinkSsoRow } from "./AccountAccess";
 
@@ -40,7 +41,7 @@ let root: ReturnType<typeof createRoot>;
 const security: AccountSecurity = {
   hasPassword: false,
   freshOidcAuth: false,
-  ssoLinked: false,
+  ssoLinked: true,
   emailDeletion: false,
   sso: { name: "SSO" },
 };
@@ -83,7 +84,7 @@ async function click(label: string) {
 it("uses the shared desktop flow for linking", async () => {
   await render();
   await click("Link SSO");
-  const failed = `${window.location.origin}${window.location.pathname}?sso-link=1`;
+  const failed = `${window.location.origin}${window.location.pathname}?sso-link=oidc`;
   expect(runSsoFlow).toHaveBeenCalledWith(expect.any(Function), [window.location.href, failed]);
   expect(authClient.linkSocial).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -200,11 +201,12 @@ it("requires a nonempty code and allows it after the proof expires", async () =>
   expect(authClient.deleteUser).toHaveBeenCalledWith({ token: "123456" });
 });
 
-it("clears saved drafts only once the account is deleted", async () => {
+it("clears saved drafts and the returning-user mark only once the account is deleted", async () => {
   const location = { assign: vi.fn() };
   vi.stubGlobal("location", location);
   try {
     writeComposerDraft("bot:bot-1", "unsent thought");
+    rememberSignedIn();
     vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...security, freshOidcAuth: true });
     vi.mocked(authClient.deleteUser)
       .mockResolvedValueOnce({
@@ -216,11 +218,75 @@ it("clears saved drafts only once the account is deleted", async () => {
     await click("Delete");
     await act(async () => deleteButton().click());
     expect(readComposerDraft("bot:bot-1")).toBe("unsent thought");
+    expect(hasSignedInBefore()).toBe(true);
     await act(async () => deleteButton().click());
     expect(location.assign).toHaveBeenCalledWith("/sign-in");
     expect(readComposerDraft("bot:bot-1")).toBe("");
+    expect(hasSignedInBefore()).toBe(false);
   } finally {
     vi.unstubAllGlobals();
     localStorage.clear();
   }
+});
+
+it("links the selected dedicated provider through the authenticated desktop flow", async () => {
+  vi.mocked(runSsoFlow).mockImplementation(async (begin) => begin(true, (url) => `popup:${url}`));
+  await act(async () => root.render(<LinkSsoRow provider={{ id: "google", name: "Google" }} />));
+  await click("Link Google");
+  expect(authClient.linkSocial).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "google", disableRedirect: true }),
+  );
+});
+
+it("shows a provider return error only on the row that started linking", async () => {
+  window.history.replaceState(null, "", "/?sso-link=google&error=account_not_linked");
+  await act(async () =>
+    root.render(
+      <>
+        <LinkSsoRow />
+        <LinkSsoRow provider={{ id: "google", name: "Google" }} />
+        <LinkSsoRow provider={{ id: "apple", name: "Apple" }} />
+      </>,
+    ),
+  );
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(host.querySelector('[role="alert"]')?.parentElement?.textContent).toContain("Google");
+});
+
+it("refreshes authenticated linked-account state after a successful provider link", async () => {
+  window.history.replaceState(null, "", "/");
+  const onSecurity = vi.fn();
+  const linked = { ...security, linkedProviderIds: ["google"] };
+  vi.mocked(fetchAccountSecurity).mockResolvedValue(linked);
+  await act(async () =>
+    root.render(<LinkSsoRow provider={{ id: "google", name: "Google" }} onSecurity={onSecurity} />),
+  );
+  await click("Link Google");
+  expect(onSecurity).toHaveBeenCalledWith(linked);
+});
+
+it.each(["google", "apple"])(
+  "hides unsupported linked %s confirmation without email delivery",
+  async (id) => {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({
+      ...security,
+      sso: null,
+      ssoLinked: false,
+      linkedProviderIds: [id],
+    });
+    await render();
+    await click("Delete");
+    expect(deleteButton().disabled).toBe(true);
+    expect(host.textContent).not.toContain("Continue with Provider");
+    expect(authClient.signIn.social).not.toHaveBeenCalled();
+    expect(requestAccountDeletionCode).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves a configured organization label when linking", async () => {
+  await act(async () =>
+    root.render(<LinkSsoRow provider={{ id: "oidc", name: "Company Login" }} />),
+  );
+  await click("Link Company Login");
+  expect(authClient.linkSocial).toHaveBeenCalledWith(expect.objectContaining({ provider: "oidc" }));
 });

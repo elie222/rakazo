@@ -28,9 +28,16 @@ describe("searchHitPreview", () => {
   it("joins the conversation name with the plain preview", () => {
     expect(
       searchHitRowPreview({
+        title: "launch-notes.txt",
         botName: "Scout",
         snippet: "See **this** ![x](data:image/png;base64,aaaa)",
       }),
     ).toBe("Scout: See this x");
+  });
+
+  it("does not repeat the chat the row title already names", () => {
+    expect(
+      searchHitRowPreview({ title: "Scout", botName: "Scout", snippet: "The plan is ready." }),
+    ).toBe("The plan is ready.");
   });
 });

@@ -8,8 +8,7 @@ import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const migrationUrl = process.env.DATABASE_MIGRATION_URL ?? databaseUrl;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 interface SqlRead {
   text: string;
@@ -57,7 +56,6 @@ function trackSourceRunReads(pool: Pool): SqlRead[] {
 describePostgres("replaying a sent message reads its first run (PostgreSQL)", () => {
   const provider = "sendblue";
   const address = `+1559${String(Date.now()).slice(-7)}`;
-  const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
   let prisma: PrismaClient;
   let system: PrismaClient;
   let owner: PrismaClient;
@@ -82,7 +80,7 @@ describePostgres("replaying a sent message reads its first run (PostgreSQL)", ()
       await ownerDb.pool.end();
     };
     const provisioned = await runAsSystem("test fixture", () =>
-      provisionMessagingIdentity(prisma, { provider, address }, signup),
+      provisionMessagingIdentity(prisma, { provider, address }),
     );
     ({ userId, spaceId, botId, threadId } = provisioned);
     await system.run.updateMany({

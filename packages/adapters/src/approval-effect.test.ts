@@ -13,6 +13,7 @@ import {
   catalogApprovalMatchesLiveRoute,
   catalogApprovalRequest,
   catalogExecuteToolName,
+  catalogIdForRoute,
   catalogToolPrefix,
   claimApprovedEffect,
   claimIntendedEffect,
@@ -30,6 +31,52 @@ import {
 } from "./approval-effect.js";
 
 describe("approved effect replay", () => {
+  it("binds direct and catalog approvals to the selected account", () => {
+    const marker = "__rakazoCatalogTool";
+    const route = {
+      connectorId: "example",
+      resourceId: "mail",
+      toolName: "send",
+      connectionId: "work",
+    };
+    const args = { text: "approved" };
+    const direct = boundDirectApprovalRequest(route, args, marker);
+    const catalog = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: catalogIdForRoute(route), arguments: args },
+      marker,
+      route,
+    );
+    expect(catalogIdForRoute(route)).toBe("mail:work:send");
+    for (const approved of [direct, catalog]) {
+      expect(approvalReplayResourceError("send", false, approved, route, marker)).toBeUndefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: "home" },
+          marker,
+        ),
+      ).toBeDefined();
+      expect(
+        approvalReplayResourceError(
+          "send",
+          false,
+          approved,
+          { ...route, connectionId: undefined },
+          marker,
+        ),
+      ).toBeDefined();
+    }
+    const legacy = catalogApprovalRequest(
+      "example_execute_tool",
+      { id: "mail:send", arguments: args },
+      marker,
+    );
+    expect(approvalReplayResourceError("send", false, legacy, route, marker)).toBeDefined();
+  });
+
   it("replays persisted arguments instead of a changed model reconstruction", () => {
     const approved = { title: "Approved title", body: "Approved body" };
     const queue = createApprovedEffectReplayQueue([

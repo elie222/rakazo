@@ -3,6 +3,12 @@
   overflow-wrap: anywhere;
 }
 
+/* Semibold, not bold: the system font's 700 reads heavy and smudged beside 420 body text. */
+.rk-chat-markdown strong,
+.rk-chat-markdown b {
+  font-weight: 600;
+}
+
 .rk-chat-markdown > :first-child,
 .rk-chat-markdown > :first-child > :first-child {
   margin-top: 0;
@@ -139,7 +145,7 @@
   color: var(--foreground);
   padding: 0.08em 0.32em;
   font-family: var(--font-mono);
-  font-size: var(--text-body2);
+  font-size: var(--text-body-sm);
   direction: ltr;
   unicode-bidi: isolate;
 }
@@ -159,8 +165,8 @@
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: var(--text-body2);
-  line-height: var(--text-body2--line-height);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
   white-space: pre;
 }
 
@@ -377,4 +383,49 @@ a.rk-chat-link-in-bubble .rk-chat-link-tile {
 
 a.rk-chat-link:hover .rk-chat-link-label {
   text-decoration-color: currentColor;
+}
+
+/* A page named in a message: its glyph, then its title underlined in the text's own colour. */
+.rk-chat-page-chip {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+/* Sized to the text: 17px tall at 16px, the bottom 2px below the baseline, 7px before the title. */
+.rk-chat-page-chip-icon {
+  display: inline-block;
+  width: calc(1.0625em * 33 / 41);
+  height: 1.0625em;
+  margin-inline-end: 0.4375em;
+  vertical-align: -0.125em;
+}
+
+/* Measured: 10% of the text on desktop, 30% in the touch apps, 3px under the baseline. */
+.rk-chat-page-chip-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+@media (pointer: coarse) {
+  .rk-chat-page-chip-title {
+    text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  }
+}
+
+.rk-chat-page-chip:hover .rk-chat-page-chip-title {
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.rk-chat-page-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
 }

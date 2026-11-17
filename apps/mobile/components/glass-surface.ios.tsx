@@ -17,7 +17,7 @@ export function GlassSurface({
   const scheme = useResolvedAppearance();
   if (!iosAtLeast(26)) return <View style={[style, fallbackStyle]}>{children}</View>;
   const modifiers = [
-    foregroundStyle("#00000000"),
+    foregroundStyle("transparent"),
     glassEffect({
       glass: { variant: "regular", ...(tint ? { tint } : {}) },
       shape,
@@ -26,7 +26,13 @@ export function GlassSurface({
   ];
   return (
     <View style={style}>
-      <Host colorScheme={scheme} pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {/* Near the home indicator the glass would otherwise stop at the safe area. */}
+      <Host
+        colorScheme={scheme}
+        ignoreSafeArea="container"
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+      >
         {shape === "circle" ? (
           <Circle modifiers={modifiers} />
         ) : shape === "roundedRectangle" ? (

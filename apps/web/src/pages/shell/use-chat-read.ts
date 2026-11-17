@@ -1,10 +1,11 @@
 import type { Bot, Group } from "@rakazo/contracts";
 import type { ReadBoundary } from "@rakazo/core";
-import { createChatQueues, settleReadBoundary } from "@rakazo/core";
+import { chatWoke, createChatQueues, settleReadBoundary } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { autoReadStillWanted } from "../../lib/auto-read";
 import type { createSpaceRpc } from "../../lib/rpc";
+import { useEventListener } from "../../lib/use-event-listener";
 
 /**
  * Read state for the open chat: automatic reads while it is visible, Mark as Unread holds,
@@ -58,6 +59,10 @@ export function useChatRead({
       );
     });
   }, []);
+  // A read ends a snooze that has woken, as the server does.
+  const endBotWake = useCallback((id: string) => {
+    setBots((current) => endWake(current, id));
+  }, []);
   // `stillWanted` makes it an automatic read: one that waited in the queue skips once the user
   // has left. Only an explicit read clears a Mark as Unread hold, and it does so up front, so an
   // automatic read answering after the user marked the chat unread can't undo the hold.
@@ -71,10 +76,11 @@ export function useChatRead({
         !stillWanted || stillWanted() ? rpc.threads.markRead({ botId: id }) : Promise.resolve(null),
       );
       if (!answer) return undefined;
+      endBotWake(id);
       if (!manuallyUnread.current.has(id)) updateBotUnread(id, false);
       return answer.unreadAfterSeq;
     },
-    [readInOrder, updateBotUnread],
+    [readInOrder, updateBotUnread, endBotWake],
   );
   const markBotUnread = useCallback(
     async (id: string, messageId?: string) => {
@@ -138,6 +144,7 @@ export function useChatRead({
           }
           captureReadBoundary(visit, answer.unreadAfterSeq);
           setGroups((current) => {
+            current = endWake(current, groupId);
             const group = current.find((candidate) => candidate.id === groupId);
             if (!group?.unread) return current;
             return current.map((candidate) =>
@@ -164,31 +171,26 @@ export function useChatRead({
     if (!active) return;
     // Opening a bot clears the manual unread flag so it can auto-read again.
     manuallyUnread.current.delete(active.id);
-    const markVisibleBotRead = () => {
-      markBotReadIfVisible(active.id);
-    };
-    markVisibleBotRead();
-    window.addEventListener("focus", markVisibleBotRead);
-    document.addEventListener("visibilitychange", markVisibleBotRead);
-    return () => {
-      window.removeEventListener("focus", markVisibleBotRead);
-      document.removeEventListener("visibilitychange", markVisibleBotRead);
-    };
+    markBotReadIfVisible(active.id);
   }, [active?.id, markBotReadIfVisible]);
+  const markVisibleBotRead = () => {
+    if (active) markBotReadIfVisible(active.id);
+  };
+  useEventListener(active ? window : null, "focus", markVisibleBotRead);
+  useEventListener(active ? document : null, "visibilitychange", markVisibleBotRead);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
     manuallyUnread.current.delete(activeGroup.id);
     readVisibleGroups.current.delete(groupId);
-    const markVisibleGroupRead = () => markGroupReadIfVisible(groupId);
-    markVisibleGroupRead();
-    window.addEventListener("focus", markVisibleGroupRead);
-    document.addEventListener("visibilitychange", markVisibleGroupRead);
-    return () => {
-      window.removeEventListener("focus", markVisibleGroupRead);
-      document.removeEventListener("visibilitychange", markVisibleGroupRead);
-    };
+    markGroupReadIfVisible(groupId);
   }, [activeGroup?.id, groupId, markGroupReadIfVisible]);
+  const groupOpen = Boolean(groupId && activeGroup);
+  const markVisibleGroupRead = () => {
+    if (groupId) markGroupReadIfVisible(groupId);
+  };
+  useEventListener(groupOpen ? window : null, "focus", markVisibleGroupRead);
+  useEventListener(groupOpen ? document : null, "visibilitychange", markVisibleGroupRead);
 
   /** Mark as Unread from a group message: the next open starts the New divider there. */
   const markGroupUnreadFrom = useCallback(
@@ -222,7 +224,9 @@ export function useChatRead({
     void request
       .then(() =>
         setGroups((current) =>
-          current.map((group) => (group.id === groupId ? { ...group, unread } : group)),
+          (unread ? current : endWake(current, groupId)).map((group) =>
+            group.id === groupId ? { ...group, unread } : group,
+          ),
         ),
       )
       .catch(() => {
@@ -249,4 +253,15 @@ export function useChatRead({
     markedUnreadMessageId,
     unreadAfterSeq,
   };
+}
+
+function endWake<T extends { id: string; snoozedUntil?: string | null }>(
+  chats: T[],
+  id: string,
+): T[] {
+  const chat = chats.find((candidate) => candidate.id === id);
+  if (!chat || !chatWoke(chat, Date.now())) return chats;
+  return chats.map((candidate) =>
+    candidate.id === id ? { ...candidate, snoozedUntil: null } : candidate,
+  );
 }

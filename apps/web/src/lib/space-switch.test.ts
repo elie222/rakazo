@@ -20,12 +20,19 @@ function stubTransitions() {
     startViewTransition(update: () => Promise<void>) {
       let done = () => {};
       let skip = () => {};
+      let abort = () => {};
+      const ready = new Promise<void>((_resolve, reject) => {
+        abort = () => reject(new DOMException("Document hidden", "InvalidStateError"));
+      });
       const finished = new Promise<void>((resolve, reject) => {
         done = resolve;
-        skip = () => reject(new Error("Transition skipped"));
+        skip = () => {
+          abort();
+          reject(new Error("Transition skipped"));
+        };
       });
       transitions.push({ update, done, skip });
-      return { finished };
+      return { ready, finished };
     },
   });
   return { transitions, classes };

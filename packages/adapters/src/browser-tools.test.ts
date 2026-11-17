@@ -1,6 +1,7 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import * as Logging from "@rakazo/logging";
+import type { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import {
   browserActFromTool,
@@ -10,10 +11,11 @@ import {
   parseBrowserActions,
   redactBrowserResult,
 } from "./browser-tools.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools } from "./builtin.tool-definition.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
+import { pageBrowserSessionKey } from "./page-browser-session.js";
 import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 
 const context: AdapterContext = {
@@ -425,7 +427,7 @@ describe("browser tools", () => {
       expect(snap).not.toContain("+1 555 0100");
     });
 
-    it("picks a dropdown option for a visible field and never names the value", async () => {
+    it("picks a dropdown option for a visible field and never shows which one", async () => {
       const url = "https://login.example.test/signin";
       const browser = new FakeBrowserProvider({
         pages: {
@@ -450,12 +452,13 @@ describe("browser tools", () => {
         },
       });
       await browserNavigateFromTool(browser, computer, context, { url });
-      const branch = async () => {
-        const snap = (await browserSnapshotFromTool(browser, computer, context, {})) as {
+      const snapshot = async () =>
+        (await browserSnapshotFromTool(browser, computer, context, {})) as {
+          tree: string;
           elements: Array<{ ref: string; name: string }>;
         };
-        return snap.elements.find((el) => el.name.includes("Branch"))!.ref;
-      };
+      const branch = async () =>
+        (await snapshot()).elements.find((el) => el.name.includes("Branch"))!.ref;
       const fill = async (
         text: string,
         { hidden = false, origin = "https://login.example.test" } = {},
@@ -476,15 +479,35 @@ describe("browser tools", () => {
           },
           { resolveSecretFill: async () => ({ text, origin, hidden }) },
         );
-      const chosen = async () =>
-        JSON.stringify(await browserSnapshotFromTool(browser, computer, context, {})).match(
-          /"label":"([^"]*)","value":"[^"]*","selected":true/,
-        )?.[1];
+      // Read from the page itself: the bot's snapshots never say which option is chosen.
+      const chosen = () => {
+        const session = browser.sessions.get(pageBrowserSessionKey(computer, context));
+        const { document } = (session as unknown as { dom: JSDOM }).dom.window;
+        return (document.querySelector('[aria-label="Branch"]') as HTMLSelectElement).value;
+      };
 
-      expect(await fill("A2")).toMatchObject({ ok: true, completed: 1 });
-      expect(await chosen()).toBe("A2");
+      expect(JSON.stringify(await snapshot())).toContain('"selected":true');
+      const picked = await fill("A2");
+      expect(picked).toMatchObject({ ok: true, completed: 1 });
+      expect(chosen()).toBe("A2");
       expect(await fill("v1")).toMatchObject({ ok: true, completed: 1 });
-      expect(await chosen()).toBe("A1");
+      expect(chosen()).toBe("v1");
+      for (const seen of [picked, await snapshot()] as Array<{
+        tree: string;
+        elements: Array<{ name: string }>;
+      }>) {
+        expect(seen.tree).not.toContain("(selected)");
+        expect(seen.tree).not.toMatch(/"Branch" \[e\d+\] value=/);
+        const element = seen.elements.find((el) => el.name.includes("Branch"));
+        expect(element).not.toHaveProperty("value");
+        expect(JSON.stringify(element)).not.toContain('"selected":true');
+      }
+      // The bot's own fill on that dropdown lists its options without marking the chosen one.
+      const own = await browserActFromTool(browser, computer, context, {
+        actions: [{ kind: "fill", ref: await branch(), text: "nope" }],
+      });
+      expect(JSON.stringify(own)).toContain("This dropdown has no option");
+      expect(JSON.stringify(own)).not.toContain("(selected)");
       for (const text of ["fake-999", "A3"]) {
         // The page itself lists every option; the refusal lists only those that can be chosen.
         expect(await fill(text), text).toMatchObject({
@@ -498,8 +521,10 @@ describe("browser tools", () => {
       const hidden = await fill("A2", { hidden: true });
       expect(JSON.stringify(hidden)).toMatch(/password field/);
       const elsewhere = await fill("A2", { origin: "https://other.example.test" });
-      expect(JSON.stringify(elsewhere)).toMatch(/not on the site this login was saved for/);
-      expect(await chosen()).toBe("A1");
+      expect(JSON.stringify(elsewhere)).toMatch(
+        /This login is saved for https:\/\/other.example.test/,
+      );
+      expect(chosen()).toBe("v1");
       // A page of long labels cannot flood the refusal.
       await browserNavigateFromTool(browser, computer, context, { url: `${url}?long` });
       const flooded = (await fill("fake-999")) as { error: string };
@@ -725,7 +750,10 @@ describe("browser tools", () => {
         { resolveSecretFill },
       );
       expect(acted).toMatchObject({ ok: false, completed: 0, uncertain: false });
-      expect(JSON.stringify(acted)).toMatch(/not on the site.*browser_navigate/);
+      expect(acted).toMatchObject({
+        error:
+          "This login is saved for https://login.example.test; the page is on https://phish.example.test. Open the saved site with browser_navigate, then fill again.",
+      });
       // A refusal is settled: nothing points the bot at desktop tools or takeover.
       expect(acted).not.toHaveProperty("fallback");
       expect(acted).not.toHaveProperty("note");
@@ -1150,6 +1178,7 @@ describe("browser tools and purchase approval", () => {
         site: "shop.example.test",
         label: "Pay $5",
         amount: "$5",
+        total: "",
       },
       { kind: "click", ref: "e4" },
     ]);
@@ -1159,7 +1188,7 @@ describe("browser tools and purchase approval", () => {
   });
   it("lets a card for a page that could not be checked cover each click, bound to no site", async () => {
     const unchecked = { steps: [], site: "", label: "", amount: "" };
-    const marked = { approved: true, site: "", label: "", amount: "" };
+    const marked = { approved: true, site: "", label: "", amount: "", total: "" };
     expect(
       await actWith(
         { actions: [click("e1"), { kind: "fill", ref: "e2", text: "x" }, click("e3")] },
@@ -1351,11 +1380,11 @@ describe("browser_act fill_code", () => {
     expect(() => parseBrowserActions([{ kind: "fill_code" }])).toThrow(/requires ref/);
   });
 
-  function held(overrides: { claim?: () => Promise<boolean> } = {}) {
+  function held(overrides: { claim?: () => Promise<string | undefined> } = {}) {
     return {
       text: "123456",
       origin,
-      claim: overrides.claim ?? vi.fn(async () => true),
+      claim: overrides.claim ?? vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
     };
   }
@@ -1529,13 +1558,56 @@ describe("browser_act fill_code", () => {
       computer,
       context,
       { actions: [{ kind: "fill_code", ref: "e1" }] },
-      { resolveCodeFill: async () => held({ claim: async () => false }) },
+      {
+        resolveCodeFill: async () =>
+          held({ claim: async () => "No code is waiting. Use request_secret with oneTimeCode." }),
+      },
     );
     expect(result).toMatchObject({
       ok: false,
       completed: 0,
       error: expect.stringContaining("No code"),
     });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it("releases an approved purchase when its code is refused or can't be taken", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const releasePurchase = vi.fn(async () => {});
+    const claims = [
+      async () => "No code is waiting.",
+      async () => {
+        throw new Error("The login could not be read.");
+      },
+    ];
+    for (const claim of claims) {
+      const result = await browserActFromTool(
+        browser,
+        computer,
+        context,
+        {
+          actions: [
+            { kind: "fill_code", ref: "e1" },
+            { kind: "click", ref: "e2" },
+          ],
+        },
+        {
+          resolveCodeFill: async () => held({ claim }),
+          approvedPurchase: {
+            steps: [1],
+            site: "shop.example.test",
+            label: "Pay $5",
+            amount: "$5",
+            amountSource: "button",
+          },
+          countPurchase: async () => undefined,
+          releasePurchase,
+        },
+      );
+      expect(result).toMatchObject({ ok: false });
+    }
+    expect(releasePurchase).toHaveBeenCalledTimes(2);
     expect(act).not.toHaveBeenCalled();
   });
 

@@ -84,7 +84,9 @@ test("Windows pnpm script entry preserves arguments and process behavior", {
       shim,
       `@echo off\r\nset "npm_execpath=${entry}"\r\n"${process.execPath}" "${driver}"\r\n`,
     );
-    const launched = execFileSync(env.ComSpec, ["/d", "/s", "/c", `""${shim}""`], {
+    // A plain copy of process.env keeps the key's real case, so read both spellings: cmd.exe
+    // exports `ComSpec`, while Git Bash and MSYS export `COMSPEC`.
+    const launched = execFileSync(env.COMSPEC ?? env.ComSpec, ["/d", "/s", "/c", `""${shim}""`], {
       cwd: dir,
       env: { ...env, TEST_ARGS: JSON.stringify(args) },
       encoding: "utf8",

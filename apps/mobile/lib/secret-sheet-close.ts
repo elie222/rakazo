@@ -1,6 +1,7 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
-import type { TextInput } from "react-native";
+import { useRef, useState } from "react";
+import type { TextInputInstance } from "react-native";
 
 /**
  * Closes a sheet that holds protected fields without iOS offering to save them. iOS offers to save
@@ -11,7 +12,7 @@ import type { TextInput } from "react-native";
  */
 export function useSecretSheetClose(
   /** The protected fields, in order; a sheet with fields added or removed keeps this current. */
-  inputs: RefObject<readonly (TextInput | null | undefined)[]>,
+  inputs: RefObject<readonly (TextInputInstance | null | undefined)[]>,
   clear: () => void,
   onClose: () => void,
 ) {
@@ -37,11 +38,7 @@ export function useSecretSheetClose(
     if (text === "") finishClosing();
   }
 
-  useEffect(() => {
-    if (!closing) return;
-    const timer = setTimeout(finishClosing, 500);
-    return () => clearTimeout(timer);
-  }, [closing]);
+  useTimeout(finishClosing, closing ? 500 : null);
 
   return { close, closing, endEditing };
 }

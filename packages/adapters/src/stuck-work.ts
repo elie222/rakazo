@@ -1,6 +1,5 @@
 import type { JobPublisher, NotificationMessage, NotificationProvider } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import type { StuckWorkStatus } from "@rakazo/core";
+import type { ExpirableWaitStatus, StuckWorkStatus } from "@rakazo/core";
 import {
   isStuckWorkStatus,
   STUCK_WORK_NOTICE,
@@ -10,24 +9,47 @@ import {
   stuckWorkDueAfterMs,
   stuckWorkReminder,
   stuckWorkStoppedNotification,
+  waitExpireAfterMs,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, expireStuckRun, withTransactionRetry } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  expireStuckRun,
+  runHoldsOwnSecrets,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "./expo-push.js";
+import { notificationIdentity } from "./notification-identity.js";
+import { publishChatAlert } from "./run-notifications.js";
+import { wakeRun } from "./wake-run.js";
 
 type StuckCursor = { at: Date; id: string };
 
-type StuckCandidate = {
+const STUCK_CANDIDATE_SELECT = {
+  id: true,
+  status: true,
+  updatedAt: true,
+  spaceId: true,
+  threadId: true,
+  botId: true,
+  userId: true,
+  taskId: true,
+  bot: { select: { name: true, color: true, avatarSet: true, notifyOnFinish: true } },
+  thread: { select: { groupId: true } },
+} as const;
+
+type StuckCandidate<Status extends ExpirableWaitStatus = StuckWorkStatus> = {
   id: string;
-  status: StuckWorkStatus;
+  status: Status;
   updatedAt: Date;
   spaceId: string;
   threadId: string;
   botId: string;
   userId: string;
   taskId: string;
-  bot: { name: string; notifyOnFinish: boolean };
+  bot: { name: string; color: string; avatarSet: string; notifyOnFinish: boolean };
   thread: { groupId: string | null };
 };
 
@@ -75,18 +97,7 @@ export async function reconcileStuckWork(deps: {
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: deps.batchSize,
-    select: {
-      id: true,
-      status: true,
-      updatedAt: true,
-      spaceId: true,
-      threadId: true,
-      botId: true,
-      userId: true,
-      taskId: true,
-      bot: { select: { name: true, notifyOnFinish: true } },
-      thread: { select: { groupId: true } },
-    },
+    select: STUCK_CANDIDATE_SELECT,
   });
 
   const due = runs.flatMap((run) => {
@@ -149,7 +160,7 @@ function readyStuckRun(
   };
 }
 
-function noticesEnabled(run: StuckCandidate): boolean {
+function noticesEnabled(run: StuckCandidate<ExpirableWaitStatus>): boolean {
   return Boolean(run.thread.groupId || run.bot.notifyOnFinish);
 }
 
@@ -196,6 +207,7 @@ function deliveredNotice(run: StuckCandidate): Prisma.InputJsonValue {
 async function remindStuckRun(
   deps: {
     prisma: PrismaClient;
+    events?: ThreadEvents;
     notifications?: NotificationProvider;
     now: Date;
   },
@@ -206,20 +218,29 @@ async function remindStuckRun(
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) => claimStuckReminder(tx, run, deps.now)),
+    deps.prisma.$transaction(
+      (tx) => claimStuckReminder(tx, run, deps.now),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   );
   if (!claimId) return;
   const reminder = stuckWorkReminder(run.status, run.bot.name);
-  const delivery = await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: reminder.kind,
     title: reminder.title,
     body: reminder.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  const delivery = await sendStuckNotice(deps.notifications, run, message);
   if (delivery === "delivered") {
+    // After the push, so a failed push that is retried does not alert open apps twice.
+    publishChatAlert(deps.events, run, message, run.thread.groupId);
     await withTransactionRetry(() =>
-      deps.prisma.$transaction((tx) => markStuckNoticeDelivered(tx, claimId, run)),
+      deps.prisma.$transaction(
+        (tx) => markStuckNoticeDelivered(tx, claimId, run),
+        THREAD_LOCK_TRANSACTION_OPTIONS,
+      ),
     );
     return;
   }
@@ -306,6 +327,33 @@ async function clearStuckNotice(tx: Prisma.TransactionClient, eventId: string) {
   await tx.event.deleteMany({ where: { id: eventId } });
 }
 
+/**
+ * A question stays open, but a run that took a login or code for itself cannot keep it, or the
+ * redaction built from it, past the expiry: end that wait the way a stuck one ends. Returns when to
+ * look again while the run is still waiting and younger than that.
+ */
+export async function expireWaitHoldingSecrets(
+  deps: {
+    prisma: PrismaClient;
+    jobs: JobPublisher;
+    events?: ThreadEvents;
+    notifications?: NotificationProvider;
+    now: Date;
+  },
+  runId: string,
+): Promise<Date | undefined> {
+  const run = await deps.prisma.run.findUnique({
+    where: { id: runId },
+    select: STUCK_CANDIDATE_SELECT,
+  });
+  if (run?.status !== "waiting_input") return undefined;
+  const due = new Date(run.updatedAt.getTime() + waitExpireAfterMs());
+  if (due > deps.now) return due;
+  if (!(await runHoldsOwnSecrets(deps.prisma, run))) return undefined;
+  await expireOne(deps, { ...run, status: "waiting_input" });
+  return undefined;
+}
+
 async function expireOne(
   deps: {
     prisma: PrismaClient;
@@ -314,44 +362,45 @@ async function expireOne(
     notifications?: NotificationProvider;
     now: Date;
   },
-  run: StuckCandidate,
+  run: StuckCandidate<ExpirableWaitStatus>,
 ) {
   const expired = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) =>
-      expireStuckRun(tx, {
-        runId: run.id,
-        threadId: run.threadId,
-        status: run.status,
-        updatedAt: run.updatedAt,
-        now: deps.now,
-      }),
+    deps.prisma.$transaction(
+      (tx) =>
+        expireStuckRun(tx, {
+          runId: run.id,
+          threadId: run.threadId,
+          status: run.status,
+          updatedAt: run.updatedAt,
+          now: deps.now,
+        }),
+      THREAD_LOCK_TRANSACTION_OPTIONS,
     ),
   );
   if (!expired) return;
   await deps.events?.notify(run.threadId, expired.seq).catch((error) => {
     getLogger().error("stuck work realtime notification", error);
   });
-  if (expired.continuationRunId) {
-    await deps.jobs.enqueue(runContinueJob(expired.continuationRunId)).catch((error) => {
-      getLogger().error("stuck work continuation", error);
-    });
-  }
-  if (!deps.notifications || !noticesEnabled(run)) return;
+  await deps.events?.publishSpaceChange?.(run.spaceId, "runs");
+  if (expired.continuationRunId) await wakeRun(deps.jobs, expired.continuationRunId);
+  if (!noticesEnabled(run)) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
-  await sendStuckNotice(deps.notifications, run, {
+  const message = {
     kind: stopped.kind,
     title: stopped.title,
     body: stopped.body,
     botId: run.botId,
     threadId: run.threadId,
-  });
+  };
+  publishChatAlert(deps.events, run, message, run.thread.groupId);
+  if (deps.notifications) await sendStuckNotice(deps.notifications, run, message);
 }
 
 type StuckNoticeDelivery = "delivered" | "undeliverable" | "failed";
 
 async function sendStuckNotice(
   notifications: NotificationProvider,
-  run: StuckCandidate,
+  run: StuckCandidate<ExpirableWaitStatus>,
   message: NotificationMessage,
 ): Promise<StuckNoticeDelivery> {
   const context = {
@@ -362,8 +411,12 @@ async function sendStuckNotice(
     botId: run.botId,
     signal: new AbortController().signal,
   };
-  const notice = run.thread.groupId ? { ...message, groupId: run.thread.groupId } : message;
   try {
+    const notice = {
+      ...message,
+      sender: await notificationIdentity({ id: run.botId, ...run.bot }),
+      ...(run.thread.groupId ? { groupId: run.thread.groupId } : {}),
+    };
     if (notifications instanceof ExpoPushProvider) {
       return await notifications.deliver(notice, context);
     }

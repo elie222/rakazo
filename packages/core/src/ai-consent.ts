@@ -28,6 +28,7 @@ export function aiDataUsesForProcedure(procedure: string, input?: unknown): AiDa
   if (
     [
       "threads/send",
+      "threads/sendWithRoutines",
       "artifacts/create",
       "threads/followUp",
       "threads/react",
@@ -91,6 +92,17 @@ export function aiConsentTarget(input: unknown): {
   const scope = SettingsScopeSchema.safeParse((input as { scope?: unknown }).scope).data;
   const thread = threadConsentTarget(input);
   return scope ? { ...thread, settingsScope: scope } : thread;
+}
+
+/** A send that starts routines is also checked as each routine's own test run would be. */
+export function aiConsentTargets(input: unknown): ReturnType<typeof aiConsentTarget>[] {
+  const routineIds = (input as { routineIds?: unknown } | null | undefined)?.routineIds;
+  return [
+    aiConsentTarget(input),
+    ...(Array.isArray(routineIds) ? routineIds : [])
+      .filter((routineId): routineId is string => typeof routineId === "string")
+      .map((routineId) => ({ routineId })),
+  ];
 }
 
 function threadConsentTarget(input: object): {

@@ -1,39 +1,55 @@
+import { computerHoursOut } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import type { MobileSnapshot } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
+import type { MobileSnapshot } from "../../lib/mobile-types";
 import { openModelSettings } from "../../lib/model-settings";
-import { runErrorActionLabel } from "../../lib/run-error-presentation";
+import { queryClient, rpcQuery } from "../../lib/query";
+import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/run-error-presentation";
 import { useRunError } from "../run-error-sheet";
 
 /** The chat's failed run: its error, the recovery action, and whether its details are open. */
 export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?: string) {
-  const { t } = useI18n();
   const router = useRouter();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const runError = run?.status === "failed" ? (run.error ?? null) : null;
-  const normalizedRunError = useRunError(runError, false);
+  const classified = useRunError(runError, false);
   const failedRunId = runError ? run?.id : null;
   useEffect(() => setDetailsOpen(false), [failedRunId]);
-  const label = normalizedRunError ? runErrorActionLabel(t, normalizedRunError) : null;
+  const needsPlan = classified?.recovery === "plan";
+  const asksBilling = needsPlan && Boolean(failedRunId);
+  const billingQuery = useQuery(
+    { ...rpcQuery("billing/status"), enabled: asksBilling },
+    queryClient,
+  );
+  const { refetch } = billingQuery;
+  // Each failed run reads the plan again, since it may have changed since the last one.
+  useEffect(() => {
+    if (asksBilling) void refetch({ cancelRefetch: false });
+  }, [asksBilling, failedRunId, refetch]);
+  const billing = billingQuery.data ?? null;
+  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;
+  const normalizedRunError =
+    classified && hoursOut ? { ...classified, summary: hoursOut.summary } : classified;
+  const label = needsPlan
+    ? billing?.canManage
+      ? (hoursOut?.action ?? null)
+      : null
+    : normalizedRunError
+      ? runErrorActionLabel(normalizedRunError)
+      : null;
   const runBotId = run?.botId ?? botId;
   const runErrorAction = label
     ? {
         label,
-        // Without a bot to change, the model settings pick the default model instead.
-        onPress:
-          normalizedRunError?.recovery === "model" && runBotId
-            ? () => {
-                setDetailsOpen(false);
-                router.push({
-                  pathname: "/bot-settings",
-                  params: { botId: runBotId, focus: "model" },
-                });
-              }
-            : () => {
-                setDetailsOpen(false);
-                openModelSettings();
-              },
+        onPress: () => {
+          setDetailsOpen(false);
+          if (needsPlan) router.push("/billing");
+          else if (normalizedRunError?.recovery === "model" && runBotId)
+            router.push({ pathname: "/bot-settings", params: { botId: runBotId, focus: "model" } });
+          // Without a bot to change, the model settings pick the default model instead.
+          else openModelSettings();
+        },
       }
     : null;
   return { runError, normalizedRunError, runErrorAction, detailsOpen, setDetailsOpen };

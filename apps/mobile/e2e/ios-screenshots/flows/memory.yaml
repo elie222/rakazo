@@ -1,0 +1,41 @@
+appId: com.rakazo.app
+name: Memory
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///memory"
+- extendedWaitUntil:
+    visible: "team.md"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-shared-memory
+- tapOn: "team.md"
+- extendedWaitUntil:
+    visible: ".*Dana owns the announcement.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-shared-note
+- openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- scrollUntilVisible:
+    element: "preferences.md"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "preferences.md"
+- extendedWaitUntil:
+    visible: ".*Cite a source for every claim.*"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-bot-note
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Delete preferences.md?"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 04-delete-confirm
+- tapOn: "Cancel"

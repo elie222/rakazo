@@ -1,4 +1,7 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text } from "react-native";
@@ -9,9 +12,9 @@ import { NativeSwitch } from "../../components/native-switch";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { useApprovalSettings } from "../../lib/approval-settings";
-import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
+import { queryClient, rpcQuery, useSave } from "../../lib/query";
+import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
@@ -23,56 +26,50 @@ import { errorText } from "../../lib/user-error";
 export default function SpaceSettings() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
-  const rpc = useMemo(() => settingsRpc(target), [target]);
   const router = useRouter();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [overrides, setOverrides] = useState<SpaceSetting[] | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const isSpace = target.scope === "space";
+  const space = isSpace ? target.spaceId : undefined;
+  const overridesRead = rpcQuery("spaceSettings/overrides", undefined, space);
+  const overridesQuery = useQuery({ ...overridesRead, enabled: isSpace }, queryClient);
+  const overrides = overridesQuery.data ?? null;
+  const loadError = overridesQuery.error
+    ? errorText(overridesQuery.error, t`Something went wrong. Try again.`)
+    : null;
+  const setOverrides = (next: SpaceSetting[]) =>
+    queryClient.setQueryData(overridesRead.queryKey, next);
+  const open = (setting: SpaceSetting) =>
+    router.push({ pathname: SETTING_SCREENS[setting], params: { spaceId: space } });
+  const change = useSave({
+    target,
+    // The answer is the Space's new list, kept even when nobody is left to see it.
+    save: async (input: { setting: SpaceSetting; enabled: boolean }, send) =>
+      setOverrides(await send("spaceSettings/setOverride", input)),
+    onSaved: (_saved, { setting, enabled }) => {
+      if (enabled && setting !== "confirmations") open(setting);
+    },
+  });
+  const pending = change.pending;
+  const error = change.error ? errorText(change.error, t`Could not save that preference`) : null;
   // A native switch shows the flip it reported, so keeping a setting on remounts its switch.
   const [kept, setKept] = useState(0);
   const approvals = useApprovalSettings(target, overrides?.includes("confirmations") ?? false);
 
+  const { refetch } = overridesQuery;
   useFocusEffect(
     useCallback(() => {
-      if (target.scope !== "space") return;
-      let current = true;
-      void rpc("spaceSettings/overrides")
-        .then((next) => {
-          if (!current) return;
-          setOverrides(next);
-          setLoadError(null);
-        })
-        .catch((err: unknown) => {
-          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
-        });
-      return () => {
-        current = false;
-      };
-    }, [attempt, rpc, t, target.scope]),
+      if (isSpace) void refetch();
+    }, [isSpace, refetch]),
   );
 
-  if (target.scope !== "space") return null;
-  const space = target.spaceId;
-  const open = (setting: SpaceSetting) =>
-    router.push({ pathname: SETTING_SCREENS[setting], params: { spaceId: space } });
+  if (!isSpace) return null;
 
-  async function customize(setting: SpaceSetting, enabled: boolean) {
-    setPending(true);
-    setError(null);
-    setLoadError(null);
-    try {
-      setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
-      if (enabled && setting !== "confirmations") open(setting);
-    } catch (err) {
-      setError(errorText(err, t("Could not save that preference")));
-    } finally {
-      setPending(false);
-    }
+  function customize(setting: SpaceSetting, enabled: boolean) {
+    // Keeping the overrides shown clears a failed refresh's error while this saves.
+    if (overrides) setOverrides(overrides);
+    change.run({ setting, enabled });
   }
 
   const row = (setting: SpaceSetting, title: string) => {
@@ -89,21 +86,21 @@ export default function SpaceSettings() {
         trailing={
           <NativeSwitch
             key={kept}
-            accessibilityLabel={t("Customize {setting}", { setting: title })}
+            accessibilityLabel={t`Customize ${ph({ setting: title })}`}
             value={customized}
             // A Space's mode save holds its Approvals switch, so it can't land after a reset.
             disabled={!overrides || pending || (setting === "confirmations" && approvals.pending)}
             onValueChange={(next) => {
               // A Space's own vault is deleted with its override, so turning it off asks first.
               if (setting !== "credentials" || next) return void customize(setting, next);
-              Alert.alert(t("Delete this Space's credentials?"), undefined, [
+              Alert.alert(t`Delete this Space's credentials?`, undefined, [
                 {
-                  text: t("Cancel"),
+                  text: t`Cancel`,
                   style: "cancel",
                   onPress: () => setKept((count) => count + 1),
                 },
                 {
-                  text: t("Delete"),
+                  text: t`Delete`,
                   style: "destructive",
                   onPress: () => void customize(setting, false),
                 },
@@ -129,9 +126,8 @@ export default function SpaceSettings() {
           <LoadFailure
             message={failure}
             onRetry={() => {
-              setError(null);
-              setLoadError(null);
-              setAttempt((count) => count + 1);
+              if (change.error) change.reset();
+              void queryClient.resetQueries({ queryKey: overridesRead.queryKey });
             }}
           />
         ) : shownError ? (
@@ -139,11 +135,11 @@ export default function SpaceSettings() {
             {shownError}
           </Text>
         ) : null}
-        <SettingsGroup accessibilityLabel={t("Customize")} label={t("Customize")}>
-          {row("models", t("Models"))}
-          {row("voice", t("Voice"))}
-          {row("confirmations", t("Approvals"))}
-          {row("credentials", t("Vault"))}
+        <SettingsGroup accessibilityLabel={t`Customize`} label={t`Customize`}>
+          {row("models", t`Models`)}
+          {row("voice", t`Voice`)}
+          {row("confirmations", t`Approvals`)}
+          {row("credentials", t`Vault`)}
         </SettingsGroup>
         {overrides?.includes("confirmations") ? (
           <SettingsGroup>

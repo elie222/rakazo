@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateFlowLimits } from "./limits.js";
 import {
   answeredToolApproval,
   askPendingCard,
@@ -190,4 +191,40 @@ describe("judging a flow", () => {
       reason: "Judge unavailable: spend-cap",
     });
   });
+});
+
+describe("flow limit validation", () => {
+  // Values go through Number() the way the CLI parses its options.
+  const limits = (deadlineMin: string, maxTurns: string, spendCapUsd: string) =>
+    validateFlowLimits({
+      deadlineMin: Number(deadlineMin),
+      maxUserTurns: Number(maxTurns),
+      spendCapUsd: Number(spendCapUsd),
+    });
+
+  it("accepts positive numbers and whole turns", () => {
+    expect(() => limits("45", "20", "10")).not.toThrow();
+    expect(() => limits("0.5", "1", "0.01")).not.toThrow();
+  });
+
+  it.each(["10,00", "45m", "NaN", "Infinity", "-5", "0", ""])(
+    "rejects an unparseable or non-positive deadline: %j",
+    (deadlineMin) => {
+      expect(() => limits(deadlineMin, "20", "10")).toThrow(/--deadline-min/);
+    },
+  );
+
+  it.each(["10,00", "NaN", "Infinity", "-5", "0", ""])(
+    "rejects an unparseable or non-positive spend cap: %j",
+    (spendCapUsd) => {
+      expect(() => limits("45", "20", spendCapUsd)).toThrow(/--spend-cap-usd/);
+    },
+  );
+
+  it.each(["2.5", "20x", "NaN", "Infinity", "0", "-1"])(
+    "rejects a turn limit that is not a whole positive number: %j",
+    (maxTurns) => {
+      expect(() => limits("45", maxTurns, "10")).toThrow(/--max-turns/);
+    },
+  );
 });

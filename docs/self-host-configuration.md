@@ -36,8 +36,10 @@ commands, add `-f docker-compose.override.yml` after the base file.
 All of these are optional:
 
 ```env
+RAKAZO_EXTRA_AUTH_ORIGINS=   # extra origins allowed to sign in and call the API; see below
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
+SCIM_BEARER_TOKEN=        # lets your identity provider add and remove accounts; see self-host-accounts.md
 SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
@@ -45,6 +47,7 @@ SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
 # E2B, CreateOS and Boat still apply their own timeouts.
 COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
+COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # uptime cap for providers that do not bill while running (Docker, Kubernetes, Incus); minimum 60000; 0 (default) disables; needs SANDBOX_IDLE_MS on
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
@@ -56,20 +59,87 @@ CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
-`COMPUTER_TAKEOVER_TTL_MS` (default `900000`, 15 minutes) is how long a person's takeover of a bot's
-screen lasts before control expires.
+`STUCK_WORK_NOTIFY_AFTER_MS` (default `14400000`, 4 hours) is how long a queued run may sit before the worker sends a "still waiting" reminder. `STUCK_WORK_EXPIRE_AFTER_MS`
+(default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
+thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
+anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
+takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
+queued runs after 4 hours. A question the bot asks stays open until someone answers it, unless its
+run holds a login or code it took only for itself: that run still stops at the expiry.
 
 `MODEL_STREAM_MAX_RETRIES` (0 to 5, default `1`) retries a model stream that fails partway; more
 retries let long turns survive brief provider failures.
 
+Model timeouts are configurable in milliseconds. Invalid or out-of-range values retain their
+defaults. Longer timeouts can help when several bots share a local inference server that queues
+requests. For `RAKAZO_LOCAL_MODELS` servers and compatible model connections added in the app,
+these settings are the only limits Rakazo applies, and a stream that is cut off names why in the
+run's error details, such as `terminated (other side closed)`. Built-in providers still drop a
+response after 5 minutes without data, and a proxy or load balancer in between may cut off a
+silent stream sooner.
+
+- `MODEL_STREAM_TIMEOUT_MS` (default `120000`, range `1000`–`2147483647`) is the time budget
+  for retrying the same model. It also controls the wait for response headers when using the
+  OpenAI Chat Completions, Responses or Codex API, Anthropic Messages, Mistral or Azure OpenAI.
+  Other APIs, such as Google, Vertex AI, Bedrock and some routed models, use their own client
+  timeouts.
+- `MODEL_STREAM_IDLE_TIMEOUT_MS` (default `180000`, range `0`–`2147483647`) bounds how long
+  a started response may remain silent. Set it to `0` to disable Rakazo's inactivity watchdog.
+  Explicit request cancellation remains available. Disabling this protection can leave stalled
+  requests waiting indefinitely if neither the provider nor the caller terminates them.
+- `MODEL_CONNECT_TIMEOUT_MS` (default `30000`, range `1000`–`300000`) bounds connecting to an
+  OpenAI-compatible model or speech connection added in the app. `RAKAZO_LOCAL_MODELS` servers
+  and built-in providers retain Node's own connection timeout.
+
+### Reaching Rakazo from a second address
+
+Sign-in and API calls are accepted only from `WEB_ORIGIN`, `API_URL`, `BETTER_AUTH_URL` and the
+mobile app. If you also open the same install from another address, such as a Tailscale name or a
+LAN IP, the browser or desktop app gets `403 INVALID_ORIGIN`. List that address in
+`RAKAZO_EXTRA_AUTH_ORIGINS`, comma-separated:
+
+```env
+RAKAZO_EXTRA_AUTH_ORIGINS=https://rakazo.your-tailnet.ts.net,http://192.168.1.20:5173
+```
+
+Each entry must be a bare origin (scheme, host, optional port; no path). `https://` is accepted for
+any host. `http://` is accepted only for loopback, `.local`, and private-network IPs (RFC 1918 and
+Tailscale's 100.64.0.0/10). Anything else is ignored and logged as a warning. Only origins you list
+are trusted; the default is none. `WEB_ORIGIN` stays the address used in links, passkeys and OAuth
+callbacks.
+
 ## Feature switches
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `TICKET_BOARD_ENABLED` | `false` | Turns on the ticket board. Set it on the API and worker. |
-| `USER_DEVICES_ENABLED` | on | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker. |
-| `PI_SESSION_RECORDING` | off | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
-| `PRIVACY_POLICY_URL` | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API. |
+| Variable               | Default         | Effect                                                                                                                                                  |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TICKET_BOARD_ENABLED` | `false`         | Turns the ticket board on for every account. Otherwise each person turns it on in **Settings → Labs**. Set it on the API and worker.                    |
+| `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
+| `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
+| `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
+
+## Chat history retention
+
+Rakazo keeps chat history until someone clears the chat or deletes the bot. To delete it
+automatically, set `CHAT_HISTORY_RETENTION_DAYS` on the API and worker to a whole number of days:
+
+```env
+CHAT_HISTORY_RETENTION_DAYS=180
+```
+
+About once an hour, one instance deletes the messages and the chat events older than that, oldest
+first, so each chat keeps an unbroken recent history. A chat with a bot run in progress, or a
+question or takeover waiting for an answer, is left alone until that finishes, and so is a message
+still queued behind a run. A saved summary of older messages is dropped with them. Unset or empty keeps
+everything. Any other value that is not a whole number from 1 to 36500 (`0` included) stops the worker,
+and an API running its own jobs (`WAKEUP_DRIVER=memory`), from starting, so a typo never leaves
+history kept unnoticed. Chats already open in an app keep showing deleted messages until they
+reload.
+
+Not deleted by this setting: run records (task prompts and errors), files and
+screenshots bots stored, memory a bot saved, the quoted excerpt a reply keeps of the message it
+answers, messages copied into a connected chat app, and the [audit log](./self-host-audit-log.md#retention),
+which has its own retention. Deleted history cannot be restored from the app; [backups](./self-host-backups.md)
+keep it for their own retention.
 
 ## Database roles
 
@@ -97,7 +167,7 @@ rows, plus the user's own account-level credentials. A query that leaves out its
 returns nothing from other Spaces. A background job that acts for one run, routine, computer,
 skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
 backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
-the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
+chat delivery and webhooks run in a named system scope (`runAsSystem` in
 `packages/db`). That scope also sends a key derived from the app login's password, which
 `pnpm db:migrate` registers, so SQL that runs for one Space cannot switch itself into system scope.
 An app login without a password in `DATABASE_URL` has no key, and `pnpm db:migrate` warns. The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
@@ -124,6 +194,12 @@ through a transaction pooler. It defaults to `DATABASE_URL`.
 job queue during rolling upgrades. New agent runs dispatch straight from Postgres and do not take
 those slots.
 
+`RUN_DRAIN_ENABLED=true` lets a stopping worker end the turns it is running, for up to five
+minutes, before it hands them back; otherwise it hands them back at once and the next worker
+repeats the model call that was in flight. `docker-compose.prod.yml` turns it on. Turn it on only
+where a stopping worker is left alone for longer than that, as Compose's `stop_grace_period` does:
+a worker killed sooner leaves a run mid-turn waiting for its lease to expire.
+
 ## API and worker memory
 
 Chat runs execute in the API container that receives the message, and routines and other
@@ -131,6 +207,29 @@ background runs execute in the worker, so both hold live agent turns. In the pro
 file, `RAKAZO_API_MEMORY_LIMIT` and `RAKAZO_WORKER_MEMORY_LIMIT` cap them (Compose sizes such as
 `2g` or `3072m`, default `2g` each). Raise them on a larger host. Deploys briefly run the old and
 new container of each side by side, so leave room for both.
+
+## More API and worker containers
+
+Each API and worker container runs on about one CPU core. On a host with more cores,
+`RAKAZO_API_REPLICAS` and `RAKAZO_WORKER_REPLICAS` (default `1` each) run several; they share work
+through Postgres and Caddy spreads requests across the API containers. The deploy script applies a
+new count on its next run, starting that many new containers before it stops the old ones, so
+leave memory for twice the count during a deploy. With more than one API container, give Telegram
+bots and iMessage projects a webhook secret: without one each API polls for the same messages.
+
+A deploy also briefly needs twice the database connections. Each API and worker container holds up
+to `DB_POOL_MAX` connections plus a few for live updates, and Postgres allows 100 in all by default;
+when twice the containers' total comes near that, run `ALTER SYSTEM SET max_connections = 200;` as
+the owner (`POSTGRES_USER`) and restart Postgres. Otherwise a deploy fails some requests with
+"too many clients".
+
+## Postgres memory
+
+The production Compose file sizes Postgres for an 8 GB host: `POSTGRES_MEMORY_LIMIT` caps the
+container (default `2560m`), `POSTGRES_SHARED_BUFFERS` sets its cache (default `1GB`, which counts
+against that cap) and `POSTGRES_EFFECTIVE_CACHE_SIZE` tells the planner how much data stays cached
+(default `2GB`). On a smaller host, lower them along with the API and worker caps above. Changing
+them restarts Postgres.
 
 ## Listening addresses
 

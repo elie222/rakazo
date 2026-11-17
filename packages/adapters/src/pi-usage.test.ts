@@ -1,16 +1,20 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
+import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
 import {
   createOpenAiCompatibleFetch,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { normalizePiUsage, observedPiStream, usageReportingFetch } from "./pi-usage.js";
+import type { RejectedProviderRequest } from "./provider-request-shape.js";
 
 const model: Model<Api> = {
   provider: "openrouter",
@@ -202,17 +206,11 @@ describe("Pi usage accounting", () => {
     }
   }, 30000);
   it("persists a generation id before exposing the first SSE chunk", async () => {
-    let release = () => {};
-    let entered = () => {};
-    const waiting = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const durable = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const waiting = deferred();
+    const durable = deferred();
     const onRequestId = vi.fn(async () => {
-      entered();
-      await durable;
+      waiting.resolve();
+      await durable.promise;
     });
     const fields = new Set<keyof AgentUsage>();
     const wrapped = usageReportingFetch(
@@ -229,9 +227,9 @@ describe("Pi usage accounting", () => {
       exposed = true;
       return text;
     });
-    await waiting;
+    await waiting.promise;
     expect(exposed).toBe(false);
-    release();
+    durable.resolve();
     await read;
     expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
     expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
@@ -329,11 +327,10 @@ describe("Pi usage accounting", () => {
   });
 
   it("settles a thrown provider call before exposing the terminal event", async () => {
-    let finishSettlement = () => {};
-    const settlement = new Promise<void>((resolve) => {
-      finishSettlement = resolve;
-    });
-    const afterCall = vi.fn(async () => settlement);
+    const settlement = deferred();
+    const afterCall = vi.fn(
+      async (_reservation: string, _usage: AgentUsage | null) => settlement.promise,
+    );
     const models = {
       streamSimple: () => {
         throw new Error("Synthetic provider exception");
@@ -353,11 +350,186 @@ describe("Pi usage accounting", () => {
     for (let index = 0; index < 4; index++) await Promise.resolve();
     expect(afterCall).toHaveBeenCalledOnce();
     expect(terminalSeen).toBe(false);
-    finishSettlement();
+    settlement.resolve();
     expect((await next).value).toMatchObject({ type: "error" });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
+    );
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it.each([
+    ["the call is aborted", true],
+    ["the provider drops it", false],
+  ])("keeps our own token count when %s before usage arrives", async (_case, aborted) => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const answer = "x".repeat(52);
+    const frame = {
+      id: "gen_partial",
+      choices: [{ index: 0, delta: { role: "assistant", content: answer }, finish_reason: null }],
+    };
+    let drop = () => {};
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: async (_input, init) =>
+          new Response(
+            new ReadableStream({
+              start(body) {
+                body.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+                drop = () => body.error(new Error("connection reset"));
+                init?.signal?.addEventListener("abort", drop);
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const event of stream)
+      if (event.type === "text_delta") aborted ? controller.abort() : drop();
+    const inputTokens = beforeCall.mock.calls[0]![0].inputTokensEstimate;
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: "gen_partial",
+        costUsd: null,
+        countedTokens: {
+          inputTokens,
+          outputTokens: 10,
+          ...(aborted
+            ? { ifStopped: { inputTokens, outputTokens: estimateTextTokens(answer) } }
+            : {}),
+        },
+      }),
+    );
+  });
+  it("counts the streamed answer when the terminal error carries no content", async () => {
+    const afterCall = vi.fn();
+    const usage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const message = (text: string) => ({
+      role: "assistant",
+      content: text ? [{ type: "text", text }] : [],
+      usage,
+      stopReason: "error",
+    });
+    const events = [
+      { type: "text_delta", delta: "x".repeat(50), partial: message("x".repeat(50)) },
+      { type: "error", reason: "error", error: message("") },
+    ];
+    const models = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield* events;
+        },
+        result: async () => message(""),
+      }),
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(models, model, { messages: [] }, undefined, vi.fn(), {
+      beforeCall: () => "reservation",
+      afterCall,
+    });
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).toMatchObject({
+      countedTokens: { outputTokens: lowTextTokens("x".repeat(50)) },
+    });
+  });
+  it("does not count a call whose provider refused to start it", async () => {
+    const afterCall = vi.fn();
+    const models = {
+      streamSimple: () => {
+        throw new Error("Synthetic missing credentials");
+      },
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(
+      models,
+      { ...model, provider: "google", api: "google-generative-ai" },
+      { messages: [] },
+      undefined,
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it("does not count a request that failed to connect", async () => {
+    const afterCall = vi.fn();
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      },
+      vi.fn(),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledOnce();
+    expect(afterCall.mock.calls[0]?.[1]).not.toHaveProperty("countedTokens");
+  });
+  it("counts the prompt of a call stopped after sending but before any response", async () => {
+    const controller = new AbortController();
+    const afterCall = vi.fn();
+    const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { systemPrompt: "Fixture", messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      {
+        apiKey: "fake-fixture-key",
+        signal: controller.signal,
+        fetch: (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+            controller.abort();
+          }),
+      },
+      vi.fn(),
+      { beforeCall, afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: null,
+        costUsd: null,
+        countedTokens: {
+          inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+          outputTokens: 0,
+          ifStopped: {
+            inputTokens: beforeCall.mock.calls[0]![0].inputTokensEstimate,
+            outputTokens: 0,
+          },
+        },
+      }),
     );
   });
   it("does not derive an unsafe integer total from valid component counts", () => {
@@ -408,11 +580,78 @@ describe("Pi usage accounting", () => {
       expect(events).toHaveLength(1);
       expect(afterCall).toHaveBeenCalledWith(
         "reservation",
-        expect.objectContaining({ costUsd: 0, usageSource: "provider-rejected" }),
+        expect.objectContaining({
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cacheWrite1hTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
+          pricingVersion: null,
+          usageSource: "provider-rejected",
+        }),
       );
-      expect(events[0]).toMatchObject({ costUsd: 0, costSource: "provider-rejection" });
+      expect(events[0]).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheWrite1hTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        costUsd: 0,
+        costSource: "provider-rejection",
+      });
     },
   );
+  it("records zero usage for a rejected call at the normalizer", async () => {
+    const fields = new Set<keyof AgentUsage>();
+    const wrapped = usageReportingFetch(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "Synthetic rejection" } }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        }),
+      fields,
+    );
+    await wrapped("https://model.example.test/v1");
+    // Bogus token values attached to a rejected response must lose to the
+    // rejected classification; nothing is generated, so nothing was spent.
+    expect(
+      normalizePiUsage(
+        {
+          input: 12,
+          output: 5,
+          cacheRead: 3,
+          cacheWrite: 2,
+          cacheWrite1h: 1,
+          reasoning: 4,
+          totalTokens: 25,
+        },
+        model,
+        fields,
+      ),
+    ).toMatchObject({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cacheWrite1hTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0,
+      costUsd: 0,
+      costSource: "provider-rejection",
+      pricingVersion: null,
+      usageSource: "provider-rejected",
+    });
+  });
+  it("keeps a reported zero on a successful call instead of unknown", async () => {
+    const { events } = await run({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+  });
   it.each([408, 500, 503])("retains uncertainty for HTTP %s", async (status) => {
     const afterCall = vi.fn();
     const stream = await observedPiStream(
@@ -430,7 +669,12 @@ describe("Pi usage accounting", () => {
     }
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
-      expect.objectContaining({ costUsd: null }),
+      expect.objectContaining({
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        costUsd: null,
+      }),
     );
   });
   it("prepares context before budget reservation and provider execution", async () => {
@@ -584,6 +828,46 @@ describe("Pi usage accounting", () => {
       server.close();
       await once(server, "close");
     }
+  });
+  it("records a rejected request's body as sent, after every rewrite on the way out", async () => {
+    const sent: string[] = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return new Response('{"detail":"Bad Request"}', { status: 400 });
+    });
+    const streamSimple = (_model: Model<Api>, _context: Context, options?: SimpleStreamOptions) => {
+      const stream = new AssistantMessageEventStream();
+      void (async () => {
+        const body = { model: "fixture", messages: [{ role: "user", content: "test" }] };
+        await options?.onPayload?.(body, model);
+        const response = await options!.fetch!("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        await options?.onResponse?.({ status: response.status, headers: {} }, model);
+      })();
+      return stream;
+    };
+    const rejections: (RejectedProviderRequest | undefined)[] = [];
+    observedPiStream(
+      { streamSimple } as unknown as Models,
+      model,
+      { messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      { fetch: fetcher, transport: "sse" },
+      () => {},
+      undefined,
+      { operationKind: "answer", userId: "user-fixture" },
+      { onRejectedRequest: (rejection) => rejections.push(rejection) },
+    );
+    await vi.waitFor(() => expect(rejections).toHaveLength(1));
+    expect(JSON.parse(sent[0]!)).toMatchObject({ user: "user-fixture" });
+    expect(rejections).toEqual([
+      expect.objectContaining({
+        status: 400,
+        transport: "sse",
+        sent: { bytes: Buffer.byteLength(sent[0]!), contentEncoding: "identity" },
+      }),
+    ]);
   });
   it("preserves an injected compatible fetch, its pinned dispatcher, and raw usage", async () => {
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
@@ -768,25 +1052,70 @@ describe("Pi usage accounting", () => {
     expect(push).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("retains bytes and observes fragmented CRLF SSE with explicit zeros", async () => {
-    const bytes = new TextEncoder().encode('data: {"usage":{"prompt_tokens":0}}\r\n\r\n');
-    const reported = new Set<"inputTokens">();
+  it.each(["\n", "\r\n", "\r"])(
+    "retains bytes and observes fragmented SSE with %j line endings",
+    async (newline) => {
+      const bytes = new TextEncoder().encode(
+        [
+          'data: {"id":"request-test",',
+          'data: "usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":7}}',
+          "",
+          "",
+        ].join(newline),
+      );
+      const reported = new Set<"inputTokens" | "outputTokens" | "totalTokens">();
+      const onRequestId = vi.fn();
+      const fetcher = usageReportingFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                for (const byte of bytes) {
+                  controller.enqueue(new Uint8Array([byte]));
+                  controller.enqueue(new Uint8Array());
+                }
+                controller.close();
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        reported,
+        onRequestId,
+      );
+      const response = await fetcher("https://model.example.test");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+      expect(reported).toEqual(new Set(["inputTokens", "outputTokens", "totalTokens"]));
+      expect(onRequestId).toHaveBeenCalledWith("request-test");
+      expect(normalizePiUsage({ input: 0, output: 0 }, model, reported)).toMatchObject({
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 7,
+      });
+    },
+  );
+  it("drops oversized CR frames and recovers for mixed line endings", async () => {
+    const text = `data: {"id":"oversized","padding":"${"x".repeat(262144)}"}\r\r`;
+    const tail = 'data: {"id":"valid","usage":{"total_tokens":9}}\r\n\rdata: [DONE]\n\n';
+    const onRequestId = vi.fn();
+    const reported = new Set<"totalTokens">();
     const fetcher = usageReportingFetch(
       async () =>
         new Response(
           new ReadableStream({
             start(controller) {
-              for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+              controller.enqueue(new TextEncoder().encode(text.slice(0, -2)));
+              controller.enqueue(new TextEncoder().encode(text.slice(-2) + tail));
               controller.close();
             },
           }),
           { headers: { "content-type": "text/event-stream" } },
         ),
       reported,
+      onRequestId,
     );
-    const response = await fetcher("https://model.example.test");
-    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
-    expect(reported.has("inputTokens")).toBe(true);
+    expect(await (await fetcher("https://model.example.test")).text()).toBe(text + tail);
+    expect(onRequestId.mock.calls).toEqual([["valid"]]);
+    expect(normalizePiUsage(undefined, model, reported).totalTokens).toBe(9);
   });
   it("records reported totalTokens and request id from WebSocket provider stream events when fetch is unused", async () => {
     const codexModel: Model<Api> = {

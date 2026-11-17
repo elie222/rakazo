@@ -1,28 +1,34 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey, SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJobKey,
+  isSandboxProviderOutage,
+  SandboxAllowanceUsedError,
+  WorkspaceTooLargeError,
+} from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ComputerUpdateSchema } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, computerUsingRuns } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import {
-  enqueueTakeoverContinuation,
-  isIdleOwnComputerTakeover,
-  revokeScreenControl,
-} from "./computer-control.js";
-import { scheduleComputerSleep } from "./computer-idle.js";
+import { draftRecordingsOfLeaseInTransaction, spaceTakesWork } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { endTeachingWithLease, revokeScreenControl } from "./computer-control.js";
+import { announceUnsavedHome, scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
-  computerSupportsUpdate,
+  ComputerSpaceDeletingError,
   replaceComputer,
 } from "./computer-lifecycle.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
 type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
   Partial<Pick<Deps, "sandbox">> & {
-    events?: Pick<ThreadEvents, "append">;
+    events?: Pick<ThreadEvents, "append" | "draftRecordingsOfLease">;
   };
 const STALE_MS = 10 * 60_000;
+// Far longer than any provider call should run. Past it, reconciliation assumes an
+// interrupted worker's provider calls have ended.
+const ABANDONED_MS = 60 * 60_000;
 // reserving: claimed, provider release not started. revoking: call not returned.
 // revoked: provider release returned, lease write still missing.
 const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
@@ -61,17 +67,9 @@ export async function queueComputerUpdate(
     // The following statement then observes their committed reservation.
     await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
-    if (action === "update" && !computerSupportsUpdate(computer.kind))
+    if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
-    // A run bound to this takeover must keep it. Maintenance does not resume that run.
-    if (
-      computer.controlHolder === "user" &&
-      computer.controlBotId === botId &&
-      computer.controlRunId
-    ) {
-      throw new ComputerBusyError();
-    }
-    const idleTakeover = isIdleOwnComputerTakeover(computer, botId);
+    const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
     if (computer.controlLeaseId && !idleTakeover) throw new ComputerBusyError();
 
@@ -82,7 +80,6 @@ export async function queueComputerUpdate(
           id: computerId,
           controlHolder: "user",
           controlBotId: botId,
-          controlRunId: null,
           controlLeaseId: computer.controlLeaseId,
         },
         data: computer.controlLeaseId
@@ -91,7 +88,6 @@ export async function queueComputerUpdate(
               controlHolder: "none",
               controlLeaseExpiresAt: null,
               controlBotId: null,
-              controlRunId: null,
             },
       });
       // The waiting-run check is this CAS: a run that attached loses the claim with it.
@@ -133,7 +129,11 @@ export async function queueComputerUpdate(
           none: {
             OR: [
               { computerSwitching: true },
-              { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+              {
+                runs: {
+                  some: { status: { in: [...ACTIVE_RUN_STATUSES] }, ...computerUsingRuns() },
+                },
+              },
             ],
           },
         },
@@ -200,23 +200,25 @@ export async function queueComputerUpdate(
       });
       if (confirmed.count !== 1) {
         // Reconciliation handed the takeover back while this call was pending. The provider
-        // has now released. Clear that lease, including a run that bound to it, and resume
-        // the run. Leave the expiry job when the lease is still held. Do not queue the update.
-        const released = await releaseConfirmedHandback(
+        // has now released, so clear that lease. Do not queue the update.
+        const cleared = await releaseConfirmedHandback(
           deps.prisma,
           computerId,
           prepared.row.id,
           prepared.handback,
         );
-        if (released.cleared) {
+        if (cleared) {
           await deps.jobs
             .cancel(computerControlExpireJobKey(computerId, prepared.handback.leaseId))
             .catch((error) => {
               getLogger().error("computer control expiry cancellation", error);
             });
-          await enqueueTakeoverContinuation(deps.jobs, released.runId);
-          if (released.runId) {
-            await recordTakeoverHandback(deps, botId, prepared.handback, released.runId);
+          if (deps.events) {
+            await endTeachingWithLease(
+              { events: deps.events },
+              prepared.handback.spaceId,
+              prepared.handback.leaseId,
+            ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
           }
         }
         throw new ComputerBusyError();
@@ -233,16 +235,15 @@ export async function queueComputerUpdate(
         id: computerId,
         maintenanceId: prepared.row.id,
         controlHolder: "none",
-        controlRunId: null,
         // Takeover expiry can clear this lease after the reservation and before this write.
         // Control is already free in that case; discarding the update would report busy.
         OR: [{ controlLeaseId: prepared.handback.leaseId }, { controlLeaseId: null }],
       },
       data: {
         controlLeaseId: null,
+        controlUserId: null,
         controlLeaseExpiresAt: null,
         controlBotId: null,
-        controlRunId: null,
       },
     });
     if (released.count !== 1) {
@@ -252,6 +253,13 @@ export async function queueComputerUpdate(
         await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
       }
       throw new ComputerBusyError();
+    }
+    if (deps.events) {
+      await endTeachingWithLease(
+        { events: deps.events },
+        prepared.handback.spaceId,
+        prepared.handback.leaseId,
+      ).catch((error) => getLogger().error("end teaching with maintenance hand back", error));
     }
     const queued = await deps.prisma.computerUpdate.updateMany({
       where: { id: prepared.row.id, status: prepared.row.status },
@@ -301,13 +309,11 @@ async function undoQueuedMaintenance(
           maintenanceId: updateId,
           controlHolder: "none",
           controlLeaseId: handback.leaseId,
-          controlRunId: null,
         },
         data: {
           maintenanceId: null,
           controlHolder: "user",
           controlBotId: handback.botId,
-          controlRunId: null,
         },
       });
       if (restored.count !== 1) {
@@ -358,79 +364,33 @@ async function releaseConfirmedHandback(
   computerId: string,
   updateId: string,
   handback: IdleTakeoverHandback,
-): Promise<{ cleared: boolean; runId: string | null }> {
-  if (!handback.leaseId) return { cleared: false, runId: null };
+): Promise<boolean> {
+  if (!handback.leaseId) return false;
   // The lease may still sit on the maintenance claim, or reconciliation may have given it
-  // back to the user. A run can bind before this write. The screen is already released, so
-  // clear that lease and resume the run. Skip a newer maintenance claim.
+  // back to the user. The screen is already released, so clear that lease. Skip a newer
+  // maintenance claim.
   try {
-    return await prisma.$transaction(async (tx) => {
-      const current = await tx.computer.findFirst({
-        where: {
-          id: computerId,
-          controlLeaseId: handback.leaseId,
-          controlBotId: handback.botId,
-          OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
-        },
-        select: { controlRunId: true },
-      });
-      if (!current) return { cleared: false, runId: null };
-      const cleared = await tx.computer.updateMany({
-        where: {
-          id: computerId,
-          controlLeaseId: handback.leaseId,
-          controlBotId: handback.botId,
-          controlRunId: current.controlRunId,
-          OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
-        },
-        data: {
-          maintenanceId: null,
-          controlHolder: "none",
-          controlLeaseId: null,
-          controlLeaseExpiresAt: null,
-          controlBotId: null,
-          controlRunId: null,
-        },
-      });
-      if (cleared.count !== 1) return { cleared: false, runId: null };
-      const runId = current.controlRunId
-        ? await resumeBoundTakeoverRun(tx, handback, current.controlRunId)
-        : null;
-      return { cleared: true, runId };
+    const cleared = await prisma.computer.updateMany({
+      where: {
+        id: computerId,
+        controlLeaseId: handback.leaseId,
+        controlBotId: handback.botId,
+        OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlUserId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+      },
     });
+    return cleared.count === 1;
   } catch (error) {
     getLogger().error("release confirmed takeover", error);
-    return { cleared: false, runId: null };
+    return false;
   }
-}
-
-async function resumeBoundTakeoverRun(
-  tx: Prisma.TransactionClient,
-  handback: IdleTakeoverHandback,
-  runId: string,
-): Promise<string | null> {
-  const resumed = await tx.run.updateMany({
-    where: {
-      id: runId,
-      spaceId: handback.spaceId,
-      botId: handback.botId,
-      status: "waiting_takeover",
-    },
-    data: { status: "queued", checkpoint: "takeover" },
-  });
-  const stamped =
-    resumed.count === 1
-      ? { count: 0 }
-      : await tx.run.updateMany({
-          where: {
-            id: runId,
-            spaceId: handback.spaceId,
-            botId: handback.botId,
-            status: { in: ["leased", "running"] },
-          },
-          data: { checkpoint: "takeover" },
-        });
-  return resumed.count === 1 || stamped.count === 1 ? runId : null;
 }
 
 async function abandonRevokedHandback(
@@ -441,7 +401,7 @@ async function abandonRevokedHandback(
 ) {
   try {
     await prisma.$transaction(async (tx) => {
-      await clearRevokedTakeover(tx.computer, computerId, updateId, handback.botId);
+      await clearRevokedTakeover(tx, computerId, updateId, handback.botId);
       await tx.computerUpdate.deleteMany({
         where: { id: updateId, status: { in: [...PENDING_HANDBACK_STATUSES] } },
       });
@@ -454,37 +414,50 @@ async function abandonRevokedHandback(
         data: { status: "dismissed" },
       })
       .catch(() => undefined);
-    await clearRevokedTakeover(prisma.computer, computerId, updateId, handback.botId).catch(
-      () => undefined,
-    );
+    await prisma
+      .$transaction((tx) => clearRevokedTakeover(tx, computerId, updateId, handback.botId))
+      .catch(() => undefined);
   }
 }
 
 async function clearRevokedTakeover(
-  computer: PrismaClient["computer"],
+  tx: Prisma.TransactionClient,
   computerId: string,
   updateId: string,
   botId: string,
 ) {
-  const cleared = await computer.updateMany({
-    where: {
-      id: computerId,
-      maintenanceId: updateId,
-      controlHolder: "none",
-      controlBotId: botId,
-      controlRunId: null,
-    },
+  const where = {
+    id: computerId,
+    maintenanceId: updateId,
+    controlHolder: "none",
+    controlBotId: botId,
+  };
+  const held = await tx.computer.findFirst({
+    where,
+    select: { spaceId: true, controlLeaseId: true },
+  });
+  const cleared = await tx.computer.updateMany({
+    where,
     data: {
       maintenanceId: null,
       controlHolder: "none",
       controlLeaseId: null,
+      controlUserId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
     },
   });
-  if (cleared.count === 1) return;
-  await computer.updateMany({
+  if (cleared.count === 1) {
+    // The lease is gone, so the teaching recording made under it ends with it.
+    if (held?.controlLeaseId) {
+      await draftRecordingsOfLeaseInTransaction(tx, {
+        spaceId: held.spaceId,
+        leaseId: held.controlLeaseId,
+      });
+    }
+    return;
+  }
+  await tx.computer.updateMany({
     where: { id: computerId, maintenanceId: updateId },
     data: { maintenanceId: null },
   });
@@ -494,7 +467,6 @@ async function recordTakeoverHandback(
   deps: QueueDeps,
   botId: string,
   handback: IdleTakeoverHandback,
-  runId?: string,
 ) {
   if (!deps.events || !deps.prisma.bot) return;
   try {
@@ -507,7 +479,6 @@ async function recordTakeoverHandback(
       spaceId: handback.spaceId,
       threadId: bot.thread.id,
       botId,
-      ...(runId ? { runId } : {}),
       type: "computer.takeover.released",
       payload: { holder: "none", leaseId: handback.leaseId, reason: "released" },
     });
@@ -517,11 +488,25 @@ async function recordTakeoverHandback(
 }
 
 export async function performComputerUpdate(deps: Deps, updateId: string) {
-  const claimed = await deps.prisma.computerUpdate.updateMany({
-    where: { id: updateId, status: "queued" },
-    data: { status: "running" },
+  const target = await deps.prisma.computerUpdate.findUnique({
+    where: { id: updateId },
+    select: { computer: { select: { spaceId: true } } },
   });
+  if (!target) return;
+  // A Space being deleted gets no maintenance; its computers go with it. Its lock comes before
+  // the update row, so a claim committing meanwhile is seen.
+  const claimed = await deps.prisma.$transaction(async (tx) =>
+    !(await spaceTakesWork(tx, target.computer.spaceId))
+      ? { count: 0 }
+      : tx.computerUpdate.updateMany({
+          where: { id: updateId, status: "queued" },
+          data: { status: "running" },
+        }),
+  );
   if (claimed.count !== 1) return; // Never replay a destructive operation on job redelivery.
+  const announce = () =>
+    deps.events.publishSpaceChange?.(target.computer.spaceId, "computerUpdates");
+  await announce();
   const update = await deps.prisma.computerUpdate.findUniqueOrThrow({
     where: { id: updateId },
     include: { computer: true },
@@ -561,26 +546,64 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
           data: { stage: update.action === "recover" && stage === "saving" ? "preparing" : stage },
         });
         if (result.count !== 1) throw new Error("Computer update interrupted");
+        await announce();
       },
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {
-    if (error instanceof SandboxAllowanceUsedError) {
-      getLogger().warn("computer update failed", {
-        updateId,
-        computerId: update.computerId,
-        reason: error.message,
+    if (error instanceof ComputerSpaceDeletingError) {
+      // Refused before any teardown: the update waits for the deletion to end, and if it is called
+      // off, reconciliation runs it as if it had never started.
+      await deps.prisma.computerUpdate.updateMany({
+        where: { id: updateId, status: "running" },
+        data: { status: "queued" },
       });
     } else {
-      getLogger().error("computer update failed", error, {
-        updateId,
-        computerId: update.computerId,
-      });
+      // Only the save before teardown leaves the computer running on its machine; the same limit
+      // on restoring the stored home after teardown is a failed replacement.
+      const keptUnsaved =
+        error instanceof WorkspaceTooLargeError &&
+        update.computer.providerRef !== null &&
+        (await bestEffort(
+          "check whether a computer too large to save is still running",
+          deps.prisma.computer.findFirst({
+            where: {
+              id: update.computerId,
+              state: "running",
+              providerRef: update.computer.providerRef,
+            },
+            select: { id: true },
+          }),
+        ))
+          ? error
+          : undefined;
+      const expected =
+        error instanceof SandboxAllowanceUsedError || isSandboxProviderOutage(error)
+          ? error
+          : keptUnsaved;
+      if (expected) {
+        getLogger().warn("computer update failed", {
+          updateId,
+          computerId: update.computerId,
+          reason: expected.message,
+        });
+        if (keptUnsaved)
+          await bestEffort(
+            "tell the computer's bots it is too large to save",
+            announceUnsavedHome(deps, update.computer, keptUnsaved),
+          );
+      } else {
+        getLogger().error("computer update failed", error, {
+          updateId,
+          computerId: update.computerId,
+        });
+      }
+      // Provider errors may contain credentials or private URLs. Expose only the failed stage.
+      await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
     }
-    // Provider errors may contain credentials or private URLs. Expose only the failed stage.
-    await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
   } finally {
     clearInterval(heartbeat);
+    await announce();
   }
   // A failure before teardown leaves the computer running, so idle sleep resumes either way.
   scheduleComputerSleep(deps.jobs, update.computerId);
@@ -605,20 +628,47 @@ async function finishUpdate(
   });
 }
 
-export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs">) {
-  const updates = await deps.prisma.computerUpdate.findMany({
-    where: {
+export async function reconcileComputerUpdates(
+  deps: Pick<Deps, "prisma" | "jobs"> & {
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
+  },
+) {
+  const select = (where: Prisma.ComputerUpdateWhereInput) =>
+    deps.prisma.computerUpdate.findMany({
+      where,
+      take: 100,
+      orderBy: { updatedAt: "asc" },
+      include: { computer: { select: { spaceId: true } } },
+    });
+  const changedSpaces = new Set<string>();
+  // Republishing leaves a queued row untouched, so a backlog of them would fill every pass.
+  // Stalled rows go first so a failing republish cannot keep a computer reserved.
+  const updates = [
+    ...(await select({
       OR: [
-        { status: "queued" },
         { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "reserving", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "revoking", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "revoked", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
+        { status: "interrupted", updatedAt: { lt: new Date(Date.now() - ABANDONED_MS) } },
       ],
-    },
-    take: 100,
-    orderBy: { updatedAt: "asc" },
-  });
+    })),
+    ...(await select({ status: "queued" })),
+  ];
+  try {
+    await reconcile(deps, updates, changedSpaces);
+  } finally {
+    // A later failure must not cost the changes already committed their signal.
+    for (const spaceId of changedSpaces)
+      await deps.events?.publishSpaceChange?.(spaceId, "computerUpdates");
+  }
+}
+
+async function reconcile(
+  deps: Pick<Deps, "prisma" | "jobs">,
+  updates: (Prisma.ComputerUpdateGetPayload<object> & { computer: { spaceId: string } })[],
+  changedSpaces: Set<string>,
+) {
   for (const update of updates) {
     if (update.status === "queued") {
       await deps.jobs.enqueue({
@@ -638,10 +688,11 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (stale.count !== 1) return;
+        changedSpaces.add(update.computer.spaceId);
         if (status === "revoked") {
           // The provider release returned. Clear the lease with the holder so a later
           // takeover grants a new lease.
-          await clearRevokedTakeover(tx.computer, update.computerId, update.id, update.botId);
+          await clearRevokedTakeover(tx, update.computerId, update.id, update.botId);
           return;
         }
         // The provider release has not returned, so control can still belong to the user.
@@ -651,7 +702,6 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
             maintenanceId: update.id,
             controlHolder: "none",
             controlBotId: update.botId,
-            controlRunId: null,
             controlLeaseId: { not: null },
           },
           data: { maintenanceId: null, controlHolder: "user" },
@@ -662,15 +712,41 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { maintenanceId: null },
         });
       });
+    } else if (update.status === "interrupted") {
+      const released = await deps.prisma.$transaction(async (tx) => {
+        const abandoned = await tx.computerUpdate.updateMany({
+          where: { id: update.id, status: "interrupted", updatedAt: update.updatedAt },
+          data: { status: "failed" },
+        });
+        if (abandoned.count !== 1) return false;
+        changedSpaces.add(update.computer.spaceId);
+        // Only this update can hold a booting or suspending claim under its reservation, and
+        // Recover refuses both. Unlike its worker, this cannot tell what the claim started
+        // from, so a machine still attached may be running or half destroyed: quarantine it,
+        // as after an unconfirmed stop, so no bot uses it until it is replaced. Any other
+        // claim ends as an error, as provisionComputer's failure write leaves a boot.
+        const reserved = { id: update.computerId, maintenanceId: update.id };
+        await tx.computer.updateMany({
+          where: { ...reserved, state: "suspending", providerRef: { not: null } },
+          data: { state: "quarantined" },
+        });
+        await tx.computer.updateMany({
+          where: { ...reserved, state: { in: ["booting", "suspending"] } },
+          data: { state: "error" },
+        });
+        await tx.computer.updateMany({ where: reserved, data: { maintenanceId: null } });
+        return true;
+      });
+      if (released) scheduleComputerSleep(deps.jobs, update.computerId);
     } else {
       await deps.prisma.$transaction(async (tx) => {
         const stale = await tx.computerUpdate.updateMany({
           where: { id: update.id, status: "running", updatedAt: update.updatedAt },
           data: { status: "interrupted" },
         });
-        // A stale heartbeat is not proof that provider calls have stopped. Only
-        // the worker's settled path can release this reservation.
-        if (stale.count !== 1) return;
+        // A stale heartbeat is not proof that provider calls have stopped. The worker's
+        // settled path releases this reservation, or reconciliation does after ABANDONED_MS.
+        if (stale.count === 1) changedSpaces.add(update.computer.spaceId);
       });
     }
   }

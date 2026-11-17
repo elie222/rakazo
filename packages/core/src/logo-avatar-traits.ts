@@ -1,9 +1,5 @@
-import {
-  BOT_AVATAR_COLORS,
-  resolvePersonaColorDef,
-  shippedHash,
-  shippedRandom,
-} from "./bot-avatar-colors.js";
+import { BOT_COLORS } from "@rakazo/contracts";
+import { resolvePersonaColorDef, shippedHash, shippedRandom } from "./bot-avatar-colors.js";
 
 /** Every supported track completes whole cycles in this exact export interval. */
 export const LOGO_AVATAR_LOOP_MS = 24_000;
@@ -12,7 +8,7 @@ const SLOW_PERIODS = [4000, 4800, 6000] as const;
 /** A saved bot id supplies the colour seed; this stream never advances its motion clocks. */
 export function seededLogoAvatarColor(identity: string): string {
   const random = shippedRandom(shippedHash(`logo-avatar/color/v1/${identity}`));
-  return BOT_AVATAR_COLORS[Math.floor(random() * BOT_AVATAR_COLORS.length)]!;
+  return BOT_COLORS[Math.floor(random() * BOT_COLORS.length)]!;
 }
 
 /** Evaluate once per identity, never on an animation frame or from React's useId. */

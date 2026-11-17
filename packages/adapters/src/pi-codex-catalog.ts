@@ -3,14 +3,15 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret } from "./model-secret.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
 import type { CatalogSpaceAuth } from "./pi-live-catalog.js";
 import { liveCatalogEntry, overlayLiveCatalog } from "./pi-live-catalog.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog } from "./pi-models.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId, parseModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId } from "./pi-oauth.js";
 
 /**
  * The ChatGPT backend reports which Codex models a subscription account can call.

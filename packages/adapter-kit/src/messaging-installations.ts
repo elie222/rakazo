@@ -19,14 +19,33 @@ export interface MessagingInstallationStore {
   getById(id: string): Promise<MessagingInstallation | null>;
 }
 
+/**
+ * The person cannot finish this workspace install as asked: the link is wrong, expired or already
+ * used, or the workspace belongs elsewhere. Any other failure to finish one is a fault.
+ */
+export class MessagingInstallRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MessagingInstallRefusedError";
+  }
+}
+
 /** Vendor OAuth and credential translation stay in adapters. */
 export interface MessagingInstallProvider {
   provider: string;
   capabilities: MessagingCapabilities;
   authorizeUrl(state: string): string;
-  exchange(
-    code: string,
-  ): Promise<{ workspaceId: string; workspaceName: string; credential: string }>;
+  /**
+   * `ownerId` is the workspace user who authorized the install, when the platform says. Throws
+   * `MessagingInstallRefusedError` when the platform refuses the code for a reason the person can
+   * act on.
+   */
+  exchange(code: string): Promise<{
+    workspaceId: string;
+    workspaceName: string;
+    credential: string;
+    ownerId?: string;
+  }>;
   parseWebhook(
     request: Request,
   ): Promise<{ request: Request; workspaceId?: string; challenge?: string; uninstalled?: boolean }>;

@@ -5,8 +5,7 @@ import { getModelRole, updateModelRole } from "./model-roles.js";
 import { asSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("model roles (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

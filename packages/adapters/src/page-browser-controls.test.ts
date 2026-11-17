@@ -62,7 +62,7 @@ describe("saved logins and cards in the focused field", () => {
       /Refused: A card can only be typed into a card field/,
     );
     expect(fill("Password", "fake-password", "https://other.example.test", "password")).toThrow(
-      /Refused: The page is not on the site this login was saved for/,
+      /Refused: This login is saved for https:\/\/other\.example\.test; the page is on https:\/\/portal\.example\.test\./,
     );
     expect(fill("Password", "fake-password", "http://portal.example.test", "password")).toThrow(
       /Refused: Website logins can only be filled on HTTPS/,
@@ -73,7 +73,7 @@ describe("saved logins and cards in the focused field", () => {
     expect(field("Password").hasAttribute("data-rakazo-filled")).toBe(true);
   });
 
-  it("picks a dropdown option for a visible saved field, never naming the value", () => {
+  it("picks a dropdown option for a visible saved field and marks it hidden", () => {
     const { secrets, field, win } = installSecrets(`<select aria-label="Branch">
       <option value="" disabled selected>Choose</option><option value="v1">A1</option>
       <option>A2</option><option disabled>A3</option></select>`);
@@ -102,13 +102,12 @@ describe("saved logins and cards in the focused field", () => {
     }
     expect(field("Branch").value).toBe("A2");
     expect(fill("A2", origin, "password")).toThrow(/Refused: A saved password/);
-    expect(fill("A2", "https://other.example.test")).toThrow(
-      /Refused: The page is not on the site/,
-    );
+    expect(fill("A2", "https://other.example.test")).toThrow(/Refused: This login is saved for/);
     expect(fill("A2", origin, "code")).toThrow(/Refused: A code can only be typed/);
     expect(fill("4242", origin, "card")).toThrow(/Refused: A card can only be typed/);
     expect(field("Branch").value).toBe("A2");
-    expect(field("Branch").hasAttribute("data-rakazo-filled")).toBe(false);
+    // Marked like any saved field, so the page browser's snapshots never show the choice.
+    expect(field("Branch").hasAttribute("data-rakazo-filled")).toBe(true);
     expect(win.document.body.innerHTML).not.toContain("fake-999");
   });
 

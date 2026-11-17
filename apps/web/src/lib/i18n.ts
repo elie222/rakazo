@@ -12,20 +12,21 @@ type CatalogModule = { messages: CatalogMessages };
 type CatalogLoader = () => Promise<CatalogModule>;
 
 const defaultCatalogLoaders: Record<UiLocale, CatalogLoader> = {
-  en: () => import("../locales/en/messages.po") as Promise<CatalogModule>,
-  de: () => import("../locales/de/messages.po") as Promise<CatalogModule>,
-  ko: () => import("../locales/ko/messages.po") as Promise<CatalogModule>,
-  tr: () => import("../locales/tr/messages.po") as Promise<CatalogModule>,
-  hi: () => import("../locales/hi/messages.po") as Promise<CatalogModule>,
-  "pt-BR": () => import("../locales/pt-BR/messages.po") as Promise<CatalogModule>,
-  "zh-TW": () => import("../locales/zh-TW/messages.po") as Promise<CatalogModule>,
-  "zh-CN": () => import("../locales/zh-CN/messages.po") as Promise<CatalogModule>,
-  es: () => import("../locales/es/messages.po") as Promise<CatalogModule>,
-  ru: () => import("../locales/ru/messages.po") as Promise<CatalogModule>,
-  fr: () => import("../locales/fr/messages.po") as Promise<CatalogModule>,
-  he: () => import("../locales/he/messages.po") as Promise<CatalogModule>,
-  nl: () => import("../locales/nl/messages.po") as Promise<CatalogModule>,
-  ja: () => import("../locales/ja/messages.po") as Promise<CatalogModule>,
+  en: () => import("@rakazo/i18n/locales/en/messages.po") as Promise<CatalogModule>,
+  de: () => import("@rakazo/i18n/locales/de/messages.po") as Promise<CatalogModule>,
+  ko: () => import("@rakazo/i18n/locales/ko/messages.po") as Promise<CatalogModule>,
+  tr: () => import("@rakazo/i18n/locales/tr/messages.po") as Promise<CatalogModule>,
+  hi: () => import("@rakazo/i18n/locales/hi/messages.po") as Promise<CatalogModule>,
+  "pt-BR": () => import("@rakazo/i18n/locales/pt-BR/messages.po") as Promise<CatalogModule>,
+  "zh-TW": () => import("@rakazo/i18n/locales/zh-TW/messages.po") as Promise<CatalogModule>,
+  "zh-CN": () => import("@rakazo/i18n/locales/zh-CN/messages.po") as Promise<CatalogModule>,
+  es: () => import("@rakazo/i18n/locales/es/messages.po") as Promise<CatalogModule>,
+  ru: () => import("@rakazo/i18n/locales/ru/messages.po") as Promise<CatalogModule>,
+  fr: () => import("@rakazo/i18n/locales/fr/messages.po") as Promise<CatalogModule>,
+  he: () => import("@rakazo/i18n/locales/he/messages.po") as Promise<CatalogModule>,
+  nl: () => import("@rakazo/i18n/locales/nl/messages.po") as Promise<CatalogModule>,
+  ja: () => import("@rakazo/i18n/locales/ja/messages.po") as Promise<CatalogModule>,
+  pl: () => import("@rakazo/i18n/locales/pl/messages.po") as Promise<CatalogModule>,
 };
 
 let catalogLoaders: Record<UiLocale, CatalogLoader> = defaultCatalogLoaders;

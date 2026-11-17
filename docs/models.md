@@ -7,13 +7,20 @@ model you run yourself.
 
 Open **Settings → Models**. Under **Add provider**, pick a provider and connect it:
 
-- **Sign in** with a ChatGPT or Claude subscription to use the plan you already pay for.
+- **Sign in with ChatGPT** to use an eligible plan's Codex allowance.
 - **Connect API key** for OpenAI, Anthropic, Google, OpenRouter and many others.
 - **OpenAI-compatible server URL** for a model you host yourself, such as Ollama or vLLM on your own
   machine. Paste the address, choose **Find models**, and pick one. Under **Advanced** you can set
   its context limit, whether it supports images, and its reasoning effort.
 
+For project-scoped connections, enter the **Project ID** and **Region** alongside the API key.
+Use the region where your model is available; the form starts with `global`. These settings
+belong to each connection and are used both when checking the key and when running a bot.
+
 Connected providers are listed under **Providers** and are available in every [space](./spaces.md).
+
+Have a ChatGPT, Claude, OpenCode, or other plan? See [Model subscriptions](./model-subscriptions.md)
+for connection options, separate API billing, and provider restrictions.
 
 > [!NOTE]
 > On rakazo.com you can skip this and choose **Use Rakazo credits**, which includes monthly model
@@ -46,7 +53,6 @@ for a simple daily check.
 ## Usage
 
 **Settings → Usage** shows runs, tokens and cost by model.
-
 
 ## Compatible server wire protocol
 

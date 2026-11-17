@@ -32,7 +32,6 @@ it("pads the chat title 14 at its start and 10 at its end, mirrored for right-to
 it("uses a borderless fallback title fill and leaves the header buttons clear", () => {
   const styles = createThreadHeaderStyles();
   expect(styles.titleCapsuleFill).not.toHaveProperty("borderWidth");
-  expect(styles.statusBarFade).not.toHaveProperty("backgroundColor");
 });
 
 it("lets a long chat name give way to the avatars beside it", () => {

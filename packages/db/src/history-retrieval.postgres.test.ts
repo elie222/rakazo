@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { HistorySearchInputSchema } from "@rakazo/contracts";
 import { escapeJsonSearchWildcards } from "@rakazo/core";
@@ -9,7 +10,7 @@ import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
 const enabled = process.env.VERIFY_DATABASE && process.env.DATABASE_URL;
-const postgres = enabled ? describe.sequential : describe.skip;
+const postgres = enabled ? describe : describe.skip;
 postgres("history retrieval (PostgreSQL)", () => {
   let pool: Pool;
   let prisma: PrismaClient;
@@ -20,6 +21,16 @@ postgres("history retrieval (PostgreSQL)", () => {
     botId: "synthetic-bot",
   };
   beforeAll(async () => {
+    // The migration's own statement, so the tested predicate cannot drift from production.
+    const toolWorkIndex = readFileSync(
+      new URL(
+        "../prisma/migrations/20261210120000_message_tool_work_idx/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    )
+      .replace(/^--.*$/gm, "")
+      .replace("CONCURRENTLY ", "");
     pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
     prisma = new PrismaClient({ adapter: new PrismaPg(pool, { schema: "pg_temp" }) });
     await pool.query(`
@@ -42,8 +53,9 @@ postgres("history retrieval (PostgreSQL)", () => {
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
       CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text));
+        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
+      ${toolWorkIndex}
       ANALYZE messages;
       ALTER TABLE bots ADD COLUMN name text DEFAULT 'History bot';
       ALTER TABLE chat_groups ADD COLUMN name text DEFAULT 'History group';
@@ -164,6 +176,127 @@ postgres("history retrieval (PostgreSQL)", () => {
       })}\n`,
     );
   });
+  it("finds an earlier reply by its tool step note and returns the steps it ran", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-reply', 'synthetic-thread', 10001, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 2, note: "Installing Quillfeather into Chromium." }],
+          },
+          { kind: "text", text: "Done." },
+        ]),
+      ],
+    );
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const results = await searchHistory(prisma, scope, { query: "quillfeather" });
+    const searchQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-reply"]);
+    expect(results.messages[0]!.text).toContain(
+      "- Shell ×2: Installing Quillfeather into Chromium.",
+    );
+    const explained = await pool.query(
+      `EXPLAIN (FORMAT JSON) ${searchQuery.text}`,
+      searchQuery.values,
+    );
+    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
+  });
+  it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('steps-only-reply', 'synthetic-thread', 10002, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "steps",
+            steps: [{ label: "Shell", count: 1, note: "Pruning Larkspur caches." }],
+          },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, {
+      query: "larkspur",
+      kinds: ["bot_replies"],
+    });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["steps-only-reply"]);
+    await pool.query(`DELETE FROM messages WHERE id = 'steps-only-reply'`);
+  });
+  it("lists only replies that used tools when browsing tool work without a keyword", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('browsed-steps', 'synthetic-thread', 10003, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+          { kind: "text", text: "Sites show dark now." },
+        ]),
+      ],
+    );
+    const results = await searchHistory(prisma, scope, { kinds: ["tool_work"] });
+    expect(results.messages.map((message) => message.messageId)).toEqual(["browsed-steps"]);
+    expect(results.messages[0]!.text).toContain("- Shell: Adding a dark theme.");
+    // An empty search here points at that earlier tool work.
+    const empty = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(empty.messages).toEqual([]);
+    expect(empty.note).toContain('kinds ["tool_work"]');
+    const emptyToolWork = await searchHistory(prisma, scope, {
+      query: "quillfeather zebra",
+      kinds: ["tool_work"],
+    });
+    expect(emptyToolWork.messages).toEqual([]);
+    expect(emptyToolWork.note).toContain('kinds ["tool_work"] and no query');
+    await pool.query(`DELETE FROM messages WHERE id = 'browsed-steps'`);
+    const plain = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(plain.note).not.toContain("tool_work");
+  });
+  it("finds tool work in other chats through the tool work index", async () => {
+    await pool.query(
+      `INSERT INTO threads VALUES ('tool-elsewhere','synthetic-space','synthetic-user','synthetic-bot',NULL)`,
+    );
+    await pool.query(
+      `INSERT INTO messages VALUES ('elsewhere-steps', 'tool-elsewhere', 1, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          { kind: "steps", steps: [{ label: "Shell", count: 1, note: "Adding a dark theme." }] },
+        ]),
+      ],
+    );
+    const granted = { ...scope, allowMyChats: true };
+    const explain = async (sql: Prisma.Sql) =>
+      JSON.stringify(
+        (await pool.query(`EXPLAIN (FORMAT JSON) ${sql.text}`, sql.values)).rows[0]["QUERY PLAN"],
+      );
+    // An empty all-chats search points at tool work that exists only in another chat.
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const empty = await searchHistory(prisma, granted, {
+      scope: "my_chats",
+      query: "quillfeather zebra",
+    });
+    const check = querySpy.mock.calls.at(-1)![0] as Prisma.Sql;
+    querySpy.mockClear();
+    expect(empty.note).toContain('scope "my_chats", kinds ["tool_work"]');
+    expect(check.sql).toContain("SELECT 1 FROM messages");
+    expect(await explain(check)).toContain("messages_tool_work_idx");
+    // Listing it across chats reads the same index instead of every message's blocks.
+    const listed = await searchHistory(prisma, granted, {
+      scope: "my_chats",
+      kinds: ["tool_work"],
+    });
+    const browse = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(listed.messages.map((message) => message.messageId)).toEqual(["elsewhere-steps"]);
+    expect(await explain(browse)).toContain("messages_tool_work_idx");
+    // A this-chat search still offers only this chat's tool work.
+    const here = await searchHistory(prisma, scope, { query: "quillfeather zebra" });
+    expect(here.note).not.toContain("tool_work");
+    await pool.query(`DELETE FROM messages WHERE id = 'elsewhere-steps';
+      DELETE FROM threads WHERE id = 'tool-elsewhere'`);
+  });
   it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
     await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
       '2026-01-01T00:00:00Z'::timestamptz,
@@ -217,7 +350,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       (
         await searchHistory(
           prisma,
-          { ...historicalScope, userId: "foreign-user" },
+          { ...historicalScope, spaceId: "foreign-space" },
           broad.nextSearch!,
         )
       ).messages,
@@ -290,6 +423,96 @@ postgres("history retrieval (PostgreSQL)", () => {
     );
     expect(offset.messages.map((message) => message.seq)).toEqual([1442, 1441, 1440]);
     expect(offset.nextSearch).toBeNull();
+  });
+  it("finds earlier files by name and lists only files that still belong to the space", async () => {
+    await pool.query(`
+      INSERT INTO messages VALUES
+        ('file-captioned','synthetic-thread',12001,'user',NULL,NULL,now(),
+          '[{"kind":"text","text":"Signed copy attached"},{"kind":"file","artifactId":"art-lease","name":"lisbon-office-lease.md","mimeType":"text/markdown","size":64}]'),
+        ('file-bare','synthetic-thread',12002,'user',NULL,NULL,now(),
+          '[{"kind":"file","artifactId":"art-foreign","name":"porto-warehouse.md","mimeType":"text/markdown","size":64}]');
+      INSERT INTO artifacts VALUES
+        ('art-lease','synthetic-space','synthetic-user','synthetic-bot',NULL,NULL,'lisbon-office-lease.md','text/markdown',64,now()),
+        ('art-foreign','foreign-space','outsider','synthetic-bot',NULL,NULL,'porto-warehouse.md','text/markdown',64,now());
+    `);
+    const lease = {
+      artifactId: "art-lease",
+      name: "lisbon-office-lease.md",
+      mimeType: "text/markdown",
+      size: 64,
+      path: "attachments/art-lease.md",
+    };
+    const found = await searchHistory(prisma, scope, { query: "lisbon lease" });
+    expect(
+      (await searchHistory(prisma, scope, { query: "lisbon-office-lease.md" })).messages,
+    ).toHaveLength(1);
+    // One word from the caption, one from the file name.
+    expect((await searchHistory(prisma, scope, { query: "signed lease" })).messages).toHaveLength(
+      1,
+    );
+    expect(found.messages).toEqual([
+      expect.objectContaining({
+        messageId: "file-captioned",
+        text: "Signed copy attached",
+        attachments: [lease],
+      }),
+    ]);
+    // A name match on a file from another space finds the message but never the file.
+    const foreign = await searchHistory(prisma, scope, {
+      query: "porto",
+      kinds: ["user_messages"],
+    });
+    expect(foreign.messages.map((message) => message.messageId)).toEqual(["file-bare"]);
+    expect(foreign.messages[0]).not.toHaveProperty("attachments");
+    const read = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(read.messages.find((message) => message.messageId === "file-captioned")).toMatchObject({
+      attachments: [lease],
+    });
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-lease'");
+    const afterDelete = await readHistory(prisma, scope, { messageId: "file-captioned" });
+    expect(afterDelete.messages.every((message) => !("attachments" in message))).toBe(true);
+    await pool.query("DELETE FROM messages WHERE id IN ('file-captioned','file-bare')");
+    await pool.query("DELETE FROM artifacts WHERE id = 'art-foreign'");
+  });
+  it("keeps a message with many files within the response budget and pages through them", async () => {
+    // 100 files with long names, as a deployment that raises the per-message limit allows.
+    await pool.query(`
+      INSERT INTO artifacts SELECT 'many-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-bot', NULL, NULL,
+        repeat('n', 200) || n || '.md', 'text/markdown', 1, now() FROM generate_series(1,100) n;
+      INSERT INTO messages VALUES ('many-files-neighbor','synthetic-thread',12099,'bot',NULL,NULL,now(),
+        '[{"kind":"text","text":"Neighbor context keeps every word of this reply."}]');
+      INSERT INTO messages VALUES ('many-files','synthetic-thread',12100,'user',NULL,NULL,now(),
+        (SELECT jsonb_agg(jsonb_build_object('kind','file','artifactId','many-' || n,
+          'name', repeat('n', 200) || n || '.md','mimeType','text/markdown','size',1)) FROM generate_series(1,100) n));
+    `);
+    // Files give way before nearby text does.
+    const around = await readHistory(prisma, scope, { messageId: "many-files", limit: 3 });
+    expect(Buffer.byteLength(JSON.stringify(around))).toBeLessThanOrEqual(10_000);
+    expect(around.messages.find((m) => m.messageId === "many-files-neighbor")?.text).toBe(
+      "Neighbor context keeps every word of this reply.",
+    );
+    type Page = { attachments?: Array<{ artifactId: string }>; nextAttachmentOffset?: number };
+    const seen: string[] = [];
+    let attachmentOffset: number | undefined;
+    for (let page = 0; page < 100; page += 1) {
+      const read = await readHistory(prisma, scope, {
+        messageId: "many-files",
+        limit: 1,
+        ...(attachmentOffset === undefined ? {} : { attachmentOffset }),
+      });
+      expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThanOrEqual(10_000);
+      const [message] = read.messages as Page[];
+      // Never more files than the run copies at once, so every listed path is copied.
+      expect(message!.attachments?.length ?? 0).toBeLessThanOrEqual(20);
+      seen.push(...(message!.attachments ?? []).map((file) => file.artifactId));
+      attachmentOffset = message!.nextAttachmentOffset;
+      if (attachmentOffset === undefined) break;
+    }
+    // Every file is reachable by paging, each listed once.
+    expect(seen.length).toBe(100);
+    expect(new Set(seen).size).toBe(100);
+    await pool.query("DELETE FROM messages WHERE id IN ('many-files','many-files-neighbor')");
+    await pool.query("DELETE FROM artifacts WHERE id LIKE 'many-%'");
   });
   it("does not index credential prompts or tool metadata", async () => {
     await pool.query(`INSERT INTO messages VALUES
@@ -386,7 +609,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       (
         await readHistory(
           prisma,
-          { ...groupScope, userId: "outsider-user" },
+          { ...groupScope, spaceId: "outsider-space" },
           { messageId: "group-source" },
         )
       ).messages,
@@ -543,7 +766,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(read.runs.map((run) => run.id)).toEqual(["run-a"]);
     expect(read.runs[0]!.outcomes[0]!.text).toBe("exports completed");
     expect(
-      (await searchHistory(prisma, { ...scope, userId: "outsider" }, { query: "exports" }))
+      (await searchHistory(prisma, { ...scope, spaceId: "outsider-space" }, { query: "exports" }))
         .messages,
     ).toEqual([]);
     expect(
@@ -555,7 +778,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       (await readHistory(prisma, channelScope, { messageId: "channel-result" })).messages,
     ).toEqual([]);
   });
-  it("authorizes only the requesting user's active chats in their space, including owned groups", async () => {
+  it("authorizes every active chat in the space, including groups, and nothing outside it", async () => {
     await pool.query(`
       INSERT INTO bots (id, "spaceId", "userId", "archivedAt", name) VALUES
         ('cross-peer','synthetic-space','synthetic-user',NULL,'Researcher'),
@@ -614,19 +837,28 @@ postgres("history retrieval (PostgreSQL)", () => {
     const single = await searchHistory(prisma, grant, { scope: "my_chats", query: "quasar" });
     expect(single.queries).toEqual(["quasar"]);
     for (const hit of single.messages) expect(hit.matchedQueryIndexes).toEqual([0]);
-    expect(result.messages).toHaveLength(4);
-    expect(new Set(result.messages.map((hit) => hit.messageId)).size).toBe(4);
-    expect(new Set(result.messages.map((hit) => hit.threadId))).toEqual(
-      new Set(["cross-peer-thread", "cross-group-thread"]),
+    // A page holds at most five hits; the sixth is on the next one.
+    expect(result.messages).toHaveLength(5);
+    const rest = await searchHistory(prisma, grant, result.nextSearch!);
+    expect(rest.nextSearch).toBeNull();
+    const all = [...result.messages, ...rest.messages];
+    expect(new Set(all.map((hit) => hit.messageId)).size).toBe(6);
+    expect(new Set(all.map((hit) => hit.threadId))).toEqual(
+      new Set([
+        "cross-peer-thread",
+        "cross-group-thread",
+        "cross-team-thread",
+        "cross-team-group-thread",
+      ]),
     );
-    for (const hit of result.messages) expect(hit.matchedQueryIndexes).toEqual([0, 1]);
+    for (const hit of all) expect(hit.matchedQueryIndexes).toEqual([0, 1]);
     expect(result.chats?.find((chat) => chat.threadId === "cross-peer-thread")?.name).toBe(
       "Researcher",
     );
     expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(10000);
-    // A bot filter narrows owned group membership too; it never grants a foreign thread.
+    // A bot filter narrows group membership too; it never grants a thread outside the space.
     expect(
-      (await searchHistory(prisma, grant, { ...input, botId: "cross-team" })).messages,
+      (await searchHistory(prisma, grant, { ...input, botId: "cross-space" })).messages,
     ).toEqual([]);
     expect(
       (await searchHistory(prisma, grant, { ...input, botId: "cross-peer" })).messages,
@@ -639,7 +871,15 @@ postgres("history retrieval (PostgreSQL)", () => {
     for (const [kind, ids] of [
       ["bot_messages", ["cross-structured"]],
       ["bot_replies", ["cross-reply"]],
-      ["user_messages", ["cross-cross-peer-thread", "cross-cross-group-thread"]],
+      [
+        "user_messages",
+        [
+          "cross-cross-peer-thread",
+          "cross-cross-group-thread",
+          "cross-cross-team-thread",
+          "cross-cross-team-group-thread",
+        ],
+      ],
     ] as const) {
       expect(
         new Set(
@@ -651,8 +891,12 @@ postgres("history retrieval (PostgreSQL)", () => {
     }
     const first = await searchHistory(prisma, grant, { ...input, limit: 2 });
     const next = await searchHistory(prisma, grant, first.nextSearch!);
-    expect(new Set([...first.messages, ...next.messages].map((hit) => hit.messageId)).size).toBe(4);
-    expect(next.nextSearch).toBeNull();
+    const last = await searchHistory(prisma, grant, next.nextSearch!);
+    expect(
+      new Set([...first.messages, ...next.messages, ...last.messages].map((hit) => hit.messageId))
+        .size,
+    ).toBe(6);
+    expect(last.nextSearch).toBeNull();
     expect((await searchHistory(prisma, grant, { query: "quasar" })).messages).toEqual([]);
     const own = await readHistory(prisma, grant, {
       threadId: "cross-peer-thread",
@@ -679,11 +923,9 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(linked.runs[0]?.artifacts[0]?.id).toBe("cross-artifact");
     const missing = await readHistory(prisma, grant, { threadId: "missing", messageId: "missing" });
     for (const threadId of [
-      "cross-team-thread",
       "cross-space-thread",
       "cross-archived-thread",
       "cross-archived-group-thread",
-      "cross-team-group-thread",
     ]) {
       expect(
         await readHistory(prisma, grant, { threadId, messageId: `cross-${threadId}` }),
@@ -702,18 +944,6 @@ postgres("history retrieval (PostgreSQL)", () => {
         }),
       ).toEqual(missing);
     }
-    // Ownership, not being the space owner, is sufficient (the team member has no other access).
-    expect(
-      (
-        await searchHistory(
-          prisma,
-          { ...grant, userId: "team-member" },
-          { ...input, kinds: ["user_messages"] },
-        )
-      ).messages
-        .map((hit) => hit.threadId)
-        .sort(),
-    ).toEqual(["cross-team-group-thread", "cross-team-thread"]);
     await pool.query(`UPDATE bots SET "archivedAt" = now() WHERE id = 'cross-peer'`);
     expect(
       await readHistory(prisma, grant, {

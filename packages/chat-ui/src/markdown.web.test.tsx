@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -172,14 +174,12 @@ async function renderLinks(
 
 describe("web markdown website links", () => {
   it("isolates cached misses and pending answers when the API endpoint changes", async () => {
-    let resolveOld!: (answer: { icon: string | null }) => void;
-    const oldLoad = vi.fn<LinkFavicons["load"]>((origin) =>
-      origin.includes("pending")
-        ? new Promise((resolve) => {
-            resolveOld = resolve;
-          })
-        : Promise.resolve({ icon: null }),
-    );
+    let oldAnswer: Deferred<{ icon: string | null }> | undefined;
+    const oldLoad = vi.fn<LinkFavicons["load"]>((origin) => {
+      if (!origin.includes("pending")) return Promise.resolve({ icon: null });
+      oldAnswer = deferred();
+      return oldAnswer.promise;
+    });
     const newLoad = vi.fn<LinkFavicons["load"]>(async () => ({ icon: ICON }));
     const view = await renderLinks(
       "[Miss](https://scope-miss.example.test/) [Pending](https://scope-pending.example.test/)",
@@ -190,7 +190,7 @@ describe("web markdown website links", () => {
     expect(newLoad).toHaveBeenCalledTimes(2);
     expect(view.container.querySelectorAll("a img")).toHaveLength(2);
     await act(async () => {
-      resolveOld({ icon: null });
+      oldAnswer!.resolve({ icon: null });
     });
     expect(view.container.querySelectorAll("a img")).toHaveLength(2);
     await view.cleanup();
@@ -248,15 +248,18 @@ describe("web markdown website links", () => {
   });
 
   it("shows the globe until an icon arrives, and when there is none", async () => {
-    let resolve: (answer: { icon: string | null }) => void = () => undefined;
+    let answer: Deferred<{ icon: string | null }> | undefined;
     const view = await renderLinks("[Docs](https://icon-c.example.test/docs)", {
-      load: () => new Promise((done) => (resolve = done)),
+      load: () => {
+        answer = deferred();
+        return answer.promise;
+      },
     });
     const tile = () => view.container.querySelector(".rk-chat-link-tile");
     expect(tile()?.querySelector("svg")).not.toBeNull();
     expect(tile()?.classList.contains("rk-chat-link-tile-icon")).toBe(false);
     await act(async () => {
-      resolve({ icon: null });
+      answer?.resolve({ icon: null });
     });
     expect(tile()?.querySelector("img")).toBeNull();
     expect(tile()?.querySelector("svg")).not.toBeNull();
@@ -868,6 +871,26 @@ describe("web markdown streaming", () => {
       wholeRoot.unmount();
     });
   });
+
+  it("keeps a streamed table's sort when text before it changes", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const table = "| Item | Qty |\n| --- | --- |\n| a | 2 |\n| b | 1 |";
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{table}</ChatMarkdown>);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Sort by Qty"]')!.click();
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{`Results updated.\n\n${table}`}</ChatMarkdown>);
+    });
+    expect(container.querySelector("th[aria-sort]")?.getAttribute("aria-sort")).toBe("ascending");
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });
 
 describe("web markdown streamed definitions", () => {
@@ -878,6 +901,42 @@ describe("web markdown streamed definitions", () => {
       </ChatMarkdown>,
     );
     expect(html).toContain('href="https://example.test/ref"');
+  });
+});
+
+describe("web markdown page links", () => {
+  it("draws a page link as a chip that opens the page, or as its title without a handler", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const openPage = vi.fn();
+    const markdown =
+      "See [Duplex voice](page:page_1) and [x](javascript:alert(1)) and [y](rakazo://settings) and [z](page:a/b)";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
+    });
+    const chips = container.querySelectorAll<HTMLButtonElement>("button.rk-chat-page-chip");
+    expect([...chips].map((chip) => chip.textContent)).toEqual(["Duplex voice"]);
+    expect(chips[0]!.querySelector("svg")).not.toBeNull();
+    await act(async () => {
+      chips[0]!.click();
+    });
+    expect(openPage).toHaveBeenCalledWith("page_1");
+    // Other schemes and a malformed page link keep today's plain-text rendering.
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("See Duplex voice and x and y and z");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"See [Duplex voice](page:page_1)"}</ChatMarkdown>,
+    );
+    expect(html).toContain("<span>Duplex voice</span>");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<a");
   });
 });
 

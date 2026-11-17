@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { deferred } from "@rakazo/core/test-async";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
@@ -99,38 +100,6 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(second.runId).toBe(first.runId);
     const run = await prisma.run.findUniqueOrThrow({ where: { id: first.runId } });
     expect(run.clientNonce).toBe(`routine-run:${run.userId}:${nonce}`);
-
-    // The previous release stored the key without the user id; its retry replays that run.
-    const legacyNonce = `routine-mention:${stamp}:legacy`;
-    const task = await prisma.task.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: run.botId,
-        threadId: run.threadId,
-        userId: run.userId,
-        prompt: "Replay inbox",
-        status: "queued",
-      },
-    });
-    const legacy = await prisma.run.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: run.botId,
-        threadId: run.threadId,
-        taskId: task.id,
-        userId: run.userId,
-        status: "queued",
-        trigger: "routine",
-        routineId: routine.id,
-        clientNonce: `routine-test:${legacyNonce}`,
-      },
-    });
-    const retried = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
-      routineId: routine.id,
-      clientNonce: legacyNonce,
-    });
-    expect(retried.runId).toBe(legacy.id);
-    expect(await prisma.run.count({ where: { routineId: routine.id } })).toBe(2);
   });
 
   describe("send with routines", () => {
@@ -203,6 +172,20 @@ describeWithDatabase("structured @ mention targets", () => {
       expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(2);
     });
 
+    it("treats stop sent with a routine as a message, so the routine still runs", async () => {
+      const { cookie, bot, digest } = await owner("Stop");
+      const sent = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
+        botId: bot.id,
+        clientNonce: `send-stop-${stamp}`,
+        text: "stop",
+        routineIds: [digest.id],
+      });
+      const [routineRun] = sent.routineRunIds;
+      expect((await prisma.run.findUniqueOrThrow({ where: { id: routineRun! } })).status).not.toBe(
+        "cancelled",
+      );
+    });
+
     it.each([
       ["routines-only", {}],
       ["with-text", { text: "and the notes" }],
@@ -253,43 +236,38 @@ describeWithDatabase("structured @ mention targets", () => {
         const slowThread = await prisma.thread.findUniqueOrThrow({ where: { botId: slow.id } });
         const clientNonce = `send-race-${name}-${stamp}`;
         // Holding the slow bot's thread stops B on its first run insert, after its saved-run lookup.
-        let release!: () => void;
-        const released = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let locked!: () => void;
-        const holding = new Promise<void>((resolve) => {
-          locked = resolve;
-        });
+        const released = deferred();
+        const holding = deferred();
         const holder = prisma.$transaction(
           async (tx) => {
             await tx.$queryRaw`SELECT id FROM threads WHERE id = ${slowThread.id} FOR UPDATE`;
-            locked();
-            await released;
+            holding.resolve();
+            await released.promise;
           },
           { timeout: 20_000 },
         );
-        await holding;
+        await holding.promise;
         const second = raw(app, cookie, "threads/sendWithRoutines", {
           botId: other.id,
           clientNonce,
           text,
           routineIds: [late.id, digest.id],
         });
-        for (let tries = 0; ; tries += 1) {
-          const [waiting] = await prisma.$queryRaw<Array<{ count: bigint }>>`
-          SELECT count(*) AS count FROM pg_locks WHERE NOT granted`;
-          if (Number(waiting?.count) > 0) break;
-          if (tries > 100) throw new Error("the second send never waited");
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+        await vi.waitFor(
+          async () => {
+            const [waiting] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT count(*) AS count FROM pg_locks WHERE NOT granted`;
+            if (!(Number(waiting?.count) > 0)) throw new Error("the second send never waited");
+          },
+          { interval: 50, timeout: 5_000 },
+        );
         const first = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
           botId: bot.id,
           clientNonce,
           text,
           routineIds: [digest.id],
         });
-        release();
+        released.resolve();
         await holder;
         const response = await second;
 
@@ -431,7 +409,7 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(botHasMessage).toBe(false);
   });
 
-  it("wakes exactly one bot on an unmentioned group send", async () => {
+  it("wakes every member, each free to stay silent, on an unmentioned group send", async () => {
     const cookie = await signup(app, `mention-group-default-${stamp}@rakazo.test`, "Group Default");
     const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "BotA",
@@ -455,10 +433,13 @@ describeWithDatabase("structured @ mention targets", () => {
       where: { threadId: group.threadId, trigger: "user" },
     });
     await rpc(app, cookie, "threads/send", { groupId: group.id, text: "hello team" });
-    const after = await prisma.run.count({
+    const runs = await prisma.run.findMany({
       where: { threadId: group.threadId, trigger: "user" },
+      select: { botId: true, groupReplyOptional: true },
     });
-    expect(after - before).toBe(1);
+    expect(runs.length - before).toBe(2);
+    expect(runs.map((run) => run.botId).sort()).toEqual([botA.id, botB.id].sort());
+    expect(runs.every((run) => run.groupReplyOptional)).toBe(true);
   });
 
   it("wakes a mentioned group member from typed bot chips and ignores non-members", async () => {
