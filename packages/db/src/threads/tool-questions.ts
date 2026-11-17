@@ -162,8 +162,6 @@ export async function expireRunToolQuestions(
   const candidates = await prisma.message.findMany({
     where: { runId: run.id, role: "bot" },
     select: { id: true, threadId: true, blocks: true },
-    orderBy: { seq: "desc" },
-    take: 50,
   });
   for (const message of candidates) {
     if (questionBlock(storedMessageBlocks(message))?.status !== "pending") continue;

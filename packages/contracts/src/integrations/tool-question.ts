@@ -84,7 +84,8 @@ export function checkToolQuestionValues(
   fields: readonly ToolQuestionField[],
   values: Record<string, unknown>,
 ): { ok: true; values: Record<string, ToolQuestionValue> } | { ok: false; reason: string } {
-  const out: Record<string, ToolQuestionValue> = {};
+  // Entries, not assignment: a field may be named like an object's own internals (`__proto__`).
+  const out: Array<[string, ToolQuestionValue]> = [];
   const known = new Set(fields.map((field) => field.name));
   for (const name of Object.keys(values)) {
     if (!known.has(name)) return { ok: false, reason: `Unknown field ${name}` };
@@ -97,9 +98,9 @@ export function checkToolQuestionValues(
     }
     const problem = fieldProblem(field, value);
     if (problem) return { ok: false, reason: `${field.label || field.name}: ${problem}` };
-    out[field.name] = value as ToolQuestionValue;
+    out.push([field.name, value as ToolQuestionValue]);
   }
-  return { ok: true, values: out };
+  return { ok: true, values: Object.fromEntries(out) };
 }
 
 function fieldProblem(field: ToolQuestionField, value: unknown): string | undefined {
@@ -124,13 +125,14 @@ function fieldProblem(field: ToolQuestionField, value: unknown): string | undefi
   }
 }
 
+/** A form as a client holds it while the person types: numbers stay text until sent. */
+export type ToolQuestionDraft = Record<string, string | boolean | undefined>;
+
 /**
  * What a form starts with on every client: the server's defaults, a yes/no field off, and a
  * choice on its first option when the server named none.
  */
-export function toolQuestionInitialValues(
-  fields: readonly ToolQuestionField[],
-): Record<string, ToolQuestionValue | undefined> {
+export function toolQuestionInitialDraft(fields: readonly ToolQuestionField[]): ToolQuestionDraft {
   return Object.fromEntries(
     fields.map((field) => [
       field.name,
@@ -138,18 +140,41 @@ export function toolQuestionInitialValues(
         ? (field.default ?? false)
         : field.type === "choice"
           ? (field.default ?? field.options[0]?.value)
-          : field.default,
+          : field.default === undefined
+            ? undefined
+            : String(field.default),
     ]),
   );
 }
 
-/** The values to send: fields left empty are left out. */
+/**
+ * The values to send: empty fields left out, numbers parsed, and a date-time as RFC 3339 with
+ * its offset. Text that does not parse is sent as typed, so the server names the field.
+ */
 export function toolQuestionSentValues(
-  values: Record<string, ToolQuestionValue | undefined>,
+  fields: readonly ToolQuestionField[],
+  draft: ToolQuestionDraft,
 ): Record<string, ToolQuestionValue> {
-  return Object.fromEntries(
-    Object.entries(values).filter(
-      (entry): entry is [string, ToolQuestionValue] => entry[1] !== undefined && entry[1] !== "",
-    ),
-  );
+  const out: Array<[string, ToolQuestionValue]> = [];
+  for (const field of fields) {
+    const value = draft[field.name];
+    if (value === undefined || value === "") continue;
+    if (typeof value === "string" && field.type === "number") {
+      const number = Number(value.trim());
+      out.push([field.name, value.trim() !== "" && Number.isFinite(number) ? number : value]);
+    } else if (typeof value === "string" && field.type === "text" && field.format === "date-time") {
+      const time = new Date(value);
+      out.push([field.name, Number.isNaN(time.getTime()) ? value : time.toISOString()]);
+    } else out.push([field.name, value]);
+  }
+  return Object.fromEntries(out);
+}
+
+/** What a card shows: its stored status, or the answer this client just sent until it lands. */
+export function toolQuestionShownStatus(
+  status: "pending" | "accepted" | "declined" | "expired",
+  sent: "accept" | "decline" | undefined,
+): "pending" | "accepted" | "declined" | "expired" {
+  if (status !== "pending" || !sent) return status;
+  return sent === "accept" ? "accepted" : "declined";
 }

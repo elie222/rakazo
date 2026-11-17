@@ -193,6 +193,34 @@ describe("MCP elicitation", () => {
     untrack();
   });
 
+  it("closes the question when its call ends", async () => {
+    const router = new McpElicitationRouter();
+    let handler:
+      | ((request: unknown, extra: { signal: AbortSignal }) => Promise<unknown>)
+      | undefined;
+    router.install({
+      setRequestHandler: (_: unknown, h: typeof handler) => (handler = h),
+    } as never);
+    const call = new AbortController();
+    const seen = deferred<AbortSignal>();
+    router.track({
+      owner: "run-1",
+      source: "Gateway",
+      signal: call.signal,
+      ask: (_question, signal) => {
+        seen.resolve(signal);
+        return new Promise((_, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason)),
+        );
+      },
+    });
+    const answered = handler!({ params: APPROVAL }, { signal: new AbortController().signal });
+    const signal = await seen.promise;
+    call.abort();
+    expect(signal.aborted).toBe(true);
+    expect(await answered).toEqual({ action: "cancel" });
+  });
+
   it("asks through a run's reused session too", async () => {
     const server = open();
     const pool = new RemoteMcpSessionCache(0);

@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ThreadMessage, ToolQuestionField, ToolQuestionValue } from "@rakazo/contracts";
-import { toolQuestionInitialValues, toolQuestionSentValues } from "@rakazo/contracts";
+import type { ThreadMessage, ToolQuestionDraft, ToolQuestionField } from "@rakazo/contracts";
+import {
+  toolQuestionInitialDraft,
+  toolQuestionSentValues,
+  toolQuestionShownStatus,
+} from "@rakazo/contracts";
 import {
   Button,
   Checkbox,
@@ -18,7 +22,6 @@ import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
 
 type ToolQuestionBlock = Extract<ThreadMessage["blocks"][number], { kind: "tool_question" }>;
-type Values = Record<string, ToolQuestionValue | undefined>;
 
 const INPUT_TYPES = { email: "email", uri: "url", date: "date", "date-time": "datetime-local" };
 
@@ -29,9 +32,9 @@ function QuestionField({
   onChange,
 }: {
   field: ToolQuestionField;
-  value: ToolQuestionValue | undefined;
+  value: ToolQuestionDraft[string];
   disabled: boolean;
-  onChange: (value: ToolQuestionValue | undefined) => void;
+  onChange: (value: ToolQuestionDraft[string]) => void;
 }) {
   const id = useId();
   const description = field.description ? (
@@ -76,11 +79,7 @@ function QuestionField({
           {...(field.type === "number"
             ? { min: field.minimum, max: field.maximum, step: field.integer ? 1 : "any" }
             : { minLength: field.minLength, maxLength: field.maxLength })}
-          onChange={(event) => {
-            const text = event.target.value;
-            if (field.type !== "number") return onChange(text === "" ? undefined : text);
-            onChange(text === "" || Number.isNaN(Number(text)) ? undefined : Number(text));
-          }}
+          onChange={(event) => onChange(event.target.value)}
         />
       )}
       {description}
@@ -105,23 +104,20 @@ export function ToolQuestionCard({
 }) {
   const { t } = useLingui();
   const { question } = block;
-  const [values, setValues] = useState<Values>(() => toolQuestionInitialValues(question.fields));
+  const [values, setValues] = useState<ToolQuestionDraft>(() =>
+    toolQuestionInitialDraft(question.fields),
+  );
   const answer = useSave({
-    save: (input: { action: "accept" | "decline"; values?: Values }, rpc) =>
+    save: (input: { action: "accept" | "decline"; values?: ToolQuestionDraft }, rpc) =>
       rpc.threads.answerToolQuestion({
         ...target,
         messageId,
         action: input.action,
-        ...(input.values ? { values: toolQuestionSentValues(input.values) } : {}),
+        ...(input.values ? { values: toolQuestionSentValues(question.fields, input.values) } : {}),
       }),
   });
   const sent = answer.input && !answer.pending && !answer.error ? answer.input.action : undefined;
-  const status =
-    block.status === "pending" && sent
-      ? sent === "accept"
-        ? "accepted"
-        : "declined"
-      : block.status;
+  const status = toolQuestionShownStatus(block.status, sent);
   const open = status === "pending" && canAnswer;
   return (
     <BuiCard data-testid="tool-question-card" className="w-full min-w-0 max-w-xl px-5 py-4">

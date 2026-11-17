@@ -57,7 +57,8 @@ export function toolQuestionFromElicitation(
     fields.push(field);
   }
   return {
-    source: plain(source, 200),
+    // The integration's name reaches the bot's history: one line, whatever it was named.
+    source: plain(source, 200).replace(/\s+/g, " "),
     message: plain(params.message, TOOL_QUESTION_MESSAGE_MAX),
     fields,
   };
@@ -252,7 +253,14 @@ export function mcpCallTimeoutError(timeoutMs: number): McpError {
   return new McpError(ErrorCode.RequestTimeout, "Request timed out", { timeout: timeoutMs });
 }
 
-type InFlightCall = { owner: string; source: string; ask?: ToolAsk; clock?: McpCallClock };
+type InFlightCall = {
+  owner: string;
+  source: string;
+  ask?: ToolAsk;
+  clock?: McpCallClock;
+  /** Ends when the call does: its question closes with it. */
+  signal?: AbortSignal;
+};
 
 /**
  * Routes a server's `elicitation/create` to the tool call it belongs to. The protocol does not
@@ -292,7 +300,11 @@ export class McpElicitationRouter {
     try {
       // A failed ask is a question nobody answered: the server hears a cancel and decides
       // what its call does next.
-      const answer = (await bestEffort("mcp.elicitation", ask(question, signal))) ?? {
+      const callsEnded = calls.flatMap((call) => (call.signal ? [call.signal] : []));
+      const answer = (await bestEffort(
+        "mcp.elicitation",
+        ask(question, AbortSignal.any([signal, ...callsEnded])),
+      )) ?? {
         action: "cancel",
       };
       if (answer.action === "accept") return { action: "accept", content: answer.values };
@@ -331,15 +343,19 @@ export async function callMcpToolAsking(
   const clock = new McpCallClock(options.idleMs, options.totalMs, () =>
     timedOut.abort(mcpCallTimeoutError(options.idleMs)),
   );
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, timedOut.signal])
+    : timedOut.signal;
   const untrack = router.track({
     owner: options.asker?.owner ?? "",
     source: options.asker?.source ?? "",
     ask: options.asker?.ask,
     clock,
+    signal,
   });
   try {
     return await client.callTool({ name, arguments: args }, undefined, {
-      signal: options.signal ? AbortSignal.any([options.signal, timedOut.signal]) : timedOut.signal,
+      signal,
       timeout: NO_SDK_TIMEOUT_MS,
       // A progress handler is what asks the server for progress reports at all.
       onprogress: () => clock.progress(),

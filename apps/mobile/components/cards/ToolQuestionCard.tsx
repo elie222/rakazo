@@ -1,6 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock, ToolQuestionField, ToolQuestionValue } from "@rakazo/contracts";
-import { toolQuestionInitialValues, toolQuestionSentValues } from "@rakazo/contracts";
+import type { MessageBlock, ToolQuestionDraft, ToolQuestionField } from "@rakazo/contracts";
+import {
+  toolQuestionInitialDraft,
+  toolQuestionSentValues,
+  toolQuestionShownStatus,
+} from "@rakazo/contracts";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
@@ -14,7 +18,6 @@ import { NativeSwitch } from "../native/native-switch";
 import { MenuPicker } from "../ui/menu-picker";
 
 type ToolQuestionBlock = Extract<MessageBlock, { kind: "tool_question" }>;
-type Values = Record<string, ToolQuestionValue | undefined>;
 
 const styles = StyleSheet.create({
   card: { maxWidth: 576, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
@@ -44,9 +47,9 @@ function QuestionField({
   onChange,
 }: {
   field: ToolQuestionField;
-  value: ToolQuestionValue | undefined;
+  value: ToolQuestionDraft[string];
   disabled: boolean;
-  onChange: (value: ToolQuestionValue | undefined) => void;
+  onChange: (value: ToolQuestionDraft[string]) => void;
 }) {
   const tokens = useMobileTokens();
   const label = (
@@ -102,11 +105,7 @@ function QuestionField({
               : "default"
         }
         maxLength={field.type === "text" ? field.maxLength : undefined}
-        onChangeText={(text) => {
-          if (field.type !== "number") return onChange(text === "" ? undefined : text);
-          const number = Number(text);
-          onChange(text === "" || Number.isNaN(number) ? undefined : number);
-        }}
+        onChangeText={onChange}
         style={[styles.input, { borderColor: tokens.border, color: tokens.foreground }]}
       />
       {description}
@@ -133,23 +132,20 @@ export function ToolQuestionCard({
   const tokens = useMobileTokens();
   const readOnly = useThreadReadOnly();
   const { question } = block;
-  const [values, setValues] = useState<Values>(() => toolQuestionInitialValues(question.fields));
+  const [values, setValues] = useState<ToolQuestionDraft>(() =>
+    toolQuestionInitialDraft(question.fields),
+  );
   const answer = useSave({
-    save: (input: { action: "accept" | "decline"; values?: Values }, send) =>
+    save: (input: { action: "accept" | "decline"; values?: ToolQuestionDraft }, send) =>
       send("threads/answerToolQuestion", {
         ...target,
         messageId,
         action: input.action,
-        ...(input.values ? { values: toolQuestionSentValues(input.values) } : {}),
+        ...(input.values ? { values: toolQuestionSentValues(question.fields, input.values) } : {}),
       }),
   });
   const sent = answer.input && !answer.pending && !answer.error ? answer.input.action : undefined;
-  const status =
-    block.status === "pending" && sent
-      ? sent === "accept"
-        ? "accepted"
-        : "declined"
-      : block.status;
+  const status = toolQuestionShownStatus(block.status, sent);
   const open = status === "pending" && canAnswer && !readOnly;
   return (
     <View testID="tool-question-card" style={[styles.card, { backgroundColor: native.fill }]}>
