@@ -245,21 +245,28 @@ it("retains header request IDs and estimated pricing when a response is malforme
   );
 });
 
-it("persists the body billing ID before a write-once observer sees a header ID", async () => {
-  const onRequestId = vi.fn();
-  const afterCall = vi.fn();
-  const result = await new HttpDecisionProvider("openrouter", {
-    apiKey: "fake-key",
-    fetch: async () =>
-      new Response(await response().text(), {
-        headers: { "x-request-id": "transport-fixture" },
-      }),
-    callObserver: { beforeCall: () => "call", onRequestId, afterCall },
-  }).decide(request, context);
-  expect(onRequestId.mock.calls).toEqual([["call", "fake-request"]]);
-  expect(result.usage?.providerRequestId).toBe("fake-request");
-  expect(afterCall).toHaveBeenCalledWith("call", result.usage);
-});
+it.each(["fake-request", "", "   ", undefined])(
+  "keeps a usable billing ID when the body supplies %j",
+  async (bodyId) => {
+    const onRequestId = vi.fn();
+    const afterCall = vi.fn();
+    const result = await new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        Response.json(
+          { ...(await response().json()), id: bodyId },
+          {
+            headers: { "x-request-id": "transport-fixture" },
+          },
+        ),
+      callObserver: { beforeCall: () => "call", onRequestId, afterCall },
+    }).decide(request, context);
+    const expected = bodyId?.trim() || "transport-fixture";
+    expect(onRequestId.mock.calls).toEqual([["call", expected]]);
+    expect(result.usage?.providerRequestId).toBe(expected);
+    expect(afterCall).toHaveBeenCalledWith("call", result.usage);
+  },
+);
 
 it.each([false, true])(
   "records decision usage when request-ID persistence fails (synchronous=%s)",

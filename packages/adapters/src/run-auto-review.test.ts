@@ -222,14 +222,19 @@ it("retains direct self-hosted checker usage in the customer usage view", async 
 });
 
 it.each([
-  ["typesafe", "jev-1.14", "https://api.typesafe.ai/v1/systemone", false],
-  ["typesafe", "jev-1.14", "https://api.typesafe.ai/v1/systemone", true],
-  ["typesafe", "jev-latest", "https://api.typesafe.ai/v1/systemone", false],
-  ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/api/alpha/decisions", false],
-  ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/api/alpha/decisions", true],
+  ["typesafe", "jev-1.14", "https://api.typesafe.ai/v1/systemone", "personal"],
+  ["typesafe", "jev-1.14", "https://api.typesafe.ai/v1/systemone", "included"],
+  ["typesafe", "jev-latest", "https://api.typesafe.ai/v1/systemone", "personal"],
+  ["typesafe", "jev-latest", "https://api.typesafe.ai/v1/systemone", "self-hosted"],
+  ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/api/alpha/decisions", "self-hosted"],
+  ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/api/alpha/decisions", "personal"],
+  ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/api/alpha/decisions", "included"],
 ])(
   "sends a %s checker key only to its own endpoint (%s)",
-  async (providerId, model, endpoint, included) => {
+  async (providerId, model, endpoint, funding) => {
+    const included = funding === "included";
+    const personal = funding === "personal";
+    if (!included && !personal) vi.mocked(findConnectedModelCredential).mockResolvedValueOnce(null);
     vi.stubEnv("OPENROUTER_API_KEY", "fake-openrouter-operator-key");
     vi.stubEnv("TYPESAFE_API_KEY", "fake-typesafe-operator-key");
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
@@ -249,12 +254,14 @@ it.each([
       });
     });
     vi.stubGlobal("fetch", fetchMock);
+    const registerSecrets = vi.fn();
+    const createUsage = vi.fn();
     const deps = {
       billingEnabled: included,
       prisma: {
         $transaction: async (work: (tx: unknown) => unknown) =>
           work({
-            usageRecord: { createMany: vi.fn(), updateMany: vi.fn() },
+            usageRecord: { createMany: createUsage, updateMany: vi.fn() },
             modelCreditEntry: { findUnique: async () => null },
           }),
       },
@@ -263,7 +270,7 @@ it.each([
     const checker = await autoReviewCheckerProvider(
       deps,
       { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
-      { memberChecker: !included, registerSecrets: vi.fn() },
+      { memberChecker: personal, registerSecrets },
       { provider: providerId, model },
     );
     await checker.review(
@@ -283,12 +290,19 @@ it.each([
         signal: new AbortController().signal,
       },
     );
+    if (!personal)
+      expect(registerSecrets).toHaveBeenCalledWith([`fake-${providerId}-operator-key`]);
+    expect(createUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ fundingSource: included ? "operator" : "customer" })],
+      }),
+    );
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       endpoint,
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: `Bearer ${included ? `fake-${providerId}-operator-key` : "fixture-model-key"}`,
+          Authorization: `Bearer ${personal ? "fixture-model-key" : `fake-${providerId}-operator-key`}`,
         }),
       }),
     );

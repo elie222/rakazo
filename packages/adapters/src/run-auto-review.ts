@@ -91,9 +91,10 @@ export async function autoReviewCheckerProvider(
     throw new Error("Selected checker connection is unavailable");
   }
   const decision = decisionModel(checker.provider, checker.model);
-  const includedKey = included ? decision?.deploymentApiKey(process.env) : undefined;
-  if (includedKey) registerSecrets([includedKey]);
-  const judgeKey = includedKey
+  const deploymentKey =
+    deploymentChoice && !reviewCredential ? decision?.deploymentApiKey(process.env) : undefined;
+  if (deploymentKey) registerSecrets([deploymentKey]);
+  const judgeKey = deploymentKey
     ? null
     : await resolveModelKey(
         operatorFunded ? { ...deps, billingEnabled: false } : deps,
@@ -108,7 +109,7 @@ export async function autoReviewCheckerProvider(
   if (decision)
     return new DecisionAutoReviewProvider({
       provider: decision.create({
-        apiKey: includedKey ?? judgeKey?.apiKey ?? "",
+        apiKey: deploymentKey ?? judgeKey?.apiKey ?? "",
         callObserver,
         onUsage: operatorFunded ? undefined : onUsage,
       }),
