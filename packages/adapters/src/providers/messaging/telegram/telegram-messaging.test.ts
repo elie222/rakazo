@@ -59,7 +59,69 @@ function createSurface(sendErrors: string[] = []) {
   return { surface, sends, threadId: "telegram:123" };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+describe("Telegram authenticated linking destination", () => {
+  it("publishes the token-authenticated identity rather than a configured username", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    const { surface } = createSurface();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBe("@testbot");
+    await surface.shutdown();
+  });
+
+  it("does not advertise a destination when identity lookup fails", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    const { surface } = createSurface();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("identity lookup failed");
+      }),
+    );
+    await surface.initialize();
+    expect(surface.platforms()[0]?.address).toBeUndefined();
+    await surface.shutdown();
+  });
+
+  it("discovers default and named bot destinations independently from their own tokens", async () => {
+    vi.stubEnv("TELEGRAM_BOT_USERNAME", "another_valid_bot");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const named = new URL(input).pathname.includes("botnamed-token/");
+        return Response.json({
+          ok: true,
+          result: {
+            id: named ? 1000 : 999,
+            is_bot: true,
+            username: named ? "actual_support_bot" : "actual_default_bot",
+          },
+        });
+      }),
+    );
+    const surface = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        telegramBotToken: "default-token",
+        telegramWebhookSecret: "fake-default-secret",
+        telegramBots: [
+          { name: "support", botToken: "named-token", webhookSecret: "fake-support-secret" },
+        ],
+      }),
+    );
+    expect(surface.platforms().every(({ address }) => address === undefined)).toBe(true);
+    await surface.initialize();
+    expect(surface.platforms().map(({ provider, address }) => ({ provider, address }))).toEqual([
+      { provider: "telegram", address: "@actual_default_bot" },
+      { provider: "telegram-support", address: "@actual_support_bot" },
+    ]);
+    await surface.shutdown();
+  });
+});
 
 describe("Telegram messaging Markdown", () => {
   it.each([

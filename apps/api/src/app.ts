@@ -813,11 +813,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
-      addresses: Object.fromEntries(
-        (messaging?.platforms() ?? []).flatMap((platform) =>
-          platform.address ? [[platform.provider, platform.address]] : [],
-        ),
-      ),
+      get addresses() {
+        return Object.fromEntries(
+          (messaging?.platforms() ?? []).flatMap((platform) =>
+            platform.address ? [[platform.provider, platform.address]] : [],
+          ),
+        );
+      },
       openSignup: env.messagingOpenSignup,
     },
     env: {

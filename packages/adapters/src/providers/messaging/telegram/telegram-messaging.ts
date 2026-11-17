@@ -26,18 +26,11 @@ export const telegramMessaging = defineMessagingPlatform({
   env: {
     telegramBotToken: { name: "TELEGRAM_BOT_TOKEN", required: true },
     telegramWebhookSecret: { name: "TELEGRAM_WEBHOOK_SECRET_TOKEN", required: true },
-    telegramBotUsername: { name: "TELEGRAM_BOT_USERNAME" },
     /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
     telegramBots: { read: telegramBotsFromEnv },
   },
   mount(env, options) {
-    return telegramPlatform(
-      "telegram",
-      env.telegramBotToken,
-      env.telegramWebhookSecret,
-      options,
-      env.telegramBotUsername,
-    );
+    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, options);
   },
   // Same rules as the default bot; each named bot has its own token and so
   // its own getUpdates slot. The surface maps their native "telegram:" thread
@@ -53,10 +46,9 @@ export const telegramMessaging = defineMessagingPlatform({
         continue;
       }
       tokens.add(bot.botToken.trim());
-      platforms.push({
-        ...telegramPlatform(provider, bot.botToken, bot.webhookSecret, options, bot.username),
-        adapterName: "telegram",
-      });
+      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, options);
+      platform.adapterName = "telegram";
+      platforms.push(platform);
     }
     return platforms;
   },
@@ -67,7 +59,6 @@ export interface TelegramBotCredentials {
   name: string;
   botToken: string;
   webhookSecret: string;
-  username?: string;
 }
 
 const TELEGRAM_NAMED_TOKEN = /^TELEGRAM_BOT_TOKEN_([A-Z0-9]+)$/;
@@ -90,12 +81,10 @@ export function telegramBotsFromEnv(
     const botToken = value?.trim();
     const webhookSecret = env[`TELEGRAM_WEBHOOK_SECRET_TOKEN_${suffix}`]?.trim();
     if (!botToken || !webhookSecret) continue;
-    const username = env[`TELEGRAM_BOT_USERNAME_${suffix}`]?.trim();
     bots.push({
       name: suffix.toLowerCase(),
       botToken,
       webhookSecret,
-      ...(username ? { username } : {}),
     });
   }
   bots.sort((a, b) => a.name.localeCompare(b.name));
@@ -107,7 +96,6 @@ function telegramPlatform(
   botToken: string,
   secretToken: string,
   options: MessagingMountContext,
-  username?: string,
 ): MessagingPlatform {
   const adapter = new TelegramAdapterWithLinkAddresses({
     botToken,
@@ -119,7 +107,9 @@ function telegramPlatform(
   });
   return {
     provider,
-    address: telegramLinkAddress(username),
+    get address() {
+      return adapter.verifiedLinkAddress;
+    },
     capabilities: { direct: true, groups: true, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
@@ -183,6 +173,25 @@ export function telegramFallbackText(
 
 /** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
 class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
+  verifiedLinkAddress: string | undefined;
+
+  protected override async telegramFetch<TResult>(
+    method: string,
+    payload?: Record<string, unknown> | FormData,
+    request?: { signal?: AbortSignal },
+  ): Promise<TResult> {
+    const result = await super.telegramFetch<TResult>(method, payload, request);
+    if (method === "getMe") {
+      const identity = asRecord(result);
+      this.verifiedLinkAddress = telegramLinkAddress(
+        identity ? stringField(identity, "username") : undefined,
+      );
+      // The SDK may read a legacy username override from the environment.
+      if (this.verifiedLinkAddress) this._userName = this.verifiedLinkAddress.slice(1);
+    }
+    return result;
+  }
+
   protected override renderPlainTextMessage(
     message: AdapterPostableMessage,
     card: CardElement | null,

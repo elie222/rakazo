@@ -22,24 +22,21 @@ restart those processes. Values below are placeholders, never real credentials:
 API_URL=https://api.example.test
 TELEGRAM_BOT_TOKEN=<deployment-bot-token>
 TELEGRAM_WEBHOOK_SECRET_TOKEN=<random-webhook-secret>
-TELEGRAM_BOT_USERNAME=example_bot
 MESSAGING_OPEN_SIGNUP=false
 ```
 
 Use a cryptographically random webhook secret (for example, 32 random bytes encoded as hex).
-The username is public: copy the username reported by `getMe`, without a URL; a leading `@`
-is accepted. It supplies the destination shown in the existing code instructions on web,
-Electron and mobile. It is optional for existing installations; without it users still need
-the operator to tell them where to send the code. A malformed optional username is omitted
-with a warning; it does not disable messaging.
-Changing the bot username requires updating this setting and restarting.
+The public linking destination is discovered from the authenticated `getMe` response when the
+adapter initializes. No username setting is needed. Until identity lookup succeeds, no destination
+is advertised. A legacy SDK username override cannot change the displayed destination. Restart
+the deployment after renaming the bot so its verified identity is refreshed.
 
 The standard Compose files forward these settings. Named bots additionally use
-`TELEGRAM_BOT_TOKEN_SUPPORT`, `TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT` and optional
-`TELEGRAM_BOT_USERNAME_SUPPORT`. Forward all three through a Compose override to API and worker
-as described in [named settings](./self-host-configuration.md#settings-with-names-you-choose).
-The provider and route for that mount are `telegram-support` and
-`/api/v1/messaging/webhook/telegram-support`. Each token must identify a distinct bot.
+`TELEGRAM_BOT_TOKEN_SUPPORT` and `TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT`. Forward both through a
+Compose override to API and worker as described in
+[named settings](./self-host-configuration.md#settings-with-names-you-choose). The provider and route
+for that mount are `telegram-support` and `/api/v1/messaging/webhook/telegram-support`.
+Each token must identify a distinct bot.
 
 ## Register the webhook (operator action, not performed here)
 
@@ -124,7 +121,7 @@ link codes, message contents, or unredacted screenshots.
 1. Verify the bot's identity and HTTPS ingress; verify an unsigned request and one with an
    incorrect secret are refused without creating an identity or run.
 2. Connect a supported model in Rakazo. In **Settings → Messaging**, select an owned bot,
-   choose Telegram, and verify the configured `@example_bot` destination appears. Open that
+   choose Telegram, and verify the destination discovered from the authenticated bot identity appears. Open that
    bot in Telegram, press **Start**, then send only the displayed code in the private chat
    within ten minutes. `/start` by itself does not link an account.
 3. Confirm the link appears in Rakazo and the confirmation returns to the same private chat.

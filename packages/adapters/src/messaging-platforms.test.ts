@@ -65,51 +65,6 @@ describe("messagingPlatformsFromEnv", () => {
     expect(addresses.slack).toBeUndefined();
   });
 
-  it("publishes each deployment bot's public destination without exposing credentials", () => {
-    const env = messagingEnvFromProcess({
-      TELEGRAM_BOT_TOKEN: "fake-token",
-      TELEGRAM_WEBHOOK_SECRET_TOKEN: "fake-secret",
-      TELEGRAM_BOT_USERNAME: " @example_bot ",
-      TELEGRAM_BOT_TOKEN_SUPPORT: "fake-support-token",
-      TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT: "fake-support-secret",
-      TELEGRAM_BOT_USERNAME_SUPPORT: "example_support_bot",
-    });
-    const surface = new ChatSdkMessagingSurface(messagingPlatformsFromEnv(env));
-    expect(surface.platforms().map(({ provider, address }) => ({ provider, address }))).toEqual([
-      { provider: "telegram", address: "@example_bot" },
-      { provider: "telegram-support", address: "@example_support_bot" },
-    ]);
-  });
-
-  it("ignores malformed display usernames without disabling messaging mounts", () => {
-    const platforms = messagingPlatformsFromEnv({
-      telegramBotToken: "fake-token",
-      telegramWebhookSecret: "fake-secret",
-      telegramBotUsername: "https://example.test/private",
-      telegramBots: [
-        {
-          name: "support",
-          botToken: "fake-support",
-          webhookSecret: "fake-secret",
-          username: "invalid" + "/name",
-        },
-      ],
-      whatsappAccessToken: "fake-whatsapp-token",
-      whatsappPhoneNumberId: "fake-phone",
-      whatsappAppSecret: "fake-app-secret",
-      whatsappVerifyToken: "fake-verify",
-    });
-    expect(
-      platforms
-        .filter(({ provider }) => provider.startsWith("telegram"))
-        .map(({ provider, address }) => ({ provider, address })),
-    ).toEqual([
-      { provider: "telegram", address: undefined },
-      { provider: "telegram-support", address: undefined },
-    ]);
-    expect(platforms.some(({ provider }) => provider === "whatsapp")).toBe(true);
-  });
-
   it.each([
     undefined,
     "http://localhost:3100",
