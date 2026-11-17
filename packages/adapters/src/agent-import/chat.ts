@@ -26,7 +26,7 @@ import {
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { FleetCardSummary } from "../approval-ask.js";
 import type { ExecutorDeps } from "../executor-deps.js";
@@ -103,17 +103,12 @@ export async function readRunAgentExport(
       select: { storageKey: true },
     });
     if (!row) continue;
-    let bytes: Uint8Array;
-    try {
-      bytes = await deps.artifacts.get(row.storageKey, context);
-    } catch (error) {
-      // A file that cannot be read is left out; the text and other files may hold the export.
-      if (context.signal?.aborted) throw error;
-      getLogger().warn("agent export attachment could not be read", {
-        "artifact.id": block.artifactId,
-      });
-      continue;
-    }
+    // A file that cannot be read is left out; the text and other files may hold the export.
+    const bytes = await bestEffort(
+      "agent export attachment",
+      deps.artifacts.get(row.storageKey, context),
+    );
+    if (!bytes) continue;
     const text = new TextDecoder().decode(bytes);
     // A file that would take the text past the size an export may have is not one.
     if (length + text.length > GROK_BOT_REPLY_MAX_LENGTH) continue;
@@ -158,7 +153,8 @@ function readExport(parts: readonly string[]): GrokBot[] | { error: string } {
   }
 }
 
-const savedName = (bot: GrokBot) => bot.name.slice(0, BOT_NAME_MAX_LENGTH);
+/** The name a bot is shown and created with: no invisible or direction-changing characters. */
+const savedName = (bot: GrokBot) => bot.name.replace(/\p{Cf}/gu, "").slice(0, BOT_NAME_MAX_LENGTH);
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -423,7 +419,7 @@ async function importOne(
         AgentImportCreateInput.parse({
           importKey: keyFor(attempt),
           files,
-          name: plan.suggestedName || bot.name,
+          name: savedName(bot) || plan.suggestedName,
           description: keyedDescription ? "" : plan.suggestedDescription,
           selection,
         }),
