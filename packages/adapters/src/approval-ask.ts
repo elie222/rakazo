@@ -1,6 +1,6 @@
 import type { ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
@@ -34,9 +34,11 @@ export type FleetCardSummary = {
  * instructions plus the two length lines above them.
  */
 export function approvalDetailLength(toolName: string): number {
-  return toolName === "set_child_instructions"
-    ? BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH
-    : MAX_APPROVAL_DETAIL_LENGTH;
+  if (toolName === "set_child_instructions")
+    return BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH;
+  // A line per imported bot: its name and three counts, for up to 100 bots.
+  if (toolName === "import_agents") return 100 * (BOT_NAME_MAX_LENGTH + 60);
+  return MAX_APPROVAL_DETAIL_LENGTH;
 }
 
 function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {

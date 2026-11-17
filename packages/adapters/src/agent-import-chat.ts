@@ -1,12 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
-import type {
-  Actor,
-  AgentImportPlan,
-  AgentImportStatus,
-  McpServerConfigInput,
-} from "@rakazo/contracts";
+import type { Actor, AgentImportPlan, McpServerConfigInput } from "@rakazo/contracts";
 import {
   AgentImportCreateInput,
   ConnectionSetupError,
@@ -39,6 +34,11 @@ import {
   agentExportSharedName,
   agentExportUnknownBots,
   agentExportUnreadable,
+  importNeedsText,
+  LEFT_OUT_BLOCKED,
+  LEFT_OUT_FOR_REVIEW,
+  SERVER_ADDRESS_REFUSED,
+  skippedText,
 } from "./agent-import-chat.prompt.js";
 import type { AgentImportServices } from "./agent-import-write.js";
 import { createImportedBot, previewAgentImport } from "./agent-import-write.js";
@@ -98,7 +98,18 @@ export async function readRunAgentExport(
       select: { storageKey: true },
     });
     if (!row) continue;
-    const text = new TextDecoder().decode(await deps.artifacts.get(row.storageKey, context));
+    let bytes: Uint8Array;
+    try {
+      bytes = await deps.artifacts.get(row.storageKey, context);
+    } catch (error) {
+      // A file that cannot be read is left out; the text and other files may hold the export.
+      if (context.signal?.aborted) throw error;
+      getLogger().warn("agent export attachment could not be read", {
+        "artifact.id": block.artifactId,
+      });
+      continue;
+    }
+    const text = new TextDecoder().decode(bytes);
     parts.push(text);
     length += text.length;
   }
@@ -237,6 +248,9 @@ export function runAgentImportServices(deps: ExecutorDeps): AgentImportServices 
   };
 }
 
+/** A server address this deployment will not reach. */
+const ADDRESS_REFUSED = "mcp_address_refused";
+
 /** The address must be one a bot may reach; why it is not is the user's to fix. */
 async function checkRemoteEndpoint(deps: ExecutorDeps, endpoint: string): Promise<void> {
   try {
@@ -247,7 +261,7 @@ async function checkRemoteEndpoint(deps: ExecutorDeps, endpoint: string): Promis
   } catch (error) {
     // Only a refused address is the user's to fix; anything else is a server failure.
     if (!(error instanceof ConnectionSetupError)) throw error;
-    throw new ClientError("BAD_REQUEST", error.message, "BAD_REQUEST", { cause: error });
+    throw new ClientError("BAD_REQUEST", error.message, ADDRESS_REFUSED, { cause: error });
   }
 }
 
@@ -265,35 +279,14 @@ export type ImportedAgent =
     }
   | { name: string; error: string };
 
-const NEED_TEXT: Record<string, string> = {
-  turn_on: "turn it on",
-  credentials: "sign in again with",
-  env: "set the variables",
-  requires: "needs",
-  local_paths: "uses paths on the user's computer",
-  bundled_files: "uses files that were not imported",
-  webhook: "point its source at the webhook address the routine shows",
-  email_address: "give the bot an email address",
-};
-
-const SKIP_TEXT: Record<string, string> = {
-  unsupported: "not supported here",
-  reconnect: "connect it again here",
-  invalid_skill: "not a readable skill",
-  invalid_file: "could not be read",
-};
-
 /** Settings' default ticks, except that the owner's approval stands in for ticking what acts. */
 function chatSelection(plan: AgentImportPlan) {
   const held = agentImportHeldBack(plan);
   const out = new Set([...held.review, ...held.blocked]);
   const kept = <T extends { id: string }>(items: T[]) => items.filter((item) => !out.has(item.id));
   const reasons = new Map<string, string>([
-    ...held.review.map((id): [string, string] => [
-      id,
-      "looks like it contains a key, or is an unchanged default",
-    ]),
-    ...held.blocked.map((id): [string, string] => [id, "cannot run here"]),
+    ...held.review.map((id): [string, string] => [id, LEFT_OUT_FOR_REVIEW]),
+    ...held.blocked.map((id): [string, string] => [id, LEFT_OUT_BLOCKED]),
   ]);
   const titled = [
     ...plan.instructions,
@@ -319,7 +312,7 @@ function chatSelection(plan: AgentImportPlan) {
       ),
       ...plan.skipped.map((entry) => ({
         item: entry.path,
-        reason: SKIP_TEXT[entry.reason] ?? entry.reason,
+        reason: skippedText(entry.reason),
       })),
     ],
   };
@@ -385,33 +378,42 @@ async function importOne(
     });
     const chosen = chatSelection(plan);
     // The same key on a replay returns the bot this call already made.
+    const keyFor = (attempt: string) => `chat:${digestOf(`${key}:${attempt}`).slice(0, 40)}`;
     const create = (selection: typeof chosen.selection, attempt: string) =>
       createImportedBot(
         services,
         actor,
         AgentImportCreateInput.parse({
-          importKey: `chat:${digestOf(`${key}:${attempt}`).slice(0, 40)}`,
+          importKey: keyFor(attempt),
           files,
           name: plan.suggestedName || bot.name,
           description: plan.suggestedDescription,
           selection,
         }),
       );
-    let created: Awaited<ReturnType<typeof create>>;
     let servers = chosen.kept(plan.mcpServers);
     let leftOut = chosen.leftOut;
-    try {
-      created = await create(chosen.selection, "all");
-    } catch (error) {
-      // An address this server refuses would keep the whole bot out; the bot comes without
-      // its servers instead, and they are reported. Settings lets the user untick one.
-      if (!(error instanceof ClientError) || servers.length === 0) throw error;
-      created = await create({ ...chosen.selection, mcpServers: [] }, "without-servers");
-      leftOut = [
-        ...leftOut,
-        ...servers.map((server) => ({ item: server.title, reason: error.message })),
-      ];
+    const withoutServers = async (reason: string) => {
+      leftOut = [...leftOut, ...servers.map((server) => ({ item: server.title, reason }))];
       servers = [];
+      return create({ ...chosen.selection, mcpServers: [] }, "without-servers");
+    };
+    // A replay finds the bot an earlier attempt made without its servers before trying again.
+    const earlier = await services.prisma.agentImport.findFirst({
+      where: { spaceId: actor.spaceId, userId: actor.userId, importKey: keyFor("without-servers") },
+      select: { id: true },
+    });
+    let created: Awaited<ReturnType<typeof create>>;
+    if (earlier) created = await withoutServers(SERVER_ADDRESS_REFUSED);
+    else {
+      try {
+        created = await create(chosen.selection, "all");
+      } catch (error) {
+        // An address this server refuses would keep the whole bot out; the bot comes without
+        // its servers instead, and they are reported. Settings lets the user untick one.
+        if (!(error instanceof ClientError) || error.code !== ADDRESS_REFUSED) throw error;
+        created = await withoutServers(error.message);
+      }
     }
     return {
       name: created.name,
@@ -419,10 +421,10 @@ async function importOne(
       instructions: chosen.selection.instructions.length > 0,
       memory: chosen.kept(plan.memory).map((item) => item.path),
       skills: chosen.kept(plan.skills).map((item) => item.name),
-      mcpServers: servers.map((item) => ({ name: item.name, needs: needsText(item.status) })),
+      mcpServers: servers.map((item) => ({ name: item.name, needs: importNeedsText(item.status) })),
       routines: chosen.kept(plan.routines).map((item) => ({
         name: item.title,
-        needs: needsText(item.status),
+        needs: importNeedsText(item.status),
       })),
       leftOut,
     };
@@ -432,24 +434,4 @@ async function importOne(
     getLogger().error("chat agent import failed", error);
     return { name: bot.name, error: AGENT_IMPORT_FAILED };
   }
-}
-
-function needsText(status: AgentImportStatus): string[] {
-  if (status.kind !== "needs_setup") return [];
-  return status.needs.map((need) => {
-    switch (need.kind) {
-      case "chat_app":
-        return `connect the bot to ${need.provider}`;
-      case "credentials":
-      case "env":
-      case "requires":
-        return `${NEED_TEXT[need.kind]}: ${need.names.join(", ")}`;
-      case "api_key":
-        return `an API key for ${need.provider}`;
-      case "program":
-        return `the program ${need.name}`;
-      default:
-        return NEED_TEXT[need.kind] ?? need.kind;
-    }
-  });
 }

@@ -1,3 +1,5 @@
+import type { AgentImportSkipReason, AgentImportStatus } from "@rakazo/contracts";
+
 /** Model-facing text of import_agents' refusals and result. */
 
 export const AGENT_EXPORT_NOT_FOUND =
@@ -31,4 +33,51 @@ export function agentExportUnknownBots(missing: string[], available: string[]): 
 
 export function agentExportSharedName(name: string): string {
   return `The export has more than one bot named "${name}". Ask the user to import these in Settings, where they can pick each one.`;
+}
+
+export const LEFT_OUT_FOR_REVIEW = "looks like it contains a key, or is an unchanged default";
+export const LEFT_OUT_BLOCKED = "cannot run here";
+export const SERVER_ADDRESS_REFUSED = "this server refused its address";
+
+const NEED_TEXT: Record<string, string> = {
+  turn_on: "turn it on",
+  credentials: "sign in again with",
+  env: "set the variables",
+  requires: "needs",
+  local_paths: "uses paths on the user's computer",
+  bundled_files: "uses files that were not imported",
+  webhook: "point its source at the webhook address the routine shows",
+  email_address: "give the bot an email address",
+};
+
+const SKIP_TEXT: Partial<Record<AgentImportSkipReason, string>> = {
+  unsupported: "not supported here",
+  reconnect: "connect it again here",
+  invalid_skill: "not a readable skill",
+  invalid_file: "could not be read",
+};
+
+export function skippedText(reason: AgentImportSkipReason): string {
+  return SKIP_TEXT[reason] ?? reason;
+}
+
+/** What an imported item still needs, as the managing bot tells the user. */
+export function importNeedsText(status: AgentImportStatus): string[] {
+  if (status.kind !== "needs_setup") return [];
+  return status.needs.map((need) => {
+    switch (need.kind) {
+      case "chat_app":
+        return `connect the bot to ${need.provider}`;
+      case "credentials":
+      case "env":
+      case "requires":
+        return `${NEED_TEXT[need.kind]}: ${need.names.join(", ")}`;
+      case "api_key":
+        return `an API key for ${need.provider}`;
+      case "program":
+        return `the program ${need.name}`;
+      default:
+        return NEED_TEXT[need.kind] ?? need.kind;
+    }
+  });
 }

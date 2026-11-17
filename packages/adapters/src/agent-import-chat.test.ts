@@ -192,7 +192,11 @@ describe("importing the approved bots", () => {
     const services = fakeImportServices({
       createBot,
       prepareMcpServer: async () => {
-        throw new ClientError("BAD_REQUEST", "Connector URL targets a private host");
+        throw new ClientError(
+          "BAD_REQUEST",
+          "Connector URL targets a private host",
+          "mcp_address_refused",
+        );
       },
     });
     const result = await importAgentsFromChat(
