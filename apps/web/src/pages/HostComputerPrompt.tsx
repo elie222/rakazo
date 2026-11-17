@@ -9,11 +9,11 @@ import {
   DialogTitle,
 } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import { sandboxCheckFailureMessage } from "../lib/computer-sandbox";
-import { desktopBridge } from "../lib/desktop";
-import { useSave } from "../lib/query";
-import { rpc } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { sandboxCheckFailureMessage } from "../lib/computers/computer-sandbox";
+import { desktopBridge } from "../lib/platform/desktop";
+import { useSave } from "../lib/query/query";
+import { rpc } from "../lib/query/rpc";
+import { errorText } from "../lib/query/user-error";
 
 export function HostComputerPrompt({
   initialMe,

@@ -30,7 +30,7 @@ const inbound: MessagingInboundMessage = {
   participants: [],
   channelName: null,
 };
-function fixture() {
+function fixture(fallback?: MessagingSurface) {
   const installations = new Map<string, MessagingInstallation>(
     ["a", "b"].map((id) => [
       id,
@@ -104,7 +104,7 @@ function fixture() {
     }),
   };
   return {
-    messaging: new InstalledMessagingSurface(store, provider),
+    messaging: new InstalledMessagingSurface(store, provider, fallback),
     installations,
     store,
     provider,
@@ -117,6 +117,26 @@ const webhook = (team = "Ta") =>
   new Request(`https://app.example.test/webhook?team=${team}`, { method: "POST", body: "{}" });
 
 describe("installed messaging isolation", () => {
+  it.each([false, true])(
+    "preserves fallback address discovery while hiding the installed provider (dynamic=%s)",
+    async (dynamic) => {
+      const addresses = { telegram: "@testbot", slack: "obsolete" };
+      const resolveAddresses = dynamic ? vi.fn(async () => addresses) : undefined;
+      const fallback = {
+        resolveAddresses,
+        platforms: () =>
+          Object.entries(addresses).map(([provider, address]) => ({
+            provider,
+            address,
+            capabilities: { direct: true, groups: true, receipt: null },
+          })),
+      } as unknown as MessagingSurface;
+      const f = fixture(fallback);
+      expect(await f.messaging.resolveAddresses(context.signal)).toEqual({ telegram: "@testbot" });
+      if (resolveAddresses) expect(resolveAddresses).toHaveBeenCalledWith(context.signal);
+    },
+  );
+
   it("namespaces the same Slack user, message and channel separately in each workspace", async () => {
     const f = fixture();
     const events: MessagingInboundEvent[] = [];

@@ -57,6 +57,7 @@ import {
   installedMessaging,
   isMessagingSurfaceEnabled,
   machineCleanupRecords,
+  messagingAddresses,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -817,11 +818,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
-      addresses: Object.fromEntries(
-        (messaging?.platforms() ?? []).flatMap((platform) =>
-          platform.address ? [[platform.provider, platform.address]] : [],
-        ),
-      ),
+      get addresses() {
+        return messagingAddresses(messaging?.platforms() ?? []);
+      },
+      resolveAddresses: messaging?.resolveAddresses?.bind(messaging),
       openSignup: env.messagingOpenSignup,
     },
     env: {

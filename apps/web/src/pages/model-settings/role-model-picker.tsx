@@ -15,7 +15,7 @@ import {
 } from "@rakazo/ui-web";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useListSearch } from "../../lib/use-list-search";
 
 /** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */

@@ -1,6 +1,6 @@
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
-import type { ErrorDetails } from "../lib/user-error";
+import type { ErrorDetails } from "../lib/query/user-error";
 
 /** Inline failures stay brief; documented recovery instructions open only on request. */
 export function ErrorNotice({ error, children }: { error: ErrorDetails; children?: ReactNode }) {
