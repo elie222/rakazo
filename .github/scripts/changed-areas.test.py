@@ -120,6 +120,7 @@ class ChangedAreasTests(unittest.TestCase):
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
             (".github/workflows/playwright.yml", expect(*AREAS)),
+            (".github/workflows/test-suites.yml", expect(*AREAS)),
             (".github/actions/setup-workspace/action.yml", expect(*AREAS)),
             (".github/scripts/restore-postgres-image.sh", expect(*AREAS)),
             (".github/actions/start-postgres/action.yml", expect(*AREAS)),
