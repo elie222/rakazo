@@ -110,6 +110,10 @@ export function scheduleCreateBranch(
   for (const name of scheduleTimingNames) {
     properties[name] = activeNames.has(name) ? scheduleTimingSpecs[name] : blankScheduleTiming;
   }
+  // Optional here, so a serializer's null for it means no cron, as in the other branches.
+  if (activeNames.has("cron")) {
+    properties.cron = { anyOf: [scheduleTimingSpecs.cron, { type: "null" }] };
+  }
   const repeats = activeNames.has("cron") || activeNames.has("every");
   properties.on = repeats || activeNames.has("watch") ? routineEventsSpec : blankScheduleTiming;
   properties.startAt = repeats ? startAtSpec : blankScheduleTiming;

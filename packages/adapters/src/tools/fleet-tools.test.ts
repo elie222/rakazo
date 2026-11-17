@@ -1676,6 +1676,31 @@ describe("createChildRoutine", () => {
     expect(prisma.routine.create).not.toHaveBeenCalled();
   });
 
+  it("looks up a retry by the approved events too", async () => {
+    const { prisma } = fakeFleet({
+      ...fleet,
+      routines: [{ id: "routine-1", name: "Daily", crons: [], nextRunAt: null }],
+    });
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      schedule: {},
+      on: { webhook: true, chat: "Slack" },
+    });
+    expect(result).toMatchObject({ ok: true, routineId: "routine-1" });
+    expect(prisma.routine.create).not.toHaveBeenCalled();
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          crons: { equals: [] },
+          webhookEnabled: true,
+          githubEnabled: false,
+          messageProvider: { not: null },
+          emailSenders: null,
+        }),
+      }),
+    );
+  });
+
   it("does not replay an account-derived request onto an unrelated pinned routine", async () => {
     // Same bot, thread, prompt and cron, but pinned to another zone: the replay of an
     // account-derived request must look at the account's current zone, not match any

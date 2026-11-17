@@ -1070,21 +1070,17 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
+      // The identical routine has the approved events too, so a retry returns it instead of a
+      // twin. A bot links one chat app, so any chat event on it is the approved one.
+      webhookEnabled: on?.webhook === true,
+      githubEnabled: on?.git === true,
+      messageProvider: on?.chat ? { not: null } : null,
+      emailSenders: typeof on?.email === "string" ? on.email : null,
     },
-    select: {
-      id: true,
-      name: true,
-      crons: true,
-      nextRunAt: true,
-      webhookEnabled: true,
-      githubEnabled: true,
-      messageProvider: true,
-      emailSenders: true,
-    },
+    select: { id: true, name: true, crons: true, nextRunAt: true },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
-  // The identical routine has the approved events too, so a retry returns it instead of a twin.
-  if (existing && JSON.stringify(routineEventsView(existing)) === JSON.stringify(on ?? {})) {
+  if (existing) {
     return {
       ok: true as const,
       routineId: existing.id,

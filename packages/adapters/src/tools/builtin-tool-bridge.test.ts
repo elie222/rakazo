@@ -60,7 +60,7 @@ describe("built-in tool bridge", () => {
     // search_history lists earlier tool work by kind without a keyword; message_bot is the
     // most used deferred tool, and a lookup before each message cost a step; schedule_create
     // takes the events (webhook, Git, chat, email) a routine can start on.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(34_433);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(34_461);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
