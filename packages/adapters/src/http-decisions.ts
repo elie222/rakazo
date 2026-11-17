@@ -59,6 +59,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         ? (inputTokensEstimate * pricing.inputUsdPerMillion) / 1_000_000
         : undefined,
     });
+    let result: Pick<DecisionResult, "model" | "answers">;
     let usage: AgentUsage | null = null;
     const pricingSnapshot = pricing
       ? { input: pricing.inputUsdPerMillion, output: 0, source: pricing.pricingUrl }
@@ -93,8 +94,6 @@ export class HttpDecisionProvider implements DecisionProvider {
         throw error;
       });
       providerRequestId = response.headers.get("x-request-id");
-      if (providerRequestId && reservation)
-        await this.options.callObserver?.onRequestId?.(reservation, providerRequestId);
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
@@ -115,8 +114,6 @@ export class HttpDecisionProvider implements DecisionProvider {
         ),
       );
       providerRequestId = parsed.id ?? providerRequestId;
-      if (parsed.id && reservation)
-        await this.options.callObserver?.onRequestId?.(reservation, parsed.id);
       usage = {
         inputTokens: parsed.usage?.input_tokens ?? null,
         outputTokens: parsed.usage?.output_tokens ?? null,
@@ -135,7 +132,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           throw new DecisionProviderError("invalid_response");
         answers[id] = answer.data;
       }
-      return { model: parsed.model ?? request.model, answers, usage };
+      result = { model: parsed.model ?? request.model, answers };
     } catch (error) {
       if (error instanceof DecisionProviderError) throw error;
       // Transport and validation errors can contain credentials or supplied state.
@@ -174,9 +171,15 @@ export class HttpDecisionProvider implements DecisionProvider {
             : {}),
         };
       }
-      if (reservation) {
-        const priced = await this.options.callObserver?.afterCall(reservation, usage);
-        if (priced) usage = priced;
+      try {
+        // A body ID is the billing identity; retain the header only when no body ID arrived.
+        if (providerRequestId && reservation)
+          await this.options.callObserver?.onRequestId?.(reservation, providerRequestId);
+      } finally {
+        if (reservation) {
+          const priced = await this.options.callObserver?.afterCall(reservation, usage);
+          if (priced) usage = priced;
+        }
       }
       if (usage)
         await this.options.onUsage?.({
@@ -187,5 +190,6 @@ export class HttpDecisionProvider implements DecisionProvider {
           callId,
         });
     }
+    return { ...result, usage: usage ?? undefined };
   }
 }

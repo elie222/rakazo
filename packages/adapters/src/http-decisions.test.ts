@@ -93,7 +93,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
   });
   it("reports the observer tariff rather than a provider bill", async () => {
     const onUsage = vi.fn();
-    await new HttpDecisionProvider(provider, {
+    const result = await new HttpDecisionProvider(provider, {
       apiKey: "fake-key",
       fetch: async () => response(),
       onUsage,
@@ -102,9 +102,8 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
         afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
       },
     }).decide(request, context);
-    expect(onUsage).toHaveBeenCalledWith(
-      expect.objectContaining({ costUsd: 0.25, costSource: "deployment-tariff" }),
-    );
+    expect(result.usage).toMatchObject({ costUsd: 0.25, costSource: "deployment-tariff" });
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining(result.usage));
   });
   it("rejects unknown answers while retaining provider costs", async () => {
     const onUsage = vi.fn();
@@ -178,14 +177,22 @@ describe("decision provider failures", () => {
 
   it("keeps a prompt count for a response without usage", async () => {
     const afterCall = vi.fn();
-    await new HttpDecisionProvider("openrouter", {
+    const onUsage = vi.fn();
+    const result = await new HttpDecisionProvider("openrouter", {
       apiKey: "fake-key",
+      onUsage,
       fetch: async () =>
         Response.json({
           answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
         }),
       callObserver: { beforeCall: () => "reservation", afterCall },
     }).decide(request, context);
+    expect(result.usage).toEqual(afterCall.mock.calls[0]?.[1]);
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining(result.usage));
+    expect(result.usage).toMatchObject({
+      pricingVersion: "decision-pricing-2026-11-17",
+      pricingSnapshot: { estimatedInputTokens: estimateTextTokens(JSON.stringify(request)) },
+    });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
       expect.objectContaining({
@@ -265,4 +272,20 @@ it("retains header request IDs and estimated pricing when a response is malforme
       costUsd: null,
     }),
   );
+});
+
+it("persists the body billing ID before a write-once observer sees a header ID", async () => {
+  const onRequestId = vi.fn();
+  const afterCall = vi.fn();
+  const result = await new HttpDecisionProvider("openrouter", {
+    apiKey: "fake-key",
+    fetch: async () =>
+      new Response(await response().text(), {
+        headers: { "x-request-id": "transport-fixture" },
+      }),
+    callObserver: { beforeCall: () => "call", onRequestId, afterCall },
+  }).decide(request, context);
+  expect(onRequestId.mock.calls).toEqual([["call", "fake-request"]]);
+  expect(result.usage?.providerRequestId).toBe("fake-request");
+  expect(afterCall).toHaveBeenCalledWith("call", result.usage);
 });
