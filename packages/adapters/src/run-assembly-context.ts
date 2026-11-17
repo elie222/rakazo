@@ -8,6 +8,7 @@ import {
   renderBotDirectory,
 } from "@rakazo/core";
 import { mayBeChannelMessage } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import type { FleetRun } from "./fleet-tools.js";
@@ -352,24 +353,20 @@ export async function buildTurnPrompt(
   let routineNote: string | undefined;
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
-  if (run.trigger === "routine" && run.routineId) {
-    try {
-      const routine = await deps.prisma.routine.findUnique({
-        where: { id: run.routineId },
-        select: { name: true, timezone: true },
-      });
-      if (routine) {
-        routineNote = routineRunInstruction(routine.name);
-        if (lateSince)
-          lateRoutineNote = lateRoutineRunInstruction(
-            lateSince,
-            executionStartedAt,
-            routine.timezone,
-          );
-      }
-    } catch {
-      // Routine context is optional; a lookup failure must not prevent a run.
-    }
+  if (run.trigger === "routine") {
+    const routine = run.routineId
+      ? await bestEffort(
+          "load the routine for its run's prompt",
+          deps.prisma.routine.findUnique({
+            where: { id: run.routineId },
+            select: { name: true, timezone: true },
+          }),
+        )
+      : undefined;
+    // Still framed when the routine was cancelled after this run was queued.
+    routineNote = routineRunInstruction(routine?.name);
+    if (routine && lateSince)
+      lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
   const sharedSpaceNote = people
     ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)

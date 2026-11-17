@@ -49,6 +49,7 @@ interface Scenario {
   startedAt?: Date;
   resumeAfterScheduleEdit?: boolean;
   lateLookupFails?: boolean;
+  routineGone?: boolean;
   setupFailsOnce?: boolean;
 }
 
@@ -117,8 +118,9 @@ async function failRun(scenario: Scenario) {
       }),
     },
     routine: {
-      findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean } }) => {
+      findUnique: vi.fn(async ({ select }: { select?: { crons?: boolean; name?: boolean } }) => {
         if (scenario.lateLookupFails && select?.crons) throw new Error("lookup unavailable");
+        if (scenario.routineGone && select?.name) return null;
         return {
           name: "Inbox sweep",
           crons:
@@ -371,6 +373,16 @@ describe("a routine run's prompt", () => {
     const { runtimeRun } = await failRun({ error: new Error("Invalid API key") });
     expect(prompt(runtimeRun)).toMatch(
       /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+    );
+  });
+
+  it("keeps the line, without a name, once the routine is gone", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      routineGone: true,
+    });
+    expect(prompt(runtimeRun)).toMatch(
+      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.\n\nSweep the inbox/,
     );
   });
 
