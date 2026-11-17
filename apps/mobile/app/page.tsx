@@ -10,10 +10,10 @@ import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { NativeActionButton } from "../components/native/native-action-button";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
 import { currentApiBase } from "../lib/api/api";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import {
   getLatestPage,
   offerPageReply,

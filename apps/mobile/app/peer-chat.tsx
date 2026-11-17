@@ -20,13 +20,13 @@ import { InlineImageAttachment } from "../components/media/inline-image-attachme
 import { glassHeaderOptions } from "../components/native/glass-title";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { SheetCloseButton } from "../components/native/sheet-close-button";
-import { NewestPageCards, PageCard } from "../components/pages/page-card";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
 import { openMobileArtifact } from "../lib/artifacts/artifact-open";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { isInlineImageBlock } from "../lib/messages/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native/native";
+import { NewestPageCards, PageCard } from "../lib/pages/page-card";
 import { useChatOnScreen } from "../lib/pages/page-card-detail";
 import { queryClient, rpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";

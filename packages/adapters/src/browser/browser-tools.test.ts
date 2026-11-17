@@ -1,6 +1,7 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import * as Logging from "@rakazo/logging";
+import type { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { ComputerBrowserProvider } from "../computers/screens/computer-browser.js";
 import { redactConnectorPayload } from "../connectors/connector-safety.js";
@@ -18,6 +19,7 @@ import {
   redactBrowserResult,
 } from "./browser-tools.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
+import { pageBrowserSessionKey } from "./page-browser-session.js";
 
 const context: AdapterContext = {
   operationId: "1",
@@ -426,6 +428,130 @@ describe("browser tools", () => {
       const snap = JSON.stringify(await browserSnapshotFromTool(browser, computer, context, {}));
       expect(snap).not.toContain("fake-id-123");
       expect(snap).not.toContain("+1 555 0100");
+    });
+
+    it("picks a dropdown option for a visible field and never shows which one", async () => {
+      const url = "https://login.example.test/signin";
+      const browser = new FakeBrowserProvider({
+        pages: {
+          [url]: {
+            title: "Sign in",
+            html: `<!doctype html><html><head><title>Sign in</title></head><body>
+              <input aria-label="Account" />
+              <select aria-label="Branch"><option value="" disabled selected>Choose</option>
+                <option value="v1">A1</option><option>A2</option><option disabled>A3</option></select>
+              <select aria-label="Locked" disabled><option>A1</option><option>A2</option></select>
+              <input aria-label="Phone" type="tel" />
+            </body></html>`,
+          },
+          [`${url}?long`]: {
+            title: "Sign in",
+            html: `<!doctype html><html><head><title>Sign in</title></head><body>
+              <select aria-label="Branch">${Array.from(
+                { length: 300 },
+                (_, n) => `<option>${"x".repeat(120)}${n}</option>`,
+              ).join("")}</select>
+            </body></html>`,
+          },
+        },
+      });
+      await browserNavigateFromTool(browser, computer, context, { url });
+      const snapshot = async () =>
+        (await browserSnapshotFromTool(browser, computer, context, {})) as {
+          tree: string;
+          elements: Array<{ ref: string; name: string }>;
+        };
+      const branch = async () =>
+        (await snapshot()).elements.find((el) => el.name.includes("Branch"))!.ref;
+      const fill = async (
+        text: string,
+        { hidden = false, origin = "https://login.example.test" } = {},
+      ) =>
+        browserActFromTool(
+          browser,
+          computer,
+          context,
+          {
+            actions: [
+              {
+                kind: "fill_secret",
+                ref: await branch(),
+                secret: "site_login",
+                field: "Branch",
+              },
+            ],
+          },
+          { resolveSecretFill: async () => ({ text, origin, hidden }) },
+        );
+      // Read from the page itself: the bot's snapshots never say which option is chosen.
+      const chosen = () => {
+        const session = browser.sessions.get(pageBrowserSessionKey(computer, context));
+        const { document } = (session as unknown as { dom: JSDOM }).dom.window;
+        return (document.querySelector('[aria-label="Branch"]') as HTMLSelectElement).value;
+      };
+
+      expect(JSON.stringify(await snapshot())).toContain('"selected":true');
+      const picked = await fill("A2");
+      expect(picked).toMatchObject({ ok: true, completed: 1 });
+      expect(chosen()).toBe("A2");
+      expect(await fill("v1")).toMatchObject({ ok: true, completed: 1 });
+      expect(chosen()).toBe("v1");
+      for (const seen of [picked, await snapshot()] as Array<{
+        tree: string;
+        elements: Array<{ name: string }>;
+      }>) {
+        expect(seen.tree.split("\n").find((line) => line.includes('"Branch"'))).not.toContain(
+          "(selected)",
+        );
+        expect(seen.tree).not.toMatch(/"Branch" \[e\d+\] value=/);
+        const element = seen.elements.find((el) => el.name.includes("Branch"));
+        expect(element).not.toHaveProperty("value");
+        expect(JSON.stringify(element)).not.toContain('"selected":true');
+      }
+      // The bot's own fill on that dropdown lists its options without marking the chosen one.
+      const own = await browserActFromTool(browser, computer, context, {
+        actions: [{ kind: "fill", ref: await branch(), text: "nope" }],
+      });
+      expect(JSON.stringify(own)).toContain("This dropdown has no option");
+      expect((own as { error: string }).error).not.toContain("(selected)");
+      for (const text of ["fake-999", "A3"]) {
+        // The page itself lists every option; the refusal lists only those that can be chosen.
+        expect(await fill(text), text).toMatchObject({
+          ok: false,
+          completed: 0,
+          uncertain: false,
+          error: 'This dropdown has no option for this saved field. Its options: "A1", "A2".',
+        });
+      }
+      expect(JSON.stringify(await fill("fake-999"))).not.toContain("fake-999");
+      const hidden = await fill("A2", { hidden: true });
+      expect(JSON.stringify(hidden)).toMatch(/password field/);
+      const elsewhere = await fill("A2", { origin: "https://other.example.test" });
+      expect(JSON.stringify(elsewhere)).toMatch(
+        /This login is saved for https:\/\/other.example.test/,
+      );
+      expect(chosen()).toBe("v1");
+      const locked = (await snapshot()).elements.find((el) => el.name.includes("Locked"))!.ref;
+      const onLocked = await browserActFromTool(
+        browser,
+        computer,
+        context,
+        { actions: [{ kind: "fill_secret", ref: locked, secret: "site_login", field: "Branch" }] },
+        {
+          resolveSecretFill: async () => ({
+            text: "A2",
+            origin: "https://login.example.test",
+            hidden: false,
+          }),
+        },
+      );
+      expect(onLocked).toMatchObject({ ok: false, completed: 0, error: "Element is read-only" });
+      // A page of long labels cannot flood the refusal.
+      await browserNavigateFromTool(browser, computer, context, { url: `${url}?long` });
+      const flooded = (await fill("fake-999")) as { error: string };
+      expect(flooded.error).toMatch(/, and \d+ more\.$/);
+      expect(flooded.error.length).toBeLessThan(2200);
+      expect(flooded.error).not.toContain("x".repeat(51));
     });
 
     it("tells every page browser a hidden field is a password and a visible one a username", async () => {

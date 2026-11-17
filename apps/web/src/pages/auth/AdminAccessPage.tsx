@@ -16,10 +16,10 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { PageLoading } from "../../components/PageLoading";
-import { formatBillingAmount } from "../../lib/billing";
+import { WindowChrome } from "../../components/WindowChrome";
+import { formatBillingAmount } from "../../lib/billing/billing";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
-import { WindowChrome } from "../WindowChrome";
 
 export function AdminAccessPage() {
   const { t } = useLingui();
