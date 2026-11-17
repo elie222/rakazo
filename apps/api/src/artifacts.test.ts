@@ -435,6 +435,26 @@ describe("configured artifact upload limit", () => {
       expect.anything(),
     );
     put.mockClear();
+    for (const [name, mimeType, expected] of [
+      ["bundle.rar", "application/x-rar-compressed", "application/vnd.rar"],
+      ["bundle.RAR", "application/octet-stream", "application/vnd.rar"],
+      ["bundle.7z", "application/x-7z", "application/x-7z-compressed"],
+      ["bundle.7Z", "application/octet-stream", "application/x-7z-compressed"],
+    ] as const) {
+      await expect(
+        createOwnedArtifact(deps, actor, {
+          botId: "bot-1",
+          name,
+          mimeType,
+          contentBase64: "YXJjaGl2ZQ==",
+        }),
+      ).rejects.toBe(reachedStorage);
+      expect(put).toHaveBeenCalledWith(
+        expect.objectContaining({ mimeType: expected }),
+        expect.anything(),
+      );
+      put.mockClear();
+    }
     await expect(
       createOwnedArtifact(deps, actor, {
         botId: "bot-1",

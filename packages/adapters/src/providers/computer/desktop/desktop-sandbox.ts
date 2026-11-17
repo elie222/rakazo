@@ -30,7 +30,7 @@ import type {
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import {
   applyPlaceholderAction,
   boundedComputerActions,

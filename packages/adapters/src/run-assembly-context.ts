@@ -8,6 +8,7 @@ import {
   renderBotDirectory,
 } from "@rakazo/core";
 import { mayBeChannelMessage } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import type { FleetRun } from "./fleet-tools.js";
@@ -15,6 +16,7 @@ import { loadBotGroupDirectory } from "./group-handoff.js";
 import { formatCompactedSummary } from "./history-compaction.prompt.js";
 import { loadReplyContext } from "./reply-context.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.prompt.js";
+import { routineRunInstruction } from "./routine-run.prompt.js";
 import type {
   ComputerInstructions,
   PreparedRunComputer,
@@ -353,36 +355,40 @@ export async function buildTurnPrompt(
   } catch {
     // Timezone is optional context; a lookup failure must not prevent a run.
   }
+  let routineNote: string | undefined;
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
-  if (lateSince && run.routineId) {
-    try {
-      const routine = await deps.prisma.routine.findUnique({
+  // Daily check-ins share the routine trigger but belong to no routine.
+  if (run.trigger === "routine" && run.routineId) {
+    const routine = await bestEffort(
+      "load the routine for its run's prompt",
+      deps.prisma.routine.findUnique({
         where: { id: run.routineId },
-        select: { timezone: true },
-      });
-      if (routine)
-        lateRoutineNote = lateRoutineRunInstruction(
-          lateSince,
-          executionStartedAt,
-          routine.timezone,
-        );
-    } catch {
-      // Lateness is optional context; a lookup failure must not prevent a run.
-    }
+        select: { name: true, timezone: true },
+      }),
+    );
+    routineNote = routineRunInstruction(routine?.name);
+    if (routine && lateSince)
+      lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
   const sharedSpaceNote = people
     ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
     : undefined;
   const prompt = [
     replyContext,
+    routineNote,
     run.trigger === "reaction" && replyContext ? undefined : basePrompt,
     takeoverResume?.promptNote,
     approvalContinuation,
     // A hang-up turn is read, not heard: no spoken-reply constraint.
     voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
     // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-    formatCurrentTimeInstruction(deps.now?.() ?? new Date(), userTimeZone),
+    // Tagged so it is never read as part of what the user asked for, such as text to save.
+    `<current_time>\n${formatCurrentTimeInstruction(
+      deps.now?.() ?? new Date(),
+      userTimeZone,
+      previousMessageAt(historyMessages, currentTurnMessage?.id),
+    )}\n</current_time>`,
     lateRoutineNote,
     sharedSpaceNote,
   ]
@@ -454,3 +460,16 @@ export async function buildTurnPrompt(
 }
 
 export type TurnPrompt = Awaited<ReturnType<typeof buildTurnPrompt>>;
+
+/** When the newest message other than this turn's was sent, read before compaction drops it. */
+export function previousMessageAt(
+  messages: ReadonlyArray<{ id: string; createdAt?: Date | null }>,
+  currentId: string | undefined,
+): Date | undefined {
+  let latest: Date | undefined;
+  for (const message of messages) {
+    if (message.id === currentId || !message.createdAt) continue;
+    if (!latest || message.createdAt > latest) latest = message.createdAt;
+  }
+  return latest;
+}

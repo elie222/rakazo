@@ -25,11 +25,11 @@ import {
   ACTIVE_RUN_STATUSES,
   answerableAskMessageIds,
   ONCE_ROUTINE_CRON,
-  resolveScreenProxySecret,
   settleRunSubagents,
   stuckWorkStatusMessages,
 } from "@rakazo/core";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import { resolveScreenProxySecret } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
 import {
   appendEvent,

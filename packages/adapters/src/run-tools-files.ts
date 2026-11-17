@@ -112,7 +112,7 @@ export const fileTools: ToolHandlers = {
     if (desktopGuardApplies(ctx.computer)) {
       const activateRefusal = protectedActivateScriptWriteRefusal(filePath);
       if (activateRefusal) {
-        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal) });
+        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal, filePath) });
       }
     }
     const content = new TextEncoder().encode(textContentArg(args.content, ""));

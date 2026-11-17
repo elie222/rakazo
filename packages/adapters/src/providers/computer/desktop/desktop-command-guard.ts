@@ -1,5 +1,6 @@
 import { parse as parseShellCommand } from "shell-quote";
 import { sandboxKindCapabilities } from "../../../sandbox-kind-capabilities.js";
+import { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 import {
   braceExpansionHazard,
   executesWrittenHeredoc,
@@ -7,6 +8,7 @@ import {
   heredocBodyHazard,
   isFileWriteRedirect,
   isHeredocDataSinkPipeline,
+  isHeredocScriptPipeline,
   isShellOrSourceCommand,
   nextHeredocCwd,
   normalizeWrittenPath,
@@ -52,7 +54,7 @@ type PendingHeredoc = {
  * Drop comments and quoted heredoc bodies, and substitute literal assignments.
  * Returns a short refusal when the command is dynamic in a way the later
  * tokenizer cannot see (quotes hiding a substitution, a heredoc that is not
- * data for cat or tee, a quoted body that names a lifecycle command, a shell,
+ * data for cat or tee or a quoted script for an interpreter, a quoted body that names a lifecycle command, a shell,
  * source, sudo, or busybox after that heredoc, a later command that runs a
  * path that heredoc wrote, source of anything but a
  * literal activate path, or a write that can plant that activate script).
@@ -323,7 +325,10 @@ function prepareDesktopGuardCommand(source: string): PreparedDesktopCommand {
         index += 1;
         continue;
       }
-      if (pending.some((heredoc) => !isHeredocDataSinkPipeline(heredoc.names ?? []))) {
+      const readable = (heredoc: PendingHeredoc) =>
+        isHeredocDataSinkPipeline(heredoc.names ?? []) ||
+        (heredoc.quoted && isHeredocScriptPipeline(heredoc.names ?? []));
+      if (!pending.every(readable)) {
         return { reason: "heredoc" };
       }
       let cursor = index + 1;
@@ -332,6 +337,13 @@ function prepareDesktopGuardCommand(source: string): PreparedDesktopCommand {
         if (!body) return { reason: "heredoc" };
         if (heredoc.quoted) {
           if (quotedHeredocLifecycleHazard(body.content)) return { reason: "heredoc" };
+          // Code passes names as strings and lists, which the shell-word scan does not see.
+          if (
+            !isHeredocDataSinkPipeline(heredoc.names ?? []) &&
+            namesProtectedTarget(body.content)
+          ) {
+            return { reason: "heredoc" };
+          }
           if (quotedHeredocBodyIsDynamic(body.content)) heredocDynamic = true;
         } else {
           const hazard = heredocBodyHazard(body.content);
@@ -565,10 +577,15 @@ function tokenizeProtectedShellCommand(
   }
 }
 
+const KILL_COMMANDS = /^(?:kill|pkill|killall|xkill)$/;
+const SERVICE_COMMANDS = /^(?:systemctl|service)$/;
+const BROWSER_PROFILE_PATH = /(?:\.browser-profiles|--user-data-dir)/;
+const X11_PATH = /(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/;
+
 function protectedWordRefusal(words: readonly string[]): string | undefined {
   for (const word of words) {
     const base = (word.split("/").at(-1) ?? "").toLowerCase();
-    if (/^(?:kill|pkill|killall|xkill)$/.test(base)) return `protected command ${base}`;
+    if (KILL_COMMANDS.test(base)) return `protected command ${base}`;
   }
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? "";
@@ -581,15 +598,15 @@ function protectedWordRefusal(words: readonly string[]): string | undefined {
   }
   const service = words
     .map((word) => (word.split("/").at(-1) ?? "").toLowerCase())
-    .find((word) => word === "systemctl" || word === "service");
+    .find((word) => SERVICE_COMMANDS.test(word));
   if (service) {
     const action = words.find((word) => /^(?:stop|restart|kill)$/.test(word.toLowerCase()));
     if (action) return `${service} ${action.toLowerCase()}`;
   }
   for (const word of words) {
     const folded = word.toLowerCase();
-    if (/(?:\.browser-profiles|--user-data-dir)/.test(folded)) return "browser profile path";
-    if (/(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(folded)) return "X11 path";
+    if (BROWSER_PROFILE_PATH.test(folded)) return "browser profile path";
+    if (X11_PATH.test(folded)) return "X11 path";
   }
   for (let index = 0; index < words.length; index += 1) {
     const name = (words[index]?.split("/").at(-1) ?? "").toLowerCase();
@@ -631,12 +648,34 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
   return protectedComputerLifecycleRefusal(command) !== undefined;
 }
 
-export function desktopProtectionGuardMessage(reason: string): string {
-  const recovery =
-    reason === "heredoc"
-      ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
-      : reason === "command substitution" || reason === "backtick"
-        ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
-        : "";
-  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
+const SYNTAX_REFUSALS = new Set([
+  "arithmetic expansion",
+  "backtick",
+  "command substitution",
+  "comment",
+  "coproc",
+  "eval",
+  "function",
+  "heredoc",
+  "herestring",
+  "source",
+  "subshell",
+  "uninspectable shell syntax",
+  "unsupported shell syntax",
+]);
+
+/** Whether the raw text names anything the guard protects, wherever it sits. */
+function namesProtectedTarget(command: string): boolean {
+  // Quotes and backslashes join a word the shell would see whole, as in k\ill or "k"ill.
+  const folded = command.toLowerCase().replaceAll(/[\\'"]/g, "");
+  if (BROWSER_PROFILE_PATH.test(folded) || X11_PATH.test(folded)) return true;
+  return folded.split(/[^\w./-]+/).some((word) => {
+    const base = word.split("/").at(-1) ?? "";
+    return KILL_COMMANDS.test(base) || SERVICE_COMMANDS.test(base);
+  });
+}
+
+export function desktopProtectionGuardMessage(reason: string, command: string): string {
+  const syntax = SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable");
+  return desktopGuardRefusalMessage(reason, syntax && !namesProtectedTarget(command));
 }

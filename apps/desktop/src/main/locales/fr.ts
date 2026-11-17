@@ -224,4 +224,6 @@ export const FR_MESSAGES: Record<string, string> = {
   "Starting {app}…": "Démarrage de {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker est installé mais ne fonctionne pas. Démarrez le service Docker pour continuer.",
+  "Rakazo stopped unexpectedly.": "Rakazo s’est arrêté de façon inattendue.",
+  Reload: "Recharger",
 };

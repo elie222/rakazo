@@ -576,7 +576,7 @@ export interface AgentSteeringMessage {
    * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
    * else, or no origin, is passed on as a neutral note.
    */
-  origin?: "user" | "member" | "messaging" | "webhook";
+  origin?: "user" | "member" | "messaging" | "webhook" | "routine";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
@@ -1035,7 +1035,10 @@ export interface BackgroundJobPayloads {
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
 
-/** What held a secret-store reference before it was replaced or dropped. */
+/**
+ * What held a secret-store reference before it was replaced or dropped. `store_write` is an entry
+ * written before any record held it, which every record that can hold a reference may claim.
+ */
 export type SecretCleanupKind =
   | "secret_row"
   | "secret_tables"
@@ -1044,7 +1047,8 @@ export type SecretCleanupKind =
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"
-  | "payment_wallet";
+  | "payment_wallet"
+  | "store_write";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 
@@ -1102,6 +1106,11 @@ export type SecretContext = string | { recordId: string; signal?: AbortSignal };
 export interface SecretPutOptions {
   recordId?: string;
   ephemeral?: boolean;
+  /**
+   * A store that keeps entries remotely calls this with the new entry before writing it, and does
+   * not write when it rejects, so a backup can name the entry before it exists.
+   */
+  beforeWrite?: (entry: { recordId: string; ref: string }) => Promise<void>;
 }
 export type SecretChangeListener = (ref: string) => void;
 

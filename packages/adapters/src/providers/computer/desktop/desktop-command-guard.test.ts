@@ -109,13 +109,34 @@ describe("computer lifecycle command guard", () => {
     );
     expect(protectedComputerLifecycleRefusal("echo `date`")).toBe("backtick");
     expect(protectedComputerLifecycleRefusal("( cd app && npm test )")).toBe("subshell");
-    expect(protectedComputerLifecycleRefusal("python <<'EOF'\nprint(1)\nEOF")).toBe("heredoc");
+    expect(protectedComputerLifecycleRefusal("python <<EOF\nprint(1)\nEOF")).toBe("heredoc");
     expect(protectedComputerLifecycleRefusal("source /tmp/kill-chrome.sh")).toBe("source");
     expect(protectedComputerLifecycleRefusal("eval 'ls'")).toBe("eval");
     expect(protectedComputerLifecycleRefusal('bash <<< "pkill chromium"')).toBe("herestring");
-    expect(desktopProtectionGuardMessage("unresolved variable $f")).toBe(
-      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Do not stop or restart browser or desktop processes.",
+    expect(
+      desktopProtectionGuardMessage("unresolved variable $f", "for f in *; do wc -l $f; done"),
+    ).toBe(
+      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error. Do not stop or restart browser or desktop processes.",
     );
+    for (const reason of ["heredoc", "command substitution", "backtick", "subshell"]) {
+      expect(desktopProtectionGuardMessage(reason, "ls"), reason).toContain("script file");
+    }
+    for (const reason of ["protected command pkill", "systemctl stop", "activate script"]) {
+      expect(desktopProtectionGuardMessage(reason, "ls"), reason).not.toContain("script file");
+    }
+    for (const command of [
+      "kill $(pgrep chromium)",
+      "k\\ill $(pgrep chromium)",
+      '"pk"ill $(echo chromium)',
+      "/usr/bin/k'il'l $PID",
+      "for p in $PIDS; do /bin/kill $p; done",
+      'systemctl "$action" display',
+      'rm -rf "$HOME/.browser-profiles"',
+    ]) {
+      const reason = protectedComputerLifecycleRefusal(command);
+      expect(reason, command).toBeDefined();
+      expect(desktopProtectionGuardMessage(reason!, command), command).not.toContain("script file");
+    }
   });
 
   it("allows comments, literal assignments, activate scripts, and quoted heredoc data", () => {
@@ -144,7 +165,7 @@ describe("computer lifecycle command guard", () => {
     }
   });
 
-  it("offers a usable recovery for ordinary file updates refused as an interpreter heredoc", () => {
+  it("runs an ordinary script given to an interpreter as a quoted heredoc", () => {
     const script = `import json, os
 from pathlib import Path
 state = Path("reports/state.json")
@@ -155,17 +176,19 @@ temporary.write_text(json.dumps(data))
 os.replace(temporary, state)
 with Path("reports/history.jsonl").open("a") as log:
     log.write(json.dumps({"count": 3}) + "\\n")`;
-    expect(protectedComputerLifecycleRefusal(`python <<'EOF'\n${script}\nEOF`)).toBe("heredoc");
-    expect(desktopProtectionGuardMessage("heredoc")).toContain("python3 -c");
-    expect(desktopProtectionGuardMessage("heredoc")).toContain(
-      "does not indicate a filesystem permission error",
-    );
+    expect(protectedComputerLifecycleRefusal(`python <<'EOF'\n${script}\nEOF`)).toBeUndefined();
+    expect(
+      protectedComputerLifecycleRefusal(`cd reports && python3 - <<'PY'\n${script}\nPY\nls`),
+    ).toBeUndefined();
+    expect(protectedComputerLifecycleRefusal("node <<'EOF'\nconsole.log(1)\nEOF")).toBeUndefined();
+    expect(
+      protectedComputerLifecycleRefusal(`python3 - <<'EOF' | head -5\n${script}\nEOF`),
+    ).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python -c '${script}'`)).toBeUndefined();
     expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'; pkill chromium`)).toBe(
       "protected command pkill",
     );
-    expect(desktopProtectionGuardMessage("protected command pkill")).not.toContain("python3 -c");
   });
 
   it("allows Basic authentication syntax without weakening lifecycle protection", () => {
@@ -184,7 +207,7 @@ connection.close()`;
     );
   });
 
-  it("keeps computed variables, variable source paths, and interpreter heredocs closed", () => {
+  it("keeps computed variables, variable source paths, and shell heredocs closed", () => {
     expect(protectedComputerLifecycleRefusal('dir=/tmp/$USER; ls "$dir"')).toBe(
       "unresolved variable $dir",
     );
@@ -209,7 +232,7 @@ connection.close()`;
     expect(protectedComputerLifecycleRefusal("cat <<'EOF' | python3\nprint(1)\nEOF")).toBe(
       "heredoc",
     );
-    expect(protectedComputerLifecycleRefusal("node <<'EOF'\nconsole.log(1)\nEOF")).toBe("heredoc");
+    expect(protectedComputerLifecycleRefusal("node <<EOF\nconsole.log(1)\nEOF")).toBe("heredoc");
     expect(protectedComputerLifecycleRefusal("cat <<EOF\n$(pkill chromium)\nEOF")).toBe(
       "command substitution",
     );
@@ -396,6 +419,21 @@ connection.close()`;
     expect(
       protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nrm -f /tmp/.X1-lock\nEOF"),
     ).toBe("heredoc");
+  });
+
+  it("refuses an interpreter heredoc that names a protected target or feeds code onward", () => {
+    for (const command of [
+      "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['pkill', 'chromium'])\nEOF",
+      "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['systemctl', '--user', 'restart', 'desk'])\nEOF",
+      "python3 - <<'EOF'\nimport shutil\nshutil.rmtree('/home/rakazo/.browser-profiles/x')\nEOF",
+      "node <<'EOF'\nrequire('child_process').execSync('killall chromium')\nEOF",
+      "python3 - <<'EOF' | bash\nprint('ls')\nEOF",
+      "python3 - <<'EOF' | xargs echo\nprint(1)\nEOF",
+      "sudo python3 - <<'EOF'\nprint(1)\nEOF",
+      "python3 - <<'EOF'\nprint(1)\nEOF\npython3 other.py",
+    ]) {
+      expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
+    }
   });
 
   it("refuses a quoted heredoc that hides a lifecycle command in split quotes", () => {

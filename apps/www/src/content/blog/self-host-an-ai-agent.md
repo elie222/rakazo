@@ -97,7 +97,7 @@ curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/
 bash install-images.sh
 ```
 
-The installer downloads the Compose file and `.env.images.example`, creates `.env` with random secrets, and starts Rakazo. Run it again and it keeps an existing `.env`. The default image tag is `edge`, which tracks builds from the main branch for `linux/amd64` and `linux/arm64`. Do not assume a `latest` tag until a stable release exists.
+The installer downloads the Compose file and `.env.images.example`, creates `.env` with random secrets, and starts Rakazo. Run it again and it keeps an existing `.env`. The default image tag is `latest`, which follows stable releases for `linux/amd64` and `linux/arm64`. A stable release must exist; setup does not fall back to main builds. Automatic updates are disabled unless you opt in.
 
 If you want to set the public URL, the image tag, or an optional provider before the first start, run `bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh` again. The flags `--prepare-only` and `--local` can be combined.
 

@@ -61,6 +61,7 @@ describePostgres("bounded routine reconciliation (PostgreSQL contract)", () => {
           published.push(job);
         },
         enqueueIn: async () => undefined,
+        enqueueManyIn: async () => undefined,
         cancelIn: async () => undefined,
         cancel: async () => undefined,
         close: async () => undefined,

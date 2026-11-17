@@ -147,6 +147,181 @@ describe("noVNC storage shim gate", () => {
   });
 });
 
+describe("noVNC key bridge", () => {
+  type KeyEvent = { type: string; key: string; code: string };
+  type Bridge = { run(command: unknown): void };
+
+  function page(options: { nativeKeys?: boolean; canvas?: boolean; existing?: Bridge } = {}) {
+    const events: KeyEvent[] = [];
+    const canvas = { dispatchEvent: (event: KeyEvent) => events.push(event) };
+    let drawn = options.canvas !== false;
+    const classes = new Set<string>();
+    let observed: (() => void) | undefined;
+    class FakeObserver {
+      constructor(callback: () => void) {
+        observed = callback;
+      }
+      observe() {}
+    }
+    const window: Record<string, unknown> = {
+      addEventListener() {},
+      parent: { postMessage() {} },
+      KeyboardEvent: class {
+        constructor(
+          public type: string,
+          init: { key: string; code: string },
+        ) {
+          Object.assign(this, init);
+        }
+      },
+      ...(options.nativeKeys === false ? {} : { __rakazoNativeKeys: true }),
+      ...(options.existing ? { rakazoComputerKeyboard: options.existing } : {}),
+    };
+    const document = {
+      documentElement: {
+        classList: { contains: (name: string) => classes.has(name) },
+        getAttribute: () => null,
+      },
+      readyState: "complete",
+      getElementById: () => null,
+      querySelector: () => (drawn ? canvas : null),
+      addEventListener() {},
+    };
+    const install = (html: string) => {
+      const start = html.indexOf("<script>") + "<script>".length;
+      const script = html.slice(start, html.lastIndexOf("</script>"));
+      new Function("window", "document", "MutationObserver", script)(
+        window,
+        document,
+        FakeObserver,
+      );
+    };
+    return {
+      window,
+      events,
+      install,
+      bridge: () => window.rakazoComputerKeyboard as Bridge | undefined,
+      draw() {
+        drawn = true;
+        observed?.();
+      },
+      setClasses(...names: string[]) {
+        classes.clear();
+        for (const name of names) classes.add(name);
+        observed?.();
+      },
+    };
+  }
+
+  const sequence = (events: KeyEvent[]) => events.map((e) => `${e.type}:${e.key}`);
+
+  it("lets the app's keys reach a stock noVNC page", () => {
+    const p = page();
+    p.install(injectNovncStorageShim("<head>"));
+    p.bridge()?.run({ type: "text", text: "a1" });
+    p.bridge()?.run({ type: "key", name: "Return" });
+    p.bridge()?.run({ type: "key", name: "Tab" });
+    p.bridge()?.run({ type: "backspace", count: 2 });
+    expect(sequence(p.events)).toEqual([
+      "keydown:a",
+      "keyup:a",
+      "keydown:1",
+      "keyup:1",
+      "keydown:Enter",
+      "keyup:Enter",
+      "keydown:Tab",
+      "keyup:Tab",
+      "keydown:Backspace",
+      "keyup:Backspace",
+      "keydown:Backspace",
+      "keyup:Backspace",
+    ]);
+  });
+
+  it("holds Control around only the first key of a chord", () => {
+    const p = page();
+    p.install(injectNovncStorageShim("<head>"));
+    p.bridge()?.run({ type: "char", text: "c", control: true });
+    p.bridge()?.run({ type: "text", text: "cd", control: true });
+    p.bridge()?.run({ type: "key", name: "ArrowLeft", control: true });
+    expect(sequence(p.events)).toEqual([
+      "keydown:Control",
+      "keydown:c",
+      "keyup:c",
+      "keyup:Control",
+      "keydown:Control",
+      "keydown:c",
+      "keyup:c",
+      "keyup:Control",
+      "keydown:d",
+      "keyup:d",
+      "keydown:Control",
+      "keydown:ArrowLeft",
+      "keyup:ArrowLeft",
+      "keyup:Control",
+    ]);
+  });
+
+  it("sends an emoji as one key event and ignores unknown commands", () => {
+    const p = page();
+    p.install(injectNovncStorageShim("<head>"));
+    p.bridge()?.run({ type: "text", text: "😀" });
+    p.bridge()?.run({ type: "key", name: "F13" });
+    p.bridge()?.run({ type: "backspace", count: "x" });
+    p.bridge()?.run({ type: "backspace", count: 0 });
+    p.bridge()?.run(null);
+    expect(sequence(p.events)).toEqual(["keydown:😀", "keyup:😀"]);
+  });
+
+  it("caps a run of Backspace at 500 presses", () => {
+    const p = page();
+    p.install(injectNovncStorageShim("<head>"));
+    p.bridge()?.run({ type: "backspace", count: 100_000 });
+    expect(p.events).toHaveLength(1000);
+  });
+
+  it("offers the bridge only once noVNC has drawn its canvas", () => {
+    const p = page({ canvas: false });
+    p.install(injectNovncStorageShim("<head>"));
+    expect(p.bridge()).toBeUndefined();
+    p.draw();
+    p.bridge()?.run({ type: "text", text: "a" });
+    expect(sequence(p.events)).toEqual(["keydown:a", "keyup:a"]);
+  });
+
+  it("waits for noVNC's connection before offering the bridge on a page that reports it", () => {
+    const p = page();
+    p.setClasses("noVNC_connecting");
+    p.install(injectNovncStorageShim("<head>"));
+    expect(p.bridge()).toBeUndefined();
+    p.setClasses("noVNC_connected");
+    p.bridge()?.run({ type: "text", text: "a" });
+    expect(sequence(p.events)).toEqual(["keydown:a", "keyup:a"]);
+  });
+
+  it("keeps a bridge the page defines after the canvas appears", () => {
+    const own = { run() {} };
+    const p = page({ canvas: false });
+    p.install(injectNovncStorageShim("<head>"));
+    p.window.rakazoComputerKeyboard = own;
+    p.draw();
+    expect(p.bridge()).toBe(own);
+  });
+
+  it("stays out of the way of a page's own bridge, a plain browser and a view-only screen", () => {
+    const own = { run() {} };
+    const withOwn = page({ existing: own });
+    withOwn.install(injectNovncStorageShim("<head>"));
+    expect(withOwn.bridge()).toBe(own);
+    const browser = page({ nativeKeys: false });
+    browser.install(injectNovncStorageShim("<head>"));
+    expect(browser.bridge()).toBeUndefined();
+    const viewing = page();
+    viewing.install(injectNovncStorageShim("<head>", { viewOnly: true }));
+    expect(viewing.bridge()).toBeUndefined();
+  });
+});
+
 describe("noVNC page caching", () => {
   it("drops validators so the upstream sends the full page", () => {
     expect(

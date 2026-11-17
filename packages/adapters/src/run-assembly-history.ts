@@ -142,6 +142,7 @@ export async function loadTurnContext(
       id: message.id,
       role: message.role,
       runId: message.runId,
+      createdAt: message.createdAt,
       blocks: storedMessageBlocks(message),
     }));
   const currentTurnMessage = userTurnMessageForRun(
@@ -194,7 +195,10 @@ export async function loadTurnContext(
     peerMessage?.repliesToRequest,
   );
   const allowSilentEmptyRun =
-    allowSilentPeerMessage || messagingChannelRun || runAllowsSilentEmpty(run.trigger);
+    allowSilentPeerMessage ||
+    messagingChannelRun ||
+    runAllowsSilentEmpty(run.trigger) ||
+    (Boolean(parts.records.conversationThread.groupId) && run.trigger === "follow_up");
   const emptyResponseText = peerMessage
     ? peerMessage.intent === "result" ||
       peerMessage.intent === "status" ||

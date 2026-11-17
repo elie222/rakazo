@@ -204,4 +204,6 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Starting {app}…": "正在启动 {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker 已安装但未运行。请启动 Docker 服务以继续。",
+  "Rakazo stopped unexpectedly.": "Rakazo 意外停止。",
+  Reload: "重新加载",
 };

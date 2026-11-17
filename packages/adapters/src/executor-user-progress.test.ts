@@ -2292,3 +2292,67 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
     expect(sentTexts(messages)).toEqual([]);
   });
 });
+
+describe("monitor-only group handoffs", () => {
+  it("keeps a split silence marker out of durable messages and streamed progress", async () => {
+    const result = await runTurn("NO_RESPONSE", false, [], [], "request", {
+      trigger: "follow_up",
+      group: { optional: false },
+      runtimeEvents: [
+        ...[..."NO_RESPONSE"].map((text): AgentRuntimeEvent => ({ type: "text", text })),
+        { type: "done" },
+      ],
+    });
+    expect(result.finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed", blocks: [], markUnread: false }),
+    );
+    expect(result.messages).toEqual([]);
+    expect(result.append.mock.calls.filter(([event]) => event.type === "thread.progress")).toEqual(
+      [],
+    );
+  });
+
+  it.each(["NO_RESPONSE", "NO_RESPONSE hello"])(
+    "holds runtime activity and %s until completion",
+    async (text) => {
+      const result = await runTurn("", false, [], [], "request", {
+        trigger: "follow_up",
+        group: { optional: false },
+        runtimeEvents: [
+          { type: "progress", text: "Checking", activity: true },
+          { type: "text", text },
+          { type: "done" },
+        ],
+      });
+      expect(
+        result.append.mock.calls.filter(([event]) => event.type === "thread.progress"),
+      ).toEqual([]);
+      expect(result.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          blocks: text === "NO_RESPONSE" ? [] : [{ kind: "text", text: "hello" }],
+        }),
+      );
+    },
+  );
+
+  it("still delivers new findings from a handoff", async () => {
+    const result = await runTurn(
+      "The interview overlaps your dentist appointment.",
+      false,
+      [],
+      [],
+      "request",
+      {
+        trigger: "follow_up",
+        group: { optional: false },
+      },
+    );
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "completed",
+        markUnread: true,
+        blocks: [{ kind: "text", text: "The interview overlaps your dentist appointment." }],
+      }),
+    );
+  });
+});

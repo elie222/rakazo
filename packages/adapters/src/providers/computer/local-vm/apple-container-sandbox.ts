@@ -2,32 +2,18 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import type {
-  AdapterContext,
-  CommandRequest,
-  ComputerActionRequest,
-  ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
-  ComputerRef,
-  ControlLeaseRef,
-  PortableFile,
-  ProcessEvent,
-  SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
-  TerminalRequest,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
 import type { RawExecEvent } from "../../../exec-computer.js";
-import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
-import { LinuxDesktop, onBotScreen } from "../../../linux-desktop.js";
+import { RawExecChannel, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
+import {
+  DESKTOP_PORT_START,
+  ImageComputerSandbox,
+  READY_PORT,
+} from "../../../image-computer-sandbox.js";
 import { sandboxNotFoundError } from "../../../sandbox-errors.js";
 
-const DISPLAY_START = 20;
-const DESKTOP_PORT_START = 6100;
-const READY_PORT = 6080;
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_CPUS = "2";
 const DEFAULT_MEMORY = "2g";
@@ -94,51 +80,20 @@ table inet rakazo {
  * cannot reach each other. No Docker, supervisor or socket is involved; the API, worker and web
  * reach the screen gateway on the VM's address, as with Incus.
  */
-export class AppleContainerSandboxProvider implements SandboxProvider {
+export class AppleContainerSandboxProvider extends ImageComputerSandbox {
   private readonly cli: string;
   private readonly computerImage: string;
   private readonly cpus: string;
   private readonly memory: string;
   private readonly readyTimeoutMs: number;
-  private readonly shell = new ExecComputer((...exec) => this.execRaw(...exec), "VM");
-
-  private readonly desktops = new LinuxDesktop({
-    environment: async () => ({
-      homeDir: WORKSPACE,
-      workspaceDir: WORKSPACE,
-      browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-      displayStart: DISPLAY_START,
-      portStart: DESKTOP_PORT_START,
-      bindHost: "0.0.0.0",
-    }),
-    run: async (computer, command, context) =>
-      this.shell.run(computer, ["bash", "-c", command], context),
-    screenUrl: async (computer, port, context) =>
-      `http://${await this.address(computer, context.signal)}:${port}/embed.html`,
-  });
 
   constructor(options: AppleContainerSandboxOptions = {}) {
+    super(KIND, "VM");
     this.cli = options.cli?.trim() || "container";
     this.computerImage = options.computerImage?.trim() || DEFAULT_COMPUTER_IMAGE;
     this.cpus = options.cpus?.trim() || DEFAULT_CPUS;
     this.memory = options.memory?.trim() || DEFAULT_MEMORY;
     this.readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
-  }
-
-  describe() {
-    return {
-      id: KIND,
-      contractVersion: "1",
-      adapterVersion: "0.1.0",
-      capabilities: {
-        graphical: true,
-        pty: true,
-        snapshots: true,
-        takeover: true,
-        persistentHome: false,
-        multiScreen: true,
-      },
-    };
   }
 
   async provision(
@@ -228,99 +183,6 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     );
   }
 
-  async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await this.shell.prepare(computer, context);
-  }
-
-  async *execute(
-    computer: ComputerRef,
-    requested: CommandRequest,
-    context: AdapterContext,
-  ): AsyncIterable<ProcessEvent> {
-    yield* this.shell.execute(computer, onBotScreen(requested, context, DISPLAY_START), context);
-  }
-
-  connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
-    return this.desktops.connectScreen(computer, request, context) as Promise<ScreenSession>;
-  }
-
-  connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, {
-      ...context,
-      screenLeaseId: undefined,
-    });
-  }
-
-  setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-
-  sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-
-  act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
-  listFiles(
-    computer: ComputerRef,
-    directory: string,
-    context: AdapterContext,
-  ): Promise<ComputerFileEntry[]> {
-    return this.shell.listFiles(computer, directory, context);
-  }
-
-  readFile(
-    computer: ComputerRef,
-    filePath: string,
-    context: AdapterContext,
-    options?: { maxBytes?: number },
-  ): Promise<Uint8Array> {
-    return this.shell.readFile(computer, filePath, context, options);
-  }
-
-  async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
-    await this.shell.writeFile(computer, file, context);
-  }
-
-  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
-    await this.desktops.stopBrowsers(computer, context);
-    yield* this.shell.exportWorkspace(computer, context);
-  }
-
-  async importWorkspace(
-    computer: ComputerRef,
-    files: AsyncIterable<PortableFile>,
-    context: AdapterContext,
-  ): Promise<void> {
-    await this.desktops.stopBrowsers(computer, context);
-    await this.shell.importWorkspace(computer, files, context);
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
-  }
-
   /** Computers are removed when they stop; the saved workspace is the persistence. */
   async stop(computer: ComputerRef): Promise<void> {
     await this.removeOwned(containerName(computer), computer.botId);
@@ -398,10 +260,7 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     const deadline = Date.now() + this.readyTimeoutMs;
     const computer: ComputerRef = { id: name, botId, kind: KIND, providerRef: name };
     while (true) {
-      const probe = await this.shell
-        .run(computer, ["bash", "-c", `: </dev/tcp/127.0.0.1/${READY_PORT}`], context, 10_000)
-        .catch(() => undefined);
-      if (probe?.code === 0) return;
+      if (await this.screenGatewayUp(computer, context)) return;
       if (Date.now() >= deadline) {
         throw new Error(
           `VM computer ${name} did not become ready within ${this.readyTimeoutMs} ms`,
@@ -420,7 +279,11 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     return (JSON.parse(result.stdout || "[]") as ContainerRecord[])[0];
   }
 
-  private async address(computer: ComputerRef, signal: AbortSignal): Promise<string> {
+  protected async relayBindHost() {
+    return "0.0.0.0";
+  }
+
+  protected async screenAddress(computer: ComputerRef, { signal }: AdapterContext) {
     const name = containerName(computer);
     const record = await this.inspect(name, signal);
     if (!record) throw sandboxNotFoundError(`VM computer ${name} no longer exists`);
@@ -460,7 +323,7 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     });
   }
 
-  private async *execRaw(
+  protected async *execRaw(
     computer: ComputerRef,
     command: string[],
     signal: AbortSignal,
@@ -468,16 +331,6 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
     stdin?: Readable,
     tty = false,
   ): AsyncIterable<RawExecEvent> {
-    const queue: RawExecEvent[] = [];
-    let wake: (() => void) | undefined;
-    let done = false;
-    const push = (event: RawExecEvent) => {
-      if (done) return;
-      queue.push(event);
-      if (event.type === "exit") done = true;
-      wake?.();
-      wake = undefined;
-    };
     const child = spawn(
       this.cli,
       [
@@ -498,33 +351,18 @@ export class AppleContainerSandboxProvider implements SandboxProvider {
       ],
       { stdio: ["pipe", "pipe", "pipe"] },
     );
-    const stop = (code: number, message: string) => {
-      push({ type: "stderr", data: Buffer.from(message) });
-      push({ type: "exit", code });
-      child.kill("SIGTERM");
-    };
-    const abort = () => stop(130, "command aborted\n");
-    const timer = setTimeout(
-      () => stop(124, `command timed out after ${timeoutMs} ms\n`),
-      timeoutMs + 10_000,
-    );
-    signal.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (data: Buffer) => push({ type: "stdout", data }));
-    child.stderr.on("data", (data: Buffer) => push({ type: "stderr", data }));
-    child.once("error", (error) => stop(127, `${error.message}\n`));
-    child.once("close", (code) => push({ type: "exit", code: code ?? 1 }));
+    const channel = new RawExecChannel(signal, timeoutMs, () => child.kill("SIGTERM"));
+    child.stdout.on("data", (data: Buffer) => channel.push({ type: "stdout", data }));
+    child.stderr.on("data", (data: Buffer) => channel.push({ type: "stderr", data }));
+    child.once("error", (error) => channel.stop(127, `${error.message}\n`));
+    child.once("close", (code) => channel.finish(code ?? 1));
     child.stdin.on("error", () => {});
     if (stdin) stdin.pipe(child.stdin);
     else child.stdin.end();
     try {
-      if (signal.aborted) abort();
-      while (!done || queue.length) {
-        if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
-        while (queue.length) yield queue.shift()!;
-      }
+      yield* channel.drain();
     } finally {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
+      channel.close();
       stdin?.unpipe(child.stdin);
       if (child.exitCode === null) child.kill("SIGTERM");
     }

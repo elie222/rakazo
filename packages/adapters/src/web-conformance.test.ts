@@ -1,11 +1,14 @@
 import type { AdapterContext, WebProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { FakeWebProvider } from "./fake-web.js";
-import { KeenableWebProvider } from "./keenable-web.js";
-import { keenableMcpFixture } from "./keenable-web.test-support.js";
-import { KeylessHttpWebProvider, parseDuckDuckGoResults } from "./keyless-http-web.js";
-import { ParallelWebProvider } from "./parallel-web.js";
-import { parallelMcpFixture } from "./parallel-web.test-support.js";
+import { FakeWebProvider } from "./providers/web/fake/fake-web.js";
+import { KeenableWebProvider } from "./providers/web/keenable/keenable-web.js";
+import { keenableMcpFixture } from "./providers/web/keenable/keenable-web.test-support.js";
+import {
+  KeylessHttpWebProvider,
+  parseDuckDuckGoResults,
+} from "./providers/web/keyless-http/keyless-http-web.js";
+import { ParallelWebProvider } from "./providers/web/parallel/parallel-web.js";
+import { parallelMcpFixture } from "./providers/web/parallel/parallel-web.test-support.js";
 
 const ctx: AdapterContext = {
   operationId: "1",

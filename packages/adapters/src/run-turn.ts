@@ -11,6 +11,7 @@ import { subagentMarksUnread } from "./run-notifications.js";
 import {
   canPublishDurableNarration,
   flushProgress,
+  holdsTransientProgress,
   mayBeSilentEnding,
   narrationBecomesMessages,
   progressHeldForSilence,
@@ -236,7 +237,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   const { reply } = ctx.state;
   // Tool status lines are not the model writing.
   if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
-  if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
+  if (holdsTransientProgress(ctx)) return;
   if (event.activity && event.text.trim())
     reply.lastActivityLine = redactSecrets(event.text, ctx.secrets);
   // The bot's own note stays the working line until it writes again.
