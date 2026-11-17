@@ -1,4 +1,4 @@
-import { defineMessagingPlatform } from "../../../messaging-platform-descriptor.js";
+import { defineMessagingPlatform } from "../../../messaging/messaging-platform-descriptor.js";
 import { LazyLarkAdapter } from "./lazy-adapter.js";
 import { Domain } from "./thread-id.js";
 

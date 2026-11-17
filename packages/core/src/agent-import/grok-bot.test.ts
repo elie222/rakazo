@@ -1,13 +1,14 @@
-import { GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import type { GrokBot } from "./index.js";
+import type { GrokBot, RoutineTriggersAvailable } from "./index.js";
 import {
   combineImportedInstructions,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
   grokBotExportJson,
-  grokRoutineCron,
+  grokRoutineTrigger,
   grokSkillNames,
+  NO_OPTIONAL_ROUTINE_TRIGGERS,
   parseAgentImport,
   parseGrokBotExport,
   readGrokBotExportJson,
@@ -170,7 +171,7 @@ describe("reading a Grok Bot's reply", () => {
   });
 });
 
-describe("a Grok Bot routine's schedule", () => {
+describe("a Grok Bot routine's trigger", () => {
   const routine = {
     name: "",
     instruction: "x",
@@ -181,12 +182,36 @@ describe("a Grok Bot routine's schedule", () => {
     skills: [],
     details: "",
   };
+  const none = NO_OPTIONAL_ROUTINE_TRIGGERS;
+  const all: RoutineTriggersAvailable = { messageProviders: ["slack", "telegram"], email: true };
+  const on = (trigger: string, available = all) =>
+    grokRoutineTrigger({ ...routine, trigger }, available);
 
   it("keeps a valid cron on a clock trigger only", () => {
-    expect(grokRoutineCron(routine)).toBe("0 8 * * 1-5");
-    expect(grokRoutineCron({ ...routine, trigger: "slack" })).toBeNull();
-    expect(grokRoutineCron({ ...routine, cron: "", when: "every weekday at 8" })).toBeNull();
-    expect(grokRoutineCron({ ...routine, cron: "", when: "30 9 * * *" })).toBe("30 9 * * *");
+    expect(grokRoutineTrigger(routine, none)).toEqual({ kind: "schedule", cron: "0 8 * * 1-5" });
+    expect(
+      grokRoutineTrigger({ ...routine, cron: "", when: "every weekday at 8" }, all),
+    ).toBeNull();
+    expect(grokRoutineTrigger({ ...routine, cron: "", when: "30 9 * * *" }, none)).toEqual({
+      kind: "schedule",
+      cron: "30 9 * * *",
+    });
+  });
+
+  it("maps events to the trigger that receives them here", () => {
+    for (const trigger of ["webhook", "linear", "sentry", "pagerduty"]) {
+      expect(on(trigger, none)).toEqual({ kind: "webhook" });
+    }
+    expect(on("github", none)).toEqual({ kind: "git" });
+    expect(on("slack")).toEqual({ kind: "message", provider: "slack" });
+    expect(on("email")).toEqual({ kind: "email" });
+  });
+
+  it("leaves events this server does not receive, and unknown ones, unmapped", () => {
+    expect(on("slack", none)).toBeNull();
+    expect(on("email", none)).toBeNull();
+    expect(on("other")).toBeNull();
+    expect(on("calendar")).toBeNull();
   });
 });
 
@@ -227,6 +252,16 @@ describe("a Grok Bot as an import plan", () => {
         ["weekly-account-health", "weekly-account-health"],
       ]),
     );
+  });
+
+  it("leaves an event this server receives out of the note", () => {
+    const parsed = parseAgentImport(
+      [{ path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) }],
+      {},
+      { messageProviders: ["slack"], email: false },
+    );
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.memory.map((item) => item.path)).toEqual(["MEMORY.md", "USER.md"]);
   });
 
   it("keeps a fact in both memory files and files an unreadable schedule to set up again", () => {
@@ -310,7 +345,7 @@ describe("a Grok Bot as an import plan", () => {
 });
 
 it("rejects oversized collections before allocating import names", () => {
-  for (const field of ["skills", "apps", "memories", "routines"]) {
+  for (const field of ["skills", "apps", "routines"]) {
     const source = JSON.stringify({
       bots: [{ name: "Example", [field]: Array(101).fill({ name: "same" }) }],
     });
@@ -318,6 +353,74 @@ it("rejects oversized collections before allocating import names", () => {
   }
   expect(() =>
     readGrokBotExportJson(JSON.stringify({ bots: Array(101).fill({ name: "same" }) })),
+  ).toThrow(GrokBotExportError);
+});
+
+it("bounds memories by the size of the document they become, not by count", () => {
+  const memories = Array.from({ length: 300 }, (_, index) => `Fact ${index}.`);
+  const userFacts = Array.from({ length: 150 }, (_, index) => `About me ${index}.`);
+  const [bot] = readGrokBotExportJson(
+    JSON.stringify({ bots: [{ name: "Example", memories, user_facts: userFacts }] }),
+  );
+  expect([bot!.memories.length, bot!.userFacts.length]).toEqual([300, 150]);
+  const parsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+  ]);
+  if ("error" in parsed) throw new Error(parsed.error);
+  expect(parsed.memory.find((item) => item.path === "MEMORY.md")!.content).toContain("- Fact 299.");
+
+  // Measured after repeats are dropped: thirty copies of one long memory fit.
+  const repeated = Array.from({ length: 30 }, () => "x".repeat(4_000));
+  const [once] = readGrokBotExportJson(
+    JSON.stringify({ bots: [{ name: "Example", memories: repeated }] }),
+  );
+  const onceParsed = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(once!) },
+  ]);
+  if ("error" in onceParsed) throw new Error(onceParsed.error);
+  expect(onceParsed.memory).toHaveLength(1);
+
+  // More than one document holds is split across several, every entry whole and in order.
+  const longMemories = Array.from({ length: 60 }, (_, index) => `${index} ${"x".repeat(4_000)}`);
+  const [split] = readGrokBotExportJson(
+    JSON.stringify({
+      bots: [{ name: "Example", memories: longMemories, user_facts: ["Name: Sam"] }],
+    }),
+  );
+  const splitPlan = parseAgentImport([
+    { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(split!) },
+  ]);
+  if ("error" in splitPlan) throw new Error(splitPlan.error);
+  expect(splitPlan.memory.map((item) => item.path)).toEqual([
+    "MEMORY.md",
+    "MEMORY-2.md",
+    "MEMORY-3.md",
+    "USER.md",
+  ]);
+  const memoryText = splitPlan.memory
+    .filter((item) => item.path.startsWith("MEMORY"))
+    .map((item) => item.content);
+  expect(memoryText.every((text) => text.length <= 100_000)).toBe(true);
+  expect(memoryText.join("")).toBe(longMemories.map((entry) => `- ${entry}\n`).join(""));
+  // Only an entry too long for a document of its own is refused.
+  expect(() =>
+    readGrokBotExportJson(
+      JSON.stringify({ bots: [{ name: "Example", memories: ["z".repeat(100_000)] }] }),
+    ),
+  ).toThrow(GrokBotExportError);
+  // A pasted reply full of repeats is re-sent with each entry once, within the upload limit.
+  const longRepeats = Array.from({ length: 300 }, () => "y".repeat(4_000));
+  const [pasted] = parseGrokBotExport(
+    JSON.stringify({ bots: [{ name: "Example", memories: longRepeats }] }),
+  );
+  const resent = grokBotExportJson(pasted!);
+  expect(pasted!.memories).toHaveLength(1);
+  expect(resent.length).toBeLessThan(GROK_BOT_EXPORT_MAX_LENGTH);
+  expect(readGrokBotExportJson(resent)[0]!.memories).toHaveLength(1);
+  // Too many entries to fit are refused before any document is built.
+  const many = Array.from({ length: 25_001 }, (_, index) => String(index));
+  expect(() =>
+    readGrokBotExportJson(JSON.stringify({ bots: [{ name: "Example", memories: many }] })),
   ).toThrow(GrokBotExportError);
 });
 

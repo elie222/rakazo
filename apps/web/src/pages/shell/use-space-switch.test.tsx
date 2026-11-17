@@ -26,17 +26,20 @@ vi.mock("../../lib/bootstrap", () => ({
 vi.mock("../../lib/bootstrap-target", () => ({
   initialBootstrapTarget: () => ({ botId: "target" }),
 }));
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   getSnapshot: state.call,
   isLeavingSession: state.leavingSession,
 }));
-vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/auth/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../../lib/query/query", () => ({
   queryClient: { getQueryData: state.cached },
   spaceSeedKey: () => [],
 }));
-vi.mock("../../lib/rpc", () => ({ selectedSpaceId: () => "old-space", selectSpace: state.select }));
-vi.mock("../../lib/tts", () => ({ speaker: { stop: state.stop } }));
+vi.mock("../../lib/query/rpc", () => ({
+  selectedSpaceId: () => "old-space",
+  selectSpace: state.select,
+}));
+vi.mock("../../lib/calls/tts", () => ({ speaker: { stop: state.stop } }));
 vi.mock("../../lib/space-switch", async (importOriginal) => ({
   ...(await importOriginal<typeof SpaceSwitch>()),
   remountShellForSpace: state.remount,
@@ -49,6 +52,7 @@ let commits: Array<() => boolean>;
 let navigationRevision: { current: number };
 let overlayRevision: { current: number };
 let navigate: ReturnType<typeof vi.fn>;
+let startChatRead: ReturnType<typeof vi.fn<(target: { botId?: string; groupId?: string }) => void>>;
 /** Whether the latest switch says it is still on its way, and how each switch ended. */
 let live: () => boolean;
 let ended: boolean[];
@@ -66,6 +70,7 @@ function Harness() {
     overlayRevision,
     closeMobileSidebar: () => {},
     beginSpaceSwitch,
+    startChatRead,
   });
   return null;
 }
@@ -85,6 +90,7 @@ beforeEach(() => {
   navigationRevision = { current: 0 };
   overlayRevision = { current: 0 };
   navigate = vi.fn();
+  startChatRead = vi.fn();
   live = () => false;
   ended = [];
   state.prime.mockImplementation(() => new Promise<void>((resolve) => pending.push(resolve)));
@@ -102,6 +108,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("opening a chat in this space", () => {
+  it("starts loading the chat before the route changes", () => {
+    state.select.mockReturnValue(true);
+    navigate.mockImplementation(() => expect(startChatRead).toHaveBeenCalled());
+    act(() => open("old-space", "/app/bot-2"));
+    expect(startChatRead).toHaveBeenCalledWith({ botId: "target" });
+    expect(navigate).toHaveBeenCalledWith("/app/bot-2");
+    expect(state.prime).not.toHaveBeenCalled();
+  });
+});
+
 describe("pending space switches", () => {
   it("keeps a switch when an empty space automatically redirects to the same route", async () => {
     window.history.replaceState({ idx: 0 }, "", "/app");
@@ -115,6 +132,7 @@ describe("pending space switches", () => {
         userId: "user",
         closeMobileSidebar: () => {},
         beginSpaceSwitch,
+        startChatRead,
       });
       return null;
     }

@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionModel } from "@rakazo/core";
 import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
-import { SettingsPageHeader } from "../../components/SettingsPageHeader";
+import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader";
 import { useListSearch } from "../../lib/use-list-search";
 import { SettingsListRow } from "./providers-section";
 

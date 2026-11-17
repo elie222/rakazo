@@ -5,27 +5,27 @@ import { displayName } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
-import { BotAvatar } from "../components/bot-avatar";
-import { useBotEmail, useBotEmailRows } from "../components/bot-email";
-import { botProfileMenuOptions, useBotProfileActions } from "../components/bot-profile-menu";
-import { glassHeaderOptions } from "../components/glass-title";
-import { NativeActionButton } from "../components/native-action-button";
-import { NativeSymbol } from "../components/native-symbol";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { useBotEmail, useBotEmailRows } from "../components/bots/bot-email";
+import { botProfileMenuOptions, useBotProfileActions } from "../components/bots/bot-profile-menu";
+import { glassHeaderOptions } from "../components/native/glass-title";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { NativeSymbol } from "../components/native/native-symbol";
 import {
   SettingsGroup,
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../components/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
-import { afterChatNotifyChange } from "../lib/live-notifications";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useMobileTokens, useThemedStyles } from "../lib/native";
-import { createQueuedSave } from "../lib/queued-save";
-import { useBotRoutines } from "../lib/routine-store";
-import { loadSessionToken } from "../lib/session";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+} from "../components/settings/settings-group";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api/api";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { loadSessionToken } from "../lib/api/session";
+import { errorText } from "../lib/api/user-error";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useMobileTokens, useThemedStyles } from "../lib/native/native";
+import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
+import { createQueuedSave } from "../lib/query/queued-save";
+import { useBotRoutines } from "../lib/routines/routine-store";
 
 export default function BotProfile() {
   const sideInsets = useSideInsets();
