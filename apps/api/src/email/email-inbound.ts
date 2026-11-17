@@ -225,7 +225,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     ...(email.cc.length ? { cc: listed(email.cc) } : {}),
     subject: email.subject.slice(0, HEADER_MAX_CHARS),
     ...(email.date ? { date: email.date } : {}),
-    text: email.text,
+    text: email.modelText,
     ...(artifacts.length
       ? { files: artifacts.map(({ name, mimeType, size }) => ({ name, mimeType, size })) }
       : {}),
@@ -236,7 +236,19 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   return deliverWebhookEvent(
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
-    { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
+    {
+      prompt,
+      attachmentBlocks: artifacts.map(({ id, name, mimeType, size }) => ({
+        kind: "file",
+        artifactId: id,
+        name,
+        mimeType,
+        size,
+      })),
+      routines: matched,
+      source: "email",
+      idempotencyKey: email.key,
+    },
   ).catch((error: unknown) => {
     if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
     throw error;
