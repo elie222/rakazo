@@ -142,8 +142,9 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     const ref = entry("crashed");
     const row = await secretRow("crash", ref);
     // After the commit this process reaches neither the store nor the queue, as when it dies.
-    const dying: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel"> = {
+    const dying: Pick<JobPublisher, "enqueue" | "enqueueIn" | "enqueueManyIn" | "cancel"> = {
       enqueueIn: (tx, job) => jobs.enqueueIn(tx, job),
+      enqueueManyIn: (tx, many) => jobs.enqueueManyIn(tx, many),
       enqueue: async () => {
         throw new Error("process gone");
       },
@@ -213,5 +214,157 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     );
     expect(entries.has(shared)).toBe(false);
     expect(await queued(shared)).toEqual([]);
+  });
+  it("removes the entries of a wallet and a purchase that go with their deleted user and Space", async () => {
+    const holder = `secret-persistence-cascade-${suffix}`;
+    const fixture = asSystem(owner.prisma);
+    await fixture.user.create({
+      data: { id: holder, name: "Cascade", email: `${holder}@rakazo.test`, emailVerified: true },
+    });
+    await fixture.organization.create({
+      data: { id: holder, name: "Cascade", slug: holder, createdAt: new Date() },
+    });
+    await fixture.space.create({ data: { id: holder, organizationId: holder, name: "Cascade" } });
+    const [wallet, card, request] = [entry("wallet"), entry("card"), entry("request")];
+    await fixture.paymentWallet.create({
+      data: { userId: holder, provider: "fake", status: "active", ciphertext: wallet },
+    });
+    const purchase = await fixture.purchase.create({
+      data: {
+        operationKey: `operation-${suffix}`,
+        spaceId: holder,
+        userId: holder,
+        botId: "bot",
+        threadId: "thread",
+        threadGeneration: 0,
+        provider: "fake",
+        remoteId: `remote-${suffix}`,
+        merchantName: "Shop",
+        merchantUrl: "https://shop.example.test",
+        amount: 100,
+        currency: "usd",
+        status: "pending",
+        cardCiphertext: card,
+        requestCiphertext: request,
+      },
+    });
+
+    reachable = false;
+    await asApp(() => prisma.space.deleteMany({ where: { id: holder } }));
+    expect(await queued(card)).toMatchObject([{ due: true }]);
+    expect(unwrapJobPayload((await queued(request))[0]!.payload).payload).toEqual({
+      kind: "purchase_request",
+      recordId: `purchase-request:${purchase.operationKey}`,
+      ref: request,
+    });
+    reachable = true;
+    await runQueued(card);
+    await runQueued(request);
+    expect([entries.has(card), entries.has(request)]).toEqual([false, false]);
+
+    await asApp(() => prisma.user.deleteMany({ where: { id: holder } }));
+    await fixture.organization.deleteMany({ where: { id: holder } });
+    expect(entries.has(wallet)).toBe(false);
+    expect(store.delete).toHaveBeenCalledWith(
+      wallet,
+      expect.objectContaining({ recordId: `payment-wallet:${holder}` }),
+    );
+    expect(await queued(wallet)).toEqual([]);
+  });
+  it("hands a Space's many purchase entries to the queue in one statement, due once the delete commits", async () => {
+    const space = `secret-persistence-history-${suffix}`;
+    const fixture = asSystem(owner.prisma);
+    await fixture.organization.create({
+      data: { id: space, name: "History", slug: space, createdAt: new Date() },
+    });
+    await fixture.space.create({ data: { id: space, organizationId: space, name: "History" } });
+    const purchases = Array.from({ length: 40 }, (_, i) => ({
+      id: `${space}-${i}`,
+      card: entry(`history-card-${i}`),
+      request: entry(`history-request-${i}`),
+    }));
+    await fixture.purchase.createMany({
+      data: purchases.map(({ id, card, request }) => ({
+        id,
+        operationKey: id,
+        spaceId: space,
+        userId,
+        botId: "bot",
+        threadId: "thread",
+        threadGeneration: 0,
+        provider: "fake",
+        remoteId: id,
+        merchantName: "Shop",
+        merchantUrl: "https://shop.example.test",
+        amount: 100,
+        currency: "usd",
+        status: "completed",
+        cardCiphertext: card,
+        requestCiphertext: request,
+      })),
+    });
+    const enqueueManyIn = vi.spyOn(jobs, "enqueueManyIn");
+    const enqueueIn = vi.spyOn(jobs, "enqueueIn");
+    try {
+      await asApp(() => prisma.space.deleteMany({ where: { id: space } }));
+      expect(await fixture.purchase.count({ where: { spaceId: space } })).toBe(0);
+      // The backups recorded with the delete, then brought forward in one call after it commits.
+      expect(enqueueManyIn).toHaveBeenCalledTimes(2);
+      expect(enqueueIn).not.toHaveBeenCalled();
+      expect(store.delete).not.toHaveBeenCalled();
+      const [first] = purchases;
+      expect(await queued(first!.card)).toMatchObject([{ due: true }]);
+      expect(unwrapJobPayload((await queued(first!.request))[0]!.payload).payload).toEqual({
+        kind: "purchase_request",
+        recordId: `purchase-request:${first!.id}`,
+        ref: first!.request,
+      });
+      for (const { card, request } of purchases) {
+        await runQueued(card);
+        await runQueued(request);
+      }
+      expect(purchases.some(({ card, request }) => entries.has(card) || entries.has(request))).toBe(
+        false,
+      );
+    } finally {
+      enqueueManyIn.mockRestore();
+      enqueueIn.mockRestore();
+      await fixture.organization.deleteMany({ where: { id: space } });
+    }
+  });
+
+  it("removes another member's install entry when a member deletes the bot that holds it", async () => {
+    const space = `secret-persistence-members-${suffix}`;
+    const fixture = asSystem(owner.prisma);
+    await fixture.organization.create({
+      data: { id: space, name: "Members", slug: space, createdAt: new Date() },
+    });
+    await fixture.space.create({ data: { id: space, organizationId: space, name: "Members" } });
+    const bot = await fixture.bot.create({
+      data: { spaceId: space, userId, name: "Shared", color: "blue" },
+    });
+    const theirs = entry("their-install");
+    await fixture.messagingInstallation.create({
+      data: {
+        provider: "fake",
+        workspaceId: `workspace-${suffix}`,
+        workspaceName: "Theirs",
+        spaceId: space,
+        userId: otherUserId,
+        botId: bot.id,
+        ciphertext: theirs,
+      },
+    });
+
+    reachable = false;
+    await runAsTenant({ spaceId: space, userId }, () =>
+      prisma.bot.deleteMany({ where: { id: bot.id } }),
+    );
+    expect(await fixture.messagingInstallation.count({ where: { botId: bot.id } })).toBe(0);
+    expect(await queued(theirs)).toMatchObject([{ due: true }]);
+    reachable = true;
+    await runQueued(theirs);
+    expect(entries.has(theirs)).toBe(false);
+    await fixture.organization.deleteMany({ where: { id: space } });
   });
 });
