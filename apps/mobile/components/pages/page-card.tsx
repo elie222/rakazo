@@ -7,11 +7,11 @@ import { useRouter } from "expo-router";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { currentApiBase } from "../../lib/api";
-import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
-import { usePageCardDetail } from "../../lib/page-card-detail";
-import { pageCardState, pageDocument, pagePreviewLayout } from "../../lib/pages";
-import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
+import { currentApiBase } from "../../lib/api/api";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { usePageCardDetail } from "../../lib/pages/page-card-detail";
+import { pageCardState, pageDocument, pagePreviewLayout } from "../../lib/pages/pages";
+import { SandboxedHtmlPreview } from "../media/sandboxed-html-preview";
 
 type PageBlock = Extract<MessageBlock, { kind: "page" }>;
 

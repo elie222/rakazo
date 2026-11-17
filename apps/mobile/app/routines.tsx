@@ -4,20 +4,20 @@ import type { Routine } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { NativeActionButton } from "../components/native-action-button";
-import { RoutineList } from "../components/routine-list";
-import { native, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { deviceTimeZone } from "../lib/routine";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { RoutineList } from "../components/routines/routine-list";
+import { errorText } from "../lib/api/user-error";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { deviceTimeZone } from "../lib/routines/routine";
 import {
   loadBotRoutines,
   removeBotRoutine,
   setRoutineActive,
   useBotRoutines,
-} from "../lib/routine-store";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+} from "../lib/routines/routine-store";
 
 export default function Routines() {
   const sideInsets = useSideInsets();

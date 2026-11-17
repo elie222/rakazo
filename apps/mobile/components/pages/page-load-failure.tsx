@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, View } from "react-native";
-import { useMobileTokens } from "../../lib/native";
-import { pageLoadProblem } from "../../lib/pages";
-import { NativeActionButton } from "../native-action-button";
+import { useMobileTokens } from "../../lib/native/native";
+import { pageLoadProblem } from "../../lib/pages/pages";
+import { NativeActionButton } from "../native/native-action-button";
 
 /**
  * A page or list that could not be read, said in the user's language with Try again; a page that
