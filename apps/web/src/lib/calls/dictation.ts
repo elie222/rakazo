@@ -13,6 +13,7 @@ import { desktopBridge } from "../platform/desktop.js";
 import { selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 import { errorText, voiceAccountErrorText } from "../query/user-error.js";
 import { DesktopSpeechRecognition } from "./desktop-speech.js";
+import { ensureVoiceConsent, invalidateVoiceConsent } from "./voice-consent.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -185,6 +186,7 @@ export class Dictation {
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  private requestCallId: string | undefined;
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
@@ -257,11 +259,13 @@ export class Dictation {
 
   async listen(opts: {
     mode: DictationMode;
+    callId?: string;
     transcribe?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
     this.stop("replace");
+    this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
     this.onFinal = opts.onFinal;
@@ -586,6 +590,7 @@ export class Dictation {
   }
 
   private async transcribeChunks(mine: number, spaceId: string | null) {
+    const requestCallId = this.requestCallId;
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
     // the speech threshold is not sent. Require multiple running-context readings so
@@ -612,11 +617,11 @@ export class Dictation {
     this.transcribeAbort = abort;
     const timedOutMessage = t`Transcription request timed out.`;
     const couldNotTranscribe = t`Could not transcribe that recording.`;
-    const timer = setTimeout(
-      () => abort.abort(new Error(timedOutMessage)),
-      VOICE_RESPONSE_TIMEOUT_MS,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      await ensureVoiceConsent(spaceId, undefined, abort.signal);
+      if (this.token !== mine) return;
+      timer = setTimeout(() => abort.abort(new Error(timedOutMessage)), VOICE_RESPONSE_TIMEOUT_MS);
       const audioBase64 = await blobToBase64(blob);
       if (this.token !== mine) return;
       const res = await withAbort(
@@ -628,6 +633,7 @@ export class Dictation {
             audioBase64,
             mimeType: blob.type,
             language: transcriptionLanguage(),
+            callId: requestCallId,
           }),
           signal: abort.signal,
         }),
@@ -640,6 +646,7 @@ export class Dictation {
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
+        if (body.code === "AI_CONSENT_REQUIRED") invalidateVoiceConsent();
         this.failListening(mine, voiceAccountErrorText(body) ?? body.error ?? couldNotTranscribe);
         return;
       }
