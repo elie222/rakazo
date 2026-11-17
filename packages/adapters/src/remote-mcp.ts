@@ -1,6 +1,5 @@
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
-import { isDeepStrictEqual } from "node:util";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   StreamableHTTPClientTransport,
@@ -8,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
   ConnectionSetupError,
@@ -34,6 +34,7 @@ import {
 } from "./mcp-app.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
+import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
   createAddressCheckedLookup,
@@ -47,6 +48,14 @@ import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 const DEFAULT_MAX_MCP_TOOLS = 250;
 const DEFAULT_MAX_MCP_PAGES = 20;
 const MCP_TIMEOUT_MS = 30_000;
+/** How long a tool call may go without an answer or a progress report. Real calls (a
+ * search across mail folders, a document export, a gateway running a program) take
+ * minutes; connecting and listing stay short. Below the HTTP client's default
+ * five-minute header wait, so this timeout fires first. */
+export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
+/** Progress restarts the wait, but never past this. The run's own cancellation still
+ * ends a call at any time. */
+export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
 const MAX_RESULT_BYTES = 1_000_000;
 
 export type { ResolveHostname } from "./network-address.js";
@@ -175,8 +184,10 @@ export async function callRemoteMcpTool(
   args: Record<string, unknown>,
   projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
-  return withScopedMcpClient(options, (client, signal) =>
-    callMcpTool(client, signal, toolName, args, projectResult),
+  return withScopedMcpClient(
+    options,
+    (client, signal) => callMcpTool(client, signal, toolName, args, projectResult),
+    MCP_TOOL_MAX_TOTAL_MS,
   );
 }
 
@@ -200,7 +211,11 @@ async function callMcpTool(
 ): Promise<unknown> {
   const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
     signal,
-    timeout: MCP_TIMEOUT_MS,
+    timeout: MCP_TOOL_TIMEOUT_MS,
+    // A progress handler is what asks the server for progress reports at all.
+    onprogress: () => undefined,
+    resetTimeoutOnProgress: true,
+    maxTotalTimeout: MCP_TOOL_MAX_TOTAL_MS,
   });
   const isError = result.isError === true;
   const envelope = {
@@ -214,112 +229,27 @@ async function callMcpTool(
   return limitRemoteMcpPayload(projectResult ? projectResult(envelope) : envelope);
 }
 
-/** FastMCP-style servers serialize `structuredContent` into a text block too,
- * so the result budget would hold the same data twice. Drop a text block that
- * is exactly that serialization and keep the structured form: the result
- * serializer JSON-stringifies the envelope, where structured data stays plain
- * JSON instead of becoming a quoted, escaped JSON string. Differing text,
- * images and other blocks pass through untouched. Error results keep every
- * block: their text is the diagnostic audits and error readers report. */
-function withoutDuplicatedStructuredText(
-  content: unknown,
-  structured: unknown,
-  isError: boolean,
-): unknown {
-  if (isError || structured === undefined || !Array.isArray(content)) return content;
-  return content.filter((block) => !isStructuredTextDuplicate(block, structured));
-}
-
-function isStructuredTextDuplicate(block: unknown, structured: unknown): boolean {
-  if (typeof block !== "object" || block === null) return false;
-  const { type, text } = block as { type?: unknown; text?: unknown };
-  return type === "text" && repeatsStructuredContent(text, structured);
-}
-
-function repeatsStructuredContent(text: unknown, structured: unknown): boolean {
-  if (typeof text !== "string") return false;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return false;
-  }
-  // Parsing rounds both copies of an integer like 9007199254740993 to the same
-  // double, so an equal comparison would drop the text that still carries the
-  // exact digits the server sent.
-  if (couldLoseNumericPrecision(text)) return false;
-  return isDeepStrictEqual(parsed, structured);
-}
-
-/** Whether a JSON number in `text` does not survive the round-trip through a
- * JavaScript number: integers outside the safe range round to a nearby double,
- * huge exponents overflow to Infinity and tiny ones underflow to 0. Number
- * digits inside strings are skipped. */
-function couldLoseNumericPrecision(text: string): boolean {
-  const quote = '"'.charCodeAt(0);
-  const backslash = "\\".charCodeAt(0);
-  const minus = "-".charCodeAt(0);
-  const zero = "0".charCodeAt(0);
-  const nine = "9".charCodeAt(0);
-  const numberChars = new Set([..."+-.eE0123456789"].map((char) => char.charCodeAt(0)));
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < text.length; ) {
-    const code = text.charCodeAt(index);
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (code === backslash) escaped = true;
-      else if (code === quote) inString = false;
-      index += 1;
-    } else if (code === quote) {
-      inString = true;
-      index += 1;
-    } else if (code === minus || (code >= zero && code <= nine)) {
-      let end = index + 1;
-      while (end < text.length && numberChars.has(text.charCodeAt(end))) end += 1;
-      if (numberLosesPrecision(text.slice(index, end))) return true;
-      index = end;
-    } else {
-      index += 1;
-    }
-  }
-  return false;
-}
-
-function numberLosesPrecision(token: string): boolean {
-  const value = Number(token);
-  if (!Number.isFinite(value)) return true; // 1e999 overflows to Infinity.
-  if (/[.eE]/.test(token)) {
-    if (value === 0) return /[1-9]/.test(token); // 1e-400 underflows to 0.
-    // A double keeps any 15 significant digits exactly; more may round
-    // (9.007199254740993e15, 1.0000000000000001).
-    const digits = token
-      .replace(/[eE].*$/, "")
-      .replace(/\D/g, "")
-      .replace(/^0+/, "")
-      .replace(/0+$/, "");
-    return digits.length > 15;
-  }
-  return !Number.isSafeInteger(value);
-}
-
-/** One client per call, or the run-scoped session when `options` carries one. */
+/** One client per call, or the run-scoped session when `options` carries one.
+ * `deadlineMs` bounds the whole operation; each request also has its own timeout. */
 function withScopedMcpClient<T>(
   options: RemoteMcpOptions,
   run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
+  deadlineMs = MCP_TIMEOUT_MS,
 ): Promise<T> {
   if (options.sessionPool && options.sessionScope !== undefined) {
     return options.sessionPool.withSession(
       options as RemoteMcpOptions & { sessionScope: string },
       run,
+      deadlineMs,
     );
   }
-  return withRemoteMcpClient(options, run);
+  return withRemoteMcpClient(options, run, deadlineMs);
 }
 
 async function withRemoteMcpClient<T>(
   options: RemoteMcpOptions,
   run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
+  deadlineMs: number,
 ): Promise<T> {
   const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
   const endpoint = await assertSafeRemoteUrl(
@@ -327,7 +257,7 @@ async function withRemoteMcpClient<T>(
     options.resolveHostname ?? resolveHostname,
     policy,
   );
-  const signal = combineSignals(options.signal, AbortSignal.timeout(MCP_TIMEOUT_MS));
+  const signal = combineSignals(options.signal, AbortSignal.timeout(deadlineMs));
   const safeFetch = createSafeRemoteFetch(
     options.fetch,
     options.resolveHostname ?? resolveHostname,
@@ -393,6 +323,7 @@ export class RemoteMcpSessionCache {
   async withSession<T>(
     options: RemoteMcpOptions & { sessionScope: string },
     run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
+    deadlineMs = MCP_TIMEOUT_MS,
   ): Promise<T> {
     const key = remoteMcpSessionKey(options);
     for (let attempt = 0; ; attempt += 1) {
@@ -400,7 +331,7 @@ export class RemoteMcpSessionCache {
       session.inFlight += 1;
       const controller = new AbortController();
       const deadlineReason = new DOMException("Timed out", "TimeoutError");
-      const deadline = setTimeout(() => controller.abort(deadlineReason), MCP_TIMEOUT_MS);
+      const deadline = setTimeout(() => controller.abort(deadlineReason), deadlineMs);
       const onAbort = () => controller.abort(options.signal?.reason);
       if (options.signal?.aborted) onAbort();
       else options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -420,8 +351,9 @@ export class RemoteMcpSessionCache {
         // running on the transport; only closing the session aborts it and
         // tells the server to drop the work, as a one-off session does. The
         // combined signal keeps the reason of whichever signal fired first.
-        if (brokeMcpSession(session, error) || (signal.aborted && signal.reason === deadlineReason))
-          void this.drop(session);
+        const timedOut =
+          (signal.aborted && signal.reason === deadlineReason) || isMcpWaitTimeout(error);
+        if (brokeMcpSession(session, error) || timedOut) void this.drop(session);
         throw error;
       } finally {
         clearTimeout(deadline);
@@ -995,6 +927,16 @@ export function isMcpSessionGoneError(error: unknown): boolean {
  * unlike after a server's own error, including a JSON-RPC response with the
  * same -32000 code the client uses for closure — cannot be trusted for the
  * next call. A missed closure is still caught by the server's next 404. */
+/** The SDK's own wait for an answer (a tool call without progress) ran out. A cancel uses
+ * the same code, but only the SDK's timers attach how long they waited. */
+function isMcpWaitTimeout(error: unknown): boolean {
+  if (!(error instanceof McpError) || error.code !== ErrorCode.RequestTimeout) return false;
+  const data = error.data;
+  return (
+    typeof data === "object" && data !== null && ("timeout" in data || "maxTotalTimeout" in data)
+  );
+}
+
 function brokeMcpSession(session: ScopedMcpSession, error: unknown): boolean {
   return session.connectionClosed || error instanceof RemoteMcpTransportError;
 }

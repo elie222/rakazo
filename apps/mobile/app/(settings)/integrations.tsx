@@ -822,9 +822,9 @@ export default function Integrations() {
     setSourcePreset(preset);
     setSourceError(null);
     setName(preset?.name ?? "");
-    setUrl(preset?.url ?? "");
+    setUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setSourceAuth(preset ? "bearer" : "none");
+    setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 

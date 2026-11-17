@@ -72,11 +72,13 @@ const McpAuthSchema = z
 
 /** MCP services offered as one-step sources. A preset with a URL always connects there. */
 export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
-  { id: "executor", name: "Executor", urlPlaceholder: "https://executor.example/mcp" },
+  // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
+  { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
 ];
 
 /** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send
- * only the id. Stored configs keep only fixed-URL preset ids; the rest store as custom. */
+ * only the id. A sign-in preset is saved as an MCP server instead; older clients that still
+ * send its id with a token install it here. Stored configs keep only fixed-URL preset ids; the rest store as custom. */
 export function applyMcpSourcePreset(
   source: string,
   config: Record<string, unknown>,
