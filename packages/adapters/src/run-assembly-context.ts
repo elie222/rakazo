@@ -353,17 +353,15 @@ export async function buildTurnPrompt(
   let routineNote: string | undefined;
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
-  if (run.trigger === "routine") {
-    const routine = run.routineId
-      ? await bestEffort(
-          "load the routine for its run's prompt",
-          deps.prisma.routine.findUnique({
-            where: { id: run.routineId },
-            select: { name: true, timezone: true },
-          }),
-        )
-      : undefined;
-    // Still framed when the routine was cancelled after this run was queued.
+  // Daily check-ins share the routine trigger but belong to no routine.
+  if (run.trigger === "routine" && run.routineId) {
+    const routine = await bestEffort(
+      "load the routine for its run's prompt",
+      deps.prisma.routine.findUnique({
+        where: { id: run.routineId },
+        select: { name: true, timezone: true },
+      }),
+    );
     routineNote = routineRunInstruction(routine?.name);
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);

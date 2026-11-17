@@ -50,6 +50,7 @@ interface Scenario {
   resumeAfterScheduleEdit?: boolean;
   lateLookupFails?: boolean;
   routineGone?: boolean;
+  noRoutine?: boolean;
   setupFailsOnce?: boolean;
 }
 
@@ -68,7 +69,7 @@ async function failRun(scenario: Scenario) {
     userId: "user-1",
     status: "queued",
     trigger,
-    routineId: trigger === "routine" ? "routine-1" : null,
+    routineId: trigger === "routine" && !scenario.noRoutine ? "routine-1" : null,
     retryOfRunId: scenario.retryOfRunId ?? null,
     clientNonce: scenario.clientNonce ?? null,
     lateSince: scenario.lateSince ?? null,
@@ -376,7 +377,7 @@ describe("a routine run's prompt", () => {
     );
   });
 
-  it("keeps the line, without a name, once the routine is gone", async () => {
+  it("keeps the line, without a name, when the routine cannot be read", async () => {
     const { runtimeRun } = await failRun({
       error: new Error("Invalid API key"),
       routineGone: true,
@@ -386,9 +387,15 @@ describe("a routine run's prompt", () => {
     );
   });
 
-  it("leaves other runs without it", async () => {
-    const { runtimeRun } = await failRun({ error: new Error("Invalid API key"), trigger: "user" });
-    expect(prompt(runtimeRun)).not.toContain("scheduled run of your routine");
+  it("leaves other runs and daily check-ins without it", async () => {
+    const user = await failRun({ error: new Error("Invalid API key"), trigger: "user" });
+    expect(prompt(user.runtimeRun)).not.toContain("scheduled run of your routine");
+    const checkIn = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+      noRoutine: true,
+    });
+    expect(prompt(checkIn.runtimeRun)).not.toContain("scheduled run of your routine");
   });
 });
 
