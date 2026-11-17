@@ -771,17 +771,13 @@ export function ThreadComposer({
                   }
                 }}
                 keyboardAppearance={colorScheme}
-                onContentSizeChange={
-                  model
-                    ? (event) => {
-                        // The stacked layout gives the text more width, so it stays until the box
-                        // empties; going back as soon as the text fits would flip between the two.
-                        if (event.nativeEvent.contentSize.height > 22 * textScale * 1.5)
-                          setWrapped(true);
-                        else if (!draftRef.current) setWrapped(false);
-                      }
-                    : undefined
-                }
+                // Tracked even before a model chip loads, so a long restored draft stacks once it does.
+                onContentSizeChange={(event) => {
+                  // The stacked layout gives the text more width, so it stays until the box
+                  // empties; going back as soon as the text fits would flip between the two.
+                  if (event.nativeEvent.contentSize.height > 22 * textScale * 1.5) setWrapped(true);
+                  else if (!draftRef.current) setWrapped(false);
+                }}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
