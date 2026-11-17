@@ -49,13 +49,13 @@ export function SidebarHeader({
   // In the icon rail the actions stack, so a label above or below covers its neighbour.
   const labelSide = mini ? "inline-end" : undefined;
   // In the rail the buttons share the bot tiles' box, so hover shapes line up.
-  const railTile = mini ? " size-12 rounded-xl" : "";
+  const railTile = mini ? "size-12 rounded-xl" : "";
   const toggle = (
     <IconTooltip label={toggleLabel} side={labelSide}>
       <Button
         variant="ghost"
         size="icon"
-        className={`app-no-drag hidden text-muted-foreground md:inline-flex${railTile}`}
+        className={`app-no-drag hidden text-muted-foreground md:inline-flex ${railTile}`}
         aria-label={toggleLabel}
         data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
@@ -121,7 +121,7 @@ export function SidebarHeader({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={`app-no-drag text-muted-foreground${railTile}`}
+                  className={`app-no-drag text-muted-foreground ${railTile}`}
                 />
               }
               aria-label={t`Create`}
