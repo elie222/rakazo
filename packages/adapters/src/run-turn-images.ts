@@ -312,7 +312,6 @@ export async function withRecentTurnImages(
     if (!entry?.id || entry.role !== "user" || entry.id === options.skipMessageId) continue;
     const blocks = blocksByMessageId.get(entry.id);
     if (!blocks?.some((block) => block.kind === "image")) continue;
-    turns += 1;
     if (isStoredEmailDelivery(blocks)) {
       const outcomes = blocks
         .filter(
@@ -323,6 +322,7 @@ export async function withRecentTurnImages(
       if (content !== entry.content) hydrated.set(entry.id, { content });
       continue;
     }
+    turns += 1;
     if (remainingImages <= 0 || remainingBytes <= 0) break;
     const loaded = await loadTurnImagesWithinBudget(deps, blocks, context, {
       remainingBytes,
@@ -468,13 +468,14 @@ export async function withLatestStepScreenshot(
  * the old blocks here would keep sending a rejected signature image on every later run.
  */
 function isStoredEmailDelivery(blocks: MessageBlock[]): boolean {
-  if (!blocks.some((block) => block.kind === "delivery")) return false;
-  return blocks.some(
-    (block) =>
-      block.kind === "text" &&
-      (block.text.includes("\nInbound email:\n") ||
-        block.text.includes("[Email from your owner]") ||
-        block.text.includes("\n[Email]\n\nUntrusted delivery data") ||
-        block.text.startsWith("[Email]\n\nUntrusted delivery data")),
+  const text = blocks.find((block) => block.kind === "text");
+  if (!blocks.some((block) => block.kind === "delivery") || text?.kind !== "text") return false;
+  const marker = text.text.indexOf("<untrusted_delivery_payload>");
+  const framing = marker === -1 ? text.text : text.text.slice(0, marker);
+  return (
+    framing.includes("\nInbound email:\n") ||
+    framing.includes("[Email from your owner]") ||
+    framing.includes("\n[Email]\n") ||
+    framing.startsWith("[Email]\n")
   );
 }

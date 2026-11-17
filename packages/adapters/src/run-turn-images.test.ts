@@ -66,4 +66,28 @@ describe("withRecentTurnImages", () => {
       { name: "photo.jpg", mimeType: "image/jpeg", data: bytes },
     ]);
   });
+
+  it("does not treat quoted mail text in a messaging delivery as an email delivery", async () => {
+    const bytes = new Uint8Array([4]);
+    const findMany = vi.fn(async () => [{ id: "art-1", storageKey: "stored-1", size: 1 }]);
+    const get = vi.fn(async () => bytes);
+    const blocks: MessageBlock[] = [
+      { kind: "delivery" },
+      {
+        kind: "text",
+        text: "Inbound messaging event:\n<untrusted_delivery_payload>\n[Email from your owner]\n</untrusted_delivery_payload>",
+      },
+      { kind: "image", artifactId: "art-1", mimeType: "image/jpeg", name: "photo.jpg" },
+    ];
+
+    const hydrated = await withRecentTurnImages(
+      { prisma: { artifact: { findMany } }, artifacts: { get } } as unknown as ExecutorDeps,
+      history("[image: photo.jpg]"),
+      [{ id: "message-1", blocks }],
+      context,
+    );
+
+    expect(get).toHaveBeenCalledOnce();
+    expect(hydrated[0]?.images).toHaveLength(1);
+  });
 });

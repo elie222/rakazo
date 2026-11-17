@@ -170,10 +170,9 @@ export async function readInboundEmail(
       ? email.from.name
       : "";
 
+  const referencedIds = contentIdsReferencedByHtml(email.html);
   const attachments = email.attachments
-    .filter((attachment) =>
-      keptInboundAttachment(attachment, contentIdsReferencedByHtml(email.html)),
-    )
+    .filter((attachment) => keptInboundAttachment(attachment, referencedIds))
     .map((attachment) => ({
       name: attachment.filename?.trim() || "attachment",
       mimeType: attachment.mimeType,
@@ -286,7 +285,7 @@ function isInboundImagePart(
 function contentIdsReferencedByHtml(html: string | undefined): Set<string> {
   const ids = new Set<string>();
   if (!html) return ids;
-  for (const match of html.matchAll(/cid:([^"'\s>]+)/gi)) {
+  for (const match of html.matchAll(/cid:([^"'\s<>()]+)/gi)) {
     const token = match[1] ?? "";
     ids.add(normalizeContentId(token));
     try {
