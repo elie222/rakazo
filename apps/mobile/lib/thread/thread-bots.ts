@@ -37,10 +37,12 @@ export function useThreadBots({
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
   // The roster the last chat in this Space loaded, so rows draw with their bot colours at once
-  // and the refresh only redraws them when the roster changed.
+  // and the refresh only redraws them when the roster changed. It may predate a rename, so the
+  // chat names its bot from it only once this chat's own read has arrived.
   const [mentionBots, setMentionBots] = useState<MobileBot[]>(
     () => queryClient.getQueryData(rpcQuery("bots/list").queryKey) ?? [],
   );
+  const [rosterLoaded, setRosterLoaded] = useState(false);
   // The call outlives renders, so its switch check reads the newest bot list from here.
   const mentionBotsRef = useRef<MobileBot[]>([]);
   mentionBotsRef.current = mentionBots;
@@ -64,6 +66,7 @@ export function useThreadBots({
       if (!isCurrent() || targetBotId !== activeBotId.current) return;
       mentionBotsAppliedGeneration.current = generation;
       setMentionBots((current) => retainUnchangedBotRoster(current, bots));
+      setRosterLoaded(true);
       if (targetBotId) {
         const next = bots.find((bot) => bot.id === targetBotId);
         // Read the route name from a ref so renaming does not recreate this
@@ -80,6 +83,7 @@ export function useThreadBots({
       if (!saved || mentionBotsAppliedGeneration.current !== 0) return;
       if (!isCurrent() || targetBotId !== activeBotId.current) return;
       setMentionBots((current) => (current.length ? current : saved.bots));
+      setRosterLoaded(true);
     }
   }, [botId, groupId, router]);
 
@@ -111,5 +115,12 @@ export function useThreadBots({
     await Promise.all([refreshMentionBots(), refreshMentionGroups()]);
   }, [refreshMentionBots, refreshMentionGroups]);
 
-  return { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster };
+  return {
+    mentionBots,
+    mentionBotsRef,
+    mentionGroups,
+    rosterLoaded,
+    refreshMentionBots,
+    refreshMentionRoster,
+  };
 }

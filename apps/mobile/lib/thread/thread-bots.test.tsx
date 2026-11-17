@@ -76,10 +76,12 @@ describe("thread roster refresh", () => {
     await act(async () => root.render(createElement(Thread, { botId: "bot-2" })));
     const shown = state.mentionBots;
     expect(shown).toEqual(bots);
+    expect(state.rosterLoaded).toBe(false);
     await act(async () => {
       await state.refreshMentionBots();
     });
     expect(state.mentionBots).toBe(shown);
+    expect(state.rosterLoaded).toBe(true);
   });
 
   it("keeps the newest roster in the cache when an older refresh answers last", async () => {
