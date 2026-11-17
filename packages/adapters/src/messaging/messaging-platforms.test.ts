@@ -65,6 +65,26 @@ describe("messagingPlatformsFromEnv", () => {
     expect(addresses.slack).toBeUndefined();
   });
 
+  it.each([
+    undefined,
+    "http://localhost:3100",
+    "http://127.0.0.1:3100",
+    "https://api.example.test",
+  ])("preserves automatic receiving without inferring webhook registration from %s", (apiUrl) => {
+    const credentials = {
+      telegramBotToken: "fake-token",
+      telegramWebhookSecret: "fake-secret",
+      telegramBots: [{ name: "support", botToken: "fake-support", webhookSecret: "fake-secret" }],
+      apiUrl,
+    };
+    const modes = (pollInboundMessages: boolean) =>
+      messagingPlatformsFromEnv(credentials, { pollInboundMessages }).map(
+        ({ adapter }) => (adapter as unknown as { mode: string }).mode,
+      );
+    expect(modes(true)).toEqual(["auto", "auto"]);
+    expect(modes(false)).toEqual(["webhook", "webhook"]);
+  });
+
   it("requires all four sendblue values", () => {
     for (const key of [
       "sendblueApiKeyId",

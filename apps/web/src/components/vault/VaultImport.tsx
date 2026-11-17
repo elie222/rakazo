@@ -9,7 +9,7 @@ import { newVaultImportRows, vaultImportCounts, vaultImportProblems } from "@rak
 import { vaultImportProblemLines, vaultImportText } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
 /** The review of a CSV export read on this device, then what the import saved. */
 export function VaultImportPage({

@@ -1,4 +1,9 @@
-import type { AutoReviewProvider, AutoReviewRequest, AutoReviewResult } from "@rakazo/adapter-kit";
+import type {
+  AutoReviewProvider,
+  AutoReviewRequest,
+  AutoReviewResult,
+  DecisionProviderOptions,
+} from "@rakazo/adapter-kit";
 import type { LlmAutoReviewOptions } from "./auto-review.js";
 import {
   autoReviewMinConfidence,
@@ -19,6 +24,8 @@ export type CreateAutoReviewProviderOptions = {
   timeoutMs?: number;
   minConfidence?: number;
   llm?: LlmAutoReviewOptions;
+  callObserver?: DecisionProviderOptions["callObserver"];
+  onUsage?: DecisionProviderOptions["onUsage"];
   scripted?: AutoReviewResult | ((request: AutoReviewRequest) => AutoReviewResult);
 };
 
@@ -37,6 +44,8 @@ export function createAutoReviewProvider(
       if (!apiKey) throw new Error("TYPESAFE_API_KEY is required");
       return new JevAutoReviewProvider({
         apiKey,
+        callObserver: options.callObserver,
+        onUsage: options.onUsage,
         fetch: options.fetch,
         timeoutMs: options.timeoutMs ?? autoReviewTimeoutMs(env),
         model: options.model ?? env.RAKAZO_AUTO_REVIEW_MODEL?.trim() ?? DEFAULT_JEV_MODEL,

@@ -21,7 +21,12 @@ import {
 } from "./mcp-package-installer.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
-import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
+import {
+  createSafeRemoteFetch,
+  listMcpTools,
+  MCP_TOOL_MAX_TOTAL_MS,
+  MCP_TOOL_TIMEOUT_MS,
+} from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -94,14 +99,6 @@ export class McpStdioLaunchError extends Error {
     this.name = "McpStdioLaunchError";
   }
 }
-
-/** How long a tool call may go without an answer or a progress report. Real calls (a
- * search across mail folders, a document export) take minutes; connecting stays short.
- * Below the HTTP client's default five-minute header wait, so this timeout fires first. */
-export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
-/** Progress restarts the wait, but never past this. The run's own cancellation still
- * ends a call at any time. */
-export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
 
 const STDERR_TAIL_CHARS = 4_096;
 /** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */

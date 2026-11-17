@@ -18,11 +18,11 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: String.raw }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
   useSpaceQueries: () => ({ pages: { list: { infiniteOptions: () => ({}) } } }),
 }));
-vi.mock("../../lib/pages", () => ({ useOpenPage: () => vi.fn() }));
-vi.mock("../../lib/page-actions", () => ({
+vi.mock("../../lib/pages/pages", () => ({ useOpenPage: () => vi.fn() }));
+vi.mock("../../lib/pages/page-actions", () => ({
   pageMutationOptions: () => ({ pin: {}, remove: {}, rename: {} }),
 }));
 vi.mock("@tanstack/react-query", () => ({

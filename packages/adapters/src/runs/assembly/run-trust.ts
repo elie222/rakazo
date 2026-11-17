@@ -26,6 +26,7 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { CATALOG_APPROVAL_TOOL, PASSED_EFFECT_STATUSES } from "../lifecycle/run-effects.js";
 import { loadRunOrigin } from "../lifecycle/run-origin.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../tools/run-tool-selection.js";
+import { modelCreditBillingEnabled } from "../turn/run-model.js";
 
 /**
  * The connection a connector call reaches, for read trust. Installed APIs are told apart by their
@@ -100,11 +101,10 @@ export function createRunTrustLoaders(
   };
   let approvalModelPromise: Promise<EffectiveModelRole> | undefined;
   const loadApprovalModel = () =>
-    (approvalModelPromise ??= effectiveModelRole(
-      deps.prisma,
-      { userId: run.userId, spaceId: run.spaceId },
-      "approval",
-      {},
+    (approvalModelPromise ??= modelCreditBillingEnabled(deps).then((includedApproval) =>
+      effectiveModelRole(deps.prisma, { userId: run.userId, spaceId: run.spaceId }, "approval", {
+        includedApproval,
+      }),
     ));
   let autoReviewPreferencePromise:
     | Promise<{ enabled: boolean; skipApprovals: boolean }>

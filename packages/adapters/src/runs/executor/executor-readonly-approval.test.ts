@@ -455,7 +455,10 @@ function fixture({
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => ({ id: "review-secret", ciphertext: "fake-cipher" })),
     },
-    usageRecord: { createMany: vi.fn(async () => ({ count: 1 })) },
+    usageRecord: {
+      createMany: vi.fn(async () => ({ count: 1 })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
     modelCreditEntry: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -3667,6 +3670,18 @@ it("uses the OpenRouter environment key for a decision checker on another deploy
       }),
     );
     expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.prisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            fundingSource: "customer",
+            usageSource: "response",
+            pricingVersion: "decision-pricing-2026-11-17",
+          }),
+        ],
+      }),
+    );
+    expect(f.prisma.usageRecord.updateMany).not.toHaveBeenCalled();
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

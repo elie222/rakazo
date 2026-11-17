@@ -4,7 +4,7 @@ import type { DesktopUpdateState } from "@rakazo/contracts";
 import { Button, SectionHeading, toast } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { desktopBridge } from "../lib/desktop";
+import { desktopBridge } from "../lib/platform/desktop";
 
 function useDesktopUpdates() {
   const { t } = useLingui();
