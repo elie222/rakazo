@@ -617,7 +617,10 @@ export const RoutineSchema = z.object({
   timezone: z.string(),
   active: z.boolean(),
   notify: z.boolean(),
-  /** Whether each finished run's reply also goes to the owner's linked chat. Absent on older servers. */
+  /**
+   * Whether each finished run's reply also goes to the owner's linked chat.
+   * compat-shim(after v0.12.0): the default covers servers of the previous release, which omit it.
+   */
   sendToChat: z.boolean().default(false),
   webhookEnabled: z.boolean(),
   githubEnabled: z.boolean(),

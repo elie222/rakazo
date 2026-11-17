@@ -318,8 +318,10 @@ function RoutineEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const busy = useRef(false);
   const email = useBotEmail(botId);
-  // Read on focus only, so a late answer never replaces the draft. Without one, no chat is offered.
-  const messaging = useScreenQuery(rpcQuery("messaging/status"), { onForeground: false }).data;
+  // Only decides whether the chat switch shows, never the draft, so it reads again on foreground
+  // too: a chat linked on another device appears without leaving the screen. Without an answer,
+  // no chat is offered.
+  const messaging = useScreenQuery(rpcQuery("messaging/status")).data;
   const chatLinked = Boolean(messaging?.identities.some((identity) => identity.botId === botId));
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
