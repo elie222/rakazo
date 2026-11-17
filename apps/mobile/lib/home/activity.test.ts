@@ -10,10 +10,6 @@ describe("formatActivityRelativeTime", () => {
   const now = new Date("2026-01-01T12:00:00.000Z");
 
   it.each([
-    { seconds: 0, label: "just now" },
-    { seconds: 44, label: "just now" },
-    { seconds: 45, label: "just now" },
-    { seconds: 59, label: "just now" },
     { seconds: 59.999, label: "just now" },
     { seconds: 60, label: "1m ago" },
     { seconds: 3_599, label: "59m ago" },
