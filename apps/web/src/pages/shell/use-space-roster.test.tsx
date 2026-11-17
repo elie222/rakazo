@@ -148,6 +148,7 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => {},
     beginSpaceSwitch: roster.beginSpaceSwitch,
+    startChatRead: () => {},
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
