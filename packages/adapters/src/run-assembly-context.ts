@@ -380,7 +380,7 @@ export async function buildTurnPrompt(
     formatCurrentTimeInstruction(
       deps.now?.() ?? new Date(),
       userTimeZone,
-      previousMessageAt(history, currentTurnMessage?.id),
+      previousMessageAt(historyMessages, currentTurnMessage?.id),
     ),
     lateRoutineNote,
     sharedSpaceNote,
@@ -454,16 +454,15 @@ export async function buildTurnPrompt(
 
 export type TurnPrompt = Awaited<ReturnType<typeof buildTurnPrompt>>;
 
-/** When the latest message before this turn was sent, so the time anchor can say how long ago. */
+/** When the newest message other than this turn's was sent, read before compaction drops it. */
 export function previousMessageAt(
-  history: ReadonlyArray<{ id?: string; createdAt?: string }>,
+  messages: ReadonlyArray<{ id: string; createdAt?: Date | null }>,
   currentId: string | undefined,
 ): Date | undefined {
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const message = history[index]!;
-    if (message.id && message.id === currentId) continue;
-    const at = message.createdAt ? new Date(message.createdAt) : undefined;
-    if (at && !Number.isNaN(at.getTime())) return at;
+  let latest: Date | undefined;
+  for (const message of messages) {
+    if (message.id === currentId || !message.createdAt) continue;
+    if (!latest || message.createdAt > latest) latest = message.createdAt;
   }
-  return undefined;
+  return latest;
 }
