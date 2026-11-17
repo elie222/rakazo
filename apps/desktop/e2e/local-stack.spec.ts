@@ -8,7 +8,7 @@ import path from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
-import { prepareHostComputer } from "../src/main/host-computer.js";
+import { prepareHostComputer } from "../src/main/this-computer/host-computer.js";
 import { shownWindow } from "./shown-window.js";
 
 const APP_MARKER = "Local Rakazo stack ready";

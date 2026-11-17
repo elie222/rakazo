@@ -93,11 +93,15 @@ export function messagingRoutes(ctx: RouterContext) {
               message: "That bot is already linked to a chat app; unlink it first.",
             });
           }
-          const issued = await issueMessagingLinkCode(deps.prisma, {
-            userId: context.actor.userId,
-            spaceId: bot.spaceId,
-            botId: bot.id,
-          });
+          const issued = await issueMessagingLinkCode(
+            deps.prisma,
+            {
+              userId: context.actor.userId,
+              spaceId: bot.spaceId,
+              botId: bot.id,
+            },
+            { signal: context.signal },
+          );
           const shared = await spaceIsShared(deps.prisma, bot.spaceId);
           return {
             code: formatMessagingLinkCode(issued.code),

@@ -6,17 +6,26 @@ import { accountDisplay, spaceInvitee } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet } from "react-native";
-import { LoadFailure } from "../components/load-failure";
-import { NativeSymbol } from "../components/native-symbol";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "../components/settings-group";
-import { cancelHeaderOptions } from "../components/sheet-header";
-import { selectedSpaceId } from "../lib/api";
-import { selectSpace } from "../lib/api-server";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { targetRpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { settingsTarget } from "../lib/settings-target";
-import { errorText } from "../lib/user-error";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { cancelHeaderOptions } from "../components/native/sheet-header";
+import {
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../components/settings/settings-group";
+import { LoadFailure } from "../components/ui/load-failure";
+import { selectedSpaceId } from "../lib/api/api";
+import { selectSpace } from "../lib/api/api-server";
+import { errorText } from "../lib/api/user-error";
+import {
+  native,
+  useMobileTokens,
+  useResolvedAppearance,
+  useThemedStyles,
+} from "../lib/native/native";
+import { targetRpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { settingsTarget } from "../lib/query/settings-target";
 
 /** The menu actions that share a link or email one instead of adding someone from the organization. */
 const LINK_ACTION = "link";

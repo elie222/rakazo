@@ -232,8 +232,8 @@ jobs:
             packages/adapters/src/builtin-skills.test.ts \
             packages/adapters/src/providers/messaging/lark/lark-lazy-loading.test.ts \
             packages/page-kit/src/kit/labels.test.tsx \
-            packages/testkit/src/eas-pnpm-version.test.ts \
-            packages/testkit/src/ios-screenshot-catalog.test.ts)
+            packages/testkit/src/infra/eas-pnpm-version.test.ts \
+            packages/testkit/src/screenshots/ios-screenshot-catalog.test.ts)
           # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
           files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
           if [[ "$WHOLE" == true ]] || (( files < 4 )); then
