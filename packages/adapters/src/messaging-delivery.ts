@@ -45,6 +45,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
+import { loadBotMessageContext } from "./bot-messages.js";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 import { loadRunOrigin } from "./run-origin.js";
@@ -399,7 +400,14 @@ export class MessagingDelivery {
         // the delegation started in. Only a run in that conversation's own thread, by its bot,
         // runs with the shared chat's privacy: a continuation in the bot's private thread may
         // have read its owner's memory and stays in the app.
-        const direct = await this.recordDirectRun(run, false);
+        // The chat app has no quiet message, so it gets what the app marks unread: a failure or
+        // an answer to this bot's own request. Other bot-to-bot talk sends only a question the
+        // run waits on the owner for.
+        const news =
+          run.status === "failed" ||
+          (await loadBotMessageContext(this.deps.prisma, run.sourceMessageId))?.repliesToRequest ===
+            true;
+        const direct = await this.recordDirectRun(run, false, !news);
         if (direct) lanes.push(direct);
         if (
           (run.status === "completed" || run.status === "failed") &&
@@ -935,6 +943,7 @@ export class MessagingDelivery {
   private async recordDirectRun(
     run: { id: string; botId: string; userId: string; status: string },
     progress: boolean,
+    onlyAsks = false,
   ): Promise<OutboundLane | undefined> {
     const identity = await this.deps.prisma.messagingIdentity.findUnique({
       where: { botId: run.botId },
@@ -954,7 +963,9 @@ export class MessagingDelivery {
     // pending with nothing to resume, so the chat app is not asked it.
     const asks = !TERMINAL_RUN.includes(run.status);
     const rowsByMessage = messages.map((message) => {
-      const body = extractText(message.blocks, linkedPages, { asks });
+      const body = extractText(onlyAsks ? askBlocks(message.blocks) : message.blocks, linkedPages, {
+        asks,
+      });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
       return {
         parts: parts.map((part, index) => ({
@@ -964,13 +975,15 @@ export class MessagingDelivery {
           body: part,
           sourceMessageId: message.id,
         })),
-        files: (sendsFiles ? extractArtifactIds(message.blocks) : []).map((artifactId) => ({
-          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-          kind: "dm",
-          identityId: identity.id,
-          body: "",
-          sourceMessageId: message.id,
-        })),
+        files: (sendsFiles && !onlyAsks ? extractArtifactIds(message.blocks) : []).map(
+          (artifactId) => ({
+            idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+            kind: "dm",
+            identityId: identity.id,
+            body: "",
+            sourceMessageId: message.id,
+          }),
+        ),
       };
     });
     const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
@@ -1467,6 +1480,14 @@ function textBlocks(blocks: unknown): string[] {
 }
 
 /** Pages the run's replies already link by name, so their cards add nothing more. */
+/** The blocks that wait on the owner: a question, or a screen to take over. */
+function askBlocks(blocks: unknown): unknown {
+  if (!Array.isArray(blocks)) return blocks;
+  return blocks.filter(
+    (block: { kind?: unknown } | null) => block?.kind === "ask" || block?.kind === "computer",
+  );
+}
+
 function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages)
