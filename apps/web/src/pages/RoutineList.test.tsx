@@ -27,6 +27,7 @@ function routine(index: number): Routine {
     timezone: "UTC",
     active: true,
     notify: true,
+    sendToChat: false,
     webhookEnabled: false,
     githubEnabled: false,
     messageProvider: null,

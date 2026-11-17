@@ -305,7 +305,8 @@ export class MessagingDelivery {
         include: {
           sourceMessage: true,
           bot: { select: { name: true } },
-          thread: { select: { externalConversation: { select: { botId: true } } } },
+          routine: { select: { sendToChat: true } },
+          thread: { select: { botId: true, externalConversation: { select: { botId: true } } } },
           externalMessage: { include: { externalConversation: true } },
         },
       });
@@ -394,6 +395,19 @@ export class MessagingDelivery {
           const lane = await this.recordDirectRun(run, options.progress ?? false);
           if (lane) lanes.push(lane);
         }
+      } else if (run.trigger === "routine") {
+        // A routine that sends to chat answers its owner's linked chat when a run ends, never a
+        // question it waits on or an interim message, which the person could not answer there.
+        // Only a run in the bot's own thread: a routine aimed at a group's thread stays in the app.
+        if (
+          run.routine?.sendToChat &&
+          !options.progress &&
+          terminal &&
+          run.thread.botId === run.botId
+        ) {
+          const lane = await this.recordDirectRun(run, false);
+          if (lane) lanes.push(lane);
+        }
       } else if (run.trigger === "bot_message" && !options.progress) {
         // A delegated run answers its owner's 1:1 chat, and once it ends, the team-chat thread
         // the delegation started in. Only a run in that conversation's own thread, by its bot,
@@ -416,12 +430,15 @@ export class MessagingDelivery {
             data: { messagingMirroredAt: new Date() },
           });
         }
-        // Recorded: the rows carry their own backups now. Only chat runs get a reply job.
+        // Recorded: the rows carry their own backups now. Only chat runs, and routine runs that
+        // send to chat, get a reply job. That job was decided when the run ended; the send is
+        // decided here, from the routine as it is now, so a switch changed in between wins.
         if (
           terminal &&
           (run.trigger === "messaging" ||
             run.trigger === "bot_message" ||
-            run.trigger === "helper_result")
+            run.trigger === "helper_result" ||
+            (run.trigger === "routine" && run.routine?.sendToChat))
         )
           await this.deps.jobs.cancel(messagingReplyJobKey(runId));
       }
@@ -926,7 +943,8 @@ export class MessagingDelivery {
   }
 
   /**
-   * A 1:1 messaging run's messages, and a delegated run's, go to the bot's linked chat. One row
+   * A 1:1 messaging run's messages, a delegated run's, and those of a routine run whose routine
+   * sends to chat, go to the bot's linked chat. One row
    * per platform-sized part, then one per image or file, so a retry re-sends only the parts that
    * failed. `progress` sends a running run's interim messages up to the first other message that
    * sends anything, such as a card or a file: it waits for the whole reply, and nothing posted

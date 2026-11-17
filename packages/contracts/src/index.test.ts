@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AccountExportRecordSchema,
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
@@ -397,6 +398,37 @@ describe("contracts", () => {
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-2", "bot-1"] }).success).toBe(true);
     expect(ReorderBotsInput.safeParse({ botIds: [] }).success).toBe(false);
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-1", "bot-1"] }).success).toBe(false);
+  });
+
+  it("keeps a routine's replies in the app unless it is asked to send them to chat", () => {
+    const input = { botId: "bot-1", name: "Digest", prompt: "Summarize", crons: ["0 9 * * *"] };
+    expect(CreateRoutineInput.parse(input).sendToChat).toBe(false);
+    expect(CreateRoutineInput.parse({ ...input, sendToChat: true }).sendToChat).toBe(true);
+  });
+
+  it("reads a routine from an export made before it could send to chat as one that does not", () => {
+    const record = {
+      type: "routine",
+      id: "routine-1",
+      botId: "bot-1",
+      threadId: null,
+      name: "Digest",
+      prompt: "Summarize",
+      crons: ["0 9 * * *"],
+      timezone: "UTC",
+      active: true,
+      notify: true,
+      messageProvider: null,
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      watch: null,
+      createdAt: "2026-01-02T03:04:05.000Z",
+    };
+    expect(AccountExportRecordSchema.parse(record)).toMatchObject({ sendToChat: false });
+    expect(AccountExportRecordSchema.parse({ ...record, sendToChat: true })).toMatchObject({
+      sendToChat: true,
+    });
   });
 
   it("accepts a GitHub-only routine trigger", () => {

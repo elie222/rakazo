@@ -171,6 +171,7 @@ function RoutineShot() {
     messageProvider: null,
     emailSenders: null,
     active: true,
+    sendToChat: false,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
@@ -187,6 +188,7 @@ function RoutineShot() {
         webhook={{ path: "/hooks/demo", secret: null, configured: false }}
         githubPath=""
         messageProviders={[]}
+        chatLinked={false}
         saving={false}
         running={false}
         error={null}

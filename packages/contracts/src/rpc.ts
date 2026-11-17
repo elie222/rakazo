@@ -1024,6 +1024,7 @@ export const appContract = {
             timezone: TimeZoneSchema.optional(),
             active: z.boolean().optional(),
             notify: z.boolean().optional(),
+            sendToChat: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
             githubEnabled: z.boolean().optional(),
             messageProvider: z

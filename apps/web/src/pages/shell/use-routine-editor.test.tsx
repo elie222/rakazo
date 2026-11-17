@@ -23,6 +23,7 @@ const routine: Routine = {
   timezone: "UTC",
   active: true,
   notify: true,
+  sendToChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -44,6 +45,7 @@ const update = vi.fn();
 const rotateWebhookSecret = vi.fn();
 let activeBot: Bot;
 const activeBotId = { current: "" };
+let linkedBotIds: string[] = [];
 
 function Harness() {
   editor = useRoutineEditor({
@@ -54,6 +56,7 @@ function Harness() {
     activeBotId,
     timezone: "UTC",
     messageProviders: [],
+    chatLinkedBotIds: linkedBotIds,
     setBots: () => {},
     refreshThread: async () => ({}) as never,
     setPanel: () => {},
@@ -65,6 +68,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   activeBot = { id: "bot-1", webhookConfigured: false } as Bot;
   activeBotId.current = activeBot.id;
+  linkedBotIds = [];
   update.mockImplementation(() => {
     finishUpdate = deferred();
     return finishUpdate.promise;
@@ -114,6 +118,27 @@ it("sends on/off only when the save changes it", async () => {
     await editor.editorProps!.onSave();
   });
   expect(update.mock.calls[1]![0]).toMatchObject({ active: false });
+});
+
+it("sends the chat switch only when the save changes it, and offers it for a linked bot", async () => {
+  update.mockResolvedValue(routine);
+  act(() => editor.editRoutine(routine));
+  expect(editor.editorProps!.chatLinked).toBe(false);
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Renamed" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("sendToChat");
+
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, sendToChat: true }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ sendToChat: true });
+
+  linkedBotIds = ["bot-1"];
+  act(() => root.render(<Harness />));
+  expect(editor.editorProps!.chatLinked).toBe(true);
 });
 
 it("shows a revealed webhook secret only for the bot it belongs to", async () => {

@@ -10,14 +10,23 @@ export type RoutineDraft = {
   /** Whose mail starts the routine; null without an email trigger. */
   emailSenders: RoutineEmailSenders | null;
   active: boolean;
+  /** Each finished run's reply also goes to the owner's linked chat. */
+  sendToChat: boolean;
 };
 
 export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true };
+  return {
+    name: "",
+    prompt: "",
+    schedules: [],
+    emailSenders: null,
+    active: true,
+    sendToChat: false,
+  };
 }
 
 export function draftFromRoutine(
-  routine: Pick<Routine, "name" | "prompt" | "crons" | "emailSenders" | "active">,
+  routine: Pick<Routine, "name" | "prompt" | "crons" | "emailSenders" | "active" | "sendToChat">,
 ): RoutineDraft {
   return {
     name: routine.name,
@@ -25,5 +34,6 @@ export function draftFromRoutine(
     schedules: routine.crons.map(presetFromCron),
     emailSenders: routine.emailSenders,
     active: routine.active,
+    sendToChat: routine.sendToChat,
   };
 }

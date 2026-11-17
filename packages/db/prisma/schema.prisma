@@ -1547,6 +1547,8 @@ model Routine {
   timezone       String    @default("UTC")
   active         Boolean   @default(false)
   notify         Boolean   @default(true)
+  /// Send each finished run's reply to the owner's linked chat app, not only the app.
+  sendToChat     Boolean   @default(false)
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?

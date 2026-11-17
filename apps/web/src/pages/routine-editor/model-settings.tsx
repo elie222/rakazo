@@ -1,7 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
-import { Button, OptionSelect, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
+import {
+  Button,
+  OptionSelect,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Switch,
+} from "@rakazo/ui-web";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -17,10 +24,13 @@ export function RoutineModelSettings({
   draft,
   onChange,
   fieldId,
+  chatLinked,
 }: {
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   fieldId: string;
+  /** The bot has a chat app linked to this person; without one the switch has nothing to send to. */
+  chatLinked: boolean;
 }) {
   const { t } = useLingui();
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
@@ -66,7 +76,7 @@ export function RoutineModelSettings({
         }
       >
         <SlidersHorizontal />
-        {draft.modelKey ? (
+        {draft.modelKey || draft.sendToChat ? (
           <span
             aria-hidden
             className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
@@ -110,6 +120,21 @@ export function RoutineModelSettings({
                 })),
               ]}
             />
+          </label>
+        ) : null}
+
+        {/* Shown while on even without a link, so a chat app that was unlinked still lets it go. */}
+        {chatLinked || draft.sendToChat ? (
+          <label
+            htmlFor={`${fieldId}-send-to-chat`}
+            className="mt-5 flex items-center gap-2.5 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${fieldId}-send-to-chat`}
+              checked={draft.sendToChat}
+              onCheckedChange={(sendToChat) => onChange({ ...draft, sendToChat })}
+            />
+            <Trans>Send replies to my chat app</Trans>
           </label>
         ) : null}
       </PopoverContent>

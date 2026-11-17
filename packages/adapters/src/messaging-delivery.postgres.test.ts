@@ -529,6 +529,76 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     ).not.toBeNull();
   });
 
+  it("schedules a backup for a routine run only when its routine sends to chat", async () => {
+    const routineRun = async (routineId: string | null) => {
+      const task = await system.task.create({
+        data: { ...identity, prompt: "routine fixture", status: "completed" },
+      });
+      return system.run.create({
+        data: {
+          ...identity,
+          taskId: task.id,
+          status: "running",
+          trigger: "routine",
+          routineId,
+        },
+      });
+    };
+    const routine = (sendToChat: boolean) =>
+      system.routine.create({
+        data: {
+          spaceId: identity.spaceId,
+          botId: identity.botId,
+          userId: identity.userId,
+          name: `delivery-${randomUUID()}`,
+          prompt: "Summarize.",
+          crons: [],
+          sendToChat,
+        },
+      });
+    const [on, off] = [await routine(true), await routine(false)];
+    const runs = {
+      on: await routineRun(on.id),
+      off: await routineRun(off.id),
+      // A routine deleted since the run started leaves no routine to ask.
+      orphan: await routineRun(null),
+      cancelled: await routineRun(on.id),
+    };
+    for (const [name, run] of Object.entries(runs)) {
+      await system.run.update({
+        where: { id: run.id },
+        data: { status: name === "cancelled" ? "cancelled" : "completed" },
+      });
+    }
+
+    expect((await job(messagingReplyJobKey(runs.on.id)))?.identifier).toBe("messaging.reply");
+    expect((await job(messagingReplyJobKey(runs.cancelled.id)))!.run_at.getTime()).toBeLessThan(
+      Date.now() + 1_000,
+    );
+    expect(await job(messagingReplyJobKey(runs.off.id))).toBeUndefined();
+    expect(await job(messagingReplyJobKey(runs.orphan.id))).toBeUndefined();
+
+    // Delivered once the routine says so, and not marked as the chat's own run.
+    seq += 2;
+    await system.message.create({
+      data: {
+        threadId: identity.threadId,
+        seq,
+        role: "bot",
+        botId: identity.botId,
+        runId: runs.on.id,
+        blocks: [{ kind: "text", text: "routine result" }],
+      },
+    });
+    const { messaging, sent } = surface();
+    await delivery(messaging).deliverRun(runs.on.id);
+    expect(sent).toEqual(["routine result"]);
+    expect(await job(messagingReplyJobKey(runs.on.id))).toBeUndefined();
+    expect(
+      (await system.run.findUniqueOrThrow({ where: { id: runs.on.id } })).messagingMirroredAt,
+    ).toBeNull();
+  });
+
   it("records a run's reply once when the reply job and the finishing process both deliver it", async () => {
     const run = await dmRun("completed", "only once");
     const { messaging, sent } = surface();

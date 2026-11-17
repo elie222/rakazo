@@ -29,6 +29,7 @@ export function RoutineEditor({
   webhook,
   githubPath,
   messageProviders,
+  chatLinked,
   saving,
   running,
   error,
@@ -49,6 +50,8 @@ export function RoutineEditor({
   webhook: { path: string; secret: string | null; configured: boolean };
   githubPath: string;
   messageProviders: string[];
+  /** The bot has a chat app linked to this person. */
+  chatLinked: boolean;
   saving: boolean;
   running: boolean;
   error: string | null;
@@ -175,7 +178,12 @@ export function RoutineEditor({
         <div className="flex items-center gap-2">
           <Trans>When to run</Trans>
           <span className="text-label text-muted-foreground/70">{timezone}</span>
-          <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
+          <RoutineModelSettings
+            draft={draft}
+            onChange={onChange}
+            fieldId={fieldId}
+            chatLinked={chatLinked}
+          />
         </div>
 
         <div className="mt-2 space-y-2">

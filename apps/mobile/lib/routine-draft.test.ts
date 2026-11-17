@@ -12,6 +12,7 @@ const routine: Routine = {
   timezone: "Europe/Berlin",
   active: true,
   notify: true,
+  sendToChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -69,6 +70,40 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest(draft, routine, "bot-1", "UTC")).toEqual({
       update: { routineId: "routine-1", active: false },
     });
+  });
+
+  it("sends the chat switch on create only when it is on, and on update only when it changed", () => {
+    const draft = {
+      ...emptyRoutineDraft(),
+      name: "Inbox",
+      prompt: "Summarize.",
+      schedules: [defaultCronPreset()],
+    };
+    expect(routineSaveRequest(draft, null, "bot-1", "UTC")).not.toHaveProperty("create.sendToChat");
+    expect(routineSaveRequest({ ...draft, sendToChat: true }, null, "bot-1", "UTC")).toMatchObject({
+      create: { sendToChat: true },
+    });
+
+    expect(
+      routineSaveRequest(
+        { ...draftFromRoutine(routine), sendToChat: true },
+        routine,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: "routine-1", sendToChat: true } });
+    const chatty = { ...routine, sendToChat: true };
+    expect(routineSaveRequest(draftFromRoutine(chatty), chatty, "bot-1", "UTC")).toEqual({
+      unchanged: true,
+    });
+    expect(
+      routineSaveRequest(
+        { ...draftFromRoutine(chatty), sendToChat: false },
+        chatty,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: "routine-1", sendToChat: false } });
   });
 
   it("keeps a webhook as the only trigger once the last schedule goes", () => {

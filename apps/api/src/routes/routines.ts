@@ -259,6 +259,7 @@ export function routinesRoutes(ctx: RouterContext) {
               timezone: input.timezone,
               active: input.active,
               notify: input.notify,
+              sendToChat: input.sendToChat,
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,

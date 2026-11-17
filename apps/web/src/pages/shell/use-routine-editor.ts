@@ -30,12 +30,15 @@ export function useRoutineEditor({
   refreshThread,
   setPanel,
   messageProviders,
+  chatLinkedBotIds,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   active: Bot | undefined;
   activeBotId: RefObject<string | undefined>;
   timezone: string | null | undefined;
   messageProviders: string[];
+  /** Bots the signed-in person has linked to a chat app. */
+  chatLinkedBotIds: readonly string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   setPanel: (panel: Panel) => void;
@@ -162,6 +165,7 @@ export function useRoutineEditor({
             ? `${window.location.origin}/api/v1/bots/${active.id}/github`
             : `/api/v1/bots/${active.id}/github`,
         messageProviders,
+        chatLinked: chatLinkedBotIds.includes(active.id),
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
@@ -278,6 +282,10 @@ export function useRoutineEditor({
                 ...(armOneShot || routineDraft.active !== targetRoutine.active
                   ? { active: armOneShot ? true : routineDraft.active }
                   : {}),
+                // Sent only when this save changes it, like active.
+                ...(routineDraft.sendToChat !== targetRoutine.sendToChat
+                  ? { sendToChat: routineDraft.sendToChat }
+                  : {}),
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
@@ -299,6 +307,7 @@ export function useRoutineEditor({
                 timezone: timezone ?? localTimezone(),
                 active: routineDraft.active,
                 notify: true,
+                sendToChat: routineDraft.sendToChat,
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
