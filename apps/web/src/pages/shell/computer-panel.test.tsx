@@ -55,6 +55,10 @@ async function render(
   status: ComputerStatus | null,
   onOpen = vi.fn(),
   disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
+  live: { livePreview: boolean; embeddedScreenUrl: string | null } = {
+    livePreview: false,
+    embeddedScreenUrl: null,
+  },
 ) {
   await act(async () => {
     root.render(
@@ -62,6 +66,9 @@ async function render(
         bot={bot}
         computer={status}
         computerOpen={false}
+        embeddedScreenUrl={live.embeddedScreenUrl}
+        screenFrameRef={() => undefined}
+        livePreview={live.livePreview}
         computerScreenError={null}
         computerBooting={null}
         booting={false}
@@ -113,6 +120,38 @@ it("shows a running computer awake with an Open button and no live screen", asyn
     container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
   );
   expect(onOpen).toHaveBeenCalledOnce();
+});
+
+const screenUrl = "https://screen.test/bot-1";
+
+it("shows a running computer's screen inline while the bot's own run holds it up", async () => {
+  await render(computer("running"), vi.fn(), undefined, {
+    livePreview: true,
+    embeddedScreenUrl: screenUrl,
+  });
+  const frame = container.querySelector("iframe");
+  expect(frame?.getAttribute("src")).toBe(screenUrl);
+  expect(frame?.style.pointerEvents).toBe("none");
+  expect(
+    container.querySelector('[data-testid="computer-preview"]')?.getAttribute("data-state"),
+  ).toBe("live");
+});
+
+it.each([
+  [
+    "a run is not holding it up",
+    computer("running"),
+    { livePreview: false, embeddedScreenUrl: screenUrl },
+  ],
+  [
+    "the screen address is not known yet",
+    computer("running"),
+    { livePreview: true, embeddedScreenUrl: null },
+  ],
+  ["it is asleep", computer("stopped"), { livePreview: true, embeddedScreenUrl: screenUrl }],
+])("shows no live screen when %s", async (_name, status, live) => {
+  await render(status, vi.fn(), undefined, live);
+  expect(container.querySelector("iframe")).toBeNull();
 });
 
 it("shows the person's own machine from what the server says", async () => {

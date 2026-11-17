@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { RunStatus } from "@rakazo/contracts";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { SCREEN_RECONNECT_STABLE_MS } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
@@ -9,6 +10,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SCREEN_FRAME_LOAD_TIMEOUT_MS, screenFrames } from "../../lib/computer-screen";
+import type { Panel } from "../../lib/right-panel-state";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -42,12 +44,13 @@ let screenAnswer: () => ScreenAnswer = nextSingleUseScreen;
 const screenUrl = vi.fn(async () => screenAnswer());
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
-function Harness() {
+function Harness({ panel = "settings", runStatus }: { panel?: Panel; runStatus?: RunStatus }) {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
-    panel: "settings",
+    panel,
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
+    runStatus,
   });
   if (!state.screenUrl || state.screenLoadError) return null;
   // Drawn as the panel and overlay draw it: a held predecessor first, then the live frame.
@@ -102,6 +105,27 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+it("reads the screen for the Computer tab only while the bot's own run holds a running computer up", async () => {
+  const running = { botId: "bot-1", state: "running", kind: "browser" } as never;
+  const show = (panel: Panel, runStatus?: RunStatus) =>
+    act(async () => root.render(<Harness panel={panel} runStatus={runStatus} />));
+  await act(async () => state.setComputerOpen(false));
+  await act(async () => state.commitComputer(running));
+  await show("computer", "completed");
+  await show("computer");
+  await show("settings", "running");
+  expect(state.previewVisible).toBe(false);
+  expect(screenUrl).not.toHaveBeenCalled();
+  await show("computer", "running");
+  expect(state.previewVisible).toBe(true);
+  expect(screenUrl).toHaveBeenCalledWith({ botId: "bot-1" });
+  await act(async () => state.commitComputer({ ...running, state: "suspended" }));
+  expect(state.previewVisible).toBe(false);
+  await act(async () => state.commitComputer(running));
+  await act(async () => state.setComputerOpen(true));
+  expect(state.previewVisible).toBe(false);
 });
 
 it("shows a single-use screen's failure and waits for Retry rather than spend another code", async () => {

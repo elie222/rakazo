@@ -204,7 +204,7 @@ function ComputerPreview({
           screenFrames(screenFrameKey, liveUrl, heldScreen).map((frame) => (
             <iframe
               key={frame.key}
-              title={frame.held ? undefined : t`Bot screen preview`}
+              title={frame.held ? undefined : t`Bot screen`}
               aria-hidden={frame.held || undefined}
               tabIndex={frame.held ? -1 : undefined}
               ref={frame.held ? undefined : screenFrameRef}

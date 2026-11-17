@@ -58,8 +58,8 @@ import { PagesProvider, usePagesForChat } from "../lib/pages";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
 import type { Panel } from "../lib/right-panel-state";
+import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routine-draft";
 import type { RpcClient } from "../lib/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
@@ -304,7 +304,8 @@ function SpaceShell() {
   activeBotId.current = inGroup ? undefined : active?.id;
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
-  const activeRunStatus = active && snapshot?.botId === active.id ? snapshot.run?.status : undefined;
+  const activeRunStatus =
+    active && snapshot?.botId === active.id ? snapshot.run?.status : undefined;
   const computerState = useComputerState({
     rpc,
     panel,

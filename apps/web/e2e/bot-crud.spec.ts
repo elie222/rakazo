@@ -160,11 +160,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const modelRow = settings.getByRole("button", { name: /^Model/ });
   const openWork = settings.getByTestId("bot-scratchpad");
   const notifications = settings.getByRole("switch", { name: "Notifications", exact: true });
-  // Settings fold away by default; the panel itself shows the profile, computer and routines.
+  // Only the open tab takes space: the Computer tab shows no settings.
   await page.getByRole("button", { name: "Close panel" }).click();
   await openBotPanel(page);
-  await expect(notifications).toHaveCount(0);
-  await expect(modelRow).toHaveCount(0);
+  await expect(notifications).toBeHidden();
+  await expect(modelRow).toBeHidden();
+  await captureScreenshot(page, testInfo, "bot-panel-tabs");
   await settings.getByRole("button", { name: "More actions", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Export", exact: true })).toBeVisible();
   await expect(
@@ -227,7 +228,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await openBotPanel(page);
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel).toHaveAttribute("data-panel", "settings");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
   // chrome, then wait until any overlay has cleared — avoid Locator.or() strict-mode multi-hits.
   const bootOverlay = page.getByText(/Booting up .* computer/);

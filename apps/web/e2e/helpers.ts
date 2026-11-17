@@ -122,11 +122,13 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
+export type BotPanelTab = "Computer" | "Routines" | "Pages" | "Settings";
+
 /**
- * Opens the bot panel from the header pill on the panel itself (profile, computer, routines,
- * pages), leaving an open routine editor or one of the panel's whole lists.
+ * Opens the bot panel from the header pill on the given tab (the Computer tab unless named),
+ * leaving an open routine editor.
  */
-export async function openBotPanel(page: Page) {
+export async function openBotPanel(page: Page, tab: BotPanelTab = "Computer") {
   const pill = page.getByTestId("bot-settings-trigger");
   const profile = page.getByTestId("bot-settings").getByTestId("bot-profile-header");
   // A reloaded page restores its saved panel a moment after it draws, so a single pass can
@@ -142,14 +144,15 @@ export async function openBotPanel(page: Page) {
     }
     await expect(profile).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
+  // The panel reopens on the tab it was left on.
+  const trigger = page.getByTestId("bot-settings").getByRole("tab", { name: tab, exact: true });
+  if ((await trigger.getAttribute("aria-selected")) !== "true") await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-selected", "true");
 }
 
-/** Opens the bot panel and unfolds its Settings (model, switches, instructions, memory). */
+/** Opens the bot panel on its Settings tab (model, switches, instructions, memory). */
 export async function openBotSettings(page: Page) {
-  await openBotPanel(page);
-  const toggle = page.getByTestId("bot-settings-advanced").locator("button[aria-expanded]").first();
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await openBotPanel(page, "Settings");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */

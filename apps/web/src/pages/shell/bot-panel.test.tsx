@@ -293,14 +293,12 @@ async function saveProfile() {
   });
 }
 
-async function openSettings() {
-  await act(async () => settingsButton().click());
+function tab(name: string) {
+  return container.querySelector<HTMLButtonElement>(`[role="tab"][data-value="${name}"]`)!;
 }
 
-function settingsButton() {
-  return container.querySelector<HTMLButtonElement>(
-    '[data-testid="bot-settings-advanced"] button',
-  )!;
+function settingsPanel() {
+  return container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
 }
 
 async function openModelPicker() {
@@ -343,30 +341,33 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the profile and folds the settings away", async () => {
+it("shows the profile above the tabs and keeps the settings mounted behind another tab", async () => {
   await render("Billing");
   expect(container.querySelector('[data-testid="bot-profile-header"]')?.textContent).toContain(
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect(container.querySelector('[role="tab"]')).toBeNull();
+  expect(
+    [...container.querySelectorAll('[role="tab"]')].map((node) => node.getAttribute("data-value")),
+  ).toEqual(["computer", "routines", "pages", "settings"]);
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
-  const settings = document.getElementById(settingsButton().getAttribute("aria-controls")!)!;
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("false");
-  expect(settings.hidden).toBe(true);
-  await openSettings();
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
+  const settings = settingsPanel();
+  expect(tab("settings").getAttribute("aria-selected")).toBe("true");
   expect(settings.hidden).toBe(false);
   expect(settings.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
   expect(settings.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
-  const card = settings.firstElementChild!;
+  const card = settings.querySelector(":scope > div")!.firstElementChild!;
   expect(
     [...card.querySelectorAll('label, button[id$="-model"]')].map(
       (node) => node.firstChild?.textContent,
     ),
   ).toEqual(["Model", "Notifications", "Own computer"]);
+  await act(async () => tab("computer").click());
+  expect(tab("computer").getAttribute("aria-selected")).toBe("true");
+  expect(settings.hidden).toBe(true);
+  expect(settings.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
 });
 
 describe("BotSettings model choices", () => {
@@ -779,7 +780,7 @@ it("cancels an inline name edit", async () => {
 
 it("focuses the model control for a model deep link", async () => {
   await render("", {}, 1);
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
+  expect(tab("settings").getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 

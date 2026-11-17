@@ -34,48 +34,56 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", async (importOriginal) => ({
-  OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
-  SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
-    <h3 data-variant={variant} {...props} />
-  ),
-  Button: ({
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
-  Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
-  Switch: ({
-    checked,
-    onCheckedChange,
-    ...props
-  }: ComponentProps<"button"> & {
-    checked?: boolean;
-    onCheckedChange?: (checked: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange?.(!checked)}
-      {...props}
-    />
-  ),
-  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({
-    variant: _variant,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
-  Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  PopoverTrigger: (props: ComponentProps<"button">) => <button type="button" {...props} />,
-  PopoverContent: () => null,
-  ListSearchInput: () => null,
-}));
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { OptionSelect, Tabs, TabsContent, TabsList, TabsTrigger } =
+    await importOriginal<typeof UiWeb>();
+  return {
+    OptionSelect,
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+    SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
+      <h3 data-variant={variant} {...props} />
+    ),
+    Button: ({
+      variant: _variant,
+      size: _size,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
+    Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    Switch: ({
+      checked,
+      onCheckedChange,
+      ...props
+    }: ComponentProps<"button"> & {
+      checked?: boolean;
+      onCheckedChange?: (checked: boolean) => void;
+    }) => (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onCheckedChange?.(!checked)}
+        {...props}
+      />
+    ),
+    DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DropdownMenuItem: ({
+      variant: _variant,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
+    Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    PopoverTrigger: (props: ComponentProps<"button">) => <button type="button" {...props} />,
+    PopoverContent: () => null,
+    ListSearchInput: () => null,
+  };
+});
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));

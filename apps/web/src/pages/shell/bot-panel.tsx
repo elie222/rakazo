@@ -38,7 +38,7 @@ import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { lazyComponent } from "../../lib/preload-recovery";
 import { useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
-import { ROUTINE_PREVIEW_COUNT, RoutineList } from "../RoutineList";
+import { RoutineList } from "../RoutineList";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import {
   DescriptionGroup,
@@ -562,10 +562,7 @@ export function BotSettings({
         </DropdownMenu>
         {headerButtons}
       </div>
-      <div
-        data-testid="bot-profile-header"
-        className="flex flex-col items-center pb-5 text-center"
-      >
+      <div data-testid="bot-profile-header" className="flex flex-col items-center pb-5 text-center">
         <div className="flex justify-center pb-4">
           <AvatarStudioPopover
             value={color}

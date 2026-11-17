@@ -487,7 +487,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   await expect(pageFrame(page, "Signups dashboard").getByText("1.9%")).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await openBotPanel(page);
+  await openBotPanel(page, "Pages");
   await page
     .getByTestId("bot-pages")
     .getByRole("button", { name: /^Signups dashboard/ })
@@ -811,8 +811,8 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await closePage(page);
 
   // The Library's Share opens the popover, every time.
-  await openBotPanel(page);
-  // The panel shows the latest pages; the whole list is a separate view once there are more.
+  await openBotPanel(page, "Pages");
+  // The Pages tab shows the whole list.
   const library = page.getByTestId("bot-pages").filter({ visible: true });
   for (let round = 0; round < 2; round++) {
     await library.getByRole("button", { name: "Actions for Alpha" }).click();
@@ -854,9 +854,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
 
   // A longer list gets a field to find a page by title.
   for (const title of ["One", "Two", "Three", "Four", "Five", "Six", "Seven"]) await save(title);
-  await openBotPanel(page);
-  await expect(library.getByRole("listitem")).toHaveCount(3);
-  await library.getByRole("button", { name: "Pages", exact: true }).click();
+  await openBotPanel(page, "Pages");
   await expect(library.getByRole("listitem")).toHaveCount(8);
   await expect(library.getByRole("button", { name: "Show more" })).toBeHidden();
   await library.getByRole("searchbox", { name: "Find a page" }).fill("sev");
