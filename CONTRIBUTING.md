@@ -68,8 +68,8 @@ locale in these places:
   `packages/core/src/locale/ui-locale.ts`. The web language list comes from the shared schema;
   `apps/web/src/lib/ui-locale.ts` is not a separate registry.
 - `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
-- Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/ui-locale.ts` and catalog imports/map in
-  `apps/mobile/lib/i18n.ts`. Check the new language's rules in `apps/mobile/lib/plural-rules.ts`,
+- Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/i18n/ui-locale.ts` and catalog imports/map in
+  `apps/mobile/lib/i18n/i18n.ts`. Check the new language's rules in `apps/mobile/lib/i18n/plural-rules.ts`,
   which supplies the fallback when Hermes has no `Intl.PluralRules`.
 - The PageKit locale list and `PAGE_MESSAGES` in `packages/page-kit/src/kit/labels.ts`, with a
   message table in `packages/page-kit/src/kit/locales/`. Pages use these tables, not Lingui catalogs.
