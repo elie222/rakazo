@@ -269,22 +269,10 @@ docker compose --env-file .env -f docker-compose.images.yml logs --tail 50 updat
 ```
 
 For a source checkout, use the production Compose file, not the development
-`docker-compose.yml` stack. Before enabling scheduling, build the application from a clean,
-reviewed checkout of a published stable release, with its source commit baked into the image:
-
-```bash
-docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  build --build-arg GIT_SHA="$(git rev-parse HEAD)" api worker web
-docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  up -d --wait --pull never api worker web
-```
-
-These commands also establish the metadata for an older source-built installation whose image
-has an empty `GIT_SHA`. Use the same Compose overlays as the running stack and include any
-additional application-image services, such as `supervisor`, when rebuilding. Do not stamp a main
-or modified checkout as a stable release; check out and review a compatible stable release first.
-Setting a revision only at container startup does not establish which source the image was built
-from. Published images already bake in this metadata and need no rebuild.
+`docker-compose.yml` stack. Migrate to published stable application images with the manual
+update flow above before enabling scheduling. The running image must match the cached
+source-commit image; source-built or overridden images with different bytes require manual
+migration. The updater never assigns those bytes to a shared published release tag.
 
 Then start the updater using `-f infra/compose/docker-compose.prod.yml --profile updater`, building
 or explicitly pulling its image as described above. Do not enable scheduled updates on a server
@@ -314,7 +302,8 @@ locally cached rollback images. After successful updates, cleanup removes obsole
 and computer release images and computer cache tags, retaining current/previous images, cache
 or operator tags, images used by containers, and images selected by running supervisors.
 
-The updater caches a reference to the verified running application image before changing pins.
+Before changing pins, the updater verifies the running application against the local source-commit
+image, pulling that baseline from the registry when it is not cached.
 If the app runtimes and managed computer references already match the release, stale Compose
 pins are aligned without a deployment. Scheduled image recovery is attempted only from a distinct,
 uniform previous release. A failed repair of the current release or a mixed runtime requires

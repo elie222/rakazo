@@ -142,6 +142,12 @@ async function fixture(env: string, commit: string, computers = false) {
       images[args[3]?.slice(image.length + 1) ?? ""] = args[2] ?? "";
       return ok();
     }
+    if (args[0] === "pull") {
+      const tag = args[1]?.slice(appImage.length + 1) ?? "";
+      if (!/^sha-[0-9a-f]{40}$/.test(tag)) throw new Error("Unexpected baseline pull");
+      state.appImages[tag] = `sha256:${tag[4]?.repeat(64)}`;
+      return ok();
+    }
     if (args.includes("pull")) {
       if (computers && state.unavailableComputer)
         return failed("computer commit image is not published yet");
@@ -187,9 +193,41 @@ describe("scheduled release state and recovery", () => {
       false,
     );
     expect(subject.calls).toContainEqual({
-      args: ["image", "tag", `sha256:${"2".repeat(64)}`, `${appImage}:sha-${newer}`],
+      args: ["image", "inspect", `${appImage}:sha-${newer}`, "--format", "{{.Id}}"],
       env: {},
     });
+  });
+
+  it("does not retag another stack's published image with source-built bytes", async () => {
+    const env = `RAKAZO_IMAGE_TAG=latest\n`;
+    const subject = await fixture(env, older);
+    for (const service of Object.keys(subject.state.versions))
+      subject.state.imageOverrides[service] = `sha256:${"f".repeat(64)}`;
+    await expect(subject.app.applyScheduledUpdate()).rejects.toThrow("differs from the published");
+    expect(subject.state.appImages[`sha-${older}`]).toBe(`sha256:${"1".repeat(64)}`);
+    expect(await subject.env()).toBe(env);
+    expect(
+      subject.calls.some(
+        ({ args }) => args[1] === "tag" || args.includes("pull") || args.includes("up"),
+      ),
+    ).toBe(false);
+  });
+
+  it("caches a missing baseline from the registry before updating a latest install", async () => {
+    const subject = await fixture("RAKAZO_IMAGE_TAG=latest\n", older);
+    delete subject.state.appImages[`sha-${older}`];
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(
+      subject.calls.some(
+        ({ args }) => args[0] === "pull" && args[1] === `${appImage}:sha-${older}`,
+      ),
+    ).toBe(true);
+    expect(
+      subject.calls.some(
+        ({ args }) =>
+          args[0] === "image" && args[1] === "tag" && args[3]?.startsWith(`${appImage}:`),
+      ),
+    ).toBe(false);
   });
 
   it("does not retry a failed target as recovery for a mixed runtime", async () => {
@@ -419,6 +457,7 @@ describe("scheduled release state and recovery", () => {
     const run: UpdaterCommandRunner = async (_command, args) => {
       if (args[1] === "ls")
         return { ok: true, exitCode: 0, stdout: `${busy}\n${obsolete}`, output: "" };
+      if (args[0] === "ps") return { ok: true, exitCode: 0, stdout: "", output: "" };
       removed.push(args[2] ?? "");
       const ok = args[2] !== `${computerImage}:${busy}`;
       return { ok, exitCode: ok ? 0 : 1, stdout: "", output: ok ? "" : "image is in use" };
@@ -451,6 +490,25 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls.filter(({ args }) => args[1] === "rm").map(({ args }) => args)).toEqual([
       ["image", "rm", `${computerImage}:${obsolete}`],
     ]);
+  });
+
+  it("retains a project cache tag selected by another supervisor even when pins omit it", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:latest`;
+    const selected = `${cachePrefix}${"3".repeat(64)}`;
+    subject.state.images[selected] = `sha256:${"3".repeat(64)}`;
+    subject.state.otherComputerRefs.push(`${computerImage}:${selected}`);
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.images[selected]).toBeDefined();
+    expect(
+      subject.calls.some(
+        ({ args }) => args[1] === "rm" && args.includes(`${computerImage}:${selected}`),
+      ),
+    ).toBe(false);
   });
 
   it("cleans app releases without a managed computer while preserving rollback and used images", async () => {
