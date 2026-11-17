@@ -117,15 +117,6 @@ export function isAllowedAttachmentMimeType(mimeType: string): mimeType is Attac
   return (ATTACHMENT_ALLOWED_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
-export function validateThreadsSendInput(input: {
-  text?: string;
-  artifactIds?: string[];
-}): boolean {
-  const text = input.text?.trim() ?? "";
-  const artifactIds = input.artifactIds ?? [];
-  return Boolean(text || artifactIds.length);
-}
-
 /** Effective per-file upload limit advertised in me/bootstrap. */
 export function attachmentMaxBytes(config?: { maxUploadSizeBytes?: number } | null): number {
   return config?.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;

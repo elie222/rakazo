@@ -33,7 +33,7 @@ test("iOS file drop finds the composer by its test id", () => {
       "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
       /static let composerID = "([^"]+)"/,
     ),
-    capture("apps/mobile/components/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
+    capture("apps/mobile/components/composer/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
   );
 });
 

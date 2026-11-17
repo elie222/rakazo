@@ -17,7 +17,7 @@ for (const folder of [".", "apps/web"]) {
       const sources = catalogs
         .flatMap((catalog) => catalog.sourcePaths)
         .map((file) => file.replaceAll("\\", "/"));
-      assert(sources.some((file) => file.endsWith("/apps/mobile/lib/i18n.ts")));
+      assert(sources.some((file) => file.endsWith("/apps/mobile/lib/i18n/i18n.ts")));
       assert(sources.some((file) => file.includes("/apps/web/src/")));
       assert.equal(
         sources.filter((file) => /\.test\.|\/node_modules\/|\/locales\//.test(file)).length,
