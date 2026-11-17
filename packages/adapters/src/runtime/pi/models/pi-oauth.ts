@@ -835,7 +835,9 @@ export class PiOAuthLogins<T = unknown> {
     session.stored = true;
     if (mode === "device-code") this.holdLease(session);
     // Cancelled, replaced or disconnected while saving: no process may resume it.
-    if (this.pending.get(session.id) !== session) await this.forgetRow(session);
+    if (this.pending.get(session.id) !== session) {
+      await this.forgetRow(session, { ended: "cancelled" });
+    }
   }
 
   async submit(
