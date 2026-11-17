@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
+import { AUDIT_IDENTIFYING_METADATA } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -11,20 +12,9 @@ import { SettingsPageHeader } from "../SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 
-/** Metadata that names what changed when the event has no target label of its own. */
-const IDENTIFYING_METADATA = [
-  "connectorId",
-  "connectionId",
-  "provider",
-  "serverId",
-  "id",
-  "botId",
-  "name",
-] as const;
-
 function detailLabels(event: AuditEvent): string[] {
   const target = [event.targetLabel, event.targetId, event.targetType].find(Boolean);
-  const labels = [target, ...IDENTIFYING_METADATA.map((key) => event.metadata[key])].filter(
+  const labels = [target, ...AUDIT_IDENTIFYING_METADATA.map((key) => event.metadata[key])].filter(
     (value): value is string => typeof value === "string" && value.length > 0,
   );
   return [...new Set(labels)];
@@ -72,8 +62,7 @@ export function AuditLog({
       // Events are not kept once the page closes, and a window coming back to focus asks again,
       // so a reader whose access was removed meanwhile stops seeing them.
       gcTime: 0,
-      staleTime: 0,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: "always",
       initialPageParam: null as string | null,
       getNextPageParam: (page) => page.nextCursor,
     },
