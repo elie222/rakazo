@@ -392,6 +392,17 @@ function steeringOrigin(item: {
   return intact ? "private" : "channel:unknown";
 }
 
+/**
+ * A run stopping before its next step, other than by finishing its turn, gives back a handed-over
+ * scheduled task it never read, so the task runs on its own instead of waiting on this run.
+ */
+export async function releaseUnreadHandovers(tx: Prisma.TransactionClient, runId: string) {
+  await tx.steeringMessage.updateMany({
+    where: { runId, claimedAt: null, originTrigger: "routine" },
+    data: { runId: null },
+  });
+}
+
 /** Chat turns that cannot take a handed-over task: helper results and work kept out of the chat. */
 const NO_HANDOVER_TRIGGERS = new Set<string>([HELPER_RESULT_TRIGGER, ...BACKGROUND_RUN_TRIGGERS]);
 

@@ -48,7 +48,13 @@ function busyRunWhere(
     OR: [
       { startedAt: { not: null } },
       { status: { not: "queued" } },
-      { createdAt: { lt: run.createdAt }, OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
+      {
+        OR: [
+          { createdAt: { lt: run.createdAt } },
+          { createdAt: run.createdAt, id: { lt: run.id } },
+        ],
+        AND: [{ OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] }],
+      },
     ],
   };
 }

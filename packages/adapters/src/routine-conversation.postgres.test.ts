@@ -188,6 +188,19 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
   });
 
+  it("orders two schedules due at the same moment by id", async () => {
+    const createdAt = new Date();
+    const [first, second] = (
+      await Promise.all([
+        createRun({ trigger: "routine", status: "queued", createdAt }),
+        createRun({ trigger: "routine", status: "queued", createdAt }),
+      ])
+    ).sort((a, b) => (a.id < b.id ? -1 : 1));
+
+    expect(await claimRun(deps, second!, "worker-2")).toBeUndefined();
+    expect(await claimRun(deps, first!, "worker-2")).toBeDefined();
+  });
+
   it("hands its task to the person's working run once the wait is over", async () => {
     const { id: routineId } = await routine();
     const working = await createRun({ trigger: "user", status: "running", startedAt: new Date() });
