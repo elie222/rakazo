@@ -173,6 +173,13 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
 
+### WhatsApp Business Cloud
+
+Use an operator-owned business number and the direct adapter. See the
+[WhatsApp launch runbook](./hosted-whatsapp-launch.md) for registration, token permissions,
+webhook setup, current regional AI restrictions and service-window limits. Credentials alone do
+not establish eligibility. Proactive template reminders are not implemented.
+
 ### Telegram
 
 Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
