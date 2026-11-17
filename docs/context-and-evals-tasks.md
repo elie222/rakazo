@@ -248,7 +248,7 @@ Relevant implementation locations:
 - `packages/adapters/src/history-compaction.ts`
 - `packages/adapters/src/pi-runtime.ts`
 - `packages/adapter-kit/src/types.ts`
-- `packages/db/src/messages.ts` and `packages/db/prisma/schema.prisma`
+- `packages/db/src/threads/messages.ts` and `packages/db/prisma/schema.prisma`
 - `apps/api/src/search.ts`
 - `packages/testkit/src/evals/` and `packages/testkit/src/cli/evals.ts`
 - `docs/agent-verification.md`
