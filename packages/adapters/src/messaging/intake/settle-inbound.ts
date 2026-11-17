@@ -38,8 +38,16 @@ export function messagingAttachmentClientNonce(
 }
 
 /**
- * The one reply a sender gets when files of their message did not reach the bot. Its key is the
- * message's, so the direct path and the backup job never both send it.
+ * The line that stands in a message for a file the bot never got, saying why when the path knows.
+ * The sender chose the name, so it is sanitized before it can reach a prompt.
+ */
+export function unavailableFileLine(name: string, reason?: string): string {
+  return `[file: ${sanitizeMessagingLabel(name)} (unavailable${reason ? `: ${reason}` : ""})]`;
+}
+
+/**
+ * The one reply a sender gets when files of their message did not reach the bot, whatever the
+ * reason. Its key is the message's, so the direct path and the backup job never both send it.
  */
 export function filesNotReceivedReply(
   identityId: string,
@@ -50,7 +58,7 @@ export function filesNotReceivedReply(
     idempotencyKey: `files-not-received:${provider}:${handle}`,
     kind: "dm",
     identityId,
-    body: "Some files didn't arrive. Please send them again.",
+    body: "Some files couldn't be received.",
   };
 }
 
@@ -149,11 +157,7 @@ export async function settleInboundMessage(
     return artifact ? [artifact] : [];
   });
   const missing = payload.attachments.flatMap((attachment, index) =>
-    byNonce.has(nonces[index]!)
-      ? []
-      : [
-          `[file: ${sanitizeMessagingLabel(attachment.name)} (not received — please send it again)]`,
-        ],
+    byNonce.has(nonces[index]!) ? [] : [unavailableFileLine(attachment.name, "not received")],
   );
 
   // A message routine that took the message delivered it under its own nonce.

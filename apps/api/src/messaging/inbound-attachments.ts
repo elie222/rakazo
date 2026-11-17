@@ -1,6 +1,7 @@
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
+import { unavailableFileLine } from "@rakazo/adapters";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
-import { AttachmentValidationError, sanitizeMessagingLabel } from "@rakazo/core";
+import { AttachmentValidationError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 
 type InboundArtifact = { id: string; name: string; mimeType: string; size: number };
@@ -66,10 +67,11 @@ export async function storeInboundAttachments(
   const unavailable: string[] = [];
   const { downloadDeadline, downloadTimeoutMs, attempts } = options;
   for (const [index, attachment] of attachments.entries()) {
-    const label = (reason?: UnavailableReason) =>
-      `[file: ${sanitizeMessagingLabel(attachment.name)} (unavailable${reason && options.reasons ? `: ${reason}` : ""})]`;
+    const label = (reason: UnavailableReason) =>
+      unavailableFileLine(attachment.name, options.reasons ? reason : undefined);
+    // Past the cap, or with nowhere to keep it, the file is never fetched.
     if (!store || index >= options.limit) {
-      unavailable.push(label());
+      unavailable.push(label("not received"));
       continue;
     }
     try {

@@ -993,7 +993,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         blocks: expect.arrayContaining([
           {
             kind: "text",
-            text: `hello bot\n[file: photo-${ATTACHMENT_MAX_COUNT}.jpg (unavailable)]`,
+            text: `hello bot\n[file: photo-${ATTACHMENT_MAX_COUNT}.jpg (unavailable: not received)]`,
           },
         ]),
       }),
@@ -1014,7 +1014,9 @@ describe("createMessagingInboundHandler DM routing", () => {
     });
     await settled(deps);
     const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
-    expect(prompt).toContain('"unavailable": [\n    "[file: bad instructions .oga (unavailable)]"');
+    expect(prompt).toContain(
+      '"unavailable": [\n    "[file: bad instructions .oga (unavailable: not received)]"',
+    );
     expect(prompt.indexOf('"unavailable"')).toBeGreaterThan(
       prompt.indexOf("<untrusted_delivery_payload>"),
     );
@@ -1084,7 +1086,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       expect.objectContaining({
         kind: "dm",
         identityId: "mi-1",
-        body: "Some files didn't arrive. Please send them again.",
+        body: "Some files couldn't be received.",
       }),
     ]);
     expect(deps.send).toHaveBeenLastCalledWith([{ identityId: "mi-1" }]);

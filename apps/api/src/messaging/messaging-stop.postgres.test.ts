@@ -287,7 +287,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
     });
     // Its file is settled after the webhook; this line stores none, so the sender hears so.
     await vi.waitFor(async () =>
-      expect(await replies()).toEqual(["Some files didn't arrive. Please send them again."]),
+      expect(await replies()).toEqual(["Some files couldn't be received."]),
     );
     expect(await status(running.id)).toBe("running");
     expect(await userMessages()).toBe(1);

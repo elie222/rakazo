@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
-import { MessagingDelivery, sealSettleText, settleInboundMessage } from "@rakazo/adapters";
+import {
+  MessagingDelivery,
+  messagingAttachmentClientNonce,
+  sealSettleText,
+  settleInboundMessage,
+} from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -542,7 +547,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
         blocks: [
           {
             kind: "text",
-            text: "make a short of these\n[file: clip.mov (not received — please send it again)]",
+            text: "make a short of these\n[file: clip.mov (unavailable: not received)]",
           },
         ],
       },
@@ -552,7 +557,70 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
         where: { identityId: identity.id },
         select: { kind: true, body: true },
       }),
-    ).toEqual([{ kind: "dm", body: "Some files didn't arrive. Please send them again." }]);
+    ).toEqual([{ kind: "dm", body: "Some files couldn't be received." }]);
     expect(sendToThread).toHaveBeenCalledOnce();
+  });
+
+  it("settle job posts the file that was stored and marks the one that was not", async () => {
+    const sendToThread = vi.fn(async () => ({ handle: `h-${randomUUID()}` }));
+    const delivery = new MessagingDelivery({
+      prisma: db.prisma,
+      messaging: { platforms: () => [], sendToThread } as unknown as MessagingSurface,
+      events: createThreadEvents(db.prisma),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
+    const handle = `in-${randomUUID()}`;
+    // The first file was stored before the process stopped; the second was still downloading.
+    const photo = await system.artifact.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 3,
+        hash: "hash-photo",
+        storageKey: `storage-${randomUUID()}`,
+        clientNonce: messagingAttachmentClientNonce("test", handle, 0),
+      },
+    });
+    const job = { provider: "test", handle, identityId: identity.id };
+    const payload = {
+      ...job,
+      text: await runAsSystem("seal the settle text", () =>
+        sealSettleText(db.prisma, identity.spaceId, job, ""),
+      ),
+      attachments: [
+        { name: "photo.jpg", mimeType: "image/jpeg" },
+        { name: "clip.mov", mimeType: "video/quicktime" },
+      ],
+    };
+    await runAsTenant(identity, () =>
+      settleInboundMessage(
+        { prisma: db.prisma, events: createThreadEvents(db.prisma), jobs, delivery },
+        payload,
+      ),
+    );
+
+    expect(
+      await system.message.findMany({
+        where: { threadId: identity.threadId, clientNonce: `messaging:test:${handle}` },
+        select: { blocks: true },
+      }),
+    ).toEqual([
+      {
+        blocks: [
+          { kind: "text", text: "[file: clip.mov (unavailable: not received)]" },
+          { kind: "image", artifactId: photo.id, name: "photo.jpg", mimeType: "image/jpeg" },
+        ],
+      },
+    ]);
+    expect(
+      await system.messagingOutbound.findMany({
+        where: { identityId: identity.id, idempotencyKey: `files-not-received:test:${handle}` },
+        select: { body: true },
+      }),
+    ).toEqual([{ body: "Some files couldn't be received." }]);
   });
 });
