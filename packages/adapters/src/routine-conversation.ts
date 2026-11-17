@@ -4,6 +4,7 @@ import { handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { dueRoutineHandoverPrompt } from "./routine-conversation.prompt.js";
+import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
 import { wakeRun } from "./wake-run.js";
 
 /** How long a scheduled run waits for its chat's current run before handing its task to that run. */
@@ -73,12 +74,15 @@ export async function holdRoutineRunForConversation(
       where: { id: run.taskId },
       select: { prompt: true },
     });
-    const handed = task
-      ? await handQueuedRunToWorkingRun(deps.prisma, {
-          runId: run.id,
-          text: dueRoutineHandoverPrompt(run.routine?.name ?? null, task.prompt),
-        })
-      : null;
+    // A task queued while its routine watched still quotes what the watch read, even once the
+    // routine stops watching.
+    const handed =
+      task && !task.prompt.includes(ROUTINE_WATCH_NOTE_START)
+        ? await handQueuedRunToWorkingRun(deps.prisma, {
+            runId: run.id,
+            text: dueRoutineHandoverPrompt(run.routine?.name ?? null, task.prompt),
+          })
+        : null;
     if (handed) {
       getLogger().info("routine.handed_to_working_run", {
         "run.id": run.id,
