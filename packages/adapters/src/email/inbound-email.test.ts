@@ -508,5 +508,7 @@ describe("readInboundEmail", () => {
       "invoice.pdf",
       "screenshot.png",
     ]);
+    expect(email.attachments[0]?.inline).toBeUndefined();
+    expect(email.attachments[1]?.inline).toBe(true);
   });
 });
