@@ -30,6 +30,7 @@ import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { FleetCardSummary } from "../approval-ask.js";
 import type { ExecutorDeps } from "../executor-deps.js";
+import { cardName } from "../fleet-tools.js";
 import { insertMcpServerRow } from "../mcp-server-rows.js";
 import { buildMcpCredentialBlob } from "../mcp-server-tool.js";
 import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "../remote-mcp.js";
@@ -212,7 +213,7 @@ export function prepareAgentImportRequest(
       // Each bot under the name it is created with, and only the skills with text to save.
       title:
         picked.length === 1
-          ? `Import ${savedName(picked[0]!.bot)}?`
+          ? `Import ${cardName(savedName(picked[0]!.bot))}?`
           : `Import ${picked.length} bots?`,
       lines: picked.map(
         ({ bot }) =>

@@ -99,6 +99,15 @@ describe("the import_agents approval card", () => {
     });
   });
 
+  it("keeps a bot name's markup literal in the card title", () => {
+    const name = "[Bramble](https://example.com)";
+    const linked = JSON.stringify({ bots: [{ ...bramble, name }] });
+    expect(prepareAgentImportRequest(linked, { bot_names: [name] })).toMatchObject({
+      ok: true,
+      summary: { title: "Import \\[Bramble\\](https://example.com)?" },
+    });
+  });
+
   it("refuses names the export does not have, and a message with no export", () => {
     expect(prepareAgentImportRequest(reply, { bot_names: ["Atlas"] })).toEqual({
       ok: false,
