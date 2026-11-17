@@ -199,6 +199,7 @@ export function normalizeMessagingLinkCode(text: string): string | null {
 export async function issueMessagingLinkCode(
   prisma: PrismaClient,
   request: { userId: string; spaceId: string; botId: string },
+  options?: { signal?: AbortSignal },
 ): Promise<{ code: string; expiresAt: Date }> {
   let code = "";
   for (let i = 0; i < LINK_CODE_LENGTH; i += 1) {
@@ -210,6 +211,9 @@ export async function issueMessagingLinkCode(
     await tx.$queryRaw(Prisma.sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`messaging-link-code:${request.userId}`}, 0))::text AS "lock"
     `);
+    // A caller may disconnect while waiting for the lock. Do not let that old
+    // request replace a code issued by another request in the meantime.
+    options?.signal?.throwIfAborted();
     await tx.messagingLinkCode.deleteMany({ where: { userId: request.userId } });
     await tx.messagingLinkCode.create({ data: { code, ...request, expiresAt } });
   });
