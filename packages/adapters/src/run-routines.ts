@@ -15,7 +15,7 @@ import {
   nextRoutineRunDateAcross,
   ONCE_ROUTINE_CRON,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   accountDeactivated,
   isUniqueViolation,
@@ -99,12 +99,12 @@ export async function scheduleRoutineRetry(
 }
 
 export async function deleteSpentOneShotRoutine(
-  prisma: PrismaClient,
-  run: { routineId: string; userId: string },
+  deps: { prisma: PrismaClient; events?: Pick<ThreadEvents, "publishSpaceChange"> },
+  run: { spaceId: string; routineId: string; userId: string },
 ): Promise<void> {
-  await bestEffort(
+  const deleted = await bestEffort(
     "delete spent one-time routine",
-    prisma.routine.deleteMany({
+    deps.prisma.routine.deleteMany({
       where: {
         id: run.routineId,
         userId: run.userId,
@@ -119,6 +119,11 @@ export async function deleteSpentOneShotRoutine(
         runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
       },
     }),
+  );
+  if (!deleted?.count) return;
+  await bestEffort(
+    "publish deleted one-time routine",
+    deps.events?.publishSpaceChange?.(run.spaceId, "routines"),
   );
 }
 

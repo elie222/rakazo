@@ -152,7 +152,8 @@ export async function completeRun(ctx: RunContext) {
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
-    await deleteSpentOneShotRoutine(deps.prisma, {
+    await deleteSpentOneShotRoutine(deps, {
+      spaceId: run.spaceId,
       routineId: run.routineId,
       userId: run.userId,
     });

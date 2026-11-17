@@ -126,8 +126,17 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     await runFor(busy.id, "running");
     await runFor(paused.id, "completed");
 
+    const published: string[] = [];
+    const deps = {
+      prisma: system,
+      events: {
+        publishSpaceChange: async (spaceId: string, kind: string) => {
+          published.push(`${spaceId}:${kind}`);
+        },
+      },
+    };
     for (const routine of [done, rescheduled, recurring, webhook, busy, paused])
-      await deleteSpentOneShotRoutine(system, { routineId: routine.id, userId: identity.userId });
+      await deleteSpentOneShotRoutine(deps, { ...identity, routineId: routine.id });
 
     const left = await system.routine.findMany({
       where: {
@@ -138,6 +147,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     expect(left.map((row) => row.id).sort()).toEqual(
       [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id].sort(),
     );
+    expect(published).toEqual([`${identity.spaceId}:routines`]);
     await expect(
       system.run.findUniqueOrThrow({ where: { id: finished.id }, select: { routineId: true } }),
     ).resolves.toEqual({ routineId: null });

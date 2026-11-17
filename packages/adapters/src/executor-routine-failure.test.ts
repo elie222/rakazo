@@ -248,6 +248,7 @@ async function failRun(scenario: Scenario) {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
   const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
+  const publishSpaceChange = vi.fn(async () => undefined);
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
@@ -267,6 +268,7 @@ async function failRun(scenario: Scenario) {
     events: {
       append: vi.fn(async () => undefined),
       finalizeRun,
+      publishSpaceChange,
       pauseRunForInput: vi.fn(async () => {
         run.status = "waiting_input";
         return { continuationRunId: null };
@@ -305,7 +307,7 @@ async function failRun(scenario: Scenario) {
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send, prisma, runtimeRun, run };
+  return { retries, send, prisma, runtimeRun, run, publishSpaceChange };
 }
 
 const overloaded = () =>
@@ -1200,7 +1202,7 @@ describe("reporting a failed run", () => {
 
 describe("a one-time routine after its run", () => {
   it("deletes the routine once the run completes", async () => {
-    const { prisma } = await failRun({ oneShot: true, nextRunAt: null });
+    const { prisma, publishSpaceChange } = await failRun({ oneShot: true, nextRunAt: null });
 
     expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
@@ -1212,6 +1214,7 @@ describe("a one-time routine after its run", () => {
         lastRunAt: { not: null },
       }),
     });
+    expect(publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
   });
 
   it("keeps the routine when the run fails", async () => {
