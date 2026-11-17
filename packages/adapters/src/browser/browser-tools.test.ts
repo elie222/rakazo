@@ -3,7 +3,7 @@ import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import * as Logging from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { ComputerBrowserProvider } from "../computers/screens/computer-browser.js";
-import { redactConnectorPayload } from "../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../integrations/connector-safety.js";
 import {
   filterPageBrowserTools,
   PAGE_BROWSER_TOOL_NAMES,

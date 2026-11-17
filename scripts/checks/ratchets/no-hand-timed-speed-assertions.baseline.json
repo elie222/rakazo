@@ -4,6 +4,7 @@
   "apps/desktop/src/main/windows/app-document-state.test.ts": 1,
   "apps/web/e2e/pages/page-browser.spec.ts": 1,
   "infra/sandboxes/supervisor/src/focus-or-launch.test.ts": 1,
+  "packages/adapters/src/computers/sandbox/sandbox-conformance.test.ts": 2,
   "packages/adapters/src/computers/screens/linux-desktop.focus.test.ts": 3,
   "packages/adapters/src/mcp/mcp-connector-launch.test.ts": 1,
   "packages/adapters/src/mcp/mcp-oauth.postgres.test.ts": 1,
@@ -13,7 +14,6 @@
   "packages/adapters/src/runtime/pi/models/pi-anthropic-oauth.test.ts": 1,
   "packages/adapters/src/runtime/pi/models/pi-codex-catalog.test.ts": 1,
   "packages/adapters/src/runtime/pi/models/pi-oauth.postgres.test.ts": 1,
-  "packages/adapters/src/sandboxes/sandbox-conformance.test.ts": 2,
   "packages/adapters/src/web/favicon.test.ts": 2,
   "packages/adapters/src/web/web-ssrf.test.ts": 4
 }

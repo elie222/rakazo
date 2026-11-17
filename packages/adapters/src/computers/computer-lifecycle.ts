@@ -37,13 +37,6 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sandboxAllowanceUsedUp } from "../sandboxes/sandbox-allowance.js";
-import {
-  isSandboxDamagedError,
-  isSandboxGoneError,
-  isSandboxUnsafeStopError,
-} from "../sandboxes/sandbox-errors.js";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { resolveAgentHomePath } from "../storage/home.js";
 import { ObjectAgentHomeStore } from "../storage/home-object-store.js";
 import {
@@ -52,6 +45,13 @@ import {
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
+import { sandboxAllowanceUsedUp } from "./sandbox/sandbox-allowance.js";
+import {
+  isSandboxDamagedError,
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+} from "./sandbox/sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import {
   clearInactiveUserComputerControl,
   endTeachingWithLease,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOpenAiToolParameters } from "../runtime/openai-tool-parameters.js";
+import { normalizeOpenAiToolParameters } from "../models/endpoints/openai-tool-parameters.js";
 import { builtinAgentTools } from "../tools/builtin.tool-definition.js";
 import { parseConnectorToolArgs } from "../tools/lazy-tool-catalog.js";
 

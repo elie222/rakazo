@@ -20,7 +20,7 @@ import {
 import { prepareAgentConnectionResponse } from "../../bots/agent-connections.js";
 import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-patch.js";
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
-import { sanitizeConnectorError } from "../../connectors/connector-safety.js";
+import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
 import type { PurchaseApproval } from "../../payments/purchase-gate.js";
 import {

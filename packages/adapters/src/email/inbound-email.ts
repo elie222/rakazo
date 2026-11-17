@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
+import { sliceWellFormed } from "@rakazo/core";
 import type { Address } from "postal-mime";
 import { htmlToPlainText } from "../providers/web/keyless-http/keyless-http-web.js";
-import { sliceWellFormed } from "../shared/utf8.js";
 
 /** Largest raw message accepted, the size common mail relays deliver. */
 export const INBOUND_EMAIL_MAX_BYTES = 25 * 1024 * 1024;

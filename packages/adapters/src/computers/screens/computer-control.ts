@@ -5,7 +5,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { wakeRun } from "../../runs/wakeups/wake-run.js";
-import { isSandboxGoneError } from "../../sandboxes/sandbox-errors.js";
+import { isSandboxGoneError } from "../sandbox/sandbox-errors.js";
 import { toComputerRef } from "./computer-support.js";
 
 // Who holds a computer's user control is decided in one place, next to the computer rows.
