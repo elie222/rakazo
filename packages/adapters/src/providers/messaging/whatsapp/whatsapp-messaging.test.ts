@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
 import { whatsappMessaging } from "./whatsapp-messaging.js";
 
 const appSecret = "fake-app-secret";
