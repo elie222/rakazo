@@ -258,7 +258,6 @@ vi.mock("../components/settings-group", () => ({
 vi.mock("./api-server", async (importOriginal) => ({
   ...(await importOriginal<typeof ApiServer>()),
 }));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", async (importOriginal) => ({
   ...(await importOriginal<typeof Api>()),
   currentApiBase: () => "http://127.0.0.1:3100",

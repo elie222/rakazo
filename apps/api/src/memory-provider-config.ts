@@ -151,16 +151,11 @@ async function saveMemoryProviderConnection(
 ) {
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
-    if (
-      memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
-      deps.env?.mcpAllowPrivateEndpoint !== true
-    ) {
-      throw new ORPCError("FORBIDDEN");
-    }
     assertMemoryProviderSettings(input.provider, input.settings);
     const classify = deps.classifySettings ?? classifyMemoryProviderSettings;
     const prepare = deps.prepareConnection ?? prepareMemoryProviderConnection;
-    // Classify DNS/trust before any credentialed probe so LAN endpoints stay operator-authorized.
+    // Trust is decided by the addresses a host resolves to, so it is checked only once classified,
+    // and before any credentialed probe so private endpoints stay operator-authorized.
     const classifiedSettings = await classify(input.provider, input.settings);
     if (
       memoryProviderRequiresPrivateEndpoint(input.provider, classifiedSettings) &&

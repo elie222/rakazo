@@ -110,10 +110,8 @@ export async function executePaidRequest(
     where: { operationKey: context.operationId },
     select: { requestCiphertext: true },
   });
-  if (saved?.requestCiphertext !== sealed.ciphertext) {
-    // No purchase holds this copy: the wallet refused, or a replay recorded its own.
-    await cleanUpUnsavedSecret(cleanupDeps, copy);
-  }
+  // No purchase holds this copy: the wallet refused, or a replay recorded its own.
+  if (saved?.requestCiphertext !== sealed.ciphertext) await cleanUpUnsavedSecret(cleanupDeps, copy);
   return plain(result);
 }
 

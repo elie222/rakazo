@@ -1,7 +1,7 @@
 import type { BillingStatus } from "@rakazo/contracts";
 import { MOBILE_BILLING_CALLBACK_URL } from "@rakazo/contracts";
 import { Linking } from "react-native";
-import { rpc } from "./api";
+import type { SaveSend } from "./query";
 
 export type Plan = "byok" | "credits";
 
@@ -82,7 +82,7 @@ export function isPaywallShown() {
  * provider returns to the app, then reads the result straight from the provider so the
  * app does not wait on the webhook.
  */
-export async function openBillingPage(url: string): Promise<BillingStatus> {
+export async function openBillingPage(url: string, send: SaveSend): Promise<BillingStatus> {
   // Defer the native module so billing still opens (in Safari) on older binaries.
   const browser = await import("expo-web-browser").catch(() => null);
   // Ephemeral, so iOS opens checkout without asking to "sign in" with the payment site first.
@@ -91,5 +91,5 @@ export async function openBillingPage(url: string): Promise<BillingStatus> {
       preferEphemeralSession: true,
     });
   else await Linking.openURL(url);
-  return rpc("billing/refresh");
+  return send("billing/refresh", undefined);
 }

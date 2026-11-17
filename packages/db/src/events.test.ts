@@ -1373,7 +1373,10 @@ describe("pauseRunForInput", () => {
         }),
       },
       computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      steeringMessage: { findMany: vi.fn().mockResolvedValue([]) },
+      steeringMessage: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       thread: {
         update: vi

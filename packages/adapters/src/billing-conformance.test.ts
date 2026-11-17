@@ -2,7 +2,10 @@ import type { BillingProvider, BillingSubscriptionStatus } from "@rakazo/adapter
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { BillingEmulator } from "./billing-emulator.js";
-import { StripeBillingProvider, signStripeWebhook } from "./stripe-billing.js";
+import {
+  StripeBillingProvider,
+  signStripeWebhook,
+} from "./providers/billing/stripe/stripe-billing.js";
 import { StripeEmulator } from "./testing/stripe-emulator.js";
 
 const NOW = Date.UTC(2026, 0, 1);
@@ -180,6 +183,26 @@ for (const [name, create] of Object.entries(factories)) {
       });
     });
 
+    it("expires one checkout by id, idempotently, and leaves a newer one payable", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_3c",
+      });
+      const first = await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.expireCheckout(first.id);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
+      await harness.provider.expireCheckout(first.id);
+      const second = await harness.provider.createCheckout({ customerId, seats: 2, ...urls });
+      expect(second.id).not.toBe(first.id);
+      await harness.provider.expireCheckout(first.id);
+      harness.completeCheckout(customerId);
+      expect(await harness.provider.getCustomerSubscription(customerId)).toMatchObject({
+        status: "active",
+        seats: 2,
+      });
+    });
+
     it("is active immediately without a trial and returns null before any subscription", async () => {
       const harness = create();
       const { customerId } = await harness.provider.createCustomer({
@@ -303,6 +326,24 @@ describe("offline monthly credit renewals", () => {
 });
 
 describe("offline checkout cancellation", () => {
+  it("expires only the named own-key or credit session", async () => {
+    const provider = new BillingEmulator({ modelCredits: true, now });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const urls = {
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    const byok = await provider.createByokCheckout({ customerId, amountCents: 4900, ...urls });
+    await provider.createCreditCheckout({ customerId, amountCents: 2000, monthly: false, ...urls });
+    await provider.expireCheckout(byok.id);
+    expect(() => provider.completeByokCheckout(customerId)).toThrow();
+    provider.completeCreditCheckout(customerId);
+    expect(await provider.listCreditPurchases(customerId)).toHaveLength(1);
+  });
+
   it("expires every kind of open checkout session when canceling", async () => {
     const provider = new BillingEmulator({ modelCredits: true, now });
     const { customerId } = await provider.createCustomer({

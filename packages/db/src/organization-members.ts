@@ -140,7 +140,7 @@ async function requireManager(
   return role;
 }
 
-function normalizeEmail(email: string): string {
+export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
@@ -219,6 +219,55 @@ async function lockKey(tx: Prisma.TransactionClient, key: string) {
 }
 
 /**
+ * Whether one more invitation email may go to an address now, from an organization or a Space:
+ * the daily limits count every one. Only someone whose own address is proven sends mail in the
+ * server's name (`mayEmail`); anyone else shares the link by hand. Past the address's limit
+ * nothing is emailed, and past the inviter's the invitation is refused. Takes the inviter's and
+ * the address's locks, so two invitations at once cannot both take the last email allowed.
+ */
+export async function invitationEmailAllowance(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    /** The address as a hash keyed with a server secret, as the security log names it. */
+    recipient: string;
+    sendsEmail: boolean;
+  },
+): Promise<{ mayEmail: boolean; send: boolean }> {
+  await lockKey(tx, `invitation-sender:${input.userId}`);
+  await lockKey(tx, `invitation-recipient:${input.recipient}`);
+  const today = { gt: new Date(Date.now() - DAY_MS) };
+  const [inviter, toRecipient, byInviter] = await Promise.all([
+    tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { emailVerified: true } }),
+    tx.securityEvent.count({
+      where: {
+        type: INVITATION_SENT,
+        createdAt: today,
+        metadata: { path: ["recipient"], equals: input.recipient },
+      },
+    }),
+    tx.securityEvent.count({
+      where: { type: INVITATION_SENT, userId: input.userId, createdAt: today },
+    }),
+  ]);
+  const mayEmail = input.sendsEmail && inviter.emailVerified;
+  const send = mayEmail && toRecipient < MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY;
+  if (send && byInviter >= MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY)
+    throw new OrganizationInvitationRateError();
+  return { mayEmail, send };
+}
+
+/** Each invitation email allowed, recorded in the transaction that allows it. */
+export async function recordInvitationEmail(
+  tx: Prisma.TransactionClient,
+  input: { userId: string; metadata: { recipient: string } & Record<string, string> },
+): Promise<void> {
+  await tx.securityEvent.create({
+    data: { type: INVITATION_SENT, userId: input.userId, metadata: input.metadata },
+  });
+}
+
+/**
  * Owner and admins. Inviting the same address again replaces its pending invitation with a new
  * one, which is how a lost email is resent. With `sendsEmail`, each email is recorded as it is
  * allowed, in the same transaction, and the daily limits count those records: resending,
@@ -252,9 +301,6 @@ export async function createOrganizationInvitation(
     prisma.$transaction(async (tx) => {
       await lockOrganizationMembers(tx, input.organizationId);
       await requireManager(tx, input.organizationId, input.userId);
-      // So two invitations at once cannot both take the last email allowed.
-      await lockKey(tx, `invitation-sender:${input.userId}`);
-      await lockKey(tx, `invitation-recipient:${recipient}`);
       const existing = await tx.member.findFirst({
         where: {
           organizationId: input.organizationId,
@@ -264,17 +310,18 @@ export async function createOrganizationInvitation(
         select: { id: true },
       });
       if (existing) throw new AlreadyOrganizationMemberError();
+      const { mayEmail, send } = await invitationEmailAllowance(tx, {
+        userId: input.userId,
+        recipient,
+        sendsEmail: input.sendsEmail,
+      });
       const now = new Date();
-      const today = { gt: new Date(now.getTime() - DAY_MS) };
-      const [organization, inviter, pending, toRecipient, byInviter, open] = await Promise.all([
+      const [organization, inviter, pending, open] = await Promise.all([
         tx.organization.findUniqueOrThrow({
           where: { id: input.organizationId },
           select: { name: true },
         }),
-        tx.user.findUniqueOrThrow({
-          where: { id: input.userId },
-          select: { name: true, emailVerified: true },
-        }),
+        tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { name: true } }),
         tx.invitation.findFirst({
           where: {
             organizationId: input.organizationId,
@@ -284,31 +331,15 @@ export async function createOrganizationInvitation(
           },
           select: { id: true },
         }),
-        tx.securityEvent.count({
-          where: {
-            type: INVITATION_SENT,
-            createdAt: today,
-            metadata: { path: ["recipient"], equals: recipient },
-          },
-        }),
-        tx.securityEvent.count({
-          where: { type: INVITATION_SENT, userId: input.userId, createdAt: today },
-        }),
         tx.invitation.count({
           where: { organizationId: input.organizationId, status: PENDING, expiresAt: { gt: now } },
         }),
       ]);
       const names = { organizationName: organization.name, inviterName: inviter.name };
       // Past the address's limit nothing is emailed, but the inviter still gets a link to share:
-      // the pending one, or a new one when another organization's invitations used the limit up.
-      // Only someone whose own address is proven sends mail in the server's name; anyone else
-      // shares the link by hand.
-      const mayEmail = input.sendsEmail && inviter.emailVerified;
-      const send = mayEmail && toRecipient < MAX_INVITATION_EMAILS_PER_RECIPIENT_PER_DAY;
+      // the pending one, or a new one when another invitation used the limit up.
       if (mayEmail && !send && pending)
         return { id: pending.id, email, ...names, created: false, send: false };
-      if (send && byInviter >= MAX_INVITATION_EMAILS_PER_INVITER_PER_DAY)
-        throw new OrganizationInvitationRateError();
       if (!pending && open >= MAX_PENDING_INVITATIONS) throw new OrganizationInvitationLimitError();
       // Its link stops working: the new invitation carries the new one.
       await tx.invitation.updateMany({
@@ -329,12 +360,9 @@ export async function createOrganizationInvitation(
         },
       });
       if (send)
-        await tx.securityEvent.create({
-          data: {
-            type: INVITATION_SENT,
-            userId: input.userId,
-            metadata: { organizationId: input.organizationId, recipient },
-          },
+        await recordInvitationEmail(tx, {
+          userId: input.userId,
+          metadata: { organizationId: input.organizationId, recipient },
         });
       return { id, email, ...names, created: true, send };
     }),

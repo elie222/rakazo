@@ -567,7 +567,7 @@ function EditorForm({
               <Input
                 id={id("number")}
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-number"
                 spellCheck={false}
                 disabled={busy}
                 value={groupedCardNumber(cardDigits)}
@@ -594,21 +594,21 @@ function EditorForm({
                 const digits = digitsOf(next, 6);
                 setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
               },
-              { inputMode: "numeric", placeholder: "MM/YY" },
+              { inputMode: "numeric", placeholder: "MM/YY", autoComplete: "cc-exp" },
             )}
             <FormField id={id("cvc")} label={t`Security code`}>
               <Input
                 id={id("cvc")}
                 type="password"
                 inputMode="numeric"
-                autoComplete="new-password"
+                autoComplete="cc-csc"
                 disabled={busy}
                 value={cvc}
                 onChange={(event) => setCvc(digitsOf(event.target.value, 4))}
               />
             </FormField>
           </div>
-          {text("card-name", t`Name on card`, cardName, setCardName)}
+          {text("card-name", t`Name on card`, cardName, setCardName, { autoComplete: "cc-name" })}
           {contacts?.length ? (
             <FormField id={id("billing")} label={t`Billing address`}>
               <OptionSelect

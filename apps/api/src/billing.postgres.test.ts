@@ -145,6 +145,47 @@ describePostgres("billing service (PostgreSQL)", () => {
     expect(account?.seats).toBe(2);
   });
 
+  it("corrects a missed seat recount at the next billing sync", async () => {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    const subscription = () => emulator.subscriptions.find((s) => s.customerId === customerId)!;
+    // A member joined, and the recount after it never ran.
+    const joinedId = `${memberId}-unrecounted`;
+    await prisma.user.create({
+      data: { id: joinedId, name: "Late", email: `${joinedId}@rakazo.test`, emailVerified: false },
+    });
+    await prisma.member.create({
+      data: {
+        id: `m-${joinedId}`,
+        organizationId,
+        userId: joinedId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      seats: 2,
+    });
+
+    await billing.sync(customerId);
+    expect(subscription().seats).toBe(3);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      seats: 3,
+    });
+
+    // Leaving is corrected the same way, also while a payment is overdue, so the subscription
+    // resumes with the right count.
+    emulator.setStatus(customerId, "unpaid");
+    await prisma.user.delete({ where: { id: joinedId } });
+    await billing.sync(customerId);
+    expect(subscription().seats).toBe(2);
+    await expect(billingAccountForOrganization(prisma, organizationId)).resolves.toMatchObject({
+      status: "unpaid",
+      seats: 2,
+    });
+    emulator.setStatus(customerId, "trialing");
+    await billing.sync(customerId);
+  });
+
   it("stores the cancellation answer and reports it to the owner once", async () => {
     const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
     const subscription = emulator.subscriptions.find((s) => s.customerId === customerId)!;

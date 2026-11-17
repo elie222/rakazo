@@ -14,6 +14,7 @@ import {
   leaveOrganizationSpaces,
   OrganizationAdminRequiredError,
   OwnedOrganizationHasMembersError,
+  publishOrganizationChange,
   revokeOrganizationMember,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,13 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   let handler: RPCHandler<Record<string, unknown>>;
   const syncSeats = vi.fn(async (_organizationId: string) => undefined);
   const publishRosterChange = vi.fn(async (_change: unknown) => undefined);
+  /** The topics organization signals went to, as the fanout received them. */
+  const organizationSignals: string[] = [];
+  const fanout = {
+    publish: async (topic: string) => {
+      organizationSignals.push(topic);
+    },
+  };
   const sent: TransactionalEmail[] = [];
   const email = {
     send: vi.fn(async (message: TransactionalEmail) => {
@@ -148,6 +156,8 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
         ...createThreadEvents(prisma),
         notify: vi.fn(async () => undefined),
         publishRosterChange,
+        publishOrganizationChange: (organizationId: string, alsoUserIds?: readonly string[]) =>
+          publishOrganizationChange(prisma, fanout as never, organizationId, alsoUserIds),
       },
       env: {
         agentRuntime: "scripted",
@@ -576,6 +586,107 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     );
   });
 
+  it("invites someone from outside into one Space as a guest, marked for everyone there", async () => {
+    const owner = await person("owner");
+    const colleague = await person("colleague");
+    const outsider = await person("outsider");
+    const organizationId = owner.organizationId;
+    const colleagueActor = await join(owner, colleague);
+    const clients = await sharedSpace(owner, "Clients");
+    const ownerIn = { ...owner.actor, spaceId: clients };
+    expect(
+      (await call(ownerIn, "spaces/members/add", { spaceId: clients, userId: colleague.id }))
+        .status,
+    ).toBe(200);
+    const colleagueIn = { ...colleagueActor, spaceId: clients };
+    const spaceOf = async (actor: Actor, spaceId: string) => {
+      const listed = await call(actor, "spaces/list", {});
+      const spaces = listed.json.spaces as Array<{ id: string; hasGuests?: boolean }>;
+      return spaces.find((space) => space.id === spaceId);
+    };
+    await expect(spaceOf(ownerIn, clients)).resolves.toMatchObject({ hasGuests: false });
+    await expect(call(ownerIn, "spaces/members/list", { spaceId: clients })).resolves.toMatchObject(
+      { json: { organizationName: "Personal" } },
+    );
+
+    // Only the Space's owner invites, whoever they invite.
+    expect(
+      (
+        await call(colleagueIn, "spaces/invites/create", {
+          spaceId: clients,
+          email: outsider.email,
+        })
+      ).status,
+    ).toBe(403);
+    const before = sent.length;
+    const created = await call(ownerIn, "spaces/invites/create", {
+      spaceId: clients,
+      email: outsider.email.toUpperCase(),
+    });
+    expect(created).toMatchObject({ status: 200, json: { emailed: true } });
+    const url = created.json.url as string;
+    expect(sent.slice(before)).toHaveLength(1);
+    const message = sent.at(-1)!;
+    expect(message.to).toBe(outsider.email);
+    expect(message.subject).toBe("owner invited you to Clients on Rakazo");
+    expect(message.text).toContain(url);
+    // Anyone holding the link may join, so the email asks for no particular address.
+    expect(message.text).not.toContain("Sign in with this email address");
+    // The email counts toward the address's daily limit with organization invitations, named
+    // only by a keyed hash.
+    const records = await system.securityEvent.findMany({
+      where: { type: "organization.invitation.sent", userId: owner.id },
+      select: { metadata: true },
+    });
+    expect(records.map((record) => record.metadata)).toContainEqual({
+      spaceId: clients,
+      recipient: expect.any(String),
+    });
+    expect(JSON.stringify(records)).not.toContain(outsider.email);
+
+    const token = new URL(url).pathname.split("/").at(-1)!;
+    expect((await call(outsider.actor, "spaces/invites/accept", { token })).status).toBe(200);
+    await expect(role(organizationId, outsider.id)).resolves.toEqual({ role: "guest" });
+    const outsiderIn = { ...outsider.actor, spaceId: clients };
+
+    // Everyone in the Space sees that it includes someone from outside, and who.
+    for (const actor of [ownerIn, colleagueIn, outsiderIn])
+      await expect(spaceOf(actor, clients)).resolves.toMatchObject({ hasGuests: true });
+    await expect(spaceOf(ownerIn, owner.organizationId)).resolves.toMatchObject({
+      hasGuests: false,
+    });
+    const listed = await call(colleagueIn, "spaces/members/list", { spaceId: clients });
+    expect(listed.json.members).toEqual([
+      expect.objectContaining({ userId: owner.id, role: "owner", guest: false }),
+      expect.objectContaining({ userId: colleague.id, guest: false }),
+      expect.objectContaining({ userId: outsider.id, guest: true }),
+    ]);
+
+    // A guest sees this Space only: not the organization's people, nor any way to add them.
+    expect((await call(outsiderIn, "organizations/members/list", { organizationId })).status).toBe(
+      404,
+    );
+    const organizationList = await call(outsiderIn, "organizations/list", {});
+    expect(JSON.stringify(organizationList.json)).not.toContain(organizationId);
+    expect(
+      (
+        await call(outsiderIn, "spaces/invites/create", {
+          spaceId: clients,
+          email: "x@example.test",
+        })
+      ).status,
+    ).toBe(403);
+
+    // Past the address's daily limit the owner still gets a link, to share by hand.
+    for (const emailed of [true, true, true, false]) {
+      const again = await call(ownerIn, "spaces/invites/create", {
+        spaceId: clients,
+        email: "later@example.test",
+      });
+      expect(again).toMatchObject({ status: 200, json: { emailed } });
+    }
+  });
+
   it("hands no Space to a remover who has stopped managing the organization", async () => {
     const owner = await person("owner");
     const admin = await person("admin");
@@ -718,5 +829,46 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     await expect(
       system.spaceMember.count({ where: { organizationId, userId: member.id } }),
     ).resolves.toBe(0);
+  });
+
+  it("signals each member, and only them, after every change to the members", async () => {
+    const owner = await person("owner");
+    const alice = await person("alice");
+    const bob = await person("bob");
+    const organizationId = owner.organizationId;
+    const topic = (who: Person) => `organization-changes:${who.id}`;
+    const signalled = async (action: () => Promise<unknown>, expected: Person[]) => {
+      organizationSignals.length = 0;
+      await action();
+      await vi.waitFor(() =>
+        expect([...new Set(organizationSignals)].sort()).toEqual(expected.map(topic).sort()),
+      );
+    };
+
+    // Exactly the members hear each change: never the invitee, nor anyone removed earlier.
+    // Accepting signals the member who joined as well as the ones already there.
+    await signalled(() => join(owner, alice), [owner, alice]);
+    let invitationId = "";
+    await signalled(async () => {
+      invitationId = await invite(owner, organizationId, bob.email);
+    }, [owner, alice]);
+    await signalled(
+      () =>
+        call(owner.actor, "organizations/members/setRole", {
+          organizationId,
+          userId: alice.id,
+          role: "admin",
+        }),
+      [owner, alice],
+    );
+    // Someone removed hears it too, so their own list drops the organization.
+    await signalled(
+      () => call(owner.actor, "organizations/members/remove", { organizationId, userId: alice.id }),
+      [owner, alice],
+    );
+    await signalled(
+      () => call(owner.actor, "organizations/invitations/cancel", { organizationId, invitationId }),
+      [owner],
+    );
   });
 });

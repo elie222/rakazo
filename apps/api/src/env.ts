@@ -20,16 +20,14 @@ import { socialAuthFromFields } from "@rakazo/auth";
 import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
+import { attachmentCountFromEnv, phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
 import {
-  attachmentCountFromEnv,
-  phoneCallSettings,
   resolveAuthSecret,
   resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
-  uploadSizeFromEnv,
-} from "@rakazo/core";
+} from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
@@ -163,6 +161,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
     | undefined;
   /** Crisp chat on the paywall, for the hosted service; self-hosted installs leave it unset. */
   crispWebsiteId?: string | null;
+  /** DEMO_ACCOUNT_EMAIL and DEMO_ACCOUNT_PASSWORD, published to sign-in; only for throwaway demo servers. */
+  demoAccount?: { email: string; password: string } | null;
 }
 
 /** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
@@ -341,6 +341,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     crispWebsiteId: parseCrispWebsiteId(source.CRISP_WEBSITE_ID),
+    demoAccount: demoAccountFromEnv(source),
   };
 }
 
@@ -456,4 +457,10 @@ function androidCertFingerprints(value: string | undefined): string[] {
     }
     return hex.toUpperCase().match(/../g)!.join(":");
   });
+}
+
+function demoAccountFromEnv(source: NodeJS.ProcessEnv) {
+  const email = optional(source.DEMO_ACCOUNT_EMAIL);
+  const password = source.DEMO_ACCOUNT_PASSWORD;
+  return email && password ? { email, password } : null;
 }

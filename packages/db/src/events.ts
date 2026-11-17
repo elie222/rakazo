@@ -46,6 +46,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { followOrganizationChanges, publishOrganizationChange } from "./organization-changes.js";
 import { isRecordNotFound } from "./prisma-errors.js";
 import type { RosterChange } from "./roster-changes.js";
 import { followRosterChanges, loadRosterScope, publishRosterChange } from "./roster-changes.js";
@@ -65,6 +66,7 @@ import {
   createPendingSteeringRun,
   discardAnsweredSteering,
   hasChannelMessage,
+  releaseUnreadHandovers,
 } from "./thread-steering.js";
 import type {
   AnswerTakeoverRequestInput,
@@ -117,6 +119,11 @@ export interface ThreadEvents {
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   publishSpaceChange?(spaceId: string, kind: SpaceChangeKind): Promise<void>;
   followSpaceChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<SpaceChangeKind>;
+  publishOrganizationChange?(
+    organizationId: string,
+    alsoUserIds?: readonly string[],
+  ): Promise<void>;
+  followOrganizationChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   answerRunInput(input: AnswerRunInput): Promise<boolean>;
   append(input: AppendEventInput): Promise<ProductEvent>;
   claimSteering(input: ClaimSteeringInput): Promise<ClaimedSteeringMessage[]>;
@@ -251,8 +258,12 @@ export function createThreadEvents(
       followRosterChanges: (userId, signal) =>
         followRosterChanges(realtime, userId, () => loadRosterScope(prisma, userId), signal),
       followSpaceChanges: (spaceId, signal) => followSpaceChanges(realtime, spaceId, signal),
+      followOrganizationChanges: (userId, signal) =>
+        followOrganizationChanges(realtime, userId, signal),
     }),
     publishSpaceChange: (spaceId, kind) => publishSpaceChange(realtime, spaceId, kind),
+    publishOrganizationChange: (organizationId, alsoUserIds) =>
+      publishOrganizationChange(prisma, realtime, organizationId, alsoUserIds),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
     append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
@@ -915,6 +926,8 @@ async function finalizeRunOnce(
         where: { runId: input.runId },
         data: { runId: null },
       });
+    } else {
+      await releaseUnreadHandovers(tx, input.runId);
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });

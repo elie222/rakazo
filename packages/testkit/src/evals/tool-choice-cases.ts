@@ -28,7 +28,10 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     kind: "guard",
     purpose: "Set its one-line description when asked.",
     prompt: "Set your description to: Tracks our weekly product metrics.",
-    expect: { bot: { description: "~weekly product metrics" } },
+    expect: {
+      bot: { description: "*" },
+      botMeans: { description: "Says the bot tracks the team's weekly product metrics." },
+    },
   },
   {
     id: "settings-color",
@@ -63,7 +66,13 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Write a requested instruction change directly.",
     bot: { instructions: "Answer questions about our product roadmap." },
     prompt: "Update your instructions so you always answer in bullet points.",
-    expect: { bot: { instructions: "~bullet" } },
+    expect: {
+      bot: { instructions: "*" },
+      botMeans: {
+        instructions:
+          "Always format answers as bullet points, and still covers the product roadmap.",
+      },
+    },
   },
   {
     id: "settings-instructions-replace",
@@ -72,7 +81,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Replace its instructions when asked.",
     bot: { instructions: "Help with travel planning." },
     prompt: "Replace your instructions with: You are a concise SQL tutor.",
-    expect: { bot: { instructions: "~sql tutor" } },
+    expect: {
+      bot: { instructions: "*" },
+      botMeans: {
+        instructions: "Act as a concise SQL tutor, with nothing left of the travel planning role.",
+      },
+    },
   },
   {
     id: "settings-instructions-first",
@@ -80,7 +94,10 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     kind: "guard",
     purpose: "Set first instructions when it has none.",
     prompt: "Your job is to review my pull request descriptions. Save that as your instructions.",
-    expect: { bot: { instructions: "~pull request" } },
+    expect: {
+      bot: { instructions: "*" },
+      botMeans: { instructions: "Review the user's pull request descriptions." },
+    },
   },
   {
     id: "settings-model-switch",

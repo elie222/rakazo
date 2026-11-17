@@ -46,6 +46,8 @@ const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
   OWNER_PASSWORD: "bootstrap-owner CLI input, passed on its own command line",
+  DEMO_ACCOUNT_EMAIL: "publishes a shared login; only throwaway pull request previews set it",
+  DEMO_ACCOUNT_PASSWORD: "publishes a shared login; only throwaway pull request previews set it",
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",

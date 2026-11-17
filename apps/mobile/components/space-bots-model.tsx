@@ -3,10 +3,10 @@ import { useLingui } from "@lingui/react/macro";
 import { botsWithOwnModel } from "@rakazo/core";
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { captureApiRequestContext, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileBot } from "../lib/mobile-types";
 import { native, useThemedStyles } from "../lib/native";
+import { useSave } from "../lib/query";
 import { SettingsGroup, SettingsRow } from "./settings-group";
 
 /**
@@ -25,7 +25,6 @@ export function SpaceBotsModel({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const [pending, setPending] = useState(false);
   const [moved, setMoved] = useState(0);
   const [failed, setFailed] = useState<string[]>([]);
   const pinned = botsWithOwnModel(bots);
@@ -33,27 +32,36 @@ export function SpaceBotsModel({
   // A bot changed elsewhere since the failure no longer needs a retry.
   const stillFailed = pinned.filter((bot) => failed.includes(bot.id)).map((bot) => bot.name);
 
-  async function switchAll() {
-    setPending(true);
+  const switching = useSave({
+    target: spaceId ? { scope: "space", spaceId } : undefined,
+    save: async (bots: MobileBot[], send) => {
+      // Each bot saves on its own; any that fail are named and stay listed to retry.
+      const results = await Promise.allSettled(
+        bots.map((bot) =>
+          send("bots/update", {
+            botId: bot.id,
+            modelProvider: null,
+            modelId: null,
+            thinkingLevel: null,
+          }),
+        ),
+      );
+      await onSwitched();
+      return results;
+    },
+    onSaved: (results, bots) => {
+      setMoved(results.filter((result) => result.status === "fulfilled").length);
+      setFailed(
+        bots.filter((_, index) => results[index]?.status === "rejected").map((bot) => bot.id),
+      );
+    },
+  });
+  const pending = switching.pending;
+
+  function switchAll() {
     setMoved(0);
     setFailed([]);
-    const requestContext = captureApiRequestContext(spaceId);
-    // Each bot saves on its own; any that fail are named and stay listed to retry.
-    const results = await Promise.allSettled(
-      pinned.map(async (bot) =>
-        rpc(
-          "bots/update",
-          { botId: bot.id, modelProvider: null, modelId: null, thinkingLevel: null },
-          { requestContext: await requestContext },
-        ),
-      ),
-    );
-    setMoved(results.filter((result) => result.status === "fulfilled").length);
-    setFailed(
-      pinned.filter((_, index) => results[index]?.status === "rejected").map((bot) => bot.id),
-    );
-    await onSwitched();
-    setPending(false);
+    switching.run(pinned);
   }
 
   function confirm() {
@@ -64,7 +72,7 @@ export function SpaceBotsModel({
       t`Their own model is cleared. You can pick one again in each bot.`,
       [
         { text: t`Cancel`, style: "cancel" },
-        { text: t`Switch`, onPress: () => void switchAll() },
+        { text: t`Switch`, onPress: switchAll },
       ],
     );
   }

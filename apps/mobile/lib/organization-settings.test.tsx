@@ -34,9 +34,6 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api-server", () => ({}));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "http://api.test",
@@ -60,7 +57,9 @@ vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (create: () => unknown) => create(),
 }));
+vi.mock("./roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => true,
   useRouter: () => ({}),
   useLocalSearchParams: () => ({ delete: "1" }),
 }));

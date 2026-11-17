@@ -3,7 +3,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { OrganizationInvitation, OrganizationMember } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
-import { useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet } from "react-native";
 import { LoadFailure } from "../../components/load-failure";
@@ -12,6 +12,7 @@ import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/s
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { refreshOrganizations } from "../../lib/organizations";
 import { targetRpcQuery, useSave } from "../../lib/query";
+import { useLiveStream } from "../../lib/roster-signals";
 import { useScreenQuery } from "../../lib/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -33,6 +34,8 @@ export default function OrganizationMembersScreen() {
   const { organizationId } = useLocalSearchParams<{ organizationId: string }>();
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "organizations/members/list", { organizationId });
   const query = useScreenQuery(read, { enabled: Boolean(organizationId) });
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const members = query.data ?? null;
   const [email, setEmail] = useState("");
   const loadError =

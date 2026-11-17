@@ -35,6 +35,39 @@ describe("formatCurrentTimeInstruction", () => {
     expect(formatCurrentTimeInstruction(at, "Not/AZone")).toContain(utc);
   });
 
+  it("does not tell the model to re-judge everything against the anchor", () => {
+    expect(formatCurrentTimeInstruction(new Date("2026-09-17T14:55:41Z"))).not.toContain(
+      "Treat this as the present moment",
+    );
+  });
+
+  it("says when the previous message was sent after a pause, in the user's time zone", () => {
+    const line = formatCurrentTimeInstruction(
+      new Date("2026-11-12T08:54:00Z"),
+      "Europe/Athens",
+      new Date("2026-11-11T21:42:00Z"),
+    );
+    expect(line).toContain("Wednesday, 2026-11-11 23:42 (UTC+02:00), 11 hours earlier");
+  });
+
+  it("counts long pauses in days and falls back to UTC", () => {
+    const line = formatCurrentTimeInstruction(
+      new Date("2026-11-12T08:54:00Z"),
+      null,
+      new Date("2026-11-09T08:00:00Z"),
+    );
+    expect(line).toContain("Monday, 2026-11-09 08:00 (UTC), 3 days earlier");
+  });
+
+  it("says nothing about the previous message within the hour", () => {
+    const line = formatCurrentTimeInstruction(
+      new Date("2026-11-12T08:54:00Z"),
+      "Europe/Athens",
+      new Date("2026-11-12T08:00:00Z"),
+    );
+    expect(line).not.toContain("earlier");
+  });
+
   it("defaults to the real clock", () => {
     const before = Date.now();
     const line = formatCurrentTimeInstruction();

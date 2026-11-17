@@ -25,8 +25,10 @@ import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError } from "./pi-oauth.js";
 import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime-models.js";
 import {
+  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   persistentComputerInstruction,
+  RAKAZO_PLATFORM_INSTRUCTION,
   threadContextForRun,
   userTurnInstructions,
   VOICE_CALL_INSTRUCTION,
@@ -656,6 +658,21 @@ describe("run tool selection", () => {
     ).toContain("handoff_to_bot");
     expect(toolNames("user", "group-1")).not.toContain("message_bot");
     expect(toolNames("user")).toContain("message_bot");
+  });
+
+  it("offers message_bot only when there is another bot to message", () => {
+    const names = (patch: { hasTeammates: boolean; fleetManagement?: boolean }) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "user",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        ...patch,
+      }).map((tool) => tool.name);
+    expect(names({ hasTeammates: false })).not.toContain("message_bot");
+    expect(names({ hasTeammates: true })).toContain("message_bot");
+    expect(names({ hasTeammates: false, fleetManagement: true })).not.toContain("message_bot");
   });
 
   it("keeps schedule tools in group chats and offers creation to routines", () => {
@@ -1494,6 +1511,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "This entire computer workspace is your private home.",
@@ -1531,6 +1549,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "This entire computer workspace is your private home.",
@@ -1580,6 +1599,7 @@ describe("userTurnInstructions", () => {
     }).filter(Boolean);
 
     expect(instructions).toEqual([
+      RAKAZO_PLATFORM_INSTRUCTION,
       "Bot instructions",
       computerLine,
       "Catalog guidance",
@@ -1627,7 +1647,7 @@ describe("userTurnInstructions", () => {
         agentSkillsLine: undefined,
         taughtSkillsLine: undefined,
         followUpsOffered,
-      }).filter(Boolean)[1];
+      }).filter(Boolean)[2];
     const offered = toolLine(true);
     expect(offered).toContain(
       "(not reminders — those are schedule_*). Do not wait to be asked about open loops.",
@@ -1857,14 +1877,22 @@ describe("userTurnInstructions", () => {
   });
 });
 
+describe("desktopGuardShellInstruction", () => {
+  it("names write_file only when it is offered and says nothing without shell", () => {
+    expect(desktopGuardShellInstruction(new Set(["shell", "write_file"]))).toBe(
+      "Shell commands must be literal: no `$(...)`, backticks, subshells, or loop or computed variables. For more, write a script with write_file and run it with `python3` or `bash`.",
+    );
+    expect(desktopGuardShellInstruction(new Set(["shell"]))).toContain("write a script file and");
+    expect(desktopGuardShellInstruction(new Set(["write_file"]))).toBeUndefined();
+  });
+});
+
 describe("dockerComputerToolInstruction", () => {
   it("documents rootless Python tool installation only for Docker images", () => {
     expect(dockerComputerToolInstruction("docker")).toContain("uv tool install <package>");
     expect(dockerComputerToolInstruction("docker")).toContain("without sudo");
-    expect(dockerComputerToolInstruction("docker")).toContain("`python3 -c`");
-    expect(dockerComputerToolInstruction("docker", new Set(["shell"]))).not.toContain(
-      "`python3 -c`",
-    );
+    expect(dockerComputerToolInstruction("docker")).toContain("`python3`");
+    expect(dockerComputerToolInstruction("docker", new Set(["shell"]))).not.toContain("`python3`");
     expect(dockerComputerToolInstruction("desktop")).toBeUndefined();
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
@@ -1878,7 +1906,7 @@ describe("dockerComputerToolInstruction", () => {
       new Set(["browser_navigate", "browser_snapshot"]),
     );
     expect(noShellAtSelection).not.toContain("Debian bookworm");
-    expect(noShellAtSelection).not.toContain("`python3 -c`");
+    expect(noShellAtSelection).not.toContain("`python3`");
     const shellOffered = dockerComputerToolInstruction(
       "docker",
       undefined,

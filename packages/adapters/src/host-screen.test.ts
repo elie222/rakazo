@@ -2,12 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import type { HostComputerFrame } from "./host-computer-protocol.js";
 import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
 import type { HostScreen } from "./host-screen.js";
 import { HostScreenError } from "./host-screen.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
 
 const observation = { app: "TextEdit", tree: "- [0] AXWindow" };
 

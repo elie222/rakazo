@@ -38,6 +38,7 @@ export * from "./events.js";
 export * from "./expire-stuck-run.js";
 export * from "./external-conversations.js";
 export * from "./groups.js";
+export * from "./history-retention.js";
 export * from "./history-retrieval.js";
 export * from "./json-column.js";
 export * from "./leases.js";
@@ -49,6 +50,7 @@ export * from "./model-credentials.js";
 export * from "./model-credit-cap.js";
 export * from "./model-credits.js";
 export * from "./model-roles.js";
+export * from "./organization-changes.js";
 export * from "./organization-members.js";
 export * from "./organizations.js";
 export * from "./page-shares.js";
@@ -78,6 +80,7 @@ export {
   claimSteering,
   createPendingSteeringRun,
   discardAnsweredSteering,
+  handQueuedRunToWorkingRun,
 } from "./thread-steering.js";
 export * from "./thread-takeover.js";
 export * from "./transaction-retry.js";

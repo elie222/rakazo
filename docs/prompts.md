@@ -15,8 +15,9 @@ The main entry points are:
 
 - `packages/adapters/src/run-instructions.prompt.ts`: main turn instructions and
   capability-dependent guidance.
-- `packages/adapters/src/builtin.tool-definition.ts`: built-in tool descriptions
-  and input schemas.
+- `packages/adapters/src/builtin.tool-definition.ts`: the built-in tool list, in
+  order, assembled from `builtin-*.tool-definition.ts` files that hold each area's
+  descriptions and input schemas.
 - `packages/adapters/src/run-replies.prompt.ts` and `continuation.prompt.ts`:
   reply, silence and continuation guidance.
 - `packages/adapters/src/auto-review.prompt.ts` and `team-chat-judge.prompt.ts`:

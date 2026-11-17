@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,6 +17,7 @@ import {
   useOrganizations,
 } from "../../lib/organizations";
 import { useSave } from "../../lib/query";
+import { useLiveStream } from "../../lib/roster-signals";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -27,6 +28,8 @@ export default function OrganizationSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const organization = activeOrganization(query.data);
   const [draft, setDraft] = useState<string | null>(null);
   // The plan choice links here with the deletion confirmation already open.

@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertLocalServiceBaseUrl } from "./local-service-endpoint.js";
+import { revalidateLocalServiceSettings } from "./local-service-endpoint.js";
 import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
@@ -200,26 +200,41 @@ describe("SpaceMemoryProviderResolver", () => {
     await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(secrets.load).not.toHaveBeenCalled();
 
+    // Saved before public servers were marked: still private, so a public answer is refused.
+    vi.mocked(lookup).mockResolvedValue([{ address: "203.0.113.10", family: 4 }] as never);
     await expect(
-      assertLocalServiceBaseUrl("https://memory.example.com", {
-        allowPrivateEndpoint: true,
-        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
-      }),
+      revalidateLocalServiceSettings({ mode: "local", baseUrl: "https://memory.example.com" }),
     ).rejects.toThrow(/private-network/);
+    // Saved public: a private answer now is refused, whatever the operator setting.
+    vi.mocked(lookup).mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as never);
     await expect(
-      assertLocalServiceBaseUrl("http://example.com:6767", {
-        allowPrivateEndpoint: true,
-        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      revalidateLocalServiceSettings({
+        mode: "local",
+        baseUrl: "https://memory.example.com",
+        endpointTrust: "public",
       }),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow(/public address/);
 
-    expect(() =>
-      createMemoryProvider(
-        "supermemory",
-        { mode: "local", baseUrl: "http://203.0.113.10:6767" },
-        { apiKey: "sm_test_key" },
-      ),
-    ).toThrow(/private-network/);
+    // A public server over plain HTTP never receives the key.
+    const refusedFetch = vi.fn();
+    vi.stubGlobal("fetch", refusedFetch);
+    const cleartext = createMemoryProvider(
+      "supermemory",
+      { mode: "local", baseUrl: "http://203.0.113.10:6767", endpointTrust: "public" },
+      { apiKey: "sm_test_key" },
+    );
+    const refused = await cleartext.recall(
+      { query: "project", scope: "isolated", botId: "bot-1", limit: 1 },
+      {
+        operationId: "op-1",
+        traceId: "trace-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/HTTPS/) });
+    expect(refusedFetch).not.toHaveBeenCalled();
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), {

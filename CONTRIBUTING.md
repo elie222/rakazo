@@ -65,7 +65,7 @@ Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. Re
 locale in these places:
 
 - `AppLocaleSchema` in `packages/contracts/src/domain.ts` and `APP_LOCALE_LABELS` in
-  `packages/core/src/ui-locale.ts`. The web language list comes from the shared schema;
+  `packages/core/src/locale/ui-locale.ts`. The web language list comes from the shared schema;
   `apps/web/src/lib/ui-locale.ts` is not a separate registry.
 - `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
 - Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/ui-locale.ts` and catalog imports/map in
@@ -82,7 +82,7 @@ generated `*.js`/`*.mjs` catalog files or unrelated changes to existing catalogs
 
 Update the shared and platform locale tests, including normalization and plural rules, and a
 UI E2E scenario for each supported surface. The marketing homepage in `apps/www` and the
-native Electron setup window and menus (`apps/desktop/src/i18n.ts` and `locales/`) have
+native Electron setup window and menus (`apps/desktop/src/main/i18n.ts` and `apps/desktop/src/main/locales/`) have
 separate localization paths; scope and test those changes explicitly instead of assuming the
 web catalog covers them.
 

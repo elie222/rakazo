@@ -2,9 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { UsageBreakdown, UsageBreakdownInput } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
@@ -18,12 +17,6 @@ const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABAS
 const describeBreakdown = hasDb ? describe : describe.skip;
 const DAY = 24 * 60 * 60 * 1000;
 const utcDay = (at: number) => new Date(at).toISOString().slice(0, 10);
-
-// The "today" range is read when the endpoint runs: never seed across a UTC midnight.
-async function pastUtcMidnight() {
-  const left = DAY - (Date.now() % DAY);
-  if (left < 90_000) await abortableDelay(left + 1000);
-}
 
 describeBreakdown("usage.breakdown", () => {
   let app: App;
@@ -49,8 +42,12 @@ describeBreakdown("usage.breakdown", () => {
     await stop?.();
   });
 
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("attributes usage to bots, counts a run once across its subagents and honours every filter", async () => {
-    await pastUtcMidnight();
     const cookie = await signup(app, `usage-breakdown-${stamp}@rakazo.test`, "Breakdown");
     const create = (name: string) =>
       rpc<{ id: string }>(app, cookie, "bots/create", {
@@ -241,9 +238,8 @@ describeBreakdown("usage.breakdown", () => {
   }, 150000);
 
   it("cuts today and day buckets at the member's own midnight", async () => {
+    vi.setSystemTime(new Date(`${utcDay(Date.now())}T09:59:30.000Z`));
     const offset = 14 * 60 * 60 * 1000;
-    const left = DAY - ((Date.now() + offset) % DAY);
-    if (left < 90_000) await abortableDelay(left + 1000);
     const cookie = await signup(app, `usage-breakdown-tz-${stamp}@rakazo.test`, "Zoned");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Zoned",

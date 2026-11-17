@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import { accountDisplay, spaceInvitee } from "@rakazo/core";
 import {
   Badge,
   Button,
@@ -9,13 +9,14 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Input,
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
   toast,
 } from "@rakazo/ui-web";
-import { Copy, Link, MoreHorizontal, UserPlus } from "lucide-react";
+import { Copy, Link, Mail, MoreHorizontal, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSave } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
@@ -39,6 +40,8 @@ export function SpaceMembersSettings({
   const [members, setMembers] = useState<SpaceMembers | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  /** The address being invited; null while the form is closed. */
+  const [email, setEmail] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -55,6 +58,7 @@ export function SpaceMembersSettings({
     if (shownSpace.current !== space.id) {
       shownSpace.current = null;
       setMembers(null);
+      setEmail(null);
     }
     setError(null);
     setInviteUrl(null);
@@ -148,8 +152,38 @@ export function SpaceMembersSettings({
     save: (ask: { spaceId: string; userId: string }, client) => client.spaces.members.add(ask),
     onSaved: () => setReload((value) => value + 1),
   });
-  // A failure to add someone to another Space stays with that Space.
-  const addError = adding.input?.spaceId === space.id ? adding.error : null;
+  const emailing = useSave({
+    save: (ask: { spaceId: string; email: string }, client) => client.spaces.invites.create(ask),
+    onSaved: async (sent, ask) => {
+      if (ask.spaceId !== shownSpace.current) return;
+      setEmail(null);
+      setMembers((current) =>
+        current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
+      );
+      if (sent.emailed) toast(t`Invitation sent`);
+      else await copy(sent.url);
+    },
+  });
+  // A failure to add or invite someone to another Space stays with that Space.
+  const addError =
+    adding.input?.spaceId === space.id && adding.error
+      ? errorText(adding.error, t`Could not add member`)
+      : emailing.input?.spaceId === space.id && emailing.error
+        ? errorText(emailing.error, t`Could not invite`)
+        : null;
+  const invitee = members && email !== null ? spaceInvitee(members, email) : null;
+  const organizationName = members?.organizationName ?? "";
+
+  function inviteByEmail() {
+    if (!invitee || email === null) return;
+    if (invitee.kind === "outside") {
+      emailing.run({ spaceId: space.id, email: email.trim() });
+      return;
+    }
+    // Someone in the organization joins directly, and someone already here needs nothing.
+    if (invitee.kind === "addable") adding.run({ spaceId: space.id, userId: invitee.userId });
+    setEmail(null);
+  }
   const canManage = members?.canManage === true;
   const memberName =
     confirm?.kind === "remove" ? accountDisplay(confirm.member, confirm.member.email).label : "";
@@ -162,35 +196,38 @@ export function SpaceMembersSettings({
   );
   const action = !members ? null : canManage ? (
     <div className="flex items-center gap-1">
-      {/* People already in the organization come first; a link is for anyone else. */}
-      {addable.length ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="ghost" size="sm" disabled={inviting || adding.pending} />}
-          >
-            {inviteLabel}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-auto max-w-72 min-w-44">
-            {addable.map((person) => (
-              <DropdownMenuItem
-                key={person.userId}
-                onClick={() => adding.run({ spaceId: space.id, userId: person.userId })}
-              >
-                <span className="truncate">{accountDisplay(person, person.email).label}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void invite()}>
-              <Link />
-              <Trans>Copy invite link</Trans>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <Button variant="ghost" size="sm" disabled={inviting} onClick={() => void invite()}>
+      {/* People already in the organization come first; an email or a link is for anyone else. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="sm" disabled={inviting || adding.pending} />}
+        >
           {inviteLabel}
-        </Button>
-      )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto max-w-72 min-w-44">
+          {addable.map((person) => (
+            <DropdownMenuItem
+              key={person.userId}
+              onClick={() => adding.run({ spaceId: space.id, userId: person.userId })}
+            >
+              <span className="truncate">{accountDisplay(person, person.email).label}</span>
+            </DropdownMenuItem>
+          ))}
+          {addable.length ? <DropdownMenuSeparator /> : null}
+          <DropdownMenuItem
+            onClick={() => {
+              emailing.reset();
+              setEmail("");
+            }}
+          >
+            <Mail />
+            <Trans>Invite by email</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void invite()}>
+            <Link />
+            <Trans>Copy invite link</Trans>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {/* Rare, so it waits in a menu and only while some link is still unused. */}
       {members.openInvites ? (
         <DropdownMenu>
@@ -251,10 +288,42 @@ export function SpaceMembersSettings({
           </p>
         )}
       </SettingsGroup>
+      {canManage && email !== null ? (
+        <form
+          className="space-y-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            inviteByEmail();
+          }}
+        >
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              required
+              autoFocus
+              aria-label={t`Email`}
+              placeholder={t`Email`}
+              autoComplete="off"
+              value={email}
+              disabled={emailing.pending}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                emailing.reset();
+              }}
+            />
+            <Button type="submit" size="lg" disabled={emailing.pending || !invitee}>
+              <Trans>Invite</Trans>
+            </Button>
+          </div>
+          {invitee?.kind === "outside" ? (
+            <p className="px-1 text-body-sm text-muted-foreground">
+              <Trans>Not in {organizationName}. They'll only see this Space.</Trans>
+            </p>
+          ) : null}
+        </form>
+      ) : null}
       {members && (error || addError) ? (
-        <p className="px-1 text-body-sm text-destructive">
-          {error ?? errorText(addError, t`Could not add member`)}
-        </p>
+        <p className="px-1 text-body-sm text-destructive">{error ?? addError}</p>
       ) : null}
       {canManage && inviteUrl ? (
         <InputGroup>
@@ -302,11 +371,18 @@ function MemberRow({ member, onRemove }: { member: SpaceMember; onRemove?: () =>
     <PersonRow
       person={member}
       badge={
-        member.role === "owner" ? (
-          <Badge variant="secondary">
-            <Trans>Owner</Trans>
-          </Badge>
-        ) : null
+        <>
+          {member.role === "owner" ? (
+            <Badge variant="secondary">
+              <Trans>Owner</Trans>
+            </Badge>
+          ) : null}
+          {member.guest ? (
+            <Badge variant="outline">
+              <Trans>External</Trans>
+            </Badge>
+          ) : null}
+        </>
       }
       trailing={
         onRemove ? (

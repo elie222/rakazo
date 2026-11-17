@@ -19,7 +19,7 @@ import {
   storeBotSecret,
 } from "./bot-secrets.js";
 import { accountVault, fakeAuditLog, fakeDatabase } from "./bot-secrets.test-support.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { DesktopSandboxProvider } from "./providers/computer/desktop/desktop-sandbox.js";
 import { computerTools } from "./run-tools-computer.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { listVaultItemUses } from "./vault-activity.js";

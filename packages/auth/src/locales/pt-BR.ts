@@ -80,4 +80,9 @@ export const PT_BR_MESSAGES: Record<string, string> = {
   "Join {organization}": "Participar de {organization}",
   "This invitation expires in 7 days. Sign in with this email address to accept it.":
     "Este convite expira em 7 dias. Entre com este endereço de e-mail para aceitá-lo.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} convidou você para {space} no Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} convidou você para participar de {space} no Rakazo.",
+  "Join {space}": "Participar de {space}",
+  "This invitation expires in 7 days.": "Este convite expira em 7 dias.",
 };

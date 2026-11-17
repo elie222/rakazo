@@ -154,9 +154,8 @@ vi.mock("expo-router", () => {
     },
   };
 });
+// The real server client reads React Native's __DEV__ global, which tests do not define.
 vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: ui.rpc,
   captureApiRequestContext: async (spaceId: string | null = "space-selected") => ({
@@ -498,7 +497,7 @@ it("says working only while the bot works, and shows nothing beside the time", (
   ]);
 });
 
-it("marks a ghost bot waiting on you like an unread chat", () => {
+it("says a ghost bot is waiting on you without marking a read chat unread", () => {
   const bot = {
     id: "asks",
     name: "Helper",
@@ -1214,4 +1213,28 @@ it("lets screen readers reach a heading's long-press menu through the heading", 
   expect(deleteSection).toHaveBeenCalledWith({ id: "s1", name: "Ideas" });
   act(() => ui.a11yActions.get("Work")!({ nativeEvent: { actionName: "delete" } }));
   expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
+});
+
+it("reads a Space with guests as shared with guests", () => {
+  const heading = (name: string, hasGuests: boolean) =>
+    ({
+      type: "heading",
+      key: name,
+      title: name,
+      space: {
+        id: name,
+        name,
+        isDefault: false,
+        canDelete: false,
+        hasGuests,
+        bots: [],
+        groups: [],
+        botSections: [],
+      },
+    }) as unknown as InboxItem;
+  render(<List items={[heading("Clients", true), heading("Work", false)]} spaceId="Work" />);
+  expect(
+    container.querySelector('button[aria-label="Clients, Shared with guests"]'),
+  ).not.toBeNull();
+  expect(container.querySelector('button[aria-label="Work"]')).not.toBeNull();
 });

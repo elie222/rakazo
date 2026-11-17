@@ -15,6 +15,7 @@ type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
   canRename?: boolean;
   canDelete?: boolean;
   shared?: boolean;
+  hasGuests?: boolean;
   bots: readonly TBot[];
   groups: readonly TGroup[];
   botSections: readonly { id: string; name: string }[];
@@ -97,6 +98,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
       shared: space.shared === true,
+      // Once per Space: every heading that names it, or a lone Space's first heading.
+      hasGuests: space.hasGuests === true && (showSpaceNames || index === 0),
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
@@ -117,6 +120,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           sectionId: section.id as string | null,
           showLock: showSpaceNames,
           shared: space.shared === true,
+          hasGuests: space.hasGuests === true && showSpaceNames,
           emptySpaceId: undefined as string | undefined,
           spaceId: space.id,
           spaceName: space.name,
@@ -136,6 +140,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         sectionId: null,
         showLock: showSpaceNames,
         shared: space.shared === true,
+        hasGuests: space.hasGuests === true,
         emptySpaceId: showSpaceNames ? space.id : undefined,
         spaceId: space.id,
         spaceName: space.name,
