@@ -2,7 +2,11 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { listPiCatalog } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { MAX_MODEL_SETTINGS_PER_CONNECTION, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  EXTRA_REPLY_QUOTES_MAX,
+  MAX_MODEL_SETTINGS_PER_CONNECTION,
+  REPLY_QUOTE_MAX_LENGTH,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { createModelConnector, prepareModelReconnectSettings } from "./model-credentials.js";
@@ -206,6 +210,46 @@ describe("model setup gate", () => {
         }),
       }),
     });
+  });
+
+  it.each([
+    ["no first quote", { replyToMessageId: "parent-1" }],
+    ["a page reply", { replyToMessageId: "parent-1", replyQuote: "span", fromPage: true }],
+  ])("rejects further reply quotes with %s", async (_name, extra) => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "scripted" });
+
+    const response = await call(handler, actor, "threads/send", {
+      botId: "bot-1",
+      text: "hello",
+      extraReplyQuotes: [{ messageId: "parent-2", text: "another span" }],
+      ...extra,
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        data: expect.objectContaining({
+          issues: expect.arrayContaining([expect.objectContaining({ path: ["extraReplyQuotes"] })]),
+        }),
+      }),
+    });
+  });
+
+  it("rejects more further reply quotes than the limit", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "scripted" });
+
+    const response = await call(handler, actor, "threads/send", {
+      botId: "bot-1",
+      text: "hello",
+      replyToMessageId: "parent-1",
+      replyQuote: "span",
+      extraReplyQuotes: Array.from({ length: EXTRA_REPLY_QUOTES_MAX + 1 }, (_, index) => ({
+        messageId: `parent-${index}`,
+        text: "another span",
+      })),
+    });
+
+    expect(response.status).toBe(400);
   });
 
   it("rejects an over-length reply quote", async () => {
