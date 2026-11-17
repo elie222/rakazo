@@ -1330,12 +1330,15 @@ const catalogResult = (auth: { type: string } | null) => ({
   ],
 });
 
-it("looks a search up in the public catalog only when asked, and signs in from there", async () => {
+/** The public catalog offers Tracker; connecting adds it, and the server list shows it after. */
+function mockCatalogConnect() {
   const fallback = state.rpc.getMockImplementation();
+  let added = false;
   state.rpc.mockImplementation((proc: string, args: unknown) => {
     if (proc === "capabilities/catalogSearch")
       return Promise.resolve(catalogResult({ type: "oauth" }));
-    if (proc === "mcp/servers/connect")
+    if (proc === "mcp/servers/connect") {
+      added = true;
       return Promise.resolve({
         server: { id: "tracker-server", name: "Tracker", enabled: true },
         signIn: {
@@ -1344,8 +1347,27 @@ it("looks a search up in the public catalog only when asked, and signs in from t
           authorizationUrl: "https://identity.example.test/authorize",
         },
       });
+    }
+    if (proc === "mcp/servers/list")
+      return Promise.resolve(
+        added
+          ? [
+              {
+                id: "tracker-server",
+                name: "Tracker",
+                enabled: true,
+                oauthStatus: "none",
+                health: { status: "unknown" },
+              },
+            ]
+          : [],
+      );
     return fallback?.(proc, args);
   });
+}
+
+it("looks a search up in the public catalog only when asked, and signs in from there", async () => {
+  mockCatalogConnect();
   await render();
   await act(async () => catalog.resolve([]));
   await searchFor("tracker");
@@ -1378,38 +1400,7 @@ it("looks a search up in the public catalog only when asked, and signs in from t
 });
 
 it("offers Connect on a catalog server whose sign-in failed", async () => {
-  const fallback = state.rpc.getMockImplementation();
-  let added = false;
-  state.rpc.mockImplementation((proc: string, args: unknown) => {
-    if (proc === "capabilities/catalogSearch")
-      return Promise.resolve(catalogResult({ type: "oauth" }));
-    if (proc === "mcp/servers/connect") {
-      added = true;
-      return Promise.resolve({
-        server: { id: "tracker-server", name: "Tracker", enabled: true },
-        signIn: {
-          status: "authorization_required",
-          sessionId: "mobile-session",
-          authorizationUrl: "https://identity.example.test/authorize",
-        },
-      });
-    }
-    if (proc === "mcp/servers/list")
-      return Promise.resolve(
-        added
-          ? [
-              {
-                id: "tracker-server",
-                name: "Tracker",
-                enabled: true,
-                oauthStatus: "none",
-                health: { status: "unknown" },
-              },
-            ]
-          : [],
-      );
-    return fallback?.(proc, args);
-  });
+  mockCatalogConnect();
   state.authSession.mockRejectedValue(new Error("The browser could not open"));
   await render();
   await act(async () => catalog.resolve([]));
@@ -1428,38 +1419,7 @@ it("shows a catalog server added while another category was open", async () => {
     unavailableRegistries: [],
     skippedEntries: 0,
   });
-  const fallback = state.rpc.getMockImplementation();
-  let added = false;
-  state.rpc.mockImplementation((proc: string, args: unknown) => {
-    if (proc === "capabilities/catalogSearch")
-      return Promise.resolve(catalogResult({ type: "oauth" }));
-    if (proc === "mcp/servers/connect") {
-      added = true;
-      return Promise.resolve({
-        server: { id: "tracker-server", name: "Tracker", enabled: true },
-        signIn: {
-          status: "authorization_required",
-          sessionId: "mobile-session",
-          authorizationUrl: "https://identity.example.test/authorize",
-        },
-      });
-    }
-    if (proc === "mcp/servers/list")
-      return Promise.resolve(
-        added
-          ? [
-              {
-                id: "tracker-server",
-                name: "Tracker",
-                enabled: true,
-                oauthStatus: "none",
-                health: { status: "unknown" },
-              },
-            ]
-          : [],
-      );
-    return fallback?.(proc, args);
-  });
+  mockCatalogConnect();
   const browser = deferred<{ type: "cancel" }>();
   state.authSession.mockReturnValue(browser.promise);
   await render();
