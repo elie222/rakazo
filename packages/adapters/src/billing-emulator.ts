@@ -48,6 +48,12 @@ export class BillingEmulator implements BillingProvider {
   private readonly now: () => number;
   private sequence = 0;
   private customerSequence = 0;
+  /** Each checkout session by id, with the request a later checkout of the customer replaces. */
+  private readonly sessions = new Map<
+    string,
+    { open: Map<string, object>; customerId: string; request: object }
+  >();
+  private sessionSequence = 0;
   private readonly namespace: string;
 
   constructor(options: BillingEmulatorOptions = {}) {
@@ -85,8 +91,7 @@ export class BillingEmulator implements BillingProvider {
     this.requireCustomer(input.customerId);
     if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
       throw new BillingCheckoutCompletedError();
-    this.checkouts.set(input.customerId, { ...input });
-    return { url: `https://billing.emulator.invalid/checkout/${input.customerId}` };
+    return this.openSession(this.checkouts, "checkout", input.customerId, { ...input });
   }
 
   async createCreditCheckout(input: BillingCreditCheckoutRequest) {
@@ -98,16 +103,14 @@ export class BillingEmulator implements BillingProvider {
       )
     )
       throw new BillingCheckoutCompletedError();
-    this.creditCheckouts.set(input.customerId, input);
-    return { url: `https://billing.emulator.invalid/credits/${input.customerId}` };
+    return this.openSession(this.creditCheckouts, "credits", input.customerId, { ...input });
   }
 
   async createByokCheckout(input: BillingByokCheckoutRequest) {
     this.requireCustomer(input.customerId);
     if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
       throw new BillingCheckoutCompletedError();
-    this.byokCheckouts.set(input.customerId, input);
-    return { url: `https://billing.emulator.invalid/byok/${input.customerId}` };
+    return this.openSession(this.byokCheckouts, "byok", input.customerId, { ...input });
   }
 
   async endTrial(customerId: string) {
@@ -277,6 +280,26 @@ export class BillingEmulator implements BillingProvider {
 
   async cancelCustomerSubscriptions(customerId: string) {
     this.cancelAll(customerId);
+  }
+
+  async expireCheckout(id: string) {
+    const session = this.sessions.get(id);
+    this.sessions.delete(id);
+    // Only while it is still the customer's open session: a newer one stays payable.
+    if (session && session.open.get(session.customerId) === session.request)
+      session.open.delete(session.customerId);
+  }
+
+  private openSession<T extends object>(
+    open: Map<string, T>,
+    kind: string,
+    customerId: string,
+    request: T,
+  ) {
+    open.set(customerId, request);
+    const id = `cs_${this.namespace}_${++this.sessionSequence}`;
+    this.sessions.set(id, { open, customerId, request });
+    return { id, url: `https://billing.emulator.invalid/${kind}/${customerId}` };
   }
 
   async expireOpenCheckouts(customerId: string) {
