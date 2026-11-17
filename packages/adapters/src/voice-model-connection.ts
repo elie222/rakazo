@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential } from "@rakazo/db";
 import { resolveStoredModelAuth, withModelCredentialLock } from "./model-credential-refresh.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import type { SecretCleanupDeps } from "./secret-cleanup.js";
 import { voiceCatalogEntry } from "./voice-factory.js";
 
 /**
@@ -18,11 +19,9 @@ export function isModelConnectionVoiceSecret(plaintext: string): boolean {
 }
 
 export type VoiceKeyDeps = {
-  prisma: Pick<
-    PrismaClient,
-    "$transaction" | "secret" | "userModelCredential" | "userModelPreference"
-  >;
-  secretStore: Pick<SecretStore, "load" | "put" | "delete">;
+  prisma: Pick<PrismaClient, "$transaction" | "userModelCredential" | "userModelPreference"> &
+    SecretCleanupDeps["prisma"];
+  secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
 };
 
 /**

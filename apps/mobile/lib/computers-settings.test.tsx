@@ -15,9 +15,6 @@ vi.mock("./native", () => ({
   native: { groupedPage: "#fff", secondaryLabel: "#888" },
   useThemedStyles: (create: () => unknown) => create(),
 }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",

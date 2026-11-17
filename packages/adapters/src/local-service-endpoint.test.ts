@@ -9,7 +9,7 @@ import {
   pinLocalServiceHost,
 } from "./local-service-endpoint.js";
 import type { ResolvedAddress } from "./network-address.js";
-import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./providers/memory/serenity/serenity-memory-provider.js";
 
 const baseUrl = "http://memory.example.test:8888";
 const publicUrl = "https://memory.example.test";

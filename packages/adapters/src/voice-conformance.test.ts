@@ -2,20 +2,23 @@ import { writeFile } from "node:fs/promises";
 import type { VoiceProvider } from "@rakazo/adapter-kit";
 import { VoiceCatalogEntrySchema } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CartesiaVoiceProvider } from "./cartesia-voice.js";
-import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
-import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
-import type { SayRunner } from "./macos-voice.js";
-import { MacOsVoiceProvider } from "./macos-voice.js";
+import { CartesiaVoiceProvider } from "./providers/voice/cartesia/cartesia-voice.js";
+import { ElevenLabsVoiceProvider } from "./providers/voice/elevenlabs/elevenlabs-voice.js";
+import { FishAudioVoiceProvider } from "./providers/voice/fish-audio/fish-audio-voice.js";
+import type { SayRunner } from "./providers/voice/macos/macos-voice.js";
+import { MacOsVoiceProvider } from "./providers/voice/macos/macos-voice.js";
+import { OpenAIVoiceProvider } from "./providers/voice/openai/openai-voice.js";
 import {
   OpenAiCompatibleVoiceProvider,
   serializeOpenAiCompatibleVoiceSecret,
-} from "./openai-compatible-voice.js";
-import { OpenAIVoiceProvider } from "./openai-voice.js";
-import { SCRIPTED_TRANSCRIPT, ScriptedVoiceProvider } from "./scripted-voice.js";
+} from "./providers/voice/openai-compatible/openai-compatible-voice.js";
+import {
+  SCRIPTED_TRANSCRIPT,
+  ScriptedVoiceProvider,
+} from "./providers/voice/scripted/scripted-voice.js";
+import { XaiVoiceProvider } from "./providers/voice/xai/xai-voice.js";
 import type { VoiceProviderId } from "./voice-providers.js";
 import { voiceProviders } from "./voice-providers.js";
-import { XaiVoiceProvider } from "./xai-voice.js";
 
 const ctx = {
   operationId: "voice",

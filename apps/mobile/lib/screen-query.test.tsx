@@ -8,9 +8,6 @@ import { queryClient, rpcQuery } from "./query";
 import { useScreenQuery } from "./screen-query";
 
 const state = vi.hoisted(() => ({ rpc: vi.fn(), foreground: true }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",

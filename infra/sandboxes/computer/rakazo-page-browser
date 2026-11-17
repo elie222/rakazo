@@ -68,6 +68,8 @@ ACTION_WAIT_SECONDS = 2.0
 QUIET_SECONDS = 0.15
 # How often a wait reads the page again.
 POLL_SECONDS = 0.05
+# The most the purchase check waits for a page that scrolls smoothly to bring a control into view.
+SCROLL_SETTLE_SECONDS = 1.5
 # A search box or autocomplete sends its request a moment after typing stops (a debounce), so an act
 # that ends by typing starts its quiet wait this long after the last key.
 TYPING_PAUSE_SECONDS = 0.35
@@ -992,7 +994,9 @@ class PageBrowser:
             try:
                 if scrolled:
                     self.ab.batch([["scrollintoview", f"@{ref}"]])
-                (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+                    box = self.scrolled_box(ref)
+                else:
+                    (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
             except Exception:  # noqa: BLE001
                 box = None
             try:
@@ -1000,6 +1004,19 @@ class PageBrowser:
             except Offscreen:
                 continue
         return site, None
+
+    def scrolled_box(self, ref: str) -> Any:
+        """ref's box once scrolling to it stops. A page that scrolls smoothly is still moving when
+        scrollintoview returns, and a box read then can be out of view."""
+        deadline = time.monotonic() + SCROLL_SETTLE_SECONDS
+        (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+        while time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
+            previous = box
+            (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+            if box == previous:
+                break
+        return box
 
     def purchase_check(self, args: dict[str, Any]) -> dict[str, Any]:
         """Which of these clicks would complete a purchase, or whether a click or key on the screen would.

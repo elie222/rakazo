@@ -79,10 +79,8 @@ describe("speakable", () => {
 
   it("strips emphasis in linear time on markers that never close", () => {
     for (const unit of ["(_a", ".*a", "(*a_"]) {
-      const text = unit.repeat(Math.floor(20_000 / unit.length));
-      const started = performance.now();
-      expect(speakable(text)).toBe(text);
-      expect(performance.now() - started).toBeLessThan(100);
+      const text = unit.repeat(Math.floor(200_000 / unit.length));
+      expectLinearTime(() => expect(speakable(text)).toBe(text));
     }
   });
 
@@ -126,6 +124,20 @@ describe("speakable", () => {
         { kind: "ask", text: "Ship it?", status: "pending" },
       ]),
     ).toContain("Ship it?");
+  });
+
+  it("leaves tool activity out of what a voice reads, keeping the bot's own narration", () => {
+    expect(
+      speechFromBlocks([
+        { kind: "steps", steps: [{ label: "Shell", count: 2 }] },
+        { kind: "progress", text: "Using shell", activity: true },
+        { kind: "progress", text: "Let me check the build." },
+        { kind: "text", text: "It passes." },
+      ]),
+    ).toBe("Let me check the build.\nIt passes.");
+    expect(
+      speechFromBlocks([{ kind: "progress", text: "Searching the web: weather", activity: true }]),
+    ).toBe("");
   });
 });
 

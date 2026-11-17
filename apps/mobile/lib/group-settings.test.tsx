@@ -20,9 +20,6 @@ const { rpc, router, alert, selection, archivedListeners, params } = vi.hoisted(
   archivedListeners: new Set<() => void>(),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",

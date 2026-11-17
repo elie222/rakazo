@@ -14,6 +14,7 @@ import {
   connectionForModelChoice,
   createModelRoleSettings,
   modelRoleListPatch,
+  modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
 import {
@@ -29,7 +30,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   SectionHeading,
-  Spinner,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
@@ -74,6 +74,14 @@ type Props = {
   headerAction?: ReactNode;
   /** Extra items in the first row's menu. */
   primaryMenuItems?: ReactNode;
+};
+
+let blankImage: HTMLImageElement | undefined;
+const emptyDragImage = () => {
+  blankImage ??= Object.assign(new Image(), {
+    src: "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
+  });
+  return blankImage;
 };
 
 const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
@@ -160,7 +168,12 @@ export function ModelRoleSettings({
     );
   }, [queryClient, rpc, userId, spaceId, scope, role]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
-  const [dragging, setDragging] = useState<number | null>(null);
+  // The list as it reads mid-drag: the dragged row moves through it, and the order saves on drop.
+  const [drag, setDrag] = useState<{
+    key: string;
+    from: ModelRoleChoice[];
+    order: ModelRoleChoice[];
+  } | null>(null);
   // After a connection the slot's picker reopens on that provider's models.
   const [reopen, setReopen] = useState<{
     slot: "primary" | number | "add";
@@ -255,6 +268,21 @@ export function ModelRoleSettings({
     next.splice(target, 0, item!);
     void commit(next);
   };
+  // The pointer's half of the hovered row decides the side, so repeated events settle.
+  const dragOver = (target: ModelRoleChoice, after: boolean) => {
+    if (!drag || modelRoleChoiceKey(target) === drag.key) return;
+    const order = drag.order.filter((item) => modelRoleChoiceKey(item) !== drag.key);
+    const dragged = drag.order.find((item) => modelRoleChoiceKey(item) === drag.key)!;
+    order.splice(order.indexOf(target) + (after ? 1 : 0), 0, dragged);
+    if (order.some((item, index) => item !== drag.order[index])) setDrag({ ...drag, order });
+  };
+  // A drop over a list that reloaded mid-drag is dropped rather than saving the old rows.
+  const drop = () => {
+    const unchanged = (list: ModelRoleChoice[]) =>
+      list.length === rows.length && list.every((item, index) => sameChoice(item, rows[index]!));
+    if (drag && unchanged(drag.from) && !unchanged(drag.order)) void commit(drag.order);
+    setDrag(null);
+  };
   const remove = (index: number) => void commit(rows.filter((_, item) => item !== index));
   const connectFor = (slot: "primary" | number | "add") => (provider: ConnectableProvider) =>
     onConnect(provider, {
@@ -301,7 +329,8 @@ export function ModelRoleSettings({
             {ordered ? number(0) : null}
             <RoleModelPicker
               trigger={pickerTrigger(
-                deployment ? modelLabel(deployment) : defaultLabel,
+                // Blank until loaded, so an unloaded role never reads as unconfigured.
+                !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
                 deployment ? providerName(deployment) : undefined,
               )}
               label={t`Change ${title}`}
@@ -335,7 +364,8 @@ export function ModelRoleSettings({
             ) : null}
           </li>
         )}
-        {rows.map((choice, index) => {
+        {(drag?.order ?? rows).map((choice, index) => {
+          const dragged = drag?.key === modelRoleChoiceKey(choice);
           const isPrimary = Boolean(primary) && index === 0;
           const name = modelLabel(choice);
           const offset = primary ? 0 : 1;
@@ -343,21 +373,26 @@ export function ModelRoleSettings({
           return (
             <li
               key={modelRoleChoiceKey(choice)}
-              className={`${rowClass} ${dragging === index ? "opacity-50" : ""}`}
+              className={`${rowClass} ${dragged ? "relative z-10 rounded-lg bg-card shadow-lg ring-1 ring-border" : ""}`}
               data-testid={`model-role-row-${index + offset + 1}`}
               draggable={rows.length > 1 && !busy}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
-                setDragging(index);
+                // The row itself moves through the list, so the browser's translucent copy is hidden.
+                event.dataTransfer.setDragImage(emptyDragImage(), 0, 0);
+                setDrag({ key: modelRoleChoiceKey(choice), from: rows, order: rows });
               }}
-              onDragEnd={() => setDragging(null)}
+              onDragEnd={() => setDrag(null)}
               onDragOver={(event) => {
-                if (dragging !== null) event.preventDefault();
+                if (!drag) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                const box = event.currentTarget.getBoundingClientRect();
+                dragOver(choice, event.clientY > box.top + box.height / 2);
               }}
               onDrop={(event) => {
                 event.preventDefault();
-                if (dragging !== null) move(dragging, index);
-                setDragging(null);
+                drop();
               }}
             >
               {ordered ? (
@@ -459,7 +494,9 @@ export function ModelRoleSettings({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
-                  {connection && onManageModel ? (
+                  {connection &&
+                  onManageModel &&
+                  modelSettingsEditable(connection, entryFor(choice), choice.modelId) ? (
                     <DropdownMenuItem
                       onClick={() =>
                         onManageModel({
@@ -512,9 +549,6 @@ export function ModelRoleSettings({
         ) : null}
       </ol>
       {panel}
-      {state.busy && !settings ? (
-        <Spinner className="mt-3" aria-label={t`Loading model catalog…`} />
-      ) : null}
       {state.error ? (
         <div role="alert" className="mt-2 text-body text-destructive">
           {state.error}

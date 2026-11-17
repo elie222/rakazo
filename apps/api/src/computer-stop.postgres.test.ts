@@ -102,6 +102,7 @@ describePostgres("computer stop (PostgreSQL)", () => {
     const jobs: JobPublisher = {
       enqueue,
       enqueueIn: vi.fn(),
+      enqueueManyIn: vi.fn(),
       cancelIn: vi.fn(),
       cancel: vi.fn(),
       close: async () => undefined,

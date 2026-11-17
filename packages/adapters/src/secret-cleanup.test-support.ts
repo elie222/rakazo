@@ -12,7 +12,13 @@ export function fakeCleanupJobs() {
   const jobs = {
     enqueue: vi.fn(add),
     enqueueIn: vi.fn((_tx: unknown, job: BackgroundJob) => add(job)),
+    enqueueManyIn: vi.fn(async (_tx: unknown, many: readonly BackgroundJob[]) => {
+      for (const job of many) await add(job);
+    }),
     cancel: vi.fn(async (key: string) => {
+      queued.delete(key);
+    }),
+    cancelIn: vi.fn(async (_tx: unknown, key: string) => {
       queued.delete(key);
     }),
   };

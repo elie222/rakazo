@@ -1,4 +1,5 @@
 import { ConnectionSetupError, MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SpaceCatalogAuth } from "./model-selection.js";
@@ -552,9 +553,9 @@ describe("catalogModelLabel", () => {
   });
 
   it("stays fast on a long run of spacing", () => {
-    const started = performance.now();
-    catalogModelLabel("foo", `a${"\t".repeat(50_000)}latest)${"\t".repeat(50_000)}x`);
-    expect(performance.now() - started).toBeLessThan(500);
+    expectLinearTime(() =>
+      catalogModelLabel("foo", `a${"\t".repeat(200_000)}latest)${"\t".repeat(200_000)}x`),
+    );
   });
 });
 

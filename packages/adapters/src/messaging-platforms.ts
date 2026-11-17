@@ -1,5 +1,4 @@
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
-import { larkMessaging } from "./lark-messaging.js";
 import { splitMarkdown } from "./markdown-split.js";
 import type {
   MessagingEnvBindings,
@@ -7,13 +6,20 @@ import type {
   MessagingMountOptions,
   MessagingPlatformDefinition,
 } from "./messaging-platform-descriptor.js";
-import { photonMessaging } from "./photon-messaging.js";
-import { sendblueMessaging } from "./sendblue-messaging.js";
-import { slackMessaging } from "./slack-messaging.js";
-import { teamsMessaging } from "./teams-messaging.js";
-import { telegramMessaging, telegramPayloads } from "./telegram-messaging.js";
+import { larkMessaging } from "./providers/messaging/lark/lark-messaging.js";
+import { photonMessaging } from "./providers/messaging/photon/photon-messaging.js";
+import { sendblueMessaging } from "./providers/messaging/sendblue/sendblue-messaging.js";
+import { slackMessaging } from "./providers/messaging/slack/slack-messaging.js";
+import { teamsMessaging } from "./providers/messaging/teams/teams-messaging.js";
+import {
+  telegramMessaging,
+  telegramPayloads,
+} from "./providers/messaging/telegram/telegram-messaging.js";
+import {
+  whatsappMessaging,
+  whatsappPayloads,
+} from "./providers/messaging/whatsapp/whatsapp-messaging.js";
 import { isVitestRuntime } from "./test-runtime.js";
-import { whatsappMessaging, whatsappPayloads } from "./whatsapp-messaging.js";
 
 /** Every messaging platform this build has, by id, in the order they mount. */
 export const messagingPlatforms = {

@@ -239,9 +239,14 @@ export function loadCatalogEntry(
         .join(", ")}`,
     );
   }
-  throw new Error(
-    "Tool is unknown or not authorized for this bot. Use the exact id returned by search.",
-  );
+  throw new UnknownCatalogToolError();
+}
+
+/** No catalog entry matches the requested tool. */
+export class UnknownCatalogToolError extends Error {
+  constructor() {
+    super("Tool is unknown or not authorized for this bot. Use the exact id returned by search.");
+  }
 }
 
 export const GROUP_SEPARATORS = [":", "/", "__", "."];

@@ -38,8 +38,8 @@ export function maximumBotsSidebarWidth(viewportWidth: number): number {
   );
 }
 
-export function clampBotsSidebarWidth(width: number, viewportWidth = Number.POSITIVE_INFINITY) {
-  return Math.max(BOTS_SIDEBAR_MIN_WIDTH, Math.min(maximumBotsSidebarWidth(viewportWidth), width));
+export function clampBotsSidebarWidth(width: number, maximum = BOTS_SIDEBAR_MAX_WIDTH) {
+  return Math.max(BOTS_SIDEBAR_MIN_WIDTH, Math.min(maximum, width));
 }
 
 export function readBotsSidebarWidth(userId: string | null | undefined): number {

@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import { redactToolArgsForReview } from "./auto-review.js";
 import { requestWithBotSecret } from "./bot-secrets.js";
-import { sanitizeIntegrationError } from "./composio-connector.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { McpConnector } from "./mcp-connector.js";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import { oauthMaterialSecrets } from "./mcp-oauth.js";
-import { PipedreamConnector } from "./pipedream-connector.js";
+import { sanitizeIntegrationError } from "./providers/integration/composio/composio-connector.js";
+import { PipedreamConnector } from "./providers/integration/pipedream/pipedream-connector.js";
 import * as remoteMcp from "./remote-mcp.js";
 import { EncryptedSecretStore } from "./secrets.js";
 

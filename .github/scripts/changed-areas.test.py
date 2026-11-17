@@ -168,7 +168,7 @@ class ChangedAreasTests(unittest.TestCase):
             ("apps/web/src/app.ts", expect("web", "e2e")),
             ("packages/ui-web/src/button.tsx", expect("web", "e2e", "www")),
             ("packages/chat-ui/src/thread.tsx", expect("web", "e2e")),
-            ("apps/desktop/src/main.ts", expect("web", "e2e", "native")),
+            ("apps/desktop/src/main/main.ts", expect("web", "e2e", "native")),
             ("apps/web/package.json", expect(*PRODUCT, "all_packages")),
             ("packages/ui-tokens/src/tokens.ts", expect(*EVERY_BROWSER_AREA)),
         ]

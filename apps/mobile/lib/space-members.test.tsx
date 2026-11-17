@@ -20,8 +20,6 @@ const { rpc, selectSpace, selectedSpaceId, alert, share, router } = vi.hoisted((
   router: { back: vi.fn(), dismissAll: vi.fn(), replace: vi.fn() },
 }));
 
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc,
   selectedSpaceId,

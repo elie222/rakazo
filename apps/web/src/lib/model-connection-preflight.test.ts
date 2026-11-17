@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   classifyModelConnectionFailure,
-  loadStoredModelAuth,
   modelPreflightSuccessMessage,
   runModelConnectionPreflight,
   unavailableSelectedModel,
@@ -86,156 +85,10 @@ describe("unavailableSelectedModel", () => {
   });
 });
 
-describe("loadStoredModelAuth", () => {
-  it("keeps lookup failures distinct from a missing credential", async () => {
-    await expect(loadStoredModelAuth("anthropic", async () => [])).resolves.toEqual({
-      storedAuthKind: null,
-      credentialLookupFailed: false,
-      credentialUnreadable: false,
-      reconnectRequired: false,
-    });
-    await expect(
-      loadStoredModelAuth("anthropic", async () => {
-        throw new Error("offline");
-      }),
-    ).resolves.toEqual({
-      storedAuthKind: null,
-      credentialLookupFailed: true,
-      credentialUnreadable: false,
-      reconnectRequired: false,
-    });
-  });
-
-  it("reads the stored kind and flags a row whose kind is missing", async () => {
-    await expect(
-      loadStoredModelAuth("anthropic", async () => [
-        { provider: "openai", authKind: "oauth" },
-        { provider: "anthropic", authKind: "api_key" },
-      ]),
-    ).resolves.toMatchObject({ storedAuthKind: "api_key", credentialUnreadable: false });
-    await expect(
-      loadStoredModelAuth("anthropic", async () => [{ provider: "anthropic" }]),
-    ).resolves.toMatchObject({ storedAuthKind: null, credentialUnreadable: true });
-  });
-
-  it("uses the selected connection when multiple rows share a model", async () => {
-    const api = {
-      id: "api",
-      provider: "anthropic",
-      modelId: "claude",
-      authKind: "api_key" as const,
-    };
-    const oauth = {
-      id: "oauth",
-      provider: "anthropic",
-      modelId: "claude",
-      authKind: "oauth" as const,
-    };
-    for (const rows of [
-      [api, oauth],
-      [oauth, api],
-    ]) {
-      const stored = await loadStoredModelAuth("anthropic", async () => rows, "claude", "oauth");
-      expect(stored.storedAuthKind).toBe("oauth");
-      await expect(
-        loadStoredModelAuth("anthropic", async () => rows, "another-model", "api"),
-      ).resolves.toMatchObject({ storedAuthKind: "api_key" });
-      expect(
-        await runModelConnectionPreflight({ authKind: "oauth", provider: "anthropic", ...stored }),
-      ).toMatchObject({ ok: true });
-    }
-  });
-
-  it("does not substitute a different connection for an explicit ID", async () => {
-    const rows = [
-      { id: "oauth", provider: "anthropic", modelId: "claude", authKind: "oauth" as const },
-      { id: "other-provider", provider: "openai", modelId: "claude", authKind: "oauth" as const },
-      { id: "unreadable", provider: "anthropic", modelId: "claude" },
-    ];
-    for (const id of ["missing", "other-provider", "", null]) {
-      await expect(
-        loadStoredModelAuth("anthropic", async () => rows, "claude", id),
-      ).resolves.toEqual({
-        storedAuthKind: null,
-        credentialLookupFailed: false,
-        credentialUnreadable: false,
-        reconnectRequired: false,
-      });
-    }
-    await expect(
-      loadStoredModelAuth("anthropic", async () => rows, "claude", "unreadable"),
-    ).resolves.toEqual({
-      storedAuthKind: null,
-      credentialLookupFailed: false,
-      credentialUnreadable: true,
-      reconnectRequired: false,
-    });
-  });
-
-  it("uses the credential that owns the selected model, not the newest provider row", async () => {
-    const credentials = async () => [
-      { provider: "anthropic", authKind: "oauth" as const, modelId: "claude-new" },
-      {
-        provider: "anthropic",
-        authKind: "api_key" as const,
-        modelId: "claude-saved",
-        isDefault: true,
-      },
-    ];
-    await expect(
-      loadStoredModelAuth("anthropic", credentials, "claude-saved"),
-    ).resolves.toMatchObject({ storedAuthKind: "api_key", credentialUnreadable: false });
-    await expect(
-      loadStoredModelAuth("anthropic", credentials, "claude-new"),
-    ).resolves.toMatchObject({ storedAuthKind: "oauth" });
-    await expect(
-      loadStoredModelAuth("anthropic", credentials, "claude-other"),
-    ).resolves.toMatchObject({ storedAuthKind: "api_key" });
-  });
-
-  it("prefers a saved provider credential over a newer unused row", async () => {
-    await expect(
-      loadStoredModelAuth(
-        "anthropic",
-        async () => [
-          { provider: "anthropic", authKind: "oauth" },
-          { provider: "anthropic", authKind: "api_key", modelId: "claude-saved" },
-        ],
-        "claude-other",
-      ),
-    ).resolves.toMatchObject({ storedAuthKind: "api_key" });
-    await expect(
-      loadStoredModelAuth("anthropic", async () => [
-        { provider: "anthropic", authKind: "oauth" },
-        { provider: "anthropic", authKind: "api_key" },
-      ]),
-    ).resolves.toMatchObject({ storedAuthKind: "oauth" });
-  });
-
-  it("reports the selected row unreadable even when a newer row has a kind", async () => {
-    await expect(
-      loadStoredModelAuth(
-        "anthropic",
-        async () => [
-          { provider: "anthropic", authKind: "oauth", modelId: "claude-new" },
-          { provider: "anthropic", modelId: "claude-saved", isDefault: true },
-        ],
-        "claude-saved",
-      ),
-    ).resolves.toEqual({
-      storedAuthKind: null,
-      credentialLookupFailed: false,
-      credentialUnreadable: true,
-      reconnectRequired: false,
-    });
-  });
-});
-
 describe("runModelConnectionPreflight", () => {
   it("probes catalog providers through the pinned catalog endpoint", async () => {
     const probeCatalog = vi.fn().mockResolvedValue({ models: ["gpt-test"] });
     const result = await runModelConnectionPreflight({
-      authKind: "api-key",
       provider: "openrouter",
       apiKey: "sk-test-key-12345678",
       modelId: "gpt-test",
@@ -251,7 +104,6 @@ describe("runModelConnectionPreflight", () => {
 
   it("rejects a selected model the catalog probe did not list", async () => {
     const result = await runModelConnectionPreflight({
-      authKind: "api-key",
       provider: "openrouter",
       apiKey: "sk-test-key-12345678",
       modelId: "missing-model",
@@ -266,7 +118,6 @@ describe("runModelConnectionPreflight", () => {
 
   it("hides the tested key in a failed probe's message", async () => {
     const result = await runModelConnectionPreflight({
-      authKind: "api-key",
       provider: "openrouter",
       apiKey: " EXAMPLE-PLACEHOLDER-KEY ",
       catalogProbe: true,
@@ -282,7 +133,6 @@ describe("runModelConnectionPreflight", () => {
 
   it("rejects providers without a pinned catalog endpoint", async () => {
     const result = await runModelConnectionPreflight({
-      authKind: "api-key",
       provider: "anthropic",
       apiKey: "sk-test-key-12345678",
       catalogProbe: false,
@@ -290,65 +140,6 @@ describe("runModelConnectionPreflight", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.failure.outcome).toBe("unknown");
   });
-
-  it("reports oauth when not connected", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "openai-codex",
-      storedAuthKind: null,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.outcome).toBe("needs_sign_in");
-  });
-
-  it("does not treat a stored api key as subscription sign-in", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "anthropic",
-      storedAuthKind: "api_key",
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("needs_sign_in");
-      expect(result.failure.message).toMatch(/API key is stored/);
-    }
-  });
-
-  it("does not treat a rejected subscription sign-in as stored and usable", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "openai-codex",
-      storedAuthKind: "oauth",
-      reconnectRequired: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.outcome).toBe("needs_sign_in");
-    }
-  });
-
-  it("accepts a stored subscription credential", async () => {
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: "openai-codex",
-      storedAuthKind: "oauth",
-    });
-    expect(result.ok).toBe(true);
-  });
-
-  it.each([{ credentialUnreadable: true }, { credentialLookupFailed: true }])(
-    "keeps credential lookup problems distinct from a missing sign-in: %j",
-    async (lookup) => {
-      const result = await runModelConnectionPreflight({
-        authKind: "oauth",
-        provider: "anthropic",
-        storedAuthKind: "oauth",
-        ...lookup,
-      });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.failure.outcome).toBe("unknown");
-    },
-  );
 });
 
 describe("modelPreflightSuccessMessage", () => {
