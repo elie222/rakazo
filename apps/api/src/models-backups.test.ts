@@ -896,59 +896,96 @@ describe("role-based model settings API", () => {
     });
     expect(gone.response.status).toBe(400);
   });
-  it("offers and accepts a model only on the connections that can run it", async () => {
-    const { call, prisma } = setup();
-    const connection = (id: string) => ({
-      id,
-      userId: owner.userId,
-      provider: "openrouter",
-      label: id,
-      secretId: `${id}-secret`,
-      createdAt: new Date(0),
-      updatedAt: new Date(0),
-      userPreferences: [],
-    });
-    Object.assign(prisma.userModelCredential, {
-      findMany: vi.fn(async () => [
-        connection("credential-personal"),
-        connection("credential-work"),
-      ]),
-      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
-    });
-    const serves = vi
-      .spyOn(adapters, "connectionServesModel")
-      .mockImplementation(
-        async (_deps, _userId, credential, _provider, modelId) =>
-          modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
-      );
-    try {
-      for (const [procedure, input] of [
-        ["models/forRole", { role: "main" }],
-        ["models/list", null],
-      ] as const) {
-        const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
-          id: string;
-          credentialIds?: string[];
-        }>;
-        expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
-          "credential-personal",
-        ]);
+  it.each([false, true])(
+    "offers and accepts only serving personal connections alongside credits (credits=%s)",
+    async (credits) => {
+      const { call, prisma, deps } = setup();
+      if (credits) {
+        deps.billing = { modelCreditsEnabled: true } as never;
+        vi.stubEnv(
+          "MODEL_CREDIT_OFFERINGS",
+          JSON.stringify({
+            defaultOfferingId: "approved",
+            offerings: [
+              {
+                id: "approved",
+                connectionId: "operator",
+                provider: availableModel.provider,
+                modelId: availableModel.id,
+                price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              },
+            ],
+          }),
+        );
+        Object.assign(prisma.userModelCredential, {
+          findUnique: vi.fn(async () => ({
+            id: "operator",
+            userId: "operator-owner",
+            provider: availableModel.provider,
+            secretId: "operator-secret",
+          })),
+        });
       }
-      const model = { provider: availableModel.provider, modelId: availableModel.id };
-      const wrong = await call("models/setRole", {
-        role: "main",
-        primary: { ...model, credentialId: "credential-work" },
+      const connection = (id: string) => ({
+        id,
+        userId: owner.userId,
+        provider: "openrouter",
+        label: id,
+        secretId: `${id}-secret`,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        userPreferences: [],
       });
-      expect(wrong.response.status).toBe(400);
-      const right = await call("models/setRole", {
-        role: "main",
-        primary: { ...model, credentialId: "credential-personal" },
+      Object.assign(prisma.userModelCredential, {
+        findMany: vi.fn(async () => [
+          connection("credential-personal"),
+          connection("credential-work"),
+        ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
       });
-      expect(right.response.status).toBe(200);
-    } finally {
-      serves.mockRestore();
-    }
-  });
+      const serves = vi
+        .spyOn(adapters, "connectionServesModel")
+        .mockImplementation(
+          async (_deps, _userId, credential, _provider, modelId) =>
+            modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
+        );
+      try {
+        for (const [procedure, input] of [
+          ["models/forRole", { role: "main" }],
+          ["models/list", null],
+        ] as const) {
+          const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
+            id: string;
+            credentialIds?: string[];
+          }>;
+          expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
+            "credential-personal",
+          ]);
+        }
+        const model = { provider: availableModel.provider, modelId: availableModel.id };
+        const wrong = await call("models/setRole", {
+          role: "main",
+          primary: { ...model, credentialId: "credential-work" },
+        });
+        expect(wrong.response.status).toBe(400);
+        const right = await call("models/setRole", {
+          role: "main",
+          primary: { ...model, credentialId: "credential-personal" },
+        });
+        expect(right.response.status).toBe(200);
+        if (credits) {
+          const funded = await call("models/setRole", {
+            role: "main",
+            primary: { ...model, creditOfferingId: "approved" },
+          });
+          expect(funded.response.status).toBe(200);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        serves.mockRestore();
+      }
+    },
+  );
   it("reads each connection's key and the saved choices once for the whole catalog", async () => {
     const { call, prisma } = setup();
     const connection = (id: string) => ({

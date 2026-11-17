@@ -375,3 +375,47 @@ it("falls back from an unapproved bot override even on an approved provider", ()
     }),
   ).toMatchObject({ provider: "bot-provider", id: "approved-model", credential: null });
 });
+
+it.each([undefined, "personal", "credits"])(
+  "falls back only for an unpinned legacy main choice (pin=%s)",
+  (pin) => {
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "deployment-provider",
+            modelId: "deployment-model",
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    const selected = selectConfiguredModel({
+      ...defaults,
+      main: {
+        ...main,
+        credential: null,
+        ...(pin === "personal"
+          ? { credentialId: "removed-personal" }
+          : pin === "credits"
+            ? { creditOfferingId: "withdrawn-offering" }
+            : {}),
+      },
+      hostedProvider: "deployment-provider",
+      defaults: { settings: null, deployment: deploymentDefaults.deployment },
+    });
+    expect(selected).toMatchObject(
+      pin
+        ? { provider: main.provider, id: main.modelId }
+        : { provider: "deployment-provider", id: "deployment-model" },
+    );
+    if (pin)
+      expect(selected.connectionId).toBe(
+        pin === "personal" ? "removed-personal" : "credits:withdrawn-offering",
+      );
+  },
+);

@@ -11,7 +11,7 @@ import {
   retireToReconnectMarker,
 } from "./model-credential-refresh.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
-import { modelCreditOfferings } from "./model-credits/offerings.js";
+import { approvedModelCreditOffering, modelCreditOfferings } from "./model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "./model-credits/routing.js";
 import { outermostJsonObject } from "./model-json.js";
 import { deploymentModelRole, resolveMemberMainModel } from "./model-roles.js";
@@ -207,14 +207,21 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const useOverride = Boolean(
       requestedProvider &&
         requestedModel &&
-        (modelCreditOfferings() || explicitJudgeOverride || overrideCredential),
+        (explicitJudgeOverride ||
+          overrideCredential ||
+          (settings?.modelCreditsEnabled &&
+            modelCreditOfferings() &&
+            approvedModelCreditOffering(requestedProvider, requestedModel))),
     );
     // The member's main model runs on its connection, or on funded deployment credits.
     const main =
       member &&
       (member.creditOfferingId ||
+        member.credentialId ||
         member.credential ||
         (settings?.modelCreditsEnabled &&
+          (!modelCreditOfferings() ||
+            approvedModelCreditOffering(member.provider, member.modelId)) &&
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
@@ -230,7 +237,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const hosted =
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
-    const offeringId = !useOverride ? member?.creditOfferingId : undefined;
+    if (!useOverride && main?.credentialId && !credential) return null;
+    const offeringId = !useOverride ? main?.creditOfferingId : undefined;
     if (
       offeringId &&
       (!settings?.modelCreditsEnabled ||

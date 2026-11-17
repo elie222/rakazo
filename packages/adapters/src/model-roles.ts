@@ -124,7 +124,8 @@ export function selectConfiguredModel(input: {
   const useMain =
     !useOverride &&
     main !== null &&
-    (Boolean(modelCreditOfferings()) || runnable(main.provider, main.credential, main.modelId));
+    (Boolean(main.credentialId || main.creditOfferingId) ||
+      runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
     ? {

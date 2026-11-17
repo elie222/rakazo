@@ -382,13 +382,13 @@ export function createRouterContext(deps: RouterDeps) {
     return Promise.all(
       catalog.map(async (entry) => {
         const owners = byProvider.get(canonicalPiProviderId(entry.provider)) ?? [];
-        // Funded models run on the deployment's key, whichever connection is chosen, and
-        // decision models run through the provider's decisions API on any of its keys.
+        // Explicit credit routes keep their personal alternatives independently scoped.
+        // Legacy managed models and decision protocols still share provider-level access.
         if (
-          owners.length < 2 ||
+          (owners.length < 2 && !entry.creditOfferingId) ||
           entry.placeholder ||
           entry.protocol === "decisions" ||
-          ("managed" in entry && entry.managed)
+          (entry.managed && !entry.creditOfferingId)
         )
           return entry;
         const serving: string[] = [];
