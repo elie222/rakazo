@@ -81,8 +81,9 @@ function database() {
         rows.filter((row) => matches(row, args.where)).map((row) => ({ ...row })),
       count: async (args: Args) => rows.filter((row) => matches(row, args.where)).length,
       create: async (args: Args) => {
-        rows.push({ ...args.data! });
-        return args.data;
+        const row = { ...args.data!, id: args.data!.id ?? `${table}-${rows.length + 1}` };
+        rows.push(row);
+        return { ...row };
       },
       update: async (args: Args) => {
         const row = rows.find((row) => matches(row, args.where));
@@ -640,13 +641,38 @@ describe("secret store write-ahead", () => {
     try {
       const written = await ahead.put("saved", context, { recordId: "row" });
       await prisma.$transaction(async (tx) => {
+        const count = vi.spyOn(tx.secret, "count");
         await tx.secret.create({ data: { ...secretFields, ciphertext: written.ref } });
         expect(queue.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(written.ref));
+        expect(count).not.toHaveBeenCalled();
       });
       expect(queue.queued.size).toBe(0);
       expect(db.tables.get("secret")).toHaveLength(1);
       await queue.runQueued(worker);
       await expect(store.load(written.ref, "row")).resolves.toBe("saved");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("finds a created row by the id it was given, to remove the backup", async () => {
+    const { store, ahead, db, queue, prisma } = await setup();
+    try {
+      const written = await ahead.put("saved", context, { recordId: "row" });
+      const { id: _id, ...fields } = secretFields;
+      await prisma.$transaction(async (tx) => {
+        const findFirst = vi.spyOn(tx.secret, "findFirst");
+        await tx.secret.create({ data: { ...fields, ciphertext: written.ref } });
+        expect(findFirst).toHaveBeenCalledWith({
+          where: { id: "secret-1", ciphertext: written.ref },
+          select: { id: true },
+        });
+        expect(queue.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(written.ref));
+      });
+      expect(queue.queued.size).toBe(0);
+      expect(db.tables.get("secret")).toEqual([
+        { ...fields, id: "secret-1", ciphertext: written.ref },
+      ]);
     } finally {
       await store.close();
     }

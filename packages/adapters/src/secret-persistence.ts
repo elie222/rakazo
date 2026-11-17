@@ -16,6 +16,7 @@ import {
 } from "./secret-cleanup.js";
 
 type Candidate = { id: string; ciphertext: string };
+type Written = Candidate & { rowId?: string };
 /** `recorded` holds the cleanups whose backup job this transaction wrote, by reference. */
 type Cleanup = {
   old: Candidate[];
@@ -168,9 +169,9 @@ export function withSecretPersistence(
       Prisma.sql`SELECT ${fields} FROM ${Prisma.raw(`"${table}"`)} WHERE id IN (${Prisma.join(rows.map((row) => row.id))}) ORDER BY id FOR UPDATE`,
     );
   }
-  function trackWrites(state: Cleanup, model: string, input: Mutation): Candidate[] {
+  function trackWrites(state: Cleanup, model: string, input: Mutation): Written[] {
     if (!(model in secretTables)) return [];
-    const written: Candidate[] = [];
+    const written: Written[] = [];
     // Track new writes before DB access so even a pre-read failure can clean them.
     const data = [
       ...(Array.isArray(input.data) ? input.data : [input.data]),
@@ -179,10 +180,13 @@ export function withSecretPersistence(
     ];
     for (const value of data)
       if (typeof value?.ciphertext === "string") {
-        const id = String(value.id ?? input.where?.id ?? "secret");
+        const key = value.id ?? input.where?.id;
+        const rowId = typeof key === "string" ? key : undefined;
+        const id = String(rowId ?? "secret");
         written.push({
           id: model === "IntegrationProviderConfig" ? `integration-provider:${id}` : id,
           ciphertext: value.ciphertext,
+          rowId,
         });
       }
     state.written.push(...written);
@@ -193,7 +197,7 @@ export function withSecretPersistence(
     model: string,
     operation: string,
     input: Mutation,
-  ): Promise<Candidate[]> {
+  ): Promise<Written[]> {
     if (model in secretTables) {
       const written = trackWrites(state, model, input);
       // A change that leaves the reference in place has nothing to clean up after it.
@@ -230,21 +234,26 @@ export function withSecretPersistence(
     return [];
   }
   /**
-   * After the mutation: an entry the table now holds commits with its row, so its write-ahead
-   * job goes with the same commit. An upsert's unused branch keeps its job, as does a write
-   * that matched no row.
+   * After the mutation: an entry its row now holds commits with that row, so its write-ahead job
+   * goes with the same commit. An upsert's unused branch keeps its job, as does a write that
+   * matched no row or whose row the mutation did not name. Looked up by the row's key, so no
+   * table is scanned while the transaction holds its locks.
    */
-  async function saved(state: Cleanup, model: string, written: Candidate[]): Promise<void> {
+  async function saved(state: Cleanup, model: string, written: Written[]): Promise<void> {
     const queue = jobs?.();
     if (!queue) return;
     const client = state.client!;
     const delegate = Reflect.get(client, model[0]!.toLowerCase() + model.slice(1));
-    for (const ref of new Set(written.map((row) => row.ciphertext)))
-      if (
-        store.isRemote(ref) &&
-        (await Reflect.apply(delegate.count, delegate, [{ where: { ciphertext: ref } }]))
-      )
-        await queue.cancelIn(client, secretCleanupJobKey(ref));
+    const cancelled = new Set<string>();
+    for (const { ciphertext: ref, rowId } of written) {
+      if (!rowId || cancelled.has(ref) || !store.isRemote(ref)) continue;
+      const held = await Reflect.apply(delegate.findFirst, delegate, [
+        { where: { id: rowId, ciphertext: ref }, select: { id: true } },
+      ]);
+      if (!held) continue;
+      cancelled.add(ref);
+      await queue.cancelIn(client, secretCleanupJobKey(ref));
+    }
   }
   async function mutate(
     state: Cleanup,
@@ -255,6 +264,9 @@ export function withSecretPersistence(
   ): Promise<unknown> {
     const written = await prepare(state, model, operation, input);
     const result = await run();
+    // A create names its row only in what it returns.
+    const id = (result as { id?: unknown } | null)?.id;
+    if (typeof id === "string") for (const write of written) write.rowId ??= id;
     await saved(state, model, written);
     return result;
   }
