@@ -96,6 +96,8 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
     };
     unsubscribe = browser?.onOAuthCallback((callback) => {
       if (callback.serverId !== serverId || callback.state !== started.sessionId) return;
+      // A sign-in session completes only once; ignore a repeated report.
+      if (captured) return;
       captured = true;
       window.clearTimeout(timeoutTimer);
       if (callback.code === null) return finish("cancelled");
