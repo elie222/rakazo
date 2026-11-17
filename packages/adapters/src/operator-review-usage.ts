@@ -1,21 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type { PrismaClient, UsageAttribution } from "@rakazo/db";
-import { hasBillingAccess, organizationForMember, recordUsage } from "@rakazo/db";
+import { recordUsage } from "@rakazo/db";
 import { decisionModel } from "./decision-models.js";
-
-/** Trials and free periods alone do not fund the included checker. */
-export async function requirePaidReviewAccount(
-  prisma: PrismaClient,
-  scope: { userId: string; spaceId: string },
-) {
-  const member = await organizationForMember(prisma, scope);
-  const billing = member
-    ? await prisma.billingAccount.findUnique({ where: { organizationId: member.organizationId } })
-    : null;
-  if (!billing?.paidAt || !hasBillingAccess(billing.status))
-    throw new Error("Included checker requires a paid account");
-}
 
 /** Record intent before dispatch, so a process loss leaves an explicitly unknown expense. */
 export function operatorReviewObserver(
@@ -33,7 +20,12 @@ export function operatorReviewObserver(
         callId,
         pricingVersion: pricing?.pricingVersion ?? null,
         pricingSnapshot: pricing
-          ? { input: pricing.inputUsdPerMillion, output: 0, source: pricing.pricingUrl }
+          ? {
+              input: pricing.inputUsdPerMillion,
+              output: 0,
+              source: pricing.pricingUrl,
+              estimatedInputTokens: call.inputTokensEstimate,
+            }
           : null,
         provider: call.provider,
         model: call.modelId,
@@ -54,11 +46,21 @@ export function operatorReviewObserver(
     async afterCall(id, usage) {
       const event = calls.get(id);
       if (!event) throw new Error("Unknown checker expense");
+      const pricing = decisionModel(event.provider, event.model);
+      const input = usage?.inputTokens ?? event.pricingSnapshot?.estimatedInputTokens;
+      const estimate =
+        usage && usage.costUsd == null && pricing && typeof input === "number"
+          ? {
+              costUsd: (input * pricing.inputUsdPerMillion) / 1_000_000,
+              costSource: usage.inputTokens == null ? "request-token-estimate" : "catalog-estimate",
+            }
+          : {};
       await recordUsage(
         prisma,
         {
           ...event,
           ...(usage ?? { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "not-sent" }),
+          ...estimate,
         },
         scope,
         true,

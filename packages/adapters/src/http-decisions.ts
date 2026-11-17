@@ -160,6 +160,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         usage = {
           ...usage,
           operationKind: "setup",
+          costSource: usage.costSource ?? null,
           providerRequestId,
           pricingSnapshot: pricingSnapshot
             ? {
@@ -168,13 +169,6 @@ export class HttpDecisionProvider implements DecisionProvider {
               }
             : null,
           pricingVersion: pricing?.pricingVersion ?? null,
-          ...(usage.costUsd == null && pricing
-            ? {
-                costUsd: (estimatedInput * pricing.inputUsdPerMillion) / 1_000_000,
-                costSource:
-                  usage.inputTokens == null ? "request-token-estimate" : "catalog-estimate",
-              }
-            : {}),
           ...(usage.usageSource === "provider-rejected"
             ? { costSource: "provider-rejection" }
             : {}),

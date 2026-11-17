@@ -156,8 +156,8 @@ describe("decision provider failures", () => {
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
       expect.objectContaining({
-        costUsd: expect.any(Number),
-        costSource: "request-token-estimate",
+        costUsd: null,
+        costSource: null,
         pricingSnapshot: expect.objectContaining({
           input: expect.any(Number),
           source: expect.any(String),
@@ -227,9 +227,9 @@ it("retains header request IDs and estimated pricing when a response is malforme
     "call",
     expect.objectContaining({
       providerRequestId: "request-fixture",
-      costSource: "request-token-estimate",
+      costSource: null,
       pricingVersion: "decision-pricing-2026-11-17",
-      costUsd: expect.any(Number),
+      costUsd: null,
     }),
   );
 });

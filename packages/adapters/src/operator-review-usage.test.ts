@@ -1,26 +1,6 @@
-import type * as Database from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
-import { operatorReviewObserver, requirePaidReviewAccount } from "./operator-review-usage.js";
-
-vi.mock("@rakazo/db", async (original) => ({
-  ...(await original<typeof Database>()),
-  organizationForMember: vi.fn(async () => ({ organizationId: "organization-fixture" })),
-}));
-
-it.each([
-  [null, "active", false],
-  [new Date(0), "canceled", false],
-  [new Date(0), "active", true],
-  [new Date(0), "past_due", true],
-])("requires paid history and billing access", async (paidAt, status, allowed) => {
-  const prisma = {
-    billingAccount: { findUnique: async () => ({ paidAt, status }) },
-  } as unknown as PrismaClient;
-  const result = requirePaidReviewAccount(prisma, { userId: "user", spaceId: "space" });
-  if (allowed) await expect(result).resolves.toBeUndefined();
-  else await expect(result).rejects.toThrow("paid account");
-});
+import { operatorReviewObserver } from "./operator-review-usage.js";
 
 it("records intent, request id and final evidence without touching purchased credits", async () => {
   const createMany = vi.fn();
@@ -81,4 +61,38 @@ it("records intent, request id and final evidence without touching purchased cre
     }),
   );
   expect(debit).not.toHaveBeenCalled();
+});
+
+it("estimates an unknown operator expense without changing provider usage or customer settlement", async () => {
+  const createMany = vi.fn();
+  const updateMany = vi.fn();
+  const prisma = {
+    $transaction: async (work: (tx: unknown) => unknown) =>
+      work({ usageRecord: { createMany, updateMany } }),
+  } as unknown as PrismaClient;
+  const observer = operatorReviewObserver(prisma, { userId: "user", spaceId: "space" });
+  const id = await observer.beforeCall({
+    callId: "operator-call",
+    provider: "openrouter",
+    modelId: "typesafe/jev-1.14",
+    inputTokensEstimate: 1000,
+    maxOutputTokens: 0,
+  });
+  const usage = {
+    inputTokens: null,
+    outputTokens: null,
+    costUsd: null,
+    usageSource: "unavailable",
+  };
+  await observer.afterCall(id, usage);
+  expect(usage.costUsd).toBeNull();
+  expect(updateMany).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({
+        costUsd: 0.000042,
+        costSource: "request-token-estimate",
+        inputTokens: null,
+      }),
+    }),
+  );
 });

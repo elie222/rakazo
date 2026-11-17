@@ -1,10 +1,12 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type * as ModelSelection from "./model-selection.js";
 import { resolveRuntimeModel } from "./pi-runtime-models.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type * as RunModel from "./run-model.js";
+
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock("./model-selection.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelSelection>()),
@@ -69,7 +71,10 @@ it("keeps project routing from the saved checker connection through the runtime 
   });
 });
 
-it("uses operator auth for a paid included checker even when a personal connection exists", async () => {
+it("uses operator auth for an available included checker even when a personal connection exists", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "");
   const selection = await import("./model-selection.js");
   const runModel = await import("./run-model.js");
   vi.mocked(selection.findConnectedModelCredential).mockClear();
@@ -100,6 +105,53 @@ it("uses operator auth for a paid included checker even when a personal connecti
     "user-fixture",
     "space-fixture",
     null,
+    "openrouter",
+    "typesafe/jev-1.14",
+    expect.any(Function),
+  );
+});
+
+it("preserves personal authentication for a legacy hosted deployment checker", async () => {
+  const selection = await import("./model-selection.js");
+  const runModel = await import("./run-model.js");
+  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
+  await autoReviewCheckerProvider(
+    deps,
+    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    { memberChecker: false, registerSecrets: vi.fn() },
+    { provider: "google-vertex", model: "gemini-4-hydrogen" },
+  );
+  expect(selection.findConnectedModelCredential).toHaveBeenCalledOnce();
+  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+    deps,
+    "user",
+    "space",
+    expect.objectContaining({ id: "fixture-credential" }),
+    "google-vertex",
+    "gemini-4-hydrogen",
+    expect.any(Function),
+  );
+});
+
+it("keeps a personal decision connection when hosted auth is unavailable", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "");
+  const selection = await import("./model-selection.js");
+  const runModel = await import("./run-model.js");
+  vi.mocked(selection.findConnectedModelCredential).mockClear();
+  const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
+  await autoReviewCheckerProvider(
+    deps,
+    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    { memberChecker: false, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "typesafe/jev-1.14" },
+  );
+  expect(selection.findConnectedModelCredential).toHaveBeenCalledOnce();
+  expect(runModel.resolveModelKey).toHaveBeenLastCalledWith(
+    deps,
+    "user",
+    "space",
+    expect.objectContaining({ id: "fixture-credential" }),
     "openrouter",
     "typesafe/jev-1.14",
     expect.any(Function),

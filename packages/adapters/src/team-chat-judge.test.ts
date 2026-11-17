@@ -415,6 +415,7 @@ describe("team chat engagement judge", () => {
       skipDuplicates: true,
       data: [
         {
+          fundingSource: "customer",
           spaceId: "space-1",
           botId: "bot-1",
           userId: "user-1",

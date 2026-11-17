@@ -1,14 +1,18 @@
 import type { AgentRuntimeEvent, AutoReviewProvider } from "@rakazo/adapter-kit";
 import { recordUsage } from "@rakazo/db";
 import type { AutoReviewChecker } from "./auto-review.js";
-import { autoReviewTimeoutMs, resolveAutoReviewProviderKind } from "./auto-review.js";
+import {
+  autoReviewTimeoutMs,
+  isAutoReviewCheckerConfigured,
+  resolveAutoReviewProviderKind,
+} from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { HttpDecisionProvider } from "./http-decisions.js";
 import { findConnectedModelCredential, hasHostedModelCredits } from "./model-selection.js";
-import { operatorReviewObserver, requirePaidReviewAccount } from "./operator-review-usage.js";
+import { operatorReviewObserver } from "./operator-review-usage.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
@@ -31,14 +35,20 @@ export async function autoReviewCheckerProvider(
     !backups?.some(
       (choice) => choice.provider === checker.provider && choice.modelId === checker.model,
     );
-  const hosted = deploymentChoice && (await modelCreditBillingEnabled(deps));
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
       : resolveAutoReviewProviderKind();
-  // Self-hosters retain their existing own-key fallback; hosted defaults use operator auth.
+  // Only the included decision checker uses operator auth without a personal connection.
+  const included =
+    deploymentChoice &&
+    Boolean(decisionModel(checker.provider, checker.model)) &&
+    isAutoReviewCheckerConfigured({ checker }) &&
+    !process.env.RAKAZO_AUTO_REVIEW_PROVIDER?.trim() &&
+    !process.env.RAKAZO_AUTO_REVIEW_MODEL?.trim() &&
+    (await modelCreditBillingEnabled(deps));
   const reviewCredential =
-    hosted || kind === "jev" || kind === "scripted"
+    included || kind === "jev" || kind === "scripted"
       ? null
       : await findConnectedModelCredential(
           deps.prisma,
@@ -48,8 +58,12 @@ export async function autoReviewCheckerProvider(
           checker.model,
           { credentialId: checker.credentialId },
         );
-  const operatorFunded = deploymentChoice && !reviewCredential;
-  if (hosted) await requirePaidReviewAccount(deps.prisma, scope);
+  const operatorFunded =
+    deploymentChoice &&
+    !reviewCredential &&
+    (Boolean(decisionModel(checker.provider, checker.model)) ||
+      kind === "jev" ||
+      kind === "scripted");
   const operatorObserver = operatorFunded
     ? operatorReviewObserver(deps.prisma, {
         spaceId,
