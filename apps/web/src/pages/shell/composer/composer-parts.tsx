@@ -5,10 +5,10 @@ import { mentionChipKey, truncateSlashDescription } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Settings, Square, X } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
-import type { useHoldToTalk } from "../../../components/composer/HoldToTalk";
-import { HoldToTalkControls } from "../../../components/composer/HoldToTalk";
 import type { PendingAttachment } from "../chat/chat-shared";
 import { MentionOptionIcon, slashActionLabel } from "./composer-mentions";
+import type { useHoldToTalk } from "./hold-to-talk";
+import { HoldToTalkControls } from "./hold-to-talk";
 
 /** The files waiting to go with the next message, each with its remove button. */
 export function PendingAttachmentChips({

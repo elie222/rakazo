@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import { PageLoading } from "../../components/PageLoading";
+import { WindowChrome } from "../../components/WindowChrome";
 import { useSpaceQueries } from "../../lib/query/query";
-import { WindowChrome } from "../WindowChrome";
 import { PluginSubmissionsPanel } from "./PluginSubmissionsPanel";
 
 export function AdminPluginsPage() {

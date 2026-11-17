@@ -23,13 +23,14 @@ import {
   SettingsRow,
   useStackedSettings,
 } from "../../components/settings/settings-group";
+import { selectedSpaceId } from "../../lib/api/api";
 import {
   currentPlan,
   openBillingPage,
   ownKeySubscriptionCents,
   planEndsAt,
-} from "../../lib/account/billing";
-import { selectedSpaceId } from "../../lib/api/api";
+} from "../../lib/billing/billing";
+import { rememberReferral } from "../../lib/billing/referral";
 import { dateLocaleForUi } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import type { SaveSend } from "../../lib/query/query";
@@ -37,7 +38,6 @@ import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query"
 import { useScreenQuery } from "../../lib/query/screen-query";
 import type { SettingsTarget } from "../../lib/query/settings-target";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
-import { rememberReferral } from "../../lib/spaces/referral";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocaleForUi(), {

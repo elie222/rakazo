@@ -14,10 +14,10 @@ import {
   dismissThreadNotifications,
 } from "../notifications/live-notifications";
 import { removeFromSearchInbox } from "../search/search-inbox";
-import { notifyArchivedChatsChanged } from "./archived-chats";
+import { notifyArchivedChatsChanged } from "./archived/archived-chats";
 import type { InboxRowAction } from "./inbox-swipe";
 import { applyUnreadOverrides, withoutArchiving } from "./inbox-swipe";
-import { promptSectionName } from "./section-name-prompt";
+import { promptSectionName } from "./sections/section-name-prompt";
 import { useInboxChatActions } from "./use-inbox-chat-actions";
 
 const session = vi.hoisted(() => ({
@@ -47,7 +47,7 @@ vi.mock("../api/api", () => ({
   rpc: vi.fn(),
   selectedSpaceId: () => session.space,
 }));
-vi.mock("./archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
+vi.mock("./archived/archived-chats", () => ({ notifyArchivedChatsChanged: vi.fn() }));
 vi.mock("../bots/bot-lifecycle", () => ({
   confirmDeleteBot: vi.fn(),
   confirmDeleteGroup: vi.fn(),
@@ -55,13 +55,13 @@ vi.mock("../bots/bot-lifecycle", () => ({
     send("groups/remove", { groupId }),
   alertGroupNotDeleted: vi.fn(),
 }));
-vi.mock("./confirm-delete-section", () => ({ confirmDeleteSection: vi.fn() }));
+vi.mock("./sections/confirm-delete-section", () => ({ confirmDeleteSection: vi.fn() }));
 vi.mock("../notifications/live-notifications", () => ({
   afterChatNotifyChange: vi.fn(async () => {}),
   dismissThreadNotifications: vi.fn(async () => {}),
 }));
 vi.mock("../search/search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
-vi.mock("./section-name-prompt", () => ({ promptSectionName: vi.fn() }));
+vi.mock("./sections/section-name-prompt", () => ({ promptSectionName: vi.fn() }));
 vi.mock("../api/session", () => ({
   loadSessionToken: async () => null,
   currentSessionGeneration: () => session.generation,

@@ -24,7 +24,6 @@ import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
 import { ErrorBoundary, SectionLoadFailed } from "../../../components/ErrorBoundary";
 import { PagesList } from "../../../components/pages/PagesList";
-import { InstructionSettings } from "../../../components/settings/InstructionSettings";
 import { botProfilePatch } from "../../../lib/bots/bot-profile-patch";
 import { lazyComponent } from "../../../lib/platform/preload-recovery";
 import { useSpaceQueries } from "../../../lib/query/query";
@@ -40,6 +39,7 @@ import {
   ToolsGroup,
   VoiceRow,
 } from "./bot-settings-sections";
+import { InstructionSettings } from "./instruction-settings";
 
 const ScratchpadSection = lazyComponent(() =>
   import("../../space/ScratchpadSection").then((module) => module.ScratchpadSection),

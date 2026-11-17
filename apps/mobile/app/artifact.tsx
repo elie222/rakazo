@@ -31,7 +31,7 @@ import {
   listArtifactVersions,
   removeArtifact,
 } from "../lib/artifacts/artifacts";
-import { formatActivityRelativeTime } from "../lib/home/activity";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
 import { useFloatingHeaderInset } from "../lib/layout/floating-header";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { presentMessageActionSheet } from "../lib/messages/message-action-sheet";

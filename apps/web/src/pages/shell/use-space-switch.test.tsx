@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
 import { BrowserRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as SpaceSwitch from "../../lib/space-switch";
+import type * as SpaceSwitch from "./space-switch";
 import { useShellNavigation } from "./use-shell-navigation";
 import { useOpenSpaceChat } from "./use-space-switch";
 
@@ -30,7 +30,7 @@ vi.mock("../../lib/calls/call-session", () => ({
   getSnapshot: state.call,
   isLeavingSession: state.leavingSession,
 }));
-vi.mock("../../lib/auth/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../../lib/spaces/organizations", () => ({ leaveOrganization: async () => {} }));
 vi.mock("../../lib/query/query", () => ({
   queryClient: { getQueryData: state.cached },
   spaceSeedKey: () => [],
@@ -40,7 +40,7 @@ vi.mock("../../lib/query/rpc", () => ({
   selectSpace: state.select,
 }));
 vi.mock("../../lib/calls/tts", () => ({ speaker: { stop: state.stop } }));
-vi.mock("../../lib/space-switch", async (importOriginal) => ({
+vi.mock("./space-switch", async (importOriginal) => ({
   ...(await importOriginal<typeof SpaceSwitch>()),
   remountShellForSpace: state.remount,
 }));

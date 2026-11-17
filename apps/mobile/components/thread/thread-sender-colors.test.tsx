@@ -41,7 +41,7 @@ vi.mock("@rakazo/chat-ui/native", () => ({
 vi.mock("../messages/message-caption", () => ({
   MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
 }));
-vi.mock("../pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../../lib/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("./mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../cards/ComputerCard", () => ({
   ComputerCard: ({ onOpen }: { onOpen: () => void }) => {

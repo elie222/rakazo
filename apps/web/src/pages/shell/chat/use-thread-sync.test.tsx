@@ -7,7 +7,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { queryClient } from "../../../lib/query/query";
-import { useComputerControls, useComputerState } from "../computer/use-computer";
+import { useComputerControls, useComputerState } from "../computers/use-computer";
 import { useThreadSync } from "./use-thread-sync";
 
 vi.mock("@rakazo/core", async (original) => ({

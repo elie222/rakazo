@@ -12,7 +12,7 @@ import { confirmDeleteBot } from "../../lib/bots/bot-lifecycle";
 import {
   loadAllArchivedChats as loadArchivedChats,
   notifyArchivedChatsChanged,
-} from "../../lib/inbox/archived-chats";
+} from "../../lib/inbox/archived/archived-chats";
 import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useMobileTokens } from "../../lib/native/native";

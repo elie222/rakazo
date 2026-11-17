@@ -5,13 +5,13 @@ import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { PagesList } from "../../components/pages/PagesList";
 import type { createSpaceRpc } from "../../lib/query/rpc";
-import type { Panel } from "../../lib/right-panel-state";
-import { ResizableSidePanel } from "../ResizableSidePanel";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
 import { CreateGroupForm, GroupSettings } from "../space/GroupPanel";
 import { AgentImportForm } from "./bots/agent-import";
 import { BotSettings } from "./bots/bot-panel";
+import { ResizableSidePanel } from "./resizable-side-panel";
+import type { Panel } from "./right-panel-state";
 import { firstThreadRoute } from "./use-shell-navigation";
 
 /** The panel beside the chat: a bot, a routine, a group, or an import. */
