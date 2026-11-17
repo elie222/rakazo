@@ -249,7 +249,7 @@ const legacy = {
 
 async function legacyPanel(
   next: Record<string, unknown>,
-  portal?: (body: unknown) => Response | Promise<Response>,
+  portal?: (body: unknown) => Response | undefined | Promise<Response | undefined>,
 ) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   let current = next;
@@ -366,5 +366,22 @@ it("shows the usual error, and keeps the button, when billing is busy", async ()
   );
   expect(view.has("Cancel trial")).toBe(true);
   expect(view.assign).not.toHaveBeenCalled();
+  view.done();
+});
+
+it("drops a failed cancel's error when Manage is pressed", async () => {
+  const view = await legacyPanel(legacy, (body) =>
+    (body as { json?: { intent?: string } }).json?.intent === "cancel"
+      ? Response.json(
+          { json: { defined: false, code: "CONFLICT", status: 409, message: "Billing is busy" } },
+          { status: 409 },
+        )
+      : undefined,
+  );
+  await view.press("Cancel trial");
+  expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+  await view.press("Manage");
+  expect(view.assign).toHaveBeenCalledExactlyOnceWith("https://portal.example/flow");
+  expect(view.container.querySelector('[role="alert"]')).toBeNull();
   view.done();
 });

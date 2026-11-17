@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BillingStatus } from "./billing.js";
-import { billingNote, cancelPlanOffered } from "./billing.js";
+import { billingNote, cancelPlanOffered, isNoPlanToCancel, NO_PLAN_TO_CANCEL } from "./billing.js";
 
 function status(overrides: Partial<BillingStatus> = {}): BillingStatus {
   return {
@@ -46,5 +46,21 @@ describe("the billing note", () => {
   it("tells an owner with no customer nothing will be charged, and an owner with one nothing", () => {
     expect(billingNote(status({ hasCustomer: false, state: "none" }))).toBe("nothing_charged");
     expect(billingNote(status())).toBeNull();
+  });
+});
+
+describe("recognising the refusal of a cancel", () => {
+  it("reads the code from any error that carries one", () => {
+    expect(isNoPlanToCancel({ code: NO_PLAN_TO_CANCEL })).toBe(true);
+    expect(isNoPlanToCancel(Object.assign(new Error("No plan"), { code: NO_PLAN_TO_CANCEL }))).toBe(
+      true,
+    );
+  });
+
+  it("is not any other failure, whatever it is thrown as", () => {
+    expect(isNoPlanToCancel({ code: "CONFLICT" })).toBe(false);
+    expect(isNoPlanToCancel(new Error(NO_PLAN_TO_CANCEL))).toBe(false);
+    for (const value of [null, undefined, "NO_PLAN_TO_CANCEL", 409, {}])
+      expect(isNoPlanToCancel(value)).toBe(false);
   });
 });

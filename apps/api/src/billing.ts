@@ -245,6 +245,28 @@ export function createBillingService(deps: {
       return;
     }
     const live = snapshot;
+    await afterSnapshot(previous, live);
+    if (!modelCredits || !live) return;
+    // Monthly credits include the own-key plan, even when they will not renew, and a free plan
+    // bills nothing.
+    if (
+      provider.endByokPlans &&
+      hasBillingAccess(live.status) &&
+      (live.creditAmountCents ||
+        (BYOK_TIERS.standard.monthlyPriceCents === null &&
+          live.byokPlan &&
+          !live.cancelAtPeriodEnd))
+    )
+      await provider.endByokPlans(customerId);
+  }
+
+  /**
+   * What a stored snapshot that differs from the one it replaced sets off: analytics, the
+   * referral, and a newly paid own-key plan becoming the funding. Whoever stores a provider
+   * snapshot runs this with the account as it was before, or the change is never seen again (a
+   * write of no subscription has nothing to follow up).
+   */
+  async function afterSnapshot(previous: BillingAccount, live: BillingSubscriptionSnapshot | null) {
     // Measurement never decides whether a paid plan activates.
     if (live)
       try {
@@ -272,17 +294,6 @@ export function createBillingService(deps: {
         },
         data: { mode: "byok", pendingCreditCheckout: false },
       });
-    // Monthly credits include the own-key plan, even when they will not renew, and a free plan
-    // bills nothing.
-    if (
-      provider.endByokPlans &&
-      hasBillingAccess(live.status) &&
-      (live.creditAmountCents ||
-        (BYOK_TIERS.standard.monthlyPriceCents === null &&
-          live.byokPlan &&
-          !live.cancelAtPeriodEnd))
-    )
-      await provider.endByokPlans(customerId);
   }
 
   async function reportCancellation(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
@@ -878,11 +889,14 @@ export function createBillingService(deps: {
         // other account with no plan; the next plain portal or checkout replaces the customer.
         // Assigned in the callback, which control-flow narrowing does not follow.
         let read = null as BillingSubscriptionSnapshot | null;
-        await syncBillingSnapshot(prisma, customerId, async () => {
+        const written = await syncBillingSnapshot(prisma, customerId, async () => {
           read = await provider.getCustomerSubscription(customerId);
           return read;
         });
         const live = read as BillingSubscriptionSnapshot | null;
+        // What the stored account differed by is followed up here too, or this write would hide
+        // it from every later sync. It cannot block cancelling.
+        if (written) await bestEffort("billing follow-ups on cancel", afterSnapshot(held, live));
         if (
           !live?.subscriptionId ||
           !(hasBillingAccess(live.status) || needsBillingPortal(live.status)) ||

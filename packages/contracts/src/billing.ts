@@ -202,6 +202,16 @@ export function modelCreditsUsd(status: BillingStatus | null | undefined): numbe
 /** The code of the conflict that answers cancelling a plan that is gone or already set to end. */
 export const NO_PLAN_TO_CANCEL = "NO_PLAN_TO_CANCEL";
 
+/** Whether a failed cancel was that refusal, from the `code` an RPC error carries on any client. */
+export function isNoPlanToCancel(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === NO_PLAN_TO_CANCEL
+  );
+}
+
 /** What an owner may cancel: a subscription that still bills or can resume and is not set to end. */
 export function cancelPlanOffered(status: BillingStatus): "trial" | "plan" | null {
   if (

@@ -1,7 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { ORPCError } from "@orpc/client";
 import type { BillingStatus } from "@rakazo/contracts";
-import { billingNote, cancelPlanOffered, NO_PLAN_TO_CANCEL } from "@rakazo/contracts";
+import { billingNote, cancelPlanOffered, isNoPlanToCancel } from "@rakazo/contracts";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
@@ -27,7 +26,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
       } catch (err) {
         // The server found no plan to cancel: show the status it just read, so the button goes
         // instead of failing again. Any other refusal, busy billing included, is not it.
-        if (!(err instanceof ORPCError && err.code === NO_PLAN_TO_CANCEL)) throw err;
+        if (!isNoPlanToCancel(err)) throw err;
         setStatus(await rpc.billing.status());
         return null;
       }
@@ -114,6 +113,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
                 disabled={busy}
                 onClick={() => {
                   setError(null);
+                  portal.reset();
                   cancel.run();
                 }}
               >
@@ -130,6 +130,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
               disabled={busy}
               onClick={() => {
                 setError(null);
+                cancel.reset();
                 portal.run();
               }}
             >

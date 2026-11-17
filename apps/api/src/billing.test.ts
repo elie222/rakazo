@@ -1,4 +1,4 @@
-import type { BillingProvider } from "@rakazo/adapter-kit";
+import type { BillingProvider, ProductAnalytics } from "@rakazo/adapter-kit";
 import { BillingCustomerNotFoundError, BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -16,7 +16,11 @@ const price = { amount: 1000, currency: "usd", interval: "month" as const, inter
 function service(
   getPrice: BillingProvider["getPrice"],
   role = "owner",
-  provides: { capabilities?: Record<string, boolean>; extra?: Record<string, unknown> } = {},
+  provides: {
+    capabilities?: Record<string, boolean>;
+    extra?: Record<string, unknown>;
+    analytics?: ProductAnalytics;
+  } = {},
 ) {
   const prisma = {
     space: {
@@ -43,7 +47,12 @@ function service(
   return {
     provider,
     prisma,
-    billing: createBillingService({ prisma, provider, webOrigin: "https://app.example.com" }),
+    billing: createBillingService({
+      prisma,
+      provider,
+      webOrigin: "https://app.example.com",
+      analytics: provides.analytics,
+    }),
   };
 }
 
@@ -101,7 +110,9 @@ describe("opening the portal on cancelling", () => {
   ) {
     const current = { ...account };
     const { billing, prisma, provider } = service(async () => price, "owner", provides);
-    vi.mocked(prisma.billingAccount.findUnique).mockImplementation((async () => current) as never);
+    vi.mocked(prisma.billingAccount.findUnique).mockImplementation((async () => ({
+      ...current,
+    })) as never);
     Object.assign(prisma.billingAccount, {
       findUniqueOrThrow: vi.fn(async () => current),
       updateMany: vi.fn(async ({ data }: { data: Stored }) => {
@@ -300,6 +311,65 @@ describe("opening the portal on cancelling", () => {
     await expect(billing.portal(actor, undefined, "cancel")).rejects.toThrow(
       "provider unavailable",
     );
+  });
+
+  it("follows up the change it stores, which no later sync would see again", async () => {
+    const analytics = { capture: vi.fn(), flush: vi.fn() } as unknown as ProductAnalytics;
+    const { billing, prisma } = portalService(
+      stored,
+      { ...liveSubscription, status: "active", creditAmountCents: 1000 },
+      { analytics },
+    );
+    vi.mocked(prisma.member.findFirst).mockResolvedValue({ userId: "owner-1" } as never);
+    await billing.portal(actor, undefined, "cancel");
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "owner-1",
+      expect.objectContaining({ name: "subscription_started" }),
+      expect.objectContaining({ id: "sub-live" }),
+      undefined,
+    );
+  });
+
+  it("follows up a change it stores when the cancel is refused too", async () => {
+    const analytics = { capture: vi.fn(), flush: vi.fn() } as unknown as ProductAnalytics;
+    const { billing, prisma } = portalService(
+      stored,
+      {
+        ...liveSubscription,
+        status: "active",
+        creditAmountCents: 1000,
+        cancelAtPeriodEnd: true,
+      },
+      { analytics },
+    );
+    vi.mocked(prisma.member.findFirst).mockResolvedValue({ userId: "owner-1" } as never);
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      code: "NO_PLAN_TO_CANCEL",
+    });
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "owner-1",
+      expect.objectContaining({ name: "subscription_started" }),
+      expect.objectContaining({ id: "sub-live" }),
+      undefined,
+    );
+  });
+
+  it("opens the session although a follow-up of the stored change fails", async () => {
+    const { billing, provider, prisma } = portalService(
+      stored,
+      { ...liveSubscription, status: "active", byokPlan: true, byokPriceCents: 500 },
+      { capabilities: { modelCredits: true } },
+    );
+    Object.assign(prisma, {
+      modelCreditAccount: {
+        updateMany: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      },
+    });
+    await expect(billing.portal(actor, undefined, "cancel")).resolves.toEqual({
+      url: "https://portal.example.com",
+    });
+    expect(prisma.modelCreditAccount.updateMany).toHaveBeenCalled();
+    expect(provider.createPortal).toHaveBeenCalled();
   });
 
   it("refuses a customer the provider deleted, which reads as having no subscription, and stores that", async () => {

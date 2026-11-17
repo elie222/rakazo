@@ -14,9 +14,9 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
   isCancelledTrial,
+  isNoPlanToCancel,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
-  NO_PLAN_TO_CANCEL,
 } from "@rakazo/contracts";
 import {
   AlertDialog,
@@ -713,7 +713,7 @@ export function ModelCreditsSettings({
           } catch (err) {
             // The server found no plan to cancel: show the status it just read, so the button
             // goes instead of failing again. Any other refusal, busy billing included, is not it.
-            if (!(err instanceof ORPCError && err.code === NO_PLAN_TO_CANCEL)) throw err;
+            if (!isNoPlanToCancel(err)) throw err;
             await refresh();
           }
         })

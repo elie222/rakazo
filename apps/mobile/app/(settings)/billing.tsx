@@ -13,9 +13,9 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
   isCancelledTrial,
+  isNoPlanToCancel,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
-  NO_PLAN_TO_CANCEL,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused, useRouter } from "expo-router";
@@ -104,8 +104,7 @@ export default function BillingScreen() {
       } catch (error) {
         // The server found no plan to cancel: show the status it just read, so the row goes
         // instead of failing again. Any other refusal, busy billing included, is not it.
-        if ((error as { code?: unknown } | null)?.code === NO_PLAN_TO_CANCEL)
-          return send("billing/refresh", undefined);
+        if (isNoPlanToCancel(error)) return send("billing/refresh", undefined);
         throw error;
       }
     });
