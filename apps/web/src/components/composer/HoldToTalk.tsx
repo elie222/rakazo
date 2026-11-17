@@ -4,7 +4,7 @@ import { Button, cn } from "@rakazo/ui-web";
 import { ArrowUp, ChevronUp, Lock, Mic, Trash2 } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dictation } from "../../lib/dictation";
+import { dictation } from "../../lib/calls/dictation";
 import { IconTooltip } from "../IconTooltip";
 
 /** How far the finger travels up before the recording locks hands-free. */

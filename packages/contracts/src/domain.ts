@@ -1,15 +1,15 @@
 import * as z from "zod";
-import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
-import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
-import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
-import { ComputerModeSchema, ComputerStatusSchema } from "./computer.js";
+import { SpaceAvailabilitySchema } from "./account/space-availability.js";
+import { AGENT_SECRET_NAME_PATTERN } from "./bots/agent-secret-name.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bots/bot-avatar.js";
+import { DisabledBuiltinToolsSchema } from "./bots/builtin-tools.js";
+import { NavLinkSchema } from "./clients/nav-links.js";
+import { ComputerModeSchema, ComputerStatusSchema } from "./computers/computer.js";
+import { RoutineWatchSchema, RoutineWatchStateSchema } from "./conversations/routine-watch.js";
+import { RunTriggerSchema } from "./conversations/runs.js";
 import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, ReplyModeSchema, RunStatus, ThinkingLevelSchema } from "./ids.js";
 import { LabFeatureSchema } from "./labs.js";
-import { NavLinkSchema } from "./nav-links.js";
-import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
-import { RunTriggerSchema } from "./runs.js";
-import { SpaceAvailabilitySchema } from "./space-availability.js";
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 
@@ -617,6 +617,8 @@ export const RoutineSchema = z.object({
   timezone: z.string(),
   active: z.boolean(),
   notify: z.boolean(),
+  /** Runs as a turn in its chat instead of alongside it. Absent on older servers. */
+  inChat: z.boolean().default(false),
   webhookEnabled: z.boolean(),
   githubEnabled: z.boolean(),
   messageProvider: z
@@ -652,6 +654,7 @@ export const CreateRoutineInput = z
     crons: z.array(z.string().min(1)).default([]),
     timezone: TimeZoneSchema.default("UTC"),
     notify: z.boolean().default(true),
+    inChat: z.boolean().default(false),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
     githubEnabled: z.boolean().default(false),

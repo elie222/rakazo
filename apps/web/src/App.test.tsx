@@ -29,12 +29,12 @@ vi.mock("./lib/bootstrap", () => ({
   getLabs: () => (capability.enabled ? ["board"] : []),
   subscribeLabs: () => () => {},
 }));
-vi.mock("./lib/auth", () => ({
+vi.mock("./lib/auth/auth", () => ({
   authClient: {
     useSession: () => ({ ...(capability.session ?? signedIn), refetch: vi.fn() }),
   },
 }));
-vi.mock("./pages/Auth", async () => {
+vi.mock("./pages/auth/Auth", async () => {
   const { useEffect } = await import("react");
   return {
     AuthPage: ({ mode }: { mode: string }) => {
@@ -45,13 +45,13 @@ vi.mock("./pages/Auth", async () => {
     },
   };
 });
-vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
-vi.mock("./lib/remote-images-preference", () => ({
+vi.mock("./lib/calls/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
+vi.mock("./lib/chat/remote-images-preference", () => ({
   remoteImagesPreference: { use: () => false },
 }));
-vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
-vi.mock("./lib/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
-vi.mock("./components/SubscriptionGate", () => ({
+vi.mock("./lib/platform/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
+vi.mock("./lib/query/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
+vi.mock("./components/billing/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({ ShellPage: () => <div>Shell</div> }));
@@ -59,15 +59,15 @@ vi.mock("./components/call/CallLayout", async () => {
   const { Outlet } = await import("react-router-dom");
   return { CallLayout: () => <Outlet /> };
 });
-vi.mock("./components/markdown-link-prompt", () => ({
+vi.mock("./components/messages/markdown-link-prompt", () => ({
   MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./pages/Board", () => {
+vi.mock("./pages/space/Board", () => {
   capability.boardLoaded();
   return { BoardPage: () => <div>Board page</div> };
 });
-vi.mock("./pages/IntegrationSetup", () => ({ IntegrationSetupPage: () => null }));
-vi.mock("./pages/McpOAuthCallback", () => ({ McpOAuthCallbackPage: () => null }));
+vi.mock("./pages/integrations/IntegrationSetup", () => ({ IntegrationSetupPage: () => null }));
+vi.mock("./pages/integrations/McpOAuthCallback", () => ({ McpOAuthCallbackPage: () => null }));
 
 import { App } from "./App";
 

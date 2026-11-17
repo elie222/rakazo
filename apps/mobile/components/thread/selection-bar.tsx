@@ -1,8 +1,8 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Pressable, Text, View } from "react-native";
-import { mobileTokens } from "../../lib/appearance";
-import { GlassSurface } from "../glass-surface";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { GlassSurface } from "../native/glass-surface";
 
 /** Replaces the composer while messages are being chosen to copy together. */
 export function SelectionBar({

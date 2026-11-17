@@ -87,11 +87,11 @@ class ChangedAreasTests(unittest.TestCase):
             ("apps/www/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("apps/worker/src/index.ts", expect("web", "server")),
             ("packages/adapters/src/slack.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/scripted-runtime.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/runtime/scripted-runtime.ts", expect("web", "e2e", "server")),
+            ("packages/adapters/src/computers/host/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/computers/computer-workspace.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",
@@ -208,8 +208,8 @@ class ChangedAreasTests(unittest.TestCase):
 
     def test_marketing_screenshots_follow_the_packages_the_site_imports(self):
         cases = [
-            ("packages/contracts/src/client-build.ts", expect(*EVERY_BROWSER_AREA)),
-            ("packages/db/src/client.ts", expect(*PRODUCT)),
+            ("packages/contracts/src/clients/client-build.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/db/src/database/client.ts", expect(*PRODUCT)),
             ("apps/api/src/server.ts", expect(*PRODUCT)),
         ]
         for path, expected in cases:

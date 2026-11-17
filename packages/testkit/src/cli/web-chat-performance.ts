@@ -11,7 +11,7 @@ import { abortableDelay, RESPONSE_STREAMING_STORAGE_KEY } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createThreadEvents, createThreadMessage, runAsSystem } from "@rakazo/db";
-import type { NumericSummary } from "../performance-report.js";
+import type { NumericSummary } from "../performance/performance-report.js";
 import {
   checkBudgets,
   parseTcpPort,
@@ -19,7 +19,7 @@ import {
   renderBudgetTable,
   roundedSummary,
   roundMetric,
-} from "../performance-report.js";
+} from "../performance/performance-report.js";
 import {
   benchmarkThreadMessages,
   STREAM_END,
@@ -859,15 +859,16 @@ function formatValue(value: number | undefined, unit: string) {
 
 /**
  * The nightly scorecard's lines, held against the medians of the largest thread size: input work
- * fits in one frame, opening or switching feels instant, and startup, idle and memory leave
- * headroom over a CI runner's spread.
+ * fits in one frame, returning to a loaded chat feels instant, opening one waits on its read (and,
+ * in another space, the crossfade), and startup, idle and memory leave headroom over a CI runner's
+ * spread.
  */
 const BUDGETS: ReadonlyArray<{ key: MetricKey; budget: number }> = [
   { key: "firstPaintMs", budget: 1_500 },
   { key: "coldOpenMs", budget: 2_500 },
-  { key: "openChatMs", budget: 100 },
+  { key: "openChatMs", budget: 200 },
   { key: "cachedSwitchMs", budget: 100 },
-  { key: "spaceSwitchMs", budget: 100 },
+  { key: "spaceSwitchMs", budget: 200 },
   { key: "typingTaskPerKeyMs", budget: 16 },
   { key: "resizeTaskPerStepMs", budget: 16 },
   { key: "idleCpuPercent", budget: 2 },

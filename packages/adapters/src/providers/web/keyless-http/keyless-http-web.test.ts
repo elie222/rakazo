@@ -8,9 +8,9 @@ import {
   clampOffset,
   MAX_WEB_FETCH_OFFSET,
   pageWindow,
-} from "../../../web-limits.js";
-import { createWebProvider, resolveWebProviderKind } from "../../../web-provider-factory.js";
-import { webFetchFromTool, webSearchFromTool } from "../../../web-tools.js";
+} from "../../../web/web-limits.js";
+import { createWebProvider, resolveWebProviderKind } from "../../../web/web-provider-factory.js";
+import { webFetchFromTool, webSearchFromTool } from "../../../web/web-tools.js";
 import { FakeWebProvider } from "../fake/fake-web.js";
 import {
   extractReadableText,

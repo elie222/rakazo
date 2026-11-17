@@ -7,17 +7,17 @@ import { Image, Platform, Pressable, Text, View } from "react-native";
 import { KeyboardController, useKeyboardHandler } from "react-native-keyboard-controller";
 import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import type { MobileMessage } from "../../lib/mobile-types";
-import type { PendingAttachment } from "../../lib/thread-attachments";
-import type { ThreadColumnPadding } from "../../lib/thread-edges";
-import { previewMessageText } from "../../lib/thread-message-text";
-import { ComposerReplyPreview } from "../composer-reply-preview";
-import { GlassSurface } from "../glass-surface";
-import { NativeSymbol } from "../native-symbol";
-import { ReplyDismissButton } from "../reply-dismiss-button";
+import type { MobileMessage } from "../../lib/api/mobile-types";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import type { ThreadColumnPadding } from "../../lib/thread/scroll/thread-edges";
+import type { PendingAttachment } from "../../lib/thread/send/thread-attachments";
+import { previewMessageText } from "../../lib/thread/thread-message-text";
+import { ComposerReplyPreview } from "../composer/composer-reply-preview";
+import { ReplyDismissButton } from "../composer/reply-dismiss-button";
+import { GlassSurface } from "../native/glass-surface";
+import { NativeSymbol } from "../native/native-symbol";
 import { ThreadEdgeFade } from "./thread-edge-fade";
 
 /**
