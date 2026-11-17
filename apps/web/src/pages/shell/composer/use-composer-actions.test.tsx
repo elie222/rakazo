@@ -224,6 +224,22 @@ it("keeps an attachment and its preview when the chat is archived and restored",
   }
 });
 
+it("previews only the images a browser shows inline", () => {
+  const photo = new File(["a"], "photo.png", { type: "image/png" });
+  const heic = new File(["a"], "IMG_0001.heic", { type: "image/heic" });
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");
+  try {
+    act(() => void latest.onAttachmentPick([photo, heic]));
+    expect(latest.activePendingAttachments.map((pending) => pending.previewUrl)).toEqual([
+      "blob:preview-a",
+      undefined,
+    ]);
+    expect(create).toHaveBeenCalledOnce();
+  } finally {
+    create.mockRestore();
+  }
+});
+
 it("keeps unsent attachments when switching chats and back", () => {
   const file = new File(["a"], "photo.png", { type: "image/png" });
   const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview-a");

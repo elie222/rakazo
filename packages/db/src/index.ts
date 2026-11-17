@@ -20,9 +20,9 @@ export * from "./bots/bot-email-address.js";
 export * from "./bots/bot-email-attachments.js";
 export * from "./bots/bot-email-sends.js";
 export * from "./bots/bot-instructions.js";
+export * from "./bots/bot-repository.js";
 export * from "./bots/bot-update.js";
 export * from "./bots/memory-config.js";
-export * from "./bots/repos.js";
 export * from "./bots/roster-changes.js";
 export * from "./bots/teaching-recordings.js";
 export * from "./computers/computer-runs.js";
@@ -50,6 +50,7 @@ export * from "./models/model-credentials.js";
 export * from "./models/model-roles.js";
 export * from "./models/voice-credentials.js";
 export * from "./runs/cancel-runs.js";
+export * from "./runs/chat-holding-runs.js";
 export * from "./runs/expire-stuck-run.js";
 export * from "./runs/run-secrets.js";
 export * from "./runs/run-timing.js";
@@ -65,6 +66,7 @@ export * from "./spaces/space-changes.js";
 export * from "./spaces/space-members.js";
 export * from "./spaces/space-settings.js";
 export * from "./spaces/spaces.js";
+export * from "./speech/costs.js";
 export * from "./threads/chat-alerts.js";
 export {
   eventsAfter,

@@ -33,7 +33,7 @@ import {
 } from "../../components/settings/space-availability";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { loadLastBotId } from "../../lib/home/last-bot";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import { sourceHref } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";

@@ -1120,7 +1120,7 @@ export async function runTrial(
     });
     const routines = await prisma.routine.findMany({
       where: { botId },
-      select: { name: true, prompt: true, crons: true, active: true },
+      select: { name: true, prompt: true, crons: true, active: true, inChat: true },
     });
     // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
     // append is best-effort, so a routine that still exists counts even without one.

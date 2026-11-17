@@ -8,13 +8,13 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MobileBot } from "../../lib/api/mobile-types";
-import { askForModelBeforeFirstBot, createInboxBot } from "../../lib/home/create-inbox-bot";
+import { askForModelBeforeFirstBot, createInboxBot } from "../../lib/inbox/create-inbox-bot";
 import { formatThreadTime } from "../../lib/inbox/inbox";
 import { onInboxChanged } from "../../lib/inbox/inbox-changes";
 import { retainInboxValue } from "../../lib/inbox/inbox-retention";
 import type { InboxItem, InboxSpace } from "../../lib/inbox/inbox-spaces";
 import { inboxItemKey, spaceInboxItems } from "../../lib/inbox/inbox-spaces";
-import { useCollapsedSections } from "../../lib/inbox/use-collapsed-sections";
+import { useCollapsedSections } from "../../lib/inbox/sections/use-collapsed-sections";
 import { useInboxDay } from "../../lib/inbox/use-inbox-day";
 import { scheduleFocusPrompt } from "../../lib/notifications/focus-prompt";
 import type { SaveSend } from "../../lib/query/query";
@@ -191,7 +191,7 @@ vi.mock("../../lib/messages/preview", () => ({
     return text;
   },
 }));
-vi.mock("../../lib/inbox/collapsed-sections", () => ({
+vi.mock("../../lib/inbox/sections/collapsed-sections", () => ({
   loadCollapsedSections: ui.loadCollapsedSections,
   saveCollapsedSections: ui.saveCollapsedSections,
 }));

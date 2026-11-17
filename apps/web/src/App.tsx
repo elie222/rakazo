@@ -16,6 +16,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "r
 import { LoadingState } from "./components/ai/primitives";
 import { SubscriptionGate } from "./components/billing/SubscriptionGate";
 import { CallLayout } from "./components/call/CallLayout";
+import { VoiceConsentPrompt } from "./components/call/VoiceConsentPrompt";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
@@ -39,11 +40,11 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
 import { syncCallIdentity } from "./lib/calls/call-session";
-import { remoteImagesPreference } from "./lib/chat/remote-images-preference";
 import { desktopBridge } from "./lib/platform/desktop";
 import { identifyMonitoringUser } from "./lib/platform/monitoring";
 import { markAfterPaint, markOnce } from "./lib/platform/performance";
 import { lazyComponent } from "./lib/platform/preload-recovery";
+import { remoteImagesPreference } from "./lib/preferences/remote-images-preference";
 import { QueryUserProvider, setQueryUser } from "./lib/query/query";
 import { rpc } from "./lib/query/rpc";
 import { IntegrationCallbackPage } from "./pages/integrations/IntegrationCallback";
@@ -181,6 +182,7 @@ function SessionApp() {
   const user = session.data?.user;
   return (
     <QueryUserProvider value={user?.id ?? null}>
+      <VoiceConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>

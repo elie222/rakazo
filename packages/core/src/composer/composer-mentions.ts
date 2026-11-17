@@ -1,7 +1,7 @@
 import type { BotAvatarSet, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import { displayName } from "../bots/display-name.js";
-import type { CronLabels } from "../primitives/cron.js";
-import { ENGLISH_CRON_LABELS, formatCron } from "../primitives/cron.js";
+import type { CronLabels } from "../routines/schedule.js";
+import { ENGLISH_CRON_LABELS, formatCron } from "../routines/schedule.js";
 import { CJK_CHAR, everyoneWords, mentionSpans } from "./group-mentions.js";
 
 export const COMPOSER_MENTION_KINDS = ["bot", "group", "routine", "connector", "everyone"] as const;

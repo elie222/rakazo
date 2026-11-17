@@ -52,7 +52,7 @@ import {
   formatBillingAmount,
   formatBillingDate,
   formatBillingPrice,
-} from "../../lib/billing";
+} from "../../lib/billing/billing";
 import { desktopBridge } from "../../lib/platform/desktop";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc } from "../../lib/query/rpc";

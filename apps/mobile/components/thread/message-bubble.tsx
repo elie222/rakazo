@@ -36,6 +36,7 @@ import { messagePresentationSegments } from "../../lib/messages/message-presenta
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
+import { PageCard } from "../../lib/pages/page-card";
 import { botDisplayName, speakerColorFor } from "../../lib/thread/thread-message-text";
 import { AppConnectCard } from "../cards/AppConnectCard";
 import { AskActions } from "../cards/AskActions";
@@ -51,7 +52,6 @@ import { InlineImageAttachment } from "../media/inline-image-attachment";
 import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
 import { NativeSymbol } from "../native/native-symbol";
-import { PageCard } from "../pages/page-card";
 import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";

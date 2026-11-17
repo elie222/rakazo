@@ -6,8 +6,8 @@ import { useState } from "react";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
+import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
-import { WindowChrome } from "../../WindowChrome";
 
 /** The floating header over the transcript: navigation, the chat's name, call and invite. */
 export function ChatHeader({
