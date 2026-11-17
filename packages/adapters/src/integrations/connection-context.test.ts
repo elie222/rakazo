@@ -32,6 +32,27 @@ describe("run connection selection", () => {
     ).toEqual([rows[0]]);
   });
 
+  it("does not revoke a sign-in that began moments before the run", async () => {
+    const rows = [
+      {
+        id: "slack",
+        connectorId: "composio",
+        provider: "slack",
+        displayName: "Slack",
+        status: "pending",
+        updatedAt: new Date(),
+      },
+    ];
+    const prisma = {
+      connection: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaClient;
+
+    await persistLivePluginConnections(prisma, { userId: "user", spaceId: "space" }, rows, []);
+
+    expect(prisma.connection.updateMany).not.toHaveBeenCalled();
+    expect(rows[0]?.status).toBe("pending");
+  });
+
   it("does not recover a revoked account from a live provider listing", async () => {
     const rows = [
       {

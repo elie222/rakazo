@@ -7,6 +7,7 @@ import { ConnectorRegistry } from "../../../integrations/connector-registry.js";
 import { DestinationEmulator } from "../../../webhooks/destination-emulator.js";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
+  AUTHORIZATION_WINDOW_MS,
   asConnectorTools,
   ComposioConnector,
   collectLogIds,
@@ -1624,6 +1625,40 @@ describe("composio tool mapping", () => {
       connectIds: ["row-gmail"],
       revokeIds: ["row-dup", "row-err"],
     });
+  });
+
+  it("leaves a sign-in that may still be open in the browser, and revokes it once it has expired", () => {
+    const now = Date.parse("2026-01-01T12:00:00Z");
+    const began = (minutesAgo: number) => new Date(now - minutesAgo * 60_000);
+    const rows = [
+      {
+        id: "row-open",
+        provider: "slack",
+        status: "pending",
+        displayName: "Slack",
+        updatedAt: began(3),
+      },
+      {
+        id: "row-expired",
+        provider: "outlook",
+        status: "pending",
+        displayName: "Outlook",
+        updatedAt: began(AUTHORIZATION_WINDOW_MS / 60_000),
+      },
+      {
+        id: "row-failed",
+        provider: "gmail",
+        status: "error",
+        displayName: "Gmail",
+        updatedAt: began(3),
+      },
+    ];
+    expect(planLiveConnectionSync(rows, [], now)).toEqual({
+      connectIds: [],
+      revokeIds: ["row-expired", "row-failed"],
+    });
+    // Finished meanwhile: the same row connects.
+    expect(planLiveConnectionSync(rows, ["slack"], now).connectIds).toEqual(["row-open"]);
   });
 
   it("clears failed additional-account error rows while keeping in-flight pendings", () => {
