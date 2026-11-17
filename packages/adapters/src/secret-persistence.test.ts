@@ -1,5 +1,5 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { BOT_SECRET_VALUE_MAX_LENGTH, encodeLoginSecret } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { currentDbContext, runAsTenant, withTransactionRetry } from "@rakazo/db";
@@ -11,11 +11,13 @@ import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { retireToReconnectMarker } from "./model-credential-refresh.js";
 import { createRunSecretWriter } from "./run-secret.js";
+import { retrySecretCleanup } from "./secret-cleanup.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
 import { infisicalFake } from "./secret-store-fake.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import { InMemoryJobQueue } from "./wakeup.js";
 
 const context: AdapterContext = {
   operationId: "test",
@@ -616,7 +618,11 @@ describe("secret persistence cleanup with a queue", () => {
       await prisma.space.deleteMany({ where: { id: "space" } });
       for (const [query] of locks.mock.calls)
         expect((query as unknown as { values: unknown[] }).values.length).toBeLessThanOrEqual(1);
-      expect(queue.jobs.enqueueManyIn).toHaveBeenCalledOnce();
+      // Recorded as backups in the transaction, then brought forward in one call once it commits.
+      const [recorded, brought] = queue.jobs.enqueueManyIn.mock.calls;
+      expect(queue.jobs.enqueueManyIn).toHaveBeenCalledTimes(2);
+      expect(recorded![1].every((job) => job.availableAt)).toBe(true);
+      expect(brought![0]).toBe(db.prisma);
       expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
       expect(remove).not.toHaveBeenCalled();
       const cleanups = queue.cleanups();
@@ -626,6 +632,44 @@ describe("secret persistence cleanup with a queue", () => {
       await queue.runQueued(worker);
       expect(fake.values.size).toBe(0);
     } finally {
+      await store.close();
+    }
+  });
+
+  it("runs a large delete's cleanups on the in-memory queue only after the delete commits", async () => {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    const db = database();
+    const queue = new InMemoryJobQueue();
+    await queue.start({
+      "secret.cleanup": (payload) =>
+        retrySecretCleanup({ prisma: db.prisma, secrets: store }, payload),
+    } as BackgroundJobHandlers);
+    const prisma = withSecretPersistence(db.prisma, store, () => queue);
+    for (let i = 0; i < 30; i++) {
+      const card = await store.put("card", context, { recordId: `purchase-card:p${i}` });
+      db.tables.get("purchase")!.push({
+        id: `p${i}`,
+        operationKey: `op${i}`,
+        spaceId: "space",
+        userId: "user",
+        cardCiphertext: card.ref,
+        requestCiphertext: null,
+        tokenCiphertext: null,
+      });
+    }
+    const remove = vi.spyOn(store, "delete");
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.space.deleteMany({ where: { id: "space" } });
+        await queue.awaitIdle();
+        expect(remove).not.toHaveBeenCalled();
+      });
+      await queue.awaitIdle();
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await queue.close();
       await store.close();
     }
   });

@@ -271,7 +271,7 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     );
     expect(await queued(wallet)).toEqual([]);
   });
-  it("hands a Space's many purchase entries to the queue in one statement, due as the delete commits", async () => {
+  it("hands a Space's many purchase entries to the queue in one statement, due once the delete commits", async () => {
     const space = `secret-persistence-history-${suffix}`;
     const fixture = asSystem(owner.prisma);
     await fixture.organization.create({
@@ -308,7 +308,8 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     try {
       await asApp(() => prisma.space.deleteMany({ where: { id: space } }));
       expect(await fixture.purchase.count({ where: { spaceId: space } })).toBe(0);
-      expect(enqueueManyIn).toHaveBeenCalledOnce();
+      // The backups recorded with the delete, then brought forward in one call after it commits.
+      expect(enqueueManyIn).toHaveBeenCalledTimes(2);
       expect(enqueueIn).not.toHaveBeenCalled();
       expect(store.delete).not.toHaveBeenCalled();
       const [first] = purchases;

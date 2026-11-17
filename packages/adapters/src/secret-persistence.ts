@@ -13,6 +13,7 @@ import {
   purchaseRequestRecordId,
   purchaseTokenRecordId,
   recordSecretCleanups,
+  runSecretCleanupsNow,
   secretCleanupJob,
   secretIsHeld,
 } from "./secret-cleanup.js";
@@ -20,7 +21,8 @@ import {
 type Candidate = { id: string; ciphertext: string };
 /**
  * `recorded` holds the cleanups whose backup job this transaction wrote, by reference, and
- * `queued` the references whose job is due as it commits, which no direct attempt follows.
+ * `queued` the references whose job is brought forward once it commits, instead of a direct
+ * attempt.
  */
 type Cleanup = {
   old: SecretCleanup[];
@@ -155,12 +157,20 @@ export function withSecretPersistence(
   jobs?: SecretCleanupJobs,
 ): PrismaClient {
   const transaction = new AsyncLocalStorage<Cleanup>();
-  /** `recorded` only after a commit: a rollback takes the backups with it. */
-  async function cleanup(
-    candidates: SecretCleanup[],
-    recorded?: Map<string, SecretCleanup>,
-  ): Promise<void> {
-    const run = () => deleteUnreferenced(prisma, store, jobs?.(), candidates, recorded);
+  /** `committed` only after a commit: a rollback takes the backups with it. */
+  async function cleanup(candidates: SecretCleanup[], committed?: Cleanup): Promise<void> {
+    const run = async () => {
+      const queue = jobs?.();
+      if (queue && committed?.queued.size) {
+        const due = [...committed.queued].map((ref) => committed.recorded.get(ref)!);
+        // A failure leaves each backup to run at its own time.
+        await bestEffort(
+          "bring secret cleanups forward",
+          runSecretCleanupsNow({ secrets: store, jobs: queue }, prisma, due),
+        );
+      }
+      await deleteUnreferenced(prisma, store, queue, candidates, committed?.recorded);
+    };
     const prepared = preparedWrite.getStore();
     if (prepared) prepared.cleanup.push(run);
     else await run();
@@ -180,11 +190,11 @@ export function withSecretPersistence(
       fresh.push(cleanup);
     }
     const remote = fresh.filter((cleanup) => store.isRemote(cleanup.ref));
+    await recordSecretCleanups({ secrets: store, jobs: queue }, state.client!, fresh);
     // A parent with a long history cascades to many entries: the worker deletes them once this
     // commits, so the caller does not wait on a remote delete for each.
-    const due = remote.length > DIRECT_CLEANUPS;
-    await recordSecretCleanups({ secrets: store, jobs: queue }, state.client!, fresh, due);
-    if (due) for (const cleanup of remote) state.queued.add(cleanup.ref);
+    if (remote.length > DIRECT_CLEANUPS)
+      for (const cleanup of remote) state.queued.add(cleanup.ref);
     state.old.push(...dropped.filter((cleanup) => !state.queued.has(cleanup.ref)));
   }
   async function lockedRows<Row extends { id: string } = Candidate>(
@@ -360,7 +370,7 @@ export function withSecretPersistence(
                 return Reflect.apply(delegate[operation], delegate, [args]);
               }),
             );
-            await cleanup([...state.old, ...state.written.map(cleanupOf)], state.recorded);
+            await cleanup([...state.old, ...state.written.map(cleanupOf)], state);
             return result;
           } catch (error) {
             await cleanup(state.written.map(cleanupOf));
@@ -388,7 +398,7 @@ export function withSecretPersistence(
           const result = await transaction.run(state, () =>
             Reflect.apply(target.$transaction, target, args),
           );
-          await cleanup([...state.old, ...state.written.map(cleanupOf)], state.recorded);
+          await cleanup([...state.old, ...state.written.map(cleanupOf)], state);
           return result;
         } catch (error) {
           await cleanup(state.written.map(cleanupOf));
