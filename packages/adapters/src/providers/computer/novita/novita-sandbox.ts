@@ -1,13 +1,13 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { sandboxIdleMs } from "../../../computer-idle.js";
+import { sandboxIdleMs } from "../../../computers/computer-idle.js";
 import type {
   CommandResult,
   CommandStartOpts,
   RemoteDesktop,
   RemoteDesktopSdk,
-} from "../../../remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { isSandboxGoneError, SandboxUnsafeStopError } from "../../../sandbox-errors.js";
+} from "../../../sandboxes/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../sandboxes/remote-desktop-sandbox.js";
+import { isSandboxGoneError, SandboxUnsafeStopError } from "../../../sandboxes/sandbox-errors.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;

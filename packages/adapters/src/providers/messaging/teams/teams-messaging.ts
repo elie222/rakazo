@@ -1,6 +1,6 @@
-import { boundInboundMarkdown } from "../../../chat-sdk-surface.js";
-import { lazyChatAdapter } from "../../../lazy-chat-adapter.js";
-import { defineMessagingPlatform } from "../../../messaging-platform-descriptor.js";
+import { boundInboundMarkdown } from "../../../messaging/chat-sdk-surface.js";
+import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
+import { defineMessagingPlatform } from "../../../messaging/messaging-platform-descriptor.js";
 
 /**
  * Single-tenant credentials keep enterprise installations scoped to their tenant.

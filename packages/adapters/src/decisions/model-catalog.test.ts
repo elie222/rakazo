@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { decisionModel, decisionModelCatalog } from "../decision-models.js";
+import { decisionModel, decisionModelCatalog } from "../approvals/decision-models.js";
 
 it.each([
   ["openrouter", "typesafe/jev-1.14", "https://openrouter.ai/typesafe/jev-1.14"],

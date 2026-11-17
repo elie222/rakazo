@@ -330,7 +330,9 @@ describeIntegration("agent import", () => {
     expect(updated("memory/2026-01-05.md")).toBeGreaterThan(updated("memory/2026-01-01.md"));
 
     const { MarkdownMemoryStore } = await import("../../../memory/src/index.ts");
-    const { loadAgentMemoryContext } = await import("../../../adapters/src/memory-context.ts");
+    const { loadAgentMemoryContext } = await import(
+      "../../../adapters/src/memory/memory-context.ts"
+    );
     const owner = await db.bot.findUniqueOrThrow({
       where: { id: bot.id },
       select: { spaceId: true, userId: true },

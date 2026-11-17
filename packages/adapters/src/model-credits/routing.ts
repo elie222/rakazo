@@ -3,9 +3,9 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { modelProviderDefinition } from "../model-provider-registry.js";
-import { parseModelSecret, secretValuesToRedact } from "../model-secret.js";
-import { connectionModelSettings } from "../model-settings.js";
+import { modelProviderDefinition } from "../models/model-provider-registry.js";
+import { parseModelSecret, secretValuesToRedact } from "../models/model-secret.js";
+import { connectionModelSettings } from "../models/model-settings.js";
 import type { ModelCreditOffering } from "./offerings.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "./offerings.js";
 

@@ -7,7 +7,7 @@ import { PiAgentRuntime } from "@rakazo/adapters";
 import * as Core from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { estimateTextTokens } from "../../../adapters/src/context-selection.js";
+import { estimateTextTokens } from "../../../adapters/src/runtime/context/context-selection.js";
 import type { ModelEmulatorRequest } from "../model-emulator.js";
 import { startModelEmulator } from "../model-emulator.js";
 

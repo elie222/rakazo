@@ -1,6 +1,6 @@
 import { I18nProvider } from "@lingui/react";
 import { createRoot } from "react-dom/client";
-import { buildApprovalAskBlock } from "../../../../packages/adapters/src/approval-ask";
+import { buildApprovalAskBlock } from "../../../../packages/adapters/src/approvals/approval-ask";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import "../../src/styles.css";

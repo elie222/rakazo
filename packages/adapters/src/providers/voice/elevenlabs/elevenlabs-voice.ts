@@ -18,8 +18,8 @@ import {
   verifyVoiceHttpGet,
   voiceLanguageHint,
   voiceRequestError,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 const API = "https://api.elevenlabs.io/v1";
 const MODEL = "eleven_flash_v2_5";

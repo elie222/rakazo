@@ -1,9 +1,12 @@
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import type { MessagingEnvironmentValues } from "../../../messaging-platforms.js";
-import { messagingPlatformsFromEnv, splitOutboundBody } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingEnvironmentValues } from "../../../messaging/messaging-platforms.js";
+import {
+  messagingPlatformsFromEnv,
+  splitOutboundBody,
+} from "../../../messaging/messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
