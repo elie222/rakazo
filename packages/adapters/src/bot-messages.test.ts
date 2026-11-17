@@ -269,6 +269,15 @@ describe("messaging another bot", () => {
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
+  it("looks for the target only among active bots of the run's own Space", async () => {
+    const harness = deps();
+    await messageBot(harness.deps, run, sender, { bot_id: "bot-target", message: "hello" });
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { spaceId: run.spaceId, archivedAt: null } }),
+    );
+    expect(harness.deps.prisma.bot.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses an empty message", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
