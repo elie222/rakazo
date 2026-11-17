@@ -314,10 +314,10 @@ describe("OpenClaw settings", () => {
   it("turns user jobs into routines and skips OpenClaw's own jobs", () => {
     const settings = openclaw(false);
     expect(
-      settings.routines.map(({ name, prompt, cron, timezone, warnings }) => ({
+      settings.routines.map(({ name, prompt, trigger, timezone, warnings }) => ({
         name,
         prompt,
-        cron,
+        cron: trigger.crons[0],
         timezone,
         warnings,
       })),
@@ -390,7 +390,7 @@ describe("Hermes settings", () => {
     });
     expect(settings.mcpServers.map((server) => server.config.slug)).toEqual(["docs", "files"]);
     expect(settings.mcpServers[1]!.warnings).toEqual(["dropped_settings", "local_path"]);
-    expect(settings.routines.map((routine) => [routine.name, routine.cron])).toEqual([
+    expect(settings.routines.map((routine) => [routine.name, routine.trigger.crons[0]])).toEqual([
       ["morning", "0 9 * * *"],
       ["check", "0 */2 * * *"],
     ]);
@@ -712,14 +712,14 @@ describe("Grok Bot export", () => {
       ],
     }),
   );
-  const settings = readGrokBotImportSettings(bot!);
+  const settings = readGrokBotImportSettings(bot!, { messageProviders: [], email: false });
 
   it("turns scheduled routines into routines that use the saved skill names", () => {
     expect(settings.routines).toMatchObject([
       {
         id: "routine:0",
         name: "Monday review",
-        cron: "0 8 * * 1-5",
+        trigger: { crons: ["0 8 * * 1-5"] },
         timezone: "America/New_York",
         prompt: "Run the weekly account review.\n\nUse these skills: @weekly-account-health.",
         warnings: [],
@@ -771,11 +771,61 @@ it("keeps scheduled routine conditions and refuses oversized prompts", () => {
         ],
       }),
     );
-    return readGrokBotImportSettings(bot!);
+    return readGrokBotImportSettings(bot!, { messageProviders: [], email: false });
   };
   expect(read("Review reports").routines[0]?.prompt).toBe(
     "Review reports\n\nOnly when a report is due\n\nEvery morning",
   );
   expect(read("x".repeat(100001)).routines).toEqual([]);
   expect(read("x".repeat(100001)).skipped).toHaveLength(1);
+});
+
+it("turns events this server receives into paused event routines with their trigger first", () => {
+  const event = (trigger: string, trigger_details = "") => ({
+    name: trigger,
+    instruction: "Handle it.",
+    trigger,
+    trigger_details,
+    skills: ["Triage"],
+  });
+  const [bot] = parseGrokBotExport(
+    JSON.stringify({
+      bots: [
+        {
+          name: "Example",
+          skills: [{ name: "Triage", instructions: "Sort by urgency." }],
+          routines: [
+            event("slack", "#support\nchannel"),
+            { ...event("github", "acme/app"), schedule_text: "when a pull request opens" },
+            event("linear"),
+            event("email", "from Sam"),
+            event("other", "calendar invites"),
+          ],
+        },
+      ],
+    }),
+  );
+  const read = (available: { messageProviders: string[]; email: boolean }) =>
+    readGrokBotImportSettings(bot!, available);
+  const all = read({ messageProviders: ["slack"], email: true });
+  expect(all.routines.map((routine) => [routine.id, routine.trigger])).toEqual([
+    ["routine:0", { crons: [], messageProvider: "slack" }],
+    ["routine:1", { crons: [], githubEnabled: true }],
+    ["routine:2", { crons: [], webhookEnabled: true }],
+    ["routine:3", { crons: [], emailSenders: "owner" }],
+  ]);
+  expect(all.routines[0]?.prompt).toBe(
+    "Trigger: slack (#support channel)\n\nHandle it.\n\nUse these skills: @triage.",
+  );
+  expect(all.routines[1]?.prompt).toMatch(
+    /^Trigger: github \(acme\/app; when a pull request opens\)\n/,
+  );
+  expect(all.routines[2]?.prompt).toBe(
+    "Trigger: linear\n\nHandle it.\n\nUse these skills: @triage.",
+  );
+  // The rest stay in the memory note, which the plan writes.
+  expect(all.skipped).toEqual([]);
+  expect(
+    read({ messageProviders: [], email: false }).routines.map((routine) => routine.id),
+  ).toEqual(["routine:1", "routine:2"]);
 });

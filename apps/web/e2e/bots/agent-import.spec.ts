@@ -366,6 +366,13 @@ const grokBot = {
       skills: ["Weekly Account Health"],
     },
     { name: "Support pings", instruction: "Answer #support.", trigger: "slack" },
+    {
+      name: "Triage issues",
+      instruction: "Label each new issue.",
+      trigger: "linear",
+      trigger_details: "Team ENG",
+    },
+    { name: "Receipts", instruction: "File each receipt.", trigger: "email" },
   ],
   apps: [{ name: "Gmail" }],
 };
@@ -402,8 +409,16 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   await expect(preview.getByRole("checkbox", { name: "grok-bot-routines.md" })).toBeChecked();
   const skill = preview.getByRole("checkbox", { name: "weekly-account-health" });
   const routine = preview.getByRole("checkbox", { name: "Monday review" });
+  const webhookRoutine = preview.getByRole("checkbox", { name: "Triage issues" });
+  const emailRoutine = preview.getByRole("checkbox", { name: "Receipts" });
   await expect(skill).not.toBeChecked();
   await expect(routine).not.toBeChecked();
+  await expect(webhookRoutine).not.toBeChecked();
+  // This server has no Slack, so that routine stays in the note.
+  await expect(preview.getByRole("checkbox", { name: "Support pings" })).toHaveCount(0);
+  const routinesSection = preview.getByTestId("agent-import-routines");
+  await expect(routinesSection).toContainText("Point its source at the new webhook");
+  await expect(routinesSection).toContainText("Needs an email address");
   await preview.getByRole("button", { name: "Not imported" }).click();
   await expect(preview.getByTestId("agent-import-skipped")).toContainText(
     "apps: GmailConnect it again",
@@ -412,6 +427,8 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
 
   await skill.click();
   await routine.click();
+  await webhookRoutine.click();
+  await emailRoutine.click();
   await clickAndWaitForRpc(
     page,
     preview.getByRole("button", { name: "Create", exact: true }),
@@ -429,8 +446,15 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.map((item) => item.name)).toContain("weekly-account-health");
   const routines = await rpc<Routine[]>(page, "routines/list", { botId });
-  expect(routines).toMatchObject([
-    { name: "Monday review", active: false, crons: ["0 8 * * 1"], timezone: "America/New_York" },
-  ]);
-  expect(routines[0]!.prompt).toContain("@weekly-account-health");
+  const byName = (name: string) => routines.find((item) => item.name === name);
+  expect(routines).toHaveLength(3);
+  expect(byName("Monday review")).toMatchObject({
+    active: false,
+    crons: ["0 8 * * 1"],
+    timezone: "America/New_York",
+  });
+  expect(byName("Monday review")!.prompt).toContain("@weekly-account-health");
+  expect(byName("Triage issues")).toMatchObject({ active: false, crons: [], webhookEnabled: true });
+  expect(byName("Triage issues")!.prompt).toMatch(/^Trigger: linear \(Team ENG\)/);
+  expect(byName("Receipts")).toMatchObject({ active: false, emailSenders: "owner" });
 });

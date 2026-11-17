@@ -4,8 +4,10 @@ import {
   APP_LOCALE_LABELS,
   accountDisplay,
   displayName,
+  localTimezone,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  sameTimeZone,
 } from "@rakazo/core";
 import {
   Button,
@@ -21,7 +23,7 @@ import {
 } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../../components/account/AccountAccess";
-import { PasskeySettings } from "../../components/account/PasskeySettings";
+import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
 import { SuccessPop } from "../../components/ai/primitives";
 import { ComputerDeviceSettings } from "../../components/computers/ComputerDeviceSettings";
 import { ComputerProviderSettings } from "../../components/computers/ComputerProviderSettings";
@@ -30,27 +32,28 @@ import {
   computersAreUnavailable,
 } from "../../components/computers/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../../components/DesktopUpdates";
-import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
+import { PasskeySettings } from "../../components/account/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkSitesSettings";
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
-import { usePasskeysSupported } from "../../lib/auth/passkeys";
-import { remoteImagesPreference } from "../../lib/chat/remote-images-preference";
-import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
-import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
-import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
-import { localTimezone, sameTimeZone, timezoneOptions } from "../../lib/locale/local-timezone";
-import type { UiLocale } from "../../lib/locale/ui-locale";
-import { UI_LOCALES } from "../../lib/locale/ui-locale";
-import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
 import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
-import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
-import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
-import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
+import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
+import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
+import { keepTimezone } from "../../lib/kept-timezone";
+import { timezoneOptions } from "../../lib/locale/local-timezone";
+import { usePasskeysSupported } from "../../lib/auth/passkeys";
+import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
+import { remoteImagesPreference } from "../../lib/chat/remote-images-preference";
 import { responseStreamingPreference } from "../../lib/query/response-streaming";
 import type { RpcClient } from "../../lib/query/rpc";
+import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
+import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
+import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
+import type { UiLocale } from "../../lib/locale/ui-locale";
+import { UI_LOCALES } from "../../lib/locale/ui-locale";
 import { authErrorText } from "../../lib/query/user-error";
 
 export type SettingsGeneralProps = {
@@ -162,13 +165,21 @@ export function GeneralSettingsPanels({
     : [];
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
   const queries = useSpaceQueries();
+  const queryUserId = useQueryUserId();
+  const deviceTimezone = localTimezone();
   const timezoneSave = useSave({
-    save: (next: string, client) => onTimezoneChange?.(next, client) ?? Promise.resolve(),
+    save: async (next: string, client) => {
+      await onTimezoneChange?.(next, client);
+      // A zone picked by hand answers the device's prompt too, so it does not ask right after,
+      // even when Settings closed while it saved.
+      const device = localTimezone();
+      if (queryUserId && !sameTimeZone(next, device))
+        keepTimezone(queryUserId, { device, account: next });
+    },
     // Usage is grouped by day in the account's timezone.
     stale: [queries.usage.breakdown.key()],
   });
   const timezonePending = timezoneSave.pending;
-  const deviceTimezone = localTimezone();
   const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {

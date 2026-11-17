@@ -7,6 +7,7 @@ import { currentApiBase, rpc, selectedSpaceId } from "./api";
 import { selectInitialSpace } from "./api-server";
 import { appBadgeGeneration } from "./app-badge";
 import { isPaywallShown } from "./billing";
+import { checkDeviceTimezone } from "./device-timezone";
 import { getActiveUiLocale } from "./i18n";
 import { retainInboxValue } from "./inbox-retention";
 import type {
@@ -110,6 +111,11 @@ export function useHomeInbox(
           ).catch(() => undefined);
         }
       }
+      void checkDeviceTimezone(
+        nextMe.userId,
+        nextMe.timezone,
+        () => generation === currentSessionGeneration() && apiBase === currentApiBase(),
+      ).catch(() => undefined);
       inboxLoaded.current = true;
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
