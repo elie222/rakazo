@@ -446,9 +446,9 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
-  // Only a person typing in the app can be asking to connect one, and only where the card is offered.
+  // Only a turn in the app can carry a request to connect one, and only where the card is offered.
   const chatApps =
-    conversationRun.trigger === "user" &&
+    ["user", "follow_up"].includes(conversationRun.trigger) &&
     !messagingChannelRun &&
     !nonOwnerChatRun &&
     !bot.disabledBuiltinTools?.includes("connect_app")
