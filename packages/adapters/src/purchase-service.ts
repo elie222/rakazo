@@ -26,6 +26,7 @@ import {
   cleanUpUnsavedSecret,
   purchaseCardRecordId,
   purchaseTokenRecordId,
+  savedSecret,
 } from "./secret-cleanup.js";
 import { releaseUnpaidPurchase, spendingRefusalError } from "./spending-gate.js";
 import type { SafeWebFetchOptions } from "./web-ssrf.js";
@@ -486,11 +487,14 @@ export async function sealOnce(
       data: { [column]: stored.ciphertext },
     })
     .catch(() => ({ count: 0 }));
+  const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs };
   if (!saved.count)
-    await cleanUpUnsavedSecret(
-      { prisma: deps.prisma, secrets: deps.secretStore, jobs: deps.jobs },
-      { kind: card ? "purchase_card" : "purchase_token", recordId, ref: stored.ciphertext },
-    );
+    await cleanUpUnsavedSecret(cleanupDeps, {
+      kind: card ? "purchase_card" : "purchase_token",
+      recordId,
+      ref: stored.ciphertext,
+    });
+  else await savedSecret(cleanupDeps, stored.ciphertext);
 }
 
 /** Single-use cards and tokens stop working well within this, and with them the reason to hide one. */

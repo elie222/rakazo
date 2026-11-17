@@ -1,12 +1,15 @@
 import type {
+  AdapterContext,
   BackgroundJob,
   BackgroundJobPayloads,
   JobPublisher,
   JobTransaction,
   SecretCleanupKind,
+  SecretPutOptions,
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { SecretNotFoundError } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -32,6 +35,14 @@ export interface SecretCleanupDeps {
 
 const ATTEMPT_MS = 10_000;
 const BACKUP_MS = ATTEMPT_MS + 5_000;
+/** How long a store write may take before it is abandoned. */
+const STORE_WRITE_MS = 30_000;
+/**
+ * A written entry's backup runs this long after the write's own deadline. The row that will hold
+ * it is saved in this time: some saves wait on a provider's answer or a 60-second transaction
+ * first, and a backup that ran before the save would delete an entry about to be held.
+ */
+const SAVE_MARGIN_MS = 5 * 60_000;
 const PURCHASE_REQUEST_RECORD = "purchase-request:";
 const PURCHASE_CARD_RECORD = "purchase-card:";
 const PURCHASE_TOKEN_RECORD = "purchase-token:";
@@ -55,6 +66,32 @@ export function paymentWalletRecordId(userId: string): string {
 
 type Holders = SecretCleanupDeps["prisma"];
 
+/** Whether any row of the four secret tables, in any Space, holds the reference. */
+async function secretTablesHold(prisma: Holders, ref: string): Promise<boolean> {
+  const where = { ciphertext: ref };
+  return Boolean(
+    (await prisma.secret.count({ where })) ||
+      (await prisma.botSecret.count({ where })) ||
+      (await prisma.vaultCredential.count({ where })) ||
+      (await prisma.integrationProviderConfig.count({ where })),
+  );
+}
+
+/** Whether any column a reference can be saved in holds it. */
+async function anyRecordHolds(prisma: Holders, ref: string): Promise<boolean> {
+  return Boolean(
+    (await secretTablesHold(prisma, ref)) ||
+      (await prisma.messagingInstallation.count({ where: { ciphertext: ref } })) ||
+      (await prisma.deploymentSettings.count({ where: { computerProviderCipher: ref } })) ||
+      (await prisma.purchase.count({
+        where: {
+          OR: [{ requestCiphertext: ref }, { cardCiphertext: ref }, { tokenCiphertext: ref }],
+        },
+      })) ||
+      (await prisma.paymentWallet.count({ where: { ciphertext: ref } })),
+  );
+}
+
 /** The reference each kind of record holds now, which a cleanup must never delete. */
 const heldRef: Record<
   SecretCleanupKind,
@@ -63,15 +100,10 @@ const heldRef: Record<
   secret_row: async (prisma, id) =>
     (await prisma.secret.findUnique({ where: { id }, select: { ciphertext: true } }))?.ciphertext,
   // Rows of these tables can share one reference, so any of them holding it counts.
-  secret_tables: async (prisma, _recordId, ref) => {
-    const where = { ciphertext: ref };
-    const rows =
-      (await prisma.secret.count({ where })) ||
-      (await prisma.botSecret.count({ where })) ||
-      (await prisma.vaultCredential.count({ where })) ||
-      (await prisma.integrationProviderConfig.count({ where }));
-    return rows ? ref : null;
-  },
+  secret_tables: async (prisma, _recordId, ref) =>
+    (await secretTablesHold(prisma, ref)) ? ref : null,
+  // Written before its record was known, so a record of any kind may hold it.
+  store_write: async (prisma, _recordId, ref) => ((await anyRecordHolds(prisma, ref)) ? ref : null),
   messaging_installation: async (prisma, id) =>
     (await prisma.messagingInstallation.findUnique({ where: { id }, select: { ciphertext: true } }))
       ?.ciphertext,
@@ -252,4 +284,55 @@ export async function retrySecretCleanup(
     getLogger().error("secret cleanup retry failed", error, { "secret.kind": cleanup.kind });
     throw error;
   }
+}
+
+/**
+ * Every remote write first records the job that deletes its entry unless a row holds it by then,
+ * so a process that dies between the write and the save leaves nothing behind. The save removes
+ * the job (`savedSecret`, or the secret tables' transaction). Without a queue, writes go ahead
+ * unrecorded; a failure to record one refuses the write.
+ */
+export function withSecretWriteAhead<T extends SecretStore>(
+  store: T,
+  jobs: () => Pick<JobPublisher, "enqueue"> | undefined,
+): T {
+  const put = (plaintext: string, context: AdapterContext, options: SecretPutOptions = {}) => {
+    const queue = jobs();
+    if (!queue) return store.put(plaintext, context, options);
+    return store.put(
+      plaintext,
+      { ...context, signal: deadlineSignal(STORE_WRITE_MS, context.signal) },
+      {
+        ...options,
+        beforeWrite: async (entry) => {
+          await options.beforeWrite?.(entry);
+          await queue.enqueue(
+            secretCleanupJob(
+              { kind: "store_write", ...entry },
+              new Date(Date.now() + STORE_WRITE_MS + SAVE_MARGIN_MS),
+            ),
+          );
+        },
+      },
+    );
+  };
+  return new Proxy(store, {
+    get(target, property) {
+      if (property === "put") return put;
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+/** After the row holding a new entry commits: its write-ahead job has nothing left to do. */
+export async function savedSecret(
+  deps: { secrets: Pick<SecretStore, "isRemote">; jobs?: Pick<JobPublisher, "cancel"> },
+  ref: string,
+): Promise<void> {
+  if (deps.jobs && deps.secrets.isRemote(ref))
+    await bestEffort(
+      "delete a saved secret's write-ahead job",
+      deps.jobs.cancel(secretCleanupJobKey(ref)),
+    );
 }

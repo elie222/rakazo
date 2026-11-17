@@ -71,6 +71,7 @@ const payloadSchemas = {
       "purchase_card",
       "purchase_token",
       "payment_wallet",
+      "store_write",
     ]),
     recordId: z.string().min(1),
     ref: z.string().min(1),

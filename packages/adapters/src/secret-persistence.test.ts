@@ -10,6 +10,7 @@ import { McpConnector } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { createRunSecretWriter } from "./run-secret.js";
+import { secretCleanupJobKey, withSecretWriteAhead } from "./secret-cleanup.js";
 import { fakeCleanupJobs } from "./secret-cleanup.test-support.js";
 import { persistPreparedSecret, withSecretPersistence } from "./secret-persistence.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
@@ -539,6 +540,107 @@ describe("secret persistence cleanup with a queue", () => {
     expect(queue.jobs.enqueue).not.toHaveBeenCalled();
     expect(queue.jobs.enqueueIn).not.toHaveBeenCalled();
     expect(queue.jobs.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("secret store write-ahead", () => {
+  async function setup() {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    const db = database();
+    const queue = fakeCleanupJobs();
+    const ahead = withSecretWriteAhead(store, () => queue.jobs);
+    const prisma = withSecretPersistence(db.prisma, ahead, () => queue.jobs);
+    // The backup reads every column a reference can be saved in; only the secret tables are faked.
+    const none = { count: async () => 0 };
+    const holders = {
+      ...(db.prisma as unknown as Record<string, unknown>),
+      messagingInstallation: none,
+      deploymentSettings: none,
+      purchase: none,
+      paymentWallet: none,
+    } as unknown as PrismaClient;
+    const worker = { prisma: holders, secrets: store };
+    return { fake, store, ahead, db, queue, prisma, worker };
+  }
+  const secretFields = { id: "row", userId: "user", kind: "agent-environment" };
+
+  it("deletes an entry whose writer died before saving the row that holds it", async () => {
+    const { fake, store, ahead, queue, worker } = await setup();
+    try {
+      const written = await ahead.put("orphan", context, { recordId: "row" });
+      expect(fake.values.size).toBe(1);
+      expect(queue.cleanups()).toEqual([
+        { kind: "store_write", recordId: "row", ref: written.ref, due: false },
+      ]);
+      // Nothing saves the row or reaches the queue again, as when the process dies here.
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("records the backup before the entry exists, and refuses the write without one", async () => {
+    const { fake, store, ahead, queue } = await setup();
+    try {
+      queue.jobs.enqueue.mockImplementationOnce(async () => {
+        expect(fake.values.size).toBe(0);
+        throw new Error("database unavailable");
+      });
+      await expect(ahead.put("unrecorded", context, { recordId: "row" })).rejects.toThrow(
+        "database unavailable",
+      );
+      expect(fake.values.size).toBe(0);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("removes the backup in the transaction that saves the row, keeping the entry", async () => {
+    const { store, ahead, db, queue, prisma, worker } = await setup();
+    try {
+      const written = await ahead.put("saved", context, { recordId: "row" });
+      await prisma.$transaction(async (tx) => {
+        await tx.secret.create({ data: { ...secretFields, ciphertext: written.ref } });
+        expect(queue.jobs.cancelIn).toHaveBeenCalledWith(tx, secretCleanupJobKey(written.ref));
+      });
+      expect(queue.queued.size).toBe(0);
+      expect(db.tables.get("secret")).toHaveLength(1);
+      await queue.runQueued(worker);
+      await expect(store.load(written.ref, "row")).resolves.toBe("saved");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("keeps the entry when the backup runs after the row was saved", async () => {
+    const { fake, store, ahead, db, queue, worker } = await setup();
+    try {
+      const written = await ahead.put("held", context, { recordId: "row" });
+      // Saved, but the process died before it removed the backup.
+      db.tables.get("secret")!.push({ id: "row", ciphertext: written.ref });
+      await queue.runQueued(worker);
+      expect(fake.values.size).toBe(1);
+      await expect(store.load(written.ref, "row")).resolves.toBe("held");
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("writes as before while no queue exists yet", async () => {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    try {
+      const written = await withSecretWriteAhead(store, () => undefined).put("early", context, {
+        recordId: "row",
+      });
+      await expect(store.load(written.ref, "row")).resolves.toBe("early");
+    } finally {
+      await store.close();
+    }
   });
 });
 

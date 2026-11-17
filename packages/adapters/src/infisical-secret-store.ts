@@ -172,6 +172,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     const recordId = options.recordId ?? randomUUID();
     const key = `rakazo_${credentialDigest(recordId).slice(0, 24)}_${randomUUID()}`;
     const ref = INFISICAL_REF_PREFIX + key;
+    await options.beforeWrite?.({ recordId, ref });
     try {
       await this.request(
         `${SECRETS_PATH}/${key}`,

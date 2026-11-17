@@ -25,7 +25,7 @@ import {
   withPurchaseWallet,
 } from "./purchase-service.js";
 import type { SecretCleanup } from "./secret-cleanup.js";
-import { cleanUpUnsavedSecret, purchaseRequestRecordId } from "./secret-cleanup.js";
+import { cleanUpUnsavedSecret, purchaseRequestRecordId, savedSecret } from "./secret-cleanup.js";
 import type { SafeHttpResponse } from "./web-ssrf.js";
 import { fetchSafeHttpRequest } from "./web-ssrf.js";
 
@@ -113,7 +113,7 @@ export async function executePaidRequest(
   if (saved?.requestCiphertext !== sealed.ciphertext) {
     // No purchase holds this copy: the wallet refused, or a replay recorded its own.
     await cleanUpUnsavedSecret(cleanupDeps, copy);
-  }
+  } else await savedSecret(cleanupDeps, sealed.ciphertext);
   return plain(result);
 }
 

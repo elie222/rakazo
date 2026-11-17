@@ -15,6 +15,9 @@ export function fakeCleanupJobs() {
     cancel: vi.fn(async (key: string) => {
       queued.delete(key);
     }),
+    cancelIn: vi.fn(async (_tx: unknown, key: string) => {
+      queued.delete(key);
+    }),
   };
   /** The queued cleanups, with `due` false while one is still the backup of a direct attempt. */
   const cleanups = () =>

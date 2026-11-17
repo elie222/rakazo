@@ -19,6 +19,7 @@ import {
   loadAccountComputerSettings as loadSavedAccountComputerSettings,
   recordSecretCleanup,
   refreshComputerProvider,
+  savedSecret,
 } from "@rakazo/adapters";
 import type { Actor, ComputerProviderSettings, ComputerProviderUpdate } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -231,6 +232,7 @@ export async function updateComputerProviderSettings(
     await cleanUpUnsavedSecret(deps, deploymentSecret(stored.ciphertext));
     throw error;
   }
+  await savedSecret(deps, stored.ciphertext);
   if (replaced) await finishSecretCleanup(deps, replaced);
   await refreshComputerProvider(deps.sandbox);
   return view(input.provider, settings, deps.env.sandboxProvider);

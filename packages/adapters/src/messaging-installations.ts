@@ -16,6 +16,7 @@ import {
   cleanUpUnsavedSecret,
   finishSecretCleanup,
   recordSecretCleanup,
+  savedSecret,
 } from "./secret-cleanup.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */
@@ -182,6 +183,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
           throw new MessagingInstallRefusedError("Workspace is already connected");
         throw error;
       }
+      await savedSecret(this.cleanup, sealed.ciphertext);
       if (replaced) await finishSecretCleanup(this.cleanup, replaced);
     });
   }

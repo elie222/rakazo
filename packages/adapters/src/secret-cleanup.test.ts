@@ -9,6 +9,7 @@ import {
   finishSecretCleanup,
   recordSecretCleanup,
   retrySecretCleanup,
+  savedSecret,
   secretCleanupJob,
   secretCleanupJobKey,
 } from "./secret-cleanup.js";
@@ -27,8 +28,8 @@ const anyRow: SecretCleanup = { kind: "secret_tables", recordId: "secret-a", ref
 /** Each kind of record holds `held`; `remote` is whether the store keeps values elsewhere. */
 function fixture(held: string | null = null, remote = true) {
   const row = (column: string) => vi.fn(async () => (held === null ? null : { [column]: held }));
-  /** How many of a secret table's rows hold the reference asked about. */
-  const count = () => vi.fn(async (_args: { where: { ciphertext: string } }) => 0);
+  /** How many of a table's rows hold the reference asked about. */
+  const count = () => vi.fn(async (_args: { where: Record<string, unknown> }) => 0);
   /** A purchase holds `held` in whichever of its sealed columns is read. */
   const purchase = vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
     held === null ? null : Object.fromEntries(Object.keys(select).map((column) => [column, held])),
@@ -38,10 +39,10 @@ function fixture(held: string | null = null, remote = true) {
     botSecret: { count: count() },
     vaultCredential: { count: count() },
     integrationProviderConfig: { count: count() },
-    messagingInstallation: { findUnique: row("ciphertext") },
-    deploymentSettings: { findUnique: row("computerProviderCipher") },
-    purchase: { findUnique: purchase },
-    paymentWallet: { findUnique: row("ciphertext") },
+    messagingInstallation: { findUnique: row("ciphertext"), count: count() },
+    deploymentSettings: { findUnique: row("computerProviderCipher"), count: count() },
+    purchase: { findUnique: purchase, count: count() },
+    paymentWallet: { findUnique: row("ciphertext"), count: count() },
   };
   const queued = new Map<string, BackgroundJob>();
   const queue = async (job: BackgroundJob) => {
@@ -271,5 +272,45 @@ describe("secret cleanup", () => {
     f.prisma.secret.findUnique.mockRejectedValueOnce(new Error("database unavailable"));
     await expect(retrySecretCleanup(f.deps, cleanup)).rejects.toThrow("database unavailable");
     expect(f.secrets.delete).toHaveBeenCalledTimes(1);
+  });
+
+  const written: SecretCleanup = { kind: "store_write", recordId: "store-record", ref: REF };
+  const HOLDERS = [
+    ...SECRET_TABLES,
+    "messagingInstallation",
+    "deploymentSettings",
+    "purchase",
+    "paymentWallet",
+  ] as const;
+
+  it.each(HOLDERS)("keeps a written entry a %s row holds when its backup runs", async (table) => {
+    const f = fixture();
+    f.prisma[table].count.mockResolvedValue(1);
+    await retrySecretCleanup(f.deps, written);
+    expect(f.secrets.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes a written entry no row of any kind holds, under the record that wrote it", async () => {
+    const f = fixture();
+    await retrySecretCleanup(f.deps, written);
+    for (const table of HOLDERS) expect(f.prisma[table].count).toHaveBeenCalledOnce();
+    expect(f.prisma.purchase.count).toHaveBeenCalledWith({
+      where: {
+        OR: [{ requestCiphertext: REF }, { cardCiphertext: REF }, { tokenCiphertext: REF }],
+      },
+    });
+    expect(f.secrets.delete).toHaveBeenCalledWith(
+      REF,
+      expect.objectContaining({ recordId: "store-record" }),
+    );
+  });
+
+  it("removes a saved entry's write-ahead job, and none for an inline reference", async () => {
+    const f = fixture();
+    await savedSecret(f.deps, REF);
+    expect(f.jobs.cancel).toHaveBeenCalledWith(secretCleanupJobKey(REF));
+    const inline = fixture(null, false);
+    await savedSecret(inline.deps, REF);
+    expect(inline.jobs.cancel).not.toHaveBeenCalled();
   });
 });

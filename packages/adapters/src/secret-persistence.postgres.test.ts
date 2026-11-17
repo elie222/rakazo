@@ -142,8 +142,9 @@ describePostgres("secret persistence cleanup (PostgreSQL)", () => {
     const ref = entry("crashed");
     const row = await secretRow("crash", ref);
     // After the commit this process reaches neither the store nor the queue, as when it dies.
-    const dying: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel"> = {
+    const dying: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancel" | "cancelIn"> = {
       enqueueIn: (tx, job) => jobs.enqueueIn(tx, job),
+      cancelIn: (tx, key) => jobs.cancelIn(tx, key),
       enqueue: async () => {
         throw new Error("process gone");
       },

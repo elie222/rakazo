@@ -16,6 +16,7 @@ import {
   finishSecretCleanup,
   paymentWalletRecordId,
   recordSecretCleanup,
+  savedSecret,
 } from "./secret-cleanup.js";
 import { holdSecretNotifications } from "./secret-store-factory.js";
 
@@ -274,6 +275,7 @@ export async function paymentWalletStatus(
     return statusOf(await currentWallet(deps, actor.userId));
   }
   await finishSecretCleanup(cleanupDeps(deps), signIn);
+  await savedSecret(cleanupDeps(deps), ciphertext);
   await options.onConnected?.();
   return { status: "connected", connectedAt: connectedAt.toISOString() };
 }
@@ -325,6 +327,7 @@ export async function connectPaymentWallet(
     await cleanUpUnsavedSecret(cleanupDeps(deps), walletSecret(actor.userId, ciphertext));
     throw error;
   }
+  await savedSecret(cleanupDeps(deps), ciphertext);
   return {
     status: "connecting",
     verificationUrl: start.verificationUrl,
@@ -412,6 +415,7 @@ async function refreshCredential(
   }
   if (result.replaced)
     await finishSecretCleanup(cleanupDeps(deps), walletSecret(actor.userId, result.replaced));
+  if (written) await savedSecret(cleanupDeps(deps), written);
   return result;
 }
 

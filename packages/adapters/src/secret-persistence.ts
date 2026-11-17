@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -10,6 +10,7 @@ import {
   finishSecretCleanup,
   recordSecretCleanup,
   secretCleanupJob,
+  secretCleanupJobKey,
   secretIsHeld,
 } from "./secret-cleanup.js";
 
@@ -21,7 +22,7 @@ type Cleanup = {
   recorded: Map<string, SecretCleanup>;
   client?: Prisma.TransactionClient;
 };
-type Jobs = SecretCleanupDeps["jobs"];
+type Jobs = SecretCleanupDeps["jobs"] & Pick<JobPublisher, "cancelIn">;
 /** The queue that retries a failed delete, once the process has built it. */
 export type SecretCleanupJobs = () => Jobs | undefined;
 const cleanupJobs = new WeakMap<object, SecretCleanupJobs>();
@@ -166,8 +167,9 @@ export function withSecretPersistence(
       Prisma.sql`SELECT ${fields} FROM ${Prisma.raw(`"${table}"`)} WHERE id IN (${Prisma.join(rows.map((row) => row.id))}) ORDER BY id FOR UPDATE`,
     );
   }
-  function trackWrites(state: Cleanup, model: string, input: Mutation): void {
-    if (!(model in secretTables)) return;
+  function trackWrites(state: Cleanup, model: string, input: Mutation): Candidate[] {
+    if (!(model in secretTables)) return [];
+    const written: Candidate[] = [];
     // Track new writes before DB access so even a pre-read failure can clean them.
     const data = [
       ...(Array.isArray(input.data) ? input.data : [input.data]),
@@ -177,11 +179,13 @@ export function withSecretPersistence(
     for (const value of data)
       if (typeof value?.ciphertext === "string") {
         const id = String(value.id ?? input.where?.id ?? "secret");
-        state.written.push({
+        written.push({
           id: model === "IntegrationProviderConfig" ? `integration-provider:${id}` : id,
           ciphertext: value.ciphertext,
         });
       }
+    state.written.push(...written);
+    return written;
   }
   async function prepare(
     state: Cleanup,
@@ -190,7 +194,12 @@ export function withSecretPersistence(
     input: Mutation,
   ): Promise<void> {
     if (model in secretTables) {
-      trackWrites(state, model, input);
+      const written = trackWrites(state, model, input);
+      // The row commits with its entry, so the entry's write-ahead job goes with the same commit.
+      const queue = jobs?.();
+      for (const row of written)
+        if (queue && store.isRemote(row.ciphertext))
+          await queue.cancelIn(state.client!, secretCleanupJobKey(row.ciphertext));
       // A change that leaves the reference in place has nothing to clean up after it.
       if (dropsReference(operation, input)) {
         const old = await lockedRows(state, model, input.where);
