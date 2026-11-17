@@ -30,8 +30,13 @@ export function objectStorageConnectionFromEnv(
   const endpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
   if (endpoint && !/^https?:\/\//.test(endpoint))
     throw new Error("OBJECT_STORAGE_ENDPOINT must be an http(s) URL");
-  // Two anchored passes, not one alternation: the combined form backtracks quadratically.
-  const prefix = (env.OBJECT_STORAGE_PREFIX?.trim() ?? "").replace(/^\/+/, "").replace(/\/+$/, "");
+  // Walk both ends: an unanchored /\/+$/ still backtracks quadratically on a slash run.
+  const rawPrefix = env.OBJECT_STORAGE_PREFIX?.trim() ?? "";
+  let start = 0;
+  let end = rawPrefix.length;
+  while (start < end && rawPrefix[start] === "/") start += 1;
+  while (end > start && rawPrefix[end - 1] === "/") end -= 1;
+  const prefix = rawPrefix.slice(start, end);
   return { bucket, endpoint, accessKeyId, secretAccessKey, prefix: prefix ? `${prefix}/` : "" };
 }
 
