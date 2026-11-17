@@ -17,6 +17,7 @@ import {
   cloudflareModelRouting,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
+import { dataRetentionForConnect } from "./data-retention.js";
 import { vertexRoutingForConnect } from "./google-vertex-routing.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
@@ -84,6 +85,8 @@ export function buildModelConnectPlaintext(
     ...(cacheCapabilities !== undefined ? { cacheCapabilities } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
   };
+  const retention = dataRetentionForConnect(input, inherited?.zeroDataRetention);
+  const zdr = retention ? { zeroDataRetention: retention } : {};
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
     const policy = { allowPrivate: options?.allowPrivateEndpoint };
     const prepared = prepareOpenAiCompatibleConnect(input, policy);
@@ -195,6 +198,7 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...zdr,
       ...models,
     });
   }
@@ -208,6 +212,7 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...zdr,
       ...models,
     });
   }
@@ -364,6 +369,7 @@ export function modelCredentialDto(
       ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
       ...(parsed.kind === "api_key" && parsed.projectId ? { projectId: parsed.projectId } : {}),
       ...(parsed.kind === "api_key" && parsed.region ? { region: parsed.region } : {}),
+      ...(parsed.kind === "api_key" && parsed.zeroDataRetention ? { zeroDataRetention: true } : {}),
       ...(parsed.models ? { modelSettings: parsed.models } : {}),
     };
   }

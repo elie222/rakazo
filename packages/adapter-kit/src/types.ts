@@ -602,6 +602,8 @@ export interface AgentRunModel {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  /** Route only to endpoints that keep no prompts or replies, where the provider offers it. */
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;

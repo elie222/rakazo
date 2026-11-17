@@ -316,6 +316,7 @@ export async function runAutoReviewJudge(
             gatewayId: input.gatewayId,
             projectId: input.projectId,
             region: input.region,
+            zeroDataRetention: input.zeroDataRetention,
             baseUrl: input.baseUrl,
             headers: input.headers,
             allowPrivateEndpoint: input.allowPrivateEndpoint,
@@ -404,6 +405,7 @@ export type LlmAutoReviewOptions = {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;

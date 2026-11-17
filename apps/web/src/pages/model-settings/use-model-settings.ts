@@ -13,6 +13,7 @@ import {
   compatibleModelRows,
   connectionFormFields,
   connectionFormModelId,
+  dataRetentionDirty,
   modelConnectRequest,
   popularModelProvidersFirst,
   savedCompatibleModelIds,
@@ -109,6 +110,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setProvider,
     setThinkingLevel,
     thinkingLevel,
+    zeroDataRetention,
   } = form;
   const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(
@@ -296,12 +298,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     probeModels,
   );
   const defaultModelOptions = [...new Set([...enabledModelIds, modelId])];
-  // Saved-connection settings edited without a new key (gateway ids).
+  // Saved-connection settings edited without a new key (gateway ids, data retention).
   const settingsDirty =
     !isOpenAiCompatible &&
     Boolean(credential) &&
-    needsRouting &&
-    modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
+    ((needsRouting && modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential)) ||
+      (selected !== undefined && dataRetentionDirty(selected, zeroDataRetention, credential)));
 
   /** Opens a connection (by id) or a new one (null) for the provider. */
   function chooseProvider(
@@ -354,6 +356,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         gatewayId,
         projectId,
         region,
+        zeroDataRetention,
       },
       selected,
       credential,

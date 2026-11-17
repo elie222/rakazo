@@ -69,6 +69,10 @@ export async function autoReviewCheckerProvider(
       operationId: `auto-review:${runId}`,
       operationKind: "setup",
     });
+  if (decisionModel(checker.provider, checker.model) && judgeKey.zeroDataRetention) {
+    // The decision endpoint has no way to restrict routing, so it is never used for this connection.
+    throw new Error("Selected checker cannot restrict data retention");
+  }
   return decisionModel(checker.provider, checker.model)
     ? new DecisionAutoReviewProvider({
         provider: new HttpDecisionProvider("openrouter", {
@@ -90,6 +94,7 @@ export async function autoReviewCheckerProvider(
           gatewayId: judgeKey.gatewayId,
           projectId: judgeKey.projectId,
           region: judgeKey.region,
+          zeroDataRetention: judgeKey.zeroDataRetention,
           baseUrl: judgeKey.baseUrl,
           headers: judgeKey.headers,
           allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,

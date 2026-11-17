@@ -18,6 +18,7 @@ import type {
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "./context-selection.js";
+import { withDataRetentionPayload } from "./data-retention.js";
 import { withGoogleToolHistory } from "./google-tool-history.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { openRouterInferenceFetch } from "./openrouter-usage.js";
@@ -454,11 +455,14 @@ export function observedPiStream(
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
         const historyOptions = withGoogleToolHistory(
           model,
-          withChatCompletionsCompatibility(model, {
-            ...options,
-            ...(cacheRetention ? { cacheRetention } : {}),
-            ...(observer ? { maxRetries: 0 } : {}),
-          }),
+          withDataRetentionPayload(
+            model,
+            withChatCompletionsCompatibility(model, {
+              ...options,
+              ...(cacheRetention ? { cacheRetention } : {}),
+              ...(observer ? { maxRetries: 0 } : {}),
+            }),
+          ),
         );
         // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
         const streamOptions = hooks?.onRejectedRequest
