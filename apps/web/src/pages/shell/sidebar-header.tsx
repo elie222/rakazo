@@ -70,13 +70,14 @@ export function SidebarHeader({
   );
   return (
     <div
-      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between gap-2 px-3 pb-3 pt-[14px]"}`}
+      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
     >
       <div className={`flex items-center ${mini ? "flex-col gap-2" : "gap-2"}`}>
         {hasWindowChrome ? <WindowChrome /> : null}
         {toggle}
       </div>
-      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-1"}`}>
+      {/* Fits beside the macOS window controls at the narrowest sidebar width. */}
+      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-0.5"}`}>
         {onSearch && !mini ? (
           <IconTooltip label={t`Search`} side={labelSide}>
             <Button
