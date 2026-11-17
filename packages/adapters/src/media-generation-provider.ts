@@ -242,6 +242,166 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
   }
 }
 
+const muapiSubmit = z.object({ request_id: z.string().min(1).max(200) });
+const muapiResult = z.object({
+  status: z.string(),
+  outputs: z.array(z.string()).optional(),
+});
+
+/** muapi.ai HTTP protocol: POST /{endpoint} with x-api-key, then poll /predictions/{id}/result. */
+export class MuapiMediaGenerationProvider implements MediaGenerationProvider {
+  readonly id = "muapi";
+  readonly capabilities;
+  private readonly baseUrl: string;
+  constructor(
+    private readonly options: {
+      apiKey: string;
+      baseUrl?: string;
+      imageModel?: string;
+      videoModel?: string;
+      fetch?: typeof fetch;
+      resolveHostname?: ResolveHostname;
+    },
+  ) {
+    const url = new URL(options.baseUrl ?? "https://api.muapi.ai/api/v1");
+    if (
+      !["https:", "http:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error("Invalid media generation base URL");
+    this.baseUrl = url.href.replace(/\/$/, "");
+    for (const model of [options.imageModel, options.videoModel]) {
+      if (model && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(model))
+        throw new Error("Invalid media model endpoint");
+    }
+    this.capabilities = {
+      images: Boolean(options.imageModel),
+      video: Boolean(options.videoModel),
+      offline: false,
+    };
+  }
+  private async request(path: string, context: AdapterContext, body?: unknown): Promise<unknown> {
+    context.signal.throwIfAborted();
+    try {
+      const response = await (this.options.fetch ?? fetch)(`${this.baseUrl}${path}`, {
+        method: body ? "POST" : "GET",
+        headers: {
+          "x-api-key": this.options.apiKey,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.any([context.signal, AbortSignal.timeout(30_000)]),
+        redirect: "error",
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new MediaGenerationError(
+          response.status === 429
+            ? "rate_limit"
+            : [401, 403].includes(response.status)
+              ? "authentication"
+              : "provider_failure",
+        );
+      }
+      return JSON.parse(new TextDecoder().decode(await boundedBytes(response, 100_000)));
+    } catch (error) {
+      context.signal.throwIfAborted();
+      if (error instanceof MediaGenerationError) throw error;
+      throw new MediaGenerationError("provider_failure");
+    }
+  }
+  private async submit(input: MediaGenerationInput, video: boolean, context: AdapterContext) {
+    const model = video ? this.options.videoModel : this.options.imageModel;
+    if (!model) throw new MediaGenerationError("unsupported");
+    const parsed = mediaPromptSchema.safeParse(input);
+    if (!parsed.success) throw new MediaGenerationError("invalid_input");
+    const job = muapiSubmit.safeParse(
+      await this.request(`/${model}`, context, {
+        prompt: parsed.data.prompt,
+        ...(video ? {} : { num_images: 1, aspect_ratio: "1:1", output_format: "png" }),
+      }),
+    );
+    if (!job.success) throw new MediaGenerationError("provider_failure");
+    return job.data.request_id;
+  }
+  private async poll(id: string, context: AdapterContext) {
+    if (!/^[a-zA-Z0-9_-]{1,200}$/.test(id)) throw new MediaGenerationError("invalid_input");
+    const result = muapiResult.safeParse(
+      await this.request(`/predictions/${encodeURIComponent(id)}/result`, context),
+    );
+    if (!result.success) throw new MediaGenerationError("provider_failure");
+    const status = result.data.status.toLowerCase();
+    if (status === "failed") return { status: "failed" as const };
+    if (status === "completed") {
+      const url = result.data.outputs?.[0];
+      if (!url) throw new MediaGenerationError("provider_failure");
+      return { status: "completed" as const, url };
+    }
+    return { status: status === "processing" ? ("running" as const) : ("queued" as const) };
+  }
+  private async download(rawUrl: string, video: boolean, context: AdapterContext) {
+    let url: string;
+    try {
+      url = z.string().url().parse(rawUrl);
+    } catch {
+      throw new MediaGenerationError("provider_failure");
+    }
+    try {
+      // Output URLs are untrusted. Pin public DNS, reject private addresses and redirects;
+      // the muapi API key is never sent to the output host.
+      const result = await fetchSafeWebBytes(url, {
+        fetch: this.options.fetch,
+        resolveHostname: this.options.resolveHostname,
+        signal: context.signal,
+        maxBytes: ATTACHMENT_MAX_BYTES,
+        maxRedirects: 0,
+        timeoutMs: 60_000,
+      });
+      const mimeType = video ? "video/mp4" : "image/png";
+      if (result.contentType?.split(";")[0]?.trim().toLowerCase() !== mimeType)
+        throw new MediaGenerationError("provider_failure");
+      const output = { bytes: result.body, mimeType } as GeneratedMedia;
+      validateGeneratedMedia(output, mimeType);
+      return output;
+    } catch (error) {
+      context.signal.throwIfAborted();
+      if (error instanceof MediaGenerationError) throw error;
+      throw new MediaGenerationError(
+        error instanceof ResponseTooLargeError ? "output_limit" : "provider_failure",
+      );
+    }
+  }
+  async generateImage(
+    input: MediaGenerationInput,
+    context: AdapterContext,
+  ): Promise<GeneratedMedia> {
+    context = { ...context, signal: deadlineSignal(180_000, context.signal) };
+    const id = await this.submit(input, false, context);
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const job = await this.poll(id, context);
+      if (job.status === "completed") return this.download(job.url, false, context);
+      if (job.status === "failed") throw new MediaGenerationError("provider_failure");
+      await delay(1000, undefined, { signal: context.signal });
+    }
+    throw new MediaGenerationError("provider_failure");
+  }
+  async generateVideo(
+    input: MediaGenerationInput,
+    context: AdapterContext,
+  ): Promise<MediaVideoJob> {
+    return { id: await this.submit(input, true, context), status: "queued" };
+  }
+  async pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob> {
+    const job = await this.poll(id, context);
+    return job.status === "completed"
+      ? { id, status: "completed", output: await this.download(job.url, true, context) }
+      : { id, status: job.status };
+  }
+}
+
 /** Deterministic provider; no network or billing. */
 export class FakeMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "fake";

@@ -5,6 +5,7 @@ import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import {
   FakeMediaGenerationProvider,
   FalMediaGenerationProvider,
+  MuapiMediaGenerationProvider,
 } from "./media-generation-provider.js";
 
 const context: AdapterContext = {
@@ -253,5 +254,73 @@ describe("media generation connection", () => {
       provider.generateImage({ prompt: "draw" }, { ...context, signal: controller.signal }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("muapi media generation", () => {
+  const png = () => new Response(Buffer.from("png"), { headers: { "content-type": "image/png" } });
+  const mp4 = () => new Response(Buffer.from("mp4"), { headers: { "content-type": "video/mp4" } });
+  const json = (value: unknown) => Response.json(value);
+  function muapi(...responses: Response[]) {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    for (const response of responses) fetch.mockResolvedValueOnce(response);
+    return {
+      fetch,
+      provider: new MuapiMediaGenerationProvider({
+        apiKey: "fake-key",
+        imageModel: "flux-schnell-image",
+        videoModel: "seedance-lite-t2v",
+        fetch,
+        resolveHostname: async () => [{ address: "93.184.216.34", family: 4 }],
+      }),
+    };
+  }
+
+  it("is selected by the factory with the default muapi base URL", () => {
+    const provider = createMediaGenerationProvider({
+      MEDIA_GENERATION_PROVIDER: "muapi",
+      MEDIA_GENERATION_API_KEY: "fake-key",
+      MEDIA_GENERATION_VIDEO_MODEL: "seedance-lite-t2v",
+      MEDIA_GENERATION_BASE_URL: "",
+    });
+    expect(provider?.id).toBe("muapi");
+    expect(provider?.capabilities).toEqual({ images: false, video: true, offline: false });
+  });
+
+  it("submits with x-api-key, polls the result and downloads the image", async () => {
+    const { provider, fetch } = muapi(
+      json({ request_id: "req-1" }),
+      json({ status: "processing" }),
+      json({ status: "completed", outputs: ["https://cdn.example.test/a.png"] }),
+      png(),
+    );
+    const output = await provider.generateImage({ prompt: "a cat" }, context);
+    expect(output.mimeType).toBe("image/png");
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe("https://api.muapi.ai/api/v1/flux-schnell-image");
+    expect(new Headers(init?.headers).get("x-api-key")).toBe("fake-key");
+    expect(fetch.mock.calls[1]![0]).toBe("https://api.muapi.ai/api/v1/predictions/req-1/result");
+  });
+
+  it("returns a queued video job and later the finished MP4", async () => {
+    const { provider } = muapi(
+      json({ request_id: "vid-1" }),
+      json({ status: "completed", outputs: ["https://cdn.example.test/v.mp4"] }),
+      mp4(),
+    );
+    expect(await provider.generateVideo({ prompt: "a wave" }, context)).toEqual({
+      id: "vid-1",
+      status: "queued",
+    });
+    const job = await provider.pollVideo("vid-1", context);
+    expect(job.status).toBe("completed");
+  });
+
+  it("reports failed jobs and rejects malformed job ids", async () => {
+    const { provider } = muapi(json({ status: "failed" }));
+    expect(await provider.pollVideo("vid-1", context)).toEqual({ id: "vid-1", status: "failed" });
+    await expect(provider.pollVideo("../x", context)).rejects.toMatchObject({
+      code: "invalid_input",
+    });
   });
 });

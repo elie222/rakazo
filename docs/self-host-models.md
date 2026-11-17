@@ -272,8 +272,21 @@ MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
 MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `muapi`, or `fake`
 (for offline testing only). The base URL is optional and defaults to the URL above.
+
+To use [muapi](https://muapi.ai) instead, which hosts 500+ image and video models
+behind one key, set the provider to `muapi` and name muapi endpoints as the models.
+The base URL defaults to `https://api.muapi.ai/api/v1`:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=muapi
+MEDIA_GENERATION_API_KEY=replace-with-muapi-api-key
+MEDIA_GENERATION_IMAGE_MODEL=flux-schnell-image
+MEDIA_GENERATION_VIDEO_MODEL=seedance-lite-t2v
+```
+
+muapi image models must return PNG and video models MP4, as the tools require.
 Only set the image/video model fields for capabilities you want enabled. Compatible
 servers can use the same connection fields; models must support the corresponding
 fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
