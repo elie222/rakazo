@@ -34,6 +34,7 @@ export interface RuntimeState {
 }
 export interface ComputerTagChange {
   fromTag: string;
+  restoreTag?: string;
   previousTag: string | null;
   toTag: string;
 }
@@ -258,6 +259,7 @@ export async function readScheduledComputer(
   return {
     tags: {
       fromTag: tags[0] ?? envTag,
+      restoreTag: envTag,
       previousTag: readEnvAssignment(env, PREVIOUS_COMPUTER_TAG_ENV),
       toTag: targetTag,
     },

@@ -202,7 +202,31 @@ describe("scheduled release state and recovery", () => {
       [`sha-${older}`, cachedOlder],
     ]);
     expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
-    expect(await subject.env()).toContain(`RAKAZO_COMPUTER_IMAGE_TAG=${cachedOlder}\n`);
+    expect(await subject.env()).toContain("RAKAZO_COMPUTER_IMAGE_TAG=latest\n");
+  });
+
+  it("preserves registry pins across a failed pull and failed updates with recovery", async () => {
+    const subject = await fixture(
+      `RAKAZO_IMAGE_TAG=sha-${older}\nRAKAZO_COMPUTER_IMAGE_TAG=latest\n`,
+      older,
+      true,
+    );
+    subject.state.computer = `${computerImage}:latest`;
+    subject.state.unavailableComputer = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.calls.some(({ args }) => args.includes("up"))).toBe(false);
+    expect(await subject.env()).toContain("RAKAZO_COMPUTER_IMAGE_TAG=latest\n");
+    subject.state.unavailableComputer = false;
+    subject.state.failTarget = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.state.computer).toBe(`${computerImage}:${cachedOlder}`);
+    expect(await subject.env()).toContain("RAKAZO_COMPUTER_IMAGE_TAG=latest\n");
+    // A later check observes the local recovery tag in the supervisor, not the .env pin.
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(await subject.env()).toContain("RAKAZO_COMPUTER_IMAGE_TAG=latest\n");
+    expect(
+      subject.calls.filter(({ args }) => args.includes("up")).at(-1)?.env.RAKAZO_COMPUTER_IMAGE_TAG,
+    ).toBe(cachedOlder);
   });
 
   it("waits for the exact computer commit image and never relies on computer:latest", async () => {

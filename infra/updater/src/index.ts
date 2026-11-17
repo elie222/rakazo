@@ -698,8 +698,9 @@ export function createUpdaterApp(
     restartAdvice: string;
   }): Promise<ServerUpdateRun> {
     const computerUnchanged = input.computerTags?.fromTag === input.computerTags?.toTag;
+    let cachedComputerTag = input.computerTags?.fromTag ?? "";
     if (input.computerTags && !computerUnchanged) {
-      input.computerTags.fromTag = await cacheComputerImage(
+      cachedComputerTag = await cacheComputerImage(
         config,
         await readEnvFile(),
         input.computerTags.fromTag,
@@ -727,7 +728,7 @@ export function createUpdaterApp(
       [PREVIOUS_IMAGE_TAG_ENV]: input.originalPreviousTag ?? input.fromTag,
       ...(input.computerTags
         ? {
-            [COMPUTER_TAG_ENV]: input.computerTags.fromTag,
+            [COMPUTER_TAG_ENV]: input.computerTags.restoreTag ?? input.computerTags.fromTag,
             [PREVIOUS_COMPUTER_TAG_ENV]: input.computerTags.previousTag ?? "",
           }
         : {}),
@@ -789,7 +790,7 @@ export function createUpdaterApp(
                 [COMPUTER_TAG_ENV]: input.computerTags.toTag,
                 [PREVIOUS_COMPUTER_TAG_ENV]: computerUnchanged
                   ? (input.computerTags.previousTag ?? "")
-                  : input.computerTags.fromTag,
+                  : cachedComputerTag,
               }
             : {}),
         });
@@ -831,7 +832,7 @@ export function createUpdaterApp(
                 },
                 {
                   [IMAGE_TAG_ENV]: input.fromTag,
-                  ...(input.computerTags ? { [COMPUTER_TAG_ENV]: input.computerTags.fromTag } : {}),
+                  ...(input.computerTags ? { [COMPUTER_TAG_ENV]: cachedComputerTag } : {}),
                 },
                 false,
               ));
