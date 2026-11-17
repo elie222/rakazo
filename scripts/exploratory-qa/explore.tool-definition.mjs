@@ -36,7 +36,11 @@ export const exploreTools = [
     "Report one bug you saw.",
     {
       title: { type: "string", description: "One line naming the problem" },
-      key: { type: "string", description: "Short kebab-case name of the bug" },
+      key: {
+        type: "string",
+        maxLength: 120,
+        description: "Short kebab-case name of the bug, at most 120 characters",
+      },
       path: { type: "string", description: "Path of the page where it happens" },
       steps: { type: "array", items: { type: "string" } },
       expected: { type: "string" },
