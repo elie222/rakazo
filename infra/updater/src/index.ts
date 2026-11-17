@@ -48,7 +48,7 @@ import {
   cacheComputerImage,
   cacheRuntimeBaseline,
   PREVIOUS_COMPUTER_TAG_ENV,
-  pruneComputerCache,
+  pruneUpdateImages,
   readManualComputer,
   readRollbackComputer,
   readScheduledComputer,
@@ -853,11 +853,10 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
-      if (input.computerTags)
-        await bestEffort(
-          "prune obsolete computer rollback cache",
-          readEnvFile().then((env) => pruneComputerCache(config, env, run)),
-        );
+      await bestEffort(
+        "prune obsolete update images",
+        readEnvFile().then((env) => pruneUpdateImages(config, env, run)),
+      );
       return record;
     } finally {
       if (!record.ok && checkoutNeedsRestore && !(await restoreCheckout())) {

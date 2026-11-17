@@ -41,6 +41,11 @@ async function fixture(env: string, commit: string, computers = false) {
     } as Record<string, string>,
     imageOverrides: {} as Record<string, string>,
     usedComputerTags: new Set<string>(),
+    usedAppTags: new Set<string>(),
+    appImages: {
+      [`sha-${older}`]: `sha256:${"1".repeat(64)}`,
+      [`sha-${newer}`]: `sha256:${"2".repeat(64)}`,
+    } as Record<string, string>,
     otherComputerRefs: [] as string[],
     computer: `${computerImage}:sha-${older}`,
     images: {
@@ -65,10 +70,19 @@ async function fixture(env: string, commit: string, computers = false) {
     if (command === "git") return ok(`${older}\trefs/tags/v1.0.0\n${newer}\trefs/tags/v1.1.0\n`);
     if (args[0] === "ps") {
       const ancestor = args.find((arg) => arg.startsWith("ancestor="));
-      if (ancestor)
-        return ok(
-          state.usedComputerTags.has(ancestor.split(":").at(-1) ?? "") ? "e".repeat(12) : "",
-        );
+      if (ancestor) {
+        const tag = ancestor.split(":").at(-1) ?? "";
+        const app = ancestor.startsWith(`ancestor=${appImage}:`);
+        const used = app
+          ? state.usedAppTags.has(tag) ||
+            Object.entries(state.versions).some(
+              ([service, commit]) =>
+                (state.imageOverrides[service] ?? `sha256:${commit[0]?.repeat(64)}`) ===
+                state.appImages[tag],
+            )
+          : state.usedComputerTags.has(tag);
+        return ok(used ? "e".repeat(12) : "");
+      }
       if (!args.some((arg) => arg.startsWith("label=com.docker.compose.project=")))
         return ok(
           [
@@ -98,27 +112,34 @@ async function fixture(env: string, commit: string, computers = false) {
         );
       return ok(args.at(-1) === "process.env.GIT_SHA" ? state.versions[service] : state.computer);
     }
-    if (args[0] === "image" && args[1] === "ls") return ok(Object.keys(state.images).join("\n"));
+    if (args[0] === "image" && args[1] === "ls")
+      return ok(Object.keys(args[2] === appImage ? state.appImages : state.images).join("\n"));
     if (args[0] === "image" && args[1] === "rm") {
-      for (const ref of args.slice(2)) delete state.images[ref.split(":").at(-1) ?? ""];
+      for (const ref of args.slice(2)) {
+        const images = ref.startsWith(`${appImage}:`) ? state.appImages : state.images;
+        delete images[ref.split(":").at(-1) ?? ""];
+      }
       return ok();
     }
     if (args[0] === "image" && args[1] === "inspect") {
       const tag = args[2]?.split(":").at(-1) ?? "";
-      if (!state.images[tag]) return failed("image unavailable");
+      const image = args[2]?.startsWith(`${appImage}:`) ? appImage : computerImage;
+      const images = image === appImage ? state.appImages : state.images;
+      if (!images[tag]) return failed("image unavailable");
       if (args.at(-1) === "{{json .RepoTags}}")
         return ok(
           JSON.stringify(
-            Object.keys(state.images)
-              .filter((name) => state.images[name] === state.images[tag])
-              .map((name) => `${computerImage}:${name}`),
+            Object.keys(images)
+              .filter((name) => images[name] === images[tag])
+              .map((name) => `${image}:${name}`),
           ),
         );
-      return ok(state.images[tag]);
+      return ok(images[tag]);
     }
     if (args[0] === "image" && args[1] === "tag") {
-      if (args[3]?.startsWith(`${computerImage}:`))
-        state.images[args[3].slice(computerImage.length + 1)] = args[2] ?? "";
+      const image = args[3]?.startsWith(`${appImage}:`) ? appImage : computerImage;
+      const images = image === appImage ? state.appImages : state.images;
+      images[args[3]?.slice(image.length + 1) ?? ""] = args[2] ?? "";
       return ok();
     }
     if (args.includes("pull")) {
@@ -430,6 +451,28 @@ describe("scheduled release state and recovery", () => {
     expect(subject.calls.filter(({ args }) => args[1] === "rm").map(({ args }) => args)).toEqual([
       ["image", "rm", `${computerImage}:${obsolete}`],
     ]);
+  });
+
+  it("cleans app releases without a managed computer while preserving rollback and used images", async () => {
+    const subject = await fixture(`RAKAZO_IMAGE_TAG=sha-${older}\n`, older);
+    const obsolete = `sha-${"3".repeat(40)}`;
+    const used = `sha-${"4".repeat(40)}`;
+    const aliased = `sha-${"5".repeat(40)}`;
+    for (const [index, tag] of [obsolete, used, aliased].entries())
+      subject.state.appImages[tag] = `sha256:${(index + 3).toString().repeat(64)}`;
+    subject.state.usedAppTags.add(used);
+    subject.state.appImages["operator-backup"] = subject.state.appImages[aliased] ?? "";
+    subject.state.failTarget = true;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(false);
+    expect(subject.state.appImages[obsolete]).toBeDefined();
+    subject.state.failTarget = false;
+    expect((await subject.app.applyScheduledUpdate()).ok).toBe(true);
+    expect(subject.state.appImages[obsolete]).toBeUndefined();
+    for (const tag of [used, aliased, `sha-${older}`, `sha-${newer}`])
+      expect(subject.state.appImages[tag]).toBeDefined();
+    expect(subject.calls.some(({ args }) => args[1] === "ls" && args[2] === computerImage)).toBe(
+      false,
+    );
   });
 
   it("reclaims obsolete release images while retaining current, previous, used and shared images", async () => {

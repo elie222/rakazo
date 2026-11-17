@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 import type { RemoteRelease } from "@rakazo/core";
 import {
   commitImageTag,
+  IMAGE_TAG_ENV,
   imageRef,
   isGitCommit,
   isValidImageTag,
+  PREVIOUS_IMAGE_TAG_ENV,
   PUBLISHED_IMAGE_REPO,
   selectLatestRelease,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import type { UpdaterCommandRunner } from "./index.js";
 import type { UpdaterConfig } from "./updater-logic.js";
 import { readEnvAssignment, UpdateRefused } from "./updater-logic.js";
@@ -176,6 +179,43 @@ export async function cacheComputerImage(
   return cachedTag;
 }
 
+export async function pruneUpdateImages(
+  config: UpdaterConfig,
+  env: string,
+  run: UpdaterCommandRunner,
+): Promise<void> {
+  await bestEffort(
+    "prune obsolete application release images",
+    pruneApplicationImages(config, env, run),
+  );
+  if (config.updateServices.includes("computer"))
+    await bestEffort("prune obsolete computer images", pruneComputerCache(config, env, run));
+}
+
+async function pruneApplicationImages(
+  config: UpdaterConfig,
+  env: string,
+  run: UpdaterCommandRunner,
+): Promise<void> {
+  const listed = await run("docker", ["image", "ls", config.image, "--format", "{{.Tag}}"], {
+    cwd: config.deployDir,
+    timeoutMs: READ_TIMEOUT_MS,
+  });
+  if (!listed.ok) throw new Error("Could not list application release images.");
+  const retained = new Set([
+    readEnvAssignment(env, IMAGE_TAG_ENV),
+    readEnvAssignment(env, PREVIOUS_IMAGE_TAG_ENV),
+  ]);
+  await pruneReleaseImages(
+    config,
+    config.image,
+    retained,
+    listed.stdout.trim().split(/\s+/),
+    run,
+    false,
+  );
+}
+
 /** Remove only obsolete updater cache tags; Docker protects images still used by containers. */
 export async function pruneComputerCache(
   config: UpdaterConfig,
@@ -202,40 +242,43 @@ export async function pruneComputerCache(
     const removed = await run("docker", ["image", "rm", imageRef(image, tag)], options);
     if (!removed.ok) failed.push(tag);
   }
-  await pruneComputerReleases(config, image, retained, listed.stdout.trim().split(/\s+/), run);
+  await pruneReleaseImages(config, image, retained, listed.stdout.trim().split(/\s+/), run, true);
   if (failed.length > 0)
     throw new Error(`Could not remove obsolete computer cache tags: ${failed.join(", ")}.`);
 }
 
-/** Release tags are shared across projects: protect every supervisor's selected image. */
-async function pruneComputerReleases(
+/** Delete only unused release-only images; aliases and other stacks retain their bytes. */
+async function pruneReleaseImages(
   config: UpdaterConfig,
   image: string,
   retained: Set<string | null>,
   tags: string[],
   run: UpdaterCommandRunner,
+  protectComputerSelections: boolean,
 ): Promise<void> {
   const releases = tags.filter((tag) => /^sha-[0-9a-f]{40}$/.test(tag));
   if (releases.length === 0) return;
   const options = { cwd: config.deployDir, timeoutMs: READ_TIMEOUT_MS };
-  const supervisors = await run(
-    "docker",
-    ["ps", "--filter", "label=com.docker.compose.service=supervisor", "--format", "{{.ID}}"],
-    options,
-  );
-  const ids = supervisors.stdout.trim() ? supervisors.stdout.trim().split(/\s+/) : [];
-  if (!supervisors.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id)))
-    throw new Error("Could not identify supervisors before computer image cleanup.");
-  for (const id of ids) {
-    const selected = await run(
+  if (protectComputerSelections) {
+    const supervisors = await run(
       "docker",
-      ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+      ["ps", "--filter", "label=com.docker.compose.service=supervisor", "--format", "{{.ID}}"],
       options,
     );
-    if (!selected.ok)
-      throw new Error("Could not inspect supervisor image references before cleanup.");
-    const ref = selected.stdout.trim();
-    if (ref.startsWith(`${image}:`)) retained.add(ref.slice(image.length + 1));
+    const ids = supervisors.stdout.trim() ? supervisors.stdout.trim().split(/\s+/) : [];
+    if (!supervisors.ok || ids.some((id) => !/^[0-9a-f]{12,64}$/.test(id)))
+      throw new Error("Could not identify supervisors before computer image cleanup.");
+    for (const id of ids) {
+      const selected = await run(
+        "docker",
+        ["exec", id, "node", "-p", "process.env.RAKAZO_COMPUTER_IMAGE"],
+        options,
+      );
+      if (!selected.ok)
+        throw new Error("Could not inspect supervisor image references before cleanup.");
+      const ref = selected.stdout.trim();
+      if (ref.startsWith(`${image}:`)) retained.add(ref.slice(image.length + 1));
+    }
   }
   const processed = new Set<string>();
   for (const tag of releases) {
@@ -246,8 +289,7 @@ async function pruneComputerReleases(
       ["image", "inspect", ref, "--format", "{{json .RepoTags}}"],
       options,
     );
-    if (!inspected.ok)
-      throw new Error("Could not inspect computer release references before cleanup.");
+    if (!inspected.ok) throw new Error("Could not inspect release references before cleanup.");
     const references: unknown = JSON.parse(inspected.stdout);
     // Any remaining cache, operator or selected release tag retains the image bytes.
     if (!Array.isArray(references) || references.length === 0) continue;
@@ -264,11 +306,11 @@ async function pruneComputerReleases(
       ["ps", "-a", "--filter", `ancestor=${ref}`, "--format", "{{.ID}}"],
       options,
     );
-    if (!users.ok) throw new Error("Could not inspect computer image usage before cleanup.");
+    if (!users.ok) throw new Error("Could not inspect release image usage before cleanup.");
     if (users.stdout.trim()) continue;
     for (const reference of obsoleteReferences) processed.add(reference.slice(image.length + 1));
     const removed = await run("docker", ["image", "rm", ...obsoleteReferences], options);
-    if (!removed.ok) throw new Error("Could not remove an obsolete computer release image.");
+    if (!removed.ok) throw new Error("Could not remove an obsolete release image.");
   }
 }
 
