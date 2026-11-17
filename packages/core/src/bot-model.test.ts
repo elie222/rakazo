@@ -1,6 +1,6 @@
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { botModelState } from "./bot-model.js";
+import { botModelPick, botModelState } from "./bot-model.js";
 
 const credentials = [{ provider: "acme", label: "Acme" }] as unknown as ModelCredential[];
 const catalog = [
@@ -49,5 +49,14 @@ describe("botModelState", () => {
       spaceDefaultLabel: "Space default",
     });
     expect(state.selectedName).toBe("Fast");
+  });
+
+  it("turns a pick into the bot update, starting the new model on its default thinking", () => {
+    expect(botModelPick("acme::fast")).toEqual({
+      modelProvider: "acme",
+      modelId: "fast",
+      thinkingLevel: null,
+    });
+    expect(botModelPick("")).toEqual({ modelProvider: null, modelId: null, thinkingLevel: null });
   });
 });

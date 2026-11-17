@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
-import { botModelState, modelOptionKey, parseModelOptionKey } from "@rakazo/core";
+import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
 import { Command, CommandGroup, CommandItem, CommandList, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
@@ -28,16 +28,7 @@ export function ComposerModelPicker({
   const me = useQuery(queries.me.queryOptions()).data;
   const onFailed = (error: Error) => toast.error(errorText(error, t`Could not change the model`));
   const saveModel = useSave({
-    // A new model starts on its own default thinking level, as it does from the bot's settings.
-    save: (key: string, client) => {
-      const model = key ? parseModelOptionKey(key) : null;
-      return client.bots.update({
-        botId: bot.id,
-        modelProvider: model?.provider ?? null,
-        modelId: model?.modelId ?? null,
-        thinkingLevel: null,
-      });
-    },
+    save: (key: string, client) => client.bots.update({ botId: bot.id, ...botModelPick(key) }),
     stale: [queries.bots.list.key()],
     onSaved,
     onFailed,

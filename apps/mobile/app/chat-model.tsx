@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { botModelState, modelOptionKey, parseModelOptionKey } from "@rakazo/core";
+import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
 import { useLocalSearchParams } from "expo-router";
 import { Alert, View } from "react-native";
 import { MenuPicker } from "../components/menu-picker";
@@ -23,21 +23,14 @@ export default function ChatModelScreen() {
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
   const save = useSave({
-    save: (patch: { modelKey?: string; thinkingLevel: ThinkingLevel | null }, send) => {
-      const model =
-        patch.modelKey === undefined
-          ? undefined
-          : patch.modelKey
-            ? parseModelOptionKey(patch.modelKey)
-            : null;
-      return send("bots/update", {
+    // A model pick also resets thinking; a thinking pick sends only the level.
+    save: (patch: { modelKey?: string; thinkingLevel: ThinkingLevel | null }, send) =>
+      send("bots/update", {
         botId,
-        ...(model === undefined
-          ? {}
-          : { modelProvider: model?.provider ?? null, modelId: model?.modelId ?? null }),
-        thinkingLevel: patch.thinkingLevel,
-      });
-    },
+        ...(patch.modelKey === undefined
+          ? { thinkingLevel: patch.thinkingLevel }
+          : botModelPick(patch.modelKey)),
+      }),
     // The chat's chip and the bot's settings read the bot again.
     stale: [botRead.queryKey],
     onFailed: (error) => Alert.alert(errorText(error, t`Could not change the model`)),

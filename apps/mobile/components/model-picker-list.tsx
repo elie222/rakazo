@@ -157,8 +157,11 @@ export function ModelPickerList({
       ? [...models, { key: "connect", heading: undefined, connect: true, data: connect }]
       : models;
   }, [choices, visible, providerLabel]);
+  const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;
+    // A header holds settings meant to be seen first, so the list opens at the top.
+    if (opensAtTop) state.cancelled = true;
     if (state.handled || state.cancelled || choices === null) return;
     state.ready = true;
     state.target = null;
@@ -169,7 +172,7 @@ export function ModelPickerList({
         break;
       }
     }
-  }, [choices, sections, selectedKey]);
+  }, [choices, sections, selectedKey, opensAtTop]);
 
   // Viewability is reported after layout, including when an async catalog arrives.
   const revealInitialSelection = useCallback(

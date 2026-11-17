@@ -107,3 +107,16 @@ function catalogEntry(
 function shortModelName(label: string | undefined) {
   return label?.match(/^[^:]+: (.+)$/)?.[1] ?? label;
 }
+
+/**
+ * The bot update for picking a model from a chat picker (`key` "" is the Space default): a new
+ * model starts on its own default thinking level, as it does from the bot's settings.
+ */
+export function botModelPick(key: string) {
+  const model = key ? parseModelOptionKey(key) : null;
+  return {
+    modelProvider: model?.provider ?? null,
+    modelId: model?.modelId ?? null,
+    thinkingLevel: null,
+  };
+}
