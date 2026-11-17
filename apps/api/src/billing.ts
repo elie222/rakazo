@@ -58,6 +58,7 @@ import {
   byokTierOffers,
   byokTrialAvailable,
   NoPlanToCancelError,
+  OrganizationBeingDeletedError,
   planTerms,
   subscribedByokPrice,
 } from "./billing-plan.js";
@@ -184,7 +185,7 @@ export function createBillingService(deps: {
     if (!found.isOwner) throw new ORPCError("FORBIDDEN");
     // Deletion cancels billing once, so nothing may start a charge after it claims the org.
     if (await organizationBeingDeleted(found.organizationId))
-      throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+      throw new OrganizationBeingDeletedError();
     return found;
   }
 
@@ -381,7 +382,7 @@ export function createBillingService(deps: {
       // cancellation holds the same lease: re-check, so no session opens that the
       // cancellation cannot see and the organization cannot outlive.
       if (await organizationBeingDeleted(account.organizationId))
-        throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+        throw new OrganizationBeingDeletedError();
       return withLiveCustomer(actor, account, (customerId) => call(customerId, underLease));
     });
   }
@@ -865,25 +866,32 @@ export function createBillingService(deps: {
         // can end on an organization that is gone. Read again too: the customer may have been
         // replaced meanwhile.
         if (await organizationBeingDeleted(organizationId))
-          throw new ORPCError("CONFLICT", { message: "Organization is being deleted" });
+          throw new OrganizationBeingDeletedError();
         const held = await billingAccountForOrganization(prisma, organizationId);
         if (!held) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
         return withLiveCustomer(actor, held, async (customerId) => {
-          // Decide from the provider, not a snapshot a missed webhook may have left stale.
-          // Inside the wrapper, so a customer the provider deleted is replaced and then has no plan.
-          await sync(customerId);
-          const current = await billingAccountForOrganization(prisma, organizationId);
-          const status = current?.status ?? null;
+          // Decide from the provider's own read, not a snapshot a missed webhook may have left
+          // stale, and not from a full sync: credit-purchase reconciliation and own-key cleanup
+          // can fail without the subscription being unreadable. The read is stored as it is made,
+          // so a refusal leaves the status the client reads next up to date. Inside the wrapper,
+          // so a customer the provider deleted is replaced and then has no plan.
+          // Assigned in the callback, which control-flow narrowing does not follow.
+          let read = null as BillingSubscriptionSnapshot | null;
+          await syncBillingSnapshot(prisma, customerId, async () => {
+            read = await provider.getCustomerSubscription(customerId);
+            return read;
+          });
+          const live = read as BillingSubscriptionSnapshot | null;
           if (
-            !current?.subscriptionId ||
-            !(hasBillingAccess(status) || needsBillingPortal(status)) ||
-            current.cancelAtPeriodEnd
+            !live?.subscriptionId ||
+            !(hasBillingAccess(live.status) || needsBillingPortal(live.status)) ||
+            live.cancelAtPeriodEnd
           )
             throw new NoPlanToCancelError();
           return provider.createPortal({
             customerId,
             returnUrl: client === "mobile" ? mobileReturnUrl : returnUrl,
-            cancelSubscriptionId: current.subscriptionId,
+            cancelSubscriptionId: live.subscriptionId,
           });
         });
       });

@@ -32,6 +32,14 @@ export class NoPlanToCancelError extends ClientError {
   }
 }
 
+/** Billing was asked to start something for an organization whose deletion has begun. */
+export class OrganizationBeingDeletedError extends ClientError {
+  constructor() {
+    super("CONFLICT", "Organization is being deleted");
+    this.name = "OrganizationBeingDeletedError";
+  }
+}
+
 export type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
 
 /** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */

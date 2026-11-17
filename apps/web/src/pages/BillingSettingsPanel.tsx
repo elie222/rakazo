@@ -1,5 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { ORPCError } from "@orpc/client";
 import type { BillingStatus } from "@rakazo/contracts";
+import { billingNote, cancelPlanOffered, NO_PLAN_TO_CANCEL } from "@rakazo/contracts";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../components/ModelCredits";
@@ -17,6 +19,22 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const portal = useSave({
     save: (_: void, rpc) => rpc.billing.portal(),
     onSaved: ({ url }) => window.location.assign(url),
+  });
+  const cancel = useSave({
+    save: async (_: void, rpc) => {
+      try {
+        return await rpc.billing.portal({ intent: "cancel" });
+      } catch (err) {
+        // The server found no plan to cancel: show the status it just read, so the button goes
+        // instead of failing again. Any other refusal, busy billing included, is not it.
+        if (!(err instanceof ORPCError && err.code === NO_PLAN_TO_CANCEL)) throw err;
+        setStatus(await rpc.billing.status());
+        return null;
+      }
+    },
+    onSaved: (opened) => {
+      if (opened) window.location.assign(opened.url);
+    },
   });
 
   useEffect(() => {
@@ -47,6 +65,10 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
     : null;
 
   const dateLabel = status ? billingDateLabel(status, locale) : null;
+
+  const cancelOffered = status ? cancelPlanOffered(status) : null;
+  const note = status ? billingNote(status) : null;
+  const busy = portal.pending || cancel.pending;
 
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
@@ -84,22 +106,50 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
           ) : null}
         </div>
         {status?.canManage && status.hasCustomer ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={portal.pending}
-            onClick={() => {
-              setError(null);
-              portal.run();
-            }}
-          >
-            <Trans>Manage</Trans>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {cancelOffered ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setError(null);
+                  cancel.run();
+                }}
+              >
+                {cancelOffered === "trial" ? (
+                  <Trans>Cancel trial</Trans>
+                ) : (
+                  <Trans>Cancel plan</Trans>
+                )}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                portal.run();
+              }}
+            >
+              <Trans>Manage</Trans>
+            </Button>
+          </div>
         ) : null}
       </div>
-      {portal.error || error ? (
+      {note ? (
+        <p className="mt-3 text-body text-muted-foreground">
+          {note === "owner_only" ? (
+            <Trans>Only the organization owner can change or cancel billing.</Trans>
+          ) : (
+            <Trans>No payment method on file. Nothing will be charged.</Trans>
+          )}
+        </p>
+      ) : null}
+      {portal.error || cancel.error || error ? (
         <p role="alert" className="mt-3 text-body text-destructive">
-          {portal.error ? t`Could not open billing` : error}
+          {portal.error || cancel.error ? t`Could not open billing` : error}
         </p>
       ) : null}
     </div>

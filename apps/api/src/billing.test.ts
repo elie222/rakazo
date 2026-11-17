@@ -13,7 +13,11 @@ const actor: Actor = {
 };
 const price = { amount: 1000, currency: "usd", interval: "month" as const, intervalCount: 1 };
 
-function service(getPrice: BillingProvider["getPrice"], role = "owner") {
+function service(
+  getPrice: BillingProvider["getPrice"],
+  role = "owner",
+  provides: { capabilities?: Record<string, boolean>; extra?: Record<string, unknown> } = {},
+) {
   const prisma = {
     space: {
       findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
@@ -29,9 +33,12 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
     user: { findUnique: vi.fn().mockResolvedValue({ billingTrialUsedAt: null }) },
   } as unknown as PrismaClient;
   const provider = {
-    describe: () => ({ capabilities: { trials: true, portal: true } }),
+    describe: () => ({
+      capabilities: { trials: true, portal: true, ...provides.capabilities },
+    }),
     getPrice: vi.fn(getPrice),
     endTrial: vi.fn(),
+    ...provides.extra,
   } as unknown as BillingProvider;
   return {
     provider,
@@ -87,9 +94,13 @@ describe("opening the portal on cancelling", () => {
     cancelAtPeriodEnd: false,
   };
 
-  function portalService(account: Stored, live: Stored | null) {
+  function portalService(
+    account: Stored,
+    live: Stored | null,
+    provides?: Parameters<typeof service>[2],
+  ) {
     const current = { ...account };
-    const { billing, prisma, provider } = service(async () => price);
+    const { billing, prisma, provider } = service(async () => price, "owner", provides);
     vi.mocked(prisma.billingAccount.findUnique).mockImplementation((async () => current) as never);
     Object.assign(prisma.billingAccount, {
       findUniqueOrThrow: vi.fn(async () => current),
@@ -189,11 +200,59 @@ describe("opening the portal on cancelling", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValue({ id: "space-1" } as never);
     await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      name: "OrganizationBeingDeletedError",
+      kind: "CONFLICT",
       code: "CONFLICT",
       message: "Organization is being deleted",
     });
     expect(provider.getCustomerSubscription).not.toHaveBeenCalled();
     expect(provider.createPortal).not.toHaveBeenCalled();
+  });
+
+  it("opens the session although credit purchases cannot be read", async () => {
+    const listCreditPurchases = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const { billing, provider } = portalService(stored, liveSubscription, {
+      capabilities: { modelCredits: true },
+      extra: { listCreditPurchases },
+    });
+    await expect(billing.portal(actor, undefined, "cancel")).resolves.toEqual({
+      url: "https://portal.example.com",
+    });
+    expect(listCreditPurchases).not.toHaveBeenCalled();
+    expect(provider.createPortal).toHaveBeenCalledWith(
+      expect.objectContaining({ cancelSubscriptionId: "sub-live" }),
+    );
+  });
+
+  it("stores what it read when it refuses, although credit purchases cannot be read", async () => {
+    const listCreditPurchases = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const { billing, prisma, provider } = portalService(
+      stored,
+      { ...liveSubscription, cancelAtPeriodEnd: true },
+      { capabilities: { modelCredits: true }, extra: { listCreditPurchases } },
+    );
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      kind: "CONFLICT",
+      code: "NO_PLAN_TO_CANCEL",
+    });
+    expect(listCreditPurchases).not.toHaveBeenCalled();
+    expect(prisma.billingAccount.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ cancelAtPeriodEnd: true }) }),
+    );
+    expect(provider.createPortal).not.toHaveBeenCalled();
+  });
+
+  it("stores what it read when it refuses", async () => {
+    const { billing, prisma } = portalService(stored, {
+      ...liveSubscription,
+      cancelAtPeriodEnd: true,
+    });
+    await expect(billing.portal(actor, undefined, "cancel")).rejects.toMatchObject({
+      code: "NO_PLAN_TO_CANCEL",
+    });
+    expect(prisma.billingAccount.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ cancelAtPeriodEnd: true }) }),
+    );
   });
 
   it("opens the plain portal without the intent", async () => {

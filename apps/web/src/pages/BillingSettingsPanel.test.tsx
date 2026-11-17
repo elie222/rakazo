@@ -237,3 +237,134 @@ it("opens the billing portal of the window's space, and says so when it cannot",
   act(() => root.unmount());
   container.remove();
 });
+
+/** A provider without model credits: the status carries no `funding`, so this panel is the page. */
+const legacy = {
+  state: "trialing",
+  canManage: true,
+  hasCustomer: true,
+  cancelAtPeriodEnd: false,
+  seats: 1,
+};
+
+async function legacyPanel(
+  next: Record<string, unknown>,
+  portal?: (body: unknown) => Response | Promise<Response>,
+) {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  let current = next;
+  const portalBodies: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (request.url.endsWith("/billing/portal")) {
+        const body = await request.json();
+        portalBodies.push(body);
+        return (
+          (await portal?.(body)) ?? Response.json({ json: { url: "https://portal.example/flow" } })
+        );
+      }
+      return Response.json({ json: current });
+    }),
+  );
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(panel(createSpaceRpc("space-a"), "space-a"));
+    await flush();
+  });
+  return {
+    container,
+    assign,
+    portalBodies,
+    setStatus: (value: Record<string, unknown>) => {
+      current = value;
+    },
+    has: (label: string) =>
+      [...container.querySelectorAll("button")].some(
+        (candidate) => candidate.textContent === label,
+      ),
+    press: async (label: string) => {
+      await act(async () => {
+        button(container, label).click();
+        await flush();
+      });
+    },
+    done: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+it("offers an owner of a plan without model credits Cancel trial, in the cancel flow", async () => {
+  const view = await legacyPanel(legacy);
+  expect(view.has("Cancel plan")).toBe(false);
+  await view.press("Cancel trial");
+  expect(view.portalBodies).toEqual([{ json: { intent: "cancel" } }]);
+  expect(view.assign).toHaveBeenCalledExactlyOnceWith("https://portal.example/flow");
+  view.done();
+});
+
+it("offers Cancel plan on an active plan, and none once it is set to end", async () => {
+  const active = await legacyPanel({ ...legacy, state: "active" });
+  expect(active.has("Cancel plan")).toBe(true);
+  active.done();
+  const ending = await legacyPanel({ ...legacy, state: "active", cancelAtPeriodEnd: true });
+  expect(ending.has("Cancel plan")).toBe(false);
+  expect(ending.has("Cancel trial")).toBe(false);
+  expect(ending.has("Manage")).toBe(true);
+  ending.done();
+});
+
+it("explains billing to a member and to an owner with no customer, and no one else", async () => {
+  const member = await legacyPanel({ ...legacy, canManage: false });
+  expect(member.container.textContent).toContain(
+    "Only the organization owner can change or cancel billing.",
+  );
+  expect(member.has("Cancel trial")).toBe(false);
+  member.done();
+  const free = await legacyPanel({ ...legacy, state: "none", hasCustomer: false });
+  expect(free.container.textContent).toContain(
+    "No payment method on file. Nothing will be charged.",
+  );
+  free.done();
+  const owner = await legacyPanel(legacy);
+  expect(owner.container.textContent).not.toContain("Only the organization owner");
+  expect(owner.container.textContent).not.toContain("Nothing will be charged");
+  owner.done();
+});
+
+it("re-reads the status when the server finds no plan to cancel, and shows no error", async () => {
+  const view = await legacyPanel(legacy, () =>
+    Response.json(
+      { json: { defined: false, code: "NO_PLAN_TO_CANCEL", status: 409, message: "No plan" } },
+      { status: 409 },
+    ),
+  );
+  view.setStatus({ ...legacy, cancelAtPeriodEnd: true });
+  await view.press("Cancel trial");
+  expect(view.has("Cancel trial")).toBe(false);
+  expect(view.assign).not.toHaveBeenCalled();
+  expect(view.container.querySelector('[role="alert"]')).toBeNull();
+  view.done();
+});
+
+it("shows the usual error, and keeps the button, when billing is busy", async () => {
+  const view = await legacyPanel(legacy, () =>
+    Response.json(
+      { json: { defined: false, code: "CONFLICT", status: 409, message: "Billing is busy" } },
+      { status: 409 },
+    ),
+  );
+  await view.press("Cancel trial");
+  expect(view.container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Could not open billing",
+  );
+  expect(view.has("Cancel trial")).toBe(true);
+  expect(view.assign).not.toHaveBeenCalled();
+  view.done();
+});
