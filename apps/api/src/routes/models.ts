@@ -54,11 +54,10 @@ import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import {
-  firstModelConnectAnalytics,
   recordSignInStep,
   signInDurationMs,
   signInFlow,
-  signInTry,
+  signInRecorder,
   startModelConnect,
 } from "../models/model-connect-analytics.js";
 import {
@@ -110,13 +109,7 @@ export function modelsRoutes(ctx: RouterContext) {
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
       try {
-        // Read before the save: it only counts a member's first connection.
-        const record = await firstModelConnectAnalytics(
-          deps,
-          actor,
-          "oauth",
-          signInTry(login.measure),
-        );
+        const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
@@ -463,12 +456,7 @@ export function modelsRoutes(ctx: RouterContext) {
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(
-            deps,
-            context.actor,
-            "oauth",
-            signInTry(result.measure),
-          );
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           return { status: "error" as const, error: result.error };
         }
@@ -481,12 +469,7 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(
-            deps,
-            context.actor,
-            "oauth",
-            signInTry(result.measure),
-          );
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }

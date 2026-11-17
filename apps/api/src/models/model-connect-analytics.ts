@@ -57,24 +57,23 @@ function recorder(
 }
 
 /**
- * Measures the "Connect a model" step: only while the user has no model chat can run, so
- * later settings edits stay out of the funnel. Returns a recorder that does nothing otherwise.
+ * Records the outcome of a sign-in that was measured when it began. It stays measured to
+ * its end, whatever else its person connects meanwhile; one that was not is never recorded.
  */
-export async function firstModelConnectAnalytics(
-  deps: RouterDeps,
-  actor: Actor,
-  method: ConnectMethod,
-  attempted: ModelConnectTry = {},
-): Promise<ModelConnectRecorder> {
-  const analytics = deps.analytics;
-  if (!analytics || !(await needsFirstModel(deps, actor))) return () => {};
-  return recorder(analytics, actor.userId, method, attempted);
+export function signInRecorder(
+  analytics: ProductAnalytics | undefined,
+  userId: string,
+  measure: PiOAuthMeasure | undefined,
+): ModelConnectRecorder {
+  if (!analytics || !measure) return () => {};
+  return recorder(analytics, userId, "oauth", signInTry(measure));
 }
 
 /**
- * Begins a measured try: numbers it for the person and records that it started. `measure`
- * is what a sign-in carries so its later steps are reported; absent when the try is not
- * measured.
+ * Measures the "Connect a model" step: only while the user has no model chat can run, so
+ * later settings edits stay out of the funnel. Begins a measured try: numbers it for the
+ * person and records that it started. `measure` is what a sign-in carries so its later
+ * steps are reported; absent when the try is not measured.
  */
 export async function startModelConnect(
   deps: RouterDeps,
@@ -89,7 +88,8 @@ export async function startModelConnect(
     "model connect try number",
     deps.prisma.user.update({
       where: { id: actor.userId },
-      data: { modelConnectStarts: { increment: 1 } },
+      // A newer try replaces a credits choice still waiting for its purchase.
+      data: { modelConnectStarts: { increment: 1 }, pendingCreditsConnect: null },
       select: { modelConnectStarts: true },
     }),
   );
@@ -100,14 +100,26 @@ export async function startModelConnect(
   return { record, ...(attempt ? { measure: { ...tried, attempt } } : {}) };
 }
 
-/** Choosing credits connects at once when the account already holds some. */
-export async function recordCreditsUsable(
+/**
+ * Choosing credits connects at once when the account already holds some. Otherwise the
+ * try waits for the purchase that funds it, which billing reports when it lands.
+ */
+export async function recordCreditsChoice(
   deps: RouterDeps,
   actor: Actor,
   started: Awaited<ReturnType<typeof startModelConnect>>,
 ): Promise<void> {
-  if (!started.measure || (await needsFirstModel(deps, actor)) !== false) return;
-  started.record(undefined, { name: "model_connected" });
+  if (!started.measure) return;
+  const needsModel = await needsFirstModel(deps, actor);
+  if (needsModel === false) started.record(undefined, { name: "model_connected" });
+  if (needsModel !== true) return;
+  await bestEffort(
+    "credits choice awaiting its purchase",
+    deps.prisma.user.updateMany({
+      where: { id: actor.userId, modelConnectStarts: started.measure.attempt },
+      data: { pendingCreditsConnect: started.measure.attempt },
+    }),
+  );
 }
 
 /** Only fixed catalog ids leave the server; compatible endpoints never send their address. */

@@ -98,8 +98,9 @@ export function useOnboardingModel({
   });
   const { oauthPending, cancelOAuthAttempt, startSubscriptionSignIn } = signIn;
   const copyOAuthCode = (code: string) => {
-    copyText(code);
-    signIn.reportSignInStep("code_copied");
+    void copyText(code).then((copied) => {
+      if (copied) signIn.reportSignInStep("code_copied");
+    });
   };
 
   const providers = useMemo(() => {

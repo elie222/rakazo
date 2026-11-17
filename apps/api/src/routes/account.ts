@@ -70,7 +70,7 @@ import {
   withVoiceConnection,
 } from "../calls/voice.js";
 import {
-  recordCreditsUsable,
+  recordCreditsChoice,
   recordSignInStep,
   startModelConnect,
 } from "../models/model-connect-analytics.js";
@@ -140,7 +140,7 @@ export function accountRoutes(ctx: RouterContext) {
           input.interval,
           input.tier,
         );
-        if (started) await recordCreditsUsable(deps, context.actor, started);
+        if (started) await recordCreditsChoice(deps, context.actor, started);
         return selected;
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>

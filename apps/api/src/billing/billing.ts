@@ -382,23 +382,25 @@ export function createBillingService(deps: {
 
   /**
    * The outcome of choosing credits with none on the account: the purchase that funds it.
-   * It lands from the payment provider, so no app is named; only an owner who began
-   * connecting a first model is counted, with the number of that try.
+   * Only an owner whose latest try at connecting a first model was that choice is counted,
+   * once. It lands from the payment provider, so no app is named.
    */
   async function reportCreditsConnected(organizationId: string) {
     const { analytics } = deps;
     const owner = analytics && (await ownerUserId(organizationId));
     if (!owner) return;
-    const started = await prisma.user.findUnique({
+    const waiting = await prisma.user.findUnique({
       where: { id: owner },
-      select: { modelConnectStarts: true },
+      select: { pendingCreditsConnect: true },
     });
-    if (!started?.modelConnectStarts) return;
-    analytics.capture(owner, {
-      name: "model_connected",
-      method: "credits",
-      attempt: started.modelConnectStarts,
+    const attempt = waiting?.pendingCreditsConnect;
+    if (!attempt) return;
+    const taken = await prisma.user.updateMany({
+      where: { id: owner, pendingCreditsConnect: attempt },
+      data: { pendingCreditsConnect: null },
     });
+    if (taken.count === 1)
+      analytics.capture(owner, { name: "model_connected", method: "credits", attempt });
   }
 
   async function ownerUserId(organizationId: string) {

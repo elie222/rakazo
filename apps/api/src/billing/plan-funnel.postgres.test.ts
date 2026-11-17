@@ -115,12 +115,12 @@ dbTests("plan choice funnel", () => {
     const before = events.length;
     await service.purchaseCredits(actor, { amountCents: 2000, monthly: false });
     provider.completeCreditCheckout(customer);
-    // Someone who never began connecting a first model is not part of that measurement.
+    // A purchase by someone whose latest try was not a credits choice is not that try's outcome.
     await service.sync(customer);
     expect(events.slice(before).map((event) => event.name)).not.toContain("model_connected");
 
     await prisma.modelCreditAccount.update({ where: { organizationId }, data: { mode: null } });
-    await prisma.user.update({ where: { id: userId }, data: { modelConnectStarts: 2 } });
+    await prisma.user.update({ where: { id: userId }, data: { pendingCreditsConnect: 2 } });
     await service.sync(customer);
     await service.sync(customer);
     expect(events.slice(before).filter((event) => event.name === "model_connected")).toEqual([

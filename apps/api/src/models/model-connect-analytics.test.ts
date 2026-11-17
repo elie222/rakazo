@@ -8,12 +8,12 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import {
-  firstModelConnectAnalytics,
   modelConnectErrorKind,
   modelConnectProperties,
-  recordCreditsUsable,
+  recordCreditsChoice,
   recordSignInEnded,
   recordSignInStep,
+  signInRecorder,
   startModelConnect,
 } from "./model-connect-analytics.js";
 
@@ -50,48 +50,16 @@ describe("model connect analytics", () => {
     expect(modelConnectErrorKind("not an error")).toBe("other");
   });
 
-  it("records only while the user has no usable model", async () => {
-    const capture = vi.fn();
-    const deps = { analytics: { capture, flush: async () => undefined } } as unknown as RouterDeps;
-
-    modelSetup.mockResolvedValueOnce({ needsModel: false });
-    (await firstModelConnectAnalytics(deps, actor, "api_key"))("openai", {
-      name: "model_connected",
-    });
-    expect(capture).not.toHaveBeenCalled();
-
-    modelSetup.mockRejectedValueOnce(new Error("db unavailable"));
-    (await firstModelConnectAnalytics(deps, actor, "api_key"))("openai", {
-      name: "model_connected",
-    });
-    expect(capture).not.toHaveBeenCalled();
-
-    modelSetup.mockResolvedValueOnce({ needsModel: true });
-    const record = await firstModelConnectAnalytics(deps, actor, "api_key");
-    record("openai", { name: "model_connect_started" });
-    record("openai", {
-      name: "model_connect_failed",
-      error: new Error(`${MODEL_KEY_REJECTED_ERROR} sk-private`),
-    });
-    expect(capture.mock.calls).toEqual([
-      ["user-1", { name: "model_connect_started", method: "api_key", provider: "openai" }],
-      [
-        "user-1",
-        { name: "model_connect_failed", method: "api_key", provider: "openai", errorKind: "other" },
-      ],
-    ]);
-    expect(JSON.stringify(capture.mock.calls)).not.toContain("sk-private");
-  });
-
   function measuredDeps(starts = 0) {
     const capture = vi.fn();
     let count = starts;
     const update = vi.fn(async () => ({ modelConnectStarts: ++count }));
+    const updateMany = vi.fn(async () => ({ count: 1 }));
     const deps = {
       analytics: { capture, flush: async () => undefined },
-      prisma: { user: { update } },
+      prisma: { user: { update, updateMany } },
     } as unknown as RouterDeps;
-    return { deps, capture, update };
+    return { deps, capture, update, updateMany };
   }
 
   it("numbers each try and carries the app on its events", async () => {
@@ -109,28 +77,85 @@ describe("model connect analytics", () => {
     ]);
   });
 
-  it("neither counts nor measures a try by someone who already has a model", async () => {
+  it("neither counts nor measures a try by someone who already has a model, or when that is unknown", async () => {
     const { deps, capture, update } = measuredDeps();
-    modelSetup.mockResolvedValue({ needsModel: false });
+    modelSetup.mockResolvedValueOnce({ needsModel: false });
+    modelSetup.mockRejectedValueOnce(new Error("db unavailable"));
 
-    const started = await startModelConnect(deps, actor, "oauth", "openai-codex", "web");
-    started.record("openai-codex", { name: "model_connected" });
+    for (const method of ["oauth", "api_key"] as const) {
+      const started = await startModelConnect(deps, actor, method, "openai-codex", "web");
+      started.record("openai-codex", { name: "model_connected" });
+      expect(started.measure).toBeUndefined();
+    }
 
-    expect(started.measure).toBeUndefined();
     expect(update).not.toHaveBeenCalled();
     expect(capture).not.toHaveBeenCalled();
   });
 
-  it("shows the outcome of choosing credits only once they can run a model", async () => {
+  it("reduces a failed try to its kind and keeps the key out", async () => {
     const { deps, capture } = measuredDeps();
+    modelSetup.mockResolvedValue({ needsModel: true });
+
+    const started = await startModelConnect(deps, actor, "api_key", "openai", undefined);
+    started.record("openai", {
+      name: "model_connect_failed",
+      error: new Error(`${MODEL_KEY_REJECTED_ERROR} sk-private`),
+    });
+
+    expect(capture.mock.calls[1]?.[1]).toEqual({
+      name: "model_connect_failed",
+      method: "api_key",
+      provider: "openai",
+      attempt: 1,
+      errorKind: "other",
+    });
+    expect(JSON.stringify(capture.mock.calls)).not.toContain("sk-private");
+  });
+
+  it("records a sign-in's outcome by how it began, not by what its person has since", () => {
+    const capture = vi.fn();
+    const analytics = { capture, flush: async () => undefined };
+
+    signInRecorder(analytics, "user-1", undefined)("openai-codex", { name: "model_connected" });
+    expect(capture).not.toHaveBeenCalled();
+
+    signInRecorder(analytics, "user-1", { surface: "web", attempt: 2 })("openai-codex", {
+      name: "model_connected",
+      flow: "device_code",
+      durationMs: 1200,
+    });
+    expect(capture.mock.calls).toEqual([
+      [
+        "user-1",
+        {
+          name: "model_connected",
+          method: "oauth",
+          provider: "openai-codex",
+          surface: "web",
+          attempt: 2,
+          flow: "device_code",
+          durationMs: 1200,
+        },
+      ],
+    ]);
+    expect(modelSetup).not.toHaveBeenCalled();
+  });
+
+  it("connects a credits choice at once when credits can run a model, else waits for the purchase", async () => {
+    const { deps, capture, updateMany } = measuredDeps();
     modelSetup.mockResolvedValue({ needsModel: true });
     const started = await startModelConnect(deps, actor, "credits", undefined, "ios");
 
-    await recordCreditsUsable(deps, actor, started);
+    await recordCreditsChoice(deps, actor, started);
     expect(capture).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", modelConnectStarts: 1 },
+      data: { pendingCreditsConnect: 1 },
+    });
 
     modelSetup.mockResolvedValue({ needsModel: false });
-    await recordCreditsUsable(deps, actor, started);
+    await recordCreditsChoice(deps, actor, started);
+    expect(updateMany).toHaveBeenCalledTimes(1);
     expect(capture.mock.calls[1]).toEqual([
       "user-1",
       { name: "model_connected", method: "credits", surface: "ios", attempt: 1 },
