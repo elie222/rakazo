@@ -12,9 +12,9 @@ import {
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
 import { createDb } from "@rakazo/db";
+import { disposableDatabaseEnv } from "../cli/postgres.js";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
-import { disposableDatabaseEnv } from "./postgres.js";
 
 /**
  * An isolated API for the iOS catalog: scripted models, a fake sandbox, and offline billing

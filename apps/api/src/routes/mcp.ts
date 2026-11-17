@@ -38,7 +38,7 @@ import {
   lockOwner,
   serverAvailability,
   serverSecretSpace,
-} from "../spaces/availability.js";
+} from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
