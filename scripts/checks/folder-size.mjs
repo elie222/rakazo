@@ -11,14 +11,9 @@ export const BASELINE = path.join(
   "folder-size.baseline.json",
 );
 
-const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt|c|h|m|mm)$/;
+const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt|c|h|m|mm|sql|prisma)$/;
 // Generated output, migrations and vendored registry components are not organised by hand.
-const IGNORED = [
-  /\/generated\//,
-  /\/migrations\//,
-  /^packages\/ui-web\/src\/components\/ui\//,
-  /\.d\.ts$/,
-];
+const IGNORED = [/\/generated\//, /\/migrations\//, /^packages\/ui-web\/src\/components\/ui\//];
 
 /** Code files per folder (direct children only), for every tracked folder that has any. */
 export function folderCounts(files) {
