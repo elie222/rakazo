@@ -64,7 +64,7 @@ test("Kubernetes computers use the published Compose image repository", () => {
   assert.equal(
     // Source/main deployments retain their development channel; published installs use stable.
     capture(
-      "packages/adapters/src/kubernetes-sandbox.ts",
+      "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts",
       /DEFAULT_COMPUTER_IMAGE = "([^"]+)";/,
     ).split(":")[0],
     image,

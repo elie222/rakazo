@@ -21,6 +21,7 @@ import {
   recognitionLocaleTag,
   reduceThreadSnapshot,
   retryDelayMs,
+  speechFromBlocks,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
@@ -44,7 +45,6 @@ import * as dictation from "./dictation";
 import { hapticImpact, hapticSuccess } from "./haptics";
 import { deviceLanguage, getActiveUiLocale } from "./i18n";
 import type { MobileSnapshot } from "./mobile-types";
-import { blockText } from "./mobile-types";
 import { reportMobileError } from "./monitoring";
 import { fetchServer } from "./server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
@@ -730,6 +730,11 @@ function onReply(messageId: string, text: string, runId?: string): void {
   // A reply to something typed into the thread mid-call belongs on screen only.
   if (callRunId && runId && runId !== callRunId) return;
   spokenMessageId = messageId;
+  // A finished reply with nothing to say, such as tool activity alone, still ends the wait.
+  if (!text) {
+    if (state.phase === "thinking") void listen();
+    return;
+  }
   speakAndListen(text);
 }
 
@@ -1144,8 +1149,7 @@ function watchReplies(
               snapshot?.activeRuns?.find((active) => active.id === message.runId) ?? snapshot?.run;
             const fromAnotherRun = Boolean(message.runId && message.runId !== run?.id);
             if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) return;
-            const text = blockText(message).trim();
-            if (!text) return;
+            const text = speechFromBlocks(message.blocks).trim();
             lastSeen = message.id;
             onNewReply(message.id, text, message.runId);
           },

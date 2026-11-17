@@ -39,12 +39,12 @@ import {
   unchangedVisualLoopToolResult,
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
-} from "./desktop-command-guard.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+} from "./providers/computer/desktop/desktop-command-guard.js";
 import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";

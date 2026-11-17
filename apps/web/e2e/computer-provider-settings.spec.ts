@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { computerProviderDescriptors } from "../../../packages/adapters/src/fake-computer-settings.test-support";
+import { computerProviderDescriptors } from "../../../packages/adapters/src/providers/computer/fake/fake-computer-settings.test-support";
 import {
   captureScreenshot,
   chooseOption,

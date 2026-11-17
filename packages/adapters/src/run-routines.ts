@@ -20,9 +20,9 @@ import {
   spaceTakesWork,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { protectedComputerLifecycleRefusal } from "./desktop-command-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { routineRunModelPin } from "./model-selection.js";
+import { protectedComputerLifecycleRefusal } from "./providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 import { nextRoutineWatchAt, parseRoutineWatch, tickRoutineWatch } from "./routine-watch.js";
 import { notifyRun } from "./run-notifications.js";

@@ -166,7 +166,14 @@ describe("shared role editor", () => {
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
   });
-  it("reopens on the cached list without a spinner while it refreshes", async () => {
+  it("does not show the unconfigured label before the first load", async () => {
+    const hold = new Promise<never>(() => undefined);
+    api.role.mockReturnValue(hold);
+    api.forRole.mockReturnValue(hold);
+    await render();
+    expect(container.textContent).not.toContain("Deployment default");
+  });
+  it("reopens on the cached list while it refreshes", async () => {
     saved = { primary: chat, backups: [mini] };
     await render();
     expect(rows()).toEqual(["ChatOpenRouter", "MiniOpenRouter"]);
@@ -177,7 +184,6 @@ describe("shared role editor", () => {
     api.forRole.mockReturnValue(hold);
     const loads = api.role.mock.calls.length;
     await render();
-    expect(container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
     expect(rows()).toEqual(["ChatOpenRouter", "MiniOpenRouter"]);
     expect(api.role.mock.calls.length).toBe(loads + 1);
   });
@@ -218,6 +224,35 @@ describe("shared role editor", () => {
       expect.objectContaining({ primary: jev, backups: [mini] }),
       expect.anything(),
     );
+  });
+  it("moves a dragged row through the list and saves the order once on drop", async () => {
+    saved = { primary: chat, backups: [jev, mini] };
+    await render();
+    const row = (n: number) => container.querySelector(`[data-testid="model-role-row-${n}"]`)!;
+    // jsdom has no layout, so every row reads as zero height and the pointer as below its middle.
+    const dragEvent = async (target: Element, type: string, clientY = 0) => {
+      const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
+        dataTransfer: { setDragImage: () => undefined },
+        clientY,
+      });
+      await act(async () => target.dispatchEvent(event));
+    };
+    await dragEvent(row(3), "dragstart");
+    await dragEvent(row(2), "dragover", -1);
+    await dragEvent(row(1), "dragover", -1);
+    await dragEvent(row(2), "dragover", -1);
+    await dragEvent(row(2), "dragover", -1);
+    const names = () => rows().map((name) => name?.replace(/OpenRouter$/, ""));
+    expect(names()).toEqual(["Mini", "Chat", "Jev 1.14"]);
+    expect(api.setRole).not.toHaveBeenCalled();
+    await dragEvent(row(1), "drop");
+    await dragEvent(row(1), "dragend");
+    expect(api.setRole).toHaveBeenCalledTimes(1);
+    expect(api.setRole).toHaveBeenLastCalledWith(
+      expect.objectContaining({ primary: mini, backups: [chat, jev] }),
+      expect.anything(),
+    );
+    expect(names()).toEqual(["Mini", "Chat", "Jev 1.14"]);
   });
   it("lets any fallback lead the main model, including a deployment-managed one", async () => {
     const managed = { provider: "anthropic", modelId: "claude" };

@@ -127,6 +127,20 @@ describe("speakable", () => {
       ]),
     ).toContain("Ship it?");
   });
+
+  it("leaves tool activity out of what a voice reads, keeping the bot's own narration", () => {
+    expect(
+      speechFromBlocks([
+        { kind: "steps", steps: [{ label: "Shell", count: 2 }] },
+        { kind: "progress", text: "Using shell", activity: true },
+        { kind: "progress", text: "Let me check the build." },
+        { kind: "text", text: "It passes." },
+      ]),
+    ).toBe("Let me check the build.\nIt passes.");
+    expect(
+      speechFromBlocks([{ kind: "progress", text: "Searching the web: weather", activity: true }]),
+    ).toBe("");
+  });
 });
 
 describe("toUtterances", () => {
