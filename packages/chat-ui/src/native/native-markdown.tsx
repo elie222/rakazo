@@ -32,7 +32,7 @@ import type { FenceStyles } from "./styles";
 
 const MONO_FONT = Platform.select({ ios: "Menlo", default: "monospace" });
 const BLOCK_GAP = 8;
-const WEBSITE_LINK = "^https?://";
+const WEBSITE_LINK = "^[Hh][Tt][Tt][Pp][Ss]?://";
 const MENTION_LINK = "^rakazo-mention:";
 const PAGE_LINK = "^page:";
 // Addresses the app will not open (any scheme but these) read as plain text, as they do on web.

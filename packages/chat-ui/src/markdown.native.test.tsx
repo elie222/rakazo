@@ -905,7 +905,7 @@ describe("native website links", () => {
     for (const url of ["/docs", "javascript:alert(1)", "ftp://example.test/f"]) {
       expect(variantFor(url)).toEqual({ color: darkTokens.foreground, underline: false });
     }
-    expect(variantFor("HTTPS://native-a.example.test/")).toBeUndefined();
+    expect(variantFor("HTTPS://native-a.example.test/")).toHaveProperty("pill");
     await view.cleanup();
   });
 });
