@@ -1,8 +1,12 @@
 import { implement, ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { CatalogReads } from "@rakazo/adapters";
 import {
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
+  approvedModelCreditCatalogEntry,
+  approvedModelCreditSeesImages,
+  availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
   codexLiveCatalogsForSpace,
@@ -12,6 +16,7 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hasHostedModelCredits,
   hasReadyModelCredential,
   hiddenCatalogModel,
   isAutoReviewCheckerConfigured,
@@ -19,6 +24,7 @@ import {
   listAvailablePiCatalog,
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
+  modelCreditOfferings,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
@@ -27,6 +33,7 @@ import {
   scriptedCatalogEntry,
   spaceCanRunCatalogModel,
   validateConnectedModelChoice,
+  validateCreditOfferingChoice,
   withLiveModelSettings,
 } from "@rakazo/adapters";
 import type {
@@ -46,17 +53,21 @@ import {
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { createAgentImportServices } from "../agent-import-services.js";
-import { createAgentSkillsService } from "../agent-skills.js";
-import { createBotRemoval } from "../bot-removal.js";
-import { createMcpServers } from "../mcp-servers.js";
-import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
-import { rosterChangeFor } from "../roster-procedures.js";
+import { procedureSecurityEvent } from "../auth/security-audit.js";
+import { createAgentImportServices } from "../bots/agent-import-services.js";
+import { createAgentSkillsService } from "../bots/agent-skills.js";
+import { createBotRemoval } from "../bots/bot-removal.js";
+import { rosterChangeFor } from "../bots/roster-procedures.js";
+import { createTaughtSkillsService } from "../bots/taught-skills.js";
+import { createMcpServers } from "../integrations/mcp-servers.js";
+import { createModelConnector, prepareAllowedThinkingLevels } from "../models/model-credentials.js";
 import type { RouterDeps } from "../router.js";
-import { createRoutineAnnouncer } from "../routines.js";
-import { procedureSecurityEvent } from "../security-audit.js";
-import { spaceChangesFor } from "../space-change-procedures.js";
-import { createTaughtSkillsService } from "../taught-skills.js";
+import { createRoutineAnnouncer } from "../routines/routines.js";
+import { spaceChangesFor } from "../spaces/space-change-procedures.js";
+import {
+  ModelCreditOfferingUnavailableError,
+  UnsupportedThinkingLevelError,
+} from "./model-role-errors.js";
 import { meDto } from "./shared.js";
 
 /**
@@ -144,17 +155,39 @@ export function createRouterContext(deps: RouterDeps) {
   });
   // The scripted fixture only exists to drive the scripted runtime; a real runtime
   // cannot execute it, so it stays out of the user-facing catalog otherwise.
-  const chatCatalog = async (actor: Actor) => {
-    const catalog = await catalogForSpace(actor);
+  const chatCatalog = async (actor: Actor, role: ModelRole = "main", reads?: CatalogReads) => {
+    const catalog = await catalogForSpace(actor, role, reads);
     return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
   };
-  const catalogForSpace = async (actor: Actor) => {
+  const catalogForSpace = async (
+    actor: Actor,
+    role: ModelRole = "main",
+    reads: CatalogReads = new Map(),
+  ) => {
     const auth = await modelCredentialAuthKindsForSpace(
       deps.prisma,
       deps.secrets,
       actor,
       deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
     );
+    const configured = deps.billing?.modelCreditsEnabled
+      ? (modelCreditOfferings()?.offerings ?? [])
+      : [];
+    const fundedProviders = new Set(
+      (
+        await Promise.all(
+          [...new Set(configured.map((entry) => entry.provider))].map(async (provider) =>
+            (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
+          ),
+        )
+      ).filter((provider): provider is string => provider !== null),
+    );
+    const approved = fundedProviders.size
+      ? await availableModelCreditOfferings(deps.prisma, deps.secrets, {
+          providers: fundedProviders,
+          reads,
+        })
+      : [];
     const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
     const [live, providerLive] = await Promise.all([
       codexLiveCatalogsForSpace(deps.prisma, deps.secrets, actor, auth, codexCatalog, {
@@ -175,10 +208,38 @@ export function createRouterContext(deps: RouterDeps) {
     let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
       : undefined;
-    const merged = withLiveModelSettings(
-      auth,
-      applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
-    );
+    const merged: ModelCatalogEntry[] = [
+      ...withLiveModelSettings(
+        auth,
+        applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
+      ),
+      ...(role === "approval" ? decisionModelCatalog() : []),
+    ];
+    for (const offering of approved) {
+      if (
+        !fundedProviders.has(offering.provider) ||
+        merged.some(
+          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+        )
+      )
+        continue;
+      const entry =
+        listAvailablePiCatalog({ [offering.provider]: "api_key" }).find(
+          (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
+        ) ??
+        (await approvedModelCreditCatalogEntry(
+          deps.prisma,
+          deps.secrets,
+          offering.provider,
+          offering.modelId,
+          reads,
+        ));
+      if (entry) merged.push(entry);
+    }
+    // Legacy decision protocols have their own prices, outside the bundled chat catalog.
+    const canRun = (entry: ModelCatalogEntry) =>
+      (entry.protocol === "decisions" && !modelCreditOfferings()) ||
+      spaceCanRunCatalogModel(auth, entry);
     // A connected provider's saved choice stays listed after new users stop being offered it.
     if (
       !selected &&
@@ -186,8 +247,9 @@ export function createRouterContext(deps: RouterDeps) {
         (entry) =>
           (auth.byProvider[entry.provider] ||
             auth.byModel[entry.provider] ||
-            entry.provider === auth.managedProvider) &&
-          (hiddenCatalogModel(entry) || !spaceCanRunCatalogModel(auth, entry)),
+            entry.provider === auth.managedProvider ||
+            auth.managedProviders?.includes(entry.provider)) &&
+          (hiddenCatalogModel(entry) || !canRun(entry)),
       )
     )
       selected = await savedCatalogSelections(deps.prisma, actor.userId);
@@ -195,10 +257,30 @@ export function createRouterContext(deps: RouterDeps) {
     return offeredCatalog(merged, selected)
       .filter(
         (entry) =>
-          spaceCanRunCatalogModel(auth, entry) || selected?.has(`${entry.provider}:${entry.id}`),
+          (canRun(entry) &&
+            (!modelCreditOfferings() ||
+              !runsOnHostedCredits(auth, entry) ||
+              approved.some(
+                (offering) => offering.provider === entry.provider && offering.modelId === entry.id,
+              ))) ||
+          selected?.has(`${entry.provider}:${entry.id}`),
       )
+      .map((entry) => {
+        const offering = approved.find(
+          (offering) =>
+            offering.provider === entry.provider &&
+            offering.modelId === entry.id &&
+            fundedProviders.has(entry.provider),
+        );
+        return offering ? { ...entry, creditOfferingId: offering.id } : entry;
+      })
       .map((entry) =>
-        entry.provider === auth.managedProvider
+        (
+          modelCreditOfferings()
+            ? Boolean(entry.creditOfferingId)
+            : entry.provider === auth.managedProvider ||
+              auth.managedProviders?.includes(entry.provider)
+        )
           ? {
               ...entry,
               managed: true,
@@ -223,9 +305,15 @@ export function createRouterContext(deps: RouterDeps) {
               ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
               : null,
           }
-        : { env: process.env };
+        : { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true };
     let deploymentPrimary = deploymentModelRole(role, defaults).primary;
-    if (role === "approval" && deploymentPrimary && !isAutoReviewCheckerConfigured({})) {
+    if (
+      role === "approval" &&
+      deploymentPrimary &&
+      !isAutoReviewCheckerConfigured({
+        checker: { provider: deploymentPrimary.provider, model: deploymentPrimary.modelId },
+      })
+    ) {
       try {
         const ready = await hasReadyModelCredential(
           deps.prisma,
@@ -253,10 +341,35 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor,
     role: ModelRole,
     view: ModelRoleView,
+    reads: CatalogReads = new Map(),
   ): Promise<ModelRoleView> => {
     const choice = role === "main" ? (view.primary ?? view.deploymentPrimary) : null;
     if (!choice) return view;
     try {
+      if (choice.creditOfferingId || (!view.primary && modelCreditOfferings())) {
+        const offering = modelCreditOfferings()?.offerings.find(
+          (entry) =>
+            entry.provider === choice.provider &&
+            entry.modelId === choice.modelId &&
+            (!choice.creditOfferingId || entry.id === choice.creditOfferingId),
+        );
+        if (
+          !offering ||
+          !deps.billing?.modelCreditsEnabled ||
+          !(await hasHostedModelCredits(deps.prisma, actor, choice.provider, true))
+        )
+          return { ...view, seesImages: false };
+        return {
+          ...view,
+          seesImages: await approvedModelCreditSeesImages(
+            deps.prisma,
+            deps.secrets,
+            choice.provider,
+            choice.modelId,
+            reads,
+          ),
+        };
+      }
       const [credential, catalog] = await Promise.all([
         // The deployment's model runs on the deployment's key, never a member's connection.
         view.primary
@@ -289,18 +402,15 @@ export function createRouterContext(deps: RouterDeps) {
       return view;
     }
   };
-  const modelRoleCatalog = async (actor: Actor, role: ModelRole): Promise<ModelCatalogEntry[]> => {
-    const catalog = await chatCatalog(actor);
-    const decisions = role === "approval" ? decisionModelCatalog() : [];
-    const managedProviders = new Set(
-      catalog.filter((entry) => "managed" in entry && entry.managed).map((entry) => entry.provider),
-    );
+  const modelRoleCatalog = async (
+    actor: Actor,
+    role: ModelRole,
+    reads?: CatalogReads,
+  ): Promise<ModelCatalogEntry[]> => {
+    const catalog = await chatCatalog(actor, role, reads);
     return withServingConnections(
       actor,
-      [
-        ...catalog,
-        ...decisions.map((entry) => ({ ...entry, managed: managedProviders.has(entry.provider) })),
-      ].filter((entry) => modelSupportsRole(entry, role)),
+      catalog.filter((entry) => modelSupportsRole(entry, role)),
     );
   };
   /**
@@ -326,13 +436,13 @@ export function createRouterContext(deps: RouterDeps) {
     return Promise.all(
       catalog.map(async (entry) => {
         const owners = byProvider.get(canonicalPiProviderId(entry.provider)) ?? [];
-        // Funded models run on the deployment's key, whichever connection is chosen, and
-        // decision models run through the provider's decisions API on any of its keys.
+        // Explicit credit routes keep their personal alternatives independently scoped.
+        // Legacy managed models and decision protocols still share provider-level access.
         if (
-          owners.length < 2 ||
+          (owners.length < 2 && !entry.creditOfferingId) ||
           entry.placeholder ||
           entry.protocol === "decisions" ||
-          ("managed" in entry && entry.managed)
+          (entry.managed && !entry.creditOfferingId)
         )
           return entry;
         const serving: string[] = [];
@@ -357,14 +467,40 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor,
     role: ModelRole,
     choices: ModelRoleChoice[],
+    reads: CatalogReads = new Map(),
   ): Promise<void> => {
     if (choices.length === 0) return;
-    const catalog = await modelRoleCatalog(actor, role);
+    const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
       const entry = catalog.find(
         (entry) =>
           entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,
       );
+      if (choice.creditOfferingId) {
+        if (
+          !deps.billing?.modelCreditsEnabled ||
+          !(await validateCreditOfferingChoice(
+            deps.prisma,
+            deps.secrets,
+            actor,
+            choice.provider,
+            choice.modelId,
+            choice.creditOfferingId,
+            reads,
+          )) ||
+          !entry ||
+          entry.creditOfferingId !== choice.creditOfferingId ||
+          (role === "computer" && entry.images === false)
+        )
+          throw new ModelCreditOfferingUnavailableError();
+        if (
+          choice.thinkingLevel &&
+          entry.thinkingLevels &&
+          !entry.thinkingLevels.includes(choice.thinkingLevel)
+        )
+          throw new UnsupportedThinkingLevelError();
+        continue;
+      }
       // A row pinned to a connection runs only there, never on the deployment's.
       const resolution = { credentialId: choice.credentialId };
       const credential = await findConnectedModelCredential(

@@ -14,6 +14,7 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -22,6 +23,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDeadJobPruner,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
@@ -166,7 +168,7 @@ async function main() {
     ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const shutdown = new AbortController();
@@ -229,6 +231,23 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
+  // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
+  // switched off since they were queued, those jobs are dropped.
+  // Read only when product mail is on, so incomplete mail settings never stop a worker that
+  // sends none.
+  const accountEmail =
+    process.env.WELCOME_EMAIL_ENABLED === "true"
+      ? configuredEmailProvider({
+          provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
+          apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+          from: process.env.EMAIL_FROM?.trim() || undefined,
+          replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+          smtpUrl: process.env.SMTP_URL?.trim() || undefined,
+        })
+      : undefined;
+  const lifecycleEmail = accountEmail
+    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+    : undefined;
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     prisma,
@@ -247,6 +266,7 @@ async function main() {
     onTicketChange: ticketChanges,
     // Bots use a separate sending connection from account email.
     email,
+    lifecycleEmail,
     messaging,
     isMessagingInstallationActive: messagingInstallations
       ? (id: string) => messagingInstallations.isActive(id)
@@ -284,6 +304,7 @@ async function main() {
   const reconciler = createRunReconciler(
     {
       prisma,
+      secretStore: secrets,
       jobs,
       events,
       notifications,
@@ -319,6 +340,7 @@ async function main() {
         await jobHost.stop();
         // A bot's email still on its way finishes before the process exits.
         await email?.drain?.();
+        await accountEmail?.drain?.();
         await jobs.close();
         await secrets.close();
         await realtime.close();

@@ -4,21 +4,24 @@ import { SandboxRateLimitError, SandboxSizeUnavailableError } from "@rakazo/adap
 import type { ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
 import { withAbort } from "@rakazo/core";
-import { shellQuote } from "../../../computer-support.js";
 import type {
   CommandResult,
   CommandStartOpts,
   RemoteDesktop,
   RemoteDesktopSdk,
-} from "../../../remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
 import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
   SandboxUnsafeStopError,
   sandboxNotFoundError,
-} from "../../../sandbox-errors.js";
+} from "../../../computers/sandbox/sandbox-errors.js";
+import { shellQuote } from "../../../computers/screens/computer-support.js";
 
 /** instabox's stock desktop image; the shared prepare step installs the rest. */
 export const INSTABOX_COMPUTER_TEMPLATE = "agent-browser";

@@ -21,8 +21,8 @@ import {
   assertHttpsForKeyedOpenAiCompatibleUrl,
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatAllowPublicHosts,
-} from "../../../openai-compatible-url.js";
-import { createOpenAiCompatibleFetch } from "../../../pi-openai-compatible-provider.js";
+} from "../../../models/endpoints/openai-compatible-url.js";
+import { createOpenAiCompatibleFetch } from "../../../runtime/pi/models/pi-openai-compatible-provider.js";
 import {
   readVoiceAudio,
   readVoiceJson,
@@ -32,8 +32,8 @@ import {
   voiceHttpError,
   voiceLanguageHint,
   voiceRequestError,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 import { OPENAI_VOICES } from "../openai/openai-voice.js";
 
 export { DEFAULT_COMPATIBLE_STT_MODEL, DEFAULT_COMPATIBLE_TTS_MODEL };
@@ -623,6 +623,14 @@ function isNetworkError(error: Error): boolean {
 }
 
 export const openAiCompatibleVoice: VoiceProviderDefinition = {
+  customEndpoints: true,
+  validateConnection: ({ plaintext, baseUrl, ...connection }, { allowPrivateEndpoint }) => {
+    serializeOpenAiCompatibleVoiceSecret(
+      { ...connection, baseUrl: baseUrl ?? "", apiKey: plaintext },
+      undefined,
+      { allowPrivate: allowPrivateEndpoint },
+    );
+  },
   catalog: {
     name: "Self-hosted",
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",

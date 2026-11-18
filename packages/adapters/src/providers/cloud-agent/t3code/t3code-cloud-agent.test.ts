@@ -1,8 +1,11 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { cloudAgentsEnabled, createCloudAgentConnection } from "../../../cloud-agent-factory.js";
-import { resolveCloudAgentProvider } from "../../../cloud-agent-provider-env.js";
+import {
+  cloudAgentsEnabled,
+  createCloudAgentConnection,
+} from "../../../cloud-agents/cloud-agent-factory.js";
+import { resolveCloudAgentProvider } from "../../../cloud-agents/cloud-agent-provider-env.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
 import { link, SECRET_BODY, T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 

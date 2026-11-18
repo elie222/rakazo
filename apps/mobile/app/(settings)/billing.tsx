@@ -18,22 +18,27 @@ import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { selectedSpaceId } from "../../lib/api";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { selectedSpaceId } from "../../lib/api/api";
 import {
   currentPlan,
   openBillingPage,
   ownKeySubscriptionCents,
   planEndsAt,
-} from "../../lib/billing";
-import { dateLocaleForUi } from "../../lib/i18n";
-import type { SaveSend } from "../../lib/query";
-import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
-import { rememberReferral } from "../../lib/referral";
-import { useScreenQuery } from "../../lib/screen-query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
+} from "../../lib/billing/billing";
+import { rememberReferral } from "../../lib/billing/referral";
+import { dateLocaleForUi } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { analyticsSurface } from "../../lib/native/analytics-surface";
+import type { SaveSend } from "../../lib/query/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
@@ -378,7 +383,10 @@ export default function BillingScreen() {
               disabled={pending || !status.creditPurchasesEnabled}
               onPress={() =>
                 action(async (send) => {
-                  await send("billing/selectFunding", { funding: "credits" });
+                  await send("billing/selectFunding", {
+                    funding: "credits",
+                    surface: analyticsSurface(),
+                  });
                   router.replace("/models");
                   return undefined;
                 })

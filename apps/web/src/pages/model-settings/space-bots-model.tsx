@@ -4,8 +4,8 @@ import { botsWithOwnModel } from "@rakazo/core";
 import { Button, Popover, PopoverContent, PopoverTrigger, toast } from "@rakazo/ui-web";
 import { Bot as BotIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSave } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useSave } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 
 /**
  * Bots that ignore the main model. They stay out of sight behind a small icon by the

@@ -1,8 +1,8 @@
 import { withAbort } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { expect, vi } from "vitest";
-import type { ExecOutput } from "../../../exec-computer.test-support.js";
-import { execComputerShell } from "../../../exec-computer.test-support.js";
+import type { ExecOutput } from "../../../computers/sandbox/exec-computer.test-support.js";
+import { execComputerShell } from "../../../computers/sandbox/exec-computer.test-support.js";
 import type {
   IncusClient,
   IncusResponse,

@@ -20,8 +20,8 @@ import {
   verifyVoiceHttpGet,
   voiceLanguageHint,
   voiceRequestError,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;

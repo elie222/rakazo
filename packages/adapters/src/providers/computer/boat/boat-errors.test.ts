@@ -8,7 +8,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { COMPUTER_PROVIDER_UNAVAILABLE_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import { BoatApiError, BoatRequestGate, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 
