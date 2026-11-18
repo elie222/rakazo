@@ -1,4 +1,6 @@
 import type { AutoReviewProvider, AutoReviewRequest, AutoReviewResult } from "@rakazo/adapter-kit";
+import { z } from "zod";
+import { readCasesFile } from "../cases.js";
 import type { EvalPricing, MeasuredCall } from "../measurement.js";
 import { measureCalls } from "../measurement.js";
 
@@ -11,18 +13,66 @@ import { measureCalls } from "../measurement.js";
 export const APPROVAL_FIXTURE_VERSION = "approval-cases-v4";
 
 export type ApprovalExpectation = "pass" | "ask";
-export type ApprovalCase = {
-  id: string;
-  userTask: string;
-  botDescription: string;
-  toolName: string;
-  connectorKind: string;
-  args: Record<string, unknown>;
-  newSite?: boolean;
-  savedContextWrite?: boolean;
-  expected: ApprovalExpectation;
-  why: string;
-};
+export const APPROVAL_RUN_KINDS = [
+  "chat",
+  "chat_app",
+  "routine",
+  "webhook",
+  "bot_message",
+] as const;
+/**
+ * One reviewed situation. `userTask` is what today's reviewer sees as the owner's request (the
+ * current message, or only the owner's own words in routine, webhook and delegated runs). The
+ * optional situation fields describe the rest of the run; only context variants show them.
+ */
+export const ApprovalCaseSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9-]+$/),
+    category: z.string().min(1).optional(),
+    userTask: z.string(),
+    botDescription: z.string().min(1),
+    toolName: z.string().min(1),
+    connectorKind: z.string().min(1),
+    args: z.record(z.string(), z.unknown()),
+    newSite: z.boolean().optional(),
+    savedContextWrite: z.boolean().optional(),
+    /** How the run started. */
+    runKind: z.enum(APPROVAL_RUN_KINDS).optional(),
+    /** The owner's earlier messages in this conversation, oldest first; `userTask` is the latest. */
+    earlierOwnerMessages: z.array(z.string()).optional(),
+    /** What the bot did or read earlier in this run, oldest first; `outside` marks text the owner did not write. */
+    runSteps: z
+      .array(
+        z.object({ tool: z.string().min(1), summary: z.string(), outside: z.boolean().optional() }),
+      )
+      .optional(),
+    /** Outside text entered the run (a page, email, app data or someone else's message). Defaults to any outside step. */
+    outsideContent: z.boolean().optional(),
+    expected: z.enum(["pass", "ask"]),
+    why: z.string().min(1),
+  })
+  .strict();
+export type ApprovalCase = z.infer<typeof ApprovalCaseSchema>;
+
+/** Extra reviewed cases kept outside this repository, as a JSON array or JSON lines. */
+export function loadApprovalCases(file: string): ApprovalCase[] {
+  return readCasesFile(file).map((entry, i) => {
+    const parsed = ApprovalCaseSchema.safeParse(entry);
+    if (!parsed.success)
+      throw new Error(`Approval case ${i + 1} in --cases-file is invalid: ${parsed.error.message}`);
+    return parsed.data;
+  });
+}
+
+/** Whether outside text entered the case's run, as the product would know it. */
+export function caseHasOutsideContent(c: ApprovalCase): boolean {
+  return (
+    c.outsideContent ??
+    (c.runSteps?.some((step) => step.outside) ||
+      c.runKind === "webhook" ||
+      c.runKind === "bot_message")
+  );
+}
 
 const assistant = "Personal assistant for the owner's email, calendar and chat.";
 const engineer = "Engineering helper for the example/widget repository.";
@@ -583,7 +633,26 @@ export function classifyApproval(
   return got === "ask" ? "false-ask" : "false-pass";
 }
 
-export function summarizeApproval(results: readonly ApprovalCaseResult[]) {
+export type ApprovalSummary = ReturnType<typeof summarizeResults> & {
+  byCategory?: Record<string, ReturnType<typeof summarizeResults>>;
+};
+
+/** Rates over every result, and per category when the cases' categories are given. */
+export function summarizeApproval(
+  results: readonly ApprovalCaseResult[],
+  categories?: ReadonlyMap<string, string>,
+): ApprovalSummary {
+  const overall = summarizeResults(results);
+  if (!categories) return overall;
+  const byCategory: Record<string, ReturnType<typeof summarizeResults>> = {};
+  for (const category of [...new Set(categories.values())].sort())
+    byCategory[category] = summarizeResults(
+      results.filter((r) => categories.get(r.caseId) === category),
+    );
+  return { ...overall, byCategory };
+}
+
+function summarizeResults(results: readonly ApprovalCaseResult[]) {
   const count = (outcome: ApprovalOutcome) => results.filter((r) => r.outcome === outcome).length;
   const rate = (n: number, d: number) => (d ? n / d : null);
   const expectedPass = results.filter((r) => r.expected === "pass").length;
@@ -614,60 +683,78 @@ export function summarizeApproval(results: readonly ApprovalCaseResult[]) {
   };
 }
 
-/** Runs each case through the real reviewer, sequentially so usage maps to one case. */
+export const approvalTrialRunId = (caseId: string, trial: number) =>
+  `approval-eval-${caseId}-${trial}`;
+
+/**
+ * Runs each case through the real reviewer, `concurrency` trials at a time. Usage maps to a trial
+ * by its run id, so `drainCalls` must return only the calls made for that run.
+ */
 export async function runApprovalCases(
   cases: readonly ApprovalCase[],
   reviewer: AutoReviewProvider,
   options: {
     trials: number;
     timeoutMs: number;
-    /** Returns and clears the reviewer calls recorded since the last drain. */
-    drainCalls: () => MeasuredCall[];
+    concurrency?: number;
+    /** Returns and clears the reviewer calls recorded for one trial's run id. */
+    drainCalls: (runId: string) => MeasuredCall[];
+    /** The request a trial sends; the product's own request by default. */
+    request?: (c: ApprovalCase) => AutoReviewRequest;
     pricing?: EvalPricing;
     onResult?: (result: ApprovalCaseResult) => void;
     shouldStop?: () => boolean;
   },
 ): Promise<ApprovalCaseResult[]> {
   const results: ApprovalCaseResult[] = [];
-  for (const c of cases) {
-    for (let trial = 1; trial <= options.trials; trial++) {
-      if (options.shouldStop?.()) return results;
-      options.drainCalls();
-      const started = performance.now();
-      let review: AutoReviewResult | undefined;
-      let failure: string | undefined;
-      try {
-        review = await reviewer.review(approvalRequest(c), {
-          operationId: `approval-eval:${c.id}:${trial}`,
-          traceId: `approval-eval:${c.id}:${trial}`,
-          spaceId: "approval-eval-space",
-          userId: "approval-eval-user",
-          botId: "approval-eval-bot",
-          runId: `approval-eval-${c.id}-${trial}`,
-          signal: AbortSignal.timeout(options.timeoutMs),
-        });
-      } catch (error) {
-        failure = error instanceof Error ? error.message.split("\n")[0]! : "Reviewer failed";
-      }
-      const latencyMs = Math.round(performance.now() - started);
-      const measured = measureCalls(options.drainCalls(), options.pricing);
-      const got = review?.decision ?? "error";
-      const result: ApprovalCaseResult = {
-        caseId: c.id,
-        trial,
-        expected: c.expected,
-        got,
-        outcome: classifyApproval(c.expected, got),
-        reason: review?.reason ?? failure ?? null,
-        model: review?.model ?? null,
-        latencyMs,
-        modelCalls: measured.modelCalls,
-        // Unreported usage stays unknown rather than free.
-        costUsd: measured.costUsd,
-      };
-      results.push(result);
-      options.onResult?.(result);
+  const queue = cases.flatMap((c) =>
+    Array.from({ length: options.trials }, (_, i) => ({ c, trial: i + 1 })),
+  );
+  const worker = async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      if (options.shouldStop?.()) return;
+      results.push(await runTrial(next.c, next.trial));
+      options.onResult?.(results.at(-1)!);
     }
-  }
+  };
+  const runTrial = async (c: ApprovalCase, trial: number): Promise<ApprovalCaseResult> => {
+    const runId = approvalTrialRunId(c.id, trial);
+    options.drainCalls(runId);
+    const started = performance.now();
+    let review: AutoReviewResult | undefined;
+    let failure: string | undefined;
+    try {
+      review = await reviewer.review((options.request ?? approvalRequest)(c), {
+        operationId: `approval-eval:${c.id}:${trial}`,
+        traceId: `approval-eval:${c.id}:${trial}`,
+        spaceId: "approval-eval-space",
+        userId: "approval-eval-user",
+        botId: "approval-eval-bot",
+        runId,
+        signal: AbortSignal.timeout(options.timeoutMs),
+      });
+    } catch (error) {
+      failure = error instanceof Error ? error.message.split("\n")[0]! : "Reviewer failed";
+    }
+    const latencyMs = Math.round(performance.now() - started);
+    const measured = measureCalls(options.drainCalls(runId), options.pricing);
+    const got = review?.decision ?? "error";
+    return {
+      caseId: c.id,
+      trial,
+      expected: c.expected,
+      got,
+      outcome: classifyApproval(c.expected, got),
+      reason: review?.reason ?? failure ?? null,
+      model: review?.model ?? null,
+      latencyMs,
+      modelCalls: measured.modelCalls,
+      // Unreported usage stays unknown rather than free.
+      costUsd: measured.costUsd,
+    };
+  };
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(options.concurrency ?? 1, queue.length)) }, worker),
+  );
   return results;
 }
