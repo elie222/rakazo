@@ -1,12 +1,13 @@
 import type { ToolAsk } from "@rakazo/adapter-kit";
 import type { ToolQuestion, ToolQuestionAnswer } from "@rakazo/contracts";
 import { checkToolQuestionValues } from "@rakazo/contracts";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, displayName } from "@rakazo/core";
 import { createSealedBoxKey } from "@rakazo/core/node/sealed-box";
 import { takeToolQuestionAnswer } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RunContext } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
+import { notifyRun } from "../lifecycle/run-notifications.js";
 
 /**
  * How long a tool's question waits for the person. The server holds its response to the call open
@@ -49,6 +50,18 @@ async function askInRun(
     { kind: "tool_question", question, status: "pending", expiresAt, publicKey: key.publicKey },
   ]);
   if (!message) return { action: "decline" };
+  // As for any question the run asks: the person may be elsewhere. Only the integration's name is
+  // sent, never the server's own text.
+  await bestEffort(
+    "tool question notification",
+    notifyRun(deps, run, {
+      kind: "help",
+      title: `${displayName(ctx.bot.name, "Bot")} needs an answer`,
+      body: question.source,
+      botId: run.botId,
+      threadId: run.threadId,
+    }),
+  );
   const ref = { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id };
   const take = async (expire: boolean): Promise<ToolQuestionAnswer | undefined> => {
     const { answer, seq } = await takeToolQuestionAnswer(deps.prisma, ref, { expire });

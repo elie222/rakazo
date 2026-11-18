@@ -96,6 +96,7 @@ postgres("a tool's question in a running run (PostgreSQL)", () => {
       deps,
       run: { ...run, trigger: "user" },
       runId: run.id,
+      bot: { id: run.botId, name: "Asker" },
       thread: { id: run.threadId, groupId: null },
       context: { spaceId, userId, runId: run.id, signal },
       source,
