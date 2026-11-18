@@ -253,6 +253,14 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { anyOf: [{ tool: "list_files" }, { tool: "shell" }] },
   },
   {
+    id: "web-search",
+    area: "web",
+    kind: "guard",
+    purpose: "Search the web for current information.",
+    prompt: "Search the web for the latest stable Node.js release.",
+    expect: { calls: [{ tool: "web_search" }] },
+  },
+  {
     id: "web-fetch",
     area: "web",
     kind: "guard",
@@ -468,7 +476,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     kind: "control",
     purpose: "Run a command without searching for tools.",
     prompt: "Run `date -u` and tell me the result.",
-    expect: { calls: [{ tool: "shell" }], maxCalls: { find_tool: 0 } },
+    expect: { calls: [{ tool: "shell", args: { command: "~date" } }], maxCalls: { find_tool: 0 } },
   },
   {
     id: "lazy-common-web",
