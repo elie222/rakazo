@@ -21,6 +21,7 @@ export function ConnectionControls({
   codeCopied,
   connectKey,
   copyOAuthCode,
+  reportSignInStep,
   credential,
   gatewayId,
   projectId,
@@ -62,6 +63,7 @@ export function ConnectionControls({
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
+  | "reportSignInStep"
   | "credential"
   | "gatewayId"
   | "projectId"
@@ -116,6 +118,7 @@ export function ConnectionControls({
                       Sign in at{" "}
                       <a
                         href={oauth.verificationUri}
+                        onClick={() => reportSignInStep("page_opened")}
                         target="_blank"
                         rel="noreferrer"
                         className="text-foreground underline"
@@ -160,6 +163,7 @@ export function ConnectionControls({
                         Open{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -173,6 +177,7 @@ export function ConnectionControls({
                         A sign-in tab opened at{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"

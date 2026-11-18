@@ -31,6 +31,7 @@ import {
   terminatingReplyText,
   uncertainEffectResult,
 } from "../../approvals/approval-effect.js";
+import { deliverFinishedShells } from "../../computers/sandbox/shell-command-stream.js";
 import { withAutomatedLabels } from "../../messaging/automated-messages.js";
 import { withCloudflareAuth } from "../../models/endpoints/cloudflare-ai-gateway.js";
 import {
@@ -50,7 +51,6 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
-import { deliverFinishedShells } from "../../sandboxes/shell-command-stream.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
 import type { RuntimeContextDecision } from "../context/runtime-context.js";
 import { createRuntimeContextPolicy } from "../context/runtime-context.js";

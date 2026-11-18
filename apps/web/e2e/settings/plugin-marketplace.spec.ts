@@ -345,3 +345,40 @@ test("integration fallback icons preserve non-BMP initials", async ({ page }, te
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "integrations-unicode-connector");
 });
+
+test("an app that is also a chat app here leads to messaging settings", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/rpc/connections/catalog", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          { slug: "chatty", name: "Chatty", chatApp: true },
+          { slug: "notes", name: "Notes" },
+        ].map((app) => ({
+          connectorId: "fixture",
+          logo: null,
+          connected: false,
+          noAuth: false,
+          ...app,
+        })),
+      },
+    }),
+  );
+  await page.route("**/rpc/connections/list", (route) => route.fulfill({ json: { json: [] } }));
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill({
+      json: { json: { enabled: true, providers: ["chatty"], openSignup: false, identities: [] } },
+    }),
+  );
+  await signup(page, `chat-app-hint-${Date.now()}@rakazo.test`, "password12", "Chat App Hint");
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  const hint = dialog.getByTestId("chat-app-hint");
+  await expect(hint).toHaveCount(1);
+  await expect(hint).toHaveText("Tools for your bot.Chat from Chatty");
+  await captureScreenshot(page, testInfo, "integrations-chat-app-hint");
+  await hint.getByRole("button", { name: "Chat from Chatty", exact: true }).click();
+  await expect(dialog).toBeHidden();
+});

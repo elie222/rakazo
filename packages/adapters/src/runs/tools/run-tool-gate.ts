@@ -337,6 +337,7 @@ export async function gateToolCall(
             model: reviewSettings.primary.modelId,
             thinkingLevel: reviewSettings.primary.thinkingLevel,
             credentialId: reviewSettings.primary.credentialId,
+            creditOfferingId: reviewSettings.primary.creditOfferingId,
           }
         : null
       : resolveAutoReviewChecker();
@@ -902,6 +903,7 @@ async function reviewToolCall(
           model: choice.modelId,
           thinkingLevel: choice.thinkingLevel,
           credentialId: choice.credentialId,
+          creditOfferingId: choice.creditOfferingId,
         })) ?? []),
       ],
       async (checker) => {

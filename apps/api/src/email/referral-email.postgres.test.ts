@@ -77,7 +77,7 @@ dbTests("day-one email eligibility and durable claims", () => {
     return id;
   }
 
-  it("waits 24 hours, skips old accounts and honors consent, verification and ownership", async () => {
+  it("waits 24 hours and a day after any other mail, skips old accounts and honors consent, verification and ownership", async () => {
     const due = await account("due", DAY);
     const combined = await account("combined", DAY, { role: "admin, owner" });
     await account("early", DAY - 1);
@@ -89,10 +89,22 @@ dbTests("day-one email eligibility and durable claims", () => {
     await account("bad-address", DAY, { email: "invalid@" });
     const deleted = await account("deleted", DAY);
     await prisma.user.delete({ where: { id: deleted } });
+    const mailedToday = await account("mailed-today", DAY);
+    await prisma.emailSend.create({
+      data: { userId: mailedToday, kind: "another-kind", sentAt: new Date(now - DAY + 1) },
+    });
+    const mailedYesterday = await account("mailed-yesterday", DAY);
+    await prisma.emailSend.create({
+      data: { userId: mailedYesterday, kind: "another-kind", sentAt: new Date(now - DAY) },
+    });
     await reconcile();
-    expect(send).toHaveBeenCalledTimes(2);
-    const markers = await prisma.emailSend.findMany({ where: { userId: { in: ids } } });
-    expect(markers.map((marker) => marker.userId).sort()).toEqual([due, combined].sort());
+    expect(send).toHaveBeenCalledTimes(3);
+    const markers = await prisma.emailSend.findMany({
+      where: { userId: { in: ids }, kind: "referral-day1" },
+    });
+    expect(markers.map((marker) => marker.userId).sort()).toEqual(
+      [due, combined, mailedYesterday].sort(),
+    );
     expect(onError).not.toHaveBeenCalled();
   });
 

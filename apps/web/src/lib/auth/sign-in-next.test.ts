@@ -4,6 +4,8 @@ import { newAccountDestination, signInNext } from "./sign-in-next.js";
 it("returns to integration setup, plugin admin, MCP sign-in and invite links only", () => {
   expect(signInNext("/integrations/setup")).toBe("/integrations/setup");
   expect(signInNext("/admin/plugins")).toBe("/admin/plugins");
+  expect(signInNext("/onboarding/model")).toBe("/onboarding/model");
+  expect(signInNext("/onboarding/model/../../app")).toBeNull();
   expect(signInNext("/mcp/oauth/callback?code=c&state=s")).toBe(
     "/mcp/oauth/callback?code=c&state=s",
   );

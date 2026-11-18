@@ -9,7 +9,7 @@ import {
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
-import { operatorReviewObserver } from "../../decisions/operator-review-usage.js";
+import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
 import {
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -30,7 +30,7 @@ export async function autoReviewCheckerProvider(
   const { runId, spaceId, userId, botId, threadId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
-  const deploymentChoice = !memberChecker && !checker.credentialId;
+  const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
@@ -47,7 +47,7 @@ export async function autoReviewCheckerProvider(
     Boolean(decisionModel(checker.provider, checker.model)) &&
     isAutoReviewCheckerConfigured({ checker });
   const reviewCredential =
-    included || kind === "jev" || kind === "scripted"
+    checker.creditOfferingId || included || kind === "jev" || kind === "scripted"
       ? null
       : await findConnectedModelCredential(
           deps.prisma,
@@ -89,6 +89,7 @@ export async function autoReviewCheckerProvider(
   if (
     (memberChecker || checker.credentialId) &&
     !reviewCredential &&
+    !checker.creditOfferingId &&
     !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
   ) {
     throw new Error("Selected checker connection is unavailable");
@@ -100,13 +101,18 @@ export async function autoReviewCheckerProvider(
   const judgeKey = deploymentKey
     ? null
     : await resolveModelKey(
-        operatorFunded ? { ...deps, billingEnabled: false } : deps,
+        deps,
         userId,
         spaceId,
         reviewCredential,
         checker.provider,
         checker.model,
         registerSecrets,
+        {
+          creditOfferingId: checker.creditOfferingId,
+          requireStoredSecret: Boolean(checker.credentialId),
+          operatorFunded,
+        },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
   if (decision && judgeKey?.zeroDataRetention) {

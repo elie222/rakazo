@@ -15,14 +15,15 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { openRouterInferenceFetch } from "../../../models/credits/openrouter-usage.js";
+import { getLogger } from "@rakazo/logging";
 import { withDataRetentionPayload } from "../../../models/endpoints/data-retention.js";
+import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
+import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
-import { fetchForRequest } from "../../../web/undici-fetch.js";
+import { fetchForRequest } from "../../../network/undici-fetch.js";
 import { withChatCompletionsCompatibility } from "../../chat-completions-compat.js";
 import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
-import { withGoogleToolHistory } from "../../google-tool-history.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
@@ -551,13 +552,14 @@ export function observedPiStream(
               message,
             );
             if (observer && reservation !== undefined) {
-              await observer.afterCall(
+              const priced = await observer.afterCall(
                 reservation,
                 receipt(
                   { ...normalized, operationKind },
                   message.content.length ? message : (received ?? message),
                 ),
               );
+              if (priced) normalized = priced;
               settled = true;
             }
             await emitUsage(normalized, operationKind);
@@ -574,18 +576,13 @@ export function observedPiStream(
       } catch (error) {
         span?.setStatus({ status: "error" });
         let terminalError = error;
-        if (started && normalized === null) {
-          try {
-            await emitUsage(normalizePiUsage(undefined, model, reported));
-          } catch (accountingError) {
-            terminalError = accountingError;
-          }
-        }
+        let emitFailureUsage = started && normalized === null;
+        if (emitFailureUsage) normalized = normalizePiUsage(undefined, model, reported);
         if (observer && reservation !== undefined && !settled) {
           // Keep the reservation alive until settlement finishes, before exposing termination.
           settled = true;
           try {
-            await observer.afterCall(
+            const priced = await observer.afterCall(
               reservation,
               started
                 ? receipt(
@@ -594,8 +591,18 @@ export function observedPiStream(
                   )
                 : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
             );
-          } catch {
-            /* Already failing. */
+            if (priced) normalized = priced;
+          } catch (accountingError) {
+            // Never publish unpriced upstream spend after a tariff receipt failed.
+            emitFailureUsage = false;
+            terminalError = accountingError;
+          }
+        }
+        if (emitFailureUsage && normalized) {
+          try {
+            await emitUsage(normalized);
+          } catch (accountingError) {
+            terminalError = accountingError;
           }
         }
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.
@@ -618,7 +625,18 @@ export function observedPiStream(
             terminalError instanceof Error ? terminalError.message : String(terminalError),
           timestamp: Date.now(),
         };
-        if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
+        if (providerThrew) {
+          if (terminalError !== providerError)
+            getLogger().warn("Model usage accounting failed while handling a provider failure", {
+              provider: model.provider,
+              model: model.id,
+            });
+          hooks?.onProviderError?.({
+            ...message,
+            errorMessage:
+              providerError instanceof Error ? providerError.message : String(providerError),
+          });
+        }
         stream.push({ type: "error", reason: "error", error: message });
         stream.end(message);
       }

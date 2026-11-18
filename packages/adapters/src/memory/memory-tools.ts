@@ -1,6 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
-import { byteLength } from "../shared/utf8.js";
+import { byteLength } from "@rakazo/core";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
   "recall_memory",

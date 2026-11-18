@@ -171,7 +171,14 @@ export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(ch
       for (const [index, choice] of choices.entries()) {
         // The same model may run on two connections, so a pinned connection is part of it.
         const credentialId = (choice as { credentialId?: string | null }).credentialId ?? null;
-        const key = JSON.stringify([choice.provider, choice.modelId, credentialId]);
+        const creditOfferingId =
+          (choice as { creditOfferingId?: string | null }).creditOfferingId ?? null;
+        const key = JSON.stringify([
+          choice.provider,
+          choice.modelId,
+          credentialId,
+          creditOfferingId,
+        ]);
         if (seen.has(key)) {
           ctx.addIssue({
             code: "custom",
@@ -398,6 +405,7 @@ export const ModelCatalogEntrySchema = z.object({
   credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
+  creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
   id: z.string(),

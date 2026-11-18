@@ -25,6 +25,7 @@ import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { analyticsSurface } from "../../lib/platform/desktop";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
@@ -112,7 +113,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     thinkingLevel,
     zeroDataRetention,
   } = form;
-  const [codeCopied, copyOAuthCode] = useCopyText();
+  const [codeCopied, copyText] = useCopyText();
   const [loading, setLoading] = useState(
     () =>
       queryClient.getQueryData(catalogQuery.queryKey) === undefined ||
@@ -133,6 +134,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     oauthPending,
     popupBlocked,
     cancelOAuthAttempt,
+    reportSignInStep,
     startSubscriptionSignIn,
     submitOAuthCode,
   } = useModelOAuthSignIn({
@@ -147,6 +149,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
     },
   });
+  const copyOAuthCode = (code: string) => {
+    const loginId = oauth?.loginId;
+    void copyText(code).then((copied) => {
+      if (copied) reportSignInStep("code_copied", loginId);
+    });
+  };
 
   /**
    * `keepForm` reloads the lists without resetting the open connection's fields. Every refresh but
@@ -374,7 +382,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     const form = formRevisionRef.current;
     const stillSelected = () => form === formRevisionRef.current;
     try {
-      const saved = await rpc.models.connect(input);
+      const saved = await rpc.models.connect({ ...input, surface: analyticsSurface() });
       if (!stillSelected()) {
         await refresh({ keepForm: true });
         return;
@@ -462,6 +470,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     confirmDisconnect,
     connectKey,
     copyOAuthCode,
+    reportSignInStep,
     credential,
     credentialByProvider,
     credentials,

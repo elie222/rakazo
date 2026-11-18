@@ -916,7 +916,10 @@ describe("model disconnect", () => {
       where: {
         userId: actor.userId,
         provider: "openai-codex",
-        OR: [{ credentialId: { in: ["personal", "work"] } }, { credentialId: null }],
+        OR: [
+          { credentialId: { in: ["personal", "work"] } },
+          { credentialId: null, creditOfferingId: null },
+        ],
       },
     };
     expect(tx.userModelRoleChoice.deleteMany).toHaveBeenCalledWith(providerRows);

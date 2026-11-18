@@ -4,6 +4,11 @@ import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  approvedModelCreditOffering,
+  modelCreditOfferings,
+} from "../../model-credits/offerings.js";
+import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
 import {
   persistRefreshedModelCredential,
@@ -14,7 +19,10 @@ import {
 import { outermostJsonObject } from "../../models/model-json.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
 import { secretValuesToRedact } from "../../models/model-secret.js";
-import { hasHostedModelCredits } from "../../models/model-selection.js";
+import {
+  hasHostedModelCredits,
+  validateCreditOfferingChoice,
+} from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
 import {
   cleanLine,
@@ -203,13 +211,23 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       : null;
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(
-      requestedProvider && requestedModel && (explicitJudgeOverride || overrideCredential),
+      requestedProvider &&
+        requestedModel &&
+        (explicitJudgeOverride ||
+          overrideCredential ||
+          (settings?.modelCreditsEnabled &&
+            modelCreditOfferings() &&
+            approvedModelCreditOffering(requestedProvider, requestedModel))),
     );
     // The member's main model runs on its connection, or on funded deployment credits.
     const main =
       member &&
-      (member.credential ||
+      (member.creditOfferingId ||
+        member.credentialId ||
+        member.credential ||
         (settings?.modelCreditsEnabled &&
+          (!modelCreditOfferings() ||
+            approvedModelCreditOffering(member.provider, member.modelId)) &&
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
@@ -225,13 +243,38 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const hosted =
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
+    if (!useOverride && main?.credentialId && !credential) return null;
+    const offeringId = !useOverride ? main?.creditOfferingId : undefined;
+    if (
+      offeringId &&
+      (!settings?.modelCreditsEnabled ||
+        !(await validateCreditOfferingChoice(
+          this.deps.prisma,
+          this.deps.secrets,
+          scope,
+          provider,
+          modelId,
+          offeringId,
+        )))
+    )
+      return null;
     if (!credential || hosted) {
+      if (modelCreditOfferings() && !settings?.modelCreditsEnabled) return null;
+      const material = await approvedModelCreditMaterial(
+        this.deps.prisma,
+        this.deps.secrets,
+        provider,
+        modelId,
+      );
       const apiKey =
-        provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined;
+        material?.apiKey ??
+        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
-      return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
+      return {
+        model: { provider, id: modelId, ...material, ...(apiKey ? { apiKey } : {}), callObserver },
+      };
     }
 
     const secret = await this.deps.prisma.secret.findFirst({

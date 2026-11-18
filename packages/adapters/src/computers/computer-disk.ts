@@ -1,7 +1,7 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 
 const MEASURE_TIMEOUT_MS = 5_000;
 /** How full the disk is before the bot is told at the start of a run. */

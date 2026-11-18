@@ -39,7 +39,7 @@ import { createdByWhere, managedBotsWhere } from "../bots/child-bots.js";
 import type { UpdateBotPatch } from "../bots/update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "../bots/update-bot-patch.js";
 import { stopCancelledGroupRuns } from "../computers/computer-idle.js";
-import { asRecord } from "../connectors/connector-http.js";
+import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
