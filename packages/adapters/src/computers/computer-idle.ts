@@ -1041,25 +1041,34 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
   });
 }
 
-function findComputerHoldingRun(
+async function findComputerHoldingRun(
   prisma: PrismaClient,
   computerId: string,
   controlledTakeover: boolean,
 ) {
+  const now = new Date();
+  const leases = await liveComputerExecutionLeases(prisma, computerId, now);
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
       OR: [
         {
+          id: { in: leases.map((lease) => lease.runId) },
           status: { in: [...EXECUTING_RUN_STATUSES] },
-          computerUseStartedAt: { not: null },
-          leaseExpiresAt: { gt: new Date() },
+          leaseExpiresAt: { gt: now },
         },
         // A paused takeover has no worker lease. The person controlling the computer holds it.
         ...(controlledTakeover ? [{ status: { in: ["waiting_takeover"] } }] : []),
       ],
     },
     select: { status: true },
+  });
+}
+
+function liveComputerExecutionLeases(prisma: PrismaClient, computerId: string, now: Date) {
+  return prisma.computerExecutionLease.findMany({
+    where: { computerId, expiresAt: { gt: now } },
+    select: { runId: true, fence: true },
   });
 }
 
@@ -1070,10 +1079,7 @@ function findComputerHoldingRun(
  * The fence lets a run that resumes in the meantime block the claim again.
  */
 async function noBlockingExecutionLease(prisma: PrismaClient, computerId: string, now: Date) {
-  const leases = await prisma.computerExecutionLease.findMany({
-    where: { computerId, expiresAt: { gt: now } },
-    select: { runId: true, fence: true },
-  });
+  const leases = await liveComputerExecutionLeases(prisma, computerId, now);
   const waiting =
     leases.length === 0
       ? []
@@ -1121,7 +1127,13 @@ async function inspectBackgroundWork(
       : await probeBackgroundWork(sandbox, computer, computerId, context);
   } catch (error) {
     // A gone or damaged sandbox runs nothing; the checkpoint below then stops the computer.
-    return isSandboxGoneError(error) || isSandboxDamagedError(error) ? "idle" : "unknown";
+    if (isSandboxGoneError(error) || isSandboxDamagedError(error)) return "idle";
+    getLogger().warn("computer.background_work_probe_failed", {
+      "computer.id": computerId,
+      provider: computer.kind,
+      error,
+    });
+    return "unknown";
   }
 }
 

@@ -250,7 +250,7 @@ describe("sandbox idle", () => {
   it("fails closed when the provider cannot inspect background work", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const harness = idleHarness({ backgroundWorkProbeCode: 2 });
+    const harness = idleHarness({ probeError: new Error("Background work probe failed") });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
@@ -262,6 +262,12 @@ describe("sandbox idle", () => {
         message: "computer.sleep_held",
         reason: "background_work_unknown",
         phase: "before_checkpoint",
+      }),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.background_work_probe_failed",
+        error: expect.objectContaining({ message: "Background work probe failed" }),
       }),
     );
   });
@@ -1279,6 +1285,9 @@ describe("maximum active lifetime", () => {
   it("does not pull the computer out from under a run that is executing", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+    harness.prisma.computerExecutionLease.findMany.mockResolvedValue([
+      { runId: "executing", fence: 1 },
+    ]);
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
@@ -1288,7 +1297,7 @@ describe("maximum active lifetime", () => {
           OR: [
             {
               status: { in: ["leased", "running"] },
-              computerUseStartedAt: { not: null },
+              id: { in: ["executing"] },
               leaseExpiresAt: { gt: new Date(now) },
             },
           ],

@@ -238,11 +238,19 @@ describePostgres("computer runs (PostgreSQL)", () => {
       expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
         "suspended",
       );
-      // An expired claim from an earlier attempt cannot hold the computer either.
+      // Renewing the worker lease alone cannot keep a stale computer claim alive.
       await o.start();
       await system.run.update({
         where: { id: run.id },
-        data: { computerUseStartedAt: new Date(), leaseExpiresAt: new Date(0) },
+        data: { computerUseStartedAt: new Date(), leaseExpiresAt: new Date(Date.now() + 60_000) },
+      });
+      await system.computerExecutionLease.create({
+        data: {
+          computerId: o.id,
+          botId: bot.id,
+          runId: run.id,
+          expiresAt: new Date(0),
+        },
       });
       await o.sleep();
       expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
