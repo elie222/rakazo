@@ -59,7 +59,7 @@ export function renderBotGroupDirectory(
         `- ${escapeDirectoryField(group.name)} (group_id: ${escapeDirectoryField(group.id)}): ${group.members.map((member) => `${escapeDirectoryField(member.name)} (id: ${escapeDirectoryField(member.id)})`).join(", ")}`,
     ),
     "</bot_groups>",
-    "Use message_bot to message a teammate directly, or handoff_to_bot with group_id and a member's bot_id to coordinate in a group, or post_to_group to post there yourself. Choose the conversation that fits the work and follow the user's instructions. Send the relevant task or update, not unrelated chat history. Group replies appear in that group.",
+    "Use message_bot to message a teammate directly, or handoff_to_bot with group_id and a member's bot_id to coordinate in a group. Choose the conversation that fits the work and follow the user's instructions. Send the relevant task or update, not unrelated chat history. Group replies appear in that group.",
   ].join("\n");
 }
 

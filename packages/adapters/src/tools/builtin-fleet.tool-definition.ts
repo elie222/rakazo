@@ -441,7 +441,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "post_to_group",
     description:
-      "Post a message as yourself into a group you belong to, from outside it, such as from a routine. It starts no member; use handoff_to_bot for that.",
+      "Post a message as yourself in one of your groups. Wakes no member; use handoff_to_bot for that.",
     inputSchema: {
       type: "object",
       properties: {

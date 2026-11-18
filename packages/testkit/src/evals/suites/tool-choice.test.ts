@@ -140,7 +140,7 @@ describe("tool-choice grading", () => {
       TOOL_CHOICE_DEFINITIONS.length,
     );
     expect(TOOL_CHOICE_DEFINITIONS.length).toBeGreaterThanOrEqual(60);
-    for (const area of ["settings", "user-settings", "product-help"])
+    for (const area of ["settings", "user-settings", "product-help", "group"])
       expect(
         new Set(TOOL_CHOICE_DEFINITIONS.filter((c) => c.area === area).map((c) => c.kind)),
       ).toEqual(new Set(["guard", "control"]));
@@ -292,6 +292,24 @@ describe("tool-choice grading", () => {
     expect(input.evidence).toEqual({
       request: "Who reads your memory?",
       reply: { text: "Only I read my notes.", expected: "Says its own memory is private." },
+    });
+  });
+
+  it("puts a group case's bot in the group with its members, asked in its own chat", () => {
+    const scenario = toolChoiceEvalCase({
+      id: "x",
+      area: "group",
+      kind: "control",
+      purpose: "p",
+      group: { name: "Ops", members: { Mira: "Runs infrastructure." } },
+      prompt: "Hi",
+      expect: { notCalls: ["post_to_group"] },
+    });
+    expect(scenario.group).toEqual({
+      name: "Ops",
+      members: ["Mira"],
+      roles: { Mira: "Runs infrastructure." },
+      directChat: true,
     });
   });
 

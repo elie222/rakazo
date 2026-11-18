@@ -156,7 +156,10 @@ export type EvalCase = {
    * `instructions` given for it, and the eval model, so any of them can answer.
    */
   group?: {
+    name?: string;
     members: string[];
+    /** Talk to the subject in its direct chat, so the group is only one it belongs to. */
+    directChat?: true;
     roles?: Record<string, string>;
     instructions?: Record<string, string>;
   };
