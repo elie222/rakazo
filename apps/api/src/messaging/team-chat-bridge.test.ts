@@ -592,6 +592,7 @@ describe("TeamChatBridge.receive", () => {
     );
     expect(files).toEqual([
       {
+        artifactId: "document-1",
         name: "report.pdf",
         mimeType: "application/pdf",
         size: 3,

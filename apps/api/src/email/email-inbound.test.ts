@@ -2,6 +2,7 @@ import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
 import { AttachmentValidationError } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
@@ -344,7 +345,7 @@ describe("inbound email route", () => {
     expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
   });
 
-  it("copies each kept file into the bot's computer before the bot gets the mail", async () => {
+  it("answers the relay while each kept file is still being copied into the bot's computer", async () => {
     const paths = ["attachments/2026-11-05_1000_Owner_invoice.pdf", null];
     const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
       async ({ attachment }) => ({
@@ -355,9 +356,10 @@ describe("inbound email route", () => {
         computerPath: paths.shift() ?? null,
       }),
     );
-    const copy = vi.fn<CopyAttachment>(async () => ({ copied: "x" }));
+    const slow = deferred<{ copied: string }>();
+    const copy = vi.fn<CopyAttachment>(() => slow.promise);
     const invoice = new Uint8Array([1, 2, 3]);
-    const { post, sendUserMessage } = setup({
+    const { post } = setup({
       storeAttachment,
       arrivalCopy: {
         prisma: {
@@ -377,6 +379,10 @@ describe("inbound email route", () => {
     });
 
     expect(await (await post()).json()).toMatchObject({ ok: true, runId: "run-1" });
+
+    await vi.waitFor(() => expect(copy).toHaveBeenCalledOnce());
+    // The file without a path is left for the run to copy.
+    await flush();
     expect(copy).toHaveBeenCalledExactlyOnceWith(
       {
         bot: { id: "bot-1", computerId: "computer-1" },
@@ -385,9 +391,7 @@ describe("inbound email route", () => {
       },
       expect.objectContaining({ spaceId: "space-1", userId: "user-1", botId: "bot-1" }),
     );
-    expect(copy.mock.invocationCallOrder[0]).toBeLessThan(
-      sendUserMessage.mock.invocationCallOrder[0]!,
-    );
+    slow.resolve({ copied: "x" });
   });
 
   it.each([false, true])(

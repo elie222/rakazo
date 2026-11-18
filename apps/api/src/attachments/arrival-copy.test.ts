@@ -1,10 +1,11 @@
 import type { AgentHomeStore, ArtifactStore, SandboxProvider } from "@rakazo/adapter-kit";
+import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { createSenderQueue } from "../messaging/intake/sender-queue.js";
 import type { ArrivalCopyDeps, CopyAttachment } from "./arrival-copy.js";
-import { copyOnArrival, createArrivalCopy } from "./arrival-copy.js";
+import { copyOnArrival, createArrivalCopy, startArrivalCopy } from "./arrival-copy.js";
 
 const ids = { botId: "bot-1", userId: "user-1", spaceId: "ws-1" };
 const PATH = "attachments/2026-11-17_1912_Dana_photo.jpg";
@@ -138,5 +139,28 @@ describe("copyOnArrival", () => {
     expect(logged).not.toContain("Dana");
     expect(logged).not.toContain("photo.jpg");
     expect(logged).not.toContain("/data/homes");
+  });
+});
+
+describe("startArrivalCopy", () => {
+  it("leaves no rejection unhandled when the copy fails before it starts", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    onTestFinished(() => {
+      process.off("unhandledRejection", onUnhandled);
+    });
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      throw new Error("no timers left");
+    });
+    onTestFinished(() => timeout.mockRestore());
+    const { deps, copy } = arrivalCopy();
+
+    startArrivalCopy(deps, ids, [{ computerPath: PATH, bytes, storageKey: "key-1" }]);
+    await flush();
+    await flush();
+
+    expect(copy).not.toHaveBeenCalled();
+    expect(unhandled).toEqual([]);
   });
 });

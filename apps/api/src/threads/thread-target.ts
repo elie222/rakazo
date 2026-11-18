@@ -49,7 +49,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ArrivalCopyDeps, ArrivalFile } from "../attachments/arrival-copy.js";
-import { copyOnArrival } from "../attachments/arrival-copy.js";
+import { startArrivalCopy } from "../attachments/arrival-copy.js";
 import {
   buildSendPrompt,
   buildUserMessageBlocks,
@@ -1133,8 +1133,8 @@ export async function sendThreadMessage(
   });
   if ("replay" in committed) return committed.replay;
   if (deps.arrivalCopy && target.kind === "bot" && sentFiles.length) {
-    // Not awaited: the send never waits on the copy, which never throws.
-    void copyOnArrival(
+    // Not awaited: the send never waits on the copy.
+    startArrivalCopy(
       deps.arrivalCopy,
       { botId: target.botId, spaceId: actor.spaceId, userId: actor.userId },
       sentFiles,

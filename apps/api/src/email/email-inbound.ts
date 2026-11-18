@@ -17,7 +17,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 import type { ArrivalCopyDeps, ArrivalFile } from "../attachments/arrival-copy.js";
-import { copyOnArrival } from "../attachments/arrival-copy.js";
+import { startArrivalCopy } from "../attachments/arrival-copy.js";
 import { cancelBody, readBoundedBytes } from "../http/http-body.js";
 import {
   formatRoutineEmailPrompt,
@@ -404,9 +404,9 @@ async function storeAttachments(
       files.push({ name });
     }
   }
-  // In the computer of the bot the mail is for before the bot is told of it.
+  // Not awaited: the relay's request never waits on copies into the bot's computer.
   if (deps.arrivalCopy) {
-    await copyOnArrival(
+    startArrivalCopy(
       deps.arrivalCopy,
       { botId: bot.id, spaceId: bot.spaceId, userId: bot.userId },
       arrived,

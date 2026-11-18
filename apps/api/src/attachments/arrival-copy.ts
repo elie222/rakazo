@@ -59,6 +59,21 @@ export function createArrivalCopy(deps: {
 }
 
 /**
+ * Starts `copyOnArrival` without waiting for it, for a caller that must not be held up. Any
+ * rejection is caught and logged by its code only, so none goes unhandled.
+ */
+export function startArrivalCopy(
+  deps: ArrivalCopyDeps,
+  ids: { botId: string; spaceId: string; userId: string },
+  files: ArrivalFile[],
+): void {
+  void bestEffortWithoutPaths(
+    "start copying attachments into the bot's computer",
+    copyOnArrival(deps, ids, files),
+  );
+}
+
+/**
  * Copies each attachment that has a stored path into the bot's computer, when the setting is
  * on. One that has none (an id-named file) is left for the run to copy, as it is otherwise. Each
  * copy is best effort, has its own deadline, and never throws. A copy that ends after its
