@@ -147,6 +147,13 @@ describe("mobile message presentation", () => {
     ]);
   });
 
+  it("leaves out the import option, which this app cannot open, until it is the answer", () => {
+    const moving = { id: "import", letter: "E", label: "Move from another assistant" };
+    const withImport = { ...choice, options: [...choice.options, moving] };
+    expect(choiceCardOptions(withImport)).toEqual(choice.options);
+    expect(choiceCardOptions({ ...withImport, answerId: "import" })).toEqual([moving]);
+  });
+
   it("hides a dismissed choice card", () => {
     const dismissed = { ...choice, answerId: DISMISSED_CHOICE_ANSWER_ID };
     expect(choiceCardOptions(dismissed)).toEqual([]);

@@ -43,6 +43,20 @@ function fixture(catalog: unknown[]) {
   };
   return { deps, actor, tx };
 }
+describe("moving from another assistant", () => {
+  it("points to the import and suggests no apps", async () => {
+    const { deps, actor } = fixture([
+      { slug: "slack", name: "Slack", connectorId: "first-connector" },
+    ]);
+    await chooseFocus(deps, actor, "bot", "import");
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      markUnread: false,
+      blocks: [{ kind: "text", text: expect.stringContaining("Import an agent") }],
+    });
+  });
+});
+
 describe("onboarding connection suggestions", () => {
   it("does not invent authorization cards when no connector has an app catalog", async () => {
     const { deps, actor } = fixture([]);

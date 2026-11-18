@@ -880,6 +880,7 @@ function SpaceShell() {
     },
     [setSearchParams],
   );
+  const openAgentImport = useCallback(() => setOverlayRef.current({ kind: "import" }), []);
   const { teachBusy, stopTeaching, refreshActiveTeaching } = useTeaching({
     rpc,
     queries,
@@ -1212,6 +1213,7 @@ function SpaceShell() {
               onOpenComputer={computerControls.onOpenComputer}
               onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
+              onOpenAgentImport={openAgentImport}
               rpc={rpc}
             />
           )}

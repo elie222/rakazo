@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
+import { FOCUS_IMPORT_OPTION_ID } from "@rakazo/contracts";
 import { appConnectedInput, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
@@ -23,10 +24,12 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
+  onOpenAgentImport,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
+  onOpenAgentImport?: () => void;
 }) {
   const { t } = useLingui();
   const [locallyDismissed, setLocallyDismissed] = useState(false);
@@ -39,7 +42,10 @@ export function ChoiceCard({
     // An answered card takes no second answer; the thread brings the answer back.
     closesScreen: true,
     onSaved: async (_saved, input) => {
-      if ("optionId" in input) return onBotChanged();
+      if ("optionId" in input) {
+        if (input.optionId === FOCUS_IMPORT_OPTION_ID) onOpenAgentImport?.();
+        return onBotChanged();
+      }
       setLocallyDismissed(true);
       void onBotChanged().catch(() => undefined);
     },
@@ -129,6 +135,8 @@ function OnboardingFocusOptionLabel({
       return <Trans>Research & writing</Trans>;
     case "everything":
       return <Trans>A bit of everything</Trans>;
+    case FOCUS_IMPORT_OPTION_ID:
+      return <Trans>Move from another assistant</Trans>;
     default:
       return label;
   }
