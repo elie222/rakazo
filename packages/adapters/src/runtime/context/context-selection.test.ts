@@ -1,5 +1,9 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
-import { MODEL_CONTEXT_TOO_SMALL_ERROR, VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+} from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   ContextBudgetError,
@@ -139,6 +143,42 @@ describe("bounded context selection", () => {
         verbatimMcpServers: { ids: [], slugs: ["mail"] },
       }),
     ).toThrow("Required context exceeds the model context budget");
+  });
+  it("keeps an opted-in app connection result whole and fails clearly when too large", () => {
+    const call = {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "call",
+          name: "GMAIL_GET_MESSAGE",
+          arguments: {},
+        },
+      ],
+    };
+    const body = "message ".repeat(1_500);
+    const result = {
+      role: "toolResult",
+      toolCallId: "call",
+      toolName: "GMAIL_GET_MESSAGE",
+      content: body,
+    };
+    const options = {
+      budget,
+      strategy: "retrieval" as const,
+      protectedIndexes: [0],
+      verbatimConnections: {
+        prefixRules: [{ prefixes: ["gmail_"] }],
+      },
+    };
+    expect(() => selectContext([call, result, user("steering")], options)).toThrow(
+      VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR,
+    );
+    const fitting = selectContext([call, result, user("steering")], {
+      ...options,
+      budget: { ...budget, contextWindow: 20_000 },
+    });
+    expect(JSON.stringify(fitting.messages)).toContain(body);
   });
   it("keeps and shortens the unread tool step after steering", () => {
     const oldCall = {
@@ -711,6 +751,26 @@ describe("bounded context selection", () => {
     expect(out.length).toBeLessThan(source.length);
     expect(out).toContain("Earlier result shortened after you read it");
     expect(JSON.parse(out).id).toBe("doc-1");
+  });
+  it("reports dropped char counts and truncatedFields paths when shortening structured results", () => {
+    const bodyText = "letter ".repeat(400);
+    const source = JSON.stringify({
+      id: "msg-1",
+      data: {
+        messages: [{ body: { data: bodyText } }],
+      },
+    });
+    const out = shortenToolResultText(source, 512);
+    const parsed = JSON.parse(out);
+    expect(parsed.contextTruncated).toBe(true);
+    expect(parsed.truncatedFields["data.messages[0].body.data"]).toBeGreaterThan(2000);
+    expect(parsed.data.messages[0].body.data).toMatch(/\(\d+ chars dropped\)/);
+
+    const reShortened = JSON.parse(shortenToolResultText(out, 256));
+    expect(reShortened.truncatedFields["data.messages[0].body.data"]).toBeGreaterThanOrEqual(
+      parsed.truncatedFields["data.messages[0].body.data"],
+    );
+    expect(reShortened.truncatedFields).not.toHaveProperty("truncatedFields");
   });
   it("keeps ids in a JSON text part when the MCP envelope also has other content", () => {
     const names = ["Ada", "Ben", "Cleo"];

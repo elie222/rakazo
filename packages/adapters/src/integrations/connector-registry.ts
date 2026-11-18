@@ -1,10 +1,12 @@
 import type {
   AdapterContext,
+  ConnectedConnector,
   ConnectorCall,
   ConnectorEvent,
   ConnectorProvider,
   ConnectorTool,
   ManagedConnectorProvider,
+  VerbatimConnectorPrefixRule,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { ComposioProvider } from "../providers/integration/composio/composio-connector.js";
@@ -133,6 +135,23 @@ export class ConnectorRegistry implements ConnectorProvider {
     }
     const provider = this.providers.get(connectorId);
     return provider?.resolveCall?.({ ...call, tool: call.route?.toolName ?? call.tool }, context);
+  }
+
+  verbatimToolRules(
+    verbatimConnections: readonly ConnectedConnector[],
+    allConnections: readonly ConnectedConnector[],
+  ): VerbatimConnectorPrefixRule[] {
+    const rules: VerbatimConnectorPrefixRule[] = [];
+    for (const [connectorId, provider] of this.providers) {
+      if (!provider.verbatimToolRules) continue;
+      const verbatim = verbatimConnections.filter(
+        (connection) => connection.connectorId === connectorId,
+      );
+      if (verbatim.length === 0) continue;
+      const all = allConnections.filter((connection) => connection.connectorId === connectorId);
+      rules.push(...provider.verbatimToolRules(verbatim, all));
+    }
+    return rules;
   }
 }
 

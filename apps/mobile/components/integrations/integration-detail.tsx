@@ -7,6 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
+import { NativeSwitch } from "../native/native-switch";
 import { Chevron } from "../ui/row-accessories";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
@@ -29,6 +30,7 @@ export function IntegrationDetail({
   onRename,
   onRevoke,
   onConnect,
+  onSetVerbatimResults,
   onOpenChatApp,
 }: {
   item: ConnectionCatalogItem;
@@ -45,6 +47,7 @@ export function IntegrationDetail({
   onRename: (row: Connection) => void;
   onRevoke: (row: Connection) => void;
   onConnect: () => void;
+  onSetVerbatimResults: (connectionId: string, verbatimResults: boolean) => void;
   onOpenChatApp: () => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
@@ -84,25 +87,36 @@ export function IntegrationDetail({
       <View style={styles.card}>
         <Text style={styles.section}>{t`Accounts`}</Text>
         {accounts.map((row) => (
-          <View key={row.id} style={styles.accountRow}>
-            <TextInput
-              value={labelDrafts[row.id] ?? row.displayName}
-              maxLength={CONNECTION_LABEL_MAX_LENGTH}
-              onChangeText={(value) =>
-                setLabelDrafts((current) => ({ ...current, [row.id]: value }))
-              }
-              onEndEditing={() => onRename(row)}
-              accessibilityLabel={t`Account label`}
-              style={styles.accountLabel}
-            />
-            <NativeActionButton
-              accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
-              disabled={pending === row.id || uninstalling}
-              fill={false}
-              label={pending === row.id ? t`Working…` : t`Remove`}
-              onPress={() => onRevoke(row)}
-              prominence="destructive"
-            />
+          <View key={row.id}>
+            <View style={styles.accountRow}>
+              <TextInput
+                value={labelDrafts[row.id] ?? row.displayName}
+                maxLength={CONNECTION_LABEL_MAX_LENGTH}
+                onChangeText={(value) =>
+                  setLabelDrafts((current) => ({ ...current, [row.id]: value }))
+                }
+                onEndEditing={() => onRename(row)}
+                accessibilityLabel={t`Account label`}
+                style={styles.accountLabel}
+              />
+              <NativeActionButton
+                accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
+                disabled={pending === row.id || uninstalling}
+                fill={false}
+                label={pending === row.id ? t`Working…` : t`Remove`}
+                onPress={() => onRevoke(row)}
+                prominence="destructive"
+              />
+            </View>
+            <View style={styles.switchRow}>
+              <Text style={[styles.title, styles.grow]}>{t`Keep tool results whole`}</Text>
+              <NativeSwitch
+                accessibilityLabel={t`Keep tool results whole`}
+                disabled={pending !== null}
+                onValueChange={(checked) => onSetVerbatimResults(row.id, checked)}
+                value={row.verbatimResults}
+              />
+            </View>
           </View>
         ))}
         <NativeActionButton

@@ -83,6 +83,7 @@ const snapshot = {
       status: "connected" as const,
       capabilities: [],
       createdAt: "2026-01-01",
+      verbatimResults: false,
     },
   ],
 };

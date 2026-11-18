@@ -558,6 +558,7 @@ export async function completeConnection(
     displayName: row.displayName,
     status: row.status as "pending" | "connected" | "revoked" | "error",
     capabilities: [],
+    verbatimResults: row.verbatimResults ?? false,
     createdAt: row.createdAt.toISOString(),
   };
 }

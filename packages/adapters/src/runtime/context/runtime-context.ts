@@ -3,6 +3,7 @@ import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AdapterContext, AgentRunRequest, AgentUsage } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { isVerbatimConnectorResult } from "../../integrations/verbatim-connector-result.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "../../mcp/verbatim-mcp-result.js";
 import { promptCacheDeclaredOff } from "../pi/models/pi-local-provider-id.js";
 import {
@@ -546,7 +547,10 @@ export function createRuntimeContextPolicy(
           if (part.type === "toolCall") latestCalls.set(part.id, part);
       if (message.role !== "toolResult") return false;
       const call = toolCallIdentity(latestCalls.get(message.toolCallId), message.toolName);
-      return isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers);
+      return (
+        isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers) ||
+        isVerbatimConnectorResult(call.name, call.arguments, request.verbatimConnections)
+      );
     });
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
@@ -581,6 +585,7 @@ export function createRuntimeContextPolicy(
       strategy,
       protectedIndexes,
       verbatimMcpServers: request.verbatimMcpServers,
+      verbatimConnections: request.verbatimConnections,
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,

@@ -1,4 +1,4 @@
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, ConnectedConnector, ConnectorTool } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts";
 import {
@@ -13,7 +13,10 @@ import {
 } from "@rakazo/core";
 import { availableInSpace, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
+import {
+  catalogExecuteToolName,
+  createApprovedEffectReplayQueue,
+} from "../../approvals/approval-effect.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-factory.js";
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
@@ -40,6 +43,7 @@ import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
+import { agentToolDefinitions } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import {
   createEarlierFileQueue,
   listCurrentTurnFiles,
@@ -107,6 +111,65 @@ async function verbatimMcpServersForRun(
   });
   if (!servers?.length) return undefined;
   return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
+}
+
+function verbatimConnectionsForRun(
+  connector: ExecutorDeps["connector"],
+  connectedConnections: readonly ConnectedConnector[],
+  allTools: readonly ConnectorTool[],
+): AgentRunRequest["verbatimConnections"] {
+  const verbatim = connectedConnections.filter((connection) => connection.verbatimResults);
+  if (verbatim.length === 0) return undefined;
+
+  const verbatimIds = new Set(verbatim.map((connection) => connection.id));
+  const resourceKey = (connection: ConnectedConnector) =>
+    `${connection.connectorId}:${connection.externalId.trim().toLowerCase()}`;
+  const verbatimResourceKeys = new Set(verbatim.map(resourceKey));
+  const ambiguousResourceKeys = new Set<string>();
+  for (const connection of connectedConnections) {
+    if (verbatimIds.has(connection.id)) continue;
+    const key = resourceKey(connection);
+    if (verbatimResourceKeys.has(key)) ambiguousResourceKeys.add(key);
+  }
+
+  const toolNames: string[] = [];
+  for (const [exposedName, tool] of agentToolDefinitions(allTools)) {
+    const route = tool.route;
+    if (!route) continue;
+    const key = `${route.connectorId}:${(route.resourceId ?? "").trim().toLowerCase()}`;
+    const matched = route.connectionId
+      ? verbatimIds.has(route.connectionId)
+      : verbatimResourceKeys.has(key) && !ambiguousResourceKeys.has(key);
+    if (matched) {
+      toolNames.push(exposedName);
+      if (tool.name !== exposedName) toolNames.push(tool.name);
+    }
+  }
+
+  const byConnector = new Map<string, { connectionIds: string[]; providers: string[] }>();
+  for (const connection of verbatim) {
+    let entry = byConnector.get(connection.connectorId);
+    if (!entry) {
+      entry = { connectionIds: [], providers: [] };
+      byConnector.set(connection.connectorId, entry);
+    }
+    entry.connectionIds.push(connection.id);
+    const key = resourceKey(connection);
+    if (!ambiguousResourceKeys.has(key)) entry.providers.push(connection.externalId);
+  }
+  const catalogMatches = [...byConnector.entries()].map(([connectorId, entry]) => ({
+    executeToolName: catalogExecuteToolName(connectorId),
+    connectionIds: entry.connectionIds,
+    providers: entry.providers,
+  }));
+  const prefixRules = connector?.verbatimToolRules?.(verbatim, connectedConnections) ?? [];
+
+  return {
+    connectionIds: [...verbatimIds],
+    ...(toolNames.length > 0 ? { toolNames: [...new Set(toolNames)] } : {}),
+    ...(catalogMatches.length > 0 ? { catalogMatches } : {}),
+    ...(prefixRules.length > 0 ? { prefixRules } : {}),
+  };
 }
 
 /** Undefined when the run cannot start its model: it was failed instead of starting a turn. */
@@ -902,7 +965,13 @@ export type ComputerInstructions = Awaited<ReturnType<typeof loadComputerInstruc
 
 export async function loadModelFallbacks(
   hold: RunHold,
-  parts: { records: RunRecords; model: StartedTurnModel; capabilities: RunCapabilities },
+  parts: {
+    records: RunRecords;
+    connected: ConnectedRun;
+    model: StartedTurnModel;
+    capabilities: RunCapabilities;
+    tools: SelectedRunTools;
+  },
 ) {
   const { deps, run } = hold;
   const { bot } = parts.records;
@@ -913,6 +982,11 @@ export async function loadModelFallbacks(
     spaceId: run.spaceId,
     userId: run.userId,
   });
+  const verbatimConnections = verbatimConnectionsForRun(
+    deps.connector,
+    parts.connected.context.connectedConnections ?? [],
+    parts.tools.tools,
+  );
   // The running model is not its own backup, unless another account serves it.
   const fallbackModels = (await backups.load()).filter(
     (candidate) =>
@@ -936,6 +1010,7 @@ export async function loadModelFallbacks(
   const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
   return {
     verbatimMcpServers,
+    verbatimConnections,
     fallbackModels,
     fallbackKey,
     fallbackModelKeys,

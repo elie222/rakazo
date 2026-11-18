@@ -37,6 +37,7 @@ export function connectedContext(
     provider: string;
     displayName: string;
     providerRef: string | null;
+    verbatimResults?: boolean;
   }>,
 ): Pick<AdapterContext, "connectedConnections" | "connectedProviders"> {
   return {
@@ -46,6 +47,7 @@ export function connectedContext(
       externalId: row.provider,
       displayName: row.displayName,
       providerRef: row.providerRef ?? undefined,
+      ...(row.verbatimResults ? { verbatimResults: true } : {}),
     })),
     connectedProviders: rows
       .filter((row) => row.connectorId === "composio")

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "./integration-controls.test-support";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
@@ -102,40 +103,6 @@ vi.mock("../../components/native/native-symbol", () => ({
 vi.mock("../../components/ui/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-vi.mock("../../components/ui/menu-picker", () => ({
-  MenuPicker: ({
-    choices,
-    onChange,
-  }: {
-    choices: { key: string; label: string }[];
-    onChange: (key: string) => void;
-  }) => (
-    <div>
-      {choices.map(({ key, label }) => (
-        <button key={key} type="button" onClick={() => onChange(key)}>
-          {label}
-        </button>
-      ))}
-    </div>
-  ),
-}));
-vi.mock("../../components/native/native-action-button", () => ({
-  NativeActionButton: ({
-    label,
-    onPress,
-    disabled,
-    busy,
-  }: {
-    label: string;
-    onPress: () => void;
-    disabled?: boolean;
-    busy?: boolean;
-  }) => (
-    <button type="button" disabled={disabled || busy} onClick={onPress}>
-      {label}
-    </button>
-  ),
 }));
 vi.mock("react-native-svg", () => ({
   SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) => {
@@ -1326,6 +1293,39 @@ it("clears a failed add when another type is picked from the header menu", async
   expect(container.textContent).toContain("Could not add source");
   await pick("OpenAPI");
   expect(container.textContent).not.toContain("Could not add source");
+});
+
+it("toggles Keep tool results whole on a connected app detail screen", async () => {
+  state.read.mockReturnValue({
+    catalog: [item],
+    connections: [{ ...account, verbatimResults: false }],
+  });
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "connections/setVerbatimResults") {
+      return Promise.resolve({ ...account, verbatimResults: true });
+    }
+    return original(proc, args);
+  });
+  await render();
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Added")?.click(),
+  );
+  const toggle = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Keep tool results whole"]',
+  )!;
+  expect(toggle.checked).toBe(false);
+  await act(async () => toggle.click());
+  expect(state.rpc).toHaveBeenCalledWith("connections/setVerbatimResults", {
+    connectionId: account.id,
+    verbatimResults: true,
+  });
+  await vi.waitFor(() =>
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="Keep tool results whole"]')
+        ?.checked,
+    ).toBe(true),
+  );
 });
 
 async function searchFor(text: string) {

@@ -298,6 +298,24 @@ export function usePluginConnections({
     }
   }
 
+  async function setVerbatimResults(connectionId: string, verbatimResults: boolean) {
+    setPending(`verbatim:${connectionId}`);
+    setCatalogError(null);
+    try {
+      const updated = await rpc.connections.setVerbatimResults({ connectionId, verbatimResults });
+      await updateIntegrations((current) => ({
+        ...current,
+        connections: current.connections.map((entry) =>
+          entry.id === connectionId ? updated : entry,
+        ),
+      }));
+    } catch (err) {
+      setCatalogError(errorText(err, t`Could not update connection`));
+    } finally {
+      setPending(null);
+    }
+  }
+
   return {
     mcpQuery,
     mcpServers,
@@ -329,5 +347,6 @@ export function usePluginConnections({
     revokeAccount,
     uninstall,
     renameAccount,
+    setVerbatimResults,
   };
 }

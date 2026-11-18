@@ -70,7 +70,13 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     ctx,
   });
   if (!(await turnMayStillStart(hold, { connected }))) return;
-  const fallbacks = await loadModelFallbacks(hold, { records, model, capabilities });
+  const fallbacks = await loadModelFallbacks(hold, {
+    records,
+    connected,
+    model,
+    capabilities,
+    tools,
+  });
   return {
     saved,
     records,

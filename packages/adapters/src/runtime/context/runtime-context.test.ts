@@ -480,6 +480,53 @@ describe("runtime context policy", () => {
     expect(text("mail")).toBe(mail);
     expect(text("shell-1")).toContain("[Earlier result shortened after you read it");
   });
+  it("keeps opted-in app connection results whole across turns", () => {
+    const { request, context } = fixture(2);
+    const gmailBody = "important-letter ".repeat(400);
+    const shellOutput = "synthetic shell output ".repeat(3000);
+    const call = (id: string, name: string) =>
+      ({
+        role: "assistant" as const,
+        content: [{ type: "toolCall" as const, id, name, arguments: {} }],
+        timestamp: 100,
+      }) as unknown as Message;
+    const result = (id: string, toolName: string, text: string) => ({
+      role: "toolResult" as const,
+      toolCallId: id,
+      toolName,
+      content: [{ type: "text" as const, text }],
+      isError: false,
+      timestamp: 101,
+    });
+    context.messages.push(
+      call("gmail", "GMAIL_GET_MESSAGE"),
+      result("gmail", "GMAIL_GET_MESSAGE", gmailBody),
+      call("shell-1", "shell"),
+      result("shell-1", "shell", shellOutput),
+      call("shell-2", "shell"),
+      result("shell-2", "shell", shellOutput),
+      call("shell-3", "shell"),
+      result("shell-3", "shell", shellOutput),
+      call("shell-4", "shell"),
+      result("shell-4", "shell", shellOutput),
+    );
+    const policy = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: DEFAULT_CONTEXT_STRATEGY,
+      verbatimConnections: {
+        prefixRules: [{ prefixes: ["gmail_"] }],
+      },
+    });
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 100_000 });
+    const text = (id: string) => {
+      const message = prepared.messages.find(
+        (message) => message.role === "toolResult" && message.toolCallId === id,
+      ) as Extract<Message, { role: "toolResult" }>;
+      return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    };
+    expect(text("gmail")).toBe(gmailBody);
+    expect(text("shell-1")).toContain("[Earlier result shortened after you read it");
+  });
   it.each([65_536, 10_000])(
     "retains individual parallel results within a %i budget",
     (contextWindow) => {

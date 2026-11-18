@@ -40,6 +40,7 @@ import type {
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ConnectedConnector,
   ConnectorCall,
   ConnectorCapabilities,
   ConnectorCatalogItem,
@@ -87,6 +88,7 @@ import type {
   TerminalRequest,
   TransactionalEmail,
   UnreferencedMachine,
+  VerbatimConnectorPrefixRule,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -298,6 +300,14 @@ export interface ConnectorProvider {
     call: ConnectorCall,
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined>;
+  /**
+   * Declare provider-neutral prefix and batch-call matching rules for connections
+   * that keep tool results whole when tools are not individually scoped by `connectionId`.
+   */
+  verbatimToolRules?(
+    verbatimConnections: readonly ConnectedConnector[],
+    allConnections: readonly ConnectedConnector[],
+  ): VerbatimConnectorPrefixRule[];
   execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent>;
   /** Release run-scoped state (open sessions) of a run that ended for good on
    * this worker. A run that ended elsewhere is bounded by the provider itself. */

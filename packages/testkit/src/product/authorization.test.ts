@@ -473,6 +473,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["connections/rename"],
+      [
+        "connections/setVerbatimResults",
+        { connectionId: "missing-connection", verbatimResults: false },
+      ],
       ["connections/tools"],
       ["approvalRules/list"],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],

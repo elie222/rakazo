@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
-import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
+import type {
+  AgentContextStrategy,
+  CacheCapabilities,
+  VerbatimConnectorTargets,
+} from "@rakazo/adapter-kit";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   shortenedTextLength,
   textBoundary,
   truncatePlainText,
+  VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "@rakazo/core";
+import { isVerbatimConnectorResult } from "../../integrations/verbatim-connector-result.js";
 import type { VerbatimMcpServers } from "../../mcp/verbatim-mcp-result.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "../../mcp/verbatim-mcp-result.js";
 import {
@@ -51,6 +57,8 @@ export interface ContextSelectionOptions {
   truncateToolResults?: boolean;
   /** Servers that asked to keep tool results whole. Those results are never cut. */
   verbatimMcpServers?: VerbatimMcpServers;
+  /** App connections that asked to keep tool results whole. Those results are never cut. */
+  verbatimConnections?: VerbatimConnectorTargets;
 }
 export class ContextBudgetError extends Error {
   constructor(
@@ -276,23 +284,76 @@ function shortenStructuredResult(
     return;
   }
   const holder: Record<string, unknown> = { payload };
-  const leaves: Array<{ parent: Record<string, unknown> | unknown[]; key: string | number }> = [];
-  const visit = (value: unknown) => {
+  const leaves: Array<{
+    parent: Record<string, unknown> | unknown[];
+    key: string | number;
+    path: string;
+    original: string;
+  }> = [];
+  const formatPath = (prefix: string, key: string | number) => {
+    if (typeof key === "number") return `${prefix}[${key}]`;
+    return prefix ? `${prefix}.${key}` : key;
+  };
+  const visit = (value: unknown, prefix: string) => {
     if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index++) {
+        const child = value[index];
+        const path = formatPath(prefix, index);
+        if (typeof child === "string") {
+          leaves.push({ parent: value, key: index, path, original: child });
+        } else if (child && typeof child === "object") {
+          visit(child, path);
+        }
+      }
+      return;
+    }
     for (const [key, child] of Object.entries(value)) {
+      if (key === "contextTruncated" || key === "truncatedFields") continue;
       // IDs, cursors and routing/action metadata must remain usable exactly as returned.
       if (
         typeof child === "string" &&
         !/(?:id|cursor|token|url|path|name|status|type|query)$/i.test(key)
       )
-        leaves.push({ parent: value as Record<string, unknown>, key });
-      else if (child && typeof child === "object") visit(child);
+        leaves.push({
+          parent: value as Record<string, unknown>,
+          key,
+          path: formatPath(prefix, key),
+          original: child,
+        });
+      else if (child && typeof child === "object") visit(child, formatPath(prefix, key));
     }
   };
-  if (typeof payload === "string") leaves.push({ parent: holder, key: "payload" });
-  else visit(payload);
-  if (payload && typeof payload === "object" && !Array.isArray(payload))
-    (payload as Record<string, unknown>).contextTruncated = true;
+  if (typeof payload === "string") {
+    leaves.push({ parent: holder, key: "payload", path: "value", original: payload });
+  } else {
+    visit(payload, "");
+  }
+  const recordPayload =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined;
+  if (recordPayload) recordPayload.contextTruncated = true;
+  const existingTruncatedFields =
+    recordPayload?.truncatedFields &&
+    typeof recordPayload.truncatedFields === "object" &&
+    !Array.isArray(recordPayload.truncatedFields)
+      ? { ...(recordPayload.truncatedFields as Record<string, number>) }
+      : undefined;
+  let truncatedFields = existingTruncatedFields;
+  const truncatedFieldValueLengths = new Map<string, number>();
+  let truncatedFieldsCount = 0;
+  let truncatedFieldsEncodedLength = 0;
+  if (recordPayload && existingTruncatedFields) {
+    recordPayload.truncatedFields = existingTruncatedFields;
+    truncatedFieldsEncodedLength = JSON.stringify(existingTruncatedFields).length;
+    for (const [path, count] of Object.entries(existingTruncatedFields)) {
+      truncatedFieldsCount += 1;
+      truncatedFieldValueLengths.set(path, String(count).length);
+    }
+  }
+  const maxTruncatedFieldEntries = 16;
+  const maxTruncatedFieldsBytes = Math.max(256, Math.floor(size / 4));
   // Re-encoding the whole payload and rescanning every leaf per cut blocked the event loop for
   // tens of seconds on large connector results, so track the length and the longest leaf instead.
   let encodedLength = JSON.stringify(holder.payload).length;
@@ -303,22 +364,70 @@ function shortenStructuredResult(
       leafText(index).length > 128 ? [[index, leafText(index).length] as const] : [],
     ),
   );
+  const inlineNotice = (dropped: number, path: string) =>
+    recordPayload || leaves[0]?.path === "value"
+      ? `${marker} (${dropped} chars dropped)`
+      : `${marker} (${dropped} chars dropped from ${path})`;
   while (encodedLength > size) {
     const index = longest.peek();
     if (index === undefined) break; // Required metadata alone may still need explicit budget failure.
+    const leaf = leaves[index]!;
     const value = leafText(index);
+    const maxNoticeLen = inlineNotice(leaf.original.length, leaf.path).length;
     // Keep a quarter at each end when that still shrinks the field. Otherwise size the ends net
     // of the marker, so each pass on a medium-length field halves what is left to cut.
     const preferredKeep = Math.max(8, Math.floor(value.length / 4));
     const keep =
-      2 * preferredKeep + marker.length + 2 < value.length
+      2 * preferredKeep + maxNoticeLen + 2 < value.length
         ? preferredKeep
-        : Math.floor((value.length - marker.length) / 4);
+        : Math.floor((value.length - maxNoticeLen) / 4);
     if (keep < 1) break;
-    const shortened = `${value.slice(0, keep)}\n${marker}\n${value.slice(-keep)}`;
+    const head = truncatePlainText(value, keep);
+    const tailStart = textBoundary(value, value.length - keep);
+    const tail = value.slice(tailStart);
+    const dropped = Math.max(1, leaf.original.length - head.length - tail.length);
+    const notice = inlineNotice(dropped, leaf.path);
+    const shortened = `${head}\n${notice}\n${tail}`;
     if (shortened.length >= value.length) break;
-    (leaves[index]!.parent as Record<string, unknown>)[leaves[index]!.key] = shortened;
+    (leaf.parent as Record<string, unknown>)[leaf.key] = shortened;
     encodedLength += JSON.stringify(shortened).length - JSON.stringify(value).length;
+    if (recordPayload) {
+      const priorDropped = existingTruncatedFields?.[leaf.path] ?? 0;
+      const totalDropped =
+        priorDropped > 0 && value.includes(marker)
+          ? priorDropped + Math.max(1, value.length - head.length - tail.length)
+          : dropped;
+      const digitsLen = String(totalDropped).length;
+      if (!truncatedFields) {
+        const entryLen = 2 + JSON.stringify(leaf.path).length + 1 + digitsLen;
+        if (entryLen <= maxTruncatedFieldsBytes) {
+          truncatedFields = { [leaf.path]: totalDropped };
+          recordPayload.truncatedFields = truncatedFields;
+          truncatedFieldValueLengths.set(leaf.path, digitsLen);
+          truncatedFieldsCount = 1;
+          truncatedFieldsEncodedLength = entryLen;
+          encodedLength += ',"truncatedFields":'.length + entryLen;
+        }
+      } else {
+        const existingLen = truncatedFieldValueLengths.get(leaf.path);
+        if (existingLen !== undefined) {
+          truncatedFields[leaf.path] = totalDropped;
+          truncatedFieldValueLengths.set(leaf.path, digitsLen);
+          const delta = digitsLen - existingLen;
+          truncatedFieldsEncodedLength += delta;
+          encodedLength += delta;
+        } else if (truncatedFieldsCount < maxTruncatedFieldEntries) {
+          const entryLen = 1 + JSON.stringify(leaf.path).length + 1 + digitsLen;
+          if (truncatedFieldsEncodedLength + entryLen <= maxTruncatedFieldsBytes) {
+            truncatedFields[leaf.path] = totalDropped;
+            truncatedFieldValueLengths.set(leaf.path, digitsLen);
+            truncatedFieldsCount += 1;
+            truncatedFieldsEncodedLength += entryLen;
+            encodedLength += entryLen;
+          }
+        }
+      }
+    }
     longest.pop();
     if (shortened.length > 128) longest.push(index, shortened.length);
   }
@@ -635,7 +744,8 @@ export function selectContext<T extends ContextMessage>(
   if (used > available) {
     if (options.truncateToolResults !== false) {
       let shortenedCount = 0;
-      let keptVerbatimWhole = false;
+      let keptVerbatimMcp = false;
+      let keptVerbatimConnection = false;
       const shortened = messages.map((message, index) => {
         if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
         const parts = Array.isArray(message.content) ? message.content : undefined;
@@ -662,7 +772,11 @@ export function selectContext<T extends ContextMessage>(
           : undefined;
         const call = toolCallIdentity(nativeCall, message.toolName);
         if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
-          keptVerbatimWhole = true;
+          keptVerbatimMcp = true;
+          return message;
+        }
+        if (isVerbatimConnectorResult(call.name, call.arguments, options.verbatimConnections)) {
+          keptVerbatimConnection = true;
           return message;
         }
         const size = Math.max(
@@ -686,14 +800,29 @@ export function selectContext<T extends ContextMessage>(
           truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
         };
       }
-      if (keptVerbatimWhole) {
+      if (keptVerbatimMcp || keptVerbatimConnection) {
         // Throws the generic error when shortening the kept results would not make it fit either.
-        selectContext(messages, { ...options, verbatimMcpServers: undefined });
+        selectContext(messages, {
+          ...options,
+          verbatimMcpServers: undefined,
+          verbatimConnections: undefined,
+        });
+        let message = keptVerbatimMcp
+          ? VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR
+          : VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR;
+        if (keptVerbatimMcp && keptVerbatimConnection) {
+          try {
+            selectContext(messages, { ...options, verbatimConnections: undefined });
+            message = VERBATIM_CONNECTION_TOOL_RESULT_TOO_LARGE_ERROR;
+          } catch (error) {
+            if (!(error instanceof ContextBudgetError)) throw error;
+          }
+        }
         throw new ContextBudgetError(
           used + fixed,
           options.budget.contextWindow - options.budget.outputReserve,
           false,
-          VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+          message,
         );
       }
     }

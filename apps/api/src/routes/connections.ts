@@ -113,6 +113,24 @@ async function reconcileConnections(
 
 export function connectionsRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
+  const serializeConnection = (row: {
+    id: string;
+    connectorId: string;
+    provider: string;
+    displayName: string;
+    status: string;
+    verbatimResults?: boolean;
+    createdAt: Date;
+  }) => ({
+    id: row.id,
+    connectorId: row.connectorId,
+    provider: row.provider,
+    displayName: row.displayName,
+    status: row.status as "pending" | "connected" | "revoked" | "error",
+    capabilities: [],
+    verbatimResults: row.verbatimResults ?? false,
+    createdAt: row.createdAt.toISOString(),
+  });
   return {
     connections: {
       catalog: authed.connections.catalog.handler(async ({ context, input }) => {
@@ -166,15 +184,7 @@ export function connectionsRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.connection.findMany({
           where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
         });
-        return rows.map((row) => ({
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        }));
+        return rows.map(serializeConnection);
       }),
       begin: authed.connections.begin.handler(({ context, input }) =>
         beginConnection(deps, context, input),
@@ -195,16 +205,25 @@ export function connectionsRoutes(ctx: RouterContext) {
           where: { id: existing.id },
           data: { displayName: input.displayName },
         });
-        return {
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        };
+        return serializeConnection(row);
       }),
+      setVerbatimResults: authed.connections.setVerbatimResults.handler(
+        async ({ context, input }) => {
+          const existing = await deps.prisma.connection.findFirst({
+            where: {
+              id: input.connectionId,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            },
+          });
+          if (!existing) throw new IsolationError();
+          const row = await deps.prisma.connection.update({
+            where: { id: existing.id },
+            data: { verbatimResults: input.verbatimResults },
+          });
+          return serializeConnection(row);
+        },
+      ),
       revoke: authed.connections.revoke.handler(({ context, input }) =>
         revokeConnection(deps, context, input),
       ),

@@ -2,7 +2,7 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { appToolLabel, catalogItemAccounts, catalogItemKey } from "@rakazo/core";
-import { Badge, Button, Disclosure, Input } from "@rakazo/ui-web";
+import { Badge, Button, Checkbox, Disclosure, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import { ChatAppLink } from "./parts";
 import type { PluginConnections } from "./use-plugin-connections";
@@ -31,6 +31,7 @@ export function ConnectorDetail({
     revokeAccount,
     uninstall,
     renameAccount,
+    setVerbatimResults,
   } = state;
   const accounts = catalogItemAccounts(connections, item);
   const key = catalogItemKey(item);
@@ -80,39 +81,52 @@ export function ConnectorDetail({
 
       <section data-testid="connection-accounts" className="space-y-1">
         {accounts.map((row) => (
-          <div key={row.id} className="group/account flex items-center gap-2">
-            <Input
-              value={labelDrafts[row.id] ?? row.displayName}
-              aria-label={t`Account label`}
-              maxLength={CONNECTION_LABEL_MAX_LENGTH}
-              className="h-9 rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
-              onChange={(event) =>
-                setLabelDrafts((current) => ({
-                  ...current,
-                  [row.id]: event.target.value,
-                }))
-              }
-              onBlur={() => void renameAccount(row)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.keyCode === 229) {
-                  if (event.key === "Escape") event.stopPropagation();
-                  return;
+          <div key={row.id} className="group/account">
+            <div className="flex items-center gap-2">
+              <Input
+                value={labelDrafts[row.id] ?? row.displayName}
+                aria-label={t`Account label`}
+                maxLength={CONNECTION_LABEL_MAX_LENGTH}
+                className="h-9 rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
+                onChange={(event) =>
+                  setLabelDrafts((current) => ({
+                    ...current,
+                    [row.id]: event.target.value,
+                  }))
                 }
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
-              size="sm"
-              disabled={pending === row.id || uninstalling}
-              onClick={() => void revokeAccount(row, item)}
-            >
-              {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
-            </Button>
+                onBlur={() => void renameAccount(row)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    if (event.key === "Escape") event.stopPropagation();
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+                size="sm"
+                disabled={pending === row.id || uninstalling}
+                onClick={() => void revokeAccount(row, item)}
+              >
+                {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
+              </Button>
+            </div>
+            <Field orientation="horizontal" className="px-2">
+              <Checkbox
+                id={`connection-verbatim-${row.id}`}
+                checked={row.verbatimResults}
+                disabled={pending !== null}
+                onCheckedChange={(checked) => void setVerbatimResults(row.id, checked === true)}
+              />
+              <FieldLabel htmlFor={`connection-verbatim-${row.id}`}>
+                <Trans>Keep tool results whole</Trans>
+              </FieldLabel>
+            </Field>
           </div>
         ))}
         <Button
