@@ -6,12 +6,8 @@ import { startPostgres } from "../cli/postgres.js";
 import { startIosScreenshotBackend } from "../screenshots/ios-screenshot-backend.js";
 import { ensurePlan, ensureUser, rpc } from "../screenshots/ios-screenshot-seed.js";
 import { startDelayProxy } from "./delay-proxy.js";
-import {
-  argument,
-  nonnegativeInteger,
-  positiveInteger,
-  repositoryRoot as root,
-} from "./performance-stack.js";
+import { parseTcpPort } from "./performance-report.js";
+import { argument, nonnegativeInteger, repositoryRoot as root } from "./performance-stack.js";
 import { benchmarkBot, seedBenchmarkThread } from "./web-chat-fixture.js";
 
 const EMAIL = "mobile-perf@example.test";
@@ -19,7 +15,9 @@ const PASSWORD = "mobile-perf-password-1234";
 const MESSAGES_PER_CHAT = 100;
 
 const delayMs = nonnegativeInteger(argument("--delay") ?? "0");
-const apiPort = positiveInteger(argument("--port") ?? "3120");
+const apiPort = parseTcpPort(argument("--port") ?? "3120", "--port");
+// The proxy listens on the next port, so check it before anything starts.
+const proxyPort = delayMs > 0 ? parseTcpPort(String(apiPort + 1), "--port plus one") : 0;
 
 // The seeder writes encrypted messages, so it shares the local API's keys.
 Object.assign(process.env, {
@@ -57,7 +55,7 @@ async function serve(serverUrl: string) {
 
   let appUrl = backend.apiUrl;
   if (delayMs > 0) {
-    const proxy = await startDelayProxy({ target: backend.apiUrl, port: apiPort + 1, delayMs });
+    const proxy = await startDelayProxy({ target: backend.apiUrl, port: proxyPort, delayMs });
     stops.push(() => proxy.close());
     appUrl = proxy.url;
   }

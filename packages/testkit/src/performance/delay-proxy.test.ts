@@ -81,6 +81,19 @@ describe("startDelayProxy", () => {
     expect(rest).toBe("last\n");
   });
 
+  it("ends only the affected response when the API connection resets mid-stream", async () => {
+    const upstream = await startUpstream((request, response) => {
+      if (request.url === "/health") return void response.end("ok");
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write("first\n", () => response.socket?.destroy());
+    });
+    const proxy = await startProxy(upstream.url, async () => {});
+
+    const stream = await fetch(`${proxy.url}/rpc/notifications/subscribe`);
+    await expect(stream.text()).rejects.toThrow();
+    expect(await (await fetch(`${proxy.url}/health`)).text()).toBe("ok");
+  });
+
   it("drops a request whose caller left while it was held", async () => {
     const upstream = await startUpstream((_request, response) => response.end("ok"));
     const gate = deferred();

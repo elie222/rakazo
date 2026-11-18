@@ -29,6 +29,8 @@ export async function startDelayProxy(input: {
         },
         (answer) => {
           response.writeHead(answer.statusCode ?? 502, answer.headers);
+          // A reset API connection ends only this caller's response, never the proxy.
+          answer.once("error", () => response.destroy());
           answer.pipe(response);
         },
       );
