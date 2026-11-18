@@ -8,6 +8,7 @@ import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
 import {
   meetingCalendarActionLabel,
   meetingCalendarActions,
+  meetingCalendarSharingNotice,
   meetingCalendarStatusLabel,
   meetingPlatformLabel,
 } from "@rakazo/i18n/meeting";
@@ -89,7 +90,9 @@ export default function MeetingCalendarScreen() {
   const format = new Intl.DateTimeFormat(i18n.locale, { dateStyle: "medium", timeStyle: "short" });
 
   function pick(event: UpcomingEvent, title: string) {
-    const actions = meetingCalendarActions(event).map((kind) => ({
+    const availableActions = meetingCalendarActions(event);
+    const message = meetingCalendarSharingNotice(availableActions);
+    const actions = availableActions.map((kind) => ({
       kind,
       label: meetingCalendarActionLabel(kind),
     }));
@@ -98,6 +101,7 @@ export default function MeetingCalendarScreen() {
       showIOSActionSheet(
         {
           title,
+          message,
           options: [...actions.map(({ label }) => label), t`Cancel`],
           cancelButtonIndex: actions.length,
         },
@@ -107,7 +111,7 @@ export default function MeetingCalendarScreen() {
         },
       );
     } else {
-      Alert.alert(title, undefined, [
+      Alert.alert(title, message, [
         { text: t`Cancel`, style: "cancel" },
         ...actions.map(({ label, kind }) => ({ text: label, onPress: () => dispatch(kind) })),
       ]);
@@ -147,14 +151,7 @@ export default function MeetingCalendarScreen() {
         </SettingsGroup>
       ) : (
         <>
-          <SettingsGroup
-            label={t`Upcoming meetings`}
-            footer={
-              data.events.length
-                ? t`Transcripts from newly scheduled meetings are shared with this Space.`
-                : undefined
-            }
-          >
+          <SettingsGroup label={t`Upcoming meetings`}>
             {data.events.length ? (
               data.events.map((event) => {
                 const title = event.title || t`Untitled meeting`;
