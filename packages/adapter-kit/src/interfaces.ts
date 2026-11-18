@@ -437,10 +437,23 @@ export interface JobPublisher {
   close(): Promise<void>;
 }
 
-/** What a job queue still holds, for work that must not overtake jobs already queued. */
-export interface JobQueueReader {
-  /** When the last unfinished job of a named queue is due, or null when the queue has none. */
-  pendingUntil(queueName: string): Promise<Date | null>;
+/**
+ * Order between the jobs of a named queue beyond running them one at a time, for work that must
+ * not overtake jobs already queued. A job whose payload has `follower: true` is due late only so
+ * it runs after the jobs ahead of it in its queue.
+ */
+export interface JobQueueOrder {
+  /**
+   * When the last unfinished job of a named queue is due, leaving out the job keyed `exceptKey`;
+   * null when the queue has none.
+   */
+  pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null>;
+  /**
+   * In the caller's transaction, makes the followers at the head of a named queue due now, a
+   * millisecond apart in their order, up to the first job that is not one or is running. The job
+   * keyed `exceptKey`, the one settling, is left out.
+   */
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void>;
 }
 
 export interface JobWorkerHost {

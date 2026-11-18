@@ -3,7 +3,7 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   JobPublisher,
-  JobQueueReader,
+  JobQueueOrder,
   JobTransaction,
   JobWorkerHost,
   RealtimeFanout,
@@ -173,10 +173,10 @@ export class RunStarter {
 }
 
 /** Runs are durable in Postgres and start in the process that makes them due. */
-export class RunJobPublisher implements JobPublisher, JobQueueReader {
+export class RunJobPublisher implements JobPublisher, JobQueueOrder {
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly background: JobPublisher & Partial<JobQueueReader>,
+    private readonly background: JobPublisher & JobQueueOrder,
     private readonly starter: RunStarter,
   ) {}
 
@@ -211,9 +211,12 @@ export class RunJobPublisher implements JobPublisher, JobQueueReader {
     if (!key.startsWith("run:")) await this.background.cancel(key);
   }
 
-  async pendingUntil(queueName: string): Promise<Date | null> {
-    if (!this.background.pendingUntil) throw new Error("This job queue cannot list what it holds");
-    return this.background.pendingUntil(queueName);
+  pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
+    return this.background.pendingUntil(queueName, exceptKey);
+  }
+
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void> {
+    return this.background.releaseFollowersIn(tx, queueName, exceptKey);
   }
 
   async close(): Promise<void> {

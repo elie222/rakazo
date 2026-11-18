@@ -178,6 +178,8 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
       cancelIn: vi.fn(),
       cancel: vi.fn(),
       close: vi.fn(),
+      pendingUntil: vi.fn(async () => null),
+      releaseFollowersIn: vi.fn(),
     };
     const starter = new RunStarter(realtime);
     const publisher = new RunJobPublisher(app.prisma, background, starter);

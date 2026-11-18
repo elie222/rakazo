@@ -5,7 +5,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
-  JobQueueReader,
+  JobQueueOrder,
   JobTransaction,
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
@@ -52,7 +52,7 @@ async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boole
 // pool per graphile-worker component: three independent pools per worker process
 // (Prisma + publisher + runner) triples the connection footprint against Postgres'
 // max_connections for no benefit, since they never need isolation from each other.
-export class GraphileJobPublisher implements JobPublisher, JobQueueReader {
+export class GraphileJobPublisher implements JobPublisher, JobQueueOrder {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
 
@@ -165,19 +165,47 @@ export class GraphileJobPublisher implements JobPublisher, JobQueueReader {
    * Counts a job queued, in backoff or running; one that used up its attempts is finished, though
    * Graphile keeps its row until the dead-job pruner removes it.
    */
-  async pendingUntil(queueName: string): Promise<Date | null> {
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
     const utils = await this.getUtils();
     return utils.withPgClient(async (client) => {
       const found = await client.query<{ run_at: Date | null }>(
         `select max(jobs.run_at) as run_at
          from graphile_worker._private_jobs as jobs
          join graphile_worker._private_job_queues as queues on queues.id = jobs.job_queue_id
-         where queues.queue_name = $1
+         where queues.queue_name = $1 and jobs.key is distinct from $2
            and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)`,
-        [queueName],
+        [queueName, exceptKey ?? null],
       );
       return found.rows[0]?.run_at ?? null;
     });
+  }
+
+  /** The follower mark is read from the stored payload, with or without its correlation wrapper. */
+  async releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string) {
+    await tx.$executeRawUnsafe(
+      `with queued as (
+         select jobs.id, jobs.run_at, jobs.locked_at is null and coalesce(
+             coalesce(jobs.payload->'payload'->>'follower', jobs.payload->>'follower') = 'true',
+             false
+           ) as follower
+         from graphile_worker._private_jobs as jobs
+         join graphile_worker._private_job_queues as queues on queues.id = jobs.job_queue_id
+         where queues.queue_name = $1::text and jobs.key is distinct from $2::text
+           and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)
+       ), head as (
+         select id, run_at, row_number() over (order by run_at, id) - 1 as place
+         from queued
+         where follower
+           and run_at < coalesce(
+             (select min(run_at) from queued where not follower), 'infinity'::timestamptz)
+       )
+       update graphile_worker._private_jobs as jobs
+       set run_at = least(head.run_at, now() + head.place * interval '1 millisecond')
+       from head
+       where jobs.id = head.id`,
+      queueName,
+      exceptKey ?? null,
+    );
   }
 
   async close(): Promise<void> {
@@ -699,6 +727,12 @@ export function createRoutineRetryNoticeReconciler(
 
 const LAST_ATTEMPT = { number: 1, max: 1 } as const;
 
+/** A job due late only so it runs after the jobs ahead of it in its named queue. */
+function isFollower(job: QueuedJob): boolean {
+  const { payload } = unwrapJobPayload(job.payload);
+  return (payload as { follower?: unknown } | null)?.follower === true;
+}
+
 /** Graphile's default when a job sets no cap. */
 const DEFAULT_JOB_MAX_ATTEMPTS = 25;
 
@@ -724,7 +758,7 @@ function toQueuedJob(job: BackgroundJob): QueuedJob {
   };
 }
 
-export class InMemoryJobQueue implements JobPublisher, JobQueueReader, JobWorkerHost {
+export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly scheduled = new Map<ReturnType<typeof setTimeout>, QueuedJob>();
@@ -763,6 +797,10 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueReader, JobWorker
         return;
       }
     }
+    this.schedule(stored);
+  }
+
+  private schedule(stored: QueuedJob): void {
     const delay = stored.availableAt ? Math.max(0, stored.availableAt.getTime() - Date.now()) : 0;
     const timer = setTimeout(() => {
       this.timers.delete(timer);
@@ -806,16 +844,42 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueReader, JobWorker
   }
 
   /** Like Graphile's: jobs scheduled, waiting out a shutdown or running count; a running one is due now. */
-  async pendingUntil(queueName: string): Promise<Date | null> {
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
     let until: number | undefined;
     const note = (job: QueuedJob, dueAt: number) => {
-      if (job.queueName === queueName) until = Math.max(until ?? dueAt, dueAt);
+      if (job.queueName !== queueName || (exceptKey && job.replaceKey === exceptKey)) return;
+      until = Math.max(until ?? dueAt, dueAt);
     };
     for (const job of [...this.scheduled.values(), ...this.closingJobs]) {
       note(job, job.availableAt?.getTime() ?? Date.now());
     }
     for (const job of this.running) note(job, Date.now());
     return until === undefined ? null : new Date(until);
+  }
+
+  /** Like Graphile's, though not transactional: the followers move as soon as this is called. */
+  async releaseFollowersIn(
+    _tx: JobTransaction,
+    queueName: string,
+    exceptKey?: string,
+  ): Promise<void> {
+    // A running job of the queue settles first; it releases them itself when it is done.
+    if ([...this.running].some((job) => job.queueName === queueName)) return;
+    const queued = [...this.scheduled]
+      .filter(([, job]) => job.queueName === queueName && job.replaceKey !== exceptKey)
+      .map(([timer, job]) => ({ timer, job, dueAt: job.availableAt?.getTime() ?? Date.now() }))
+      .sort((a, b) => a.dueAt - b.dueAt);
+    const firstLeader = queued.find(({ job }) => !isFollower(job));
+    const head = queued.filter(
+      ({ job, dueAt }) => isFollower(job) && (!firstLeader || dueAt < firstLeader.dueAt),
+    );
+    for (const [place, { timer, job, dueAt }] of head.entries()) {
+      clearTimeout(timer);
+      this.timers.delete(timer);
+      this.scheduled.delete(timer);
+      if (job.replaceKey) this.keyed.delete(job.replaceKey);
+      this.schedule({ ...job, availableAt: new Date(Math.min(dueAt, Date.now() + place)) });
+    }
   }
 
   /** Attempts and schedule for a keyed job that is still queued. */

@@ -663,6 +663,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await publisher.enqueue(job("later", later));
       await publisher.enqueue(job("other", elsewhere, `${queueName}-other`));
       expect(await publisher.pendingUntil(queueName)).toEqual(later);
+      // A message's own job, as for its redelivery, can be left out.
+      expect(await publisher.pendingUntil(queueName, keys[1])).toEqual(soon);
 
       // A job that used up its tries is finished, though its row stays.
       await testPool().query(
@@ -683,6 +685,80 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     } finally {
       await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
         keys,
+      ]);
+      await publisher.close();
+    }
+  });
+
+  it("makes the followers at the head of a named queue due now, in their order", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const queueName = `contract:followers:${process.pid}-${Date.now()}`;
+    const hour = 60 * 60 * 1000;
+    const base = Date.now() + hour;
+    const job = (name: string, runAt: number, follower: boolean, queue = queueName) => ({
+      name: "messaging.inbound_settle" as const,
+      payload: {
+        provider: "contract",
+        handle: `${queue}:${name}`,
+        identityId: "contract",
+        text: "",
+        attachments: [],
+        ...(follower ? { follower: true } : {}),
+      },
+      availableAt: new Date(runAt),
+      replaceKey: `${queue}:${name}`,
+      queueName: queue,
+      maxAttempts: 3,
+    });
+    const jobs = [
+      // The one settling, then two that wait only for it, then one still downloading elsewhere
+      // and the follower behind that.
+      job("settling", base, false),
+      job("first", base + 1, true),
+      job("second", base + 2, true),
+      job("downloading", base + hour, false),
+      job("behind", base + hour + 1, true),
+      job("elsewhere", base + 1, true, `${queueName}-other`),
+    ];
+    const runAt = async (key: string) =>
+      (
+        await testPool().query<{ run_at: Date }>(
+          "select run_at from graphile_worker._private_jobs where key = $1",
+          [key],
+        )
+      ).rows[0]!.run_at.getTime();
+    const tx = {
+      $executeRawUnsafe: (query: string, ...values: unknown[]) => testPool().query(query, values),
+    };
+    try {
+      for (const queued of jobs) await publisher.enqueue(queued);
+      // Held, so no worker of another suite takes a job made due here.
+      await testPool().query(
+        "update graphile_worker._private_job_queues set locked_at = now(), locked_by = 'contract' where queue_name = any($1)",
+        [[queueName, `${queueName}-other`]],
+      );
+      const before = Date.now();
+      await publisher.releaseFollowersIn(tx, queueName, jobs[0]!.replaceKey);
+      const after = Date.now();
+      const first = await runAt(jobs[1]!.replaceKey);
+      expect(first).toBeGreaterThanOrEqual(before - 1_000);
+      expect(first).toBeLessThanOrEqual(after);
+      expect(await runAt(jobs[2]!.replaceKey)).toBe(first + 1);
+      expect(await runAt(jobs[0]!.replaceKey)).toBe(base);
+      expect(await runAt(jobs[3]!.replaceKey)).toBe(base + hour);
+      expect(await runAt(jobs[4]!.replaceKey)).toBe(base + hour + 1);
+      expect(await runAt(jobs[5]!.replaceKey)).toBe(base + 1);
+
+      // A job running at the head holds its followers until it settles and releases them.
+      await testPool().query(
+        "update graphile_worker._private_jobs set locked_at = now(), locked_by = 'contract' where key = $1",
+        [jobs[3]!.replaceKey],
+      );
+      await publisher.releaseFollowersIn(tx, queueName);
+      expect(await runAt(jobs[4]!.replaceKey)).toBe(base + hour + 1);
+    } finally {
+      await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
+        jobs.map((queued) => queued.replaceKey),
       ]);
       await publisher.close();
     }

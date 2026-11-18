@@ -6,6 +6,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobPayloads,
   JobPublisher,
+  JobQueueOrder,
   MediaGenerationProvider,
   PaymentWalletProvider,
   SandboxProvider,
@@ -99,7 +100,7 @@ export function createBackgroundJobHandlers(deps: {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   artifacts: ArtifactStore;
-  jobs: JobPublisher;
+  jobs: JobPublisher & JobQueueOrder;
   events: ThreadEvents;
   workerId: string;
   runtime: AgentRuntime;

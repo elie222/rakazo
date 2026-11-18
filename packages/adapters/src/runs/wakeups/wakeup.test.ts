@@ -133,6 +133,44 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
   });
 
+  it("makes the followers at the head of a named queue due now, in their order", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    const hour = 60 * 60_000;
+    const settle = (handle: string, dueIn: number, follower: boolean) =>
+      messagingInboundSettleJob(
+        {
+          provider: "chat",
+          handle,
+          identityId: "identity-1",
+          text: "",
+          attachments: [],
+          ...(follower ? { follower: true } : {}),
+        },
+        new Date(Date.now() + dueIn),
+      );
+    const settling = settle("settling", hour, false);
+    await queue.enqueue(settling);
+    await queue.enqueue(settle("first", hour + 1, true));
+    await queue.enqueue(settle("second", hour + 2, true));
+    await queue.enqueue(settle("downloading", 2 * hour, false));
+    await queue.enqueue(settle("behind", 2 * hour + 1, true));
+
+    await queue.releaseFollowersIn({ $executeRawUnsafe: vi.fn() }, "messaging.inbound:identity-1", settling.replaceKey);
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = () =>
+      vi
+        .mocked(target["messaging.inbound_settle"])
+        .mock.calls.map(([payload]) => (payload as { handle: string }).handle);
+    expect(settled()).toEqual(["first", "second"]);
+    // The one still downloading elsewhere holds the follower behind it.
+    await vi.advanceTimersByTimeAsync(hour);
+    expect(settled()).toEqual(["first", "second", "settling"]);
+    await queue.close();
+  });
+
   it("delivers delayed jobs", async () => {
     vi.useFakeTimers();
     const queue = new InMemoryJobQueue();

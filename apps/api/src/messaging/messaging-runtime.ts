@@ -1,7 +1,7 @@
 import type {
   ArtifactStore,
   JobPublisher,
-  JobQueueReader,
+  JobQueueOrder,
   MessagingInboundEvent,
   MessagingSurface,
   SandboxProvider,
@@ -48,7 +48,7 @@ export async function startMessagingRuntime({
   app: Hono;
   prisma: PrismaClient;
   events: ThreadEvents;
-  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueReader;
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueOrder;
   sandbox: SandboxProvider;
   secrets: SecretStore;
   artifacts: ArtifactStore;
