@@ -3,7 +3,8 @@
 Hosted model-credit billing enables the included decision checker for members without an
 account or Space approval-model choice. The existing Auto / Ask / Never modes, block rules,
 mandatory approvals and ordered backups still apply. A deliberate ask or uncertainty never
-advances to a backup. Errors and timeouts ultimately ask the owner. The existing run-access gates govern eligibility, including trials and free access periods.
+advances to a backup. When a member's own checker or backup cannot run, the included checker
+decides as the last backup. Errors and timeouts ultimately ask the owner. The existing run-access gates govern eligibility, including trials and free access periods.
 There is no second paid-history gate that can make a configured checker unavailable. Personal
 checker choices and general LLM deployment checkers keep their existing funding behavior. A deployment decision checker without a personal connection records operator expenses.
 
