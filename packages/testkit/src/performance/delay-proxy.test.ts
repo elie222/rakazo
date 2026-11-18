@@ -113,6 +113,18 @@ describe("startDelayProxy", () => {
     expect(await (await fetch(`${proxy.url}/health`)).text()).toBe("ok");
   });
 
+  it("ends only the affected request when its delay fails", async () => {
+    const upstream = await startUpstream((_request, response) => response.end("ok"));
+    let calls = 0;
+    const proxy = await startProxy(upstream.url, async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("hold failed");
+    });
+
+    await expect(fetch(`${proxy.url}/health`)).rejects.toThrow();
+    expect(await (await fetch(`${proxy.url}/health`)).text()).toBe("ok");
+  });
+
   it("drops a request whose caller left while it was held", async () => {
     const upstream = await startUpstream((_request, response) => response.end("ok"));
     const gate = deferred();
