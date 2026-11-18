@@ -128,6 +128,17 @@ describe("OpenRouterVoiceProvider", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts the audio/mp3 label for MP3 audio", async () => {
+    stubFetch(
+      () => new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mp3" } }),
+    );
+    const clip = await new OpenRouterVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "v", apiKey: "key" },
+      context,
+    );
+    expect(clip.mimeType).toBe("audio/mpeg");
+  });
+
   it("refuses raw samples that do not name their rate", async () => {
     stubFetch(
       () => new Response(new Uint8Array([1, 0]), { headers: { "content-type": "audio/pcm" } }),

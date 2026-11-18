@@ -145,7 +145,7 @@ export class OpenRouterVoiceProvider implements VoiceProvider {
         mimeType: "audio/wav",
       };
     }
-    if (mime !== "audio/mpeg")
+    if (mime !== "audio/mpeg" && mime !== "audio/mp3")
       throw new Error("This speech model returned audio that can't be played.");
     return {
       ...(providerRequestId ? { providerRequestId } : {}),

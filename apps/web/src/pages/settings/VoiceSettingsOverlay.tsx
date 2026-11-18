@@ -408,7 +408,7 @@ export function VoiceSettingsOverlay({
   }
 
   /** The server moved the voice to one the new model has; show it with the new model's voices. */
-  async function showSavedSpeechModelVoices(providerId: string, savedVoiceId: string) {
+  async function showSavedSpeechModelVoices(providerId: string) {
     const request = ++voicesRequest.current;
     try {
       const listed = await queryClient.fetchQuery(
@@ -419,7 +419,6 @@ export function VoiceSettingsOverlay({
       );
       if (request !== voicesRequest.current) return;
       setVoiceList({ provider: providerId, voices: listed });
-      setVoiceId(savedVoiceId);
     } catch (err) {
       if (request === voicesRequest.current) {
         setError(errorText(err, t`Could not load voice settings`));
@@ -443,6 +442,8 @@ export function VoiceSettingsOverlay({
         speechModel: next,
       });
       setSpeechModel(saved.speechModel);
+      // The server moved the voice to one the new model has, unless one was typed meanwhile.
+      if (!edited.current.has("voiceId")) setVoiceId(saved.voiceId);
       const update = (current: VoiceCredential[]) =>
         current.map((entry) => (entry.id === saved.id ? saved : entry));
       setCredentials(update);
@@ -456,7 +457,7 @@ export function VoiceSettingsOverlay({
       speechModelSave.current = null;
       markPending(null);
     }
-    if (selected.speechModels) await showSavedSpeechModelVoices(selected.id, saved.voiceId);
+    if (selected.speechModels) await showSavedSpeechModelVoices(selected.id);
   }
 
   async function testVoice() {
