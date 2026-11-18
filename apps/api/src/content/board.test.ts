@@ -128,6 +128,7 @@ function meDeps(labs: string[], deploymentLabs: string[] = []) {
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: vi.fn(async () => []) },
     deploymentSettings: { findUnique: vi.fn(async () => null) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
   };
   const deps = {
     prisma,
