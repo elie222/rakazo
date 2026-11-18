@@ -90,7 +90,6 @@ export default function MeetingsDialog({
                       id="meeting-link"
                       type="url"
                       aria-describedby="meeting-capture-notice"
-                      placeholder={t`Zoom or Google Meet link`}
                       autoComplete="off"
                       value={url}
                       disabled={busy}

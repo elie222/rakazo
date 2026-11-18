@@ -1,6 +1,6 @@
 # Meeting bots
 
-A meeting bot can join a Zoom or Google Meet link and bring back a speaker-labeled transcript. Open **Meetings** in the bot chat and enter the attendee link. Use a meeting where you're allowed to capture audio and create a transcript. Admit the bot from the waiting room when prompted and grant the meeting platform's capture permission.
+A meeting bot can join Zoom, Google Meet, or Microsoft Teams work meetings and bring back a speaker-labeled transcript. Open **Meetings** in the bot chat and enter the attendee link. Use a meeting where you're allowed to capture audio and create a transcript. Admit the bot from the waiting room when prompted and grant the meeting platform's capture permission.
 
 The transcript belongs to the member who started the session. They can open it from **Meetings**, ask the bot a question about it, or delete it. Ask uses the bot's configured model connection and sends the transcript and question to that model. Meetings are available in web, desktop and mobile.
 

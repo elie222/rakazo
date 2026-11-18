@@ -50,4 +50,4 @@ The mobile app uses your phone's own speech recognition and voices for calls. Pi
 
 ## Join a meeting
 
-Open **Meetings** in a bot chat to send the bot to a Zoom or Google Meet call and get a speaker-labeled transcript. See [Meeting bots](./self-host-meetings.md) for server setup.
+Open **Meetings** in a bot chat to send the bot to a Zoom, Google Meet, or Microsoft Teams call and get a speaker-labeled transcript. See [Meeting bots](./self-host-meetings.md) for server setup.

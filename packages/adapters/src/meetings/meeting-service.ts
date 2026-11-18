@@ -44,7 +44,12 @@ const errors = {
 
 export function parseMeetingUrl(input: string) {
   const meeting = meetingTargetFromUrl(input);
-  if (!meeting) throw new ClientError("BAD_REQUEST", "Enter a valid Zoom or Google Meet link.");
+  if (!meeting) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+    );
+  }
   return meeting;
 }
 

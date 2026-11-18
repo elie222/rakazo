@@ -69,7 +69,6 @@ export default function MeetingsScreen() {
           >
             <SettingsInputRow
               accessibilityLabel={t`Meeting link`}
-              placeholder={t`Zoom or Google Meet link`}
               keyboardType="url"
               autoCorrect={false}
               autoCapitalize="none"

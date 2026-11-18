@@ -3,6 +3,7 @@ import type { MeetingPlatform } from "@rakazo/contracts";
 export const meetingPlatformNames: Record<MeetingPlatform, string> = {
   zoom: "Zoom",
   google_meet: "Google Meet",
+  microsoft_teams: "Microsoft Teams",
 };
 
 export function meetingTargetFromUrl(input: string): {
@@ -26,6 +27,22 @@ export function meetingTargetFromUrl(input: string): {
       const join = new URL(`https://${url.hostname}/j/${number}`);
       if (password) join.searchParams.set("pwd", password);
       return { platform: "zoom", url: join.href, key: number };
+    }
+  }
+  if (url.hostname === "teams.microsoft.com" || url.hostname === "teams.cloud.microsoft") {
+    const code = /^\/meet\/(\d{9,15})\/?$/.exec(url.pathname)?.[1];
+    const thread =
+      /^\/l\/meetup-join\/19(?::|%3a)meeting_([a-z0-9_=-]+)(?:@|%40)thread\.(v2|skype)\/\d+\/?$/i.exec(
+        url.pathname,
+      );
+    const key = code ?? (thread && `19:meeting_${thread[1]}@thread.${thread[2]?.toLowerCase()}`);
+    if (key) {
+      const join = new URL(url.pathname, url.origin);
+      for (const parameter of ["p", "context"]) {
+        const value = url.searchParams.get(parameter);
+        if (value) join.searchParams.set(parameter, value);
+      }
+      return { platform: "microsoft_teams", url: join.href, key };
     }
   }
   return null;

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "../helpers/helpers";
 
-const meetingUrl = "https://meet.google.com/abc-defg-hij";
+const meetingUrl = "https://teams.microsoft.com/meet/123456789012?p=fake-passcode";
 const launchDecision = "We agreed to send the launch draft on Friday.";
 const question = "When is the launch draft due?";
 const answer = "The launch draft is due Friday. Sam will check the final copy.";
@@ -19,6 +19,7 @@ test("a bot joins a meeting and brings its transcript back to chat", async ({ pa
   await meetings.getByRole("textbox", { name: "Meeting link" }).fill(meetingUrl);
   await meetings.getByRole("button", { name: "Join meeting" }).click();
   await expect(meetings.getByText("In the meeting", { exact: true })).toBeVisible();
+  await expect(meetings.getByText("Microsoft Teams", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "meeting-joined");
 
   await meetings.getByRole("button", { name: "Leave meeting" }).click();
