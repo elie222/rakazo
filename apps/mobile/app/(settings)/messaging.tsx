@@ -2,11 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { MessagingChannelMembership, MessagingStatus } from "@rakazo/contracts";
-import {
-  createMessagingLinkGuard,
-  messagingConnectOptions,
-  messagingProviderName,
-} from "@rakazo/core";
+import { createMessagingLinkGuard, messagingChatApps, messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -174,26 +170,19 @@ export default function MessagingSettings() {
     (connection) =>
       connection.status === "approved" || (connection.status === "pending" && !connection.incoming),
   );
-  const connectOptions = messagingConnectOptions(
-    status?.enabled ? status.providers : [],
-    installations.available,
-  );
-  const slackInstall = connectOptions.some(({ method }) => method === "install");
-  const linkProviders = connectOptions
-    .filter(({ method }) => method === "link")
-    .map(({ provider }) => provider);
+  const identities = status?.identities ?? [];
   const slackInstallations = installations.installations.filter(
     (installation) => installation.provider === "slack",
   );
-  const showSlack = slackInstall || slackInstallations.length > 0;
-  const identities = status?.identities ?? [];
+  const { slackInstall, showSlack, linkProviders, otherIdentities, freeBots } = messagingChatApps({
+    providers: status?.enabled ? status.providers : [],
+    installAvailable: installations.available,
+    installations: slackInstallations,
+    identities,
+    bots,
+  });
   const identitiesOf = (provider: string) =>
     identities.filter((identity) => identity.provider === provider);
-  // Linked apps this deployment no longer offers stay listed so they can be unlinked.
-  const otherIdentities = identities.filter(
-    (identity) =>
-      !linkProviders.includes(identity.provider) && !(showSlack && identity.provider === "slack"),
-  );
   // A teammate's workspace: DMs link to a bot of the member's own choosing.
   const memberLink =
     Boolean(installations.personalLinkAvailable) && Boolean(status?.providers.includes("slack"));
@@ -240,11 +229,18 @@ export default function MessagingSettings() {
     const app = messagingProviderName(provider);
     return t`Connect ${app}`;
   };
-  /** Issues a code for `provider`, asking which bot first when there are several. */
-  const linkAction = (row: string, provider: string, label: string, accessibilityLabel = label) => {
-    const only = bots.length === 1 ? bots[0] : undefined;
+  /** Acts on a bot free to take a chat app, asking which one first when there is a choice. */
+  const botAction = (
+    label: string,
+    pick: (botId: string) => void,
+    {
+      accessibilityLabel = label,
+      ask = false,
+    }: { accessibilityLabel?: string; ask?: boolean } = {},
+  ) => {
+    const only = freeBots.length === 1 && !ask ? freeBots[0] : undefined;
     const disabled = busy || issuingLink;
-    if (only || bots.length === 0) {
+    if (only || freeBots.length === 0) {
       return (
         <NativeActionButton
           label={label}
@@ -254,17 +250,17 @@ export default function MessagingSettings() {
           fill={false}
           variant="text"
           disabled={disabled || !only}
-          onPress={() => only && startLink(row, provider, only.id)}
+          onPress={() => only && pick(only.id)}
         />
       );
     }
     return (
       <MenuPickerMenu
         label={t`Bot`}
-        choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
+        choices={freeBots.map((bot) => ({ key: bot.id, label: bot.name }))}
         value=""
         disabled={disabled}
-        onChange={(botId) => startLink(row, provider, botId)}
+        onChange={pick}
       >
         <View accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
           <Text style={[styles.link, disabled && styles.disabled]}>{label}</Text>
@@ -272,6 +268,9 @@ export default function MessagingSettings() {
       </MenuPickerMenu>
     );
   };
+  /** Issues a code for `provider` to a bot the person picks. */
+  const linkAction = (row: string, provider: string, label: string, accessibilityLabel = label) =>
+    botAction(label, (botId) => startLink(row, provider, botId), { accessibilityLabel });
   /** The code to send, right under the row that asked for it. */
   const linkCode = (row: string) => {
     if (!link || link.row !== row || Date.parse(link.expiresAt) <= Date.now()) return null;
@@ -287,16 +286,23 @@ export default function MessagingSettings() {
       </Text>
     );
   };
-  /** A linked account; `relink` offers moving it to another bot with a new code, keeping its chats. */
-  const identityRow = (identity: MessagingStatus["identities"][number], relink = false) => [
+  /** A linked account; `movable` offers moving it, chats and all, to another bot. */
+  const identityRow = (identity: MessagingStatus["identities"][number], movable = false) => (
     <SettingsRow
       key={identity.id}
       title={messagingProviderName(identity.provider)}
       detail={`${identity.address}, ${identity.botName}`}
       trailing={
         <View style={styles.actions}>
-          {relink && bots.length > 1
-            ? linkAction(`identity:${identity.id}`, identity.provider, t`Change bot`)
+          {movable && freeBots.length
+            ? botAction(
+                t`Change bot`,
+                (botId) =>
+                  act((send) =>
+                    send("messaging/identities/setBot", { identityId: identity.id, botId }),
+                  ),
+                { ask: true },
+              )
             : null}
           {textAction(
             t`Unlink`,
@@ -305,9 +311,8 @@ export default function MessagingSettings() {
           )}
         </View>
       }
-    />,
-    linkCode(`identity:${identity.id}`),
-  ];
+    />
+  );
   const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
     <View style={styles.actions}>
       {textAction(t`Approve`, (send) => onRespond(true, send), "primary")}

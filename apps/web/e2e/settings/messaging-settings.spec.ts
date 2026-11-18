@@ -54,7 +54,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
               id: "mi-2",
               provider: "telegram-work",
               address: "424242",
-              botId: "bot-2",
+              botId: "bot-archived",
               botName: "Lead",
             },
           ],

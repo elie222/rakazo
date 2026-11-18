@@ -16,7 +16,7 @@ const messaging = vi.hoisted(() => ({
   },
   channels: { list: vi.fn(async () => []), respond: vi.fn(), leave: vi.fn() },
   connections: { list: vi.fn(async () => []), respond: vi.fn(), revoke: vi.fn() },
-  identities: { unlink: vi.fn() },
+  identities: { unlink: vi.fn(), setBot: vi.fn() },
   link: {
     start: vi.fn(async () => ({
       code: "ABCD-2345",
@@ -632,7 +632,7 @@ it("blocks issuance across remounts until the previous request settles", async (
   expect(container.textContent).toContain("ABCD-2345");
 });
 
-it("moves a linked app to another bot with a new code instead of unlinking it", async () => {
+it("moves a linked app to a free bot without unlinking it", async () => {
   messaging.status.mockResolvedValue(statusWith([identity]));
   api.bots.list.mockResolvedValue([
     { id: "bot-1", name: "Chief" },
@@ -640,8 +640,24 @@ it("moves a linked app to another bot with a new code instead of unlinking it", 
   ]);
   await renderOverlay();
   expect(rowButton("Telegram", "Change bot")).toBeDefined();
+  // Chief already answers Telegram, so only Team is offered.
+  expect(() => rowButton("Telegram", "Chief")).toThrow();
   await act(async () => rowButton("Telegram", "Team").click());
-  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.identities.setBot).toHaveBeenCalledWith({ identityId: "mi-1", botId: "bot-2" });
   expect(messaging.identities.unlink).not.toHaveBeenCalled();
-  expect(appRow("Telegram").textContent).toContain("ABCD-2345");
+  expect(messaging.link.start).not.toHaveBeenCalled();
+});
+
+it("offers only bots that are not already linked", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([identity]),
+    providers: ["telegram", "whatsapp"],
+  });
+  api.bots.list.mockResolvedValue([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  await act(async () => rowButton("WhatsApp", "Connect").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
 });

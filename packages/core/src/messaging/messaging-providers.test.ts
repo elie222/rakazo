@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   availableChatApps,
   isAvailableChatApp,
+  messagingChatApps,
   messagingConnectOptions,
   messagingProviderLabel,
   messagingProviderName,
@@ -59,4 +60,41 @@ it("recognizes a catalog app that is also a chat app people can connect here", (
   expect(isAvailableChatApp({ name: "Notion", slug: "notion" }, chatApps)).toBe(false);
   expect(isAvailableChatApp({ name: "Slack", slug: "slack" }, [])).toBe(false);
   expect(isAvailableChatApp({ name: "Telegram", slug: "tg" }, ["telegram-work"])).toBe(true);
+});
+
+describe("messaging chat apps", () => {
+  const identities = [
+    { provider: "telegram", botId: "bot-1" },
+    { provider: "slack", botId: "bot-2" },
+    { provider: "signal", botId: "bot-3" },
+  ];
+  const bots = [{ id: "bot-1" }, { id: "bot-2" }, { id: "bot-4" }];
+
+  it("lists Slack once, beside its workspaces, even when it also links with a code", () => {
+    const apps = messagingChatApps({
+      providers: ["slack", "telegram"],
+      installAvailable: false,
+      installations: [{ provider: "slack" }],
+      identities,
+      bots,
+    });
+    expect(apps).toMatchObject({
+      slackInstall: false,
+      showSlack: true,
+      linkProviders: ["telegram"],
+    });
+    expect(apps.otherIdentities).toEqual([{ provider: "signal", botId: "bot-3" }]);
+  });
+
+  it("offers only bots not already answering a chat app", () => {
+    const apps = messagingChatApps({
+      providers: ["telegram"],
+      installAvailable: false,
+      installations: [],
+      identities,
+      bots,
+    });
+    expect(apps.freeBots).toEqual([{ id: "bot-4" }]);
+    expect(apps.otherIdentities.map(({ provider }) => provider)).toEqual(["slack", "signal"]);
+  });
 });

@@ -79,3 +79,37 @@ export function availableChatApps(
 ): string[] {
   return messagingConnectOptions(providers, installAvailable).map(({ provider }) => provider);
 }
+
+/**
+ * The chat-app list in messaging settings: Slack's workspace rows, one row per app linked
+ * with a code, linked accounts on apps no longer offered, and the bots a new link may use.
+ */
+export function messagingChatApps<
+  Identity extends { provider: string; botId: string },
+  Bot extends { id: string },
+>(input: {
+  providers: readonly string[];
+  installAvailable: boolean;
+  installations: readonly { provider: string }[];
+  identities: readonly Identity[];
+  bots: readonly Bot[];
+}) {
+  const options = messagingConnectOptions(input.providers, input.installAvailable);
+  const slackInstall = options.some(({ method }) => method === "install");
+  const showSlack =
+    slackInstall || input.installations.some(({ provider }) => provider === "slack");
+  // Saved workspaces already list Slack and its DM links.
+  const linkProviders = options
+    .filter(({ method, provider }) => method === "link" && !(showSlack && provider === "slack"))
+    .map(({ provider }) => provider);
+  const listed = (provider: string) =>
+    linkProviders.includes(provider) || (showSlack && provider === "slack");
+  return {
+    slackInstall,
+    showSlack,
+    linkProviders,
+    otherIdentities: input.identities.filter(({ provider }) => !listed(provider)),
+    // A bot answers one chat app at a time.
+    freeBots: input.bots.filter((bot) => !input.identities.some(({ botId }) => botId === bot.id)),
+  };
+}

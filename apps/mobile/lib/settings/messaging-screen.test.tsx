@@ -374,6 +374,10 @@ it("lets a workspace member link DMs without installing the app again", async ()
 });
 
 it("keeps a new DM code visible when Slack is already linked in another workspace", async () => {
+  responses["bots/list"] = [
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Lead" },
+  ];
   responses["messaging/status"] = {
     enabled: true,
     providers: ["slack"],
@@ -398,6 +402,7 @@ it("keeps a new DM code visible when Slack is already linked in another workspac
       .find((button) => button.textContent === "Link DMs")!
       .click(),
   );
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
   expect(container.textContent).toContain("ABCD-2345");
 });
 
@@ -614,7 +619,7 @@ it("answers a request once for a double tap", async () => {
   ).toHaveLength(1);
 });
 
-it("moves a linked app to another bot with a new code instead of unlinking it", async () => {
+it("moves a linked app to a free bot without unlinking it", async () => {
   responses["bots/list"] = [
     { id: "bot-1", name: "Chief" },
     { id: "bot-2", name: "Lead" },
@@ -627,12 +632,14 @@ it("moves a linked app to another bot with a new code instead of unlinking it", 
     ],
   };
   await act(async () => root.render(<MessagingSettings />));
+  expect(() => button("iMessage", "Chief")).toThrow();
   await press("iMessage", "Lead");
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
-  expect(rpc).not.toHaveBeenCalledWith(
-    "messaging/identities/unlink",
-    expect.anything(),
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/identities/setBot",
+    { identityId: "mi-1", botId: "bot-2" },
     expect.anything(),
   );
-  expect(container.textContent).toContain("ABCD-2345");
+  for (const path of ["messaging/identities/unlink", "messaging/link/start"]) {
+    expect(rpc).not.toHaveBeenCalledWith(path, expect.anything(), expect.anything());
+  }
 });
