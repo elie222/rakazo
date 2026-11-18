@@ -1,6 +1,6 @@
 # Meeting bots
 
-A meeting bot can join a Zoom or Google Meet link and bring back a speaker-labeled transcript. Open **Meetings** in the bot chat and enter the attendee link. Use a meeting where you're allowed to capture audio and create a transcript. Admit the bot from the waiting room when prompted and grant the meeting platform's capture permission.
+A meeting bot can join Zoom, Google Meet, or Microsoft Teams work meetings and bring back a speaker-labeled transcript. Open **Meetings** in the bot chat and enter the attendee link. Use a meeting where you're allowed to capture audio and create a transcript. Admit the bot from the waiting room when prompted and grant the meeting platform's capture permission.
 
 For new joins from updated clients, the speaker-labeled transcript is shared with the Space and appears in **Artifacts** for that bot. Ask the bot about the call in its regular chat. It can see that the meeting ended while the transcript is still processing and can read the transcript once ready. The member who started the meeting can open or delete the original in **Meetings**. Deleting the original also removes its artifact. To add an older transcript, open it and select **Share transcript with Space**. Meetings are available in web, desktop and mobile.
 

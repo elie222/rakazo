@@ -1,6 +1,6 @@
 # Meetings
 
-Send a Rakazo bot to a Zoom or Google Meet call. After the call, you can ask the bot what was discussed and download a speaker-labeled transcript.
+Send a Rakazo bot to Zoom, Google Meet, or a Microsoft Teams work meeting. After the call, you can ask the bot what was discussed and download a speaker-labeled transcript.
 
 ## Send a bot to a meeting
 

@@ -1,7 +1,8 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 
-export const MeetingPlatformSchema = z.enum(["zoom", "google_meet"]);
+// The service that hosts the meeting. Product labels live in core's meeting platform catalog.
+export const MeetingPlatformSchema = z.enum(["zoom", "google_meet", "microsoft_teams"]);
 export type MeetingPlatform = z.infer<typeof MeetingPlatformSchema>;
 
 export const MeetingStatusSchema = z.enum([

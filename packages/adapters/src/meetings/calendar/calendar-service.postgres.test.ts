@@ -106,7 +106,14 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await expect(
         runAsTenant(second, () => service.updateSelection(second, botId, firstReview.id, "once")),
       ).rejects.toMatchObject({ kind: "NOT_FOUND" });
+      const teamsLink =
+        "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_Fake%2Bthread%40thread.v2/0?context=%7B%22Tid%22%3A%22fake-tenant%22%7D";
+      emulator.revision(lastReview.id, { meeting_url: teamsLink });
+      expect((await listing(first)).events.find(({ id }) => id === lastReview.id)).toMatchObject({
+        platform: "microsoft_teams",
+      });
       await runAsTenant(first, () => service.updateSelection(first, botId, lastReview.id, "once"));
+      expect(emulator.scheduledLink(lastReview.id)).toBe(teamsLink);
       await runAsTenant(first, () =>
         service.updateSelection(first, botId, firstReview.id, "series"),
       );
