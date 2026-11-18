@@ -1,5 +1,8 @@
-import { rpc } from "../api/api";
+import { isRetryableError } from "@rakazo/core";
+import { rpc, selectedSpaceId } from "../api/api";
 import type { MobileSnapshot } from "../api/mobile-types";
+import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
+import { onConversationCleared } from "../thread/conversation-cleared";
 import type { InboxItem } from "./inbox-spaces";
 import type { SavedChatsScope } from "./saved-chats";
 import {
@@ -45,10 +48,12 @@ export function inboxChats(
  */
 export function preloadChats(chats: readonly ChatTarget[]): Promise<void> {
   const targets = chats.slice(0, PRELOADED_CHATS);
+  // These chats belong to the Space selected now; a pass that starts after a switch skips them.
+  const selection = selectedSpaceId();
   const pass = async () => {
     // The inbox changes often; a Space this session already read needs no keychain reads.
     const scope = currentSavedChatsScope() ?? (await savedChatsScope());
-    if (scope) await preloadInto(scope, targets);
+    if (scope && scope.selectionId === selection) await preloadInto(scope, targets);
   };
   running = (running ?? Promise.resolve()).then(pass, pass);
   return running;
@@ -56,23 +61,34 @@ export function preloadChats(chats: readonly ChatTarget[]): Promise<void> {
 
 async function preloadInto(scope: SavedChatsScope, targets: readonly ChatTarget[]) {
   for (const chat of targets) {
+    // After a Space switch these chats belong to another Space; the new one gets its own pass.
+    if (!isIntegrationsScopeCurrent(scope)) return;
     const target = savedChatTarget(chat);
     const key = JSON.stringify([scope.namespace, scope.selectionId, target]);
     if (handled.has(key)) continue;
     handled.add(key);
     if (readSavedThread(scope, target)) continue;
+    let cleared = false;
+    const stopWatching = onConversationCleared((botId) => {
+      if (botId === chat.botId) cleared = true;
+    });
     let snapshot: MobileSnapshot;
     try {
       snapshot = await rpc(
         "threads/get",
         chat.groupId ? { groupId: chat.groupId } : { botId: chat.botId! },
       );
-    } catch {
-      // Offline or refused: the chat loads as usual when opened, and the next pass tries again.
+    } catch (error) {
+      // A refusal is the server's answer: reported once and not asked again this launch.
+      if (!isRetryableError(error)) throw error;
+      // Offline or busy: the chat loads as usual when opened, and a later pass asks again.
       handled.delete(key);
       return;
+    } finally {
+      stopWatching();
     }
-    // The chat screen saves a fresher copy when the chat was opened meanwhile.
-    if (!readSavedThread(scope, target)) writeSavedThread(scope, target, snapshot);
+    // A chat cleared meanwhile, or opened meanwhile (its screen saved a fresher copy), keeps
+    // what it has.
+    if (!cleared && !readSavedThread(scope, target)) writeSavedThread(scope, target, snapshot);
   }
 }

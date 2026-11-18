@@ -8,7 +8,10 @@ const state = vi.hoisted(() => ({
   scope: true,
   rpc: vi.fn(),
 }));
-vi.mock("../api/api", () => ({ rpc: state.rpc }));
+vi.mock("../api/api", () => ({ rpc: state.rpc, selectedSpaceId: () => state.space }));
+vi.mock("../integrations/integrations-cache", () => ({
+  isIntegrationsScopeCurrent: (scope: { selectionId: string }) => scope.selectionId === state.space,
+}));
 vi.mock("./saved-chats", () => ({
   currentSavedChatsScope: () => null,
   savedChatsScope: async () =>
@@ -23,6 +26,7 @@ vi.mock("./saved-chats", () => ({
 }));
 
 const { inboxChats, preloadChats, PRELOADED_CHATS } = await import("./preload-chats");
+const { notifyConversationCleared } = await import("../thread/conversation-cleared");
 
 const snapshotOf = (input: { botId?: string; groupId?: string }) => ({ fetched: input });
 
@@ -58,7 +62,7 @@ it("saves a copy of the first chats that have none, one request at a time", asyn
 });
 
 it("asks for each chat once per Space, and again after a failed request", async () => {
-  state.rpc.mockRejectedValueOnce(new Error("offline"));
+  state.rpc.mockRejectedValueOnce(new TypeError("Network request failed"));
   await preloadChats([{ botId: "b1" }, { groupId: "g1" }]);
   // The pass stops at the first failure.
   expect(state.rpc).toHaveBeenCalledTimes(1);
@@ -100,4 +104,39 @@ it("lists the selected Space's chats in inbox order, pinned ones first", () => {
   expect(inboxChats(items, { bots: [{ id: "b1" }], groups: [{ id: "g1" }, { id: "g2" }] })).toEqual(
     [{ groupId: "g1" }, { botId: "b1" }, { groupId: "g2" }],
   );
+});
+
+it("stops when the Space changes, and never asks for one Space's chats in another", async () => {
+  const answer = deferred<unknown>();
+  state.rpc.mockImplementationOnce(() => answer.promise);
+  const first = state.space;
+  const pass = preloadChats([{ botId: "b1" }, { botId: "b2" }]);
+  await vi.waitFor(() => expect(state.rpc).toHaveBeenCalledTimes(1));
+  state.space = "space-other";
+  // Queued while the first pass is out, under the Space it was listed in.
+  const queued = preloadChats([{ botId: "b3" }]);
+  state.space = "space-new";
+  answer.resolve(snapshotOf({ botId: "b1" }));
+  await pass;
+  await queued;
+  expect(state.rpc).toHaveBeenCalledTimes(1);
+  expect(state.saved.has(`${first}/bot:b2`)).toBe(false);
+});
+
+it("does not save a chat that was cleared while its request was out", async () => {
+  const answer = deferred<unknown>();
+  state.rpc.mockImplementationOnce(() => answer.promise);
+  const pass = preloadChats([{ botId: "b1" }]);
+  await vi.waitFor(() => expect(state.rpc).toHaveBeenCalled());
+  notifyConversationCleared("b1");
+  answer.resolve(snapshotOf({ botId: "b1" }));
+  await pass;
+  expect(state.saved.has(`${state.space}/bot:b1`)).toBe(false);
+});
+
+it("passes on a refusal, so it is reported", async () => {
+  state.rpc.mockRejectedValueOnce(Object.assign(new Error("Forbidden"), { status: 403 }));
+  await expect(preloadChats([{ botId: "b1" }])).rejects.toThrow("Forbidden");
+  await preloadChats([{ botId: "b1" }]);
+  expect(state.rpc).toHaveBeenCalledTimes(1);
 });
