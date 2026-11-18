@@ -17,6 +17,10 @@ export const MeetingStatusSchema = z.enum([
 ]);
 export type MeetingStatus = z.infer<typeof MeetingStatusSchema>;
 
+export function canLeaveMeeting(status: MeetingStatus): boolean {
+  return status === "joining" || status === "waiting" || status === "joined";
+}
+
 export const MeetingTurnSchema = z.object({
   speaker: z.string().max(256),
   startMs: z.number().int().nonnegative(),

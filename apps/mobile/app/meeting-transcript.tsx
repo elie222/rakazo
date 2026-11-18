@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
+import { useMeetingQuestion } from "@rakazo/chat-ui/hooks";
 import { transcriptTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { SettingsGroup, SettingsInputRow } from "../components/settings/settings-group";
@@ -20,8 +20,7 @@ export default function MeetingTranscriptScreen() {
   const { botId = "", id = "" } = useLocalSearchParams<{ botId?: string; id?: string }>();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [question, setQuestion] = useState("");
-  const [exchange, setExchange] = useState<{ question: string; answer: string }>();
+  const question = useMeetingQuestion();
   const read = formRead(rpcQuery("meetings/transcript", { id }));
   const list = rpcQuery("meetings/list", { botId });
   const transcript = useScreenQuery(read, { enabled: Boolean(id) });
@@ -34,10 +33,7 @@ export default function MeetingTranscriptScreen() {
 
   const ask = useSave({
     save: (question: string, send) => send("meetings/ask", { id, question }),
-    onSaved: ({ answer }, question) => {
-      setExchange({ question, answer });
-      setQuestion("");
-    },
+    onSaved: question.onAnswered,
   });
   const removal = useSave({
     save: (_, send) => send("meetings/deleteTranscript", { id }),
@@ -66,9 +62,7 @@ export default function MeetingTranscriptScreen() {
         }
       : null,
   });
-  const submit = () => {
-    if (question.trim() && !ask.pending && !removal.pending) ask.run(question.trim());
-  };
+  const submit = () => question.submit(ask.run, ask.pending || removal.pending);
   const error = transcript.error ?? ask.error ?? removal.error;
   return (
     <FlatList
@@ -100,10 +94,10 @@ export default function MeetingTranscriptScreen() {
                   placeholder={t`Type a question`}
                   returnKeyType="send"
                   editable={!ask.pending && !removal.pending}
-                  value={question}
+                  value={question.draft}
                   onChangeText={(value) => {
                     ask.reset();
-                    setQuestion(value);
+                    question.setDraft(value);
                   }}
                   onSubmitEditing={submit}
                 />
@@ -111,14 +105,14 @@ export default function MeetingTranscriptScreen() {
               <NativeActionButton
                 label={t`Ask`}
                 busy={ask.pending}
-                disabled={removal.pending || !question.trim()}
+                disabled={removal.pending || !question.canAsk}
                 onPress={submit}
               />
-              {exchange ? (
+              {question.exchange ? (
                 <View accessibilityLiveRegion="polite" style={styles.answer}>
-                  <Text style={styles.speaker}>{exchange.question}</Text>
+                  <Text style={styles.speaker}>{question.exchange.question}</Text>
                   <Text selectable style={styles.body}>
-                    {exchange.answer}
+                    {question.exchange.answer}
                   </Text>
                 </View>
               ) : null}

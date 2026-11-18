@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { canLeaveMeeting } from "@rakazo/contracts";
 import { meetingPlatformLabel, meetingStatusLabel, meetingTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -95,11 +96,8 @@ export default function MeetingsScreen() {
       {!list.error && list.data?.meetings.length ? (
         <SettingsGroup accessibilityLabel={t`Recent meetings`}>
           {list.data.meetings.map((meeting) => {
-            const canRead = meeting.status === "ready" && meeting.transcriptAvailable;
-            const canLeave =
-              meeting.status === "joining" ||
-              meeting.status === "waiting" ||
-              meeting.status === "joined";
+            const canRead = meeting.transcriptAvailable;
+            const canLeave = canLeaveMeeting(meeting.status);
             const status = meeting.error ?? meetingStatusLabel(meeting.status);
             return (
               <SettingsRow

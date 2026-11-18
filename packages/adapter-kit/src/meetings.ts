@@ -30,6 +30,7 @@ export interface MeetingProvider {
     recordingId: string,
     signal: AbortSignal,
   ): Promise<{ id: string; ready: boolean }>;
+  transcriptReady(transcriptId: string, signal: AbortSignal): Promise<boolean>;
   downloadTranscript(
     transcriptId: string,
     signal: AbortSignal,
