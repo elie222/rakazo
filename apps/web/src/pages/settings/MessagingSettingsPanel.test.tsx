@@ -631,3 +631,17 @@ it("blocks issuance across remounts until the previous request settles", async (
   expect(messaging.link.start).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("ABCD-2345");
 });
+
+it("moves a linked app to another bot with a new code instead of unlinking it", async () => {
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  api.bots.list.mockResolvedValue([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  expect(rowButton("Telegram", "Change bot")).toBeDefined();
+  await act(async () => rowButton("Telegram", "Team").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.identities.unlink).not.toHaveBeenCalled();
+  expect(appRow("Telegram").textContent).toContain("ABCD-2345");
+});

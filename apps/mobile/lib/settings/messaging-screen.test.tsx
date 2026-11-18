@@ -613,3 +613,26 @@ it("answers a request once for a double tap", async () => {
     vi.mocked(rpc).mock.calls.filter(([path]) => path === "messaging/channels/respond"),
   ).toHaveLength(1);
 });
+
+it("moves a linked app to another bot with a new code instead of unlinking it", async () => {
+  responses["bots/list"] = [
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Lead" },
+  ];
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["sendblue"],
+    identities: [
+      { id: "mi-1", provider: "sendblue", botId: "bot-1", botName: "Chief", address: "+1555" },
+    ],
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await press("iMessage", "Lead");
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" }, expect.anything());
+  expect(rpc).not.toHaveBeenCalledWith(
+    "messaging/identities/unlink",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(container.textContent).toContain("ABCD-2345");
+});

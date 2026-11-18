@@ -354,7 +354,8 @@ export function MessagingSettingsPanel() {
     );
   }
 
-  const identityRow = (identity: MessagingStatus["identities"][number]) => (
+  /** A linked account; `relink` offers moving it to another bot with a new code, keeping its chats. */
+  const identityRow = (identity: MessagingStatus["identities"][number], relink = false) => (
     <SettingsRow
       key={identity.id}
       label={
@@ -364,17 +365,29 @@ export function MessagingSettingsPanel() {
         />
       }
       control={
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() =>
-            void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
-          }
-        >
-          <Trans>Unlink</Trans>
-        </Button>
+        <>
+          {relink && bots.length > 1
+            ? linkAction(
+                `identity:${identity.id}`,
+                identity.provider,
+                <Trans>Change bot</Trans>,
+                "ghost",
+              )
+            : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
+            }
+          >
+            <Trans>Unlink</Trans>
+          </Button>
+        </>
       }
-    />
+    >
+      {linkCodeFor(`identity:${identity.id}`)}
+    </SettingsRow>
   );
 
   const memberLinkAction = linkAction("member", "slack", <Trans>Link DMs</Trans>, "ghost");
@@ -477,7 +490,7 @@ export function MessagingSettingsPanel() {
               {linkCodeFor(`install:${installation.id}`)}
             </SettingsRow>
           ))}
-          {showSlack ? identitiesOf("slack").map(identityRow) : null}
+          {showSlack ? identitiesOf("slack").map((identity) => identityRow(identity)) : null}
           {slackInstall && slackInstallations.length === 0 ? (
             <SettingsRow
               label={<AppLabel provider="slack" />}
@@ -515,7 +528,7 @@ export function MessagingSettingsPanel() {
           ) : null}
           {linkProviders.map((provider) => {
             const linked = identitiesOf(provider);
-            if (linked.length) return linked.map(identityRow);
+            if (linked.length) return linked.map((identity) => identityRow(identity, true));
             return (
               <SettingsRow
                 key={provider}
@@ -532,7 +545,7 @@ export function MessagingSettingsPanel() {
               </SettingsRow>
             );
           })}
-          {otherIdentities.map(identityRow)}
+          {otherIdentities.map((identity) => identityRow(identity))}
         </SettingsGroup>
       ) : null}
 

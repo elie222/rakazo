@@ -287,18 +287,27 @@ export default function MessagingSettings() {
       </Text>
     );
   };
-  const identityRow = (identity: MessagingStatus["identities"][number]) => (
+  /** A linked account; `relink` offers moving it to another bot with a new code, keeping its chats. */
+  const identityRow = (identity: MessagingStatus["identities"][number], relink = false) => [
     <SettingsRow
       key={identity.id}
       title={messagingProviderName(identity.provider)}
       detail={`${identity.address}, ${identity.botName}`}
-      trailing={textAction(
-        t`Unlink`,
-        (send) => send("messaging/identities/unlink", { identityId: identity.id }),
-        "destructive",
-      )}
-    />
-  );
+      trailing={
+        <View style={styles.actions}>
+          {relink && bots.length > 1
+            ? linkAction(`identity:${identity.id}`, identity.provider, t`Change bot`)
+            : null}
+          {textAction(
+            t`Unlink`,
+            (send) => send("messaging/identities/unlink", { identityId: identity.id }),
+            "destructive",
+          )}
+        </View>
+      }
+    />,
+    linkCode(`identity:${identity.id}`),
+  ];
   const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
     <View style={styles.actions}>
       {textAction(t`Approve`, (send) => onRespond(true, send), "primary")}
@@ -384,7 +393,7 @@ export default function MessagingSettings() {
           />,
           linkCode(`install:${installation.id}`),
         ])}
-        {showSlack ? identitiesOf("slack").map(identityRow) : null}
+        {showSlack ? identitiesOf("slack").map((identity) => identityRow(identity)) : null}
         {slackInstall && slackInstallations.length === 0 ? (
           <SettingsRow
             key="slack"
@@ -425,7 +434,7 @@ export default function MessagingSettings() {
         ) : null}
         {linkProviders.map((provider) => {
           const linked = identitiesOf(provider);
-          if (linked.length) return linked.map(identityRow);
+          if (linked.length) return linked.map((identity) => identityRow(identity, true));
           return [
             <SettingsRow
               key={provider}
@@ -435,7 +444,7 @@ export default function MessagingSettings() {
             linkCode(`app:${provider}`),
           ];
         })}
-        {otherIdentities.map(identityRow)}
+        {otherIdentities.map((identity) => identityRow(identity))}
       </SettingsGroup>
       <SettingsGroup label={t`Conversations`}>
         {joinedChannels.map((channel) => (
