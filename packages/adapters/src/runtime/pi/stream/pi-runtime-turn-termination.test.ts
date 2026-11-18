@@ -26,14 +26,16 @@ vi.mock("../models/pi-openai-compatible-provider.js", () => ({
 
 import {
   approvalPausedToolResult,
-  OWNER_SETTINGS_REFUSAL_REPLY,
   terminatingToolResult,
 } from "../../../approvals/approval-effect.js";
 import { PiAgentRuntime } from "../pi-runtime.js";
 
+const TERMINATING_REPLY =
+  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
+
 const primary = model("provider-a", "primary", 32_768);
 
-const REFUSAL = OWNER_SETTINGS_REFUSAL_REPLY;
+const REFUSAL = TERMINATING_REPLY;
 const FIRST_REFUSAL =
   "You cannot change owner settings from this chat; ask the owner to change them in Settings.";
 

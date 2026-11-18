@@ -17,7 +17,6 @@ import {
   displayName,
   HELPER_RESULT_TRIGGER,
   humanizeToolName,
-  newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   planActionGate,
@@ -25,7 +24,7 @@ import {
   repeatsDeniedAction,
   resolveActionApprovalForTools,
   SITE_SENDING_TOOLS,
-  savedContextWriteNeedsApproval,
+  savedContextWriteNeedsReview,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
@@ -43,6 +42,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "../../approvals/approval-effect.js";
+import { scheduleApprovalExpiry } from "../../approvals/approval-expiry.js";
 import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   isAutoReviewCheckerConfigured,
@@ -257,9 +257,8 @@ export async function gateToolCall(
   // neither an allow rule nor an automatic reviewer may create them.
   const unattendedWatch = watch?.kind === "command" || httpWatch;
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
-  // ones its runs may fetch. Once outside content entered this run, a routine naming a
-  // site this run was not given needs a person: a reviewer would judge it on this run's
-  // context, and passing it would trust the site for every later run.
+  // ones its runs may fetch. Once outside content entered this run, a routine naming a site this
+  // run was not given trusts the site for every later run, so its card offers no Always allow.
   const scheduleNamesNewSite =
     (name === "schedule_create" ||
       name === "create_child_routine" ||
@@ -267,14 +266,27 @@ export async function gateToolCall(
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   // An event trigger opens a standing way in for outside text (a chat app's every message, mail,
-  // a webhook), so once outside content entered this run, adding one needs a person, as above.
+  // a webhook), so once outside content entered this run, its card offers no Always allow either.
   const routineAddsEvents =
     (name === "schedule_create" || name === "schedule_update" || name === "create_child_routine") &&
     asksRoutineEvents(args.on) &&
     (await isRunTainted(ctx));
-  const savedContextWriteGated = await savedContextWriteNeedsApproval(name, () =>
+  // A routine runs later as the owner's own words, so one written or rewritten after outside
+  // content entered this run goes through the approval mode like any consequential action: text
+  // the bot read must not plant a prompt that later runs with the owner's trust.
+  const routineWrittenAfterOutside =
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && (Boolean(args.prompt) || asksRoutineEvents(args.on)))) &&
+    (await isRunTainted(ctx));
+  const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),
   );
+  // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
+  const reviewOnly =
+    connectorReadGated ||
+    savedContextWriteReviewed ||
+    (Boolean(request.settingsChange) && (await isRunTainted(ctx)));
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
   const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);
@@ -282,8 +294,8 @@ export async function gateToolCall(
     request.heldForApproval ||
     paying ||
     unattendedWatch ||
+    routineWrittenAfterOutside ||
     siteGate === "new" ||
-    savedContextWriteGated ||
     unidentifiedAction ||
     (!catalogControlRead &&
       approvalToolNames.some(
@@ -291,19 +303,17 @@ export async function gateToolCall(
           toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)) ||
           (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName)),
       ));
-  // A gated read still fails closed when its review errors, and keeps its approval key.
-  const gated = requiresApprovalByDefault || connectorReadGated;
-  // These ask in every run, whatever started it.
-  const mandatoryInAnyRun =
-    paying ||
-    unattendedWatch ||
-    scheduleNamesNewSite ||
-    routineAddsEvents ||
-    toolRequiresExplicitApproval(name);
+  // A reviewed call still fails closed when its review errors, and keeps its approval key.
+  const gated = requiresApprovalByDefault || reviewOnly;
+  // In Ask and Auto these ask a person every time, whatever started the run.
+  const mandatoryInAnyRun = paying || unattendedWatch || toolRequiresExplicitApproval(name);
+  // Outside text may have asked for these, so an Always allow rule saved for calls the owner asked
+  // for does not skip them; they still go through the approval mode.
+  const ignoresAllowRules = routineWrittenAfterOutside || request.ignoresAllowRules;
   // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
   // on their card would save a rule that never takes effect.
   const asksEveryTime =
-    (unattendedWatch || scheduleNamesNewSite || routineAddsEvents) &&
+    (unattendedWatch || scheduleNamesNewSite || routineAddsEvents || ignoresAllowRules) &&
     !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
@@ -324,7 +334,9 @@ export async function gateToolCall(
   const approvalResolved =
     unidentifiedAction && resolvedRules.decision === "allow"
       ? { ...resolvedRules, decision: "ask" as const }
-      : resolvedRules;
+      : ignoresAllowRules && resolvedRules.source === "always_allow"
+        ? { ...resolvedRules, source: "default" as const }
+        : resolvedRules;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
@@ -360,7 +372,7 @@ export async function gateToolCall(
           )
         : false));
   const plan = USER_COMPUTER_TOOLS.has(name)
-    ? await userComputerGate(ctx, approvalResolved.decision === "deny", name, args)
+    ? await userComputerGate(ctx, approvalResolved.decision === "deny", name, args, mode)
     : planActionGate({
         resolved: approvalResolved,
         mode,
@@ -370,23 +382,11 @@ export async function gateToolCall(
             ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
             : undefined,
         consequential: requiresApprovalByDefault,
-        reviewOnly: connectorReadGated,
+        reviewOnly,
         checkerConfigured,
         newDestination: siteGate === "new",
         purchase: paying,
       });
-  // Nobody is there to approve a purchase, or a sign-in that asks first, a webhook run reaches.
-  if (paying && run.trigger === "webhook" && plan !== "deny") {
-    await auditToolCall(ctx, name, "denied", {
-      reason: loginUse ? "login_unattended" : "purchase_unattended",
-    });
-    return {
-      result: refusal(
-        loginUse ? "login_needs_approval_unattended" : "purchase_needs_approval_unattended",
-        `This would ${loginUse ? "sign in with a saved login" : "complete a purchase"}, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.`,
-      ),
-    };
-  }
   if (plan === "deny") {
     await auditToolCall(ctx, name, "denied", {
       reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
@@ -512,7 +512,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
-      savedContextWrite: savedContextWriteGated,
+      savedContextWrite: savedContextWriteReviewed,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -548,23 +548,6 @@ export async function gateToolCall(
     gateDecision = "ask";
   }
   if (context.signal.aborted) return { result: pauseForApproval(ctx) };
-  if (
-    siteGate === "new" &&
-    newSiteOutcome({ trigger: run.trigger, decision: gateDecision }) === "deny"
-  ) {
-    if (applied) {
-      await deps.prisma.externalEffect.updateMany({
-        where: { id: applied.effect.id, status: "intended" },
-        data: { status: "denied" },
-      });
-    }
-    return {
-      result: refusal(
-        "fetch_needs_approval_unattended",
-        `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.`,
-      ),
-    };
-  }
 
   const needsApproval = gateDecision === "ask";
   const call = createToolCall(ctx, {
@@ -795,7 +778,14 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     attemptId: ctx.attempt.id,
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
-    onPaused: scheduleRunSecretsExpiry(deps.jobs, runId),
+    onPaused: async (tx) => {
+      await scheduleRunSecretsExpiry(deps.jobs, runId)(tx);
+      await scheduleApprovalExpiry(deps.jobs, tx, {
+        trigger: run.trigger,
+        runId,
+        effectId: applied!.effect.id,
+      });
+    },
     blocks: [
       buildApprovalAskBlock(
         applied!.effect.id,

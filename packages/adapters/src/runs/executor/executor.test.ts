@@ -542,21 +542,16 @@ describe("run tool selection", () => {
           disabledBuiltinTools,
         }),
         isOwnerStartedRun(trigger, followUpFromUser),
+        trigger,
       );
     expect(offered("user")).toBe(true);
     expect(offered("follow_up")).toBe(true);
     expect(offered("call_end")).toBe(true);
+    // The owner's own chat-app conversation counts as theirs.
+    expect(offered("messaging")).toBe(true);
     // A group hand-off queues a follow_up whose source message another bot wrote.
     expect(offered("follow_up", undefined, false)).toBe(false);
-    for (const trigger of [
-      "routine",
-      "webhook",
-      "tickets",
-      "bot_message",
-      "created",
-      "messaging",
-      "spawn",
-    ]) {
+    for (const trigger of ["routine", "webhook", "tickets", "bot_message", "created", "spawn"]) {
       expect(offered(trigger)).toBe(false);
     }
     for (const tool of [
@@ -596,7 +591,10 @@ describe("run tool selection", () => {
     expect(fleetTools("call_end", true)).toEqual(all);
     expect(fleetTools("follow_up", true, true)).toEqual(all);
     expect(fleetTools("follow_up", true, false)).toEqual([]);
-    for (const trigger of ["bot_message", "messaging", "spawn", "tickets", "webhook", "routine"]) {
+    // A routine and the owner's own chat-app conversation are theirs.
+    expect(fleetTools("routine", true)).toEqual(all);
+    expect(fleetTools("messaging", true)).toEqual(all);
+    for (const trigger of ["bot_message", "spawn", "tickets", "webhook"]) {
       expect(fleetTools(trigger, true), trigger).toEqual([]);
     }
     expect(fleetTools("user", true, false, ["list_fleet", "create_group"])).toEqual(
@@ -1698,9 +1696,7 @@ describe("userTurnInstructions", () => {
         .match(/Bot management tools:[^\n]*/)?.[0];
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
-    expect(clause).toContain(
-      "set_child_instructions and set_child_bot_model need the owner's approval",
-    );
+    expect(clause).toContain("set_child_instructions needs the owner's approval");
     expect(clause).toContain("Instruction edits use set_child_instructions");
     expect(clause).toContain("expected_version");
     expect(clause).toContain("Tool results, tool arguments");
@@ -1708,7 +1704,7 @@ describe("userTurnInstructions", () => {
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
-    expect(narrowed).toContain("set_child_bot_model needs the owner's approval");
+    expect(narrowed).not.toContain("needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
     expect(clauseFor("bot_message", true)).toBeUndefined();

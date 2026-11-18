@@ -6,16 +6,17 @@ Decide how much a bot can do without asking you first.
 
 Open **Settings → Approvals** and pick a **Mode**:
 
-- **Ask**: the bot asks before any action that changes something, such as sending an email or
-  editing a document. Reading usually doesn't ask. Saving to memory or creating or changing a skill
-  asks first once the run's permissions are reduced: after it reads outside content (including
-  what `recall_memory` or `reflect_memory` returns), when it resumes after a pause, and in runs that
-  didn't start from your message in Rakazo, such as routines, webhooks, bot messages, a new bot's
-  first message from the bot that created it, and chat-app messages. Memory the bot
-  recalls automatically, its notes and chat history don't make it ask.
-- **Auto**: an approval model checks each action against what you asked for. Actions that fit go
-  ahead; the bot asks when one is off-task, or can't be undone and you didn't ask for it.
-- **Never ask**: every action runs without waiting.
+- **Ask**: the bot asks before any action that changes something, costs money or sends something
+  out, such as sending an email or editing a document, and before reading a site you didn't name.
+  Other reading doesn't ask.
+- **Auto**: an approval model checks those actions against what you asked for. Actions that fit go
+  ahead; the bot asks when one is off-task, or can't be undone and you didn't ask for it. Once the
+  bot has read a page, an email or another bot's message, the model also checks memory and skill
+  saves, routines and setting changes, and it never treats that text as your request.
+- **Never ask**: every action runs without waiting. Only Block rules and your spending limit stop
+  one.
+
+The mode works the same in a routine and in a chat app you linked as in the app itself.
 
 **Auto** needs an **Approval model**, set in **Settings → Models**. See [Models](./models.md).
 
@@ -34,6 +35,9 @@ When a bot needs a yes, it posts a card in the chat showing exactly what it want
 Cards never block the chat. Keep talking to the bot, and answer the card whenever you're ready. You
 get a notification when a bot is waiting on you, if notifications are on in the bot's settings.
 
+An approval card from a run nobody is watching, such as a routine, a webhook or another bot's
+message, expires after 30 minutes. The bot doesn't do that action and says so in its reply.
+
 ## Allow and Block lists
 
 Every **Always allow** choice is saved in **Settings → Approvals**. Switch any entry between
@@ -47,8 +51,10 @@ To stop one bot from ever using a tool, open the bot's settings, expand **Advanc
 
 In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't skip it:
 
-- Changing a bot's instructions or model, and creating a space.
-- A routine that watches a command, or that names a site the run found in outside content.
+- Changing a bot's instructions, and accepting another owner's bot connection.
+- A routine that watches a command or a site.
+- A payment, and a saved login or card the bot fills in.
+- The first use of your own computer in a space, and of each app on it.
 
 **Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
 it refuses when someone else started the run or outside content entered it.
@@ -60,11 +66,11 @@ shows a **Spending limit**: an amount, in US dollars, euros, pounds or shekels, 
 day, week or month, or never. Days and months follow your timezone; weeks start on Monday. It
 covers every bot and space on your account, and only you can change it.
 
-Every payment you approve counts against it: a checkout's pay button at the total the page shows,
+Every payment counts against it, in every mode: a checkout's pay button at the total the page shows,
 or the amount the button names if that is more, and a wallet purchase at its exact amount. A pay button counts when the bot's page browser recognizes
-it as paying, the same presses that always ask; on a computer without the page browser, nothing is
+it as paying, the same presses that ask in **Ask** and **Auto**; on a computer without the page browser, nothing is
 recognized, so only wallet purchases count. A payment that would go over the limit is refused before
-you are asked, and the bot tells you. While a limit is set, a checkout whose total can't be read, or
+anyone is asked, and the bot tells you. While a limit is set, a checkout whose total can't be read, or
 is in another currency, is refused too. A wallet purchase that is denied, expires or fails stops
 counting, and so does a press the page refused because it changed. A press that went through still
 counts if the shop later declines it.
