@@ -262,6 +262,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/saveModelSettings"],
       ["models/disconnect"],
       ["spaces/list"],
+      ["meetingCalendar/status", { botId: "missing-bot" }],
       ["meetingCalendar/upcoming", { botId: "missing-bot" }],
       ["meetingCalendar/begin", { botId: "missing-bot", client: "web" }],
       ["meetingCalendar/complete", { code: "fake-code", state: "fake-state" }],
