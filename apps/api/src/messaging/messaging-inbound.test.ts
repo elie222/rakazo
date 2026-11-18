@@ -21,6 +21,7 @@ import {
   DIRECT_ATTACHMENT_TIMEOUT_MS,
   DIRECT_MESSAGE_SETTLE_BUDGET_MS,
   SHUTDOWN_DOWNLOAD_GRACE_MS,
+  SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
@@ -68,7 +69,12 @@ function createDeps(
   const enqueueIn = vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined);
   const cancelIn = vi.fn(async (_tx: unknown, _key: string) => undefined);
   // The job queue holds none of the sender's backup jobs unless a test says it does.
-  const pendingUntil = vi.fn(async (_queueName: string): Promise<Date | null> => null);
+  const pendingUntil = vi.fn(
+    async (_queueName: string, _exceptKey?: string): Promise<Date | null> => null,
+  );
+  const releaseFollowersIn = vi.fn(
+    async (_tx: unknown, _queueName: string, _exceptKey?: string) => undefined,
+  );
   const acknowledge = vi.fn<MessagingReceipts["acknowledge"]>();
   const runs = new Map<string, { status: string; messagingMirroredAt: Date | null }>([
     ["run-1", { status: "running", messagingMirroredAt: null }],
@@ -353,7 +359,7 @@ function createDeps(
   return {
     prisma,
     events: { sendUserMessage, notify },
-    jobs: { enqueue, enqueueIn, cancelIn, pendingUntil },
+    jobs: { enqueue, enqueueIn, cancelIn, pendingUntil, releaseFollowersIn },
     delivery: { recordIn, send },
     provision,
     openSignup: true,
@@ -368,6 +374,7 @@ function createDeps(
     enqueueIn,
     cancelIn,
     pendingUntil,
+    releaseFollowersIn,
     recordIn,
     send,
     outboundRows,
@@ -382,6 +389,7 @@ function createDeps(
     enqueueIn: typeof enqueueIn;
     cancelIn: typeof cancelIn;
     pendingUntil: typeof pendingUntil;
+    releaseFollowersIn: typeof releaseFollowersIn;
     recordIn: typeof recordIn;
     send: typeof send;
     acknowledge: typeof acknowledge;
@@ -1255,6 +1263,12 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.enqueueIn.mock.invocationCallOrder[0]).toBeLessThan(
       deps.cancelIn.mock.invocationCallOrder[0]!,
     );
+    // The jobs that waited only for it are due now, in the transaction that ends its own.
+    expect(deps.releaseFollowersIn).toHaveBeenCalledExactlyOnceWith(
+      deps.cancelIn.mock.calls[0]![0],
+      "messaging.inbound:mi-1",
+      key,
+    );
 
     // Plain text from a sender with nothing pending is delivered at once, with no backup job.
     await handle({ ...dmEvent, handle: "handle-2" });
@@ -1353,50 +1367,70 @@ describe("createMessagingInboundHandler DM routing", () => {
     )! as [BackgroundJob];
     expect(job.availableAt!.getTime()).toBeGreaterThanOrEqual(before);
     expect(job.availableAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    // Due now, it waits for nothing ahead of it.
+    expect(job.payload).not.toHaveProperty("follower");
     expect(deps.cancelIn).not.toHaveBeenCalled();
   });
 
   it("lets a download still running finish on shutdown, then hands the messages to their jobs", async () => {
-    const download = deferred();
-    const stored = vi.fn();
-    const storeAttachment = vi.fn(async () => {
-      await download.promise;
-      stored();
-      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
-    });
-    const deps = createDeps({ storeAttachment });
-    const handler = createMessagingInboundHandler(deps);
-    await handler(photoEvent);
-    await handler({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
-    const before = Date.now();
+    // The clock stands still, so the times the jobs are due can be checked exactly.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const download = deferred();
+      const stored = vi.fn();
+      const storeAttachment = vi.fn(async () => {
+        await download.promise;
+        stored();
+        return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+      });
+      const deps = createDeps({ storeAttachment });
+      const handler = createMessagingInboundHandler(deps);
+      await handler(photoEvent);
+      await handler({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+      const before = Date.now();
+      const soon = before + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
+      const dueNow = () => handedOff(deps).filter((job) => job.availableAt!.getTime() < soon);
 
-    const stopping = handler.handOffPending();
-    await flush();
-    // The file may still come in: nothing is the jobs' yet.
-    expect(handedOff(deps)).toEqual([]);
-    // A message that comes in now is its job's, after the ones before it, and downloads nothing.
-    await handler({ ...photoEvent, handle: "handle-3" });
-    expect(handedOff(deps)).toEqual([]);
+      const stopping = handler.handOffPending();
+      await flush();
+      // Before the grace, each job is due just past it, as it was otherwise, so a process killed
+      // meanwhile still leaves the messages settling soon, in order.
+      const recorded = deps.enqueueIn.mock.calls.map(([, job]) => job);
+      expect(handedOff(deps)).toEqual(
+        recorded.map((job, index) => ({ ...job, availableAt: new Date(soon + index) })),
+      );
+      expect(dueNow()).toEqual([]);
+      // A message that comes in now is its job's, after the ones before it, and downloads nothing.
+      await handler({ ...photoEvent, handle: "handle-3" });
+      expect(handedOff(deps).at(-1)).toMatchObject({
+        replaceKey: settleKey("handle-3"),
+        availableAt: new Date(soon + 2),
+      });
+      expect(dueNow()).toEqual([]);
 
-    download.resolve();
-    await stopping;
-    expect(handedOff(deps).map((job) => job.replaceKey)).toEqual([
-      settleKey("handle-1"),
-      settleKey("handle-2"),
-      settleKey("handle-3"),
-    ]);
-    // Due now, one after another, so the sender's job queue keeps their order.
-    const due = handedOff(deps).map((job) => job.availableAt!.getTime());
-    expect(due[0]).toBeGreaterThanOrEqual(before);
-    expect(due[1]).toBeGreaterThan(due[0]!);
-    expect(due[2]).toBeGreaterThan(due[1]!);
-    // The file was stored before its job could run, and the job, not this process, posts it.
-    expect(stored.mock.invocationCallOrder[0]).toBeLessThan(
-      deps.enqueue.mock.invocationCallOrder[0]!,
-    );
-    expect(storeAttachment).toHaveBeenCalledOnce();
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    expect(deps.cancelIn).not.toHaveBeenCalled();
+      download.resolve();
+      await stopping;
+      expect(dueNow().map((job) => job.replaceKey)).toEqual([
+        settleKey("handle-1"),
+        settleKey("handle-2"),
+        settleKey("handle-3"),
+      ]);
+      // Due now, one after another, so the sender's job queue keeps their order.
+      const due = dueNow().map((job) => job.availableAt!.getTime());
+      expect(due[0]).toBeGreaterThanOrEqual(before);
+      expect(due[1]).toBeGreaterThan(due[0]!);
+      expect(due[2]).toBeGreaterThan(due[1]!);
+      // The file was stored before its job could run now, and the job, not this process, posts it.
+      const firstDueNow = handedOff(deps).indexOf(dueNow()[0]!);
+      expect(stored.mock.invocationCallOrder[0]).toBeLessThan(
+        deps.enqueue.mock.invocationCallOrder[firstDueNow]!,
+      );
+      expect(storeAttachment).toHaveBeenCalledOnce();
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+      expect(deps.cancelIn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hands a download still running to its job once the shutdown's grace is over", async () => {
@@ -1409,11 +1443,16 @@ describe("createMessagingInboundHandler DM routing", () => {
       await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
 
       const stopping = handler.handOffPending();
+      const soon = Date.now() + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
       await vi.advanceTimersByTimeAsync(SHUTDOWN_DOWNLOAD_GRACE_MS - 1);
-      expect(handedOff(deps)).toEqual([]);
+      // Only the job made due just past the grace, should the process be killed now.
+      expect(handedOff(deps).map((job) => job.availableAt)).toEqual([new Date(soon)]);
       await vi.advanceTimersByTimeAsync(1);
       await stopping;
-      expect(handedOff(deps).map((job) => job.replaceKey)).toEqual([settleKey("handle-1")]);
+      expect(handedOff(deps).map((job) => [job.replaceKey, job.availableAt])).toEqual([
+        [settleKey("handle-1"), new Date(soon)],
+        [settleKey("handle-1"), new Date(Date.now())],
+      ]);
       expect(deps.sendUserMessage).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -1428,7 +1467,8 @@ describe("createMessagingInboundHandler DM routing", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "and make it short" });
 
-    expect(deps.pendingUntil).toHaveBeenCalledWith("messaging.inbound:mi-1");
+    // Its own job, should this be a redelivery, is not one it waits for.
+    expect(deps.pendingUntil).toHaveBeenCalledWith("messaging.inbound:mi-1", settleKey("handle-1"));
     // Its own backup job was recorded before the webhook was answered.
     expect(deps.enqueueIn).toHaveBeenCalledWith(
       expect.anything(),
@@ -1438,13 +1478,28 @@ describe("createMessagingInboundHandler DM routing", () => {
       }),
     );
     await vi.waitFor(() => expect(handedOff(deps)).toHaveLength(1));
-    // Due right after the queued job, in the same queue, so that one settles first.
+    // Due right after the queued job, in the same queue, so that one settles first; a follower,
+    // so whichever path settles that one makes this one due then.
     expect(handedOff(deps)[0]).toMatchObject({
       replaceKey: settleKey("handle-1"),
       queueName: "messaging.inbound:mi-1",
       availableAt: new Date(queued.getTime() + 1),
+      payload: { follower: true },
     });
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not hold a redelivered message back behind its own backup job", async () => {
+    const deps = createDeps();
+    // The first delivery's job is the only one in the sender's queue.
+    deps.pendingUntil.mockImplementation(async (_queue, exceptKey) =>
+      exceptKey === settleKey("handle-1") ? null : new Date(Date.now() + 60 * 60_000),
+    );
+    await createMessagingInboundHandler(deps)(dmEvent);
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-1" }),
+    );
+    expect(handedOff(deps)).toEqual([]);
   });
 
   it("sends a file message and the text behind it after the sender's queued backup jobs", async () => {

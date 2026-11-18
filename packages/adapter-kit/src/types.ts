@@ -1023,6 +1023,11 @@ export interface BackgroundJobPayloads {
     attachments: { name: string; mimeType: string; size?: number }[];
     /** An owner's "stop" came after it: the message joins the chat but starts no turn. */
     quiet?: boolean;
+    /**
+     * Due late only to settle after the sender's jobs ahead of it: whichever path settles the one
+     * ahead makes it due now.
+     */
+    follower?: boolean;
   };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };

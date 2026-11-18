@@ -80,6 +80,7 @@ const payloadSchemas = {
       )
       .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
     quiet: z.boolean().optional(),
+    follower: z.boolean().optional(),
   }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),

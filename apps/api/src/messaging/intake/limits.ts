@@ -19,6 +19,13 @@ export const DOWNLOAD_BUDGET_FILES = 4;
 
 /**
  * Time a shutdown gives the direct-message downloads still running to finish before their
- * messages go to their backup jobs, which find what was stored by then.
+ * messages go to their backup jobs, which find what was stored by then. Well inside the shortest
+ * stop window a container gets, ten seconds by default, after the connection drain.
  */
-export const SHUTDOWN_DOWNLOAD_GRACE_MS = 20_000;
+export const SHUTDOWN_DOWNLOAD_GRACE_MS = 5_000;
+
+/**
+ * Past the grace, when a shutdown makes those jobs due at the latest, so a process killed
+ * during the grace still leaves them settling soon after.
+ */
+export const SHUTDOWN_HANDOFF_MARGIN_MS = 2_000;

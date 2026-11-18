@@ -72,6 +72,7 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
       pendingUntil: vi.fn(async () => null),
+      releaseFollowersIn: vi.fn(async () => undefined),
     };
     const recorder = new MessagingDelivery({
       prisma: unhurried,
@@ -269,6 +270,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
     pendingUntil: vi.fn(async () => null),
+    releaseFollowersIn: vi.fn(async () => undefined),
   };
 
   beforeAll(() => {
@@ -480,6 +482,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
     pendingUntil: vi.fn(async () => null),
+    releaseFollowersIn: vi.fn(async () => undefined),
   };
 
   beforeAll(async () => {
@@ -803,6 +806,183 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       ).toBe(0);
     } finally {
       await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await publisher.close();
+    }
+  });
+
+  /** The real job queue, except that runs are not started: no worker here takes them. */
+  const queueWithoutRuns = (publisher: GraphileJobPublisher) => ({
+    enqueue: (job: Parameters<GraphileJobPublisher["enqueue"]>[0]) =>
+      job.name === "run.continue" ? Promise.resolve() : publisher.enqueue(job),
+    enqueueIn: publisher.enqueueIn.bind(publisher),
+    cancelIn: publisher.cancelIn.bind(publisher),
+    cancel: publisher.cancel.bind(publisher),
+    pendingUntil: publisher.pendingUntil.bind(publisher),
+    releaseFollowersIn: publisher.releaseFollowersIn.bind(publisher),
+  });
+
+  /** Holds the sender's queue, so no worker of another suite takes a job made due here. */
+  const holdQueue = (locked: boolean) =>
+    db.pool.query(
+      `update graphile_worker._private_job_queues
+       set locked_at = case when $2 then now() end, locked_by = case when $2 then 'contract' end
+       where queue_name = $1`,
+      [`messaging.inbound:${identity.id}`, locked],
+    );
+
+  const jobRow = async (key: string) =>
+    (
+      await db.pool.query<{ run_at: Date }>(
+        "select run_at from graphile_worker.jobs where key = $1",
+        [key],
+      )
+    ).rows[0];
+
+  it("makes a follower due once the backup job it waited for settles the message ahead", async () => {
+    const publisher = new GraphileJobPublisher(db.pool);
+    const jobs = queueWithoutRuns(publisher);
+    const ahead = `in-${randomUUID()}`;
+    const behind = `in-${randomUUID()}`;
+    const keys = [
+      messagingInboundSettleJobKey("test", ahead),
+      messagingInboundSettleJobKey("test", behind),
+    ];
+    const queuedAt = new Date(Date.now() + 60 * 60_000);
+    const payload = (handle: string, follower: boolean) => ({
+      provider: "test",
+      handle,
+      identityId: identity.id,
+      text: "",
+      attachments: [],
+      ...(follower ? { follower: true } : {}),
+    });
+    try {
+      await publisher.enqueue(messagingInboundSettleJob(payload(ahead, false), queuedAt));
+      await holdQueue(true);
+      // Recorded on another instance behind the message ahead, which was mid-settle there.
+      await publisher.enqueue(
+        messagingInboundSettleJob(payload(behind, true), new Date(queuedAt.getTime() + 1)),
+      );
+      const delivery = new MessagingDelivery({
+        prisma: db.prisma,
+        messaging: { platforms: () => [], sendToThread: vi.fn() } as unknown as MessagingSurface,
+        events: createThreadEvents(db.prisma),
+        jobs,
+        artifacts: { get: vi.fn() },
+      });
+      const before = Date.now();
+      await runAsTenant(identity, () =>
+        settleInboundMessage(
+          { prisma: db.prisma, events: createThreadEvents(db.prisma), jobs, delivery },
+          { ...payload(ahead, false), text: "first" },
+        ),
+      );
+      const due = (await jobRow(keys[1]!))!.run_at.getTime();
+      expect(due).toBeGreaterThanOrEqual(before - 1_000);
+      expect(due).toBeLessThanOrEqual(Date.now());
+    } finally {
+      await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await holdQueue(false);
+      await publisher.close();
+    }
+  });
+
+  it("makes a follower due once the message ahead settles here", async () => {
+    const publisher = new GraphileJobPublisher(db.pool);
+    const jobs = queueWithoutRuns(publisher);
+    const ahead = `in-${randomUUID()}`;
+    const behind = `in-${randomUUID()}`;
+    const keys = [
+      messagingInboundSettleJobKey("test", ahead),
+      messagingInboundSettleJobKey("test", behind),
+    ];
+    const photo = await system.artifact.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 3,
+        hash: "hash-follower-photo",
+        storageKey: `storage-${randomUUID()}`,
+        clientNonce: messagingAttachmentClientNonce("test", ahead, 0),
+      },
+    });
+    const download = deferred();
+    try {
+      const inbound = createMessagingInboundHandler({
+        prisma: db.prisma,
+        events: createThreadEvents(db.prisma),
+        jobs,
+        delivery: { recordIn: vi.fn(), send: vi.fn(async () => undefined) },
+        sandbox: {} as never,
+        provision: vi.fn(),
+        openSignup: false,
+        storeAttachment: async () => {
+          await download.promise;
+          return { id: photo.id, name: photo.name, mimeType: photo.mimeType, size: photo.size };
+        },
+      });
+      const address = (
+        await system.messagingIdentity.findUniqueOrThrow({ where: { id: identity.id } })
+      ).address;
+      await runAsSystem("test inbound", () =>
+        inbound({
+          type: "message",
+          provider: "test",
+          handle: ahead,
+          threadId: `test:${address}`,
+          isDirect: true,
+          from: address,
+          fromLabel: null,
+          channelName: null,
+          participants: [],
+          content: "",
+          mediaUrl: null,
+          attachments: [
+            {
+              name: "photo.jpg",
+              mimeType: "image/jpeg",
+              size: 3,
+              fetch: async () => new Uint8Array([1]),
+            },
+          ],
+        }),
+      );
+      const recorded = (await jobRow(keys[0]!))!.run_at.getTime();
+      await holdQueue(true);
+      // Another instance's message, recorded behind it while it is still downloading here.
+      await publisher.enqueue(
+        messagingInboundSettleJob(
+          {
+            provider: "test",
+            handle: behind,
+            identityId: identity.id,
+            text: "",
+            attachments: [],
+            follower: true,
+          },
+          new Date(recorded + 1),
+        ),
+      );
+      const before = Date.now();
+      download.resolve();
+
+      // Settled here: its own job is gone, and the follower is due now.
+      await vi.waitFor(async () => expect(await jobRow(keys[0]!)).toBeUndefined());
+      const due = (await jobRow(keys[1]!))!.run_at.getTime();
+      expect(due).toBeGreaterThanOrEqual(before - 1_000);
+      expect(due).toBeLessThanOrEqual(Date.now());
+      expect(
+        await system.message.count({
+          where: { threadId: identity.threadId, clientNonce: `messaging:test:${ahead}` },
+        }),
+      ).toBe(1);
+    } finally {
+      download.resolve();
+      await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await holdQueue(false);
       await publisher.close();
     }
   });

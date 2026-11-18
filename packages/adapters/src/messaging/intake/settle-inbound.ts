@@ -1,5 +1,5 @@
-import type { BackgroundJobPayloads, JobPublisher } from "@rakazo/adapter-kit";
-import { messagingInboundSettleJobKey } from "@rakazo/adapter-kit";
+import type { BackgroundJobPayloads, JobPublisher, JobQueueOrder } from "@rakazo/adapter-kit";
+import { messagingInboundSettleJobKey, messagingInboundSettleQueue } from "@rakazo/adapter-kit";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
@@ -145,19 +145,30 @@ async function openSettleText(
  * The backup for a direct message whose files were still downloading when its process stopped:
  * posts the message with the files that were stored, marks every other one with why it is
  * missing, wakes the bot unless a stop quieted the message, and tells the sender once. A message
- * that already landed, here or through a message routine, is left as it is.
+ * that already landed, here or through a message routine, is left as it is. Then the sender's
+ * jobs that waited only for it are due now.
  */
-export async function settleInboundMessage(
-  deps: {
-    prisma: PrismaClient;
-    events: Pick<ThreadEvents, "sendUserMessage">;
-    jobs: Pick<JobPublisher, "enqueue">;
-    delivery: Pick<MessagingDelivery, "record">;
-    /** The upload limit the direct path refuses larger files by. */
-    maxUploadSizeBytes?: number;
-  },
-  payload: Payload,
-): Promise<void> {
+export async function settleInboundMessage(deps: SettleDeps, payload: Payload): Promise<void> {
+  await settleMessage(deps, payload);
+  await deps.prisma.$transaction((tx) =>
+    deps.jobs.releaseFollowersIn(
+      tx,
+      messagingInboundSettleQueue(payload.identityId),
+      messagingInboundSettleJobKey(payload.provider, payload.handle),
+    ),
+  );
+}
+
+type SettleDeps = {
+  prisma: PrismaClient;
+  events: Pick<ThreadEvents, "sendUserMessage">;
+  jobs: Pick<JobPublisher, "enqueue"> & Pick<JobQueueOrder, "releaseFollowersIn">;
+  delivery: Pick<MessagingDelivery, "record">;
+  /** The upload limit the direct path refuses larger files by. */
+  maxUploadSizeBytes?: number;
+};
+
+async function settleMessage(deps: SettleDeps, payload: Payload): Promise<void> {
   const { provider, handle } = payload;
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { id: payload.identityId },

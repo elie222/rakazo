@@ -1,11 +1,12 @@
 import type {
   JobPublisher,
-  JobQueueReader,
+  JobQueueOrder,
   MessagingInboundMessage,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
   MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
+  messagingInboundSettleJobKey,
   messagingInboundSettleQueue,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
@@ -63,6 +64,7 @@ import {
   DIRECT_ATTACHMENT_TIMEOUT_MS,
   DIRECT_MESSAGE_SETTLE_BUDGET_MS,
   SHUTDOWN_DOWNLOAD_GRACE_MS,
+  SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
 import type { SenderQueue } from "./intake/sender-queue.js";
 import { createSenderQueue } from "./intake/sender-queue.js";
@@ -78,8 +80,11 @@ import type { MessagingReceipts } from "./messaging-receipts.js";
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
-  /** The job queue, also asked whether a sender's backup jobs are still settling earlier messages. */
-  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueReader;
+  /**
+   * The job queue, also asked whether a sender's backup jobs are still settling earlier messages,
+   * and told when one settles so the jobs waiting for it are due.
+   */
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueOrder;
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
@@ -147,23 +152,31 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   };
   return Object.assign(handle, {
     /**
-     * For a shutdown: nothing more is posted here. Downloads still running get a short grace to
-     * finish, then every message still settling goes to its backup job, which finds the files
-     * stored meanwhile; one that comes in after is its job's from the start.
+     * For a shutdown: nothing more is posted here. Every message still settling has its backup
+     * job made due just past a short grace, so the job settles it soon even if the process is
+     * killed meanwhile. Downloads still running get that grace to finish, then every such job is
+     * due now, and finds the files stored meanwhile; a message that comes in after is its job's
+     * from the start.
      */
     handOffPending: async (): Promise<void> => {
       intake.closing = true;
       // In each sender's order, so their jobs come due in the order the messages came.
-      const arrivals = [...intake.pending.values()].flat();
-      intake.handingOff = arrivals;
+      const shutdown: Shutdown = {
+        arrivals: [...intake.pending.values()].flat(),
+        dueBy: Date.now() + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS,
+        last: new Map(),
+      };
+      intake.handingOff = shutdown;
+      await Promise.all(shutdown.arrivals.map((arrival) => dueByShutdown(deps, shutdown, arrival)));
       const graceOver = new AbortController();
       await Promise.race([
-        Promise.allSettled(arrivals.map((arrival) => arrival.media)),
+        Promise.allSettled(shutdown.arrivals.map((arrival) => arrival.media)),
         abortableDelay(SHUTDOWN_DOWNLOAD_GRACE_MS, graceOver.signal),
       ]);
       graceOver.abort();
       intake.handingOff = undefined;
-      await Promise.all(arrivals.map((arrival) => handOffToJob(deps, intake, arrival)));
+      // One at a time, so a kill partway leaves no later message due before an earlier one.
+      for (const arrival of shutdown.arrivals) await handOffToJob(deps, intake, arrival);
     },
   });
 }
@@ -186,7 +199,15 @@ type DirectIntake = {
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
   /** During a shutdown's grace, the messages it hands off once the grace is over. */
-  handingOff?: Arrival[];
+  handingOff?: Shutdown;
+};
+
+/** A shutdown's hand-off: its messages, and when their jobs are due at the latest meanwhile. */
+type Shutdown = {
+  arrivals: Arrival[];
+  dueBy: number;
+  /** When each sender's last job is due meanwhile, so the next comes after it. */
+  last: Map<string, number>;
 };
 
 /**
@@ -357,7 +378,7 @@ async function prepareDirectEvent(
   const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
   // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
   // restart, or on another instance: this one follows them there rather than overtaking them.
-  if (existing && !behind) await followQueuedJobs(deps, intake, arrival.sender, existing.id);
+  if (existing && !behind) await followQueuedJobs(deps, intake, arrival.sender, existing.id, event);
   if (attachments.length === 0 && !behind && !intake.handedOff.has(arrival.sender)) {
     return {
       inline: true,
@@ -397,8 +418,12 @@ async function prepareDirectEvent(
     // Arriving during a shutdown, it is its backup job's, after the sender's earlier messages.
     if (intake.closing) {
       intake.settling.delete(message);
-      if (!intake.handingOff) await handOffToJob(deps, intake, arrival);
-      else if (!intake.handingOff.includes(arrival)) intake.handingOff.push(arrival);
+      const shutdown = intake.handingOff;
+      if (!shutdown) await handOffToJob(deps, intake, arrival);
+      else if (!shutdown.arrivals.includes(arrival)) {
+        shutdown.arrivals.push(arrival);
+        await dueByShutdown(deps, shutdown, arrival);
+      }
       return null;
     }
     // The files download from now on, whatever is ahead of the message in its sender's queue;
@@ -452,6 +477,12 @@ async function settleDirectMessage(
           ]);
         }
         await cancelSettleJob(deps.jobs, tx, job.payload);
+        // The sender's jobs that waited only for this one are due now.
+        await deps.jobs.releaseFollowersIn(
+          tx,
+          messagingInboundSettleQueue(lane.identityId),
+          messagingInboundSettleJobKey(event.provider, event.handle),
+        );
       });
       arrival.job = undefined;
       return lane;
@@ -475,8 +506,13 @@ async function followQueuedJobs(
   intake: DirectIntake,
   sender: string,
   identityId: string,
+  event: MessagingInboundMessage,
 ): Promise<void> {
-  const until = await deps.jobs.pendingUntil(messagingInboundSettleQueue(identityId));
+  // A redelivery of this very message does not wait on its own job.
+  const until = await deps.jobs.pendingUntil(
+    messagingInboundSettleQueue(identityId),
+    messagingInboundSettleJobKey(event.provider, event.handle),
+  );
   if (!until) return;
   intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
 }
@@ -492,18 +528,54 @@ function handOffToJob(
   arrival: Arrival,
 ): Promise<void> {
   if (!arrival.job) return Promise.resolve();
+  const now = Date.now();
   const after = intake.handedOff.get(arrival.sender);
-  const dueAt = Math.max(Date.now(), after === undefined ? 0 : after + 1);
+  const dueAt = Math.max(now, after === undefined ? 0 : after + 1);
   intake.handedOff.set(arrival.sender, dueAt);
   arrival.job.dueAt = dueAt;
+  // Due later than now only to wait for the jobs ahead of it, which make it due when they settle.
+  const follower = dueAt > now;
   return writeJob(arrival, async (job) => {
-    const payload = arrival.quiet ? { ...job.payload, quiet: true } : job.payload;
+    const { follower: _was, ...rest } = job.payload;
+    const payload: SettlePayload = {
+      ...rest,
+      ...(arrival.quiet ? { quiet: true } : {}),
+      ...(follower ? { follower: true } : {}),
+    };
     await bestEffort(
       "hand an inbound message to its backup job",
       settleJobAt(deps.jobs, payload, new Date(job.dueAt)),
     );
     job.payload = payload;
   }).then(() => undefined);
+}
+
+/**
+ * During a shutdown's grace: the message's job is due by the end of it, after the sender's jobs
+ * before it, so a process killed meanwhile still leaves it settling soon. A job due sooner, or
+ * waiting for the jobs ahead of it, keeps its time.
+ */
+function dueByShutdown(
+  deps: MessagingInboundDeps,
+  shutdown: Shutdown,
+  arrival: Arrival,
+): Promise<void> {
+  const job = arrival.job;
+  if (!job) return Promise.resolve();
+  const after = shutdown.last.get(arrival.sender);
+  const dueAt = Math.max(shutdown.dueBy, after === undefined ? 0 : after + 1);
+  if (job.dueAt <= dueAt || job.payload.follower) {
+    shutdown.last.set(arrival.sender, Math.max(after ?? job.dueAt, job.dueAt));
+    return Promise.resolve();
+  }
+  shutdown.last.set(arrival.sender, dueAt);
+  job.dueAt = dueAt;
+  return writeJob(arrival, (current) =>
+    bestEffort(
+      "make an inbound message's backup job due soon",
+      settleJobAt(deps.jobs, current.payload, new Date(current.dueAt)),
+    ),
+  ).then(() => undefined);
 }
 
 /** A stop quieted the message: its backup job, as due as it was, starts no turn either. */
