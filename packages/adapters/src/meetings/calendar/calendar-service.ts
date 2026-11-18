@@ -175,14 +175,7 @@ export class MeetingCalendarService {
     await prisma.$transaction(async (tx) => {
       // Lock this connection's row while recording the user's choices, so disconnect
       // and concurrent selections cannot leave rules on a calendar just removed.
-      if (
-        !(
-          await tx.meetingCalendarConnection.updateMany({
-            where: { id: connection.id, disconnecting: false },
-            data: { disconnecting: false },
-          })
-        ).count
-      )
+      if (!(await this.lockConnectedCalendar(tx, connection.id)))
         throw new ClientError("CONFLICT", "This calendar is disconnecting.");
       if (action === "removeSeries") {
         await tx.meetingCalendarRule.deleteMany({
@@ -351,13 +344,10 @@ export class MeetingCalendarService {
           }
 
           await this.scheduleCalendarRefresh(connectionId);
+          const window = this.upcomingWindow();
           const events = [];
           let retryCancellation: unknown;
-          for await (const event of provider.listEvents(
-            calendarId,
-            this.upcomingWindow(),
-            lease.signal,
-          ))
+          for await (const event of provider.listEvents(calendarId, window, lease.signal))
             events.push(event);
 
           const bookings = new Map(
@@ -366,16 +356,21 @@ export class MeetingCalendarService {
           for (const event of events) {
             const previous = bookings.get(event.id);
             bookings.delete(event.id);
-            const rule = matchCalendarRule(connection.rules, event);
-            const link = this.eligibleLink(event);
-            const bot = rule?.botId
+            const botId =
+              previous || matchCalendarRule(connection.rules, event)?.botId
+                ? await this.selectedBotId(prisma, connectionId, event)
+                : null;
+            const link = this.eligibleLink(event, window);
+            const bot = botId
               ? await prisma.bot.findFirst({
-                  where: { id: rule.botId, spaceId: connection.spaceId, archivedAt: null },
+                  where: { id: botId, spaceId: connection.spaceId, archivedAt: null },
                   select: { id: true, name: true },
                 })
               : null;
             if (bot && link && event.meetingUrl) {
               lease.signal.throwIfAborted();
+              // A valid reservation that started during this pass can already be joining.
+              if (event.startsAt <= this.now()) continue;
               const key = meetingBookingKey(connection.spaceId, bot.id, link.key, event.startsAt);
               const expiresAt = new Date(event.startsAt.getTime() + MEETING_SESSION_DURATION);
               const configDigest = createHmac("sha256", this.options.oauthStateKey)
@@ -387,7 +382,7 @@ export class MeetingCalendarService {
                   select: { activeKey: true, closedAt: true, status: true },
                 });
                 if (!prior || prior.closedAt || prior.status === "leaving") {
-                  await this.cancelBooking(connectionId, previous, lease);
+                  await this.cancelBooking(connectionId, previous, event, bot.id, lease);
                   continue;
                 }
                 if (
@@ -402,13 +397,15 @@ export class MeetingCalendarService {
 
               const sessionId = await this.reserve(
                 connection,
+                event,
                 bot.id,
                 link.platform,
-                { eventId: event.id, startsAt: event.startsAt, configDigest, expiresAt, key },
+                { configDigest, expiresAt, key },
                 lease,
               );
               if (!sessionId) continue;
 
+              const booking = { eventId: event.id, sessionId, startsAt: event.startsAt };
               const request = await this.options.buildJoin({
                 sessionId,
                 meetingUrl: link.url,
@@ -416,6 +413,10 @@ export class MeetingCalendarService {
                 botName: `${bot.name.slice(0, 88)} · Rakazo`,
                 expiresAt,
               });
+              if ((await this.selectedBotId(prisma, connectionId, event)) !== bot.id) {
+                await this.removeBooking(connectionId, booking, lease);
+                continue;
+              }
               let externalId: string;
               try {
                 externalId = await provider.schedule(
@@ -427,19 +428,17 @@ export class MeetingCalendarService {
                 );
               } catch (error) {
                 if (!(error instanceof MeetingCalendarScheduleRejected)) throw error;
-                await this.cancelBooking(
-                  connectionId,
-                  { eventId: event.id, sessionId, startsAt: event.startsAt },
-                  lease,
-                ).catch((error: unknown) => {
-                  // If this event already had a vendor reservation, retry its
-                  // cancellation after giving the other events a chance to sync.
-                  retryCancellation ??= error;
-                });
+                await this.cancelBooking(connectionId, booking, event, bot.id, lease).catch(
+                  (error: unknown) => {
+                    // Give the other events a chance to sync before retrying cancellation.
+                    retryCancellation ??= error;
+                  },
+                );
                 continue;
               }
               const cancelled = await prisma.$transaction(async (tx) => {
                 await assertLeaseHeld(tx, lease);
+                const connected = await this.lockConnectedCalendar(tx, connectionId);
                 await tx.$queryRaw`SELECT id FROM meeting_sessions WHERE id = ${sessionId} FOR UPDATE`;
                 const session = await tx.meetingSession.findFirst({
                   where: { id: sessionId },
@@ -451,13 +450,11 @@ export class MeetingCalendarService {
                     data: { externalId },
                   });
                 }
-                const connected = await tx.meetingCalendarConnection.findFirst({
-                  where: { id: connectionId, disconnecting: false },
-                  select: { id: true },
-                });
-                if (!session || session.closedAt || session.status === "leaving" || !connected) {
-                  // Keep the provider ID even after a leave or disconnect has won. Unlink the pending
-                  // event and wake the other calendars if this reservation was shared.
+                const selected =
+                  connected && (await this.selectedBotId(tx, connectionId, event)) === bot.id;
+                if (!session || session.closedAt || session.status === "leaving" || !selected) {
+                  // Keep the provider ID for cleanup when a leave or selection change wins.
+                  // Wake the other calendars if the reservation was shared.
                   const others = await tx.meetingCalendarBooking.findMany({
                     where: { sessionId, connectionId: { not: connectionId } },
                     distinct: ["connectionId"],
@@ -479,7 +476,7 @@ export class MeetingCalendarService {
                       queueName: `meeting:${sessionId}`,
                     });
                   }
-                  return true;
+                  return selected ? "closed" : "selection-changed";
                 }
                 await tx.meetingCalendarBooking.update({
                   where: { connectionId_eventId: { connectionId, eventId: event.id } },
@@ -496,15 +493,12 @@ export class MeetingCalendarService {
                     queueName: `meeting-calendar:${connectionId}`,
                   });
                 }
-                return false;
+                return null;
               });
-              if (cancelled) {
-                await this.cancelBooking(
-                  connectionId,
-                  { eventId: event.id, sessionId, startsAt: event.startsAt },
-                  lease,
-                );
-              }
+              if (cancelled === "closed")
+                await this.cancelBooking(connectionId, booking, event, bot.id, lease);
+              if (cancelled === "selection-changed")
+                await this.removeBooking(connectionId, booking, lease);
             } else if (previous) {
               await this.removeBooking(connectionId, previous, lease);
             }
@@ -667,17 +661,14 @@ export class MeetingCalendarService {
 
   private async reserve(
     connection: Connection,
+    event: MeetingCalendarEvent,
     botId: string,
     platform: MeetingJoinRequest["platform"],
     {
-      eventId,
-      startsAt,
       configDigest,
       expiresAt,
       key,
     }: {
-      eventId: string;
-      startsAt: Date;
       expiresAt: Date;
       configDigest: string;
       key: string;
@@ -685,6 +676,7 @@ export class MeetingCalendarService {
     lease: HeldLease,
   ) {
     const { prisma, provider } = this.options;
+    const { id: eventId, startsAt } = event;
     return withLease(
       prisma,
       `meeting-admission:${connection.spaceId}`,
@@ -693,11 +685,11 @@ export class MeetingCalendarService {
         prisma.$transaction(async (tx) => {
           await assertLeaseHeld(tx, lease);
           await assertLeaseHeld(tx, admission);
-          const connected = await tx.meetingCalendarConnection.findFirst({
-            where: { id: connection.id, disconnecting: false },
-            select: { id: true },
-          });
-          if (!connected) return null;
+          if (
+            !(await this.lockConnectedCalendar(tx, connection.id)) ||
+            (await this.selectedBotId(tx, connection.id, event)) !== botId
+          )
+            return null;
           // Reserve the link with the session. Last-unlink cleanup locks the same
           // session row and keeps it while another calendar is being attached.
           const [existing] = await tx.$queryRaw<{ id: string; status: string }[]>`
@@ -750,10 +742,47 @@ export class MeetingCalendarService {
     );
   }
 
-  private async cancelBooking(connectionId: string, booking: Booking, lease: HeldLease) {
+  private async selectedBotId(
+    db: Pick<Prisma.TransactionClient, "meetingCalendarRule">,
+    connectionId: string,
+    event: MeetingCalendarEvent,
+  ) {
+    const rules = await db.meetingCalendarRule.findMany({
+      where: {
+        connectionId,
+        OR: [
+          { scope: "event", targetId: event.id },
+          ...(event.seriesId ? [{ scope: "series", targetId: event.seriesId }] : []),
+        ],
+      },
+      select: { scope: true, targetId: true, botId: true },
+    });
+    return matchCalendarRule(rules, event)?.botId ?? null;
+  }
+
+  private async lockConnectedCalendar(tx: Prisma.TransactionClient, connectionId: string) {
+    const [row] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM meeting_calendar_connections
+      WHERE id = ${connectionId} AND NOT disconnecting
+      FOR UPDATE
+    `;
+    return Boolean(row);
+  }
+
+  private async cancelBooking(
+    connectionId: string,
+    booking: Booking,
+    event: MeetingCalendarEvent,
+    botId: string,
+    lease: HeldLease,
+  ) {
     await this.options.prisma.$transaction(async (tx) => {
       await assertLeaseHeld(tx, lease);
-      await this.recordSkippedEvent(tx, connectionId, booking.eventId, booking.startsAt);
+      if (
+        (await this.lockConnectedCalendar(tx, connectionId)) &&
+        (await this.selectedBotId(tx, connectionId, event)) === botId
+      )
+        await this.recordSkippedEvent(tx, connectionId, booking.eventId, booking.startsAt);
     });
     // A rejected update may leave an earlier provider booking intact, even if
     // this attempt had cleared its local linked flag.
@@ -847,8 +876,10 @@ export class MeetingCalendarService {
     return { upcoming, startsThrough: new Date(upcoming.getTime() + CALENDAR_LOOKAHEAD_MS) };
   }
 
-  private eligibleLink(event: MeetingCalendarEvent) {
-    const { upcoming, startsThrough } = this.upcomingWindow();
+  private eligibleLink(
+    event: MeetingCalendarEvent,
+    { upcoming, startsThrough } = this.upcomingWindow(),
+  ) {
     if (
       event.cancelled ||
       event.declined ||

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { JobPublisher, MeetingJoinRequest } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -31,6 +31,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       close: vi.fn(resolved),
     };
     const publish = vi.fn(resolved);
+    const buildJoin = vi.fn((input: MeetingJoinRequest) => Promise.resolve(input));
     const service = new MeetingCalendarService({
       prisma,
       provider: emulator.provider,
@@ -38,7 +39,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       webOrigin: "https://rakazo.example.test",
       oauthStateKey: "offline-fixture-key",
       enabled: (space) => space === spaceId,
-      buildJoin: (input) => input,
+      buildJoin,
       publish,
       now: () => clock,
     });
@@ -317,6 +318,45 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       );
 
       const race = events.find(({ platform }) => platform === "zoom")!;
+      const preparing = deferred();
+      const prepared = deferred();
+      buildJoin.mockImplementationOnce(async (input) => {
+        preparing.resolve();
+        await prepared.promise;
+        return input;
+      });
+      const schedule = vi.spyOn(emulator.provider, "schedule");
+      const preparingSchedule = runAsTenant(second, () =>
+        service.updateSelection(second, botId, race.id, "once"),
+      );
+      try {
+        await preparing.promise;
+        await runAsTenant(second, () => service.updateSelection(second, botId, race.id, "skip"));
+      } finally {
+        prepared.resolve();
+        await preparingSchedule;
+      }
+      expect(schedule).not.toHaveBeenCalled();
+      schedule.mockRestore();
+
+      const skippedDelivery = deferred<void>();
+      emulator.holdNextScheduleReply(skippedDelivery.promise);
+      const skippedScheduling = runAsTenant(second, () =>
+        service.updateSelection(second, botId, race.id, "once"),
+      );
+      try {
+        await vi.waitFor(() => expect(emulator.scheduled(race.id)).toBeTruthy());
+        await runAsTenant(second, () => service.updateSelection(second, botId, race.id, "skip"));
+      } finally {
+        skippedDelivery.resolve();
+        await skippedScheduling;
+      }
+      expect(emulator.scheduled(race.id)).toBeUndefined();
+      expect((await listing(second)).events.find(({ id }) => id === race.id)).toMatchObject({
+        selection: "skipped",
+        scheduled: false,
+      });
+
       const delivery = deferred<void>();
       emulator.holdNextScheduleReply(delivery.promise);
       const scheduling = runAsTenant(second, () =>
@@ -372,8 +412,16 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
         start_time: movedReview.toISOString(),
         end_time: new Date(movedReview.getTime() + 30 * 60_000).toISOString(),
       });
-      clock = new Date(lateReview.startsAt + 1);
+      clock = new Date(lateReview.startsAt - 1);
+      const listEvents = emulator.provider.listEvents.bind(emulator.provider);
+      const slowList = vi
+        .spyOn(emulator.provider, "listEvents")
+        .mockImplementationOnce(async function* (...args) {
+          yield* listEvents(...args);
+          clock = new Date(lateReview.startsAt + 1);
+        });
       await service.sync(connected.id);
+      slowList.mockRestore();
       const findBooking = () =>
         runAsTenant(second, () =>
           prisma.meetingCalendarBooking.findFirst({
@@ -381,6 +429,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
           }),
         );
       expect(await findBooking()).not.toBeNull();
+      expect(emulator.scheduled(lateReview.id)).toBeTruthy();
       await runAsTenant(second, () =>
         prisma.meetingSession.update({
           where: { id: pastBooking.sessionId },
