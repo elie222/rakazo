@@ -8,8 +8,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
-  modelProviderAllowed,
-  modelProviderAllowlist,
+  carriedBotModelPin,
   normalizeWorkspacePath,
   resolveBotWorkspacePath,
 } from "@rakazo/adapters";
@@ -84,23 +83,6 @@ export class AccountImportError extends Error {
 
 const unreadable = () => new AccountImportError("The file is not a readable Rakazo export.");
 
-/**
- * A restored bot keeps its model pin only when the deployment allowlist still offers that
- * provider; otherwise the copy follows the account's main model, like a fresh bot.
- */
-function restoredBotModelPin(record: {
-  modelProvider?: string | null;
-  modelId?: string | null;
-  thinkingLevel?: string | null;
-}) {
-  if (!record.modelProvider) return {};
-  if (!modelProviderAllowed(modelProviderAllowlist(), record.modelProvider)) return {};
-  return {
-    modelProvider: record.modelProvider,
-    modelId: record.modelId,
-    thinkingLevel: record.thinkingLevel,
-  };
-}
 const invalidEntry = () => new AccountImportError("The export contains an unexpected file.");
 const outOfOrder = () => new AccountImportError("The export's files are out of order.");
 const missingRecord = () => new AccountImportError("The export refers to a missing record.");
@@ -807,7 +789,7 @@ class AccountImporter implements ArchiveSink {
             // What a watch read is not the owner's words, so it never runs as a turn in the chat.
             inChat: record.inChat && !record.watch,
             messageProvider: record.messageProvider,
-            ...restoredBotModelPin(record),
+            ...carriedBotModelPin(record),
             watch: jsonValue(record.watch),
             createdAt: new Date(record.createdAt),
           },
@@ -915,7 +897,7 @@ class AccountImporter implements ArchiveSink {
       avatarSet: resolveBotAvatarSet(record.avatarSet),
       // Bot ids pick the avatar shape; keep the look the bot had.
       avatarFamily: organicAvatarFamily(record.id),
-      ...restoredBotModelPin(record),
+      ...carriedBotModelPin(record),
       disabledBuiltinTools: record.disabledBuiltinTools,
       seed: async (tx, botId) => {
         await tx.bot.update({

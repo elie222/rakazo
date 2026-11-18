@@ -26,6 +26,24 @@ export function modelProviderAllowed(
   return allowlist === null || allowlist.has(canonicalPiProviderId(provider));
 }
 
+/**
+ * The model pin a copy or a restored bot may be born with. The provider and model stay only
+ * while the deployment allowlist offers that provider, so the copy follows the account's main
+ * model instead of a pin its runs would refuse. The thinking level is its own setting and
+ * travels either way.
+ */
+export function carriedBotModelPin(source: {
+  modelProvider?: string | null;
+  modelId?: string | null;
+  thinkingLevel?: string | null;
+}) {
+  const pin =
+    source.modelProvider && modelProviderAllowed(modelProviderAllowlist(), source.modelProvider)
+      ? { modelProvider: source.modelProvider, modelId: source.modelId }
+      : {};
+  return { ...pin, thinkingLevel: source.thinkingLevel };
+}
+
 /** One refusal shared by every allowlist gate, so one setting reads as one rule. */
 export const MODEL_PROVIDER_NOT_ALLOWED_ERROR =
   "This model provider is not allowed on this server.";

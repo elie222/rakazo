@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { modelProviderAllowed, modelProviderAllowlist } from "./model-provider-allowlist.js";
+import {
+  carriedBotModelPin,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 
 const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
 
@@ -36,5 +40,39 @@ describe("model provider allowlist", () => {
     expect(modelProviderAllowed(modelProviderAllowlist(), "openrouter")).toBe(true);
     expect(modelProviderAllowed(modelProviderAllowlist(), "azure")).toBe(true);
     expect(modelProviderAllowed(modelProviderAllowlist(), "anthropic")).toBe(false);
+  });
+});
+
+describe("a bot pin a copy or a restored record carries", () => {
+  it("keeps the provider and model when the allowlist is unset", () => {
+    delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    expect(
+      carriedBotModelPin({
+        modelProvider: "anthropic",
+        modelId: "claude-haiku-5-5",
+        thinkingLevel: "high",
+      }),
+    ).toEqual({ modelProvider: "anthropic", modelId: "claude-haiku-5-5", thinkingLevel: "high" });
+  });
+
+  it("drops a refused provider and model but keeps the thinking level", () => {
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    expect(
+      carriedBotModelPin({
+        modelProvider: "anthropic",
+        modelId: "claude-haiku-5-5",
+        thinkingLevel: "high",
+      }),
+    ).toEqual({ thinkingLevel: "high" });
+  });
+
+  it("keeps a thinking level set on a bot that follows the account main model", () => {
+    for (const allowlist of [undefined, "openrouter"]) {
+      if (allowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = allowlist;
+      expect(
+        carriedBotModelPin({ modelProvider: null, modelId: null, thinkingLevel: "low" }),
+      ).toEqual({ thinkingLevel: "low" });
+    }
   });
 });
