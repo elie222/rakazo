@@ -304,7 +304,7 @@ Set it in `.env`; the API and worker both receive it.
 
 `ATTACHMENT_COPY_ON_ARRIVAL=true` copies each file into the bot's computer when the message
 arrives, so a large file is there by the time the bot's run starts. It is off by default: the
-copy is then made when a run needs it. It covers direct chat-app
+copy is then made when a run needs it. The API reads this setting. It covers direct chat-app
 messages, email to a bot, and messages sent to one bot from the web or the apps. Files in group
 and team chats are still copied when a run needs them. A web upload is copied when its message
 is sent, not when the file is uploaded.
@@ -371,6 +371,8 @@ made stay until removed by hand.
   same turn. Each arrival copy has 30 seconds, waiting included; one not made by then is skipped,
   and the next copy goes ahead. A copy still being written at that point can land later; the
   cleanup removes it like any other.
+- A run that starts while a file is being copied on arrival can write the same file again. The
+  result is the same file.
 - A message's files are copied between its downloads, so each later file of the message starts
   downloading a little later, within the same download time limit.
 - A copy into an asleep or stopped computer's stored home, and the cleanup of one, are not held
