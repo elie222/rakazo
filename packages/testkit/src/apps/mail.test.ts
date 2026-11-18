@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DANA, SAM, studioFacts, studioMail } from "./fixtures/studio.js";
+import { DANA, SAM, studioFacts, studioMail } from "../evals/fixtures/studio.js";
 import { mailThreadId } from "./mail.js";
 
 const now = new Date("2026-11-06T16:30:00Z");

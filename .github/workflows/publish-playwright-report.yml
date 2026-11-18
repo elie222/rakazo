@@ -176,7 +176,7 @@ jobs:
               PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
               PLAYWRIGHT_RUN_URL="$RUN_URL" \
               PLAYWRIGHT_SHA="$SHA" \
-                pnpm exec tsx packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts \
+                pnpm exec tsx packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts \
                   "$review_path" \
                   "$changed_paths_file"
             )"
@@ -252,4 +252,9 @@ jobs:
     with:
       head_sha: ${{ github.event.workflow_run.head_sha }}
       pull_request: ${{ matrix.pr }}
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
+      GH_DEPENDENCY_UPDATES_PAT: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

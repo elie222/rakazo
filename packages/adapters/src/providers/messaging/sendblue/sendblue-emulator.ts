@@ -1,5 +1,5 @@
-import type { MessagingPlatform } from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 
 interface SentMessage {
   kind: "dm" | "group";

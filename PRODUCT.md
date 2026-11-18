@@ -16,6 +16,7 @@ Keep implementation gaps explicit when adding a capability, and keep technical p
 
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
+A bot's model and thinking level belong to the bot and change in its settings. A Chat setting, off by default and kept per device, also shows them in the message box of a one-to-one chat, where a pick saves to the bot the same way. It is opt-in because most people rarely change models and the message box stays minimal, and group chats leave it out because each bot in a group can use a different model.
 
 ## Activity
 
@@ -41,6 +42,13 @@ For example, a bot comparing three options can delegate their research, answer a
 
 Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
 Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
+
+## Routines
+
+A routine runs either in its chat, as a turn with the whole conversation that waits for work already under way there, or alongside it, as its own run that starts on time even while the bot is busy and posts its result in the chat.
+The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
+A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
+A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
 
 ## Computers
 

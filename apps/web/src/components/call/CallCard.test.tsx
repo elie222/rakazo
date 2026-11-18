@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { CallState } from "../../lib/call-session";
-import { endCall } from "../../lib/call-session";
+import type { CallState } from "../../lib/calls/call-session";
+import { endCall } from "../../lib/calls/call-session";
 import { CallCard } from "./CallCard";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -22,7 +22,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn(), useParams: () => ({}) }));
 let session: CallState | null = null;
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   endCall: vi.fn(),
   setCallMinimized: vi.fn(),
   toggleMute: vi.fn(),

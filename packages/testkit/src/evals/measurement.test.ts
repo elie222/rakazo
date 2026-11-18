@@ -317,3 +317,22 @@ it("retains spend and blocks further calls when observed one-hour writes lack th
   expect(unknown.usedUsd).toBe(unknownReserved);
   expect(() => unknown.reserve(100, 10)).toThrow("no configured pricing");
 });
+
+it("requires zero output pricing when a protocol has no output bound", () => {
+  const freeOutput = new SpendBudget(1, {
+    ...pricing,
+    input: 1,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
+  expect(freeOutput.reserve(100, null)).toBe("1");
+  const paidOutput = new SpendBudget(1, {
+    ...pricing,
+    input: 1,
+    output: 1,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
+  expect(() => paidOutput.reserve(100, null)).toThrow("zero output price");
+});

@@ -30,10 +30,10 @@ import {
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
-import { ArtifactListCursorError } from "./artifacts.js";
-import { NameTakenError } from "./availability.js";
-import { PageListCursorError, PageShareConflictError } from "./pages.js";
+import { ArtifactListCursorError } from "./content/artifacts.js";
+import { PageListCursorError, PageShareConflictError } from "./content/pages.js";
 import { handleRpcError } from "./rpc-errors.js";
+import { NameTakenError } from "./spaces/name-claims.js";
 
 /** Each domain refusal with the answer its routes wrote by hand before the central mapping. */
 const REFUSALS: Array<[error: Error, code: string, status: number, message: string]> = [

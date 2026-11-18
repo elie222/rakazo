@@ -221,4 +221,12 @@ export const TR_MESSAGES: Record<string, string> = {
     "Docker yüklü ama çalışmıyor. Devam etmek için Docker hizmetini başlatın.",
   "Rakazo stopped unexpectedly.": "Rakazo beklenmedik şekilde durdu.",
   Reload: "Yeniden yükle",
+  "Mac app control": "Mac uygulama kontrolü",
+  "Set up Mac app control": "Mac uygulama kontrolünü ayarla",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "Komutlar zaten çalışıyor. Uygulamaları kullanmak için Sistem Ayarları’nda Rakazo için Erişilebilirlik ve Ekran Kaydı izinlerini verin, ardından Rakazo’yu yeniden başlatın.",
+  "Open System Settings": "Sistem Ayarları’nı aç",
+  "Restart Rakazo": "Rakazo’yu yeniden başlat",
+  "Not Now": "Şimdi değil",
+  "Restart Rakazo to finish setup": "Kurulumu tamamlamak için Rakazo’yu yeniden başlatın",
 };

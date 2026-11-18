@@ -3,16 +3,18 @@
 // agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
 import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
 } from "@rakazo/contracts";
 import JSON5 from "json5";
-import { buildSkillMd, parseSkillMd } from "../agent-skill.js";
-import { nextCronDateAcrossStrict } from "../cron.js";
+import { messagingProviderNamed } from "../messaging/messaging-providers.js";
+import { nextCronDateAcrossStrict } from "../routines/schedule.js";
+import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
-import type { AgentImportParse } from "./shared.js";
-import { freeName, memoryItem, renameSkillMd, skillItem } from "./shared.js";
+import type { AgentImportParse } from "./types.js";
+import { freeName, memoryItem, renameSkillMd, skillItem } from "./types.js";
 
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
@@ -403,10 +405,11 @@ function mergeBots(bots: readonly GrokBot[]): GrokBot[] {
         : bot,
     );
     const current = merged.get(key)!;
+    // Skills, apps and routines each become a named item. Memories and facts about the user
+    // become one document each: their size is checked once all parts are joined.
     if (
-      [current.skills, current.apps, current.routines, current.memories, current.userFacts].some(
-        (items) => items.length > 100,
-      )
+      [current.skills, current.apps, current.routines].some((items) => items.length > 100) ||
+      [current.memories, current.userFacts].some((items) => items.length > MEMORY_ENTRY_LIMIT)
     )
       throw new GrokBotExportError("too_large");
   }
@@ -423,23 +426,35 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
   );
   if (
     raw.length > 100 ||
-    raw.some((bot) =>
-      [
-        bot.skills,
-        bot.apps,
-        bot.plugins,
-        bot.integrations,
-        bot.routines,
-        bot.memories,
-        bot.user_facts,
-        bot.userFacts,
-      ].some((items) => Array.isArray(items) && items.length > 100),
+    raw.some(
+      (bot) =>
+        [bot.skills, bot.apps, bot.plugins, bot.integrations, bot.routines].some(
+          (items) => Array.isArray(items) && items.length > 100,
+        ) ||
+        [bot.memories, bot.user_facts, bot.userFacts].some(
+          (items) => Array.isArray(items) && items.length > MEMORY_ENTRY_LIMIT,
+        ),
     )
   )
     throw new GrokBotExportError("too_large");
   const parsed = raw.map(readBot).filter((bot) => bot.name);
-  const bots = mergeBots(parsed);
+  // Repeats are dropped here, so the chosen Bot's re-sent export carries each entry once.
+  const bots = mergeBots(parsed).map((bot) => ({
+    ...bot,
+    memories: distinct(bot.memories),
+    userFacts: distinct(bot.userFacts),
+  }));
   if (bots.length === 0) throw new GrokBotExportError("not_export");
+  // Memories split across documents of an imported file's size; only one entry too long for a
+  // document of its own cannot come over.
+  if (
+    bots.some((bot) =>
+      [...bot.memories, ...bot.userFacts].some(
+        (item) => bullets([item]).length > AGENT_IMPORT_MAX_FILE_LENGTH,
+      ),
+    )
+  )
+    throw new GrokBotExportError("too_large");
   return bots;
 }
 
@@ -507,19 +522,56 @@ export function grokBotExportJson(bot: GrokBot): string {
 }
 
 const CLOCK_TRIGGERS = new Set(["", "schedule", "scheduled", "time", "cron", "interval"]);
+/** Services that start a routine by calling a webhook. */
+const WEBHOOK_TRIGGERS = new Set(["webhook", "linear", "sentry", "pagerduty"]);
+const GIT_TRIGGERS = new Set(["github"]);
+const EMAIL_TRIGGERS = new Set(["email"]);
 
-/** The routine's cron when it runs on a clock and the cron is valid; null otherwise. */
-export function grokRoutineCron(routine: GrokBotRoutine): string | null {
-  if (!CLOCK_TRIGGERS.has(routine.trigger)) return null;
-  for (const candidate of [routine.cron, routine.when]) {
-    if (!candidate) continue;
-    try {
-      if (nextCronDateAcrossStrict([candidate], new Date(), "UTC") !== null) return candidate;
-    } catch {
-      // Not a cron: the words, or nothing.
+/** How a routine can start here. Schedules, webhooks and Git events always can. */
+export type GrokRoutineTrigger =
+  | { kind: "schedule"; cron: string }
+  | { kind: "webhook" }
+  | { kind: "git" }
+  | { kind: "message"; provider: string }
+  | { kind: "email" };
+
+/** The event triggers this server receives, as the routine editor offers them. */
+export type RoutineTriggersAvailable = {
+  /** Messaging providers this server runs. */
+  messageProviders: readonly string[];
+  /** Whether it receives email for bots. */
+  email: boolean;
+};
+
+export const NO_OPTIONAL_ROUTINE_TRIGGERS: RoutineTriggersAvailable = {
+  messageProviders: [],
+  email: false,
+};
+
+/** The trigger a routine maps to here, or null when its schedule or event cannot be set up. */
+export function grokRoutineTrigger(
+  routine: GrokBotRoutine,
+  available: RoutineTriggersAvailable,
+): GrokRoutineTrigger | null {
+  const { trigger } = routine;
+  if (CLOCK_TRIGGERS.has(trigger)) {
+    for (const candidate of [routine.cron, routine.when]) {
+      if (!candidate) continue;
+      try {
+        if (nextCronDateAcrossStrict([candidate], new Date(), "UTC") !== null) {
+          return { kind: "schedule", cron: candidate };
+        }
+      } catch {
+        // Not a cron: the words, or nothing.
+      }
     }
+    return null;
   }
-  return null;
+  if (WEBHOOK_TRIGGERS.has(trigger)) return { kind: "webhook" };
+  if (GIT_TRIGGERS.has(trigger)) return { kind: "git" };
+  if (EMAIL_TRIGGERS.has(trigger)) return available.email ? { kind: "email" } : null;
+  const provider = messagingProviderNamed(trigger, available.messageProviders);
+  return provider ? { kind: "message", provider } : null;
 }
 
 function slug(value: string): string {
@@ -586,7 +638,45 @@ function bullets(lines: readonly string[]): string {
   return `${lines.map((line) => `- ${line.replace(/\r?\n/g, "\n  ")}`).join("\n")}\n`;
 }
 
-/** Each routine with every setting the export gave, so it can be set up again by hand. */
+/** Far more entries than a Bot keeps; it bounds the work done before documents are built. */
+const MEMORY_ENTRY_LIMIT = AGENT_IMPORT_MAX_FILE_LENGTH / 4;
+
+/**
+ * Bullets in documents no longer than an imported file: `MEMORY.md`, then `MEMORY-2.md`, ...
+ * Entries stay whole and in order.
+ */
+function memoryDocuments(stem: string, lines: readonly string[]): AgentImportMemory[] {
+  const parts: string[][] = [];
+  let size = 0;
+  for (const line of lines) {
+    const length = bullets([line]).length;
+    const current = parts.at(-1);
+    if (!current || size + length > AGENT_IMPORT_MAX_FILE_LENGTH) {
+      parts.push([line]);
+      size = length;
+    } else {
+      current.push(line);
+      size += length;
+    }
+  }
+  return parts.map((part, index) => {
+    const path = index === 0 ? `${stem}.md` : `${stem}-${index + 1}.md`;
+    return memoryItem(path, path, path, bullets(part));
+  });
+}
+
+/** Entries once, ignoring case and spacing, in their first order. */
+function distinct(lines: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = line.replace(/\s+/g, " ").trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Each routine with every setting the export gave, so it can be set up by hand. */
 function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
   const blocks = routines.map((routine) => {
     const fields = [
@@ -599,31 +689,26 @@ function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
     ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
     return `## ${routine.name || "Routine"}\n\n${fields.join("\n")}\n\n${routine.instruction}\n`;
   });
-  return `# Grok Bot routines to set up again\n\nThese run on an event, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
+  return `# Grok Bot routines to set up again\n\nThese start on an event this server does not receive, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
 }
 
-/** Imported text is data: nothing here follows it. Routines and apps are added by the server. */
-export function parseGrokBot(bot: GrokBot): AgentImportParse {
+/**
+ * Imported text is data: nothing here follows it. Routines and apps are added by the server;
+ * a routine none of `triggers` can start is kept in a memory note instead.
+ */
+export function parseGrokBot(
+  bot: GrokBot,
+  triggers: RoutineTriggersAvailable = NO_OPTIONAL_ROUTINE_TRIGGERS,
+): AgentImportParse {
   // Each field on its own: a fact in both stays in both documents.
-  const fresh = (lines: readonly string[]) => {
-    const seen = new Set<string>();
-    return lines.filter((line) => {
-      const key = line.replace(/\s+/g, " ").trim().toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
-  const memories = fresh(bot.memories);
-  const userFacts = fresh(bot.userFacts);
+  const memories = distinct(bot.memories);
+  const userFacts = distinct(bot.userFacts);
   const toSetUp = bot.routines.filter(
-    (routine) => routine.instruction && grokRoutineCron(routine) === null,
+    (routine) => routine.instruction && grokRoutineTrigger(routine, triggers) === null,
   );
   const memory: AgentImportMemory[] = [
-    ...(memories.length
-      ? [memoryItem("MEMORY.md", "MEMORY.md", "MEMORY.md", bullets(memories))]
-      : []),
-    ...(userFacts.length ? [memoryItem("USER.md", "USER.md", "USER.md", bullets(userFacts))] : []),
+    ...memoryDocuments("MEMORY", memories),
+    ...memoryDocuments("USER", userFacts),
     ...(toSetUp.length
       ? [
           memoryItem(

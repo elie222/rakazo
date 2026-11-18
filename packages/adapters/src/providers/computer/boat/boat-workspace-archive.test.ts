@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { readWorkspaceArchive } from "../../../workspace-archive.js";
+import { readWorkspaceArchive } from "../../../storage/workspace-archive.js";
 import { archiveBoatWorkspaceCommand } from "./boat-sandbox.js";
 
 /** The export script needs GNU find and tar, as the Boat image has; macOS ships BSD ones. */

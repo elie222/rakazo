@@ -38,84 +38,94 @@ import {
   useState,
 } from "react";
 import { useParams } from "react-router-dom";
-import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
+import { ComputerUpdateProgress } from "../components/computers/ComputerUpdateProgress";
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
-import type { ArtifactTarget } from "../lib/artifact-open";
-import { authClient } from "../lib/auth";
+import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
-import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
-import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
-import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
-import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
-import { composerModelPickerPreference } from "../lib/composer-model-picker-preference";
-import { computersAreUnavailable } from "../lib/computer-sandbox";
-import { desktopBridge } from "../lib/desktop";
-import { hasOpenDialog } from "../lib/has-open-dialog";
-import { PagesProvider, usePagesForChat } from "../lib/pages";
-import { markAfterPaint, markOnce } from "../lib/performance";
-import { usePreloadRecoveryState } from "../lib/preload-recovery";
-import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
-import { routineNeedsOneShotArm } from "../lib/routine-draft";
-import type { RpcClient } from "../lib/rpc";
-import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
-import { SpaceRpcProvider } from "../lib/space-rpc";
-import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
-import { toolActivityPreference } from "../lib/tool-activity-preference";
-import { useDesktopBadge } from "../lib/use-desktop-badge";
-import { errorText } from "../lib/user-error";
-import { HostComputerPrompt } from "./HostComputerPrompt";
-import { ArchivedChats } from "./shell/archived-chats";
-import type { ChatMenuState, ChatMenuTarget } from "./shell/chat-context-menu";
-import { ChatContextMenu } from "./shell/chat-context-menu";
-import { ChatFindBar } from "./shell/chat-find-bar";
-import { ChatHeader } from "./shell/chat-header";
-import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
-import { Composer } from "./shell/composer";
-import { ComposerModelPicker } from "./shell/composer-model-picker";
-import { ComputerOverlay } from "./shell/computer-overlay";
-import { ComputerPanel } from "./shell/computer-panel";
-import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
-import type { ImportSetupTarget } from "./shell/import-setup-card";
+import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-session";
+import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
+import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
+import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
+import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
+import type { ArtifactTarget } from "../lib/pages/artifact-open";
+import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
+import { desktopBridge } from "../lib/platform/desktop";
+import { hasOpenDialog } from "../lib/platform/has-open-dialog";
+import { markAfterPaint, markOnce } from "../lib/platform/performance";
+import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
+import { useDesktopBadge } from "../lib/platform/use-desktop-badge";
+import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
+import {
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/preferences/bots-sidebar-pref";
+import {
+  lastChatKey,
+  lastChatOf,
+  queryClient,
+  spaceQueries,
+  spaceSeedKey,
+} from "../lib/query/query";
+import type { RpcClient } from "../lib/query/rpc";
+import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
+import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { errorText } from "../lib/query/user-error";
+import { routineNeedsOneShotArm } from "../lib/routines/routine-draft";
+import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
+import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
+import { useTeaching } from "./shell/bots/use-teaching";
+import type { ChatMenuState, ChatMenuTarget } from "./shell/chat/chat-context-menu";
+import { ChatContextMenu } from "./shell/chat/chat-context-menu";
+import { ChatFindBar } from "./shell/chat/chat-find-bar";
+import { ChatHeader } from "./shell/chat/chat-header";
+import { FALLBACK_BOT_COLOR } from "./shell/chat/chat-shared";
+import { Transcript } from "./shell/chat/transcript";
+import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/chat/transcript-member-name";
+import { useChatRead } from "./shell/chat/use-chat-read";
+import { useMessageJump } from "./shell/chat/use-message-jump";
+import { useReadAloud } from "./shell/chat/use-read-aloud";
+import { useThreadState } from "./shell/chat/use-thread-state";
+import { useThreadSync } from "./shell/chat/use-thread-sync";
+import { Composer } from "./shell/composer/composer";
+import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
+import { useComposerActions } from "./shell/composer/use-composer-actions";
+import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { ComputerOverlay } from "./shell/computers/computer-overlay";
+import { ComputerPanel } from "./shell/computers/computer-panel";
+import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
+import { HostComputerPrompt } from "./shell/host-computer-prompt";
 import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
+import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
-import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
 import { ShellSidePanel } from "./shell/side-panel";
-import { BotsSidebarLayout } from "./shell/sidebar-layout";
-import { SidebarRoster } from "./shell/sidebar-roster";
-import { SnoozedChats } from "./shell/snoozed-chats";
-import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
-import { Transcript } from "./shell/transcript";
-import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/transcript-member-name";
+import { ArchivedChats } from "./shell/sidebar/archived-chats";
+import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
+import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
+import { SidebarRoster } from "./shell/sidebar/sidebar-roster";
+import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
+import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/sidebar/space-sidebar";
+import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
+import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
+import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
+import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
+import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
+import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import { markShellReady, useSpaceEpoch } from "./shell/space-switch";
+import { TimezonePrompt } from "./shell/timezone-prompt";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
-import { useChatRead } from "./shell/use-chat-read";
-import { useChatSnooze } from "./shell/use-chat-snooze";
-import { useComposerActions } from "./shell/use-composer-actions";
-import { useComposerMentions } from "./shell/use-composer-mentions";
-import { useComputerControls, useComputerState } from "./shell/use-computer";
-import { useMessageJump } from "./shell/use-message-jump";
-import { useMobileSidebar } from "./shell/use-mobile-sidebar";
 import { usePaletteActions } from "./shell/use-palette-actions";
-import { useReadAloud } from "./shell/use-read-aloud";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
-import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
-import { useSidebarSearch } from "./shell/use-sidebar-search";
-import { useSnoozeClock } from "./shell/use-snooze-clock";
 import { useSpaceActions } from "./shell/use-space-actions";
-import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
-import { useTeaching } from "./shell/use-teaching";
-import { useThreadState } from "./shell/use-thread-state";
-import { useThreadSync } from "./shell/use-thread-sync";
-import type { SettingsSection } from "./shell-overlay";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -428,7 +438,6 @@ function SpaceShell() {
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const rosterSignals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer,
@@ -977,6 +986,23 @@ function SpaceShell() {
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} onMeUpdated={setBootstrapMe} />
       ) : null}
+      {userId && bootstrapMe ? (
+        <TimezonePrompt
+          key={userId}
+          userId={userId}
+          timezone={bootstrapMe.timezone}
+          onSaved={(me, adopted) =>
+            setBootstrapMe((prev) =>
+              // An adoption only fills an empty zone, so it never replaces a newer pick.
+              !prev
+                ? me
+                : adopted && prev.timezone != null
+                  ? prev
+                  : { ...prev, timezone: me.timezone },
+            )
+          }
+        />
+      ) : null}
       <ShellSidebar
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
@@ -1082,7 +1108,11 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={chatColumnRef}
+          data-finding={findOpen || undefined}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (
@@ -1193,6 +1223,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
                         current.map((bot) => (bot.id === updated.id ? updated : bot)),
@@ -1409,6 +1440,7 @@ function SpaceShell() {
           setOverlay={setOverlay}
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
+          messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
           onOpenBot={openCreatedBot}
         />

@@ -7,7 +7,7 @@ export const include = [
 ];
 
 // Browser specs run outside vitest and have their own waits (no-wait-for-timeout).
-export const exclude = ["**/e2e/**", "packages/core/src/async.test-support.ts"];
+export const exclude = ["**/e2e/**", "packages/core/src/primitives/async.test-support.ts"];
 
 // A type argument, with `=>` and up to three levels of nesting: `<Array<{ done: () => void }>>`.
 const TYPE = "(?:<(?:=>|[^<>]|<(?:=>|[^<>]|<(?:=>|[^<>])*>)*>)*>)?";

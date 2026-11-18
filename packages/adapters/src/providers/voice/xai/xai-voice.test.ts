@@ -33,7 +33,11 @@ describe("XaiVoiceProvider", () => {
       context,
     );
 
-    expect(clip).toEqual({ bytes: new Uint8Array([1, 2, 3]), mimeType: "audio/mpeg" });
+    expect(clip).toMatchObject({
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/mpeg",
+      usage: { model: "tts", units: 3, unit: "characters" },
+    });
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toBe("https://api.x.ai/v1/tts");
     expect(init?.method).toBe("POST");
@@ -102,7 +106,7 @@ describe("XaiVoiceProvider", () => {
     expect(String(url)).toBe("https://api.x.ai/v1/stt");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xai-key");
     const form = init?.body as FormData;
-    expect([...form.keys()]).toEqual(["language", "format", "file"]);
+    expect([...form.keys()]).toEqual(["model", "language", "format", "file"]);
     expect(form.get("language")).toBe("pt");
     expect(form.get("format")).toBe("true");
     expect((form.get("file") as File).name).toBe("speech.ogg");
@@ -117,7 +121,7 @@ describe("XaiVoiceProvider", () => {
     );
 
     const form = fetch.mock.calls[0]![1]?.body as FormData;
-    expect([...form.keys()]).toEqual(["file"]);
+    expect([...form.keys()]).toEqual(["model", "file"]);
   });
 
   it("raises xAI's own words when the account has no credit", async () => {
@@ -134,4 +138,52 @@ describe("XaiVoiceProvider", () => {
     expect(error).toBeInstanceOf(VoiceAccountError);
     expect(error).toMatchObject({ code: "VOICE_OUT_OF_CREDIT", message });
   });
+});
+
+it("returns character and duration evidence for operator speech accounting", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(new Uint8Array([1]), { headers: { "x-request-id": "fake-tts" } }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ text: "Hello", duration: 3.45 }, { headers: { "x-request-id": "fake-stt" } }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const provider = new XaiVoiceProvider();
+  const context = {
+    operationId: "fake-operation",
+    traceId: "fake-trace",
+    spaceId: "fake-space",
+    userId: "fake-user",
+    signal: new AbortController().signal,
+  };
+  const clip = await provider.synthesize(
+    { apiKey: "fake-server-key", text: "A😀", voiceId: "eve" },
+    context,
+  );
+  expect(clip.providerRequestId).toBe("fake-tts");
+  expect(clip.usage).toEqual({
+    model: "tts",
+    unit: "characters",
+    units: 2,
+  });
+  const transcript = await provider.transcribe(
+    {
+      apiKey: "fake-server-key",
+      model: "grok-voice-transcribe-2.0",
+      audio: new Uint8Array([1]),
+      mimeType: "audio/wav",
+    },
+    context,
+  );
+  expect(transcript.providerRequestId).toBe("fake-stt");
+  expect(transcript.usage).toEqual({
+    model: "grok-voice-transcribe-2.0",
+    unit: "seconds",
+    units: 3.45,
+  });
+  expect((fetchMock.mock.calls[1]![1].body as FormData).get("model")).toBe(
+    "grok-voice-transcribe-2.0",
+  );
 });
