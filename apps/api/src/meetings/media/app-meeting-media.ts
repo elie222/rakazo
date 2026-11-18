@@ -55,7 +55,7 @@ export function appMeetingMedia(
         botId: session.botId,
         botName: session.bot.name,
         admitted: session.status === "joined",
-        voice: config.voice && (await meetingVoiceReady(deps, actor)),
+        voice: config.voice && (await meetingVoiceReady(deps, actor, session.botId)),
       };
     },
   });

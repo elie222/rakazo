@@ -1,18 +1,31 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { ModelAccountError, VoiceAccountError } from "@rakazo/adapter-kit";
+import {
+  isRetiredModelCredentialError,
+  NoVoiceConfigured,
+  UnavailableModelForAuthError,
+} from "@rakazo/adapters";
+import { parseModelJson } from "@rakazo/adapters/model-json";
 import type { Actor } from "@rakazo/contracts";
+import { ClientError, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import { LeaseHeldError, recordUsage, runAsTenant, withLease } from "@rakazo/db";
 import * as z from "zod";
 import type { VoiceDeps } from "../../calls/voice.js";
 import {
   loadDefaultVoiceCredential,
+  resolveVoiceTarget,
   synthesizeVoice,
   transcribeVoice,
   voiceProviderFor,
 } from "../../calls/voice.js";
+import { hasDeploymentVoiceConsent } from "../../voice/deployment-consent.js";
 import type { MeetingMediaSession } from "./meeting-media-bridge.js";
 import { createMeetingMediaBridge } from "./meeting-media-bridge.js";
 import { meetingReplyInstructions } from "./meeting-reply.prompt.js";
+
+type ModelScope = Pick<Actor, "userId" | "spaceId"> & { botId: string };
+type ReplyModel = AgentRunRequest["model"];
 
 const replySchema = z.object({ reply: z.string().trim().min(1).max(420).nullable() });
 
@@ -20,11 +33,7 @@ export function createMeetingMedia(
   deps: VoiceDeps & {
     /** This runtime must be constructed without persistent session recording. */
     runtime: AgentRuntime;
-    resolveModel: (scope: {
-      userId: string;
-      spaceId: string;
-      botId: string;
-    }) => Promise<AgentRunRequest["model"]>;
+    resolveModel: (scope: ModelScope) => Promise<ReplyModel>;
     signingSecret: string;
     publicOrigin: string;
     loadSession: (sessionId: string) => Promise<MeetingMediaSession | null>;
@@ -47,6 +56,13 @@ export function createMeetingMedia(
               },
             },
             async (lease) => {
+              const scope = {
+                userId: session.actor.userId,
+                spaceId: session.actor.spaceId,
+                botId: session.botId,
+              };
+              const model = await meetingReplyModel(scope);
+              if (!model) return { clip: null };
               const { text } = await transcribeVoice(deps, session.actor, {
                 audio,
                 mimeType: "audio/wav",
@@ -57,7 +73,7 @@ export function createMeetingMedia(
               if (!utterance) return { clip: null };
               const context = `${session.recentSpeech}
 Participant: ${utterance}`.trimStart();
-              const answer = await reply(session, utterance, lease.signal);
+              const answer = await reply(session, scope, model, utterance, lease.signal);
               if (!answer) return { clip: null, context };
               const clip = await synthesizeVoice(deps, session.actor, {
                 botId: session.botId,
@@ -74,7 +90,15 @@ Bot: ${answer}`,
           );
         } catch (error) {
           // Keep a single in-flight speech turn per meeting across API replicas.
-          if (error instanceof LeaseHeldError) return { clip: null };
+          if (
+            error instanceof LeaseHeldError ||
+            error instanceof NoVoiceConfigured ||
+            error instanceof VoiceAccountError ||
+            error instanceof ModelAccountError ||
+            (error instanceof ClientError && error.code === "AI_CONSENT_REQUIRED")
+          ) {
+            return { clip: null };
+          }
           throw error;
         }
       }),
@@ -82,21 +106,34 @@ Bot: ${answer}`,
 
   return bridge;
 
+  async function meetingReplyModel(scope: ModelScope) {
+    if (deps.runtime.describe().capabilities.scripted) return null;
+    try {
+      const model = await deps.resolveModel(scope);
+      return model.provider === "scripted" ? null : model;
+    } catch (error) {
+      if (
+        error instanceof UnavailableModelForAuthError ||
+        isRetiredModelCredentialError(error) ||
+        (error instanceof Error && error.message === MISSING_MODEL_RUN_ERROR)
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async function reply(
     session: MeetingMediaSession & { recentSpeech: string },
+    scope: ModelScope,
+    model: ReplyModel,
     utterance: string,
     signal: AbortSignal,
   ) {
     const id = `meeting-voice:${randomUUID()}`;
-    const scope = {
-      spaceId: session.actor.spaceId,
-      userId: session.actor.userId,
-      botId: session.botId,
-    };
     const onUsage = async (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => {
       await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
     };
-    const model = await deps.resolveModel(scope);
     signal.throwIfAborted();
     for await (const event of deps.runtime.run(
       {
@@ -124,25 +161,41 @@ Bot: ${answer}`,
     )) {
       if (event.type === "usage" && !event.accounted) await onUsage(event);
       if (event.type === "done") {
-        try {
-          return replySchema.safeParse(JSON.parse(event.text ?? "")).data?.reply ?? null;
-        } catch (error) {
-          if (error instanceof SyntaxError) return null;
-          throw error;
-        }
+        signal.throwIfAborted();
+        return parseModelJson(event.text ?? "", replySchema)?.reply ?? null;
       }
     }
     return null;
   }
 }
 
-export function meetingVoiceReady(deps: VoiceDeps, actor: Actor, signal?: AbortSignal) {
+export function meetingVoiceReady(
+  deps: VoiceDeps,
+  actor: Actor,
+  botId: string,
+  signal?: AbortSignal,
+) {
   return runAsTenant(actor, async () => {
-    const [speaker, listener] = await Promise.all([
-      loadDefaultVoiceCredential(deps, actor, undefined, signal),
-      loadDefaultVoiceCredential(deps, actor, undefined, signal, "transcribe"),
-    ]);
-    if (!speaker || !listener) return false;
-    return Boolean((await voiceProviderFor(deps, listener.cred.provider)).transcribe);
+    try {
+      const [speaker, listener] = await Promise.all([
+        resolveVoiceTarget(deps, actor, { botId, signal }),
+        loadDefaultVoiceCredential(deps, actor, undefined, signal, "transcribe"),
+      ]);
+      if (!listener || !(await voiceProviderFor(deps, listener.cred.provider)).transcribe) {
+        return false;
+      }
+      if (!(speaker.deployment || listener.deployment)) return true;
+      const deployment = deps.env?.deploymentVoice;
+      return Boolean(
+        deployment &&
+          (await hasDeploymentVoiceConsent(deps.prisma, actor, deployment, {
+            synthesize: speaker.deployment,
+            transcribe: listener.deployment,
+          })),
+      );
+    } catch (error) {
+      if (error instanceof NoVoiceConfigured || error instanceof VoiceAccountError) return false;
+      throw error;
+    }
   });
 }

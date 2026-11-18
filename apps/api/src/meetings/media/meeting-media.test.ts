@@ -1,17 +1,36 @@
-import type { AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntime, VoiceProvider } from "@rakazo/adapter-kit";
+import { NoVoiceConfigured, UnavailableModelForAuthError } from "@rakazo/adapters";
 import { MEETING_MEDIA_PATH } from "@rakazo/adapters/meeting-media";
+import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "../../calls/voice.js";
-import { synthesizeVoice, transcribeVoice } from "../../calls/voice.js";
+import {
+  loadDefaultVoiceCredential,
+  resolveVoiceTarget,
+  synthesizeVoice,
+  transcribeVoice,
+  voiceProviderFor,
+} from "../../calls/voice.js";
+import type { DeploymentVoice } from "../../voice/deployment-config.js";
+import { hasDeploymentVoiceConsent } from "../../voice/deployment-consent.js";
 import { MEETING_SAMPLE_RATE, meetingAudioWav } from "./meeting-audio.js";
-import { createMeetingMedia } from "./meeting-media.js";
+import { createMeetingMedia, meetingVoiceReady } from "./meeting-media.js";
 import { meetingTone } from "./meeting-media.test-support.js";
 
 vi.mock("../../calls/voice.js", () => ({
+  loadDefaultVoiceCredential: vi.fn(),
+  resolveVoiceTarget: vi.fn(),
   transcribeVoice: vi.fn(),
   synthesizeVoice: vi.fn(),
+  voiceProviderFor: vi.fn(),
+}));
+vi.mock("../../voice/deployment-consent.js", () => ({ hasDeploymentVoiceConsent: vi.fn() }));
+vi.mock("@rakazo/adapters", () => ({
+  NoVoiceConfigured: class extends Error {},
+  UnavailableModelForAuthError: class extends Error {},
+  isRetiredModelCredentialError: () => false,
 }));
 vi.mock("@rakazo/db", () => ({
   LeaseHeldError: class extends Error {},
@@ -32,16 +51,33 @@ const actor = {
   isDeploymentOwner: false,
 };
 
+const voiceDeps = {
+  prisma: {} as PrismaClient,
+  secrets: {} as VoiceDeps["secrets"],
+};
+
 function fixture(modelText: string, recentTranscript?: string) {
   const run = vi.fn<AgentRuntime["run"]>(async function* () {
-    yield { type: "done", text: modelText } as AgentRuntimeEvent;
+    yield { type: "done", text: modelText };
   });
-  const runtime = { run } as unknown as AgentRuntime;
+  const runtime: AgentRuntime = {
+    run,
+    abort: vi.fn(async () => {}),
+    describe: () => ({
+      id: "fixture-runtime",
+      contractVersion: "1",
+      adapterVersion: "0.1.0",
+      capabilities: { streaming: true, compaction: true, tools: false, scripted: false },
+    }),
+  };
+  const resolveModel = vi.fn<() => Promise<AgentRunRequest["model"]>>(async () => ({
+    provider: "test-connection",
+    id: "fixture-model",
+  }));
   const media = createMeetingMedia({
-    prisma: {} as PrismaClient,
-    secrets: {} as VoiceDeps["secrets"],
+    ...voiceDeps,
     runtime,
-    resolveModel: async () => ({ provider: "test-connection", id: "fixture-model" }),
+    resolveModel,
     signingSecret: "emulator-secret",
     publicOrigin: "https://rakazo.example.test",
     loadSession: async () => ({
@@ -60,6 +96,7 @@ function fixture(modelText: string, recentTranscript?: string) {
   );
   return {
     run,
+    resolveModel,
     token,
     say: (options?: { context?: string; grant?: string }) =>
       app.request(`${MEETING_MEDIA_PATH}/turn`, {
@@ -85,11 +122,15 @@ describe("live meeting voice", () => {
   });
 
   it("transcribes a turn, uses meeting-only context and voices an addressed reply", async () => {
-    const { run, say } = fixture(
+    const { run, resolveModel, say } = fixture(
       '{"reply":"The demo is Thursday."}',
       "Taylor: The demo is Thursday.",
     );
     expect((await say()).status).toBe(200);
+    expect(resolveModel).toHaveBeenCalledExactlyOnceWith(actorForRun());
+    expect(resolveModel.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(transcribeVoice).mock.invocationCallOrder[0]!,
+    );
     expect(transcribeVoice).toHaveBeenCalledWith(
       expect.anything(),
       actor,
@@ -134,12 +175,107 @@ describe("live meeting voice", () => {
     );
   });
 
+  it("accepts a fenced structured response", async () => {
+    const { say } = fixture('```json\n{"reply":"Thursday."}\n```');
+    expect((await say()).status).toBe(200);
+    expect(synthesizeVoice).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      actor,
+      expect.objectContaining({ text: "Thursday." }),
+    );
+  });
+
+  it("skips paid transcription when the model resolver would use a scripted fallback", async () => {
+    const { say, run, resolveModel } = fixture('{"reply":"An unexpected reply."}');
+    resolveModel.mockResolvedValue({ provider: "scripted", id: "scripted" });
+    expect((await say()).status).toBe(204);
+    expect(transcribeVoice).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new Error(MISSING_MODEL_RUN_ERROR),
+    new UnavailableModelForAuthError("The selected connection is unavailable."),
+  ])("skips paid transcription when model setup fails (%s)", async (error) => {
+    const { say, run, resolveModel } = fixture('{"reply":"An unexpected reply."}');
+    resolveModel.mockRejectedValue(error);
+    expect((await say()).status).toBe(204);
+    expect(transcribeVoice).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it.each(['{"reply":null}', "unstructured model text"])(
     "stays silent for %s",
     async (modelText) => {
       const { say } = fixture(modelText);
       expect((await say()).status).toBe(204);
       expect(synthesizeVoice).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("meeting microphone readiness", () => {
+  const personal = {
+    cred: { provider: "fixture-speech" },
+    deployment: false,
+  };
+  const deploymentVoice = {} as DeploymentVoice;
+  const deployed = { ...voiceDeps, env: { deploymentVoice } };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(resolveVoiceTarget).mockResolvedValue({
+      ...personal,
+      voiceId: "bot-override",
+    } as Awaited<ReturnType<typeof resolveVoiceTarget>>);
+    vi.mocked(loadDefaultVoiceCredential).mockResolvedValue(
+      personal as Awaited<ReturnType<typeof loadDefaultVoiceCredential>>,
+    );
+    vi.mocked(voiceProviderFor).mockResolvedValue({
+      transcribe: vi.fn(),
+    } as unknown as VoiceProvider);
+  });
+
+  it("requires a resolved voice for the meeting bot, including an override", async () => {
+    expect(await meetingVoiceReady(voiceDeps, actor, "emulator-bot")).toBe(true);
+    expect(resolveVoiceTarget).toHaveBeenCalledWith(
+      voiceDeps,
+      actor,
+      expect.objectContaining({ botId: "emulator-bot" }),
+    );
+    expect(hasDeploymentVoiceConsent).not.toHaveBeenCalled();
+
+    vi.mocked(resolveVoiceTarget).mockRejectedValue(new NoVoiceConfigured("voice"));
+    expect(await meetingVoiceReady(voiceDeps, actor, "emulator-bot")).toBe(false);
+  });
+
+  it.each([
+    { synthesize: false, transcribe: true },
+    { synthesize: true, transcribe: false },
+    { synthesize: true, transcribe: true },
+  ])(
+    "requires deployment consent for $synthesize synthesis and $transcribe transcription",
+    async (operations) => {
+      vi.mocked(resolveVoiceTarget).mockResolvedValue({
+        ...personal,
+        deployment: operations.synthesize,
+        voiceId: "bot-override",
+      } as Awaited<ReturnType<typeof resolveVoiceTarget>>);
+      vi.mocked(loadDefaultVoiceCredential).mockResolvedValue({
+        ...personal,
+        deployment: operations.transcribe,
+      } as Awaited<ReturnType<typeof loadDefaultVoiceCredential>>);
+      vi.mocked(hasDeploymentVoiceConsent).mockResolvedValue(false);
+      expect(await meetingVoiceReady(deployed, actor, "emulator-bot")).toBe(false);
+      expect(hasDeploymentVoiceConsent).toHaveBeenCalledExactlyOnceWith(
+        voiceDeps.prisma,
+        actor,
+        deploymentVoice,
+        operations,
+      );
+
+      vi.mocked(hasDeploymentVoiceConsent).mockResolvedValue(true);
+      expect(await meetingVoiceReady(deployed, actor, "emulator-bot")).toBe(true);
     },
   );
 });
