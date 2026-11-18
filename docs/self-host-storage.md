@@ -336,8 +336,12 @@ Cleanup deletes old attachment copies from computers. It is off by default.
 | `FILES_CLEANUP_MAX_AGE_DAYS`   | `31`    | How old a copy gets before it is deleted. A whole number from `1` to `36500`. |
 | `FILES_CLEANUP_INTERVAL_HOURS` | `24`    | How often the cleanup runs. A whole number from `1` to `8760`.                |
 
-The worker does the cleanup. A value that is not understood stops the API and worker from starting, with an
-error naming the setting. The two number settings are shared with other file cleanups.
+The worker does the cleanup and checks these settings: a value that is not understood stops the
+worker from starting, with an error naming the setting. The two number settings are shared with
+other file cleanups. The other settings are checked at startup too, by the API:
+`ATTACHMENT_COPY_NAMES` and `ATTACHMENT_COPY_FOLDERS` stop it with an error naming the setting
+when they hold any other value. `ATTACHMENT_COPY_ON_ARRIVAL` is not checked: only `true` turns it
+on, and any other value leaves it off.
 
 An age comes from the file's own record, because a home's file list has no file times:
 
@@ -345,8 +349,9 @@ An age comes from the file's own record, because a home's file list has no file 
   directly in `attachments/` when folders are off;
 - an old copy named `attachments/<id>.<ext>`, by when that file was created in Rakazo.
 
-The cleanup then removes the year and month folders that this leaves empty. It covers
-`attachments/` and every `bots/*/attachments/`. It leaves alone anything in `attachments/` that
+The cleanup then removes the year and month folders that this leaves empty. It cleans
+`attachments/` on a private computer, and each bot's `bots/<bot>/attachments/` on a team
+computer. It leaves alone anything in `attachments/` that
 is not named like a copy. The original stays in Rakazo's storage, and a later run copies it back
 if it needs it; the new copy gets a fresh age.
 
