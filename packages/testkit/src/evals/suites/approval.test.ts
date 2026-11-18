@@ -222,6 +222,8 @@ describe("approval cases file", () => {
       expect(() => loadApprovalCases(file)).toThrow(/case 1/);
       writeFileSync(file, `${JSON.stringify({ ...extra, surprise: 1 })}\n`);
       expect(() => loadApprovalCases(file)).toThrow(/case 1/);
+      writeFileSync(file, `${JSON.stringify({ ...extra, newSite: true, args: { href: "x" } })}\n`);
+      expect(() => loadApprovalCases(file)).toThrow(/newSite/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

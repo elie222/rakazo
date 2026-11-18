@@ -58,7 +58,11 @@ export const ApprovalCaseSchema = z
     expected: z.enum(["pass", "ask"]),
     why: z.string().min(1),
   })
-  .strict();
+  .strict()
+  // The product judges a new site on its URL alone, so such a case must have one.
+  .refine((c) => !c.newSite || typeof c.args.url === "string", {
+    message: "A newSite case needs a string args.url",
+  });
 export type ApprovalCase = z.infer<typeof ApprovalCaseSchema>;
 
 /** Extra reviewed cases kept outside this repository, as a JSON array or JSON lines. */

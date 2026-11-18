@@ -261,8 +261,21 @@ export async function runApprovalSuite(
   if (protocol === "llm" && isJev)
     return notRun("This provider serves decision models only; drop --protocol llm");
   report.reviewer = { protocol, provider: connection.provider, model: connection.modelId };
+  // Endpoints and account ids can carry credentials or name private hosts: only a short hash of
+  // each reaches the report, enough to tell two setups apart.
   const { apiKey: _key, headers, ...settings } = connection;
-  report.connection = { ...settings, headers: headers ? Object.keys(headers).sort() : undefined };
+  const shortHash = (value: string) =>
+    createHash("sha256").update(value).digest("hex").slice(0, 12);
+  report.connection = Object.fromEntries(
+    Object.entries({ ...settings, headers: headers ? Object.keys(headers).sort() : undefined }).map(
+      ([key, value]) => [
+        key,
+        /url|account|gateway|project/i.test(key) && typeof value === "string"
+          ? `sha256:${shortHash(value)}`
+          : value,
+      ],
+    ),
+  );
 
   let pricing: EvalPricing;
   try {
