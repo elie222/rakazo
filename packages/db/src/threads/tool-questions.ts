@@ -2,7 +2,9 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { checkToolQuestionValues, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { sealTo } from "@rakazo/core/node/sealed-box";
+import { bestEffort } from "@rakazo/logging";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import { warnJsonColumnOnce } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { appendEventInTransaction } from "./events.js";
@@ -171,7 +173,14 @@ export async function expireRunToolQuestions(
     select: { id: true, threadId: true, blocks: true },
   });
   for (const message of candidates) {
-    const block = questionBlock(storedMessageBlocks(message));
+    const stored = storedMessageBlocks(message);
+    const block = questionBlock(stored);
+    if (!block && stored.some((entry) => entry.kind === "tool_question"))
+      warnJsonColumnOnce("Stored tool question does not match its schema; left as it is", {
+        table: "messages",
+        column: "blocks",
+        id: message.id,
+      });
     // An open card, or an answer its call never took: either way no call will read it now.
     if (block?.status !== "pending" && !block?.sealedValues) continue;
     const { seq } = await takeToolQuestionAnswer(
@@ -179,6 +188,7 @@ export async function expireRunToolQuestions(
       { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id },
       { expire: true },
     );
-    if (seq !== undefined) await notify(message.threadId, seq);
+    // A missed signal only delays the card; the next cards still close.
+    if (seq !== undefined) await bestEffort("tool question expiry", notify(message.threadId, seq));
   }
 }

@@ -205,15 +205,20 @@ export class McpCallClock {
   private totalStartedAt = 0;
   private asking = 0;
   private done = false;
+  private readonly totalMs: number;
 
   constructor(
     private readonly idleMs: number,
     totalMs: number,
-    private readonly onTimeout: () => void,
+    /** Hears which limit ran out: the idle wait, the total or the wall-clock ceiling. */
+    private readonly onTimeout: (
+      limit: { [key in "timeout" | "maxTotalTimeout" | "ceiling"]?: number },
+    ) => void,
     ceilingMs = totalMs + MCP_ANSWER_ALLOWANCE_MS,
   ) {
     this.totalLeft = totalMs;
-    this.ceiling = setTimeout(() => this.fire(), ceilingMs);
+    this.totalMs = totalMs;
+    this.ceiling = setTimeout(() => this.fire({ ceiling: ceilingMs }), ceilingMs);
     this.run();
   }
 
@@ -245,13 +250,16 @@ export class McpCallClock {
 
   private run(): void {
     this.totalStartedAt = Date.now();
-    this.total = setTimeout(() => this.fire(), Math.max(0, this.totalLeft));
+    this.total = setTimeout(
+      () => this.fire({ maxTotalTimeout: this.totalMs }),
+      Math.max(0, this.totalLeft),
+    );
     this.startIdle();
   }
 
   private startIdle(): void {
     if (this.idle) clearTimeout(this.idle);
-    this.idle = setTimeout(() => this.fire(), this.idleMs);
+    this.idle = setTimeout(() => this.fire({ timeout: this.idleMs }), this.idleMs);
   }
 
   private stop(): void {
@@ -264,16 +272,16 @@ export class McpCallClock {
     this.total = undefined;
   }
 
-  private fire(): void {
+  private fire(limit: Parameters<McpCallClock["onTimeout"]>[0]): void {
     if (this.done) return;
     this.end();
-    this.onTimeout();
+    this.onTimeout(limit);
   }
 }
 
-/** The error a call ends with when its clock runs out, as the SDK's own timeout reads. */
-export function mcpCallTimeoutError(timeoutMs: number): McpError {
-  return new McpError(ErrorCode.RequestTimeout, "Request timed out", { timeout: timeoutMs });
+/** The error a call ends with when its clock runs out, naming the limit as the SDK's own does. */
+export function mcpCallTimeoutError(limit: Record<string, number | undefined>): McpError {
+  return new McpError(ErrorCode.RequestTimeout, "Request timed out", limit);
 }
 
 type InFlightCall = {
@@ -365,8 +373,8 @@ export async function callMcpToolAsking(
   options: { signal?: AbortSignal; idleMs: number; totalMs: number; asker?: McpCallAsker },
 ) {
   const timedOut = new AbortController();
-  const clock = new McpCallClock(options.idleMs, options.totalMs, () =>
-    timedOut.abort(mcpCallTimeoutError(options.idleMs)),
+  const clock = new McpCallClock(options.idleMs, options.totalMs, (limit) =>
+    timedOut.abort(mcpCallTimeoutError(limit)),
   );
   const signal = options.signal
     ? AbortSignal.any([options.signal, timedOut.signal])

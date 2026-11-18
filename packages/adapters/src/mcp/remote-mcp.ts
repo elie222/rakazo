@@ -975,7 +975,9 @@ function isMcpWaitTimeout(error: unknown): boolean {
   if (!(error instanceof McpError) || error.code !== ErrorCode.RequestTimeout) return false;
   const data = error.data;
   return (
-    typeof data === "object" && data !== null && ("timeout" in data || "maxTotalTimeout" in data)
+    typeof data === "object" &&
+    data !== null &&
+    ("timeout" in data || "maxTotalTimeout" in data || "ceiling" in data)
   );
 }
 

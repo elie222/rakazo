@@ -61,7 +61,7 @@ describe("tool question forms", () => {
     ]);
     expect([
       ok("date-time", "2026-11-18T09:30:00.000Z"),
-      ok("date-time", "2026-11-18T09:30"),
+      ok("date-time", "2024-02-30T12:00:00Z"),
     ]).toEqual([true, false]);
   });
 
