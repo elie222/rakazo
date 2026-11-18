@@ -210,7 +210,12 @@ describe("withDataRetentionPayload", () => {
 
 describe("the run", () => {
   it("carries the flag only for a connection that has it on", () => {
-    const resolved = { apiKey, redact: [] as string[], callObserver: undefined };
+    const resolved = {
+      apiKey,
+      connectionId: undefined,
+      redact: [] as string[],
+      callObserver: undefined,
+    };
     expect(resolvedModelRunFields({ ...resolved, zeroDataRetention: true })).toMatchObject({
       zeroDataRetention: true,
     });
