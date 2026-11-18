@@ -138,6 +138,7 @@ export function AgentImportPlanReview({
       invalid_file: t`Could not read these files`,
       default: defaultNote,
       reconnect: t`Connect it again`,
+      contains_key: keyNote,
     })[reason];
   const warningText = (warning: AgentImportWarning) =>
     warning === "runs_code"
@@ -290,7 +291,7 @@ export function AgentImportPlanReview({
                         }
                         options={[
                           { value: "bot", label: t`Only this bot` },
-                          { value: "space", label: t`All my bots` },
+                          { value: "space", label: t`All bots` },
                         ]}
                       />
                       {entry.containsKey || entry.stock

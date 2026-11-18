@@ -102,6 +102,11 @@ export function useAgentImportSource() {
       // Everything starts ticked but the untouched defaults the source wrote. Routines arrive
       // paused, and the bot asks before it uses an MCP server.
       const flagged = [
+        // A skill joins the library every bot shares, and an export is text someone else or
+        // a model wrote: one that carries code or files comes over only when it is ticked.
+        ...found.skills.filter((item) =>
+          item.warnings.some((warning) => warning === "runs_code" || warning === "bundled_files"),
+        ),
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
         // Key-looking text reaches a bot only when the user ticks it.

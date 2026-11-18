@@ -181,8 +181,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     }
   }
   const skills = homePreview.getByTestId("agent-import-skills");
-  // Everything the import found starts ticked.
-  await expect(skills.getByRole("checkbox", { name: "cleanup" })).toBeChecked();
+  // Everything starts ticked but a skill that carries code.
+  await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
   await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
   // A ready item needs no label: the checkbox says enough.
@@ -198,7 +198,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   const nameBox = homePreview.getByRole("textbox", { name: "Name" });
   await nameBox.fill("Home bot");
   await skills.getByRole("checkbox", { name: "cleanup" }).click();
-  await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "cleanup" })).toBeChecked();
   await homePreview
     .getByTestId("agent-import-instructions")
     .getByRole("button", { name: "SOUL.md", exact: true })
@@ -254,7 +254,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(keys.getByRole("heading", { name: "API keys" })).toHaveCount(0);
   await expect(nameBox).toHaveValue("Home bot");
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
-  await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "cleanup" })).toBeChecked();
   await panel.getByRole("button", { name: "Back", exact: true }).click();
 
   const workspace = testInfo.outputPath("workspace");

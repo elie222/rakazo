@@ -78,8 +78,9 @@ not want:
 | Scheduled jobs and Grok Bot routines         | Routines, paused until you turn them on                                  |
 | API keys                                     | Model connections, only when you tick **Include API keys**               |
 
-Routines arrive paused, and the bot asks before it uses an MCP server. Untouched defaults the
-old agent wrote and text that looks like it contains a key start unticked. **Not
+Routines arrive paused, and the bot asks before it uses an MCP server. A skill that carries
+code or files, untouched defaults the old agent wrote, and text that looks like it contains a key
+start unticked. **Not
 imported** lists what was left out and why, such as files only the old runtime uses.
 
 ## After the import

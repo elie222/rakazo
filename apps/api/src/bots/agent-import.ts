@@ -322,7 +322,7 @@ async function buildPlan(
     if (!item.containsKey) continue;
     skipped.push({
       path: `routines: ${looksLikeCredential(item.title) ? "Routine" : item.title}`,
-      reason: "unsupported",
+      reason: "contains_key",
     });
   }
   const leftoverInputs = new Map([...handable, ...appLeftovers].map((item) => [item.id, item]));

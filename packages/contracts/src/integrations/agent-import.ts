@@ -190,6 +190,8 @@ export const AgentImportSkipReasonSchema = z.enum([
   "default",
   /** A connected app with no server address to carry over: connect it again here. */
   "reconnect",
+  /** Text that looks like it holds a key, with no box to tick it by. */
+  "contains_key",
 ]);
 export type AgentImportSkipReason = z.infer<typeof AgentImportSkipReasonSchema>;
 
