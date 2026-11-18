@@ -2,7 +2,7 @@
 
 A meeting bot can join a Zoom or Google Meet link and bring back a speaker-labeled transcript. Open **Meetings** in the bot chat and enter the attendee link. Use a meeting where you're allowed to capture audio and create a transcript. Admit the bot from the waiting room when prompted and grant the meeting platform's capture permission.
 
-The transcript belongs to the member who started the session. They can open it from **Meetings**, ask the bot a question about it, or delete it. Ask uses the bot's configured model connection and sends the transcript and question to that model. Meetings are available in web, desktop and mobile.
+For new joins from updated clients, the speaker-labeled transcript is shared with the Space and appears in **Artifacts** for that bot. Ask the bot about the call in its regular chat. It can see that the meeting ended while the transcript is still processing and can read the transcript once ready. The member who started the meeting can open or delete the original in **Meetings**. Deleting the original also removes its artifact. To add an older transcript, open it and select **Share transcript with Space**. Meetings are available in web, desktop and mobile.
 
 ## Configure a deployment
 
@@ -30,7 +30,8 @@ Set `MEETING_PROVIDER=emulator` in a development process. The emulator immediate
 Run the web flow through the local emulator with:
 
 ```sh
-MEETING_PROVIDER=emulator pnpm test:e2e -- --spec=meeting-transcript.spec.ts
+MEETING_PROVIDER=emulator MEETING_SIGNING_KEY="$(openssl rand -hex 32)" \
+  pnpm test:e2e -- --spec=meeting-transcript.spec.ts
 ```
 
 ## Add the branded camera and live voice
@@ -47,7 +48,7 @@ Set `MEETING_CALENDAR_CLIENT_ID` and `MEETING_CALENDAR_CLIENT_SECRET` on the API
 
 Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/calendar/webhook` on the public API origin. Use the workspace signing secret. If your workspace uses legacy per-endpoint Svix secrets, set `MEETING_CALENDAR_WEBHOOK_SECRET` to the calendar endpoint's signing secret.
 
-In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. **Stop joining this series** also clears individually selected occurrences for that bot in the series. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Rakazo reserves meetings within the next 14 days and extends a recurring series as that window moves. Each Space can use or reserve up to 20 meetings per UTC day. A manual join also counts meetings in the past 24 hours. **Space limit reached** marks a selected event that still needs a reservation. Linked calendars with the same selected bot share one scheduled participant per occurrence. The final transcript is available to the member who owns that shared session. If they withdraw before the bot starts joining, Rakazo can pass the reservation to an active member who still has that occurrence booked.
+In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. **Stop joining this series** also clears individually selected occurrences for that bot in the series. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Rakazo reserves meetings within the next 14 days and extends a recurring series as that window moves. Each Space can use or reserve up to 20 meetings per UTC day. A manual join also counts meetings in the past 24 hours. **Space limit reached** marks a selected event that still needs a reservation. Linked calendars with the same selected bot share one scheduled participant per occurrence. The session owner's selection controls whether the final transcript appears in the Space's Artifacts. If they withdraw before the bot starts joining, Rakazo can pass the reservation to an active member who still has that occurrence booked.
 
 Before removing calendar credentials or switching meeting providers, disconnect the calendars associated with the old credentials. Account, organization, and Space deletion require confirmed calendar cleanup before cancelling billing or removing content. If billing cancellation fails and you keep the account or organization, reconnect the calendar and select its meetings again.
 

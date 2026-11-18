@@ -72,6 +72,14 @@ export function meetingCalendarActions(event: CalendarEventState): MeetingCalend
   return event.recurring ? ["once", "series"] : ["once"];
 }
 
+export function meetingCalendarSharingNotice(actions: readonly MeetingCalendarAction[]) {
+  if (!actions.includes("once") && !actions.includes("series")) return;
+  return i18n._({
+    id: "Choosing a join option shares transcripts with this Space.",
+    message: "Choosing a join option shares transcripts with this Space.",
+  });
+}
+
 export function meetingCalendarActionLabel(action: MeetingCalendarAction) {
   switch (action) {
     case "once":

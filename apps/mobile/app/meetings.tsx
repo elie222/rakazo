@@ -41,7 +41,7 @@ export default function MeetingsScreen() {
   );
 
   const join = useSave({
-    save: (url: string, send) => send("meetings/join", { botId, url }),
+    save: (url: string, send) => send("meetings/join", { botId, url, shareTranscript: true }),
     stale: [read.queryKey],
     onSaved: () => setUrl(""),
   });
@@ -65,7 +65,7 @@ export default function MeetingsScreen() {
         <>
           <SettingsGroup
             label={t`Meeting link`}
-            footer={t`Only send the bot if you have permission to record and transcribe the meeting.`}
+            footer={t`Get permission to record and share the transcript with this Space.`}
           >
             <SettingsInputRow
               accessibilityLabel={t`Meeting link`}

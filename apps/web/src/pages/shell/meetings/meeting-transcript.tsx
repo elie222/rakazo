@@ -1,11 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useMeetingQuestion } from "@rakazo/chat-ui/hooks";
 import { transcriptTime } from "@rakazo/i18n/meeting";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { BuiCard, Shimmer } from "../../../components/ai/primitives";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { ErrorNotice } from "../../../components/ErrorNotice";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
@@ -22,16 +20,15 @@ export function MeetingTranscript({
   onRemoved: () => void;
 }) {
   const { t } = useLingui();
-  const question = useMeetingQuestion();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const queries = useSpaceQueries();
   const client = useQueryClient();
   const read = queries.meetings.transcript.queryOptions({ input: { id } });
   const transcript = useQuery({ ...read, gcTime: 0, retry: false });
   useEventListener(window, "focus", () => void transcript.refetch({ cancelRefetch: false }));
-  const ask = useSave({
-    save: (question: string, rpc) => rpc.meetings.ask({ id, question }),
-    onSaved: question.onAnswered,
+  const sharing = useSave({
+    save: (_, rpc) => rpc.meetings.shareTranscript({ id }),
+    stale: [read.queryKey, queries.artifacts.listSpace.key()],
   });
   const removal = useSave({
     save: (_, rpc) => rpc.meetings.deleteTranscript({ id }),
@@ -74,57 +71,26 @@ export function MeetingTranscript({
           </li>
         ))}
       </ol>
-      <form
-        className="flex flex-col gap-2 border-t pt-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          question.submit(ask.run, ask.pending || removal.pending);
-        }}
-      >
-        {ask.pending ? (
-          <p role="status" className="text-body-sm">
-            <Shimmer>
-              <Trans>Asking…</Trans>
-            </Shimmer>
-          </p>
-        ) : question.exchange ? (
-          <BuiCard role="status" className="bg-muted p-3">
-            <p className="font-medium" dir="auto">
-              {question.exchange.question}
-            </p>
-            <p className="mt-1 whitespace-pre-wrap break-words" dir="auto">
-              {question.exchange.answer}
-            </p>
-          </BuiCard>
-        ) : null}
-        <label htmlFor="meeting-question" className="font-medium">
-          <Trans>Ask about this meeting</Trans>
-        </label>
-        <div className="flex items-center gap-2">
-          <Input
-            id="meeting-question"
-            autoComplete="off"
-            value={question.draft}
-            disabled={ask.pending || removal.pending}
-            onChange={(event) => {
-              ask.reset();
-              question.setDraft(event.target.value);
-            }}
-          />
-          <Button type="submit" disabled={ask.pending || removal.pending || !question.canAsk}>
-            <Trans>Ask</Trans>
-          </Button>
-        </div>
-        {ask.error ? (
-          <ErrorNotice error={errorDetails(ask.error, t`Could not answer the question`)} />
-        ) : null}
-      </form>
+      {transcript.data.artifactAvailable === false ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="self-start"
+          disabled={sharing.pending || removal.pending}
+          onClick={() => sharing.run()}
+        >
+          <Trans>Share transcript with Space</Trans>
+        </Button>
+      ) : null}
+      {sharing.error ? (
+        <ErrorNotice error={errorDetails(sharing.error, t`Could not share transcript`)} />
+      ) : null}
       <Button
         type="button"
         variant="ghost"
         size="sm"
         className="self-start text-muted-foreground"
-        disabled={ask.pending || removal.pending}
+        disabled={removal.pending || sharing.pending}
         onClick={() => {
           removal.reset();
           setConfirmOpen(true);
