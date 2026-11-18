@@ -178,17 +178,15 @@ describePostgres("tool call records (PostgreSQL)", () => {
     expect(await asOwner(() => runToolCallRecords(prisma, { spaceId, runId }))).toEqual([]);
   });
 
-  it("gives a bot the details of a run its page reached, and no other", async () => {
+  it("gives a bot the details of the run it linked, and no other", async () => {
     const sourceMessageId = await message("why did that fail");
     const runId = await runFrom(sourceMessageId);
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-4")));
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-5")));
     const scope = { spaceId, threadId, botId, toolDetailsUserId: userId };
-    const calls = async (toolDetailsRunId: string) =>
+    const calls = async (linkedRunId: string) =>
       (
-        await asOwner(() =>
-          readHistory(prisma, scope, { messageId: sourceMessageId, toolDetailsRunId }),
-        )
+        await asOwner(() => readHistory(prisma, scope, { messageId: sourceMessageId, linkedRunId }))
       ).runs.flatMap((run) => ("toolCalls" in run ? [run.toolCalls] : []));
 
     expect(await calls(runId)).toHaveLength(1);
@@ -200,7 +198,7 @@ describePostgres("tool call records (PostgreSQL)", () => {
     const sourceMessageId = await message("what went wrong here");
     const runId = await runFrom(sourceMessageId);
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-6")));
-    const page = { messageId: sourceMessageId, toolDetailsRunId: runId };
+    const page = { messageId: sourceMessageId, linkedRunId: runId };
 
     const mine = await asOwner(() =>
       readHistory(prisma, { spaceId, threadId, botId, toolDetailsUserId: userId }, page),

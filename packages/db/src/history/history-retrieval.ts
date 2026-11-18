@@ -693,11 +693,12 @@ export async function readHistory(
   const outcomes = outcomeRows.slice(0, LINK_PAGE_SIZE);
   const artifacts = artifactRows.slice(0, LINK_PAGE_SIZE);
   const attachments = await messageAttachments(prisma, scope, rows);
-  // Only the reader's own run on this page may be explained: a shared page holds other members'.
-  const reachableRun = runs.find((run) => run.id === input.toolDetailsRunId);
+  // A linked run brings what its own calls were sent and returned, but only to its own reader:
+  // a shared page also holds runs other members started.
+  const linkedRun = runs.find((run) => run.id === input.linkedRunId);
   const toolDetails =
-    input.toolDetailsRunId && reachableRun?.userId === scope.toolDetailsUserId
-      ? await toolCallDetails(prisma, scope, input.toolDetailsRunId)
+    input.linkedRunId && linkedRun?.userId === scope.toolDetailsUserId
+      ? await toolCallDetails(prisma, scope, input.linkedRunId)
       : undefined;
   return bounded({
     untrusted: true as const,
@@ -715,7 +716,7 @@ export async function readHistory(
       ...run,
       outcomes: outcomes.filter((row) => row.runId === run.id).map((row) => reference(row)),
       artifacts: artifacts.filter((artifact) => artifact.runId === run.id),
-      ...(toolDetails && run.id === input.toolDetailsRunId ? { toolCalls: toolDetails } : {}),
+      ...(toolDetails && run.id === input.linkedRunId ? { toolCalls: toolDetails } : {}),
     })),
     snapshots: rows.map((row) => {
       const linkedRuns = runs.filter(

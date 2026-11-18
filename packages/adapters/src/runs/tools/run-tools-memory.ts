@@ -71,13 +71,10 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   } else {
     const parsed = HistoryReadInputSchema.safeParse(given);
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
-    // Tool details are for a run the owner started; every other run reads the conversation alone.
-    const { toolDetailsRunId, ...readInput } = parsed.data;
+    // A linked run explains its own calls to a run the owner started; every other run reads alone.
     response = await readHistory(deps.prisma, scope, {
-      ...readInput,
-      ...(toolDetailsRunId && ctx.source.toolDetailsAllowed
-        ? { toolDetailsRunId, toolDetailsUserId: run.userId }
-        : {}),
+      ...parsed.data,
+      ...(ctx.source.toolDetailsAllowed ? { toolDetailsUserId: run.userId } : {}),
     });
   }
   const redacted = redactConnectorPayload(

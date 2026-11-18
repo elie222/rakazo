@@ -107,8 +107,6 @@ export const HistoryReadInputSchema = z.object({
   attachmentOffset: z.number().int().nonnegative().optional(),
   direction: z.enum(["around", "older", "newer"]).optional(),
   limit: z.number().int().min(1).max(20).optional(),
-  /** One earlier run whose kept tool call details come back with this read. */
-  toolDetailsRunId: Id.optional(),
 });
 export type HistorySearchInput = z.infer<typeof HistorySearchInputSchema>;
 export type HistoryReadInput = z.infer<typeof HistoryReadInputSchema>;
