@@ -3,7 +3,8 @@ import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createBillingService, trialOutcome } from "./billing.js";
+import { createBillingService } from "./billing.js";
+import { trialOutcome } from "./trial-outcome.js";
 
 const actor: Actor = {
   userId: "user-1",

@@ -66,6 +66,7 @@ import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
+import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
 /** An invited organization's first trial. */
@@ -160,23 +161,6 @@ function subscriptionStarted(previous: BillingAccount, live: BillingSubscription
     hasBillingAccess(live.status) &&
     (live.subscriptionId !== previous.subscriptionId || previous.status === "incomplete")
   );
-}
-
-/**
- * How a trial ended, once that is known: true when its first charge was paid, false when the
- * subscription stopped without one, null while the trial runs or the charge is still pending
- * (a subscription turns active before its first charge is collected). A failed first charge
- * that is settled later ends it a second time, as true.
- */
-export function trialOutcome(
-  previous: Pick<BillingAccount, "status" | "trialEndsAt" | "paidAt">,
-  live: Pick<BillingSubscriptionSnapshot, "status" | "paidAt">,
-): boolean | null {
-  const unpaidTrial = previous.trialEndsAt !== null && !previous.paidAt;
-  if (unpaidTrial && needsBillingPortal(previous.status)) return live.paidAt ? true : null;
-  if (previous.status !== "trialing" && !(unpaidTrial && previous.status === "active")) return null;
-  if (live.paidAt) return true;
-  return live.status === "trialing" || live.status === "active" ? null : false;
 }
 
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
