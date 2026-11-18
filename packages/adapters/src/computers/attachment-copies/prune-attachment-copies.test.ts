@@ -80,7 +80,14 @@ async function setup(
     prisma,
     home,
     sandbox,
-    settings: { attachments: true, maxAgeMs: 31 * DAY, intervalMs: DAY, ...settings },
+    settings: {
+      attachments: true,
+      received: false,
+      created: false,
+      maxAgeMs: 31 * DAY,
+      intervalMs: DAY,
+      ...settings,
+    },
     now: () => now,
   });
   const names = async (homeKey: string, dir: string) =>
@@ -108,7 +115,13 @@ describe("createAttachmentCopiesPruner", () => {
       prisma: {} as PrismaClient,
       home: {} as LocalAgentHomeStore,
       sandbox: {} as SandboxProvider,
-      settings: { attachments: false, maxAgeMs: 31 * DAY, intervalMs: DAY },
+      settings: {
+        attachments: false,
+        received: false,
+        created: false,
+        maxAgeMs: 31 * DAY,
+        intervalMs: DAY,
+      },
     });
     expect(off).toBeUndefined();
   });

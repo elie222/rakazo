@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
 import type { AttachmentNaming } from "@rakazo/adapters";
-import { attachmentPath, inboundAttachmentMimeType, userTimeZone } from "@rakazo/adapters";
+import {
+  attachmentPath,
+  deleteArtifactFamilyRows,
+  inboundAttachmentMimeType,
+  userTimeZone,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -31,7 +36,6 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   HIDDEN_ARTIFACT_MIME_TYPES,
   IsolationError,
-  isRecordNotFound,
   isUniqueViolation,
   Prisma,
   withResolvedArtifactVersion,
@@ -656,9 +660,7 @@ export async function listArtifactVersions(
   }));
 }
 
-type ArtifactMember = { id: string; storageKey: string; botId: string | null };
-
-// Delete each blob before its row, and the root only while it has no versions.
+// Deletes the whole family the anchor belongs to; the shared helper owns the order.
 export async function deleteArtifactFamily(
   deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   actor: Actor,
@@ -670,106 +672,12 @@ export async function deleteArtifactFamily(
   });
   if (!anchor) throw new IsolationError();
   const rootId = anchor.rootArtifactId ?? anchor.id;
-
-  for (;;) {
-    const members = await deps.prisma.artifact.findMany({
-      where: {
-        spaceId: actor.spaceId,
-        OR: [{ id: rootId }, { rootArtifactId: rootId }],
-      },
-      select: { id: true, storageKey: true, botId: true },
-    });
-    if (members.length === 0) return { ok: true as const };
-    const child = members.find((row) => row.id !== rootId);
-    if (child) {
-      await removeArtifactBlob(deps.artifacts, actor, child);
-      await deleteArtifactRowIfPresent(deps.prisma, child.id);
-      continue;
-    }
-    const root = members.find((row) => row.id === rootId);
-    if (!root) throw new IsolationError();
-    const outcome = await deleteArtifactRootIfChildless(deps, actor, root);
-    if (outcome === "has-child") continue;
-    return { ok: true as const };
-  }
-}
-
-async function deleteArtifactRootIfChildless(
-  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
-  actor: Actor,
-  root: ArtifactMember,
-): Promise<"deleted" | "gone" | "has-child"> {
-  let outcome: "deleted" | "gone" | "has-child" = "gone";
-  await deps.prisma.$transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT id FROM "artifacts" WHERE id = ${root.id} FOR UPDATE
-    `);
-    if (locked.length === 0) {
-      outcome = "gone";
-      return;
-    }
-    const child = await tx.artifact.findFirst({
-      where: { rootArtifactId: root.id },
-      select: { id: true },
-    });
-    if (child) {
-      outcome = "has-child";
-      return;
-    }
-    await removeArtifactBlob(deps.artifacts, actor, root);
-    try {
-      await tx.artifact.delete({ where: { id: root.id } });
-    } catch (error) {
-      if (isRecordNotFound(error)) {
-        outcome = "gone";
-        return;
-      }
-      throw error;
-    }
-    outcome = "deleted";
+  await deleteArtifactFamilyRows(deps, {
+    spaceId: actor.spaceId,
+    rootId,
+    context: createAdapterContext(actor, anchor.botId ?? anchor.id, `artifact-delete:${rootId}`),
   });
-  return outcome;
-}
-
-async function removeArtifactBlob(
-  artifacts: ArtifactStore,
-  actor: Actor,
-  member: ArtifactMember,
-): Promise<void> {
-  try {
-    await artifacts.remove(
-      member.storageKey,
-      createAdapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
-    );
-  } catch (error) {
-    if (isAlreadyRemoved(error)) return;
-    throw error;
-  }
-}
-
-function isAlreadyRemoved(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const code = "code" in error ? error.code : undefined;
-  const name = "name" in error ? error.name : undefined;
-  return (
-    code === "ENOENT" ||
-    code === "ENOTDIR" ||
-    code === "NoSuchKey" ||
-    name === "NotFound" ||
-    name === "NoSuchKey"
-  );
-}
-
-async function deleteArtifactRowIfPresent(
-  prisma: Pick<PrismaClient, "artifact">,
-  id: string,
-): Promise<void> {
-  try {
-    await prisma.artifact.delete({ where: { id } });
-  } catch (error) {
-    if (isRecordNotFound(error)) return;
-    throw error;
-  }
+  return { ok: true as const };
 }
 
 type SendAttachmentRow = {

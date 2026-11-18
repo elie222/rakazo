@@ -290,6 +290,7 @@ export {
   attachmentPath,
   copyAttachmentsOnArrivalFromEnv,
 } from "./storage/attachment-path.js";
+export * from "./storage/delete-artifact-family.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
 export * from "./storage/storage-migration.js";
