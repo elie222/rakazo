@@ -298,6 +298,8 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /** The provider can read the disk of a stopped sandbox without starting it. */
+  readStoppedFiles?: boolean;
 }
 
 export interface SandboxCapabilities {
