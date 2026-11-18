@@ -56,7 +56,7 @@ function allowanceDeps(input: {
         _min: { appliedAt: input.granted?.since ?? null },
       }),
     },
-    $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),
+    $queryRaw: vi.fn(async (_query: { values: unknown[] }) => input.hours ?? []),
   };
   return {
     prisma,
@@ -173,7 +173,7 @@ describe("computer allowance", () => {
       granted: { creditCents: 5000, since },
     });
     expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
-    expect(prisma.$queryRaw.mock.calls[0]).toContainEqual(since);
+    expect(prisma.$queryRaw.mock.calls[0]?.[0].values).toContainEqual(since);
   });
 
   it("does not add granted credit to a monthly credit plan", async () => {
@@ -220,7 +220,7 @@ describe("computer allowance", () => {
     });
     const now = new Date("2026-03-17T08:30:00.000Z");
     await sandboxAllowance(deps, "organization", now);
-    const values = prisma.$queryRaw.mock.calls[0]?.slice(1);
+    const values = prisma.$queryRaw.mock.calls[0]?.[0].values;
     expect(values).toContainEqual(periodStart);
     expect(values).toContainEqual(now);
   });
@@ -239,7 +239,7 @@ describe("computer allowance", () => {
       });
       await sandboxAllowance(deps, "organization", new Date(now));
       // The query reads `now`, `now`, then `since`.
-      return prisma.$queryRaw.mock.calls[0]?.[3];
+      return prisma.$queryRaw.mock.calls[0]?.[0].values[2];
     };
     expect(await since("2026-01-31T15:00:00.000Z")).toEqual(periodStart);
     // February is short, so its anniversary is the 28th.
@@ -303,7 +303,7 @@ describe("computer allowance", () => {
       "organization",
       new Date("2026-04-01T00:00:00Z"),
     );
-    expect(prisma.$queryRaw.mock.calls[0]?.[3]).toEqual(periodStart);
+    expect(prisma.$queryRaw.mock.calls[0]?.[0].values[2]).toEqual(periodStart);
     expect(allowance?.resetsAt).toBeNull();
   });
 
@@ -325,7 +325,9 @@ describe("computer allowance", () => {
         "organization",
         new Date("2026-04-10T00:00:00Z"),
       );
-      expect(prisma.$queryRaw.mock.calls[0]?.[3]).toEqual(new Date("2026-04-01T00:00:00Z"));
+      expect(prisma.$queryRaw.mock.calls[0]?.[0].values[2]).toEqual(
+        new Date("2026-04-01T00:00:00Z"),
+      );
       expect(allowance?.resetsAt).toEqual(new Date("2026-05-01T00:00:00Z"));
     },
   );
@@ -381,7 +383,7 @@ describe("computer allowance", () => {
     });
     const now = new Date("2026-03-17T08:30:00.000Z");
     await sandboxAllowance(deps, "organization", now);
-    const values = prisma.$queryRaw.mock.calls[0]?.slice(1);
+    const values = prisma.$queryRaw.mock.calls[0]?.[0].values;
     expect(values).toContainEqual(new Date("2026-03-01T00:00:00.000Z"));
   });
 
