@@ -226,8 +226,8 @@ describe("LocalAgentHomeStore path containment", () => {
   it("writes binary files in new folders, with the same containment as text writes", async () => {
     const { root, store, home } = await fixture();
     const content = new Uint8Array([0, 255, 10, 13]);
-    await store.writeBinaryFile("bot-1", "shared/received/2026/11/clip.mov", content, context);
-    expect(await readFile(path.join(home, "shared/received/2026/11/clip.mov"))).toEqual(
+    await store.writeBinaryFile("bot-1", "attachments/2026/11/clip.mov", content, context);
+    expect(await readFile(path.join(home, "attachments/2026/11/clip.mov"))).toEqual(
       Buffer.from(content),
     );
 
