@@ -101,3 +101,85 @@ describe("routine tools in a group run", () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe("schedule_create with a command watch", () => {
+  const watch = { kind: "command", command: "ls inbox", everyMinutes: 30 };
+
+  /**
+   * A run as `schedule_create` sees it. `tainted` is what the run has read or been sent, `resumed`
+   * an attempt after a pause, and `approved` a call replayed from the owner's card.
+   */
+  function watchRun(options: {
+    ownerStarted?: boolean;
+    tainted?: boolean;
+    resumed?: boolean;
+    approved?: boolean;
+  }) {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "r-new",
+      ...data,
+    }));
+    const enqueue = vi.fn(async () => undefined);
+    const client = {
+      bot: { findFirst: vi.fn(async () => ({ id: "b", computer: null })) },
+      user: { findUnique: vi.fn(async () => ({ timezone: "UTC" })) },
+      routine: { count: vi.fn(async () => 0), findMany: vi.fn(async () => []), create },
+      $queryRaw: async () => [{ timezone: "UTC" }],
+    };
+    const ctx = {
+      deps: {
+        prisma: {
+          ...client,
+          $transaction: async (run: (c: unknown) => Promise<unknown>) => run(client),
+        },
+        events: { append: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
+        jobs: { enqueue, cancel: vi.fn() },
+      },
+      run: { id: "run-1", spaceId: "s", userId: "u", threadId: "t" },
+      runId: "run-1",
+      bot: { id: "b", name: "Bot" },
+      thread: { id: "t" },
+      computer: { graphical: false },
+      source: { ownerStartedRun: options.ownerStarted ?? true },
+      state: {
+        tainted: options.tainted ?? false,
+        earlierAttempt: Promise.resolve(options.resumed ?? false),
+      },
+      trust: { receivedOutsideMessage: async () => false },
+    } as unknown as RunContext;
+    const call = {
+      name: "schedule_create",
+      args: { name: "Inbox", prompt: "report it", watch },
+      nextApprovedTool: options.approved ? "schedule_create" : undefined,
+      finish: async (result: unknown) => result,
+    } as unknown as ToolCall;
+    const run = async () => {
+      await taskTools.schedule_create!(ctx, call);
+      return create.mock.calls[0]![0].data as { active: boolean; nextRunAt: Date | null };
+    };
+    return { run, enqueue };
+  }
+
+  it.each([
+    ["the owner's own untainted run", {}],
+    ["an approved card in the owner's run", { approved: true }],
+    // The resumed attempt after the owner answered the card reads as tainted; the card counts.
+    ["an approved card in a resumed attempt", { approved: true, resumed: true }],
+    ["an approved card after outside content", { approved: true, tainted: true }],
+  ])("runs by itself from %s", async (_label, options) => {
+    const { run, enqueue } = watchRun(options);
+    expect(await run()).toMatchObject({ active: true, nextRunAt: expect.any(Date) });
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["outside content entered the run (Never ask draws no card)", { tainted: true }],
+    ["a resumed attempt with no approved card", { resumed: true }],
+    ["a run the owner did not start", { ownerStarted: false }],
+    ["an approved card in a run the owner did not start", { ownerStarted: false, approved: true }],
+  ])("is saved turned off from %s", async (_label, options) => {
+    const { run, enqueue } = watchRun(options);
+    expect(await run()).toMatchObject({ active: false, nextRunAt: null });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

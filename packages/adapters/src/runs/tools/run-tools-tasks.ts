@@ -37,7 +37,8 @@ import {
   skillUpdateFromTool,
 } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
-import type { ToolHandlers } from "./run-tool-gate.js";
+import { isRunTainted } from "../assembly/run-context.js";
+import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
 /** A command watch may not run what the desktop guard keeps the bot from running itself. */
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
@@ -46,6 +47,17 @@ function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undef
   return desktopGuardApplies(ctx.computer) && refusal
     ? desktopProtectionGuardMessage(refusal, command ?? "")
     : undefined;
+}
+
+/**
+ * Whether a command watch made by this call may start running by itself: it is the owner's own run
+ * and either no outside content entered it, or the owner approved this call on its card, which
+ * shows the command. A resumed attempt always reads as tainted, so the approval is what counts
+ * there. Never ask draws no card, so only an untainted run starts one.
+ */
+async function commandWatchTrusted(ctx: RunContext, call: ToolCall): Promise<boolean> {
+  if (!ctx.source.ownerStartedRun) return false;
+  return call.nextApprovedTool === call.name || !(await isRunTainted(ctx));
 }
 
 /**
@@ -217,6 +229,7 @@ export const taskTools: ToolHandlers = {
       userId: run.userId,
       threadId: thread.id,
       ...scheduleCreateFields(args),
+      commandWatchTrusted: await commandWatchTrusted(ctx, call),
     });
     return call.finish(created);
   },

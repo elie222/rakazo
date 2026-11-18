@@ -50,8 +50,9 @@ In **Auto** and **Ask**, these always show a card, and **Always allow** doesn't 
 - Changing a bot's instructions or model, and creating a space.
 - A routine that watches a command, or that names a site the run found in outside content.
 
-**Never ask** runs all of them. The one exception is accepting another owner's bot connection, which
-it refuses when someone else started the run or outside content entered it.
+**Never ask** runs all of them. The exceptions are accepting another owner's bot connection, which
+it refuses when someone else started the run or outside content entered it, and a command watch,
+which it saves turned off in that case (see [Routines](./routines.md#when-something-changes)).
 
 ## Spending limit
 

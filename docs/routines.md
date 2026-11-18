@@ -39,6 +39,13 @@ when it changed. **What to watch** can be files or folders on the computer, a co
 tool from a connected app. Turn on **Post "No changes" in chat** if you want a note every time. A
 watch can't be combined with a schedule.
 
+A command runs on its own every interval, with no model. A bot's command watch starts only when you
+asked for it in your own chat and no outside content (a web page, a message, a file) entered the run,
+or when you approved its card, which shows the command. Otherwise the bot saves it turned off and
+tells you, and you turn it on in the routine's settings, where the command is shown. A bot can never
+turn one on. If another member edits a command watch, it also turns off until its new owner switches
+it back on.
+
 ### Webhook
 
 Gives you a URL and key. Any service that can send a POST request can start the routine.

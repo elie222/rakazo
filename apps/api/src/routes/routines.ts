@@ -103,7 +103,11 @@ export function routinesRoutes(ctx: RouterContext) {
         });
         if (!existing) throw new ORPCError("NOT_FOUND");
         const bot = await repos.getBot(context.actor, existing.botId);
-        const active = input.active ?? existing.active;
+        // Taking over another member's command watch leaves it off until its new owner turns it on
+        // here, where the command is shown.
+        const watch = input.watch === undefined ? parseRoutineWatch(existing.watch) : input.watch;
+        const offOnTakeover = existing.userId !== context.actor.userId && watch?.kind === "command";
+        const active = offOnTakeover ? false : (input.active ?? existing.active);
         const crons = input.crons ?? existing.crons;
         const timezone = input.timezone ?? existing.timezone;
         const webhookEnabled = input.webhookEnabled ?? existing.webhookEnabled;
@@ -145,7 +149,6 @@ export function routinesRoutes(ctx: RouterContext) {
         if (modelChanged) {
           await assertRoutineModel(deps, context.actor, { modelProvider, modelId }, codexCatalog);
         }
-        const watch = input.watch === undefined ? parseRoutineWatch(existing.watch) : input.watch;
         if (input.watch) await assertRoutineWatch(input.watch, context.actor, bot);
         const watchChanged =
           input.watch !== undefined &&
@@ -227,7 +230,8 @@ export function routinesRoutes(ctx: RouterContext) {
         const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
         // An explicit on/off must not undo an enable, a disable or a finished one-shot that landed
         // after the read; neither may a schedule change computed from the old on/off state.
-        const writesActive = input.active !== undefined || scheduleChanged || watchChanged;
+        const writesActive =
+          input.active !== undefined || scheduleChanged || watchChanged || offOnTakeover;
         // Re-check the parent in the write itself so an archive that lands after the read wins.
         // Model and schedule patches must also match the snapshot they were computed from, so a
         // tick that fired after the read is not rewound onto an occurrence that already ran.
@@ -257,7 +261,7 @@ export function routinesRoutes(ctx: RouterContext) {
               prompt: input.prompt,
               crons: input.crons,
               timezone: input.timezone,
-              active: input.active,
+              active: offOnTakeover ? false : input.active,
               notify: input.notify,
               // What a watch read is not the owner's words, so it never runs as a turn in the chat.
               inChat: watch ? false : input.inChat,

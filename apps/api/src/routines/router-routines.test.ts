@@ -332,6 +332,78 @@ describe("routines.update", () => {
     expect(update.mock.calls[0]![0].data).not.toHaveProperty("watchState");
   });
 
+  describe("a command watch", () => {
+    const commandWatch = { kind: "command", command: "date", everyMinutes: 30 };
+    const running = {
+      crons: [],
+      watch: commandWatch,
+      active: true,
+      nextRunAt: new Date(Date.now() + 60_000),
+    };
+    const rename = { name: "Renamed", active: undefined, runAt: undefined };
+
+    it("stays off when another member takes it over by editing it", async () => {
+      const { call, update, enqueue, cancel } = fixture(false, false, {
+        ...running,
+        userId: "user-2",
+      });
+      expect((await call(rename)).status).toBe(200);
+      const data = update.mock.calls[0]![0].data;
+      expect(data).toMatchObject({ userId: "user-1", active: false, nextRunAt: null });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(cancel).toHaveBeenCalled();
+    });
+
+    it("stays off when another member asks to turn it on", async () => {
+      const { call, update, enqueue } = fixture(false, false, {
+        ...running,
+        active: false,
+        nextRunAt: null,
+        userId: "user-2",
+      });
+      expect((await call({ ...rename, active: true })).status).toBe(200);
+      expect(update.mock.calls[0]![0].data).toMatchObject({ active: false });
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it("goes off when another member swaps another watch for a command", async () => {
+      const { call, update } = fixture(false, false, {
+        ...running,
+        watch: { kind: "files", paths: ["inbox"], everyMinutes: 30 },
+        userId: "user-2",
+      });
+      expect((await call({ ...rename, watch: commandWatch })).status).toBe(200);
+      expect(update.mock.calls[0]![0].data).toMatchObject({ active: false });
+    });
+
+    it("keeps running when its owner edits it", async () => {
+      const { call, update } = fixture(false, false, running);
+      expect((await call(rename)).status).toBe(200);
+      expect(update.mock.calls[0]![0].data.active).toBeUndefined();
+    });
+
+    it("is turned on by its owner, where the command is shown", async () => {
+      const { call, update, enqueue } = fixture(false, false, {
+        ...running,
+        active: false,
+        nextRunAt: null,
+      });
+      expect((await call({ ...rename, active: true })).status).toBe(200);
+      expect(update.mock.calls[0]![0].data).toMatchObject({ active: true });
+      expect(enqueue).toHaveBeenCalledOnce();
+    });
+
+    it("does not switch off a takeover of a watch that runs no command", async () => {
+      const { call, update } = fixture(false, false, {
+        ...running,
+        watch: { kind: "files", paths: ["inbox"], everyMinutes: 30 },
+        userId: "user-2",
+      });
+      expect((await call(rename)).status).toBe(200);
+      expect(update.mock.calls[0]![0].data.active).toBeUndefined();
+    });
+  });
+
   const ownModel = {
     modelProvider: "openai-compatible",
     modelId: "old-model",
