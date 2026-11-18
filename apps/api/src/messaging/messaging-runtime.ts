@@ -1,6 +1,7 @@
 import type {
   ArtifactStore,
   JobPublisher,
+  JobQueueReader,
   MessagingInboundEvent,
   MessagingSurface,
   SandboxProvider,
@@ -15,6 +16,7 @@ import type { Hono } from "hono";
 import { transcribeInboundVoice } from "../calls/voice.js";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import type { AppEnv } from "../env.js";
+import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { createDownloadBudget } from "./intake/download-budget.js";
 import { DOWNLOAD_BUDGET_FILES } from "./intake/limits.js";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
@@ -46,7 +48,7 @@ export async function startMessagingRuntime({
   app: Hono;
   prisma: PrismaClient;
   events: ThreadEvents;
-  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn">;
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueReader;
   sandbox: SandboxProvider;
   secrets: SecretStore;
   artifacts: ArtifactStore;
@@ -60,17 +62,11 @@ export async function startMessagingRuntime({
   let messagingStopped = false;
   let clearMessagingRetryDelay: (() => void) | undefined;
   const receipts = createMessagingReceipts(messaging);
-  const downloadBudget = createDownloadBudget(DOWNLOAD_BUDGET_FILES * env.maxUploadSizeBytes);
-  const storeAttachment: Parameters<typeof createMessagingInboundHandler>[0]["storeAttachment"] = ({
-    spaceId,
-    userId,
-    ...input
-  }) =>
-    storeInboundAttachment(
-      { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes, downloadBudget },
-      { spaceId, userId },
-      input,
-    );
+  const stores = createInboundAttachmentStores({
+    prisma,
+    artifacts,
+    maxUploadSizeBytes: env.maxUploadSizeBytes,
+  });
   const inboundDeps = {
     prisma,
     events,
@@ -80,7 +76,7 @@ export async function startMessagingRuntime({
     provision: (request) => provisionMessagingIdentity(prisma, request),
     openSignup: env.messagingOpenSignup,
     acknowledge: receipts.acknowledge,
-    storeAttachment,
+    storeAttachment: stores.direct,
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
       transcribeInboundVoice(
         {
@@ -108,7 +104,7 @@ export async function startMessagingRuntime({
         teamChat,
         jobs,
         fetchThreadHistory: createMessagingTeamChatHistory(messaging),
-        storeAttachment,
+        storeAttachment: stores.teamChat,
         providerId: "slack",
         botId,
         workspaceId: installation?.workspaceId,
@@ -191,10 +187,32 @@ export async function startMessagingRuntime({
     stopReceiving,
     stop: async () => {
       await stopReceiving();
-      // Downloads still running here end with this process; their backup jobs take over now.
+      // Downloads still running here get a short grace; then their backup jobs take over.
       await inbound.handOffPending();
       receipts.stop();
       await messaging.shutdown?.();
     },
   };
+}
+
+/**
+ * The attachment stores of one process. Direct-message files share its download budget and take
+ * the time they need; team-chat files keep their short wait outside it, so they never queue
+ * behind a direct message's video.
+ */
+export function createInboundAttachmentStores(deps: {
+  prisma: PrismaClient;
+  artifacts: ArtifactStore;
+  maxUploadSizeBytes: number;
+}): { direct: InboundAttachmentStore; teamChat: InboundAttachmentStore } {
+  const downloadBudget = createDownloadBudget(DOWNLOAD_BUDGET_FILES * deps.maxUploadSizeBytes);
+  const store =
+    (budget?: typeof downloadBudget): InboundAttachmentStore =>
+    ({ spaceId, userId, ...input }) =>
+      storeInboundAttachment(
+        { ...deps, ...(budget ? { downloadBudget: budget } : {}) },
+        { spaceId, userId },
+        input,
+      );
+  return { direct: store(downloadBudget), teamChat: store() };
 }
