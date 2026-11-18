@@ -502,7 +502,7 @@ function storedApprovalRun(
     connection: Record<string, unknown> | null;
     codeRevision: string | null;
     workingDiffHash: string | null;
-    controls: { trials: number };
+    controls: { trials: number; timeoutMs: number };
     results: ApprovalCaseResult[];
     summary: { costUsd: number | null };
   },
@@ -522,7 +522,7 @@ function storedApprovalRun(
   const caseHashes = Object.fromEntries(
     cases.map((c) => [
       caseKey(c.id, report.variant),
-      hash({ c, trials: report.controls.trials, ...inputs }),
+      hash({ c, trials: report.controls.trials, timeoutMs: report.controls.timeoutMs, ...inputs }),
     ]),
   );
   return {
