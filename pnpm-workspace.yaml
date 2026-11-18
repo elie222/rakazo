@@ -92,4 +92,5 @@ allowBuilds:
   cpu-features: false
   dtrace-provider: false
   protobufjs: false
+  react-native-enriched-markdown: false
   ssh2: false

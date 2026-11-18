@@ -56,6 +56,8 @@ const NOT_PASSED: Record<string, string> = {
   NODE_USE_ENV_PROXY:
     "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
   NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
+  NODE_TLS_REJECT_UNAUTHORIZED:
+    "Node's own switch, read so a hostname CONNECT stays off while verification is disabled",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   PATH: "the image's own search path, where tailscaled is found; a pass-through entry would unset it",
