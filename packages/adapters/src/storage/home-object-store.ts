@@ -202,15 +202,21 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     await this.revise(botId);
   }
 
+  /**
+   * Stores the removal, also when it stopped early: files already deleted from this copy must not
+   * come back from the stored one, so a partial removal is saved as it is.
+   */
   override async removeFiles(
     botId: string,
     paths: readonly string[],
+    root: string,
     context: AdapterContext,
-    options?: { emptyFoldersBelow?: string },
+    options?: { signal?: AbortSignal },
   ) {
     await this.hydrate(botId);
-    await super.removeFiles(botId, paths, context, options);
-    await this.revise(botId);
+    const removed = await super.removeFiles(botId, paths, root, context, options);
+    if (removed) await this.revise(botId);
+    return removed;
   }
 
   /**

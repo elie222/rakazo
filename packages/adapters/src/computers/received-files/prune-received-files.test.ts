@@ -120,7 +120,6 @@ describe("createReceivedFilesPruner", () => {
       "team-home": [
         "received/2026/11/notes.txt",
         "received/2026/11/2026-11-07_0900_alice_fresh.pdf",
-        "received/2026/08/2026-13-45_9999_x.pdf",
         "received/2025/readme.md",
         "notes/2026-01-01_0900_alice_keep.pdf",
         "received/2026/09/2026-09-01_0900_a_b.pdf",
@@ -131,20 +130,54 @@ describe("createReceivedFilesPruner", () => {
 
     expect(await names("team-home", "received/2026/11")).toHaveLength(2);
     expect(await names("team-home", "received/2025")).toEqual(["readme.md"]);
-    expect(await names("team-home", "received/2026/08")).toHaveLength(1);
     expect(await names("team-home", "received/2026/09")).toEqual([]);
     expect(await names("team-home", "notes")).toHaveLength(1);
   });
 
-  it("does not run again within the hour, then runs once it has passed", async () => {
+  it("keeps names whose date is not real or does not match their folders", async () => {
+    const kept = [
+      "received/2026/08/2026-13-45_0900_x.pdf",
+      "received/2026/08/2026-08-31_2460_x.pdf",
+      "received/2026/08/2026-08-31_2400_x.pdf",
+      "received/2026/02/2026-02-30_0900_x.pdf",
+      "received/2026/09/2026-01-05_0900_x.pdf",
+      "received/2025/09/2026-09-05_0900_x.pdf",
+    ];
+    const { prune, home } = await setup([{ ...team, scope: "dedicated" }], {
+      "team-home": kept,
+    });
+
+    await prune();
+
+    for (const file of kept) {
+      expect((await stat(path.join(home.pathFor("team-home"), file))).isFile()).toBe(true);
+    }
+  });
+
+  it("hands the lease's signal to the deletion", async () => {
+    const { prune, home } = await setup([team], { "team-home": [OLD] });
+    const removeFiles = vi.spyOn(home, "removeFiles");
+
+    await prune();
+
+    expect(removeFiles).toHaveBeenCalledWith(
+      "team-home",
+      [OLD],
+      "shared/received",
+      expect.anything(),
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("does not run again within a day, then runs once it has passed", async () => {
     const { prune, prisma, advance } = await setup([team], { "team-home": [FRESH] });
 
     await prune();
-    advance(59 * 60_000);
+    advance(23 * 60 * 60_000);
     await prune();
     expect(prisma.computer.findMany).toHaveBeenCalledOnce();
 
-    advance(2 * 60_000);
+    advance(2 * 60 * 60_000);
     await prune();
     expect(prisma.computer.findMany).toHaveBeenCalledTimes(2);
   });

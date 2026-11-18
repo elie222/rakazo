@@ -261,8 +261,8 @@ describe("LocalAgentHomeStore path containment", () => {
         "received/linked/old.mov",
         "received/2026",
       ],
+      "received",
       context,
-      { emptyFoldersBelow: "received" },
     );
 
     await expect(stat(path.join(home, "received/2026/09"))).rejects.toMatchObject({
@@ -271,6 +271,43 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(await readFile(path.join(home, "received/2026/10/keep.mov"), "utf8")).toBe("x");
     expect(await readFile(path.join(outside, "old.mov"), "utf8")).toBe("x");
     expect((await stat(path.join(home, "received"))).isDirectory()).toBe(true);
+  });
+
+  it("refuses to remove a path outside the root folder, deleting nothing", async () => {
+    const { store, home } = await fixture();
+    for (const file of ["received/a.mov", "notes.txt"]) {
+      await mkdir(path.dirname(path.join(home, file)), { recursive: true });
+      await writeFile(path.join(home, file), "x");
+    }
+
+    for (const paths of [
+      ["received/a.mov", "notes.txt"],
+      ["received/../notes.txt"],
+      ["received"],
+    ]) {
+      await expect(store.removeFiles("bot-1", paths, "received", context)).rejects.toThrow(
+        /outside/i,
+      );
+    }
+    await expect(store.removeFiles("bot-1", ["notes.txt"], "", context)).rejects.toThrow();
+    expect(await readFile(path.join(home, "received/a.mov"), "utf8")).toBe("x");
+    expect(await readFile(path.join(home, "notes.txt"), "utf8")).toBe("x");
+  });
+
+  it("stops removing files once its signal aborts", async () => {
+    const { store, home } = await fixture();
+    const files = ["received/a.mov", "received/b.mov"];
+    for (const file of files) {
+      await mkdir(path.dirname(path.join(home, file)), { recursive: true });
+      await writeFile(path.join(home, file), "x");
+    }
+    const stop = new AbortController();
+    stop.abort();
+
+    expect(
+      await store.removeFiles("bot-1", files, "received", context, { signal: stop.signal }),
+    ).toBe(0);
+    expect(await readFile(path.join(home, "received/b.mov"), "utf8")).toBe("x");
   });
 
   it("never writes a binary file over one already there", async () => {

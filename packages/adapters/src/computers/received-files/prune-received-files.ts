@@ -5,8 +5,12 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { RECEIVED_FILE_MAX_AGE_MS } from "./received-path.js";
 import { homeHoldsReceivedFiles } from "./save-received-file.js";
 
-/** How often received copies are looked at for pruning. */
-const PRUNE_INTERVAL_MS = 60 * 60_000;
+/**
+ * How often received copies are looked at for pruning. Looking at a home loads it: a home kept
+ * in object storage is downloaded whole to list one folder, and nothing stored tells without
+ * that whether it has received files. A one-month retention does not need it more than daily.
+ */
+const PRUNE_INTERVAL_MS = 24 * 60 * 60_000;
 /** How long a prune holds a computer's received folder before another process may take it. */
 const PRUNE_LEASE_MS = 60_000;
 const COMPUTER_PAGE_SIZE = 100;
@@ -14,19 +18,32 @@ const COMPUTER_PAGE_SIZE = 100;
 /** `YYYY-MM-DD_HHMM_` at the start of a received file's name; the date is the time it arrived. */
 const RECEIVED_NAME = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})_/;
 
-function arrivedAt(fileName: string): number | undefined {
+/**
+ * When a received file arrived, from `YYYY-MM-DD_HHMM_` in its name, or undefined when the name
+ * is not one or its date is not real. The name is written in the bot's time zone and read here
+ * as UTC; the difference is hours, well within the retention's slack of a day over 30.
+ */
+function arrivedAt(fileName: string, year: string, month: string): number | undefined {
   const match = RECEIVED_NAME.exec(fileName);
-  if (!match) return undefined;
-  const [year, month, day, hour, minute] = match.slice(1).map(Number) as [
+  // The folders name the same year and month, or the file is not one of ours.
+  if (!match || match[1] !== year || match[2] !== month) return undefined;
+  const [y, m, d, hour, minute] = match.slice(1).map(Number) as [
     number,
     number,
     number,
     number,
     number,
   ];
-  const at = Date.UTC(year, month - 1, day, hour, minute);
-  // The name's own time zone is not known here, which a day's slack in a month's limit absorbs.
-  return Number.isNaN(at) ? undefined : at;
+  const at = new Date(Date.UTC(y, m - 1, d, hour, minute));
+  const real =
+    m >= 1 &&
+    m <= 12 &&
+    hour <= 23 &&
+    minute <= 59 &&
+    at.getUTCFullYear() === y &&
+    at.getUTCMonth() === m - 1 &&
+    at.getUTCDate() === d;
+  return real ? at.getTime() : undefined;
 }
 
 type Listing = Array<{ path: string; kind: "file" | "dir" }>;
@@ -61,7 +78,7 @@ async function expiredFiles(
     for (const month of await list(year.path)) {
       if (month.kind !== "dir" || !/^\d{2}$/.test(baseName(month.path))) continue;
       for (const file of await list(month.path)) {
-        const at = arrivedAt(baseName(file.path));
+        const at = arrivedAt(baseName(file.path), baseName(year.path), baseName(month.path));
         if (file.kind === "file" && at !== undefined && at < cutoff) expired.push(file.path);
       }
     }
@@ -69,20 +86,20 @@ async function expiredFiles(
   return expired;
 }
 
-/** Emptied month and year folders under `root` go with the files; `root` itself stays. */
+/** Deletes the expired files under `root` and the month and year folders that empties. */
 async function pruneComputer(
   home: AgentHomeStore,
   computer: { homeKey: string; scope: string },
   cutoff: number,
   context: AdapterContext,
+  signal: AbortSignal,
 ): Promise<number> {
   const root = parseComputerMode(computer.scope) === "team" ? "shared/received" : "received";
   const list = (directory: string) =>
     home.list(computer.homeKey, directory, context) as Promise<Listing>;
   const files = await expiredFiles(list, root, cutoff);
   if (!files.length) return 0;
-  await home.removeFiles(computer.homeKey, files, context, { emptyFoldersBelow: root });
-  return files.length;
+  return home.removeFiles(computer.homeKey, files, root, context, { signal });
 }
 
 /**
@@ -141,7 +158,7 @@ export function createReceivedFilesPruner(deps: {
               deps.prisma,
               `received-files:${computer.id}`,
               { ttlMs: PRUNE_LEASE_MS, signal: context.signal },
-              () => pruneComputer(deps.home, computer, cutoff, context),
+              (lease) => pruneComputer(deps.home, computer, cutoff, context, lease.signal),
             ).catch((error: unknown) => {
               if (error instanceof LeaseHeldError) return 0;
               throw error;

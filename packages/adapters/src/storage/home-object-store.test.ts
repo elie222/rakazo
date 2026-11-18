@@ -229,15 +229,54 @@ describe("ObjectAgentHomeStore", () => {
     const { store, otherHost } = await setup();
     await store.commit("bot-1", await staged({ "received/2026/10/old.mov": "x" }), context);
 
-    await store.removeFiles("bot-1", ["received/2026/10/old.mov"], context, {
-      emptyFoldersBelow: "received",
-    });
+    await store.removeFiles("bot-1", ["received/2026/10/old.mov"], "received", context);
 
     const restored = await otherHost();
     await restored.hydrate("bot-1");
     await expect(
       readFile(path.join(restored.pathFor("bot-1"), "received/2026/10/old.mov")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("stores a removal that stopped early, so deleted files do not come back", async () => {
+    const { store, otherHost } = await setup();
+    await store.commit(
+      "bot-1",
+      await staged({ "received/2026/10/a.mov": "x", "received/2026/10/b.mov": "x" }),
+      context,
+    );
+    const stop = new AbortController();
+    // Aborts after the first file is gone.
+    const removing = store.removeFiles(
+      "bot-1",
+      ["received/2026/10/a.mov", "received/2026/10/b.mov"],
+      "received",
+      context,
+      { signal: stop.signal },
+    );
+    stop.abort();
+    await removing;
+
+    const restored = await otherHost();
+    await restored.hydrate("bot-1");
+    const left = await Promise.all(
+      ["a", "b"].map((name) =>
+        readFile(path.join(restored.pathFor("bot-1"), `received/2026/10/${name}.mov`)).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    // Whatever the local copy lost, the stored one lost too.
+    const local = await Promise.all(
+      ["a", "b"].map((name) =>
+        readFile(path.join(store.pathFor("bot-1"), `received/2026/10/${name}.mov`)).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    expect(left).toEqual(local);
   });
 
   it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
