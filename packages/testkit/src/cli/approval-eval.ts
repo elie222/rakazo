@@ -22,8 +22,6 @@ import {
   APPROVAL_CASES,
   APPROVAL_FIXTURE_VERSION,
   approvalRequest,
-  caseHasOutsideContent,
-  caseReadContent,
   loadApprovalCases,
   runApprovalCases,
   summarizeApproval,
@@ -387,30 +385,13 @@ export async function runApprovalSuite(
     return notRun("The approval reviewer could not be constructed from this connection");
   }
 
-  // The product's own request fields for the owner's earlier messages and its facts, built by the
-  // same code the product runs, from each case's raw step output.
-  const reviewInputs =
-    variant.parts.has("history") || variant.parts.has("facts")
-      ? await import("../../../adapters/src/approvals/review-facts.ts")
-      : undefined;
+  // The owner's earlier messages as the product sends them, through the product's own helper.
+  const ownerMessages = variant.parts.has("history")
+    ? (await import("../../../adapters/src/approvals/review-owner-messages.ts")).reviewOwnerMessages
+    : undefined;
   const request = (c: ApprovalCase): AutoReviewRequest => {
-    if (!reviewInputs) return approvalRequest(c);
-    const earlier = reviewInputs.reviewOwnerMessages(c.earlierOwnerMessages ?? []);
-    const facts = variant.parts.has("facts")
-      ? reviewInputs.reviewFacts({
-          args: c.args,
-          ownerWords: [...earlier, c.userTask].join("\n"),
-          readContent: caseReadContent(c),
-          outsideContent: caseHasOutsideContent(c),
-          inputSchema: c.inputSchema,
-          knownModel: reviewInputs.catalogKnowsModel,
-        })
-      : undefined;
-    return {
-      ...approvalRequest(c),
-      ...(variant.parts.has("history") && earlier.length ? { ownerMessages: earlier } : {}),
-      ...(facts ? { facts } : {}),
-    };
+    const earlier = ownerMessages?.(c.earlierOwnerMessages ?? []) ?? [];
+    return { ...approvalRequest(c), ...(earlier.length ? { ownerMessages: earlier } : {}) };
   };
   const secrets = [apiKey, connection.baseUrl ?? ""];
   let stopRequested = false;
