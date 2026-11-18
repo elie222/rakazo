@@ -118,6 +118,7 @@ it("shows a running computer's live screen with an Open button", async () => {
   expect(container.querySelector('[data-state="running"] iframe')?.getAttribute("src")).toBe(
     "https://screen.example.test/",
   );
+  expect(container.querySelector("iframe")?.tabIndex).toBe(-1);
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
   );

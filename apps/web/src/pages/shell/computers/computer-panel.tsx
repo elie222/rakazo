@@ -159,7 +159,7 @@ function ComputerPreview({
               key={frame.key}
               title={frame.held ? undefined : t`Bot screen preview`}
               aria-hidden={frame.held || undefined}
-              tabIndex={frame.held ? -1 : undefined}
+              tabIndex={-1}
               ref={frame.held ? undefined : screenFrameRef}
               src={frame.url}
               sandbox={screenIframeSandbox(frame.url)}
