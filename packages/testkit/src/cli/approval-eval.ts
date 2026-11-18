@@ -4,16 +4,16 @@ import path from "node:path";
 import type { AutoReviewProvider, ModelCallObserver } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import type { ApprovalCaseResult } from "../evals/approval.js";
+import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
+import { SpendBudget, validatePricing } from "../evals/measurement.js";
+import { redact } from "../evals/report.js";
+import type { ApprovalCaseResult } from "../evals/suites/approval.js";
 import {
   APPROVAL_CASES,
   APPROVAL_FIXTURE_VERSION,
   runApprovalCases,
   summarizeApproval,
-} from "../evals/approval.js";
-import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
-import { SpendBudget, validatePricing } from "../evals/measurement.js";
-import { redact } from "../evals/report.js";
+} from "../evals/suites/approval.js";
 
 type ApprovalValues = {
   live?: boolean;
@@ -102,10 +102,10 @@ export async function runApprovalSuite(
   loadRootEnv();
 
   // Direct source imports keep the adapters barrel, and its database client, out of this suite.
-  const autoReview = await import("../../../adapters/src/auto-review.ts");
-  const { decisionModel } = await import("../../../adapters/src/decision-models.ts");
+  const autoReview = await import("../../../adapters/src/approvals/auto-review.ts");
+  const { decisionModel } = await import("../../../adapters/src/approvals/decision-models.ts");
   const { APPROVAL_DECISION_RUBRIC_VERSION } = await import(
-    "../../../adapters/src/decision-auto-review.ts"
+    "../../../adapters/src/approvals/decision-auto-review.ts"
   );
   report.rubricVersion = APPROVAL_DECISION_RUBRIC_VERSION;
 
@@ -202,7 +202,9 @@ export async function runApprovalSuite(
   let reviewer: AutoReviewProvider;
   try {
     if (isJev) {
-      const { JevAutoReviewProvider } = await import("../../../adapters/src/jev-auto-review.ts");
+      const { JevAutoReviewProvider } = await import(
+        "../../../adapters/src/providers/decision/typesafe/jev-auto-review.ts"
+      );
       reviewer = new JevAutoReviewProvider({
         apiKey,
         model: connection.modelId,
@@ -210,9 +212,11 @@ export async function runApprovalSuite(
         onUsage: async (usage) => record(usage),
       });
     } else if (catalog) {
-      const { HttpDecisionProvider } = await import("../../../adapters/src/http-decisions.ts");
+      const { HttpDecisionProvider } = await import(
+        "../../../adapters/src/approvals/http-decisions.ts"
+      );
       const { DecisionAutoReviewProvider } = await import(
-        "../../../adapters/src/decision-auto-review.ts"
+        "../../../adapters/src/approvals/decision-auto-review.ts"
       );
       reviewer = new DecisionAutoReviewProvider({
         provider: new HttpDecisionProvider("openrouter", {
@@ -224,7 +228,7 @@ export async function runApprovalSuite(
         model: connection.modelId,
       });
     } else {
-      const { PiAgentRuntime } = await import("../../../adapters/src/pi-runtime.ts");
+      const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
       reviewer = new autoReview.LlmAutoReviewProvider({
         runtime: new PiAgentRuntime({ modelCallObserver: callObserver }),
         checker: { provider: connection.provider, model: connection.modelId },

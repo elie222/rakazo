@@ -1,5 +1,5 @@
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
 
 export const noneComputer: ComputerProviderDefinition = {

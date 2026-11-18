@@ -7,12 +7,12 @@ import type {
   ToolRouterCreateSessionConfig,
   ToolRouterToolkitsOptions,
 } from "@composio/core";
-import { collectPages } from "../../../connector-catalog.js";
-import type { EmulatedGithubRelease } from "../../../release-watch.js";
+import { collectPages } from "../../../integrations/connector-catalog.js";
+import type { EmulatedGithubRelease } from "../../../routines/release-watch.js";
 import {
   DEFAULT_RAKAZO_EMULATED_RELEASES,
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
-} from "../../../release-watch.js";
+} from "../../../routines/release-watch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import type { ComposioClient, ComposioSession } from "./composio-connector.js";
 

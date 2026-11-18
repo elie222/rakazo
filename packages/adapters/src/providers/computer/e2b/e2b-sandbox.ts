@@ -1,15 +1,15 @@
-import type { RemoteDesktopSdk } from "../../../remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
+import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 
 export type {
   RemoteDesktop as E2BDesktop,
   RemoteDesktopSdk as E2BSandboxSdk,
-} from "../../../remote-desktop-sandbox.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
 export {
   keepingAwake,
   remoteDesktopCreateOptions as e2bCreateOptions,
-} from "../../../remote-desktop-sandbox.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
 
 /** The SDK loads only when an E2B computer is used, never in the default runtime. */
 const e2b = async () => (await import("@e2b/desktop")).Sandbox;

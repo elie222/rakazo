@@ -11,21 +11,22 @@ import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
-import type { connectedAppMarks } from "../../lib/connected-apps";
-import type { SpaceQueries } from "../../lib/query";
-import { queryClient } from "../../lib/query";
-import type { createSpaceRpc, RpcClient } from "../../lib/rpc";
-import type { ShellOverlay } from "../shell-overlay";
-import { FALLBACK_BOT_COLOR } from "./chat-shared";
+import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
+import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
+import type { SpaceQueries } from "../../lib/query/query";
+import { queryClient } from "../../lib/query/query";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { FALLBACK_BOT_COLOR } from "./chat/chat-shared";
+import type { ShellOverlay } from "./shell-overlay-url";
 
 const SettingsOverlay = lazyOverlay(() =>
-  import("../SettingsOverlay").then((module) => module.SettingsOverlay),
+  import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay),
 );
 const PeerMessagesOverlay = lazyOverlay(() =>
-  import("../PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
+  import("../settings/PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
 );
 const PluginsOverlay = lazyOverlay(() =>
-  import("../PluginsOverlay").then((module) => module.PluginsOverlay),
+  import("../plugins/PluginsOverlay").then((module) => module.PluginsOverlay),
 );
 const SkillsDialog = lazyOverlay(() =>
   import("../../components/integrations/skills-dialog").then((module) => module.SkillsDialog),
@@ -36,7 +37,7 @@ const BotTemplatesDialog = lazyOverlay(() =>
   ),
 );
 const McpServersOverlay = lazyOverlay(() =>
-  import("../McpServersOverlay").then((module) => module.McpServersOverlay),
+  import("../integrations/McpServersOverlay").then((module) => module.McpServersOverlay),
 );
 
 /** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
@@ -56,6 +57,7 @@ export function AppOverlays({
   setOverlay,
   activeBotId,
   stdioEnabled,
+  messagingEnabled,
   onConnectedAppsChange,
   onOpenBot,
 }: {
@@ -63,6 +65,8 @@ export function AppOverlays({
   setOverlay: (next: ShellOverlay) => void;
   activeBotId: string | undefined;
   stdioEnabled: boolean;
+  /** Messaging settings can be opened; a link there is shown only then. */
+  messagingEnabled: boolean;
   onConnectedAppsChange: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onOpenBot: (bot: Bot) => void;
 }) {
@@ -76,6 +80,11 @@ export function AppOverlays({
           onClose={() => setOverlay(null)}
           onOpenMcp={() => setOverlay({ kind: "mcp" })}
           onOpenTemplates={openTemplates}
+          onOpenMessaging={
+            messagingEnabled
+              ? () => setOverlay({ kind: "settings", section: "messaging", spaceId: null })
+              : undefined
+          }
         />
       ) : null}
       {overlay?.kind === "skills" ? (
@@ -226,6 +235,7 @@ export function SettingsOverlays({
             void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
           }}
           onVoiceStatusMaybeChanged={async () => {
+            invalidateVoiceConsent();
             try {
               queryClient.setQueryData(
                 voiceStatusKey,

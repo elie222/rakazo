@@ -32,6 +32,7 @@ infra/sandboxes/supervisor/dist
 .vercel
 .cache
 artifacts
+!packages/contracts/src/artifacts
 backups
 test-report
 verify-report
@@ -52,3 +53,6 @@ playwright-report-www
 # Downloaded embedded computer screen SDK files
 apps/web/public/computer-screen/*.js
 apps/web/public/computer-screen/sdk/
+
+# Private marketing pages, cloned in by apps/www/scripts/clone-marketing.sh
+apps/www/src/marketing/

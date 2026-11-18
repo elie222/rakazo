@@ -14,11 +14,11 @@ import {
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { connectedAppMarks } from "../../lib/connected-apps";
-import { optionalCatalogFeedProbe } from "../../lib/optional-catalog-feed";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { connectedAppMarks } from "../../lib/integrations/connected-apps";
+import { optionalCatalogFeedProbe } from "../../lib/integrations/optional-catalog-feed";
+import { useSpaceQueries } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 const NO_CATALOG: ConnectionCatalogItem[] = [];
 const NO_CONNECTIONS: Connection[] = [];
@@ -298,38 +298,17 @@ export function usePluginConnections({
     }
   }
 
-  async function setVerbatimResults(item: ConnectionCatalogItem, verbatimResults: boolean) {
-    const matches = catalogItemAccounts(connections, item).filter(
-      (entry) => entry.status === "connected" || entry.status === "pending",
-    );
-    if (matches.length === 0) return;
-    setPending(`verbatim:${catalogItemKey(item)}`);
+  async function setVerbatimResults(connectionId: string, verbatimResults: boolean) {
+    setPending(`verbatim:${connectionId}`);
     setCatalogError(null);
     try {
-      const results = await Promise.allSettled(
-        matches.map((row) =>
-          rpc.connections.setVerbatimResults({
-            connectionId: row.id,
-            verbatimResults,
-          }),
+      const updated = await rpc.connections.setVerbatimResults({ connectionId, verbatimResults });
+      await updateIntegrations((current) => ({
+        ...current,
+        connections: current.connections.map((entry) =>
+          entry.id === connectionId ? updated : entry,
         ),
-      );
-      const updated = results
-        .filter(
-          (result): result is PromiseFulfilledResult<Connection> => result.status === "fulfilled",
-        )
-        .map((result) => result.value);
-      if (updated.length > 0) {
-        const byId = new Map(updated.map((row) => [row.id, row]));
-        await updateIntegrations((current) => ({
-          ...current,
-          connections: current.connections.map((entry) => byId.get(entry.id) ?? entry),
-        }));
-      }
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") {
-        throw failed.reason;
-      }
+      }));
     } catch (err) {
       setCatalogError(errorText(err, t`Could not update connection`));
     } finally {

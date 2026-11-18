@@ -29,7 +29,6 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -39,35 +38,44 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import type {
   AddCustomOption,
   SourceAuth,
   SourceKind,
-} from "../../components/add-custom-integration";
-import { AddCustomForm, AddCustomMenu } from "../../components/add-custom-integration";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { ConnectorIcon } from "../../components/connector-icon";
-import type { ConnectionTool } from "../../components/integration-detail";
-import { IntegrationDetail } from "../../components/integration-detail";
-import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integration-plugins";
-import { createIntegrationsStyles, LOGO_SIZE } from "../../components/integrations-styles";
-import { MenuPicker } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { Chevron } from "../../components/row-accessories";
-import { mobileTokens } from "../../lib/appearance";
-import type { IntegrationsCacheScope, IntegrationsSnapshot } from "../../lib/integrations-cache";
+} from "../../components/integrations/add-custom-integration";
+import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
+import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
+import type { ConnectionTool } from "../../components/integrations/integration-detail";
+import { IntegrationDetail } from "../../components/integrations/integration-detail";
+import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integrations/integration-plugins";
+import {
+  createIntegrationsStyles,
+  LOGO_SIZE,
+} from "../../components/integrations/integrations-styles";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { Chevron } from "../../components/ui/row-accessories";
+import { rpc } from "../../lib/api/api";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import type {
+  IntegrationsCacheScope,
+  IntegrationsSnapshot,
+} from "../../lib/integrations/integrations-cache";
 import {
   integrationsCacheScope,
   isIntegrationsScopeCurrent,
   persistedIntegrationsCacheScope,
   readIntegrationsCache,
   writeIntegrationsCache,
-} from "../../lib/integrations-cache";
+} from "../../lib/integrations/integrations-cache";
 import {
   beginConnection,
-  beginMcpOAuth,
   completeConnection,
   createMcpServer,
   installCapability,
@@ -82,11 +90,9 @@ import {
   renameConnection,
   revokeConnection,
   setConnectionVerbatimResults,
-} from "../../lib/integrations-screen-rpc";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
+} from "../../lib/integrations/integrations-screen-rpc";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   browsablePlugins,
   filterPlugins,
@@ -95,9 +101,10 @@ import {
   managedPluginParams,
   pluginCategories,
   pluginParams,
-} from "../../lib/plugin-marketplace";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -157,7 +164,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -267,6 +273,11 @@ export default function Integrations() {
           matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
+  const noMatch =
+    catalogsReady &&
+    filtering &&
+    catalogApps.length + pluginMatches.length + brandMatches.length + savedServerMatches.length ===
+      0;
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
 
   const detailItem = useMemo(() => {
@@ -465,16 +476,6 @@ export default function Integrations() {
       };
     }, []),
   );
-
-  useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -803,22 +804,14 @@ export default function Integrations() {
     }
   }
 
-  async function setVerbatimResults(item: ConnectionCatalogItem, verbatimResults: boolean) {
-    const matches = accountsFor(item);
-    if (matches.length === 0) return;
+  async function setVerbatimResults(connectionId: string, verbatimResults: boolean) {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
-    setPending(`verbatim:${catalogItemKey(item)}`);
+    setPending(`verbatim:${connectionId}`);
     setCatalogError(null);
     try {
-      for (const row of matches) {
-        const updated = await setConnectionVerbatimResults({
-          connectionId: row.id,
-          verbatimResults,
-        });
-        if (!isCurrent()) return;
-        updateAccount(updated);
-      }
+      const updated = await setConnectionVerbatimResults({ connectionId, verbatimResults });
+      if (isCurrent()) updateAccount(updated);
     } catch (reason) {
       if (!isCurrent()) return;
       setCatalogError(errorText(reason, t`Could not update connection`));
@@ -861,9 +854,9 @@ export default function Integrations() {
     setSourcePreset(preset);
     setSourceError(null);
     setName(preset?.name ?? "");
-    setUrl(preset?.url ?? "");
+    setUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setSourceAuth(preset ? "bearer" : "none");
+    setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 
@@ -873,15 +866,8 @@ export default function Integrations() {
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await beginMcpOAuth({ serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await retryRefresh(isCurrent);
-      }
+      await signInToMcpServer(rpc, serverId);
+      if (isCurrent()) await retryRefresh(isCurrent);
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
     } finally {
@@ -987,6 +973,18 @@ export default function Integrations() {
           <Text numberOfLines={1} style={styles.title}>
             {label}
           </Text>
+          {item.chatApp && !connected ? (
+            <Text style={styles.secondary}>
+              {t`Tools for your bot.`}{" "}
+              <Text
+                accessibilityRole="link"
+                onPress={() => router.push("/messaging")}
+                style={styles.inlineLink}
+              >
+                {t`Chat from ${ph({ name: label })}`}
+              </Text>
+            </Text>
+          ) : null}
         </View>
         {renderCatalogActions(item, label)}
       </>
@@ -1175,9 +1173,8 @@ export default function Integrations() {
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
                 onConnect={() => void connect(detailItem)}
-                onSetVerbatimResults={(verbatimResults) =>
-                  void setVerbatimResults(detailItem, verbatimResults)
-                }
+                onSetVerbatimResults={setVerbatimResults}
+                onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (
               <>
@@ -1247,13 +1244,19 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogsReady &&
-                catalogApps.length === 0 &&
-                pluginMatches.length === 0 &&
-                brandMatches.length === 0 &&
-                savedServerMatches.length === 0 &&
-                filtering ? (
+                {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
+                ) : null}
+                {catalogsReady ? (
+                  <IntegrationCatalogSearch
+                    query={query}
+                    hidden={Boolean(category)}
+                    noLocalMatch={noMatch}
+                    onChanged={(serverId) => {
+                      if (serverId) setOauthServerId(serverId);
+                      void retryRefresh();
+                    }}
+                  />
                 ) : null}
 
                 {!category && renderedApps.length < catalogApps.length ? (

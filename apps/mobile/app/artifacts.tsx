@@ -16,19 +16,23 @@ import {
   Text,
   View,
 } from "react-native";
-import { BotAvatar } from "../components/bot-avatar";
-import { NativeSegmentedControl } from "../components/native-segmented-control";
-import { NativeSymbol } from "../components/native-symbol";
-import { formatActivityRelativeTime } from "../lib/activity";
-import { rpc } from "../lib/api";
-import { mobileTokens } from "../lib/appearance";
-import type { MobileArtifactSummary } from "../lib/artifacts";
-import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
-import { useContentBottomInset } from "../lib/content-bottom-inset";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useThemedStyles } from "../lib/native";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { NativeSegmentedControl } from "../components/native/native-segmented-control";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { rpc } from "../lib/api/api";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import type { MobileArtifactSummary } from "../lib/artifacts/artifacts";
+import {
+  listSpaceArtifacts,
+  matchesArtifactQuery,
+  removeArtifact,
+} from "../lib/artifacts/artifacts";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
+import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
 
 const PAGE_SIZE = 30;
 

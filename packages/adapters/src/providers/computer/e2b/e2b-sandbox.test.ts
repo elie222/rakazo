@@ -16,11 +16,11 @@ import {
 import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { sandboxIdleMs } from "../../../computer-idle.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../computer-workspace.js";
-import { desktopCommandResponder } from "../../../linux-desktop.test-support.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
-import { assertSandboxReadLimit } from "../../../sandbox-test-support.js";
+import { sandboxIdleMs } from "../../../computers/computer-idle.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../computers/computer-workspace.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
+import { assertSandboxReadLimit } from "../../../computers/sandbox/sandbox-test-support.js";
+import { desktopCommandResponder } from "../../../computers/screens/linux-desktop.test-support.js";
 import type { E2BDesktop, E2BSandboxSdk } from "./e2b-sandbox.js";
 import { E2BSandboxProvider, e2bCreateOptions, keepingAwake } from "./e2b-sandbox.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";

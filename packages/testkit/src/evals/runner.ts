@@ -3,6 +3,7 @@ import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/a
 import { historyCompactJob, runJobKey } from "@rakazo/adapter-kit";
 import {
   CapturingNotificationProvider,
+  handoffToGroupBot,
   MessagingTeamChatEmulator,
   messageBot,
 } from "@rakazo/adapters";
@@ -25,8 +26,6 @@ import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
-import type { ClarificationBlock } from "./clarification.js";
-import { expectedClarificationText } from "./clarification.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -37,10 +36,12 @@ import type { FailureCategory, TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot, redact } from "./report.js";
 import { browserScreen } from "./sandbox.js";
 import { EvalServices } from "./services.js";
-import type { RoutineEvidence } from "./silence.js";
-import { SilenceObserver } from "./silence-observer.js";
 import type { LedgerCall } from "./step-accounting.js";
 import { measureWorkflowSteps } from "./step-accounting.js";
+import type { ClarificationBlock } from "./suites/clarification.js";
+import { expectedClarificationText } from "./suites/clarification.js";
+import type { RoutineEvidence } from "./suites/silence.js";
+import { SilenceObserver } from "./suites/silence-observer.js";
 import type { ObservedToolCall, ObservedToolList } from "./tool-calls.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> | Response };
@@ -633,6 +634,22 @@ export async function runTrial(
             where: { id: runId },
             select: { sourceMessageId: true },
           }));
+      } else if ("fromMember" in step) {
+        const memberId = group?.memberIds.get(step.fromMember);
+        if (!group || !memberId)
+          throw new EvalFailure("harness", "A fromMember step needs a group member");
+        runId = (await deliverPeerMessage(
+          prisma,
+          handles.jobs,
+          { id: memberId, name: step.fromMember },
+          botId,
+          step.text,
+          group.id,
+        ))!;
+        ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
+          where: { id: runId },
+          select: { sourceMessageId: true },
+        }));
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(
@@ -751,7 +768,11 @@ export async function runTrial(
           .slice(stepIndex + 1)
           .some(
             (next) =>
-              "ask" in next || "slack" in next || "wakeRoutine" in next || "fromPeer" in next,
+              "ask" in next ||
+              "slack" in next ||
+              "wakeRoutine" in next ||
+              "fromPeer" in next ||
+              "fromMember" in next,
           )
       )
         setupRunIds.add(runId);
@@ -1099,7 +1120,7 @@ export async function runTrial(
     });
     const routines = await prisma.routine.findMany({
       where: { botId },
-      select: { name: true, prompt: true, crons: true, active: true },
+      select: { name: true, prompt: true, crons: true, active: true, inChat: true },
     });
     // schedule_cancel deletes the routine, but its creation event stays in the thread. The event
     // append is best-effort, so a routine that still exists counts even without one.
@@ -1133,6 +1154,13 @@ export async function runTrial(
       ...(historySummary ? { historySummary } : {}),
       replies,
       memberReplies,
+      ...(group
+        ? {
+            groupProgressEvents: await prisma.event.count({
+              where: { threadId: group.threadId, type: "thread.progress" },
+            }),
+          }
+        : {}),
       routineRuns,
       peerExchanges,
       ...(deliveries.length ? { deliveries } : {}),
@@ -1142,6 +1170,7 @@ export async function runTrial(
       records: services.records,
       notes: services.notes,
       calls: services.calls,
+      subjectBotId: botId,
       apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
       routines,
       routinesCreated,
@@ -1178,6 +1207,17 @@ export async function runTrial(
         ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         ...(memberReplies ? { "member-replies": JSON.stringify(memberReplies) } : {}),
         ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
+        // What graders check for writes, so a failed write criterion can be read.
+        ...(evidence.calls.length
+          ? {
+              "service-calls": JSON.stringify(
+                evidence.calls.map(({ botId: caller, ...call }) => ({
+                  ...call,
+                  by: caller === botId ? "subject" : caller === peer?.id ? "peer" : "other",
+                })),
+              ),
+            }
+          : {}),
         ...(apps.length
           ? {
               "app-calls": JSON.stringify(
@@ -1350,8 +1390,8 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
 }
 
 /**
- * Speak as the peer through message_bot's own delivery, so the subject wakes exactly as it
- * would from a teammate. The peer's turn is fixture setup: no model is paid to write its words.
+ * Speak as a teammate through message_bot or a group handoff, so the subject wakes
+ * through the product delivery path. The peer's turn is fixture setup: no model is paid to write its words.
  */
 async function deliverPeerMessage(
   prisma: EvalApp["prisma"],
@@ -1359,6 +1399,7 @@ async function deliverPeerMessage(
   peer: { id: string; name: string },
   targetBotId: string,
   text: string,
+  groupId?: string,
 ) {
   const { spaceId, userId, thread } = await prisma.bot.findUniqueOrThrow({
     where: { id: peer.id },
@@ -1382,11 +1423,28 @@ async function deliverPeerMessage(
       botId: peer.id,
       threadId: thread.id,
       taskId: task.id,
-      status: "completed",
+      status: groupId ? "running" : "completed",
       trigger: "user",
-      completedAt: new Date(),
+      completedAt: groupId ? null : new Date(),
     },
   });
+  if (groupId) {
+    try {
+      const sent = await handoffToGroupBot(
+        { prisma, events: createThreadEvents(prisma), jobs },
+        { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
+        groupId,
+        { bot_id: targetBotId, message: text },
+      );
+      if (!sent.ok) throw new EvalFailure("harness", `Group handoff failed: ${sent.error}`);
+      return sent.runId;
+    } finally {
+      await prisma.run.update({
+        where: { id: run.id },
+        data: { status: "completed", completedAt: new Date() },
+      });
+    }
+  }
   const sent = await messageBot(
     { prisma, events: createThreadEvents(prisma), jobs },
     { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },

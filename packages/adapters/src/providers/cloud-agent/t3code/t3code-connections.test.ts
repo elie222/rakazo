@@ -2,9 +2,12 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import type { CloudAgentConnection } from "../../../cloud-agent-factory.js";
-import { cloudAgentForActor, executeCloudAgentTool } from "../../../cloud-agent-service.js";
-import type { McpOAuthBroker } from "../../../mcp-oauth.js";
+import type { CloudAgentConnection } from "../../../cloud-agents/cloud-agent-factory.js";
+import {
+  cloudAgentForActor,
+  executeCloudAgentTool,
+} from "../../../cloud-agents/cloud-agent-service.js";
+import type { McpOAuthBroker } from "../../../mcp/mcp-oauth.js";
 import { T3CodeConnections } from "./t3code-connections.js";
 import { T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 

@@ -1,6 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ResolveHostname } from "../../../network-address.js";
+import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
 import {

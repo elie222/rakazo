@@ -7,7 +7,7 @@
   "packages/adapters/src/providers/computer/kubernetes/kubernetes-sandbox.ts": 2,
   "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts": 1,
   "packages/adapters/src/providers/computer/wuying/wuying-sandbox.ts": 3,
-  "packages/adapters/src/screen-turn.ts": 1,
-  "packages/core/src/screen-reconnect.ts": 1,
-  "packages/db/src/database-outage.ts": 1
+  "packages/adapters/src/runs/turn/screen-turn.ts": 1,
+  "packages/core/src/computers/screen-reconnect.ts": 1,
+  "packages/db/src/database/database-outage.ts": 1
 }

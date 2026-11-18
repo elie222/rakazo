@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   MemoryObjectStorage,
   objectStorageConformance,
-} from "../../../object-storage.test-support.js";
+} from "../../../storage/object-storage.test-support.js";
 import {
   objectStorageConfigFromEnv,
   objectStorageRequestHandler,
