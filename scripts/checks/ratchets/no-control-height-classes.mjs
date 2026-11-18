@@ -1,5 +1,5 @@
 export const message =
-  "Do not set the height of a Button, SelectTrigger, OptionSelect or Input with a className (h-*, min-h-*, size-*). Pick its size prop instead: each size name is the same height on every control (packages/ui-web/src/lib/control-size.ts), so controls placed side by side line up. A control that grows with its content may use h-auto.";
+  "Do not set the height of a Button, SelectTrigger, OptionSelect or Input with a className (h-*, min-h-*, size-*). Pick its size prop instead: each size name is the same height on every control (packages/ui-web/src/lib/control-size.ts), so controls placed side by side line up. A control that grows with its content may use h-auto, with a min-h-* floor.";
 
 export const include = [
   "apps/web/src/**/*.tsx",
@@ -77,8 +77,10 @@ export function count(text) {
       if (constants.has(name)) literals.push(constants.get(name));
     }
     const tokens = literals.flatMap((literal) => literal.slice(1, -1).split(/\s+/));
-    if (tokens.includes("h-auto")) continue;
-    const heights = tokens.filter(setsHeight);
+    const grows = tokens.includes("h-auto");
+    const heights = tokens.filter(
+      (token) => setsHeight(token) && !(grows && /^(?:h-auto|min-h-)/.test(token)),
+    );
     if (heights.length === 0) continue;
     hits.push({
       line: text.slice(0, match.index).split("\n").length,

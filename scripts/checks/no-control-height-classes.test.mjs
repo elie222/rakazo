@@ -24,6 +24,7 @@ const sources = {
     '<Button size="icon" className="[&_svg]:size-5" />',
     '<Button className="h-auto min-h-8 whitespace-normal">Long label</Button>',
     '<Input size="lg" className="w-full" />',
+    '<Button className="h-auto size-9" />',
     '<ButtonGroup className="h-9" />',
   ].join("\n"),
   "packages/ui-web/src/components/ui/picker.tsx": '<SelectTrigger className="h-10" />\n',
@@ -40,7 +41,7 @@ test("counts heights set by className on a control, across lines and through con
   assert.deepEqual(
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
-      "apps/web/src/pages/Settings.tsx": [1, 2, 7],
+      "apps/web/src/pages/Settings.tsx": [1, 2, 7, 11],
       "packages/ui-web/src/components/ui/picker.tsx": [1],
     },
   );
