@@ -146,9 +146,12 @@ function Reading() {
 export function AgentImportForm({
   onClose,
   onCreated,
+  onCreatingChange,
 }: {
   onClose: () => void;
   onCreated: (bot: Bot) => void;
+  /** Told while the bot is being created, when leaving would lose track of it. */
+  onCreatingChange?: (creating: boolean) => void;
 }) {
   const { t } = useLingui();
   const ids = useId();
@@ -194,7 +197,11 @@ export function AgentImportForm({
   }, []);
   const [reply, setReply] = useState("");
   const [grokReply, setGrokReply] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreatingState] = useState(false);
+  function setCreating(next: boolean) {
+    setCreatingState(next);
+    onCreatingChange?.(next);
+  }
   const assistant = AGENT_IMPORT_ASSISTANTS.find((item) => item.id === origin);
   const assistantName = assistant?.name;
 
@@ -386,6 +393,7 @@ export function AgentImportForm({
           variant="ghost"
           size="icon-sm"
           aria-label={t`Close`}
+          disabled={creating}
           onClick={() => {
             stopReading();
             onClose();
