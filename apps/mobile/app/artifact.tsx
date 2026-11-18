@@ -106,6 +106,11 @@ async function loadContent(versionId: string): Promise<ReadyContent> {
   return { status: "ready", artifact: withoutContent(artifact), file, preview };
 }
 
+/** Refetch a version whose cached file the OS purged; the download writes to the same path. */
+async function liveContent(content: ReadyContent): Promise<ReadyContent> {
+  return content.file.exists ? content : loadContent(content.artifact.id);
+}
+
 async function loadPage(familyId: string, exactVersionId: string | null): Promise<LoadedPage> {
   let versions: ArtifactVersion[] = [];
   try {
@@ -133,7 +138,7 @@ export default function ArtifactDetailScreen() {
   const router = useRouter();
   const deletionContext = useRef<object | null>(null);
   const pages = useRef(new Map<string, LoadedPage>());
-  const downloading = useRef(false);
+  const downloading = useRef<string | null>(null);
   const gallery = useMemo(() => parseArtifactGallery(galleryParam), [galleryParam]);
   // Only a list page with more than one media artifact can swipe; deep links and chat stay single.
   const pagerGallery = useMemo(
@@ -320,28 +325,34 @@ export default function ArtifactDetailScreen() {
   const share = useCallback(async () => {
     if (content.status !== "ready") return;
     try {
-      await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
+      const loaded = await liveContent(content);
+      await shareLocalFile(loaded.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
       Alert.alert(t`Could not share this artifact`, errorText(error, t`Try again.`));
     }
   }, [content, t]);
 
   const download = useCallback(async () => {
-    if (content.status !== "ready" || downloading.current) return;
-    downloading.current = true;
+    if (content.status !== "ready" || downloading.current === content.artifact.id) return;
+    const pageId = activeId;
+    const artifact = content.artifact;
+    downloading.current = artifact.id;
     try {
+      const loaded = await liveContent(content);
       const result = await downloadArtifactToDevice(
-        content.file.uri,
-        content.artifact.mimeType,
-        content.artifact.name,
+        loaded.file.uri,
+        artifact.mimeType,
+        artifact.name,
       );
-      if (result === "saved") Alert.alert(t`Saved to Photos`);
+      if (result === "saved" && activeIdRef.current === pageId) Alert.alert(t`Saved to Photos`);
     } catch (error) {
-      Alert.alert(t`Could not download this artifact`, errorText(error, t`Try again.`));
+      if (activeIdRef.current === pageId) {
+        Alert.alert(t`Could not download this artifact`, errorText(error, t`Try again.`));
+      }
     } finally {
-      downloading.current = false;
+      if (downloading.current === artifact.id) downloading.current = null;
     }
-  }, [content, t]);
+  }, [activeId, content, t]);
 
   const downloadable = content.status === "ready" && isMediaArtifact(content.artifact);
   const activeGalleryItem = pagerGallery?.find((item) => item.id === activeId) ?? null;

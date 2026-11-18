@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   remove: vi.fn(),
   download: vi.fn(),
   mimeType: "text/plain",
+  fileUri: "file:///test",
+  fileExists: true,
   options: {} as { headerRight?: () => ReactNode; title?: string },
 }));
 vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
@@ -81,7 +83,11 @@ vi.mock("./artifacts", () => ({
   removeArtifact: state.remove,
 }));
 vi.mock("./artifact-open", () => ({
-  writeArtifactCacheFile: () => ({ text: async () => "text", uri: "file:///test" }),
+  writeArtifactCacheFile: () => ({
+    text: async () => "text",
+    uri: state.fileUri,
+    exists: state.fileExists,
+  }),
   shareLocalFile: vi.fn(),
 }));
 vi.mock("./artifact-download", () => ({ downloadArtifactToDevice: state.download }));
@@ -108,6 +114,8 @@ beforeEach(() => {
   state.remove.mockReset();
   state.download.mockReset();
   state.mimeType = "text/plain";
+  state.fileUri = "file:///test";
+  state.fileExists = true;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -120,6 +128,15 @@ afterEach(() => {
 });
 async function render() {
   await act(async () => root.render(<ArtifactDetail />));
+}
+async function pressHeader(label: string) {
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  await act(async () => node.querySelector<HTMLElement>(`[aria-label="${label}"]`)!.click());
+  act(() => {
+    buttons.unmount();
+  });
 }
 async function startDelete() {
   const pending = deferred();
@@ -202,4 +219,38 @@ it("does not offer Download for a text artifact", async () => {
   act(() => {
     buttons.unmount();
   });
+});
+it("reloads a purged cached file before saving", async () => {
+  state.mimeType = "image/png";
+  state.fileUri = "file:///gone";
+  state.fileExists = false;
+  state.download.mockResolvedValue("saved");
+  await render();
+  state.fileUri = "file:///fresh";
+  await pressHeader("Download");
+  expect(state.download).toHaveBeenCalledWith("file:///fresh", "image/png", "a");
+});
+it("keeps a save from reporting over the next artifact", async () => {
+  state.mimeType = "image/png";
+  const saving = deferred<"saved">();
+  state.download.mockReturnValue(saving.promise);
+  await render();
+  await pressHeader("Download");
+  state.id = "b";
+  await render();
+  await act(async () => saving.resolve("saved"));
+  expect(state.alert).not.toHaveBeenCalled();
+});
+it("starts the next artifact's save while one is pending", async () => {
+  state.mimeType = "image/png";
+  const saving = deferred<"saved">();
+  state.download.mockReturnValueOnce(saving.promise).mockResolvedValue("shared");
+  await render();
+  await pressHeader("Download");
+  state.id = "b";
+  await render();
+  await pressHeader("Download");
+  expect(state.download).toHaveBeenCalledTimes(2);
+  await act(async () => saving.resolve("saved"));
+  expect(state.alert).not.toHaveBeenCalled();
 });
