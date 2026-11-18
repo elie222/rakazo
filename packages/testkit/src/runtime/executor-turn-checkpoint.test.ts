@@ -180,6 +180,7 @@ function fixture(
         }),
       },
       spaceMember: { findUnique: async () => ({ id: "member-1" }) },
+      deploymentModelConnection: { findUnique: async () => null },
       deploymentSettings: {
         findUnique: async () => ({
           defaultModelProvider: model.provider,
