@@ -81,6 +81,9 @@ export function bindDeploymentModelCredential(
     deploymentCredential: {
       resolve: (signal: AbortSignal) =>
         sharedModelRequestCredential(prisma, secrets, model, signal),
+      ...(model.method === "oauth"
+        ? { invalidate: (key: string) => invalidateToken(model.revision, key) }
+        : {}),
     },
   };
 }
@@ -125,10 +128,14 @@ export async function testSharedModel(
   }
 }
 
-// This grant exchanges an assertion instead of rotating a refresh token. Each worker may
-// exchange independently, while its own concurrent calls share a short-lived token.
+// Each worker can exchange the assertion independently. Concurrent callers share the result
+// and deadline, including failures. A credential lock would queue each caller's exchange.
 let cached: { revision: string; token: Access } | undefined;
 const exchanges = new Map<string, Promise<Access>>();
+
+function invalidateToken(revision: string, key: string): void {
+  if (cached?.revision === revision && cached.token.key === key) cached = undefined;
+}
 
 function accessFor(model: SharedDeploymentModel, binding: string): Promise<Access> {
   const { revision, provider } = model;

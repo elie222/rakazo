@@ -119,18 +119,7 @@ export async function startTurnModel(
   const { bot, main, modelChoice, overrideCredential, settings, shared } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
-  const pinError =
-    !pinnedComputerModels &&
-    run.modelPinned &&
-    !(
-      (await modelCreditBillingEnabled(deps)) &&
-      (modelChoice.modelProvider === runDeployment?.provider ||
-        (modelChoice.modelProvider &&
-          modelChoice.modelId &&
-          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
-    )
-      ? pinnedModelCredentialError(modelChoice, overrideCredential)
-      : undefined;
+  const creditsEnabled = !pinnedComputerModels && (await modelCreditBillingEnabled(deps));
   const selected = pinnedComputerModels
     ? {
         provider: pinnedComputerModels.main.provider,
@@ -142,12 +131,29 @@ export async function startTurnModel(
     : selectConfiguredModel({
         override: modelChoice,
         overrideCredential,
+        pinned: run.modelPinned,
         main,
-        hostedProvider: (await modelCreditBillingEnabled(deps))
-          ? resolveDeploymentModel().provider
-          : undefined,
+        hostedProvider: creditsEnabled ? resolveDeploymentModel().provider : undefined,
         defaults: { settings, deployment: runDeployment, shared },
       });
+  const usesSharedPin =
+    "deploymentConnection" in selected &&
+    selected.deploymentConnection &&
+    selected.provider === modelChoice.modelProvider &&
+    selected.id === modelChoice.modelId;
+  const pinError =
+    !pinnedComputerModels &&
+    run.modelPinned &&
+    !usesSharedPin &&
+    !(
+      creditsEnabled &&
+      (modelChoice.modelProvider === runDeployment?.provider ||
+        (modelChoice.modelProvider &&
+          modelChoice.modelId &&
+          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
+    )
+      ? pinnedModelCredentialError(modelChoice, overrideCredential)
+      : undefined;
   const selectedProvider = selected.provider ?? runtimeFallback?.provider;
   const selectedModelId = selected.id ?? runtimeFallback?.id;
   // A missing or refused connection of the user's own fails every scheduled run alike.

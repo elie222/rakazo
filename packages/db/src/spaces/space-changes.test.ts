@@ -104,17 +104,25 @@ describe("followSpaceChanges", () => {
     await iterator.return(undefined);
   });
 
-  it("signals every kind when the fanout asks subscribers to catch up", async () => {
+  it("catches up on deployment changes only from the deployment-wide topic", async () => {
     const fanout = fakeFanout();
     const iterator = followSpaceChanges(fanout as never, "space-1");
     await opened(iterator);
     await fanout.publish("space-changes:space-1", "");
-    expect(await opened(iterator)).toEqual([
-      "computerUpdates",
-      "runs",
-      "routines",
-      "deploymentModel",
-    ]);
+    for (const kind of ["computerUpdates", "runs", "routines"]) {
+      expect((await iterator.next()).value).toBe(kind);
+    }
+
+    const next = iterator.next();
+    let signalled = false;
+    void next.then(() => {
+      signalled = true;
+    });
+    await flush();
+    expect(signalled).toBe(false);
+
+    await fanout.publish("deployment-model-changes", "");
+    expect((await next).value).toBe("deploymentModel");
     await iterator.return(undefined);
   });
 });

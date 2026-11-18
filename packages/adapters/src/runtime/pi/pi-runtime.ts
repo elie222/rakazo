@@ -503,6 +503,8 @@ export class PiAgentRuntime implements AgentRuntime {
                       deploymentApiKey: target.config.deploymentCredential
                         ? preparedOptions.apiKey
                         : undefined,
+                      onDeploymentCredentialRejected:
+                        target.config.deploymentCredential?.invalidate,
                       onProviderError: (message) => providerFailures.set(message.content, accepted),
                       onRejectedRequest: (rejection, model) => {
                         accepted = !rejection;

@@ -15,6 +15,7 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
+import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
 import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
@@ -359,6 +360,7 @@ export function observedPiStream(
     onUsage?: (usage: AgentUsage) => void;
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
     deploymentApiKey?: string;
+    onDeploymentCredentialRejected?: (apiKey: string) => void;
     /** Provider failures only; excludes context, reservations and usage settlement. */
     onProviderError?: (message: AssistantMessage) => void;
     onRejectedRequest?: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void;
@@ -412,6 +414,17 @@ export function observedPiStream(
       let inputTokensEstimate = 0;
       let collectRawUsage = false;
       let sendFailed = false;
+      let rejectedStatus: number | undefined;
+      const reportDeploymentRejection = (error: unknown) => {
+        const key = hooks?.deploymentApiKey;
+        if (
+          key &&
+          hooks.onDeploymentCredentialRejected &&
+          !options?.signal?.aborted &&
+          isModelCredentialRejected({ status: rejectedStatus, error })
+        )
+          hooks.onDeploymentCredentialRejected(key);
+      };
       // A call sent to the provider that ended without its cost keeps our own count,
       // so the reconciler can price it if the provider never reports one.
       const receipt = (usage: AgentUsage, message?: AssistantMessage): AgentUsage => {
@@ -487,13 +500,15 @@ export function observedPiStream(
               collectRawUsage
                 ? { ...historyOptions, fetch: historyOptions?.fetch ?? globalThis.fetch }
                 : historyOptions,
-              (rejection, requestModel) =>
+              (rejection, requestModel) => {
+                rejectedStatus = rejection?.status;
                 hooks.onRejectedRequest?.(
                   rejection?.requestId
                     ? { ...rejection, requestId: safeText(rejection.requestId) }
                     : rejection,
                   requestModel,
-                ),
+                );
+              },
             )
           : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
@@ -534,17 +549,19 @@ export function observedPiStream(
           providerError = error;
           throw error;
         }
-        const events = hooks?.onProviderError
-          ? (async function* () {
-              try {
-                yield* upstream;
-              } catch (error) {
-                providerThrew = true;
-                providerError = error;
-                throw error;
-              }
-            })()
-          : upstream;
+        const events =
+          hooks?.onProviderError || hooks?.onDeploymentCredentialRejected
+            ? (async function* () {
+                try {
+                  yield* upstream;
+                } catch (error) {
+                  providerThrew = true;
+                  providerError = error;
+                  reportDeploymentRejection(error);
+                  throw error;
+                }
+              })()
+            : upstream;
         for await (const event of events) {
           // A terminal error can arrive with empty content after a partial answer streamed.
           const received = partialMessage;
@@ -554,6 +571,9 @@ export function observedPiStream(
               : event.type === "error"
                 ? event.error
                 : event.partial;
+          // Read the upstream status and error before log-safe redaction and usage settlement.
+          if (event.type === "error" && event.reason === "error")
+            reportDeploymentRejection(event.error);
           const safeEvent = redaction?.event(event) ?? event;
           safePartial =
             safeEvent.type === "done"

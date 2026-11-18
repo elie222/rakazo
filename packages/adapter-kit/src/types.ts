@@ -605,7 +605,11 @@ export interface AgentRunModel {
   connectionId?: string;
   apiKey?: string;
   /** Deployment-owned authorization, revalidated at each model dispatch. */
-  deploymentCredential?: { resolve(signal: AbortSignal): Promise<string> };
+  deploymentCredential?: {
+    resolve(signal: AbortSignal): Promise<string>;
+    /** Drop the cached credential if the provider refused this exact value. */
+    invalidate?(apiKey: string): void;
+  };
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */

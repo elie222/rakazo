@@ -7,6 +7,7 @@ import { exchangeWorkloadIdentity } from "../providers/model/openai/workload-ide
 import { verifyModelServesAgents } from "./model-connect-check.js";
 import { selectConfiguredModel } from "./model-roles.js";
 import {
+  bindDeploymentModelCredential,
   readSharedDeploymentModel,
   sharedModelProviders,
   sharedModelRequestCredential,
@@ -50,7 +51,8 @@ function oauthModel(revision: string) {
   const load = vi.fn(async () => "fixture");
   const read = (signal?: AbortSignal) =>
     sharedModelRequestCredential(prisma, { load }, row, signal);
-  return { read, findUnique, row, load };
+  const { deploymentCredential } = bindDeploymentModelCredential(prisma, { load }, row);
+  return { read, findUnique, row, load, deploymentCredential };
 }
 
 describe("the deployment default", () => {
@@ -106,6 +108,31 @@ describe("the deployment default", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("evicts only the rejected token for the cached connection revision", async () => {
+    const old = oauthModel("old-rejection-revision");
+    const current = oauthModel("current-rejection-revision");
+    const sharedKey = "fixture-rejected-token";
+    const freshKey = "fixture-replacement-token";
+    const expiresAt = Date.now() + 60_000;
+    const exchange = vi
+      .mocked(exchangeWorkloadIdentity)
+      .mockResolvedValueOnce({ key: sharedKey, expiresAt })
+      .mockResolvedValueOnce({ key: sharedKey, expiresAt })
+      .mockResolvedValueOnce({ key: freshKey, expiresAt });
+
+    await expect(old.read()).resolves.toBe(sharedKey);
+    await expect(current.read()).resolves.toBe(sharedKey);
+    old.deploymentCredential.invalidate!(sharedKey);
+    await expect(current.read()).resolves.toBe(sharedKey);
+    expect(exchange).toHaveBeenCalledTimes(2);
+
+    current.deploymentCredential.invalidate!(sharedKey);
+    await expect(current.read()).resolves.toBe(freshKey);
+    current.deploymentCredential.invalidate!(sharedKey);
+    await expect(current.read()).resolves.toBe(freshKey);
+    expect(exchange).toHaveBeenCalledTimes(3);
   });
 
   it("shares a failed OAuth exchange across concurrent callers and permits a later retry", async () => {

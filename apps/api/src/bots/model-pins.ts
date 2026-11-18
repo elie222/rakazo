@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
-import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
+import {
+  findConnectedModelCredential,
+  PINNED_PROVIDER_NOT_CONNECTED,
+  readSharedDeploymentModel,
+  validateConnectedModelChoice,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
 import { modelRoleTarget, runAsSystem } from "@rakazo/db";
@@ -134,7 +139,7 @@ export async function assertCompatibleDefaultChange(
   );
 }
 
-/** A routine may only name a model the space has connected. */
+/** A routine may name a connected model or the exact shared deployment model. */
 export async function assertRoutineModel(
   deps: RouterDeps,
   actor: Actor,
@@ -150,5 +155,9 @@ export async function assertRoutineModel(
     model.modelId,
     { codexCatalog },
   );
+  if (message === PINNED_PROVIDER_NOT_CONNECTED) {
+    const shared = await readSharedDeploymentModel(deps.prisma);
+    if (shared?.provider === model.modelProvider && shared.modelId === model.modelId) return;
+  }
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }

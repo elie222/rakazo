@@ -1,4 +1,4 @@
-import type { NotificationMessage } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, NotificationMessage } from "@rakazo/adapter-kit";
 import {
   ModelAccountError,
   SandboxAllowanceUsedError,
@@ -43,7 +43,9 @@ interface Scenario {
   badgeFails?: boolean;
   switchToBackup?: { provider: string; modelId: string };
   personalKey?: boolean;
-  pinnedTo?: { provider: string; modelId: string };
+  pinnedTo?: { provider: string; modelId: string; thinkingLevel?: string };
+  sharedModel?: { provider: string; modelId: string };
+  expectedError?: string;
   clientNonce?: string;
   lateSince?: Date;
   startedAt?: Date;
@@ -80,13 +82,12 @@ async function failRun(scenario: Scenario) {
           modelPinned: true,
           modelProvider: scenario.pinnedTo.provider,
           modelId: scenario.pinnedTo.modelId,
+          thinkingLevel: scenario.pinnedTo.thinkingLevel,
         }
       : {}),
   };
   const queuedRow = { ...run };
-  const runtimeRun = vi.fn(async function* (request: {
-    onModelChange?: (provider: string, modelId: string) => Promise<void>;
-  }) {
+  const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     if (scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 1) {
       yield { type: "ask" as const, text: "Continue?" };
       return;
@@ -222,7 +223,19 @@ async function failRun(scenario: Scenario) {
           : null,
       ),
     },
-    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
+    deploymentModelConnection: {
+      findUnique: vi.fn(async () =>
+        scenario.sharedModel
+          ? {
+              ...scenario.sharedModel,
+              method: "api_key",
+              revision: "fixture-shared",
+              credentialCipher: "fixture-shared-cipher",
+              disabled: false,
+            }
+          : null,
+      ),
+    },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -247,7 +260,12 @@ async function failRun(scenario: Scenario) {
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
-    secretStore: { load: vi.fn(async () => "fixture-personal-key"), put: vi.fn() },
+    secretStore: {
+      load: vi.fn(async (ciphertext: string) =>
+        ciphertext === "fixture-shared-cipher" ? "fixture-shared-key" : "fixture-personal-key",
+      ),
+      put: vi.fn(),
+    },
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
@@ -291,7 +309,7 @@ async function failRun(scenario: Scenario) {
   expect(finalizeRun).toHaveBeenCalledWith(
     expect.objectContaining({
       outcome: "failed",
-      error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
+      error: scenario.expectedError ?? scenario.error.message,
     }),
   );
   const retries = enqueue.mock.calls
@@ -543,6 +561,59 @@ describe("retrying a routine run after a transient model failure", () => {
   });
 });
 
+describe("a routine pinned to a shared deployment model", () => {
+  const sharedModel = { provider: "openrouter", modelId: "deepseek/deepseek-v4-flash-0731" };
+
+  it("binds the exact shared model for a member without a personal connection", async () => {
+    const { runtimeRun } = await failRun({
+      error: overloaded(),
+      pinnedTo: { ...sharedModel, thinkingLevel: "low" },
+      sharedModel,
+    });
+
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    const model = runtimeRun.mock.calls[0]?.[0].model;
+    expect(model).toMatchObject({
+      provider: sharedModel.provider,
+      id: sharedModel.modelId,
+      connectionId: "deployment:fixture-shared",
+      thinkingLevel: "low",
+    });
+    await expect(model?.deploymentCredential?.resolve(AbortSignal.timeout(1_000))).resolves.toBe(
+      "fixture-shared-key",
+    );
+  });
+
+  it("uses a personal connection for the same pinned model when the member has one", async () => {
+    const { runtimeRun } = await failRun({
+      error: overloaded(),
+      pinnedTo: sharedModel,
+      sharedModel,
+      personalKey: true,
+    });
+
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(runtimeRun.mock.calls[0]?.[0].model).toMatchObject({
+      provider: sharedModel.provider,
+      id: sharedModel.modelId,
+      apiKey: "fixture-personal-key",
+    });
+  });
+
+  it("still rejects a different pin on the shared provider", async () => {
+    const { runtimeRun, prisma } = await failRun({
+      error: overloaded(),
+      pinnedTo: { ...sharedModel, modelId: "different-model" },
+      sharedModel,
+      expectedError: "Connect that model provider first",
+    });
+
+    expect(runtimeRun).not.toHaveBeenCalled();
+    // The run's lease is one transaction, the refusal count the other.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("backing off a routine after its model connection refuses it", () => {
   const refusedKey = () =>
     new ModelAccountError('401: {"error":{"message":"Invalid API key","code":401}}');
@@ -558,6 +629,7 @@ describe("backing off a routine after its model connection refuses it", () => {
     const { prisma } = await failRun({
       error: refusedKey(),
       pinnedTo: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
+      expectedError: "Connect that model provider first",
     });
 
     // The run's lease is one transaction, the refusal count the other.

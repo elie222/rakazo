@@ -116,6 +116,8 @@ export async function resolveMemberMainModel(
 export function selectConfiguredModel(input: {
   /** The bot's or the run's own model; null follows the main model. */
   override: ModelChoice | null;
+  /** An explicit run pin can use an exact match on the shared deployment connection. */
+  pinned?: boolean;
   hostedProvider?: string;
   overrideCredential: ModelCredential;
   main: MemberMainModel | null;
@@ -138,7 +140,18 @@ export function selectConfiguredModel(input: {
             : provider === input.hostedProvider)),
     );
   // The override provider, model and credential must win together.
-  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
+  const useOwnOverride =
+    hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
+  const { shared } = input.defaults;
+  const sharedOverride =
+    input.pinned &&
+    !useOwnOverride &&
+    shared &&
+    bot?.modelProvider === shared.provider &&
+    bot?.modelId === shared.modelId
+      ? shared
+      : undefined;
+  const useOverride = useOwnOverride || sharedOverride !== undefined;
   const useMain =
     !useOverride &&
     main !== null &&
@@ -152,6 +165,7 @@ export function selectConfiguredModel(input: {
         provider: bot!.modelProvider!,
         id: usableModelId(bot!.modelId),
         credential: overrideCredential,
+        ...(sharedOverride ? { deploymentConnection: sharedOverride } : {}),
       }
     : useMain
       ? {

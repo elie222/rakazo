@@ -5,12 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { appHandler, createRouter, handle } from "../router-test-support.js";
 
-describe("routine live Codex model validation", () => {
-  it.each(["create", "update"] as const)(
-    "saves a listed live-only model on %s and rejects an unlisted id",
-    async (operation) => {
+describe("routine model validation", () => {
+  it.each(
+    (["create", "update"] as const).flatMap((operation) => [
+      { operation, connection: "personal" },
+      { operation, connection: "shared" },
+    ]),
+  )(
+    "saves the $connection model and refuses an unlisted model in routines/$operation",
+    async ({ operation, connection }) => {
       const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
-      const modelId = "gpt-6-luna-latest";
+      const provider = connection === "personal" ? "openai-codex" : "deepseek";
+      const modelId = connection === "personal" ? "gpt-6-luna-latest" : "deepseek-flash";
       const stamp = new Date("2026-01-01T00:00:00Z");
       const row = {
         id: "routine-1",
@@ -55,16 +61,27 @@ describe("routine live Codex model validation", () => {
             },
             run: { updateManyAndReturn: vi.fn(async () => []) },
             userModelPreference: { findMany: vi.fn(async () => []) },
+            deploymentModelConnection: {
+              findUnique: vi.fn(async () =>
+                connection === "shared"
+                  ? { provider, modelId, method: "api_key", revision: "shared" }
+                  : null,
+              ),
+            },
             userModelCredential: {
-              findMany: vi.fn(async () => [
-                {
-                  id: "credential-1",
-                  provider: "openai-codex",
-                  secretId: "secret-1",
-                  updatedAt: stamp,
-                  createdAt: stamp,
-                },
-              ]),
+              findMany: vi.fn(async () =>
+                connection === "personal"
+                  ? [
+                      {
+                        id: "credential-1",
+                        provider,
+                        secretId: "secret-1",
+                        updatedAt: stamp,
+                        createdAt: stamp,
+                      },
+                    ]
+                  : [],
+              ),
             },
             secret: {
               findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "fake-cipher" })),
@@ -95,28 +112,32 @@ describe("routine live Codex model validation", () => {
               prompt: "Check changes",
               crons: ["0 9 * * *"],
               active: false,
-              modelProvider: "openai-codex",
+              modelProvider: provider,
               modelId: id,
             })
           : client.routines.update({
               routineId: "routine-1",
-              modelProvider: "openai-codex",
+              modelProvider: provider,
               modelId: id,
             });
 
-      await expect(call(modelId)).resolves.toMatchObject({
-        modelProvider: "openai-codex",
-        modelId,
-      });
-      expect(read).toHaveBeenCalledWith(
-        actor.userId,
-        expect.objectContaining({ accountId: "acct-test" }),
-        undefined,
-      );
+      await expect(call(modelId)).resolves.toMatchObject({ modelProvider: provider, modelId });
+      if (connection === "personal") {
+        expect(read).toHaveBeenCalledWith(
+          actor.userId,
+          expect.objectContaining({ accountId: "acct-test" }),
+          undefined,
+        );
+      } else {
+        expect(read).not.toHaveBeenCalled();
+      }
       expect(save).toHaveBeenCalledOnce();
-      await expect(call("gpt-6-luna-unlisted")).rejects.toMatchObject({
+      await expect(call("unlisted-model")).rejects.toMatchObject({
         code: "BAD_REQUEST",
-        message: "Unknown model for that provider",
+        message:
+          connection === "personal"
+            ? "Unknown model for that provider"
+            : "Connect that model provider first",
       });
       expect(save).toHaveBeenCalledOnce();
     },

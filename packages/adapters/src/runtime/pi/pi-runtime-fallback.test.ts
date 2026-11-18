@@ -5,6 +5,7 @@ import type {
   Context,
   Model,
   ModelThinkingLevel,
+  SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -756,6 +757,52 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledOnce();
     expect(providerState.stream.mock.lastCall?.[0]).toMatchObject({ id: backupA.id });
     expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({ apiKey: "backup-key" });
+  });
+
+  it.each([
+    { status: 401, rejected: true },
+    { status: 400, rejected: false },
+  ])(
+    "uses the provider's HTTP $status to decide whether to invalidate a deployment token",
+    async ({ status, rejected }) => {
+      const input = request();
+      delete input.model.apiKey;
+      const key = "rejected-shared-token-fixture";
+      const invalidate = vi.fn();
+      input.model.deploymentCredential = { resolve: async () => key, invalidate };
+      providerState.stream.mockImplementation(
+        (target: Model<"openai-completions">, _context: Context, options: SimpleStreamOptions) => {
+          const upstream = stream(target, message(target, [], "error", `Refused value ${key}`));
+          return {
+            async *[Symbol.asyncIterator]() {
+              await options.onResponse?.({ status, headers: {} }, target);
+              yield* upstream;
+            },
+            result: () => upstream.result(),
+          };
+        },
+      );
+
+      await expect(run(input)).rejects.toThrow("Refused value [redacted]");
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      if (rejected) expect(invalidate).toHaveBeenCalledExactlyOnceWith(key);
+      else expect(invalidate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not invalidate a deployment token when the provider stream fails before dispatch", async () => {
+    const input = request();
+    const invalidate = vi.fn();
+    input.model.deploymentCredential = {
+      resolve: async () => "shared-bearer-fixture",
+      invalidate,
+    };
+    providerState.stream.mockImplementation(() => {
+      throw Object.assign(new Error("Local stream setup failed"), { status: 401 });
+    });
+
+    await expect(run(input)).rejects.toThrow("Local stream setup failed");
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it("authorizes a deployment model at dispatch and stops sending after revocation", async () => {

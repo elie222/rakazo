@@ -8,6 +8,7 @@ const IDLE_WAIT_MS = 60_000;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
 const DEPLOYMENT_MODEL_TOPIC = "deployment-model-changes";
+const perSpaceKinds = SpaceChangeKind.options.filter((kind) => kind !== "deploymentModel");
 // compat-shim(after v0.11.0): workers from the previous release still announce computer updates
 // here until they drain.
 const legacyComputerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
@@ -58,16 +59,17 @@ export async function* followSpaceChanges(
   signal?: AbortSignal,
 ): AsyncGenerator<SpaceChangeKind> {
   const latch = new ChangeLatch();
+  // A client reopening its stream may have missed a deployment-wide change while offline.
   const pending = new Set<SpaceChangeKind>(SpaceChangeKind.options);
   const changed = (kind: SpaceChangeKind) => {
     pending.add(kind);
     latch.notify();
   };
   const unsubscribe = await realtime.subscribe(spaceChangesTopic(spaceId), (payload) => {
-    // An empty payload is the fanout's catch-up after its listener reconnects: anything may have changed.
-    if (payload === "") for (const kind of SpaceChangeKind.options) changed(kind);
+    // The deployment-wide topic handles its own catch-up after a listener reconnects.
+    if (payload === "") for (const kind of perSpaceKinds) changed(kind);
     const kind = SpaceChangeKind.safeParse(payload);
-    if (kind.success) changed(kind.data);
+    if (kind.success && kind.data !== "deploymentModel") changed(kind.data);
   });
   const subscriptions = [unsubscribe];
   try {
