@@ -440,7 +440,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   expect((await rpc<Bot>(page, "bots/get", { botId })).instructions).toBe("Keep replies short.");
   const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId });
   expect(memory.map((doc) => doc.path).sort()).toEqual(["MEMORY.md", "USER.md"]);
-  await expect(page.getByText("The import could not set these up:")).toBeVisible();
+  await expect(page.getByText("The import could not set these up:").first()).toBeVisible();
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.map((item) => item.name)).toContain("weekly-account-health");
   const routines = await rpc<Routine[]>(page, "routines/list", { botId });
