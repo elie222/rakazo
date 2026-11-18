@@ -116,8 +116,16 @@ export function modelCredentialRedaction(apiKey: string) {
     return { ...raw, partial: partial(raw.partial) };
   };
 
-  function finalTextDelta(safeMessage: AssistantMessage): AssistantMessageEvent | undefined {
-    if (lastTextIndex === undefined) return;
+  function trailingDelta(safeEvent: AssistantMessageEvent): AssistantMessageEvent | undefined {
+    if (safeEvent.type === "toolcall_end") {
+      const { contentIndex, partial } = safeEvent;
+      const delta = toolStreams.get(contentIndex)?.finish();
+      toolStreams.delete(contentIndex);
+      if (delta) return { type: "toolcall_delta", contentIndex, delta, partial };
+      return;
+    }
+    if (safeEvent.type !== "done" || lastTextIndex === undefined) return;
+    const safeMessage = safeEvent.message;
     const text = safeMessage.content
       .map((part) => (part.type === "text" ? part.text : ""))
       .join("");
@@ -131,5 +139,5 @@ export function modelCredentialRedaction(apiKey: string) {
     };
   }
 
-  return { event, finalTextDelta, message, redact };
+  return { event, trailingDelta, message, redact };
 }

@@ -156,6 +156,59 @@ describe("Pi usage accounting", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ operationKind: "retrieval", totalTokens: 12 });
   });
+  it("streams complete redacted tool arguments before the tool call ends", async () => {
+    const key = "opaque-deployment-credential-fixture";
+    const prefix = key.slice(0, 8);
+    const argumentsChunks = [`{"value":"${prefix}`, `${key.slice(prefix.length)}"}`];
+    const frames = argumentsChunks.map((argumentsDelta, index) => ({
+      id: "fixture",
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                ...(index === 0 ? { id: "tool-1", type: "function" } : {}),
+                function: { ...(index === 0 ? { name: "record" } : {}), arguments: argumentsDelta },
+              },
+            ],
+          },
+          finish_reason: index === 0 ? null : "tool_calls",
+        },
+      ],
+    }));
+    const stream = observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      {
+        apiKey: key,
+        fetch: async () =>
+          new Response(
+            frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") +
+              "data: [DONE]\n\n",
+            {
+              headers: { "content-type": "text/event-stream" },
+            },
+          ),
+      },
+      vi.fn(),
+      undefined,
+      undefined,
+      { deploymentApiKey: key },
+    );
+    let deltas = "";
+    for await (const event of stream) {
+      if (event.type === "toolcall_delta") deltas += event.delta;
+      if (event.type === "toolcall_end") {
+        expect(JSON.parse(deltas)).toEqual({ value: "[redacted]" });
+        expect(event.toolCall.arguments).toEqual({ value: "[redacted]" });
+      }
+    }
+    expect(deltas).toBe('{"value":"[redacted]"}');
+  });
+
   it("accounts a cancelled model call even when the event consumer closes before usage arrives", async () => {
     const onUsage = vi.fn();
     const server = createServer((_request, response) => {

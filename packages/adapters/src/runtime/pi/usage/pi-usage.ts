@@ -621,10 +621,8 @@ export function observedPiStream(
             }
           }
           if (safeEvent.type === "error") hooks?.onProviderError?.(safeEvent.error);
-          if (safeEvent.type === "done") {
-            const tail = redaction?.finalTextDelta(safeEvent.message);
-            if (tail) stream.push(tail);
-          }
+          const tail = redaction?.trailingDelta(safeEvent);
+          if (tail) stream.push(tail);
           stream.push(safeEvent);
         }
         const final = safeTerminal ?? (await upstream.result());
