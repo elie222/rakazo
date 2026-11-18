@@ -29,21 +29,38 @@ function tagEnd(text, from) {
   return text.length;
 }
 
-/** The value of the className attribute in a tag: a string, or the expression in braces. */
-function classNameValue(tag) {
+const LITERAL = /"[^"]*"|'[^']*'|`[^`]*`/g;
+
+/** The contents of every string literal in an expression. */
+function literalsIn(expression) {
+  return (expression.match(LITERAL) ?? []).map((literal) => literal.slice(1, -1));
+}
+
+/**
+ * The class strings a tag's className can hold: the attribute's own string, or every string in
+ * its expression and in the same-file constants that expression names.
+ */
+function classStrings(tag, constants) {
   const start = tag.search(/\bclassName=/);
-  if (start === -1) return null;
+  if (start === -1) return [];
   const valueStart = start + "className=".length;
   const open = tag[valueStart];
-  if (open === '"' || open === "'")
-    return tag.slice(valueStart + 1, tag.indexOf(open, valueStart + 1));
-  if (open !== "{") return null;
-  let depth = 0;
-  for (let at = valueStart; at < tag.length; at += 1) {
-    if (tag[at] === "{") depth += 1;
-    else if (tag[at] === "}" && --depth === 0) return tag.slice(valueStart + 1, at);
+  if (open === '"' || open === "'") {
+    return [tag.slice(valueStart + 1, tag.indexOf(open, valueStart + 1))];
   }
-  return tag.slice(valueStart + 1);
+  if (open !== "{") return [];
+  let depth = 0;
+  let at = valueStart;
+  for (; at < tag.length; at += 1) {
+    if (tag[at] === "{") depth += 1;
+    else if (tag[at] === "}" && --depth === 0) break;
+  }
+  const expression = tag.slice(valueStart + 1, at);
+  const strings = literalsIn(expression);
+  for (const name of expression.replace(LITERAL, "").match(/\b\w+\b/g) ?? []) {
+    strings.push(...(constants.get(name) ?? []));
+  }
+  return strings;
 }
 
 /** A class sets the control's own height; one aimed at a child (`[&_svg]:size-4`) does not. */
@@ -54,13 +71,16 @@ function setsHeight(token) {
   return HEIGHT.test(base);
 }
 
-const LITERAL = /"[^"]*"|'[^']*'|`[^`]*`/g;
-
-/** Class strings held in a constant (`const fieldClass = "..."`), so passing one is caught too. */
+/**
+ * The strings each same-file constant is built from (`const field = cn("mt-2", wide && "h-9")`).
+ * A cva() variant map is a size prop's own definition, not an override.
+ */
 function classConstants(text) {
   const constants = new Map();
-  for (const [, name, literal] of text.matchAll(/\bconst (\w+) =\s*("[^"]*"|`[^`]*`)/g)) {
-    constants.set(name, literal);
+  for (const [, name, expression] of text.matchAll(/\bconst (\w+) =\s*([\s\S]*?);\s*\n/g)) {
+    if (expression.startsWith("cva(")) continue;
+    const strings = literalsIn(expression);
+    if (strings.length > 0) constants.set(name, strings);
   }
   return constants;
 }
@@ -70,13 +90,7 @@ export function count(text) {
   const constants = classConstants(text);
   for (const match of text.matchAll(OPENING)) {
     const tag = text.slice(match.index, tagEnd(text, match.index + match[0].length));
-    const value = classNameValue(tag);
-    if (!value) continue;
-    const literals = value.match(LITERAL) ?? (tag.includes('className="') ? [`"${value}"`] : []);
-    for (const name of value.replace(LITERAL, "").match(/\b\w+\b/g) ?? []) {
-      if (constants.has(name)) literals.push(constants.get(name));
-    }
-    const tokens = literals.flatMap((literal) => literal.slice(1, -1).split(/\s+/));
+    const tokens = classStrings(tag, constants).flatMap((classes) => classes.split(/\s+/));
     const grows = tokens.includes("h-auto");
     const heights = tokens.filter(
       (token) => setsHeight(token) && !(grows && /^(?:h-auto|min-h-)/.test(token)),
