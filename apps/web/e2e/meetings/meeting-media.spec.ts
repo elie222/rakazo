@@ -7,7 +7,7 @@ type MeetingAudioProbe = typeof window & {
   inputFrames: number;
   playbackStarted: number;
   playbackStopped: number;
-  speak?: () => void;
+  speak?: (volume?: number) => void;
   workletReady?: boolean;
 };
 
@@ -59,9 +59,9 @@ mediaTest(
         sound.connect(gain).connect(microphone);
         sound.start();
         await context.resume();
-        probe.speak = () => {
+        probe.speak = (volume = 0.2) => {
           const present = context.currentTime;
-          gain.gain.setValueAtTime(0.2, present);
+          gain.gain.setValueAtTime(volume, present);
           gain.gain.setValueAtTime(0, present + 0.52);
         };
         return microphone.stream;
@@ -122,23 +122,29 @@ mediaTest(
     ]);
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await ready.promise;
-    const startedAtFrame = await page.evaluate(() => {
-      const channel = window as MeetingAudioProbe;
-      channel.speak?.();
-      return channel.inputFrames;
-    });
     try {
-      // The second tone and its trailing silence take fewer than twenty 64 ms frames.
-      await page.waitForFunction(
-        (target) => (window as MeetingAudioProbe).inputFrames >= target,
-        startedAtFrame + 20,
-      );
-      expect(media.received).toHaveLength(3);
+      for (const volume of [0.12, 0.28]) {
+        const startedAtFrame = await page.evaluate((volume) => {
+          const channel = window as MeetingAudioProbe;
+          channel.speak?.(volume);
+          return channel.inputFrames;
+        }, volume);
+        // Each tone and its trailing silence take fewer than twenty worklet frames.
+        await page.waitForFunction(
+          (target) => (window as MeetingAudioProbe).inputFrames >= target,
+          startedAtFrame + 20,
+        );
+        expect(media.received).toHaveLength(3);
+      }
     } finally {
       reply.resolve();
     }
     await responses;
     await expect.poll(() => media.received.length).toBe(4);
+    const queuedPeaks = voicedPeaks(Buffer.from(media.received[3] ?? []));
+    expect(queuedPeaks).toHaveLength(2);
+    expect(queuedPeaks[0]).toBeGreaterThan(3_000);
+    expect(queuedPeaks[1]).toBeGreaterThan(queuedPeaks[0]! * 2);
 
     media.revoke();
     const revoked = page.waitForResponse(
@@ -149,3 +155,24 @@ mediaTest(
     expect(media.received).toHaveLength(4);
   },
 );
+
+// The worklet emits 1,024 mono samples per frame. The two fixture tones have
+// distinct peak magnitudes and a full gap, so PCM establishes their order.
+function voicedPeaks(wav: Buffer) {
+  const peaks: number[] = [];
+  let peak = 0;
+  for (let offset = 44; offset + 2_048 <= wav.length; offset += 2_048) {
+    let framePeak = 0;
+    for (let sample = offset; sample < offset + 2_048; sample += 2) {
+      framePeak = Math.max(framePeak, Math.abs(wav.readInt16LE(sample)));
+    }
+    if (framePeak < 1_000) {
+      if (peak) peaks.push(peak);
+      peak = 0;
+    } else {
+      peak = Math.max(peak, framePeak);
+    }
+  }
+  if (peak) peaks.push(peak);
+  return peaks;
+}
