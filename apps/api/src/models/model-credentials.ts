@@ -11,7 +11,7 @@ import {
   keptModelSettings,
   listPiCatalog,
   liveCatalogEntry,
-  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  ModelProviderNotAllowedError,
   modelCredentialDto,
   modelProviderAllowed,
   modelProviderAllowlist,
@@ -144,7 +144,7 @@ export async function prepareModelCredential(
 ) {
   throwIfAborted(input.signal);
   if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
-    throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+    throw new ModelProviderNotAllowedError();
   }
   const parsedSecret = parseModelSecret(input.plaintext);
   const requestedModelId = usableModelId(input.modelId);
@@ -463,7 +463,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     // Before the submitted endpoint is contacted, not after: a blocked provider is not
     // probed, and its refusal is not replaced by whatever the probe would have said.
     if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
-      throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+      throw new ModelProviderNotAllowedError();
     }
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;

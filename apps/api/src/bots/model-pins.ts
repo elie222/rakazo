@@ -2,7 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import {
   findConnectedModelCredential,
-  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  ModelProviderNotAllowedError,
   modelProviderAllowed,
   modelProviderAllowlist,
   validateConnectedModelChoice,
@@ -149,7 +149,7 @@ export async function assertRoutineModel(
 ) {
   if (!model.modelProvider || !model.modelId) return;
   if (!modelProviderAllowed(modelProviderAllowlist(), model.modelProvider)) {
-    throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+    throw new ModelProviderNotAllowedError();
   }
   const message = await validateConnectedModelChoice(
     deps.prisma,

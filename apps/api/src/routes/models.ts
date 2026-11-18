@@ -8,7 +8,7 @@ import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
   listPiCatalog,
-  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  ModelProviderNotAllowedError,
   ModelSignInError,
   modelCredentialDto,
   modelProviderAllowed,
@@ -323,7 +323,7 @@ export function modelsRoutes(ctx: RouterContext) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           if (!modelProviderAllowed(modelProviderAllowlist(), OPENAI_COMPATIBLE_PROVIDER_ID)) {
-            throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+            throw new ModelProviderNotAllowedError();
           }
           let apiKey = input.apiKey;
           let headers = input.headers;
@@ -391,7 +391,7 @@ export function modelsRoutes(ctx: RouterContext) {
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
         if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+          throw new ModelProviderNotAllowedError();
         }
         try {
           const models = await probeCatalogProviderModels(
@@ -406,7 +406,7 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+          throw new ModelProviderNotAllowedError();
         }
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
@@ -507,7 +507,7 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
         if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+          throw new ModelProviderNotAllowedError();
         }
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });

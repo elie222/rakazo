@@ -79,57 +79,103 @@ describe("team chat engagement judge", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
-  it("does not engage on a member model the deployment allowlist leaves out", async () => {
-    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
-    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
-    try {
-      const prisma = {
-        user: { findUnique: vi.fn(async () => null) },
-        deploymentSettings: { findUnique: vi.fn(async () => null) },
-        userModelPreference: {
-          findFirst: vi.fn(async () => ({
-            credential: {
-              id: "credential-fixture",
-              provider: "google-vertex",
-              secretId: "secret-fixture",
-            },
-            modelId: "gemini-4-hydrogen",
-          })),
+  function allowlistJudge(deps: {
+    memberProvider: string;
+    deploymentProvider: string;
+    deploymentModel: string;
+    providerOverride?: string;
+    modelOverride?: string;
+  }) {
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      userModelPreference: {
+        findFirst: vi.fn(async () => ({
+          credential: {
+            id: "credential-fixture",
+            provider: deps.memberProvider,
+            secretId: "secret-fixture",
+          },
+          modelId: "fixture-model",
+        })),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext: "encrypted" })) },
+    };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        deps.memberProvider,
+        "fixture-model",
+      ),
+    ]);
+    const run = vi.fn(async function* (request: AgentRunRequest) {
+      yield { type: "done", text: JSON.stringify({ act: true }) };
+      expect(request.model.provider).toBeTruthy();
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: prisma as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "api_key",
+            key: "fixture-model-key",
+            projectId: "p",
+            region: "g",
+          }),
+      } as never,
+      deploymentProvider: deps.deploymentProvider,
+      deploymentModel: deps.deploymentModel,
+      ...(deps.providerOverride ? { providerOverride: deps.providerOverride } : {}),
+      ...(deps.modelOverride ? { modelOverride: deps.modelOverride } : {}),
+    });
+    const decide = (botProvider: string | null) =>
+      judge.decide({
+        bot: {
+          id: "bot-fixture",
+          spaceId: "space-fixture",
+          userId: "user-fixture",
+          name: "Fixture",
+          modelProvider: botProvider,
+          modelId: botProvider ? "fixture-model" : null,
         },
-      };
-      withModelRoles(prisma, [
-        mainRole(
-          { spaceId: "space-fixture", userId: "user-fixture" },
-          "google-vertex",
-          "gemini-4-hydrogen",
-        ),
-      ]);
-      const run = vi.fn(async function* () {
-        yield { type: "done", text: "the judge must not run a disallowed provider" };
+        channelId: "channel-fixture",
+        rules: "",
+        messages: [],
       });
-      const judge = new ModelTeamChatEngagementJudge({
-        prisma: prisma as never,
-        runtime: { run } as never,
-        secrets: { load: async () => "" } as never,
+    return { decide, run };
+  }
+
+  it("skips a bot pin the allowlist refuses and judges on the member main model", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google-vertex";
+    try {
+      const { decide, run } = allowlistJudge({
+        memberProvider: "google-vertex",
         deploymentProvider: "google-vertex",
         deploymentModel: "gemini-4-hydrogen",
       });
-      await expect(
-        judge.decide({
-          bot: {
-            id: "bot-fixture",
-            spaceId: "space-fixture",
-            userId: "user-fixture",
-            name: "Fixture",
-            modelProvider: null,
-            modelId: null,
-          },
-          channelId: "channel-fixture",
-          rules: "",
-          messages: [],
-        }),
-      ).resolves.toEqual({ act: false });
-      expect(run).not.toHaveBeenCalled();
+      await expect(decide("anthropic")).resolves.toEqual({ act: true });
+      expect(run).toHaveBeenCalledOnce();
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
+  it("still uses the operator judge model when the allowlist leaves its provider out", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google-vertex";
+    try {
+      const { decide, run } = allowlistJudge({
+        memberProvider: "google-vertex",
+        deploymentProvider: "google-vertex",
+        deploymentModel: "gemini-4-hydrogen",
+        providerOverride: "anthropic",
+        modelOverride: "claude-haiku-5-5",
+      });
+      await expect(decide(null)).resolves.toEqual({ act: true });
+      expect(run).toHaveBeenCalledOnce();
     } finally {
       if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
       else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
