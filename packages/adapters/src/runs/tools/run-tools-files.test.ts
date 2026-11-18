@@ -19,17 +19,18 @@ function setup() {
   const readStoppedFile = vi.fn().mockResolvedValue(new TextEncoder().encode("saved SECRET"));
   const readFile = vi.fn().mockResolvedValue(new TextEncoder().encode("live contents"));
   const get = vi.fn().mockResolvedValue(stored);
+  const controller = new AbortController();
   const ctx = {
     bot: { id: "bot-1" },
     run: { spaceId: "space-1" },
     computer: { stored, kind: stored.kind, mode: "team", lazy: {}, get },
-    context: { signal: new AbortController().signal },
+    context: { signal: controller.signal },
     deps: { prisma: { computer: { findFirst } }, sandbox: { readStoppedFile, readFile } },
     secrets: ["SECRET"],
   } as unknown as RunContext;
   const read = (path: string) =>
     fileTools.read_file!(ctx, { name: "read_file", args: { path } } as unknown as ToolCall);
-  return { read, readStoppedFile, readFile, get, findFirst, stored };
+  return { read, readStoppedFile, get, findFirst, stored, controller };
 }
 
 describe("read_file with a suspended computer", () => {
@@ -67,6 +68,16 @@ describe("read_file with a suspended computer", () => {
     readStoppedFile.mockRejectedValueOnce(new SandboxProviderAccountError());
     await expect(read("notes.txt")).resolves.toMatchObject({ content: "live contents" });
     expect(get).toHaveBeenCalledOnce();
+  });
+
+  it("does not wake the computer if the run is cancelled during the snapshot read", async () => {
+    const { read, readStoppedFile, get, controller } = setup();
+    readStoppedFile.mockImplementationOnce(async () => {
+      controller.abort();
+      controller.signal.throwIfAborted();
+    });
+    await expect(read("notes.txt")).rejects.toMatchObject({ name: "AbortError" });
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("reports a verified oversized file without waking, and retries if the computer changed", async () => {

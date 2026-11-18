@@ -1,5 +1,5 @@
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import {
   normalizeWorkspacePath,
@@ -56,22 +56,24 @@ export async function readStoppedRunFile(ctx: RunContext, storedPath: string, ma
   });
   if (!suspended?.providerRef) return undefined;
 
-  const result = await deps.sandbox
-    .readStoppedFile(toComputerRef(suspended), path, context, {
-      maxBytes,
-      savedAt:
-        suspended.homeRevision === "empty" ? undefined : (suspended.homeRevisionAt ?? undefined),
-    })
-    .catch((error: unknown) => {
-      context.signal.throwIfAborted();
-      if (error instanceof SandboxFileTooLargeError) return error;
-      // This optional read is side-effect free. If the provider fails, use the live path.
-      getLogger().warn("computer.stopped_file_read_failed", {
-        "computer.id": stored.id,
-        errorName: error instanceof Error ? error.name : "unknown",
-      });
-      return undefined;
-    });
+  const result = await getLogger().withContext({ "computer.id": stored.id }, () =>
+    bestEffort(
+      "read stopped computer file",
+      deps.sandbox
+        .readStoppedFile?.(toComputerRef(suspended), path, context, {
+          maxBytes,
+          savedAt:
+            suspended.homeRevision === "empty"
+              ? undefined
+              : (suspended.homeRevisionAt ?? undefined),
+        })
+        .catch((error: unknown) => {
+          if (error instanceof SandboxFileTooLargeError) return error;
+          throw error;
+        }),
+    ),
+  );
+  context.signal.throwIfAborted();
   if (!result) return undefined;
 
   // Discard a snapshot read if another caller woke, reset or moved the computer during it.
