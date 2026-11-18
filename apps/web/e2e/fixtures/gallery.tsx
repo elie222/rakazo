@@ -190,6 +190,49 @@ const approvals: Scenario = {
   id: "approvals",
   label: "Approvals",
   messages: [
+    // A tool's server asking mid-call; its text is the server's, so markdown stays literal.
+    bot([
+      {
+        kind: "tool_question",
+        question: {
+          source: "Tool gateway",
+          message: "Run **send_email** to sam@example.test?",
+          fields: [
+            { name: "approve", label: "Approve this call", required: true, type: "boolean" },
+            {
+              name: "reason",
+              label: "Reason",
+              description: "Shown in the audit log",
+              required: false,
+              type: "text",
+              maxLength: 200,
+            },
+            {
+              name: "scope",
+              label: "Scope",
+              required: true,
+              type: "choice",
+              options: [
+                { value: "once", label: "This call" },
+                { value: "session", label: "This session" },
+              ],
+            },
+          ],
+        },
+        status: "pending",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
+    bot([
+      {
+        kind: "tool_question",
+        question: { source: "Tool gateway", message: "Delete the draft?", fields: [] },
+        status: "declined",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
     bot([
       {
         kind: "ask",

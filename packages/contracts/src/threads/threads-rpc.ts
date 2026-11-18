@@ -3,6 +3,10 @@ import * as z from "zod";
 import { IncomingBotCallSchema } from "../bots/bot.js";
 import { LOGIN_FIELD_LIMIT, LoginFieldInput } from "../bots/bot-secrets.js";
 import { Id } from "../ids.js";
+import {
+  TOOL_QUESTION_FIELDS_MAX,
+  ToolQuestionValueSchema,
+} from "../integrations/tool-question.js";
 import { botId } from "../rpc/inputs.js";
 import { SpaceChangeKind } from "../spaces/space.js";
 import { ProductEventSchema } from "./events.js";
@@ -159,6 +163,19 @@ export const threadsRpc = {
                   : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    /** Answers a tool's question card while its call waits; only the run's own user may. */
+    answerToolQuestion: oc
+      .input(
+        threadTarget.safeExtend({
+          messageId: Id,
+          action: z.enum(["accept", "decline"]),
+          values: z
+            .record(z.string().max(64), ToolQuestionValueSchema)
+            .refine((values) => Object.keys(values).length <= TOOL_QUESTION_FIELDS_MAX)
+            .optional(),
+        }),
       )
       .output(z.object({ ok: z.literal(true) })),
     /** `unreadAfterSeq`: the seq read up to before this call, null when nothing was unread. */
