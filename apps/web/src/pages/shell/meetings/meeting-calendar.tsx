@@ -7,6 +7,14 @@ import {
   meetingPlatformLabel,
 } from "@rakazo/i18n/meeting";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +37,7 @@ type Action = Selection | { action: "connect" | "disconnect" };
 export function MeetingCalendar({ botId }: { botId: string }) {
   const { t, i18n } = useLingui();
   const [open, setOpen] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const queries = useSpaceQueries();
   const read = queries.meetingCalendar.upcoming.queryOptions({ input: { botId } });
   const availability = useQuery(queries.meetingCalendar.status.queryOptions({ input: { botId } }));
@@ -123,7 +132,7 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                     <Ellipsis className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-max">
-                    <DropdownMenuItem onClick={() => save.run({ action: "disconnect" })}>
+                    <DropdownMenuItem onClick={() => setConfirmDisconnect(true)}>
                       <Trans>Disconnect calendar</Trans>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -210,6 +219,33 @@ export function MeetingCalendar({ botId }: { botId: string }) {
           )}
         </div>
       ) : null}
+      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Disconnect calendar?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>Your bot will be removed from upcoming meetings on this calendar.</Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={save.pending}
+              onClick={() => {
+                setConfirmDisconnect(false);
+                save.run({ action: "disconnect" });
+              }}
+            >
+              <Trans>Disconnect calendar</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

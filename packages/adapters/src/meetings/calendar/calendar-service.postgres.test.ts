@@ -221,6 +221,20 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await service.sync(owner.id);
       expect(emulator.scheduled(zoom.id)).toBe(originalBot);
       expect(emulator.scheduledLink(zoom.id)).toBe(revisedLink);
+      emulator.revision(zoom.id, {
+        meeting_url: "https://zoom.us/j/12345678901?pwd=retry-fixture",
+      });
+      emulator.denyNextSchedule(503);
+      await expect(service.sync(owner.id)).rejects.toThrow();
+      expect(emulator.scheduled(zoom.id)).toBe(originalBot);
+      emulator.denyNextSchedule(400);
+      await service.sync(owner.id);
+      expect(emulator.scheduled(zoom.id)).toBeUndefined();
+      expect((await listing(first)).events.find(({ id }) => id === zoom.id)?.selection).toBe(
+        "skipped",
+      );
+      await runAsTenant(first, () => service.updateSelection(first, botId, zoom.id, "once"));
+      expect(emulator.scheduled(zoom.id)).toBeTruthy();
 
       await runAsSystem("deactivate the calendar owner", () =>
         prisma.user.update({ where: { id: first.userId }, data: { deactivatedAt: now } }),
@@ -309,6 +323,18 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       try {
         await vi.waitFor(() => expect(emulator.scheduled(race.id)).toBeTruthy());
         accepted = emulator.scheduled(race.id);
+        await Promise.all(
+          Array.from({ length: 3 }, () => service.providerChanged(connected.externalCalendarId!)),
+        );
+        await vi.waitFor(() => {
+          const catchups = vi
+            .mocked(jobs.enqueue)
+            .mock.calls.map(([job]) => job.replaceKey)
+            .filter((key) => key?.startsWith("meeting-calendar:webhook-recheck:"));
+          expect(catchups).toEqual(
+            Array(3).fill(`meeting-calendar:webhook-recheck:${connected.id}`),
+          );
+        });
         const booking = await runAsTenant(second, () =>
           prisma.meetingCalendarBooking.findFirstOrThrow({
             where: { eventId: race.id },

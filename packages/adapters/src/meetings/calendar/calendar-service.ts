@@ -293,7 +293,10 @@ export class MeetingCalendarService {
       }
       const backup = this.backup(connection.id);
       await this.options.jobs.enqueue(backup);
-      void bestEffort("reconcile meeting calendar", this.runNow(backup));
+      void bestEffort(
+        "reconcile meeting calendar",
+        this.runNow(backup, { coalesceWhenBusy: true }),
+      );
     });
   }
 
@@ -428,7 +431,6 @@ export class MeetingCalendarService {
                   connectionId,
                   { eventId: event.id, sessionId, startsAt: event.startsAt },
                   lease,
-                  previous?.sessionId === sessionId && previous.linked,
                 ).catch((error: unknown) => {
                   // If this event already had a vendor reservation, retry its
                   // cancellation after giving the other events a chance to sync.
@@ -748,18 +750,14 @@ export class MeetingCalendarService {
     );
   }
 
-  private async cancelBooking(
-    connectionId: string,
-    booking: Booking,
-    lease: HeldLease,
-    detach = true,
-  ) {
+  private async cancelBooking(connectionId: string, booking: Booking, lease: HeldLease) {
     await this.options.prisma.$transaction(async (tx) => {
       await assertLeaseHeld(tx, lease);
       await this.recordSkippedEvent(tx, connectionId, booking.eventId, booking.startsAt);
     });
-    if (detach) await this.removeBooking(connectionId, booking, lease);
-    else await this.dropBooking(connectionId, booking, lease);
+    // A rejected update may leave an earlier provider booking intact, even if
+    // this attempt had cleared its local linked flag.
+    await this.removeBooking(connectionId, booking, lease);
   }
 
   private recordSkippedEvent(
@@ -892,10 +890,25 @@ export class MeetingCalendarService {
     };
   }
 
-  private async runNow(backup: ReturnType<MeetingCalendarService["backup"]>) {
+  private async runNow(
+    backup: ReturnType<MeetingCalendarService["backup"]>,
+    { coalesceWhenBusy = false } = {},
+  ) {
     try {
       await this.sync(backup.payload.connectionId);
     } catch (error) {
+      if (coalesceWhenBusy && error instanceof LeaseHeldError) {
+        // Keep the request's own backup until the shared catch-up is durable.
+        // The running sync must only cancel its own backup.
+        const { connectionId } = backup.payload;
+        await this.options.jobs.enqueue({
+          ...backup,
+          replaceKey: `meeting-calendar:webhook-recheck:${connectionId}`,
+          availableAt: new Date(this.now().getTime() + CONNECT_RETRY_MS),
+        });
+        await this.options.jobs.cancel(backup.replaceKey);
+        return;
+      }
       const delay =
         error instanceof RetryJobLaterError
           ? error.delayMs

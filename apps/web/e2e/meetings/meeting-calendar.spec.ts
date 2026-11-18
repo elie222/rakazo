@@ -52,4 +52,18 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
   await expect(page.getByText("Meeting ended", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "meeting-calendar-series-and-skip");
+
+  const openDisconnect = async () => {
+    await page.getByRole("button", { name: "Calendar options" }).click();
+    await page.getByRole("menuitem", { name: "Disconnect calendar" }).click();
+  };
+  const confirmation = page.getByRole("alertdialog", { name: "Disconnect calendar?" });
+  await openDisconnect();
+  await expect(confirmation).toBeVisible();
+  await captureScreenshot(page, testInfo, "meeting-calendar-disconnect-confirmation");
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
+  await openDisconnect();
+  await confirmation.getByRole("button", { name: "Disconnect calendar" }).click();
+  await expect(page.getByRole("button", { name: "Connect Google Calendar" })).toBeVisible();
 });
