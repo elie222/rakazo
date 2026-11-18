@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AvatarViewport } from "../../lib/bots/avatar-life";
 import type { InboxSignal } from "../../lib/inbox/offscreen-unreads";
 import { offscreenUnreads } from "../../lib/inbox/offscreen-unreads";
-import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
+import { useFloatingHeaderInset, useTopBarInset } from "../../lib/layout/floating-header";
 import { native } from "../../lib/native/native";
 import { canScrollNativeList, scrollNativeListToRow } from "../../lib/native/native-list-scroll";
 import { NativeInsetList } from "../native/native-inset-list";
@@ -115,7 +115,8 @@ export function NativeInboxList<Item>({
   showJumpPills,
 }: NativeInboxListProps<Item>) {
   const hostRef = useRef(null);
-  const headerInset = useFloatingHeaderInset();
+  const floatingHeader = useFloatingHeaderInset() > 0;
+  const headerInset = useTopBarInset();
   const { bottom } = useSafeAreaInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
@@ -187,7 +188,7 @@ export function NativeInboxList<Item>({
       )}
       {spacer(
         "bottom",
-        headerInset > 0 ? bottom + 32 : 32,
+        floatingHeader ? bottom + 32 : 32,
         onGeometryChange(({ width }) => {
           if (width > 0) setRowWidth((current) => (current === width ? current : width));
         }),
