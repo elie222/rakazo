@@ -5,7 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { popularModelProvidersFirst } from "@rakazo/core";
+import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
@@ -265,7 +265,7 @@ export default function Models() {
 
   const failure = error ?? loadError;
   const shownError = error ?? (me ? loadError : null);
-  const firstConnection = target.scope === "account" && me?.needsModel && !credentials.length;
+  const firstConnection = isFirstModelConnection(target.scope, me?.needsModel, credentials.length);
   const shared = {
     credentials,
     providers,

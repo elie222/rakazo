@@ -10,6 +10,7 @@ import {
   catalogEntryFor,
   connectionModels,
   connectionServesModel,
+  isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
 import {
@@ -152,7 +153,7 @@ export function ModelSettingsOverlay({
   // list shows only then, once one is chosen, or when asked for from the main model's menu.
   const [computerOpened, setComputerOpened] = useState(false);
   const mainRole = useModelRole(me, scope, "main");
-  const firstConnection = scope === "account" && me?.needsModel && !credentials.length;
+  const firstConnection = isFirstModelConnection(scope, me?.needsModel, credentials.length);
   const computerRole = useModelRole(me, scope, "computer");
   const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
   // The server answers as runs do. A model it could not check may not see, so the list shows.

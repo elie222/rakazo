@@ -296,8 +296,11 @@ export function createRouterContext(deps: RouterDeps) {
   ): Promise<ModelRoleChoice | null> => {
     if (role === "main") {
       if (!deps.env.deploymentModelConfigured) return null;
-      const { hasDeployment } = await deploymentModelAccess(deps, actor);
-      return hasDeployment
+      const access = await bestEffort(
+        "read main model default funding",
+        deploymentModelAccess(deps, actor),
+      );
+      return access?.hasDeployment
         ? deploymentModelRole(role, {
             settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
             deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
