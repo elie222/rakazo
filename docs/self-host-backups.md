@@ -28,6 +28,8 @@ Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.
+Compose waits up to 60 seconds for Postgres to become healthy. If it fails, the script prints
+the command to read the Postgres logs and leaves the writers stopped.
 
 The SQL import runs in one transaction and stops on the first error, including conflicts with
 existing tables. An invalid archive or failed import leaves the current data tree unchanged.
