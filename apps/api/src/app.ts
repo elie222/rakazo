@@ -835,6 +835,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runtime: meetingRuntime,
       resolveModel: executor.resolveModel,
       offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
     }),
     speechSummary:
       env.voiceSummaryMinChars === undefined

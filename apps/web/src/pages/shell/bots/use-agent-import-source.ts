@@ -108,7 +108,9 @@ export function useAgentImportSource() {
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
         // Key-looking text reaches a bot only when the user ticks it.
-        ...[...found.instructions, ...found.memory].filter((item) => item.containsKey),
+        ...[...found.instructions, ...found.memory, ...found.leftovers].filter(
+          (item) => item.containsKey,
+        ),
       ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
@@ -119,6 +121,7 @@ export function useAgentImportSource() {
             ...plan.skills,
             ...plan.mcpServers,
             ...plan.routines,
+            ...plan.leftovers,
             ...plan.apiKeys,
             ...(plan.model ? [plan.model] : []),
           ].map((item) => item.id),

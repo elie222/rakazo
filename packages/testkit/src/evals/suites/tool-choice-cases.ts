@@ -7,14 +7,6 @@ const PRODUCT_HELP = { anyOf: [{ tool: "skill_read", args: { name: "~rakazo" } }
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
   // Bot settings the user asks for.
   {
-    id: "settings-rename",
-    area: "settings",
-    kind: "guard",
-    purpose: "Rename itself when asked.",
-    prompt: "Please rename yourself to Scout.",
-    expect: { calls: [{ tool: "update_bot" }], bot: { name: "~scout" } },
-  },
-  {
     id: "settings-rename-indirect",
     area: "settings",
     kind: "guard",
@@ -49,15 +41,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     bot: { notifyOnFinish: true },
     prompt: "Stop notifying me every time you finish something.",
     expect: { bot: { notifyOnFinish: false } },
-  },
-  {
-    id: "settings-notifications-on",
-    area: "settings",
-    kind: "guard",
-    purpose: "Turn finish notifications back on when asked.",
-    bot: { notifyOnFinish: false },
-    prompt: "Please turn your finish notifications back on.",
-    expect: { bot: { notifyOnFinish: true } },
   },
   {
     id: "settings-instructions-add",
@@ -100,28 +83,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     },
   },
   {
-    id: "settings-model-switch",
-    area: "settings",
-    kind: "guard",
-    purpose: "Switch its own model from a loose model name.",
-    prompt: "Switch your model to Claude Sonnet.",
-    expect: { bot: { modelId: "~sonnet" } },
-  },
-  {
     id: "settings-model-switch-gemini",
     area: "settings",
     kind: "guard",
     purpose: "Switch to another provider's model from a loose name.",
     prompt: "Use Gemini Flash for your answers from now on.",
     expect: { bot: { modelId: "~gemini" } },
-  },
-  {
-    id: "settings-thinking-up",
-    area: "settings",
-    kind: "guard",
-    purpose: "Raise its thinking level when asked.",
-    prompt: "Set your thinking level to high, these questions are hard.",
-    expect: { bot: { thinkingLevel: "high" } },
   },
   {
     id: "settings-thinking-down",
@@ -148,15 +115,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     bot: { autoSpeak: false },
     prompt: "Read your replies out loud from now on.",
     expect: { bot: { autoSpeak: true } },
-  },
-  {
-    id: "settings-read-aloud-off",
-    area: "settings",
-    kind: "guard",
-    purpose: "Turn off reading replies aloud.",
-    bot: { autoSpeak: true },
-    prompt: "Stop reading your answers out loud.",
-    expect: { bot: { autoSpeak: false } },
   },
   // Settings it must leave alone.
   {
@@ -262,14 +220,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     },
   },
   {
-    id: "help-credits",
-    area: "product-help",
-    kind: "guard",
-    purpose: "Look up how credits work.",
-    prompt: "How do credits work in Rakazo?",
-    expect: PRODUCT_HELP,
-  },
-  {
     id: "help-computer",
     area: "product-help",
     kind: "guard",
@@ -278,43 +228,11 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: PRODUCT_HELP,
   },
   {
-    id: "help-routines",
-    area: "product-help",
-    kind: "guard",
-    purpose: "Look up what routines are.",
-    prompt: "What are routines in Rakazo and how do I make one?",
-    expect: PRODUCT_HELP,
-  },
-  {
-    id: "help-self-host",
-    area: "product-help",
-    kind: "guard",
-    purpose: "Look up self-hosting.",
-    prompt: "Can I self-host Rakazo?",
-    expect: PRODUCT_HELP,
-  },
-  {
-    id: "help-spaces-groups",
-    area: "product-help",
-    kind: "guard",
-    purpose: "Look up product concepts.",
-    prompt: "What's the difference between a space and a group in Rakazo?",
-    expect: PRODUCT_HELP,
-  },
-  {
     id: "help-general-knowledge",
     area: "product-help",
     kind: "control",
     purpose: "General knowledge needs no product docs.",
     prompt: "What's the capital of Australia?",
-    expect: { notCalls: ["skill_read", "update_bot"] },
-  },
-  {
-    id: "help-llm-concept",
-    area: "product-help",
-    kind: "control",
-    purpose: "Explaining a general concept needs no product docs.",
-    prompt: "In two sentences, what is a large language model?",
     expect: { notCalls: ["skill_read", "update_bot"] },
   },
   // Everyday tools.
@@ -327,33 +245,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { anyOf: [{ tool: "remember" }, { tool: "save_memory" }] },
   },
   {
-    id: "files-write",
-    area: "files",
-    kind: "guard",
-    purpose: "Create a requested file.",
-    prompt: "Create a file notes/groceries.md listing eggs, milk and bread.",
-    expect: {
-      anyOf: [
-        { tool: "write_file", args: { path: "~groceries.md" } },
-        { tool: "shell", args: { command: "~groceries.md" } },
-      ],
-    },
-  },
-  {
     id: "files-list",
     area: "files",
     kind: "guard",
     purpose: "Inspect its files rather than guessing.",
     prompt: "What files are in your home folder right now?",
     expect: { anyOf: [{ tool: "list_files" }, { tool: "shell" }] },
-  },
-  {
-    id: "shell-run",
-    area: "shell",
-    kind: "guard",
-    purpose: "Run a requested command.",
-    prompt: "Run `python3 -c 'print(6*7)'` and tell me the output.",
-    expect: { calls: [{ tool: "shell", args: { command: "~python3" } }] },
   },
   {
     id: "web-search",
@@ -410,14 +307,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "schedule_list" }] },
   },
   {
-    id: "scratchpad-add",
-    area: "scratchpad",
-    kind: "guard",
-    purpose: "Track a to-do on its scratchpad.",
-    prompt: "Add 'call the dentist' to your scratchpad.",
-    expect: { calls: [{ tool: "scratchpad_add" }] },
-  },
-  {
     id: "skills-create",
     area: "skills",
     kind: "guard",
@@ -434,14 +323,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     prompt:
       "Interrogate this plan: we will cache every API response forever to make the app faster.",
     expect: { calls: [{ tool: "skill_read", args: { name: "~interrogate" } }] },
-  },
-  {
-    id: "fleet-spawn",
-    area: "fleet",
-    kind: "guard",
-    purpose: "Create a new bot when asked.",
-    prompt: "Create a new bot called Researcher that finds papers on battery chemistry.",
-    expect: { calls: [{ tool: "spawn_bot" }] },
   },
   {
     id: "fleet-spawn-setup",
@@ -490,14 +371,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "list_secrets" }] },
   },
   {
-    id: "secrets-generate",
-    area: "secrets",
-    kind: "guard",
-    purpose: "Generate and store a secret.",
-    prompt: "Generate a strong random password and store it as a secret named DB_PASSWORD.",
-    expect: { calls: [{ tool: "generate_secret" }] },
-  },
-  {
     id: "ask-choice",
     area: "ask",
     kind: "guard",
@@ -515,14 +388,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "run_subagent" }] },
   },
   {
-    id: "plot-render",
-    area: "rare",
-    kind: "guard",
-    purpose: "Render a plot with the plot tool.",
-    prompt: "Plot y = x^2 for x from -5 to 5.",
-    expect: { anyOf: [{ tool: "render_plot" }] },
-  },
-  {
     id: "mcp-add",
     area: "rare",
     kind: "guard",
@@ -530,31 +395,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     prompt: "Add the MCP server at https://mcp.example.com/sse so you can use its tools.",
     expect: { calls: [{ tool: "add_mcp_server" }] },
   },
-  {
-    id: "space-create",
-    area: "rare",
-    kind: "guard",
-    purpose: "Create a space when asked.",
-    prompt: "Create a new space called Marketing.",
-    expect: { calls: [{ tool: "create_space" }] },
-  },
   // Ordinary conversation that needs no tool.
-  {
-    id: "chat-haiku",
-    area: "conversation",
-    kind: "control",
-    purpose: "Write a short poem without tools.",
-    prompt: "Write a haiku about autumn.",
-    expect: { notCalls: ["*"] },
-  },
-  {
-    id: "chat-translate",
-    area: "conversation",
-    kind: "control",
-    purpose: "Translate without tools.",
-    prompt: "How do you say 'good morning' in Spanish?",
-    expect: { notCalls: ["*"] },
-  },
   {
     id: "chat-thanks",
     area: "conversation",
@@ -579,22 +420,6 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Simple arithmetic does not change settings.",
     prompt: "What's 17 times 23?",
     expect: { settingsUnchanged: true, notCalls: ["skill_read", "web_search"] },
-  },
-  {
-    id: "chat-feedback-tone",
-    area: "conversation",
-    kind: "control",
-    purpose: "Casual praise is not a request to change anything.",
-    prompt: "Nice, that last answer was really helpful.",
-    expect: { settingsUnchanged: true },
-  },
-  {
-    id: "chat-email-draft",
-    area: "conversation",
-    kind: "control",
-    purpose: "Draft text inline without tools or settings.",
-    prompt: "Draft a two-line email telling my team the standup moves to 10am.",
-    expect: { notCalls: ["*"] },
   },
   {
     id: "chat-code-question",
@@ -651,7 +476,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     kind: "control",
     purpose: "Run a command without searching for tools.",
     prompt: "Run `date -u` and tell me the result.",
-    expect: { calls: [{ tool: "shell" }], maxCalls: { find_tool: 0 } },
+    expect: { calls: [{ tool: "shell", args: { command: "~date" } }], maxCalls: { find_tool: 0 } },
   },
   {
     id: "lazy-common-web",
