@@ -36,7 +36,8 @@ async function eventsFor(emulator: RecallCalendarEmulator, id: string) {
 
 function schedule(emulator: RecallCalendarEmulator, event: MeetingCalendarEvent, key: string) {
   if (!event.meetingUrl) throw new Error("Expected meeting link in fixture");
-  const platform = event.meetingUrl.includes("meet.google.com") ? "google_meet" : "zoom";
+  const platform =
+    new URL(event.meetingUrl).hostname === "meet.google.com" ? "google_meet" : "zoom";
   return emulator.provider.schedule(
     event.id,
     key,

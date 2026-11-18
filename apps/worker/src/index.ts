@@ -75,7 +75,7 @@ import {
   withSecretWriteAhead,
 } from "@rakazo/adapters";
 import { abortableDelay } from "@rakazo/core";
-import { resolveAuthSecret, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { resolveMeetingSigningKey, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -276,7 +276,7 @@ async function main() {
       jobs,
       provider: calendarProvider,
       webOrigin: process.env.WEB_ORIGIN?.trim() || "http://127.0.0.1:5173",
-      oauthStateKey: resolveAuthSecret(),
+      oauthStateKey: resolveMeetingSigningKey(),
       enabled: (spaceId) => meetings.enabled(spaceId),
       buildJoin: meetingMedia?.buildJoin ?? ((input) => input),
       publish: async ({ spaceId, userId }) => {

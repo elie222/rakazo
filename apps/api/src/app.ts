@@ -108,7 +108,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning } from "@rakazo/core/node/secrets-guard";
+import { encryptionKeyWarning, resolveMeetingSigningKey } from "@rakazo/core/node/secrets-guard";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -708,7 +708,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       jobs,
       provider: calendarProvider,
       webOrigin: env.webOrigin,
-      oauthStateKey: env.authSecret,
+      oauthStateKey: resolveMeetingSigningKey(),
       enabled: (spaceId) => meetings.enabled(spaceId),
       buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
       publish: async ({ spaceId, userId }) => {
