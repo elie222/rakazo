@@ -25,6 +25,7 @@ import {
   summarizeApproval,
 } from "../evals/suites/approval.js";
 import {
+  APPROVAL_VARIANTS_VERSION,
   parseApprovalVariant,
   VariantDecisionProvider,
   variantPrompt,
@@ -123,6 +124,7 @@ export async function runApprovalSuite(
       : APPROVAL_FIXTURE_VERSION,
     /** Eval-only reviewer inputs and rubric; `current` is what the product sends today. */
     variant: variant.id,
+    variantsVersion: APPROVAL_VARIANTS_VERSION,
     rubricVersion: null as string | null,
     reviewer: null as null | { protocol: "decisions" | "llm"; provider: string; model: string },
     codeRevision: meta.codeRevision,
@@ -433,6 +435,7 @@ function storedApprovalRun(
     startedAt: string;
     fixtureVersion: string;
     variant: string;
+    variantsVersion: string;
     rubricVersion: string | null;
     reviewer: { protocol: string; provider: string; model: string } | null;
     codeRevision: string | null;
@@ -447,6 +450,7 @@ function storedApprovalRun(
   const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   const inputs = {
     variant: report.variant,
+    variantsVersion: report.variantsVersion,
     rubricVersion: report.rubricVersion,
     reviewer: report.reviewer,
     codeRevision: report.codeRevision,
