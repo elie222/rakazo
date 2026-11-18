@@ -37,6 +37,14 @@ function draftFields(args: Record<string, unknown>): { fields: DraftFields } | {
   const fields: DraftFields = {};
   for (const [name, max] of FIELD_LIMITS) {
     const value = args[name];
+    // A blank recipient or subject is how a revision removes one.
+    if (
+      (name === "to" || name === "subject") &&
+      (value === null || (typeof value === "string" && !value.trim()))
+    ) {
+      fields[name] = "";
+      continue;
+    }
     if (!argumentGiven(value)) continue;
     if (typeof value !== "string") return { error: `${name} must be text.` };
     const text = value.trim();
@@ -97,8 +105,14 @@ async function reviseDraft(
         (block): block is DraftBlock => block.kind === "draft" && block.draftId === draftId,
       );
       if (!current) return null;
+      const { to, subject, ...rest } = { ...current, ...fields };
       const next = redactDraft(
-        { ...current, ...fields, version: current.version + 1 },
+        {
+          ...rest,
+          ...(to ? { to } : {}),
+          ...(subject ? { subject } : {}),
+          version: current.version + 1,
+        },
         ctx.secrets,
       );
       const changed = changeMessageBlocks(message, (block) => (block === current ? next : block));

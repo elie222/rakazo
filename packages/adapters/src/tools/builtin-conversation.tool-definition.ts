@@ -250,9 +250,13 @@ export const conversationTools: ConnectorTool[] = [
         to: {
           type: "string",
           maxLength: DRAFT_TO_MAX_LENGTH,
-          description: "Who it is for, when known.",
+          description: "Who it is for, when known. An empty string removes it from a draft.",
         },
-        subject: { type: "string", maxLength: DRAFT_SUBJECT_MAX_LENGTH },
+        subject: {
+          type: "string",
+          maxLength: DRAFT_SUBJECT_MAX_LENGTH,
+          description: "An empty string removes it from a draft.",
+        },
         body: { type: "string", minLength: 1, maxLength: DRAFT_BODY_MAX_LENGTH },
       },
       required: ["body"],

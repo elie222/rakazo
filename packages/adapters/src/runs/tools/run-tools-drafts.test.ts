@@ -118,6 +118,19 @@ describe("write_draft", () => {
     expect(publishMessage).not.toHaveBeenCalled();
   });
 
+  it("removes a recipient or subject a revision leaves blank", async () => {
+    const { ctx, tx } = context({ botId: "bot-1", blocks: [{ ...draft, subject: "Hi" }] });
+    await draftTools.write_draft!(
+      ctx,
+      call({ draftId: "d-1", body: "Hey", to: "", subject: null }),
+    );
+    const { to: _to, ...withoutRecipient } = draft;
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: { blocks: [{ ...withoutRecipient, body: "Hey", version: 3 }] },
+    });
+  });
+
   it("does not revise another bot's draft or one that is not in the chat", async () => {
     for (const stored of [undefined, { botId: "bot-2", blocks: [draft] }]) {
       const { ctx, tx } = context(stored);
