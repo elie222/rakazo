@@ -44,6 +44,17 @@ describe("workload identity exchange", () => {
     });
   });
 
+  it("does not surface a malformed successful token response", async () => {
+    vi.mocked(readFile).mockResolvedValue("fixture-assertion");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("fixture-bearer"));
+    await expect(
+      exchangeWorkloadIdentity(binding, new AbortController().signal, fetcher),
+    ).rejects.toMatchObject({
+      kind: "SERVICE_UNAVAILABLE",
+      message: "The OpenAI token service returned an invalid response.",
+    });
+  });
+
   it("does not surface a rejected provider response with credentials in it", async () => {
     vi.mocked(readFile).mockResolvedValue("fixture-assertion");
     const fetcher = vi

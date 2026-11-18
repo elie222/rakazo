@@ -56,12 +56,17 @@ export async function exchangeWorkloadIdentity(
       "Model OAuth exchange failed. Check the workload identity binding.",
     );
   }
-  const token = Token.safeParse(await response.json().catch(() => undefined));
-  signal.throwIfAborted();
-  if (!token.success)
-    throw new ClientError(
+  const invalidResponse = () =>
+    new ClientError(
       "SERVICE_UNAVAILABLE",
       "The OpenAI token service returned an invalid response.",
     );
+  const payload = await response.json().catch(() => {
+    signal.throwIfAborted();
+    throw invalidResponse();
+  });
+  signal.throwIfAborted();
+  const token = Token.safeParse(payload);
+  if (!token.success) throw invalidResponse();
   return { key: token.data.access_token, expiresAt: Date.now() + token.data.expires_in * 1000 };
 }
