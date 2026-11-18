@@ -18,8 +18,8 @@ import { bestEffort } from "@rakazo/logging";
 const MINUTE = 60_000;
 const WORK_TIMEOUT = 25_000;
 const BACKUP_AFTER = WORK_TIMEOUT + 5_000;
-const SESSION_DURATION = 2 * 60 * MINUTE + 5 * MINUTE;
-const DAILY_LIMIT = 20;
+export const MEETING_SESSION_DURATION = 2 * 60 * MINUTE + 5 * MINUTE;
+export const MEETING_DAILY_LIMIT = 20;
 
 type Work = BackgroundJobPayloads["meeting.work"];
 type JobAction = Work["action"];
@@ -112,7 +112,14 @@ export class MeetingService {
   async list(actor: Actor, botId: string) {
     await this.bot(actor, botId);
     const rows = await this.deps.prisma.meetingSession.findMany({
-      where: { spaceId: actor.spaceId, userId: actor.userId, botId },
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        // Upcoming calendar reservations have their own view. Show only calls the
+        // provider has started reporting, so skipping a reservation adds no history.
+        OR: [{ scheduledFor: null }, { receivedAt: { not: null }, status: { not: "scheduled" } }],
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
@@ -154,18 +161,30 @@ export class MeetingService {
               tx.meetingSession.count({
                 where: {
                   spaceId: actor.spaceId,
-                  createdAt: { gt: new Date(Date.now() - 24 * 60 * MINUTE) },
+                  OR: [
+                    {
+                      scheduledFor: null,
+                      createdAt: { gt: new Date(Date.now() - 24 * 60 * MINUTE) },
+                    },
+                    {
+                      scheduledFor: {
+                        gt: new Date(Date.now() - 24 * 60 * MINUTE),
+                        lte: new Date(),
+                      },
+                      status: { not: "ended" },
+                    },
+                  ],
                 },
               }),
           );
-          if (count >= DAILY_LIMIT) {
+          if (count >= MEETING_DAILY_LIMIT) {
             throw new ClientError(
               "TOO_MANY_REQUESTS",
               "This Space reached its daily meeting limit.",
             );
           }
           const id = randomUUID();
-          const expiresAt = new Date(Date.now() + SESSION_DURATION);
+          const expiresAt = new Date(Date.now() + MEETING_SESSION_DURATION);
           await tx.meetingSession.create({
             data: {
               id,

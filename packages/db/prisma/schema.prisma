@@ -2948,11 +2948,63 @@ model MeetingSession {
   receivedAt   DateTime?
   closedAt     DateTime?
   expiresAt    DateTime
+  scheduledFor DateTime?
   createdAt    DateTime  @default(now())
 
   @@index([spaceId, userId, botId, createdAt])
   @@index([spaceId, createdAt])
   @@index([userId])
   @@unique([provider, externalId])
+  @@index([spaceId, scheduledFor])
   @@map("meeting_sessions")
+}
+
+model MeetingCalendarConnection {
+  id                 String                  @id
+  spaceId            String
+  userId             String
+  provider           String
+  externalCalendarId String?
+  disconnecting      Boolean                 @default(false)
+  rules              MeetingCalendarRule[]
+  bookings           MeetingCalendarBooking[]
+
+  @@unique([spaceId, userId])
+  @@unique([provider, externalCalendarId])
+  @@map("meeting_calendar_connections")
+}
+
+model MeetingCalendarAuthorization {
+  id        String   @id
+  spaceId   String
+  userId    String
+  expiresAt DateTime
+
+  @@unique([spaceId, userId])
+  @@map("meeting_calendar_authorizations")
+}
+
+model MeetingCalendarRule {
+  connectionId String
+  connection   MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  scope        String
+  targetId     String
+  botId        String?
+
+  @@id([connectionId, scope, targetId])
+  @@map("meeting_calendar_rules")
+}
+
+model MeetingCalendarBooking {
+  connectionId String
+  connection   MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  eventId      String
+  sessionId    String
+  startsAt     DateTime
+  linked       Boolean                   @default(false)
+  configDigest String
+
+  @@id([connectionId, eventId])
+  @@index([sessionId])
+  @@map("meeting_calendar_bookings")
 }

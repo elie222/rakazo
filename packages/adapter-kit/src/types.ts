@@ -1051,6 +1051,7 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.calendar-sync": { connectionId: string };
   "meeting.work": {
     sessionId: string;
     action: "join" | "leave" | "expire" | "transcript" | "cleanup";

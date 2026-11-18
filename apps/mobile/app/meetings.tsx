@@ -27,6 +27,9 @@ export default function MeetingsScreen() {
   const styles = useThemedStyles(createStyles);
   const read = rpcQuery("meetings/list", { botId });
   const list = useScreenQuery(read, { enabled: Boolean(botId) });
+  const calendar = useScreenQuery(rpcQuery("meetingCalendar/upcoming", { botId }), {
+    enabled: Boolean(botId && list.data?.enabled),
+  });
   const focused = useIsFocused();
   useSpaceChanges(
     "meetings",
@@ -133,6 +136,15 @@ export default function MeetingsScreen() {
               />
             );
           })}
+        </SettingsGroup>
+      ) : null}
+      {calendar.data?.available ? (
+        <SettingsGroup>
+          <SettingsRow
+            title={t`Auto-join`}
+            chevron="right"
+            onPress={() => router.push({ pathname: "/meeting-calendar", params: { botId } })}
+          />
         </SettingsGroup>
       ) : null}
     </ScrollView>

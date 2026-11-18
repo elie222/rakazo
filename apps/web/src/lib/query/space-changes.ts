@@ -18,6 +18,7 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   meetings: [
     ["meetings", "list"],
     ["meetings", "transcript"],
+    ["meetingCalendar", "upcoming"],
   ],
 };
 

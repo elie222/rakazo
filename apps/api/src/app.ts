@@ -32,6 +32,7 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredMeetingCalendar,
   configuredMeetingProvider,
   configuredMeetingSpaces,
   contentKeyProviderFromEnv,
@@ -60,6 +61,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
   MeetingService,
   machineCleanupRecords,
   messagingAddresses,
@@ -184,6 +186,7 @@ import { mountScriptAssets } from "./http/script-assets.js";
 import { SYSTEM_CONTEXT_PATHS } from "./http/system-context-routes.js";
 import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
 import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
+import { mountMeetingCalendarHttp } from "./meetings/calendar/calendar-routes.js";
 import { createMeetingAnswers } from "./meetings/meeting-answers.js";
 import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
@@ -694,6 +697,21 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
     buildJoin: meetingMediaConfig?.buildJoin,
   });
+  const calendarProvider = await configuredMeetingCalendar(meetingProvider);
+  const meetingCalendar =
+    calendarProvider &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: env.webOrigin,
+      oauthStateKey: env.authSecret,
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId }) => {
+        await events.publishSpaceChange?.(spaceId, "meetings");
+      },
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
@@ -701,6 +719,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
       meetingWork: meetingProvider && meetings.work.bind(meetings),
+      meetingCalendarSync:
+        meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
       contextStrategy,
       prisma,
       runtime: baseRuntime,
@@ -829,6 +849,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
   const router = createRouter({
     meetings,
+    meetingCalendar,
     meetingAnswers: createMeetingAnswers({
       prisma,
       runtime: meetingRuntime,
@@ -1201,6 +1222,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   );
   if (meetingProvider) mountMeetingWebhook(app, meetings);
   meetingMedia?.mount(app);
+  if (meetingCalendar) mountMeetingCalendarHttp(app, meetingCalendar, sessionActor);
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {

@@ -8,14 +8,14 @@ The transcript belongs to the member who started the session. They can open it f
 
 Set the same meeting-provider configuration on the API and worker.
 
-| Setting | Value |
-| --- | --- |
-| `MEETING_PROVIDER` | Use `recall` for Recall.ai. Leave empty to disable new joins. |
-| `MEETING_API_KEY` | API credential from the provider workspace. |
-| `MEETING_REGION` | Workspace's region. |
-| `MEETING_WEBHOOK_SECRET` | Signing secret for the workspace's status webhooks. |
+| Setting                     | Value                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `MEETING_PROVIDER`          | Use `recall` for Recall.ai. Leave empty to disable new joins.                    |
+| `MEETING_API_KEY`           | API credential from the provider workspace.                                      |
+| `MEETING_REGION`            | Workspace's region.                                                              |
+| `MEETING_WEBHOOK_SECRET`    | Signing secret for the workspace's status webhooks.                              |
 | `MEETING_WEBHOOK_SIGNATURE` | `webhook` by default. Set `svix` for older workspaces that use endpoint secrets. |
-| `MEETING_SPACE_IDS` | Comma-separated list of Spaces authorized to send bots. |
+| `MEETING_SPACE_IDS`         | Comma-separated list of Spaces authorized to send bots.                          |
 
 Configure the status webhook to use `/api/meetings/events` on your public API origin. Subscribe to bot lifecycle events, `recording.done`, `recording.failed`, `transcript.done`, and `transcript.failed`. The operator's workspace incurs per-minute capture and transcription costs. This deployment admits up to 20 manual meetings per Space per rolling day. A meeting can record for up to two hours.
 
@@ -36,3 +36,17 @@ MEETING_PROVIDER=emulator pnpm test:e2e -- --spec=meeting-transcript.spec.ts
 Set `MEETING_PUBLIC_ORIGIN` to the public HTTPS origin serving the API on both the API and worker. The meeting bot displays the Rakazo mark and its name on camera. The API and worker must use the same `BETTER_AUTH_SECRET` to sign media access. The meeting provider needs access to `/api/meetings/media` and its assets on that origin.
 
 Enable `MEETING_LIVE_VOICE=true` on the API to let the bot listen and reply when addressed. Configure server-side speech recognition, speech synthesis, and a model for the bot. Live voice uses those connections and their usage limits. The bot receives recent meeting speech as context for replies. The camera page carries that context while it is connected and discards it when it reloads. The post-meeting transcript is imported independently and includes the bot's spoken replies where the meeting provider can attribute them.
+
+## Schedule calendar meetings
+
+Set `MEETING_CALENDAR_CLIENT_ID` and `MEETING_CALENDAR_CLIENT_SECRET` on the API and worker to enable calendar scheduling. Create a Google OAuth web application for the deployment, enable the Google Calendar API, and register `/api/meetings/calendar/oauth/callback` on the web origin as its redirect URI. Request the read-only calendar-events and email scopes. The meeting provider receives the OAuth refresh token to keep the primary calendar in sync. Rakazo stores the provider's connection ID and your event selections. See the [Google Calendar setup guide](https://docs.recall.ai/docs/calendar-v2-google-calendar).
+
+Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/calendar/webhook` on the public API origin. Use the workspace signing secret. If your workspace uses legacy per-endpoint Svix secrets, set `MEETING_CALENDAR_WEBHOOK_SECRET` to the calendar endpoint's signing secret.
+
+In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Each Space can schedule up to 20 meetings for the same UTC day. Linked calendars with the same selected bot share one scheduled participant per occurrence. The final transcript is available to the member who owns that shared session.
+
+To exercise connection and scheduling with the local emulator, run:
+
+```sh
+MEETING_PROVIDER=emulator pnpm test:e2e -- --spec=meeting-calendar.spec.ts
+```
