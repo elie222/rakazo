@@ -8,7 +8,7 @@ import {
 } from "@rakazo/adapters";
 import { parseModelJson } from "@rakazo/adapters/model-json";
 import type { Actor } from "@rakazo/contracts";
-import { ClientError, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { ClientError, MISSING_MODEL_RUN_ERROR, truncatePlainText } from "@rakazo/core";
 import { LeaseHeldError, LeaseLostError, recordUsage, runAsTenant, withLease } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
@@ -28,7 +28,19 @@ import { meetingReplyPrompt } from "./meeting-reply.prompt.js";
 type ModelScope = Pick<Actor, "userId" | "spaceId"> & { botId: string };
 type ReplyModel = AgentRunRequest["model"];
 
-const replySchema = z.object({ reply: z.string().trim().min(1).max(420).nullable() });
+const SPOKEN_REPLY_LIMIT = 420;
+const replySchema = z.object({
+  reply: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((text) =>
+      text.length <= SPOKEN_REPLY_LIMIT
+        ? text
+        : `${truncatePlainText(text, SPOKEN_REPLY_LIMIT - 1).trimEnd()}…`,
+    )
+    .nullable(),
+});
 
 export function createMeetingMedia(
   deps: VoiceDeps &
