@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema, LoginFieldLabels, OneTimeCodeTarget } from "./bot-secrets.js";
+import { DraftBlockSchema } from "./drafts.js";
 import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 import { McpAppCspSchema } from "./mcp-app.js";
@@ -314,6 +315,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["draft", "saved"]),
   }),
   ChartBlock,
+  DraftBlockSchema,
   z.object({
     /** Approval card for an agent-created MCP server. The user completes the
         OAuth popup (or confirms no authorization is needed) in the UI. The

@@ -469,6 +469,11 @@ export function userTurnInstructions(parts: {
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
+      "write_draft",
+      "When you write something for the user to send themselves (an email, a message, a post), put it in write_draft instead of your reply, and keep the reply to a line. When the user replies to a draft with changes, revise it with its draftId instead of starting a new one.",
+    ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
       "add_mcp_server",
       "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     ),

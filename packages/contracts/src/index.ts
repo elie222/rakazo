@@ -21,6 +21,7 @@ export * from "./connection-setup-error.js";
 export * from "./connector-errors.js";
 export * from "./desktop.js";
 export * from "./domain.js";
+export * from "./drafts.js";
 export * from "./events.js";
 export * from "./experiments.js";
 export * from "./history.js";

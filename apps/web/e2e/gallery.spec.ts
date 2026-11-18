@@ -16,6 +16,39 @@ test("gallery keeps a paginated call closed and its follow-up visible", async ({
   await captureScreenshot(page, testInfo, "paginated-call-marker");
 });
 
+test("a draft opens to mark the passages to change", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=drafts&theme=light");
+  const card = page.getByTestId("draft-card").first();
+  await card.getByRole("button", { name: "Open" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("LinkedIn message")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Revise" })).toBeDisabled();
+  for (const [passage, note] of [
+    ["I hope this message finds you well.", "Warmer"],
+    ["quick 15-minute call next week", "Suggest Tuesday"],
+  ] as const) {
+    await dialog.getByTestId("draft-body").evaluate((body, passage) => {
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.textContent?.indexOf(passage) ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + passage.length);
+        getSelection()?.removeAllRanges();
+        getSelection()?.addRange(range);
+        body.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+        return;
+      }
+    }, passage);
+    await dialog.getByRole("textbox", { name: "What should change?" }).fill(note);
+    await dialog.getByRole("button", { name: "Add" }).click();
+  }
+  await expect(dialog.getByText("2 notes")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Revise" })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "draft-marked-up");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

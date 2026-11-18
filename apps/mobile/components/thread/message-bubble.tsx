@@ -45,6 +45,7 @@ import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../change-undo";
+import { DraftCard } from "../drafts/draft-card";
 import { ImportSetupCard } from "../ImportSetupCard";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
@@ -145,7 +146,12 @@ function MessageBubbleWithMentions({
 
 /** Blocks drawn as their own card between the message's text pieces. */
 function isOwnCardBlock(block: MessageBlock): boolean {
-  return isSpecialMessageBlock(block) || block.kind === "page" || block.kind === "app";
+  return (
+    isSpecialMessageBlock(block) ||
+    block.kind === "page" ||
+    block.kind === "app" ||
+    block.kind === "draft"
+  );
 }
 
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
@@ -165,6 +171,15 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     const first = blocks[0]!;
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "draft")
+      return (
+        <DraftCard
+          key={`draft-${index}`}
+          block={first}
+          messageId={message.id}
+          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
+        />
+      );
     if (first.kind === "app")
       return (
         <McpAppCard

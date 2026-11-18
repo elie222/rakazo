@@ -15,6 +15,7 @@ import {
   SUBAGENT_HIDDEN_TOOLS,
 } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { draftTools } from "./run-tools-drafts.js";
 import { emailTools } from "./run-tools-email.js";
 import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
@@ -44,6 +45,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
   ...Object.entries(pageTools),
+  ...Object.entries(draftTools),
   ...Object.entries(memoryTools),
   ...Object.entries(integrationTools),
   ...Object.entries(taskTools),

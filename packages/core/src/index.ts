@@ -40,6 +40,7 @@ export * from "./computer-updates.js";
 export * from "./connection-catalog.js";
 export * from "./cron.js";
 export * from "./display-name.js";
+export * from "./draft-notes.js";
 export * from "./echo.js";
 export * from "./email-typo.js";
 export * from "./events.js";

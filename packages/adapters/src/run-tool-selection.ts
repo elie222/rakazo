@@ -178,6 +178,7 @@ export function selectBuiltinToolsForRun(options: {
       (!isBackgroundRunTrigger(options.trigger) ||
         ![
           "message_user",
+          "write_draft",
           "message_bot",
           "handoff_to_bot",
           "message_agent",
@@ -211,6 +212,7 @@ export function selectBuiltinToolsForRun(options: {
             "reflect_memory",
             "task_catalog",
             "board_tickets",
+            "write_draft",
           ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),

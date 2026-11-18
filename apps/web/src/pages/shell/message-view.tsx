@@ -19,6 +19,7 @@ import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
 import { ComputerCard } from "../../components/ComputerCard";
+import { DraftCard } from "../../components/drafts/DraftCard";
 import { McpAppCard } from "../../components/McpAppCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { SubagentCard } from "../../components/SubagentCard";
@@ -500,6 +501,18 @@ export const MessageView = memo(function MessageView({
                 block={block}
                 updated={isPageSuperseded?.(message.id, block) ?? false}
               />
+            );
+          }
+          if (block.kind === "draft") {
+            return (
+              <div key={i} className="flex justify-start">
+                <DraftCard
+                  block={block}
+                  messageId={message.id}
+                  target={artifactTarget}
+                  onRefresh={onRefresh}
+                />
+              </div>
             );
           }
           if (block.kind === "chart") {
