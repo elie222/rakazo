@@ -7,14 +7,11 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TailnetBotAccess } from "../components/tailnet-bot-access";
-import { rpc } from "./api";
-import { queryClient } from "./query";
+import { rpc } from "./api/api";
+import { queryClient } from "./query/query";
 
 const alert = vi.hoisted(() => vi.fn());
-vi.mock("./api-server", () => ({}));
-vi.mock("./api-auth", () => ({}));
-vi.mock("./api-live", () => ({}));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   rpc: vi.fn(),
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-1",
@@ -24,9 +21,9 @@ vi.mock("./api", () => ({
     headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
   }),
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
-vi.mock("./user-error", () => ({
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("./api/user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("expo-router", async () => {
@@ -35,7 +32,7 @@ vi.mock("expo-router", async () => {
     useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
   };
 });
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, label }: { children?: ReactNode; label?: string }) => (
     <section aria-label={label}>{children}</section>
   ),

@@ -18,9 +18,9 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
-import { PanelSection } from "./bot-settings-sections";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../lib/query/user-error";
+import { PanelSection } from "./bots/bot-settings-sections";
 
 /**
  * Lets this bot reach the signed-in member's tailnet. The connection is the member's own in this

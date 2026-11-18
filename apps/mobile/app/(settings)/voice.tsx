@@ -12,11 +12,12 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPicker } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSwitch } from "../../components/native-switch";
-import { mobileTokens } from "../../lib/appearance";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSwitch } from "../../components/native/native-switch";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
 import {
   loadCallGreetingEnabled,
   loadCallSoundsEnabled,
@@ -25,15 +26,14 @@ import {
   saveCallGreetingEnabled,
   saveCallSoundsEnabled,
   saveWaitSoundEnabled,
-} from "../../lib/call-sounds";
-import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
-import { speakText } from "../../lib/voice";
+} from "../../lib/calls/call-sounds";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { settingsRpc, settingsTarget } from "../../lib/query/settings-target";
+import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/voice/device-voice";
+import { speakText } from "../../lib/voice/voice";
 
 const DEVICE_CHOICE = "device";
 

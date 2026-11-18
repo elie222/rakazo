@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { Alert } from "react-native";
-import { queryClient, rpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { errorText } from "../lib/user-error";
-import { SettingsGroup, SettingsSwitch } from "./settings-group";
+import { errorText } from "../lib/api/user-error";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { SettingsGroup, SettingsSwitch } from "./settings/settings-group";
 
 /**
  * Lets this bot reach the member's own tailnet in this Space. It shows only once they have

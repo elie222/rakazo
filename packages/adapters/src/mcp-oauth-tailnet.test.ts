@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { connect } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { McpOAuthBroker } from "./mcp-oauth.js";
+import { McpOAuthBroker } from "./mcp/mcp-oauth.js";
 import type { TailnetRoute } from "./tailnet-fetch.js";
 
 const ORIGIN = "http://mcp.tail1234.ts.net";

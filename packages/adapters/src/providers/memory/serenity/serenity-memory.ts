@@ -1,5 +1,5 @@
-import type { MemoryProviderDefinition } from "../../../memory-provider-descriptor.js";
-import { MEMORY_SECRET_MIN_LENGTH } from "../../../memory-provider-descriptor.js";
+import type { MemoryProviderDefinition } from "../../../memory/memory-provider-descriptor.js";
+import { MEMORY_SECRET_MIN_LENGTH } from "../../../memory/memory-provider-descriptor.js";
 import { normalizeSerenityEndpoint } from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,

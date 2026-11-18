@@ -65,7 +65,8 @@ const NOT_PASSED: Record<string, string> = {
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
-  RAKAZO_NET_FILE: "path of the tailnet helper on a Windows computer, not read by the api or worker",
+  RAKAZO_NET_FILE:
+    "path of the tailnet helper on a Windows computer, not read by the api or worker",
   RAKAZO_NET_HELPER: "tailnet helper bytes written only into a bot computer's shell",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
@@ -171,8 +172,14 @@ async function registryEnv(file: string, exportName: string): Promise<string[]> 
  * name through their registries. Bindings that gather a prefix family have no single name.
  */
 const REGISTRY_ENV = [
-  ...(await registryEnv("packages/adapters/src/computer-providers.ts", "computerProviders")),
-  ...(await registryEnv("packages/adapters/src/messaging-platforms.ts", "messagingPlatforms")),
+  ...(await registryEnv(
+    "packages/adapters/src/computers/computer-providers.ts",
+    "computerProviders",
+  )),
+  ...(await registryEnv(
+    "packages/adapters/src/messaging/messaging-platforms.ts",
+    "messagingPlatforms",
+  )),
 ];
 
 function scanEnvReads(dirs: readonly string[]): Set<string> {

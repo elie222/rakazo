@@ -1,6 +1,6 @@
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { EncryptedSecretStore } from "./secrets.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 import {
   getTailnetConnection,
   removeTailnetConnection,

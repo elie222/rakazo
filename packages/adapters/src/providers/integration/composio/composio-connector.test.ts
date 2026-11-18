@@ -2,11 +2,12 @@ import type { ToolkitConnectionState } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { collectPages, filterCatalog } from "../../../connector-catalog.js";
-import { ConnectorRegistry } from "../../../connector-registry.js";
-import { DestinationEmulator } from "../../../destination-emulator.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
+import { ConnectorRegistry } from "../../../integrations/connector-registry.js";
+import { DestinationEmulator } from "../../../webhooks/destination-emulator.js";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
+  AUTHORIZATION_WINDOW_MS,
   asConnectorTools,
   ComposioConnector,
   collectLogIds,
@@ -21,6 +22,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  toolkitDisplayName,
   withSharedAccessHint,
 } from "./composio-connector.js";
 
@@ -1626,6 +1628,40 @@ describe("composio tool mapping", () => {
     });
   });
 
+  it("leaves a sign-in that may still be open in the browser, and revokes it once it has expired", () => {
+    const now = Date.parse("2026-01-01T12:00:00Z");
+    const began = (minutesAgo: number) => new Date(now - minutesAgo * 60_000);
+    const rows = [
+      {
+        id: "row-open",
+        provider: "slack",
+        status: "pending",
+        displayName: "Slack",
+        updatedAt: began(3),
+      },
+      {
+        id: "row-expired",
+        provider: "outlook",
+        status: "pending",
+        displayName: "Outlook",
+        updatedAt: began(AUTHORIZATION_WINDOW_MS / 60_000),
+      },
+      {
+        id: "row-failed",
+        provider: "gmail",
+        status: "error",
+        displayName: "Gmail",
+        updatedAt: began(3),
+      },
+    ];
+    expect(planLiveConnectionSync(rows, [], now)).toEqual({
+      connectIds: [],
+      revokeIds: ["row-expired", "row-failed"],
+    });
+    // Finished meanwhile: the same row connects.
+    expect(planLiveConnectionSync(rows, ["slack"], now).connectIds).toEqual(["row-open"]);
+  });
+
   it("clears failed additional-account error rows while keeping in-flight pendings", () => {
     expect(
       planLiveConnectionSync(
@@ -1657,6 +1693,12 @@ describe("composio tool mapping", () => {
       connectIds: [],
       revokeIds: ["row-err"],
     });
+  });
+
+  it("names the business-only messaging toolkit for what it signs in to", () => {
+    expect(toolkitDisplayName({ slug: "WHATSAPP", name: "WhatsApp" })).toBe("WhatsApp Business");
+    expect(toolkitDisplayName({ slug: "GITHUB", name: "GitHub" })).toBe("GitHub");
+    expect(toolkitDisplayName({ slug: "constructor", name: "Constructor" })).toBe("Constructor");
   });
 
   it("filters the catalog by name or slug", () => {

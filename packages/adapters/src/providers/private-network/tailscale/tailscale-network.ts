@@ -3,7 +3,7 @@ import type { AdapterContext, PrivateNetworkProvider } from "@rakazo/adapter-kit
 import { PrivateNetworkError } from "@rakazo/adapter-kit";
 import type { TailnetConnectionConfig, TailnetDestination } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
-import { combineSignals } from "../../../connector-safety.js";
+import { combineSignals } from "../../../integrations/connector-safety.js";
 import { isTailnetHost } from "../../../tailnet-host.js";
 
 const TAILSCALE_API = "https://api.tailscale.com";

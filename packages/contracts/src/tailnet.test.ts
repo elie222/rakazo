@@ -7,7 +7,7 @@ import {
   tailnetNodeAttributes,
   tailnetNodeHostname,
 } from "./tailnet.js";
-import { expectLinearTime } from "./timing.test-support.js";
+import { expectLinearTime } from "./testing/timing.test-support.js";
 
 describe("tailnet connection config", () => {
   it("defaults the tag and normalizes its case", () => {

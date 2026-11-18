@@ -36,7 +36,8 @@ import type {
 import type { Auth } from "@rakazo/auth";
 import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
-import type { BillingService } from "./billing.js";
+import type { BillingService } from "./billing/billing.js";
+import type { VoiceDeps } from "./calls/voice.js";
 import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
@@ -61,10 +62,9 @@ import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import type { TailnetRouteDeps } from "./routes/tailnet.js";
 import { tailnetRoutes } from "./routes/tailnet.js";
 import { threadsRoutes } from "./routes/threads.js";
-import type { VoiceDeps } from "./voice.js";
 
-export { botIntroPrompt } from "./hidden-turns.prompt.js";
-export { nextConnectionLabel } from "./model-credentials.js";
+export { botIntroPrompt } from "./bots/hidden-turns.prompt.js";
+export { nextConnectionLabel } from "./models/model-credentials.js";
 export { enqueueBotIntroRun } from "./routes/bots.js";
 export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
@@ -128,6 +128,7 @@ export interface RouterDeps {
     enabled: boolean;
     providers: string[];
     addresses: Record<string, string>;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     openSignup: boolean;
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
@@ -136,6 +137,7 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
     navLinks?: NavLink[];

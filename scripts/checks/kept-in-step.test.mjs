@@ -23,7 +23,7 @@ test("Android's recent-runs page size matches the API's", () => {
       "apps/mobile/modules/rakazo-notifications/android/src/main/java/com/rakazo/notifications/RakazoNotificationService.kt",
       /const val RECENT_LIMIT = (\d+)/,
     ),
-    capture("apps/api/src/runs.ts", /const RECENT_LIMIT = (\d+);/),
+    capture("apps/api/src/threads/runs.ts", /const RECENT_LIMIT = (\d+);/),
   );
 });
 
@@ -33,7 +33,7 @@ test("iOS file drop finds the composer by its test id", () => {
       "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
       /static let composerID = "([^"]+)"/,
     ),
-    capture("apps/mobile/components/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
+    capture("apps/mobile/components/composer/thread-composer.tsx", /testID="(chat-composer[^"]*)"/),
   );
 });
 

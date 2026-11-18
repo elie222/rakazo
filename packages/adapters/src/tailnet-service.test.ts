@@ -13,7 +13,7 @@ import {
   FakeTailnetNodeHost,
   TailscaleApiEmulator,
 } from "./providers/private-network/tailscale/tailnet-emulator.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 import { saveTailnetConnection, setTailnetBotAccess } from "./tailnet-connections.js";
 import { tailnetDatabase } from "./tailnet-connections.test-support.js";
 import {

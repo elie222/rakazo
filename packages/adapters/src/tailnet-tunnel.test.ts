@@ -8,7 +8,7 @@ import { TAILNET_CONNECT_PATH } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import { tailnetHelper } from "./page-browser-install.js";
+import { tailnetHelper } from "./browser/page-browser-install.js";
 import type { TailnetPrincipal, TailnetTunnelDeps, TailnetTunnelRecord } from "./tailnet-tunnel.js";
 import {
   createTailnetApprovals,

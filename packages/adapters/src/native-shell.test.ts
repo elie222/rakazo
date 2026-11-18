@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { nativeTailnetCommand } from "./native-shell.js";
+import { nativeTailnetCommand } from "./computers/host/native-shell.js";
 
 const hasPwsh =
   spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"], {

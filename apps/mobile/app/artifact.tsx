@@ -18,25 +18,25 @@ import {
   Text,
   View,
 } from "react-native";
-import { NativeSymbol } from "../components/native-symbol";
-import { PdfPreview } from "../components/pdf-preview";
-import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
-import { VideoPreview } from "../components/video-preview";
-import { formatActivityRelativeTime } from "../lib/activity";
-import { mobileTokens } from "../lib/appearance";
-import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";
+import { PdfPreview } from "../components/media/pdf-preview";
+import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
+import { VideoPreview } from "../components/media/video-preview";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifacts/artifact-open";
 import {
   artifactThreadTarget,
   getArtifactById,
   listArtifactVersions,
   removeArtifact,
-} from "../lib/artifacts";
-import { useFloatingHeaderInset } from "../lib/floating-header";
-import { presentMessageActionSheet } from "../lib/message-action-sheet";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+} from "../lib/artifacts/artifacts";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
+import { useFloatingHeaderInset } from "../lib/layout/floating-header";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { presentMessageActionSheet } from "../lib/messages/message-action-sheet";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
 
 type PreviewContent =
   | { kind: "html"; html: string }

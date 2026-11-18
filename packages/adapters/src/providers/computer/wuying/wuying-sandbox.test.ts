@@ -2,12 +2,12 @@ import type * as TimersPromises from "node:timers/promises";
 import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxReadLimit,
   assertSandboxWorkspaceContract,
   provisionPrepared,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import { psLiteral, quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
 import { FAKE_PROFILE, FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 

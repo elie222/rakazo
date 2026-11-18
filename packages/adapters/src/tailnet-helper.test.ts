@@ -14,9 +14,9 @@ import { promisify } from "node:util";
 import { TAILNET_CONNECT_PATH, tailnetDestinationKey } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
-import { nativeShellCommandArgv, nativeTailnetCommand } from "./native-shell.js";
-import { tailnetHelper } from "./page-browser-install.js";
+import { tailnetHelper } from "./browser/page-browser-install.js";
+import { BACKGROUND_WORK_LAUNCH } from "./computers/computer-idle.js";
+import { nativeShellCommandArgv, nativeTailnetCommand } from "./computers/host/native-shell.js";
 import type { TailnetTunnelDeps } from "./tailnet-tunnel.js";
 import {
   sealComputerTailnetPass,

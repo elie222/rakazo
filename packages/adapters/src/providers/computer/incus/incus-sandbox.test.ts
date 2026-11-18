@@ -10,7 +10,7 @@ import {
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import { IncusError, incusTlsOptions, ociImageSource } from "./incus-sandbox.js";
 import { FakeIncus, providerFor, running } from "./incus-sandbox.test-support.js";
 

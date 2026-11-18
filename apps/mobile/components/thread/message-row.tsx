@@ -20,28 +20,34 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent, LayoutChangeEvent } from "react-native";
 import { Platform, View } from "react-native";
 import Animated, { useReducedMotion, ZoomIn } from "react-native-reanimated";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { canDoubleTapReact } from "../../lib/double-tap";
-import { useUiLocale } from "../../lib/i18n";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
-import { buildMessageContextMenu, messageMenuReaction } from "../../lib/message-context-menu";
-import { messageHasInlineControls, quotableMessageSegments } from "../../lib/message-presentation";
-import { messageRowLayout } from "../../lib/message-row-layout";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
-import { blockText } from "../../lib/mobile-types";
-import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
-import { selectableTextFromMarkdown } from "../../lib/selectable-text";
-import { ThreadReadOnlyContext } from "../../lib/thread-read-only";
-import type { UserBubble } from "../../lib/user-bubble";
-import { BotAvatar } from "../bot-avatar";
-import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
-import { presentMessageMenu } from "../message-action-menu";
-import { MessageContextMenu } from "../message-context-menu";
-import { ReplyLine } from "../reply-line";
-import { TimeSeparator } from "../time-separator";
-import { UnreadDivider } from "../unread-divider";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api/mobile-types";
+import { blockText } from "../../lib/api/mobile-types";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { canDoubleTapReact } from "../../lib/messages/double-tap";
+import { presentMessageActionSheet } from "../../lib/messages/message-action-sheet";
+import {
+  buildMessageContextMenu,
+  messageMenuReaction,
+} from "../../lib/messages/message-context-menu";
+import {
+  messageHasInlineControls,
+  quotableMessageSegments,
+} from "../../lib/messages/message-presentation";
+import { messageRowLayout } from "../../lib/messages/message-row-layout";
+import { selectableTextFromMarkdown } from "../../lib/messages/selectable-text";
+import type { UserBubble } from "../../lib/messages/user-bubble";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { ThreadReadOnlyContext } from "../../lib/thread/thread-read-only";
+import { BotAvatar } from "../bots/bot-avatar";
+import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
+import { presentMessageMenu } from "../messages/message-action-menu";
+import { MessageContextMenu } from "../messages/message-context-menu";
 import type { MessageActionProps } from "./message-bubble";
 import { MessageBubble } from "./message-bubble";
+import { ReplyLine } from "./reply-line";
+import { TimeSeparator } from "./time-separator";
+import { UnreadDivider } from "./unread-divider";
 
 export type MessageRowActions = {
   helperToggle: (

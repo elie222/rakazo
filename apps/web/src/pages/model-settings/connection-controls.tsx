@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
-} from "../../components/ModelConnectionPreflightNotice";
+} from "../../components/models/ModelConnectionPreflightNotice";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -21,6 +21,7 @@ export function ConnectionControls({
   codeCopied,
   connectKey,
   copyOAuthCode,
+  reportSignInStep,
   credential,
   gatewayId,
   projectId,
@@ -60,6 +61,7 @@ export function ConnectionControls({
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
+  | "reportSignInStep"
   | "credential"
   | "gatewayId"
   | "projectId"
@@ -112,6 +114,7 @@ export function ConnectionControls({
                       Sign in at{" "}
                       <a
                         href={oauth.verificationUri}
+                        onClick={() => reportSignInStep("page_opened")}
                         target="_blank"
                         rel="noreferrer"
                         className="text-foreground underline"
@@ -156,6 +159,7 @@ export function ConnectionControls({
                         Open{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -169,6 +173,7 @@ export function ConnectionControls({
                         A sign-in tab opened at{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"

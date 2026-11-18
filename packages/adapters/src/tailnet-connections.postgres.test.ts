@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { withSecretPersistence } from "./secret-persistence.js";
-import { EncryptedSecretStore } from "./secrets.js";
+import { withSecretPersistence } from "./secrets/secret-persistence.js";
+import { EncryptedSecretStore } from "./secrets/secrets.js";
 import {
   getTailnetConnection,
   removeTailnetConnection,

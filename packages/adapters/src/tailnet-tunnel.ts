@@ -13,9 +13,9 @@ import { listApprovalRules, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
-import { tailnetHelper } from "./page-browser-install.js";
-import { PASSED_EFFECT_STATUSES } from "./run-effects.js";
-import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
+import { tailnetHelper } from "./browser/page-browser-install.js";
+import { sandboxKindCapabilities } from "./computers/sandbox/sandbox-kind-capabilities.js";
+import { PASSED_EFFECT_STATUSES } from "./runs/lifecycle/run-effects.js";
 import { parseTailnetDestination } from "./tailnet-host.js";
 import type { TailnetRun } from "./tailnet-service.js";
 

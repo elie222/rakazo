@@ -1,5 +1,5 @@
 import { parse as parseShellCommand } from "shell-quote";
-import { sandboxKindCapabilities } from "../../../sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "../../../computers/sandbox/sandbox-kind-capabilities.js";
 import { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 import {
   braceExpansionHazard,

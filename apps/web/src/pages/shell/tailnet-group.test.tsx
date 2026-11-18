@@ -14,7 +14,7 @@ const tailnet = vi.hoisted(() => ({
   setBotAccess: vi.fn(),
 }));
 const api = vi.hoisted(() => ({ tailnet }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: api,
   rpcForSpace: () => api,
   createSpaceRpc: () => api,

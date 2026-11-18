@@ -6,7 +6,7 @@ import { TailnetConnectionConfigSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { isUniqueViolation } from "@rakazo/db";
-import { persistPreparedSecret } from "./secret-persistence.js";
+import { persistPreparedSecret } from "./secrets/secret-persistence.js";
 
 /**
  * A tailnet connection belongs to one member in one Space. Every read and write here is keyed by

@@ -1,6 +1,6 @@
 import * as z from "zod";
-import { normalizeHost } from "./network-host.js";
-import { trimEndChars, trimStartChars } from "./trim-chars.js";
+import { normalizeHost } from "./clients/network-host.js";
+import { trimEndChars, trimStartChars } from "./text/trim-chars.js";
 
 export { TAILNET_CONNECT_PATH } from "./tailnet-path.js";
 

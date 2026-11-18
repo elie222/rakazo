@@ -9,6 +9,21 @@ export function messagingDmSurfaceNote(): string {
   ].join(" ");
 }
 
+/** Keeps "connect <chat app>" from always meaning that app's tools. */
+export function chatAppConnectNote(
+  chatApps: readonly string[],
+  connectAppOffered: boolean,
+): string {
+  const apps = `People can also message you from ${chatApps.join(", ")}.`;
+  if (!connectAppOffered)
+    return `${apps} They set that up themselves in Settings, under Messaging.`;
+  return [
+    apps,
+    "They set that up themselves in Settings, under Messaging. The connect card you can show does not do it; it only gives you tools to read and act in an app.",
+    "When someone asks to connect one of these, or to talk to you from it, tell them which of the two fits what they want, and ask if you cannot tell.",
+  ].join(" ");
+}
+
 /** Hard privacy rules for bots posting into shared group channels. */
 export function messagingChannelPrivacyBlock(): string {
   return [

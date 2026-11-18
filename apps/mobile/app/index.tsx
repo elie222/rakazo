@@ -26,34 +26,45 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BotOrganizeModal } from "../components/bot-organize-modal";
-import { HomeErrorState } from "../components/home-error-state";
-import { createHomeStyles } from "../components/home-styles";
-import { ActivitySection } from "../components/inbox-activity";
-import { InboxHeader } from "../components/inbox-header";
-import { InboxListFooter, SWIPE_ROWS, useInboxRenderItem } from "../components/inbox-render-item";
-import { CompactRowsContext, SelectedChatContext } from "../components/inbox-rows";
-import { NativeInboxList } from "../components/native-inbox-list";
-import { OrganizationTitleMenu } from "../components/organization-menu";
-import { PickChatPane } from "../components/pick-chat-pane";
-import { useUnreadJumpPills } from "../components/unread-jump-overlay";
-import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
-import { readableGutters } from "../lib/adaptive-layout";
-import { currentApiBase } from "../lib/api";
-import { signOut } from "../lib/api-auth";
-import { selectSpace } from "../lib/api-server";
-import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/app-badge";
-import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
-import { explicitSignInRoute } from "../lib/auth-routing";
-import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
-import { useContentBottomInset } from "../lib/content-bottom-inset";
-import type { CreateAction } from "../lib/create-chooser";
-import { useHeaderHeightIfAny } from "../lib/floating-header";
-import { hapticImpact, hapticSelection } from "../lib/haptics";
-import { useUiLocale } from "../lib/i18n";
-import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox-changes";
-import { retainInboxValue } from "../lib/inbox-retention";
-import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox-spaces";
+import { BotOrganizeModal } from "../components/inbox/bot-organize-modal";
+import { ActivitySection } from "../components/inbox/inbox-activity";
+import { InboxErrorState } from "../components/inbox/inbox-error-state";
+import { InboxHeader } from "../components/inbox/inbox-header";
+import {
+  InboxListFooter,
+  SWIPE_ROWS,
+  useInboxRenderItem,
+} from "../components/inbox/inbox-render-item";
+import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
+import { createInboxStyles } from "../components/inbox/inbox-styles";
+import { NativeInboxList } from "../components/inbox/native-inbox-list";
+import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
+import { PickChatPane } from "../components/inbox/pick-chat-pane";
+import { useUnreadJumpPills } from "../components/inbox/unread-jump-overlay";
+import { currentApiBase } from "../lib/api/api";
+import { selectSpace } from "../lib/api/api-server";
+import type { MobileBot, MobileGroup } from "../lib/api/mobile-types";
+import { useRosterSignals } from "../lib/api/roster-signals";
+import {
+  currentReadySessionGeneration,
+  currentSessionGeneration,
+  loadSessionToken,
+  subscribeSessionGeneration,
+} from "../lib/api/session";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens, resolveMobileAppearance } from "../lib/appearance/appearance";
+import { signOut } from "../lib/auth/api-auth";
+import { explicitSignInRoute } from "../lib/auth/auth-routing";
+import { offerPasskeyOnce } from "../lib/auth/passkey";
+import { hasSignedInBefore, rememberSignedIn } from "../lib/auth/returning-user";
+import { AvatarViewportScope, createAvatarViewport } from "../lib/bots/avatar-life";
+import { mobileLogoAvatarActivity } from "../lib/bots/logo-avatar-activity";
+import { useUiLocale } from "../lib/i18n/i18n";
+import { useArchivedCount } from "../lib/inbox/archived/use-archived-count";
+import type { CreateAction } from "../lib/inbox/create-chooser";
+import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox/inbox-changes";
+import { retainInboxValue } from "../lib/inbox/inbox-retention";
+import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox/inbox-spaces";
 import {
   canDeleteInboxSpace,
   deleteSpaceTitle,
@@ -65,43 +76,36 @@ import {
   retryInboxSpaceFallback,
   selectInboxSpace,
   spaceInboxItems,
-} from "../lib/inbox-spaces";
-import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
-import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
-import type { MobileBot, MobileGroup } from "../lib/mobile-types";
-import { native, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
+} from "../lib/inbox/inbox-spaces";
+import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox/inbox-swipe";
+import { loadSavedInbox } from "../lib/inbox/saved-chats";
+import type { OrganizeTarget } from "../lib/inbox/sections/organize-target";
+import { findOrganizeTarget } from "../lib/inbox/sections/organize-target";
+import { useCollapsedSections } from "../lib/inbox/sections/use-collapsed-sections";
+import { useInbox } from "../lib/inbox/use-inbox";
+import { chatRpc, useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
+import { useInboxDay } from "../lib/inbox/use-inbox-day";
+import { useInboxHeader } from "../lib/inbox/use-inbox-header";
+import { useSnoozeClock } from "../lib/inbox/use-snooze-clock";
+import { useSpaceActivity } from "../lib/inbox/use-space-activity";
+import { readableGutters } from "../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
+import { useHeaderHeightIfAny } from "../lib/layout/floating-header";
+import { useSplitView } from "../lib/layout/split-view";
+import { hapticImpact, hapticSelection } from "../lib/native/haptics";
+import { native, useThemedStyles } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/notifications/app-badge";
+import { registerPushToken } from "../lib/notifications/push";
+import { loadActivityMode, saveActivityMode } from "../lib/preferences/activity-mode";
+import { usePublishSearchInbox } from "../lib/search/use-publish-search-inbox";
 import {
   organizationSwitchActions,
   organizationSwitchEpoch,
   subscribeOrganizationSwitch,
   useOrganizations,
-} from "../lib/organizations";
-import type { OrganizeTarget } from "../lib/organize-target";
-import { findOrganizeTarget } from "../lib/organize-target";
-import { offerPasskeyOnce } from "../lib/passkey";
-import { registerPushToken } from "../lib/push";
-import { hasSignedInBefore, rememberSignedIn } from "../lib/returning-user";
-import { useRosterSignals } from "../lib/roster-signals";
-import { loadSavedInbox } from "../lib/saved-chats";
-import {
-  currentReadySessionGeneration,
-  currentSessionGeneration,
-  loadSessionToken,
-  subscribeSessionGeneration,
-} from "../lib/session";
-import { useSplitView } from "../lib/split-view";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { useArchivedCount } from "../lib/use-archived-count";
-import { useCollapsedSections } from "../lib/use-collapsed-sections";
-import { useHomeHeader } from "../lib/use-home-header";
-import { useHomeInbox } from "../lib/use-home-inbox";
-import { chatRpc, useInboxChatActions } from "../lib/use-inbox-chat-actions";
-import { useInboxDay } from "../lib/use-inbox-day";
-import { usePublishSearchInbox } from "../lib/use-publish-search-inbox";
-import { useSnoozeClock } from "../lib/use-snooze-clock";
-import { useSpaceActivity } from "../lib/use-space-activity";
-import { errorText } from "../lib/user-error";
+} from "../lib/spaces/organizations";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 /** A row counts as on screen as soon as any of it shows. */
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
@@ -155,7 +159,7 @@ export function HomeSession({
 function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const locale = useUiLocale();
   const isFocused = useIsFocused();
@@ -185,7 +189,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     inboxLoaded,
     loadBots,
     refreshBots,
-  } = useHomeInbox(spaceActionRef);
+  } = useInbox(spaceActionRef);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [returningUser, setReturningUser] = useState(false);
@@ -647,7 +651,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [hasOrganizationMenu, organizations],
   );
 
-  useHomeHeader({
+  useInboxHeader({
     nativeHeader,
     ready,
     hasSession,
@@ -806,7 +810,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
   const listEmpty =
     showLoadFailure && loadFailure ? (
-      <HomeErrorState
+      <InboxErrorState
         kind={loadFailure.kind}
         message={loadFailure.message}
         loading={inboxLoading && !refreshing}

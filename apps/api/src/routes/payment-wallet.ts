@@ -7,7 +7,7 @@ import {
   paymentWalletStatus,
 } from "@rakazo/adapters";
 import { recordSecurityEvent } from "@rakazo/db";
-import { paymentWalletConnectedEvent } from "../security-audit.js";
+import { paymentWalletConnectedEvent } from "../auth/security-audit.js";
 import type { RouterContext } from "./context.js";
 
 export function paymentWalletRoutes(ctx: RouterContext) {

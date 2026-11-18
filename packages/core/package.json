@@ -39,6 +39,11 @@
       "development": "./src/node/shutdown-signals.ts",
       "default": "./src/node/shutdown-signals.ts"
     },
+    "./node/sealed-box": {
+      "types": "./src/node/sealed-box.ts",
+      "development": "./src/node/sealed-box.ts",
+      "default": "./src/node/sealed-box.ts"
+    },
     "./node/approval-effect-key": {
       "types": "./src/node/approval-effect-key.ts",
       "development": "./src/node/approval-effect-key.ts",
@@ -48,6 +53,11 @@
       "types": "./src/node/screen-proxy-response.ts",
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
+    },
+    "./node/test-runtime": {
+      "types": "./src/node/test-runtime.ts",
+      "development": "./src/node/test-runtime.ts",
+      "default": "./src/node/test-runtime.ts"
     },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",

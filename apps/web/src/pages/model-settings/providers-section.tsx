@@ -18,10 +18,10 @@ import {
 import { ChevronRight, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { ModelCredential } from "../../lib/model-auth";
-import { useSave, useSpaceQueries } from "../../lib/query";
+import type { ModelCredential } from "../../lib/models/model-auth";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../lib/query/user-error";
 import { useListSearch } from "../../lib/use-list-search";
-import { errorText } from "../../lib/user-error";
 import type { ConnectableProvider } from "./role-model-picker";
 
 /** Every connection the member has, with the way to add another, even for a connected provider. */

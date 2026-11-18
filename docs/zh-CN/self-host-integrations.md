@@ -65,11 +65,17 @@ Rakazo 会在传入的 access token 快过期前刷新授权并重启进程，�
 | Microsoft Teams             | `TEAMS_APP_ID`、`TEAMS_APP_PASSWORD`、`TEAMS_APP_TENANT_ID`（单租户，仅私聊）                                                                                              |
 | Slack                       | 见下文                                                                                                                                                                     |
 
+### WhatsApp Business Cloud
+
+使用运营者拥有的商业号码和直连适配器。注册、令牌权限、webhook 设置、当前地区 AI 限制和服务窗口限制见 [WhatsApp 上线 runbook](../hosted-whatsapp-launch.md)。仅配置凭据不代表满足使用资格。未实现主动模板提醒。
+
 ### Telegram
 
-Telegram 只使用 webhook：Telegram 在 `X-Telegram-Bot-Api-Secret-Token` 中发送密钥，worker 不会长轮询。名为 `<NAME>`（字母和数字）的额外机器人使用提供商 `telegram-<name>` 和 webhook `/api/v1/messaging/webhook/telegram-<name>`；见[名称由你决定的配置](./self-host-configuration.md#名称由你决定的配置)。Telegram 群聊与 iMessage 一样使用个人群聊绑定：每个绑定成员批准自己的机器人；按房间监听设置只属于 Slack team conversation。请在 BotFather 中运行 `/setprivacy` 并选择 **Disable**（或把机器人设为群管理员），否则它只能收到提及自己的群消息。广播频道帖子不会启动运行。多个机器人可以并存，允许一个人通过不同机器人绑定不同的 Rakazo bot。
+Telegram 在 `X-Telegram-Bot-Api-Secret-Token` 中发送 webhook 密钥。接收请求的 API 使用自动传输选择，未注册 webhook 时可以轮询；worker 永远不轮询。启动多个 API 实例前，请先注册托管 webhook。绑定目的地来自已认证的机器人身份，绝不是配置文件中的用户名。运营者注册和验收步骤见[托管 Telegram runbook](../hosted-telegram.md)。名为 `<NAME>`（字母和数字）的额外机器人使用提供商 `telegram-<name>` 和 webhook `/api/v1/messaging/webhook/telegram-<name>`；见[名称由你决定的配置](./self-host-configuration.md#名称由你决定的配置)。Telegram 群聊与 iMessage 一样使用个人群聊绑定：每个绑定成员批准自己的机器人；按房间监听设置只属于 Slack team conversation。请在 BotFather 中运行 `/setprivacy` 并选择 **Disable**（或把机器人设为群管理员），否则它只能收到提及自己的群消息。广播频道帖子不会启动运行。多个机器人可以并存，允许一个人通过不同机器人绑定不同的 Rakazo bot。
 
 ### 通过 Photon 使用 iMessage
+
+该连接使用 Stable Spectrum API，而不是 Photon 2.0 Beta 凭据。适配器限制和运营者检查见[托管 iMessage/SMS runbook](../hosted-imessage-sms.md)。
 
 Photon 通过 API 的出站流接收消息，因此不需要公开 URL。如要改用 webhook，设置 `PHOTON_WEBHOOK_SECRET`。每个额外项目使用 `PHOTON_PROJECT_ID_<NAME>` 和 `PHOTON_PROJECT_SECRET_<NAME>`（webhook 再加 `PHOTON_WEBHOOK_SECRET_<NAME>`），显示为 `photon-<name>`。共享线路上，必须由对方先发消息。不支持群聊。
 

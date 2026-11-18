@@ -8,9 +8,9 @@ import type { TailnetDestination } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody, deadlineSignal } from "@rakazo/core";
 import { Agent } from "undici";
-import type { SafeRemoteFetch } from "./remote-mcp.js";
+import type { SafeRemoteFetch } from "./mcp/remote-mcp.js";
+import { dispatcherFetch } from "./network/undici-fetch.js";
 import { isTailnetAddress, isTailnetHost } from "./tailnet-host.js";
-import { dispatcherFetch } from "./undici-fetch.js";
 
 /** Dials one TCP connection from a bot's tailnet node; bound to that bot and its run's member. */
 export type TailnetRoute = {

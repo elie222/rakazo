@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
+import { assertMcpRemoteEndpoint } from "./integrations/mcp-servers.js";
 import type { RouterDeps } from "./router.js";
 import { TAILNET_CHECK_NEEDS_BOT, tailnetCheckRoute } from "./routes/tailnet.js";
 
