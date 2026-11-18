@@ -22,6 +22,45 @@ describe("buildApprovalAskBlock", () => {
     expect(JSON.stringify(block)).not.toContain("token-secret");
   });
 
+  it("shows an editable draft only when the full outgoing message fits on the card", () => {
+    const args = { channel: "C12345", text: "Review the report" };
+    const entry = { action: "send", arguments: args };
+    const options = {
+      allowOutgoingDraft: true,
+      batch: {
+        items: "tools",
+        action: "action",
+        arguments: "arguments",
+        outgoingDrafts: {
+          send: {
+            kind: "message" as const,
+            source: "Team chat",
+            keys: { to: "channel", body: "text" },
+          },
+        },
+      },
+    };
+    expect(buildApprovalAskBlock("effect", "batch", { tools: [entry] }, [], options)).toMatchObject(
+      {
+        outgoingDraft: { values: { kind: "message", to: "C12345", body: "Review the report" } },
+        actions: [
+          { id: "allow", label: "Send" },
+          { id: "deny", label: "Discard" },
+        ],
+      },
+    );
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [entry, entry] }, [], options),
+    ).not.toHaveProperty("outgoingDraft");
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [entry] }, ["the report"], options),
+    ).not.toHaveProperty("outgoingDraft");
+    const attachment = { ...entry, arguments: { ...args, attachment: "example-file" } };
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [attachment] }, [], options),
+    ).not.toHaveProperty("outgoingDraft");
+  });
+
   it("offers no Always allow on an approval that asks every time", () => {
     const block = buildApprovalAskBlock(
       "effect-1",

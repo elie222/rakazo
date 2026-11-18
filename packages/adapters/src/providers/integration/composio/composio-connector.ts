@@ -17,7 +17,11 @@ import { humanizeToolName } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
-import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
+import {
+  COMPOSIO_MULTI_EXECUTE_TOOL,
+  composioOutgoingDraft,
+  composioSessionToolBatch,
+} from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
   composioToolkitDirectory,
@@ -93,7 +97,8 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
       name,
       description: String(fn.description ?? name),
       inputSchema: asObject(fn.parameters) ?? { type: "object", properties: {} },
-      batch: composioToolBatch(name),
+      batch: composioSessionToolBatch(name),
+      outgoingDraft: composioOutgoingDraft(name),
       ...composioToolLabel(name),
       route: { connectorId: "composio", toolName: name },
     };
@@ -106,7 +111,8 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
     inputSchema: asObject(raw.inputParameters) ??
       asObject(raw.inputSchema) ??
       asObject(raw.parameters) ?? { type: "object", properties: {} },
-    batch: composioToolBatch(name),
+    batch: composioSessionToolBatch(name),
+    outgoingDraft: composioOutgoingDraft(name),
     ...composioToolLabel(name),
     route: { connectorId: "composio", toolName: name },
   };

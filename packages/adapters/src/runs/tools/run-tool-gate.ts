@@ -3,7 +3,6 @@ import type {
   AgentToolExecutionObserver,
   AutoReviewRequest,
   ConnectorCall,
-  ToolBatch,
 } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
@@ -33,7 +32,7 @@ import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/a
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import type { FleetCardSummary } from "../../approvals/approval-ask.js";
+import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
 import {
   boundDirectApprovalDetails,
@@ -92,13 +91,6 @@ import { callPaidService } from "./run-tools-integrations.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
-
-type ApprovalCard = {
-  reviewReason: string | undefined;
-  summary: FleetCardSummary | undefined;
-  batch: ToolBatch | undefined;
-  onceOnly: boolean;
-};
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
 export interface ToolCall {
@@ -572,6 +564,12 @@ export async function gateToolCall(
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
     onceOnly: asksEveryTime,
+    outgoingDraft: connectorTool?.outgoingDraft,
+    allowOutgoingDraft:
+      Boolean(connectorTool?.outgoingDraft || connectorTool?.batch?.outgoingDrafts) &&
+      ctx.source.ownerStartedRun &&
+      !ctx.source.messagingChannelRun &&
+      !ctx.thread.groupId,
   };
 
   if (applied?.duplicate) {
@@ -757,7 +755,7 @@ async function settleToolUncertainty(
 }
 
 /** Ask the owner through an approval card. Parallel calls share the first call's pause. */
-function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
+function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
   const { approval } = ctx.state;
   // Parallel calls can need approval at once. Only the first saves the turn and shows
   // its card; the others wait for that pause. Otherwise a later call's save could make
@@ -767,7 +765,7 @@ function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
   return approval.request;
 }
 
-async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
+async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
   const { deps, run, runId, bot, thread } = ctx;
   const { name, args, executionId, applied } = call;
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {

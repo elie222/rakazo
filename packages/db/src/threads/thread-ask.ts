@@ -42,6 +42,7 @@ import type { FinalizeRunResult } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import { readMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
+import { editOutgoingDraft } from "./outgoing-draft.js";
 import { createPendingSteeringRun, releaseUnreadHandovers } from "./thread-steering.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
@@ -290,6 +291,7 @@ async function commitAnswerRunInput(
     batchActions: Prisma.JsonValue;
   } | null = null;
   let editedInstructions: string | undefined;
+  let editedDraft: ReturnType<typeof editOutgoingDraft>;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
     try {
@@ -309,6 +311,7 @@ async function commitAnswerRunInput(
   let approvalUserId: string | null = null;
 
   if (approvalAsk) {
+    if (pendingAsk.outgoingDraft && input.answer !== "deny") approvalAnswer = "allow";
     if (!pendingAsk.actions?.some((action) => action.id === approvalAnswer)) return null;
     approvalEffect = await tx.externalEffect.findFirst({
       where: {
@@ -319,6 +322,10 @@ async function commitAnswerRunInput(
       },
     });
     if (!approvalEffect) return null;
+    if (pendingAsk.outgoingDraft && approvalAnswer === "allow") {
+      editedDraft = editOutgoingDraft(approvalEffect, pendingAsk.outgoingDraft, input.answer);
+      if (!editedDraft) return null;
+    }
     if (pendingAsk.instructionUpdate) {
       if (
         approvalEffect.kind !== "update_bot" ||
@@ -421,6 +428,7 @@ async function commitAnswerRunInput(
       // An expired card carries a result, so a later call may ask again: nobody denied it.
       data: {
         status: allowed ? "approved" : "denied",
+        ...(editedDraft ? { request: editedDraft.request as Prisma.InputJsonValue } : {}),
         ...(expired ? { result: APPROVAL_EXPIRED_RESULT } : {}),
       },
     });
@@ -503,6 +511,9 @@ async function commitAnswerRunInput(
           ...(dismissed ? { dismissed: true as const } : {}),
           ...(expired ? { expired: true as const } : {}),
           ...(input.remember === false ? { remembered: false as const } : {}),
+          ...(editedDraft && pendingAsk.outgoingDraft
+            ? { outgoingDraft: { ...pendingAsk.outgoingDraft, values: editedDraft.values } }
+            : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },

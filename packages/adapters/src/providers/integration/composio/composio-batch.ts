@@ -1,7 +1,29 @@
-import type { ToolBatch } from "@rakazo/adapter-kit";
+import type { OutgoingDraftDescriptor, ToolBatch } from "@rakazo/adapter-kit";
 
 export const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
-const COMPOSIO_BATCH: ToolBatch = { items: "tools", action: "tool_slug", arguments: "arguments" };
+const outgoingDrafts: Readonly<Record<string, OutgoingDraftDescriptor>> = {
+  GMAIL_SEND_EMAIL: {
+    kind: "email",
+    source: "Gmail",
+    keys: { to: "recipient_email", subject: "subject", body: "body" },
+    defaults: { user_id: "me", is_html: false },
+  },
+  SLACK_SEND_MESSAGE: {
+    kind: "message",
+    source: "Slack",
+    keys: { to: "channel", body: "text" },
+  },
+};
+
+const COMPOSIO_BATCH: ToolBatch = {
+  items: "tools",
+  action: "tool_slug",
+  arguments: "arguments",
+};
+
+export function composioOutgoingDraft(toolName: string): OutgoingDraftDescriptor | undefined {
+  return Object.hasOwn(outgoingDrafts, toolName) ? outgoingDrafts[toolName] : undefined;
+}
 
 /**
  * Composio runs every action through one batch tool, naming each in `tools[].tool_slug`, whether
@@ -9,4 +31,9 @@ const COMPOSIO_BATCH: ToolBatch = { items: "tools", action: "tool_slug", argumen
  */
 export function composioToolBatch(toolName: string): ToolBatch | undefined {
   return toolName === COMPOSIO_MULTI_EXECUTE_TOOL ? COMPOSIO_BATCH : undefined;
+}
+
+export function composioSessionToolBatch(toolName: string): ToolBatch | undefined {
+  const batch = composioToolBatch(toolName);
+  return batch && { ...batch, outgoingDrafts };
 }
