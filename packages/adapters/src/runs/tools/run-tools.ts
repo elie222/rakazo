@@ -146,14 +146,16 @@ async function applyOwnUpdateWithInstructions(
     observer,
   );
   if (isInternalTermination(set)) return set;
-  if (isToolError(set))
-    return {
-      error: `Your ${others.join(", ")} changes were saved, but your instructions were not: ${errorText(set)}`,
-    };
-  // A profile part that only repeated current values was answered as a read; it changed nothing.
+  // A profile part that only repeated current values was answered as a read; it saved nothing.
+  // When resuming, it was saved before the instructions were held.
   const changed =
     profile && "ok" in (profile as object) ? (profile as Record<string, unknown>) : {};
-  return { ...changed, ...(set as Record<string, unknown>), saved: [...others, "instructions"] };
+  const saved = !profile || "ok" in changed ? others : [];
+  if (isToolError(set))
+    return {
+      error: `${saved.length ? `Your ${saved.join(", ")} changes were saved, but your instructions were not: ` : ""}${errorText(set)}`,
+    };
+  return { ...changed, ...(set as Record<string, unknown>), saved: [...saved, "instructions"] };
 }
 
 function errorText(result: unknown): string {

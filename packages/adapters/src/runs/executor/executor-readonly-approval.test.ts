@@ -2234,7 +2234,7 @@ describe("own instructions through update_bot", () => {
       expect.objectContaining({ ok: true, name: "Scout", saved: ["name", "instructions"] }),
     ]);
   });
-  it("says the other fields were saved when the instructions are refused", async () => {
+  it("saves the other fields when the instructions are refused", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([
       {
@@ -2243,13 +2243,19 @@ describe("own instructions through update_bot", () => {
       },
     ]);
     await f.run();
-    expect(f.results).toEqual([
-      {
-        error: expect.stringMatching(
-          /^Your name changes were saved, but your instructions were not: instructions must be at most/,
-        ),
-      },
-    ]);
+    expect(f.results).toEqual([{ error: expect.any(String) }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: "Scout" }) }),
+    );
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
+  it("does not report a repeated current value as saved", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    Object.assign(f.liveBot, { name: "Assistant" });
+    f.setCalls([{ args: { name: "Assistant", instructions: first }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([expect.objectContaining({ ok: true, saved: ["instructions"] })]);
+    expect(f.instructionState.instructions).toBe(first);
   });
   it("ignores a previous text the model sends", async () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
