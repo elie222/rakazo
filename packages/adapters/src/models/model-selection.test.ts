@@ -19,6 +19,7 @@ import {
   inboundRoutineModelPin,
   loadStoredModelSecret,
   modelCredentialAuthKindsForSpace,
+  permittedCatalogAuth,
   pinnedModelCredentialError,
   prepareAllowedThinkingLevels,
   readStoredModelAuth,
@@ -1668,5 +1669,37 @@ describe("connectionServesModel", () => {
         );
     expect(findFirst).toHaveBeenCalledTimes(2);
     expect(deps.secretStore.load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("catalog auth under a provider allowlist", () => {
+  const auth = {
+    managedProviders: ["anthropic", "openrouter"],
+    byProvider: { anthropic: "api_key" as const, openrouter: "api_key" as const },
+    byModel: { anthropic: { "claude-haiku-5-5": "api_key" as const } },
+    secretIdByProvider: { anthropic: "secret-anthropic", openrouter: "secret-openrouter" },
+    secretIdByModel: { anthropic: { "claude-haiku-5-5": "secret-anthropic" } },
+  };
+
+  it("returns the map untouched when the allowlist is unset", () => {
+    delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    expect(permittedCatalogAuth(auth)).toBe(auth);
+  });
+
+  it("drops a refused provider from every map, so no catalog read starts for it", () => {
+    const saved = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    try {
+      expect(permittedCatalogAuth(auth)).toEqual({
+        managedProviders: ["openrouter"],
+        byProvider: { openrouter: "api_key" },
+        byModel: {},
+        secretIdByProvider: { openrouter: "secret-openrouter" },
+        secretIdByModel: {},
+      });
+    } finally {
+      if (saved === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = saved;
+    }
   });
 });

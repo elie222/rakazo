@@ -28,6 +28,7 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
   offeredCatalog,
+  permittedCatalogAuth,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
   runsOnHostedCredits,
@@ -165,11 +166,13 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole = "main",
     reads: CatalogReads = new Map(),
   ) => {
-    const auth = await modelCredentialAuthKindsForSpace(
-      deps.prisma,
-      deps.secrets,
-      actor,
-      deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
+    const auth = permittedCatalogAuth(
+      await modelCredentialAuthKindsForSpace(
+        deps.prisma,
+        deps.secrets,
+        actor,
+        deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
+      ),
     );
     const configured = deps.billing?.modelCreditsEnabled
       ? (modelCreditOfferings()?.offerings ?? [])
@@ -214,7 +217,11 @@ export function createRouterContext(deps: RouterDeps) {
         auth,
         applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
       ),
-      ...(role === "approval" ? decisionModelCatalog() : []),
+      ...(role === "approval"
+        ? decisionModelCatalog().filter((entry) =>
+            modelProviderAllowed(modelProviderAllowlist(), entry.provider),
+          )
+        : []),
     ];
     for (const offering of approved) {
       if (

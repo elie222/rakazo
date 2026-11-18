@@ -214,6 +214,27 @@ export function spaceCanRunCatalogModel(
  * preference, then the newest account credential. An unreadable selected secret stays
  * disconnected instead of falling through to an older key.
  */
+/**
+ * The same credential map, narrowed to the providers a deployment allowlist still offers, so
+ * a catalog read never starts for a provider the list refuses.
+ */
+export function permittedCatalogAuth(auth: SpaceCatalogAuth): SpaceCatalogAuth {
+  const allowlist = modelProviderAllowlist();
+  if (allowlist === null) return auth;
+  const allowed = (provider: string) => modelProviderAllowed(allowlist, provider);
+  const keep = <T>(source: Partial<Record<string, T>>) =>
+    Object.fromEntries(Object.entries(source).filter(([provider]) => allowed(provider)));
+  return {
+    ...auth,
+    ...(auth.managedProvider ? { managedProvider: auth.managedProvider } : {}),
+    ...(auth.managedProviders ? { managedProviders: auth.managedProviders.filter(allowed) } : {}),
+    byProvider: keep(auth.byProvider),
+    byModel: keep(auth.byModel),
+    secretIdByProvider: keep(auth.secretIdByProvider),
+    secretIdByModel: keep(auth.secretIdByModel),
+  };
+}
+
 export async function modelCredentialAuthKindsForSpace(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
