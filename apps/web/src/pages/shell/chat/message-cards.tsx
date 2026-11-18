@@ -42,10 +42,7 @@ export function ChoiceCard({
     // An answered card takes no second answer; the thread brings the answer back.
     closesScreen: true,
     onSaved: async (_saved, input) => {
-      if ("optionId" in input) {
-        if (input.optionId === FOCUS_IMPORT_OPTION_ID) onOpenAgentImport?.();
-        return onBotChanged();
-      }
+      if ("optionId" in input) return onBotChanged();
       setLocallyDismissed(true);
       void onBotChanged().catch(() => undefined);
     },
@@ -90,7 +87,11 @@ export function ChoiceCard({
               letter={option.letter}
               selected={block.answerId === option.id}
               disabled={Boolean(block.answerId) || pending}
-              onClick={() => answer.run({ optionId: option.id })}
+              onClick={() => {
+                // Opened by the click itself, so a save that fails still leaves the import open.
+                if (option.id === FOCUS_IMPORT_OPTION_ID) onOpenAgentImport?.();
+                answer.run({ optionId: option.id });
+              }}
             >
               <OnboardingFocusOptionLabel
                 id={option.id}
