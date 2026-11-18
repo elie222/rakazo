@@ -3,11 +3,11 @@ appId: com.rakazo.app
 - runFlow: launch-app.yaml
 - runFlow:
     when:
-      visible: "Sign up for Rakazo"
+      visible: "Sign up for Nurlai"
     commands:
       - tapOn: "Sign in"
 - extendedWaitUntil:
-    visible: "Sign in to Rakazo"
+    visible: "Sign in to Nurlai"
     timeout: 15000
 - tapOn: "Email"
 - inputText: ${RAKAZO_ACTIVE_EMAIL}

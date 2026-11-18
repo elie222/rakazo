@@ -499,14 +499,14 @@ it("puts the bot style back and releases it when the save fails", async () => {
   const { saving } = holdPreferenceSave();
   await act(async () => botStyleButton(screen, "Original").click());
   // A second choice while the first is saving is not sent.
-  await act(async () => botStyleButton(screen, "Rakazo").click());
+  await act(async () => botStyleButton(screen, "Nurlai").click());
   expect(
     vi.mocked(rpc).mock.calls.filter(([method]) => method === "preferences/update"),
   ).toHaveLength(1);
   await act(async () => saving.reject(new Error("offline")));
   await act(flush);
   expect(Alert.alert).toHaveBeenCalledWith("Couldn't update bot style");
-  expect(botStyleButton(screen, "Rakazo").getAttribute("aria-pressed")).toBe("true");
+  expect(botStyleButton(screen, "Nurlai").getAttribute("aria-pressed")).toBe("true");
   expect(
     screen.querySelector('[aria-label="Bot style"][data-disabled]')?.getAttribute("data-disabled"),
   ).toBe("false");

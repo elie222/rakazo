@@ -3,7 +3,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Check for Updates…": "Güncellemeleri Denetle…",
   "Computer Access…": "Bilgisayar Erişimi…",
   "Revoke Local Computer Access": "Yerel Bilgisayar Erişimini İptal Et",
-  "Change Rakazo Server…": "Rakazo Sunucusunu Değiştir…",
+  "Change Nurlai Server…": "Nurlai Sunucusunu Değiştir…",
   "Hide {name}": "{name} Uygulamasını Gizle",
   "Hide Others": "Diğerlerini Gizle",
   "Show All": "Tümünü Göster",
@@ -35,12 +35,12 @@ export const TR_MESSAGES: Record<string, string> = {
   Close: "Kapat",
   "Close Window": "Pencereyi Kapat",
   "Bring All to Front": "Tümünü Öne Getir",
-  "Rakazo {version} is ready to install.": "Rakazo {version} yüklenmeye hazır.",
+  "Nurlai {version} is ready to install.": "Nurlai {version} yüklenmeye hazır.",
   Restart: "Yeniden Başlat",
   Later: "Daha Sonra",
   "Could not install the update.": "Güncelleme yüklenemedi.",
   "Could not check for updates.": "Güncellemeler denetlenemedi.",
-  "Rakazo is up to date.": "Rakazo güncel.",
+  "Nurlai is up to date.": "Nurlai güncel.",
   "Version {version}": "Sürüm {version}",
   "Automatic updates are turned off for this install.":
     "Bu kurulumda otomatik güncellemeler kapalı.",
@@ -48,11 +48,11 @@ export const TR_MESSAGES: Record<string, string> = {
     "Otomatik güncellemeler yalnızca kurulu bir sürümde çalışır.",
   "No desktop releases are published for this build yet.":
     "Bu derleme için henüz yayımlanmış masaüstü sürümü yok.",
-  "Move Rakazo to Applications to install updates.":
-    "Güncellemeleri yüklemek için Rakazo’yu Uygulamalar klasörüne taşıyın.",
+  "Move Nurlai to Applications to install updates.":
+    "Güncellemeleri yüklemek için Nurlai’yu Uygulamalar klasörüne taşıyın.",
   "Free up disk space to install updates.": "Güncellemeleri yüklemek için diskte yer açın.",
-  "This update could not be verified. Reinstall Rakazo from a trusted download.":
-    "Bu güncelleme doğrulanamadı. Rakazo’yu güvenilir bir indirmeden yeniden yükleyin.",
+  "This update could not be verified. Reinstall Nurlai from a trusted download.":
+    "Bu güncelleme doğrulanamadı. Nurlai’yu güvenilir bir indirmeden yeniden yükleyin.",
   "The update could not be completed. Try again later.":
     "Güncelleme tamamlanamadı. Daha sonra yeniden deneyin.",
   "Could not reach the update server.": "Güncelleme sunucusuna ulaşılamadı.",
@@ -71,13 +71,13 @@ export const TR_MESSAGES: Record<string, string> = {
     "Zaten devam eden bir oturum açma denemesi var. Onu iptal edip yeniden deneyin.",
   "Could not open browser sign-in. Close other sign-in attempts and retry.":
     "Tarayıcıda oturum açma başlatılamadı. Diğer oturum açma denemelerini kapatıp yeniden deneyin.",
-  "Sign-in callback rejected. Return to Rakazo to retry.":
-    "Oturum açma yanıtı reddedildi. Yeniden denemek için Rakazo’ya dönün.",
-  "You can close this tab and return to Rakazo.": "Bu sekmeyi kapatıp Rakazo’ya dönebilirsiniz.",
-  "Set up Rakazo": "Rakazo’yu Kur",
-  "Quit Rakazo": "Rakazo’dan Çık",
-  "Welcome to Rakazo": "Rakazo’ya hoş geldiniz",
-  "Choose where Rakazo runs.": "Rakazo'nun nerede çalışacağını seçin.",
+  "Sign-in callback rejected. Return to Nurlai to retry.":
+    "Oturum açma yanıtı reddedildi. Yeniden denemek için Nurlai’ya dönün.",
+  "You can close this tab and return to Nurlai.": "Bu sekmeyi kapatıp Nurlai’ya dönebilirsiniz.",
+  "Set up Nurlai": "Nurlai’yu Kur",
+  "Quit Nurlai": "Nurlai’dan Çık",
+  "Welcome to Nurlai": "Nurlai’ya hoş geldiniz",
+  "Choose where Nurlai runs.": "Nurlai'nun nerede çalışacağını seçin.",
   Instance: "Örnek",
   "This computer": "Bu bilgisayar",
   "Existing instance": "Mevcut örnek",
@@ -90,14 +90,14 @@ export const TR_MESSAGES: Record<string, string> = {
   Continue: "Devam",
   Retry: "Yeniden dene",
   "Getting ready…": "Hazırlanıyor…",
-  "Downloading Rakazo…": "Rakazo indiriliyor…",
-  "Starting Rakazo…": "Rakazo başlatılıyor…",
+  "Downloading Nurlai…": "Nurlai indiriliyor…",
+  "Starting Nurlai…": "Nurlai başlatılıyor…",
   "Almost ready…": "Neredeyse hazır…",
-  "Rakazo is ready.": "Rakazo hazır.",
+  "Nurlai is ready.": "Nurlai hazır.",
   "{size} downloaded": "{size} indirildi",
   "Connecting…": "Bağlanıyor…",
   "Checking…": "Denetleniyor…",
-  "Rakazo answered at {url}.": "Rakazo {url} adresinde yanıt verdi.",
+  "Nurlai answered at {url}.": "Nurlai {url} adresinde yanıt verdi.",
   "Enter a server address first.": "Önce bir sunucu adresi girin.",
   "Could not save that address.": "Bu adres kaydedilemedi.",
   "Could not save that address. Try again.": "Bu adres kaydedilemedi. Yeniden deneyin.",
@@ -106,17 +106,17 @@ export const TR_MESSAGES: Record<string, string> = {
   "Could not run the connection check. Try again.":
     "Bağlantı denetimi çalıştırılamadı. Yeniden deneyin.",
   "Setup bridge unavailable.": "Kurulum köprüsü kullanılamıyor.",
-  "Setup could not start. Quit Rakazo and try again.":
-    "Kurulum başlatılamadı. Rakazo’dan çıkıp yeniden deneyin.",
+  "Setup could not start. Quit Nurlai and try again.":
+    "Kurulum başlatılamadı. Nurlai’dan çıkıp yeniden deneyin.",
   "Enter a server address.": "Bir sunucu adresi girin.",
   "Enter a valid http:// or https:// address.": "Geçerli bir http:// veya https:// adresi girin.",
   "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.":
     "Geçerli bir sunucu adresi girin. Herkese açık sunucular HTTPS gerektirir; yeni bir yerel örnek localhost kullanmalıdır.",
   "Invalid custom headers": "Geçersiz özel üst bilgiler",
-  "That address redirects elsewhere. Enter the final Rakazo server address.":
-    "Bu adres başka bir yere yönlendiriyor. Rakazo sunucusunun son adresini girin.",
-  "That address did not respond like a Rakazo server.":
-    "Bu adres bir Rakazo sunucusu gibi yanıt vermedi.",
+  "That address redirects elsewhere. Enter the final Nurlai server address.":
+    "Bu adres başka bir yere yönlendiriyor. Nurlai sunucusunun son adresini girin.",
+  "That address did not respond like a Nurlai server.":
+    "Bu adres bir Nurlai sunucusu gibi yanıt vermedi.",
   "The server answered with HTTP {status}.": "Sunucu HTTP {status} ile yanıt verdi.",
   "Timed out reaching that address.": "Bu adrese ulaşırken zaman aşımı oluştu.",
   "Nothing is listening at that address yet.": "Bu adreste henüz dinleyen bir şey yok.",
@@ -140,8 +140,8 @@ export const TR_MESSAGES: Record<string, string> = {
     "Kurulum kaydedilemedi. Önceki örnek geri yüklendi.",
   "Connected, but could not save setup for the next launch. Try Continue again.":
     "Bağlanıldı ancak kurulum bir sonraki açılış için kaydedilemedi. Devam’a yeniden tıklayın.",
-  "The app-managed Rakazo services are not ready. Retry setup.":
-    "Uygulamanın yönettiği Rakazo hizmetleri hazır değil. Kurulumu yeniden deneyin.",
+  "The app-managed Nurlai services are not ready. Retry setup.":
+    "Uygulamanın yönettiği Nurlai hizmetleri hazır değil. Kurulumu yeniden deneyin.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker yüklü ancak Docker Compose eksik. Docker Desktop’ı veya docker-compose-plugin’i yükleyin.",
   "Could not check Docker Compose. Check the output below, then retry.":
@@ -162,10 +162,10 @@ export const TR_MESSAGES: Record<string, string> = {
     "Docker yanıt vermeyi bıraktı. Docker’ı başlatıp yeniden deneyin.",
   "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.":
     "Docker Compose eksik. Docker Desktop’ı veya docker-compose-plugin’i yükleyip yeniden deneyin.",
-  "Downloading Rakazo images failed. Check the output below, then retry.":
-    "Rakazo görüntüleri indirilemedi. Aşağıdaki çıktıyı inceleyip yeniden deneyin.",
-  "Rakazo services did not start. Check the output below, then retry.":
-    "Rakazo hizmetleri başlamadı. Aşağıdaki çıktıyı inceleyip yeniden deneyin.",
+  "Downloading Nurlai images failed. Check the output below, then retry.":
+    "Nurlai görüntüleri indirilemedi. Aşağıdaki çıktıyı inceleyip yeniden deneyin.",
+  "Nurlai services did not start. Check the output below, then retry.":
+    "Nurlai hizmetleri başlamadı. Aşağıdaki çıktıyı inceleyip yeniden deneyin.",
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "Yığın başladı ancak web uygulaması yanıt vermedi. Yeniden deneyin ve aşağıdaki çıktıyı inceleyin.",
   "Could not prepare the local stack. Retry.": "Yerel yığın hazırlanamadı. Yeniden deneyin.",
@@ -188,15 +188,15 @@ export const TR_MESSAGES: Record<string, string> = {
   "Chat Details": "Sohbet Ayrıntıları",
   Help: "Yardım",
   "Keyboard Shortcuts": "Klavye Kısayolları",
-  "Downloading Rakazo failed. Check the internet connection, then retry.":
-    "Rakazo indirilemedi. İnternet bağlantısını kontrol edip yeniden deneyin.",
+  "Downloading Nurlai failed. Check the internet connection, then retry.":
+    "Nurlai indirilemedi. İnternet bağlantısını kontrol edip yeniden deneyin.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Verileriniz Docker'dan taşınamadı. Aşağıdaki çıktıyı kontrol edip yeniden deneyin.",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "Zaten çalışan bilgisayar çalışma ortamı çok eski. Güncelleyin veya kapatın, ardından yeniden deneyin.",
-  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
-    "Rakazo verileriniz farklı bir bilgisayar çalışma ortamında. Çalışanı kapatın, ardından yeniden deneyin.",
-  "Run Rakazo without Docker?": "Rakazo Docker olmadan çalıştırılsın mı?",
+  "Your Nurlai data is in a different computer runtime. Quit the one running, then retry.":
+    "Nurlai verileriniz farklı bir bilgisayar çalışma ortamında. Çalışanı kapatın, ardından yeniden deneyin.",
+  "Run Nurlai without Docker?": "Nurlai Docker olmadan çalıştırılsın mı?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Botlarınız ve verileriniz taşınır. Docker durdurulur, kaldırılmaz.",
   Move: "Taşı",
@@ -205,12 +205,12 @@ export const TR_MESSAGES: Record<string, string> = {
   "Your data stays on this computer.": "Verileriniz bu bilgisayarda kalır.",
   "Connect to a server you or your team already run.":
     "Sizin veya ekibinizin zaten çalıştırdığı bir sunucuya bağlanın.",
-  "Rakazo needs Docker Desktop to run on this computer.":
-    "Rakazo'nun bu bilgisayarda çalışması için Docker Desktop gerekir.",
-  "Rakazo needs Docker to run on this computer.":
-    "Rakazo'nun bu bilgisayarda çalışması için Docker gerekir.",
-  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
-    "Docker Desktop, Rakazo'yu arka planda çalıştıran ücretsiz bir uygulamadır. Yükleyip bir kez açın.",
+  "Nurlai needs Docker Desktop to run on this computer.":
+    "Nurlai'nun bu bilgisayarda çalışması için Docker Desktop gerekir.",
+  "Nurlai needs Docker to run on this computer.":
+    "Nurlai'nun bu bilgisayarda çalışması için Docker gerekir.",
+  "Docker Desktop is a free app that runs Nurlai in the background. Install it and open it once.":
+    "Docker Desktop, Nurlai'yu arka planda çalıştıran ücretsiz bir uygulamadır. Yükleyip bir kez açın.",
   "Install Docker Engine and start it.": "Docker Engine'i yükleyip başlatın.",
   "Download Docker Desktop": "Docker Desktop'ı indir",
   "Install Docker": "Docker'ı yükle",
@@ -219,14 +219,14 @@ export const TR_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app} başlatılıyor…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker yüklü ama çalışmıyor. Devam etmek için Docker hizmetini başlatın.",
-  "Rakazo stopped unexpectedly.": "Rakazo beklenmedik şekilde durdu.",
+  "Nurlai stopped unexpectedly.": "Nurlai beklenmedik şekilde durdu.",
   Reload: "Yeniden yükle",
   "Mac app control": "Mac uygulama kontrolü",
   "Set up Mac app control": "Mac uygulama kontrolünü ayarla",
-  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
-    "Komutlar zaten çalışıyor. Uygulamaları kullanmak için Sistem Ayarları’nda Rakazo için Erişilebilirlik ve Ekran Kaydı izinlerini verin, ardından Rakazo’yu yeniden başlatın.",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Nurlai in System Settings, then restart Nurlai.":
+    "Komutlar zaten çalışıyor. Uygulamaları kullanmak için Sistem Ayarları’nda Nurlai için Erişilebilirlik ve Ekran Kaydı izinlerini verin, ardından Nurlai’yu yeniden başlatın.",
   "Open System Settings": "Sistem Ayarları’nı aç",
-  "Restart Rakazo": "Rakazo’yu yeniden başlat",
+  "Restart Nurlai": "Nurlai’yu yeniden başlat",
   "Not Now": "Şimdi değil",
-  "Restart Rakazo to finish setup": "Kurulumu tamamlamak için Rakazo’yu yeniden başlatın",
+  "Restart Nurlai to finish setup": "Kurulumu tamamlamak için Nurlai’yu yeniden başlatın",
 };

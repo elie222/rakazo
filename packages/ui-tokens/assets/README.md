@@ -1,6 +1,6 @@
 # App icon source
 
-`Rakazo.icon` is the shared editable source for macOS and iOS. Open it in Apple's
+`Nurlai.icon` is the shared editable source for macOS and iOS. Open it in Apple's
 Icon Composer with Xcode 26 or newer. The orange foreground keeps its original
 lighting, sits 90 points below center, and uses the system dark background.
 
@@ -38,7 +38,7 @@ it is not available at the script's default location.
 
 ## Animated vector avatars
 
-The animated Rakazo avatar uses SVG paths and gradients in the shared
+The animated Nurlai avatar uses SVG paths and gradients in the shared
 `logo-avatar-art.ts` definition. Its contour is sampled from this canonical
 source's alpha silhouette. The hands and lighting are simplified vector shapes;
 the original photographic skin grain is intentionally not reproduced. No raster

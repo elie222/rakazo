@@ -5,7 +5,7 @@ contact_links:
     about: Report security issues to security@rakazo.com — do not open a public issue.
   - name: User support
     url: mailto:support@rakazo.com
-    about: Questions about using Rakazo or self-hosting help.
+    about: Questions about using Nurlai or self-hosting help.
   - name: Maintainer
     url: mailto:elie@rakazo.com
     about: Reach the maintainer directly.

@@ -1,5 +1,5 @@
 // What This computer runs on an Apple silicon Mac without Docker, fetched only when it is chosen:
-// the Rakazo server bundle and, unless the person already runs one, the computer runtime. Every
+// the Nurlai server bundle and, unless the person already runs one, the computer runtime. Every
 // download is pinned by size and SHA-256 and checked before it is unpacked.
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";

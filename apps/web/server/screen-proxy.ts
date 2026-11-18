@@ -11,7 +11,7 @@ import { SCREEN_PROBE_PARAM } from "@rakazo/core/screen-reconnect";
 
 /**
  * The computer is untrusted, so only what noVNC's pages and socket need reaches it. Anything else,
- * such as credentials an access proxy in front of Rakazo expects, stays here.
+ * such as credentials an access proxy in front of Nurlai expects, stays here.
  */
 const FORWARDED_HEADERS = new Set([
   "accept",

@@ -85,11 +85,11 @@ export async function openBrowserAuth(
             !code ||
             target.searchParams.has("error")
           ) {
-            response.writeHead(400).end(t("Sign-in callback rejected. Return to Rakazo to retry."));
+            response.writeHead(400).end(t("Sign-in callback rejected. Return to Nurlai to retry."));
             return;
           }
           consumed = true;
-          response.end(t("You can close this tab and return to Rakazo."), close);
+          response.end(t("You can close this tab and return to Nurlai."), close);
           options.onCallback({ code, state });
         });
         server.requestTimeout = 10_000;

@@ -387,7 +387,7 @@ class OtaBaseStepTests(OtaBaseTestCase):
 
     def test_classifies_source_from_every_workspace_package_the_bundle_imports(self):
         tokens = "packages/ui-tokens/src/index.ts"
-        icon = "packages/ui-tokens/assets/Rakazo.icon/icon.json"
+        icon = "packages/ui-tokens/assets/Nurlai.icon/icon.json"
         eligible = "Mobile OTA eligible"
         for files, expected, summary_line in (
             ({tokens: "export const a = 1;\n"}, "publish=true", eligible),

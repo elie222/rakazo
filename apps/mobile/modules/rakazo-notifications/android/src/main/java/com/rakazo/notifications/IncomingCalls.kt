@@ -76,7 +76,7 @@ internal object IncomingCalls {
       .setContentIntent(open).setOngoing(Build.VERSION.SDK_INT >= 26).setOnlyAlertOnce(true)
     if (Build.VERSION.SDK_INT >= 26) builder.setTimeoutAfter(maxOf(1, expiry(call) - System.currentTimeMillis()))
     if (Build.VERSION.SDK_INT >= 31) builder.setStyle(Notification.CallStyle.forIncomingCall(
-      Person.Builder().setName(call.optString("botName", "Rakazo")).setImportant(true).build(), decline, answer))
+      Person.Builder().setName(call.optString("botName", "Nurlai")).setImportant(true).build(), decline, answer))
     else {
       builder.addAction(Notification.Action.Builder(null, copy.getString(R.string.rakazo_call_decline), decline).build())
       builder.addAction(Notification.Action.Builder(null, copy.getString(R.string.rakazo_call_answer), answer).build())

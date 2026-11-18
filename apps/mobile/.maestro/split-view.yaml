@@ -1,5 +1,5 @@
 appId: com.rakazo.app
-name: Rakazo split view on a wide window
+name: Nurlai split view on a wide window
 tags:
   - screenshots
 ---
@@ -9,7 +9,7 @@ tags:
     permissions:
       notifications: deny
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    visible: "Sign up for Nurlai|Pixel Launcher isn't responding"
     timeout: 60000
 - runFlow:
     when:
@@ -17,7 +17,7 @@ tags:
     commands:
       - tapOn: "Close app"
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo"
+    visible: "Sign up for Nurlai"
     timeout: 30000
 - tapOn: "Sign in"
 - runFlow: helpers/server.yaml

@@ -51,14 +51,14 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-organic-avatar")).toHaveCount(1);
 
   await captureScreenshot(page, testInfo, "avatar-studio-bot-tab");
-  await studio.getByRole("tab", { name: "Rakazo", exact: true }).click();
+  await studio.getByRole("tab", { name: "Nurlai", exact: true }).click();
   await expect(studio.locator(".rakazo-logo-avatar").first()).toBeVisible();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
   await openBotPanel(page);
   await page.getByTestId("bot-settings").getByTestId("avatar-studio-trigger").click();
   await expect(
-    page.getByTestId("avatar-studio").getByRole("tab", { name: "Rakazo", exact: true }),
+    page.getByTestId("avatar-studio").getByRole("tab", { name: "Nurlai", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await captureScreenshot(page, testInfo, "avatar-studio-rakazo-set");
 });

@@ -55,8 +55,8 @@ describe("withAppIntents prebuild", () => {
         hasFile: (file) => files.has(file),
         pbxTargetByName: (name) => (name === "RakazoWidgets" ? {} : undefined),
         pbxNativeTargetSection: () => ({
-          "app-target": { name: "Rakazo" },
-          "app-target_comment": "Rakazo",
+          "app-target": { name: "Nurlai" },
+          "app-target_comment": "Nurlai",
           "widget-target": { name: '"RakazoWidgets"' },
         }),
         pbxXCBuildConfigurationSection: () => ({ widget: { buildSettings: widgetSettings } }),
@@ -85,7 +85,7 @@ describe("withAppIntents prebuild", () => {
             withXcodeProject: (value, mod) => mod(value),
             IOSConfig: {
               XcodeUtils: {
-                getProjectName: () => "Rakazo",
+                getProjectName: () => "Nurlai",
                 addBuildSourceFileToGroup: (input) => {
                   // Like the real helper, a file already in its group is skipped.
                   const key = `${input.groupName}/${input.filepath}`;
@@ -105,12 +105,12 @@ describe("withAppIntents prebuild", () => {
     expect(plist.modResults.UIBackgroundModes).toEqual(["audio"]);
     expect(copied).toContainEqual([
       join(mobile, "ios-intents/RakazoIntents.swift"),
-      "/project/ios/Rakazo/RakazoIntents.swift",
+      "/project/ios/Nurlai/RakazoIntents.swift",
     ]);
     expect(added.map((input) => input.filepath)).toEqual([
-      "Rakazo/RakazoIntents.swift",
-      "Rakazo/VoiceMessageRecorder.swift",
-      "Rakazo/VoiceMessageActivity.swift",
+      "Nurlai/RakazoIntents.swift",
+      "Nurlai/VoiceMessageRecorder.swift",
+      "Nurlai/VoiceMessageActivity.swift",
       "RakazoWidgets.swift",
       "WorkLiveActivity.swift",
       "VoiceMessageActivity.swift",

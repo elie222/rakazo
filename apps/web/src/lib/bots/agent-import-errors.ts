@@ -50,6 +50,6 @@ export function grokBotErrorText(code: GrokBotExportErrorCode): string {
     case "too_large":
       return t`This export is too large to import.`;
     case "newer_version":
-      return t`This export is newer than Rakazo can read. Update Rakazo and try again.`;
+      return t`This export is newer than Nurlai can read. Update Nurlai and try again.`;
   }
 }

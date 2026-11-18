@@ -74,7 +74,7 @@ export default function SignupSurvey() {
         <SettingsGroup>
           <ChoiceRow
             choices={uses}
-            label={t`How will you use Rakazo?`}
+            label={t`How will you use Nurlai?`}
             onChange={setUse}
             value={use}
           />
@@ -96,9 +96,9 @@ export default function SignupSurvey() {
             value={source}
           />
         </SettingsGroup>
-        <SettingsGroup label={t`What do you most want Rakazo to help with?`}>
+        <SettingsGroup label={t`What do you most want Nurlai to help with?`}>
           <TextInput
-            accessibilityLabel={t`What do you most want Rakazo to help with?`}
+            accessibilityLabel={t`What do you most want Nurlai to help with?`}
             maxLength={2000}
             multiline
             onChangeText={setReason}

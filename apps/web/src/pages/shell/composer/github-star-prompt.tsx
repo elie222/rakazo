@@ -57,7 +57,7 @@ function GitHubStarPrompt() {
     >
       <p className="flex items-center gap-2 text-body font-medium">
         <Star aria-hidden className="size-4 fill-current text-warning" strokeWidth={1.75} />
-        <Trans>Enjoying Rakazo?</Trans>
+        <Trans>Enjoying Nurlai?</Trans>
       </p>
       <div className="mt-3 flex items-center justify-end gap-2">
         <Button variant="ghost" onClick={close}>

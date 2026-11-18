@@ -6,10 +6,10 @@
     <key>CFBundleIdentifier</key>
     <string>dev.rakazo.desktop.speech</string>
     <key>CFBundleName</key>
-    <string>Rakazo</string>
+    <string>Nurlai</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Rakazo turns what you say into text for dictation and voice calls with your bots.</string>
+    <string>Nurlai turns what you say into text for dictation and voice calls with your bots.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Rakazo uses the microphone for dictation and voice calls with your bots.</string>
+    <string>Nurlai uses the microphone for dictation and voice calls with your bots.</string>
   </dict>
 </plist>

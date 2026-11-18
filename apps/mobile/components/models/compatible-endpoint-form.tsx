@@ -111,7 +111,7 @@ export function CompatibleEndpointForm({
           {showEndpointHelp ? (
             <Text
               style={styles.hint}
-            >{t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}</Text>
+            >{t`Paste the OpenAI-compatible address from your server. Nurlai adds /v1 if needed.`}</Text>
           ) : null}
         </>
       ) : null}

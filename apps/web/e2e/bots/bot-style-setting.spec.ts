@@ -20,7 +20,7 @@ test("bot style stays available when bootstrap omits the saved preference", asyn
   const settings = await openUserSettings(page);
   const picker = settings.getByTestId("bot-style-select");
   const original = picker.getByRole("button", { name: "Original", exact: true });
-  const rakazo = picker.getByRole("button", { name: "Rakazo", exact: true });
+  const rakazo = picker.getByRole("button", { name: "Nurlai", exact: true });
   await expect(original).toBeVisible();
   await expect(original).toHaveAttribute("aria-pressed", "false");
   await rakazo.click();

@@ -72,7 +72,7 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
  * screen's state to the app. Extension content scripts run inside the sandboxed document too;
  * one reading storage throws a SecurityError that noVNC's global error handler would otherwise
  * show in place of the screen. The app cannot see into the frame, so the page posts "loading" as
- * soon as it runs and then follows noVNC's connection classes (which Rakazo's own embed page
+ * soon as it runs and then follows noVNC's connection classes (which Nurlai's own embed page
  * sets as well) and its status bar.
  */
 export function injectNovncStorageShim(
@@ -131,7 +131,7 @@ export function injectNovncStorageShim(
     } catch {}
   });
   // The mobile app types through window.rakazoComputerKeyboard and treats its presence as "ready".
-  // Rakazo's own embed page installs that bridge itself, in the same run that builds the canvas; a
+  // Nurlai's own embed page installs that bridge itself, in the same run that builds the canvas; a
   // stock noVNC page has none, so the app's keys would wait for it forever. This one hands keys to
   // noVNC's canvas, where its keyboard handler sends them. noVNC builds the canvas before it
   // connects and ignores keys until then, so on a page that sets noVNC's connection classes the
@@ -176,7 +176,7 @@ export function injectNovncStorageShim(
     };
   };
   let last = "";
-  // Pages that never set noVNC's classes (older Rakazo embed images) still build their viewer
+  // Pages that never set noVNC's classes (older Nurlai embed images) still build their viewer
   // canvas, which is as far as they can be followed.
   let classed = false;
   const sync = () => {

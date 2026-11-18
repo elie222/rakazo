@@ -3,7 +3,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Check for Updates…": "アップデートを確認…",
   "Computer Access…": "コンピュータへのアクセス…",
   "Revoke Local Computer Access": "ローカルコンピュータへのアクセスを取り消す",
-  "Change Rakazo Server…": "Rakazoサーバを変更…",
+  "Change Nurlai Server…": "Nurlaiサーバを変更…",
   "Hide {name}": "{name}を非表示",
   "Hide Others": "ほかを非表示",
   "Show All": "すべてを表示",
@@ -35,12 +35,12 @@ export const JA_MESSAGES: Record<string, string> = {
   Close: "閉じる",
   "Close Window": "ウインドウを閉じる",
   "Bring All to Front": "すべてを手前に移動",
-  "Rakazo {version} is ready to install.": "Rakazo {version}をインストールする準備ができました。",
+  "Nurlai {version} is ready to install.": "Nurlai {version}をインストールする準備ができました。",
   Restart: "再起動",
   Later: "あとで",
   "Could not install the update.": "アップデートをインストールできませんでした。",
   "Could not check for updates.": "アップデートを確認できませんでした。",
-  "Rakazo is up to date.": "Rakazoは最新です。",
+  "Nurlai is up to date.": "Nurlaiは最新です。",
   "Version {version}": "バージョン{version}",
   "Automatic updates are turned off for this install.":
     "このインストールでは自動アップデートがオフになっています。",
@@ -48,12 +48,12 @@ export const JA_MESSAGES: Record<string, string> = {
     "自動アップデートはインストール済みのビルドでのみ動作します。",
   "No desktop releases are published for this build yet.":
     "このビルド向けのデスクトップ版はまだ公開されていません。",
-  "Move Rakazo to Applications to install updates.":
-    "アップデートをインストールするには、Rakazoを「アプリケーション」に移動してください。",
+  "Move Nurlai to Applications to install updates.":
+    "アップデートをインストールするには、Nurlaiを「アプリケーション」に移動してください。",
   "Free up disk space to install updates.":
     "アップデートをインストールするには、ディスクの空き容量を増やしてください。",
-  "This update could not be verified. Reinstall Rakazo from a trusted download.":
-    "このアップデートを検証できませんでした。信頼できるダウンロード元からRakazoを再インストールしてください。",
+  "This update could not be verified. Reinstall Nurlai from a trusted download.":
+    "このアップデートを検証できませんでした。信頼できるダウンロード元からNurlaiを再インストールしてください。",
   "The update could not be completed. Try again later.":
     "アップデートを完了できませんでした。しばらくしてからもう一度お試しください。",
   "Could not reach the update server.": "アップデートサーバに接続できませんでした。",
@@ -72,13 +72,13 @@ export const JA_MESSAGES: Record<string, string> = {
     "サインインはすでに進行中です。キャンセルしてからもう一度お試しください。",
   "Could not open browser sign-in. Close other sign-in attempts and retry.":
     "ブラウザでのサインインを開けませんでした。ほかのサインインを閉じてからもう一度お試しください。",
-  "Sign-in callback rejected. Return to Rakazo to retry.":
-    "サインインの応答が拒否されました。Rakazoに戻ってもう一度お試しください。",
-  "You can close this tab and return to Rakazo.": "このタブを閉じてRakazoに戻ってください。",
-  "Set up Rakazo": "Rakazoを設定",
-  "Quit Rakazo": "Rakazoを終了",
-  "Welcome to Rakazo": "Rakazoへようこそ",
-  "Choose where Rakazo runs.": "Rakazoを動かす場所を選んでください。",
+  "Sign-in callback rejected. Return to Nurlai to retry.":
+    "サインインの応答が拒否されました。Nurlaiに戻ってもう一度お試しください。",
+  "You can close this tab and return to Nurlai.": "このタブを閉じてNurlaiに戻ってください。",
+  "Set up Nurlai": "Nurlaiを設定",
+  "Quit Nurlai": "Nurlaiを終了",
+  "Welcome to Nurlai": "Nurlaiへようこそ",
+  "Choose where Nurlai runs.": "Nurlaiを動かす場所を選んでください。",
   Instance: "インスタンス",
   "This computer": "このコンピュータ",
   "Existing instance": "既存のインスタンス",
@@ -91,14 +91,14 @@ export const JA_MESSAGES: Record<string, string> = {
   Continue: "続ける",
   Retry: "再試行",
   "Getting ready…": "準備しています…",
-  "Downloading Rakazo…": "Rakazoをダウンロードしています…",
-  "Starting Rakazo…": "Rakazoを起動しています…",
+  "Downloading Nurlai…": "Nurlaiをダウンロードしています…",
+  "Starting Nurlai…": "Nurlaiを起動しています…",
   "Almost ready…": "まもなく完了…",
-  "Rakazo is ready.": "Rakazoの準備ができました。",
+  "Nurlai is ready.": "Nurlaiの準備ができました。",
   "{size} downloaded": "{size}ダウンロード済み",
   "Connecting…": "接続しています…",
   "Checking…": "確認しています…",
-  "Rakazo answered at {url}.": "Rakazoが{url}で応答しました。",
+  "Nurlai answered at {url}.": "Nurlaiが{url}で応答しました。",
   "Enter a server address first.": "先にサーバのアドレスを入力してください。",
   "Could not save that address.": "そのアドレスを保存できませんでした。",
   "Could not save that address. Try again.":
@@ -110,18 +110,18 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not run the connection check. Try again.":
     "接続を確認できませんでした。もう一度お試しください。",
   "Setup bridge unavailable.": "設定用のブリッジを利用できません。",
-  "Setup could not start. Quit Rakazo and try again.":
-    "設定を開始できませんでした。Rakazoを終了してからもう一度お試しください。",
+  "Setup could not start. Quit Nurlai and try again.":
+    "設定を開始できませんでした。Nurlaiを終了してからもう一度お試しください。",
   "Enter a server address.": "サーバのアドレスを入力してください。",
   "Enter a valid http:// or https:// address.":
     "有効なhttp://またはhttps://のアドレスを入力してください。",
   "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.":
     "有効なサーバのアドレスを入力してください。公開サーバにはHTTPSが必要です。新しいローカルインスタンスにはlocalhostを使ってください。",
   "Invalid custom headers": "カスタムヘッダーが無効です",
-  "That address redirects elsewhere. Enter the final Rakazo server address.":
-    "そのアドレスは別の場所にリダイレクトされます。最終的なRakazoサーバのアドレスを入力してください。",
-  "That address did not respond like a Rakazo server.":
-    "そのアドレスはRakazoサーバとして応答しませんでした。",
+  "That address redirects elsewhere. Enter the final Nurlai server address.":
+    "そのアドレスは別の場所にリダイレクトされます。最終的なNurlaiサーバのアドレスを入力してください。",
+  "That address did not respond like a Nurlai server.":
+    "そのアドレスはNurlaiサーバとして応答しませんでした。",
   "The server answered with HTTP {status}.": "サーバがHTTP {status}で応答しました。",
   "Timed out reaching that address.": "そのアドレスへの接続がタイムアウトしました。",
   "Nothing is listening at that address yet.": "そのアドレスではまだ何も待ち受けていません。",
@@ -146,8 +146,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "設定を保存できませんでした。以前のインスタンスを復元しました。",
   "Connected, but could not save setup for the next launch. Try Continue again.":
     "接続しましたが、次回の起動用に設定を保存できませんでした。もう一度「続ける」をクリックしてください。",
-  "The app-managed Rakazo services are not ready. Retry setup.":
-    "アプリが管理するRakazoサービスの準備ができていません。設定をやり直してください。",
+  "The app-managed Nurlai services are not ready. Retry setup.":
+    "アプリが管理するNurlaiサービスの準備ができていません。設定をやり直してください。",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Dockerはインストールされていますが、Docker Composeがありません。Docker Desktopまたはdocker-compose-pluginをインストールしてください。",
   "Could not check Docker Compose. Check the output below, then retry.":
@@ -168,10 +168,10 @@ export const JA_MESSAGES: Record<string, string> = {
     "Dockerが応答しなくなりました。Dockerを起動してから再試行してください。",
   "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.":
     "Docker Composeがありません。Docker Desktopまたはdocker-compose-pluginをインストールしてから再試行してください。",
-  "Downloading Rakazo images failed. Check the output below, then retry.":
-    "Rakazoのイメージをダウンロードできませんでした。下の出力を確認してから再試行してください。",
-  "Rakazo services did not start. Check the output below, then retry.":
-    "Rakazoのサービスが起動しませんでした。下の出力を確認してから再試行してください。",
+  "Downloading Nurlai images failed. Check the output below, then retry.":
+    "Nurlaiのイメージをダウンロードできませんでした。下の出力を確認してから再試行してください。",
+  "Nurlai services did not start. Check the output below, then retry.":
+    "Nurlaiのサービスが起動しませんでした。下の出力を確認してから再試行してください。",
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "スタックは起動しましたが、Webアプリが応答しませんでした。再試行して、下の出力を確認してください。",
   "Could not prepare the local stack. Retry.":
@@ -195,15 +195,15 @@ export const JA_MESSAGES: Record<string, string> = {
   "Chat Details": "チャットの詳細",
   Help: "ヘルプ",
   "Keyboard Shortcuts": "キーボードショートカット",
-  "Downloading Rakazo failed. Check the internet connection, then retry.":
-    "Rakazoをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
+  "Downloading Nurlai failed. Check the internet connection, then retry.":
+    "Nurlaiをダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Dockerからデータを移行できませんでした。下の出力を確認してから、もう一度お試しください。",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "すでに実行中のコンピューターランタイムが古すぎます。更新するか終了してから、もう一度お試しください。",
-  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
-    "Rakazoのデータは別のコンピューターランタイムにあります。実行中のものを終了してから、もう一度お試しください。",
-  "Run Rakazo without Docker?": "DockerなしでRakazoを実行しますか？",
+  "Your Nurlai data is in a different computer runtime. Quit the one running, then retry.":
+    "Nurlaiのデータは別のコンピューターランタイムにあります。実行中のものを終了してから、もう一度お試しください。",
+  "Run Nurlai without Docker?": "DockerなしでNurlaiを実行しますか？",
   "Your bots and data move over. Docker is stopped, not removed.":
     "ボットとデータは引き継がれます。Dockerは停止されますが、削除はされません。",
   Move: "移行",
@@ -212,12 +212,12 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your data stays on this computer.": "データはこのコンピュータに保存されます。",
   "Connect to a server you or your team already run.":
     "あなたやチームがすでに運用しているサーバーに接続します。",
-  "Rakazo needs Docker Desktop to run on this computer.":
-    "このコンピュータでRakazoを動かすにはDocker Desktopが必要です。",
-  "Rakazo needs Docker to run on this computer.":
-    "このコンピュータでRakazoを動かすにはDockerが必要です。",
-  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
-    "Docker Desktopは、Rakazoをバックグラウンドで動かす無料のアプリです。インストールして一度開いてください。",
+  "Nurlai needs Docker Desktop to run on this computer.":
+    "このコンピュータでNurlaiを動かすにはDocker Desktopが必要です。",
+  "Nurlai needs Docker to run on this computer.":
+    "このコンピュータでNurlaiを動かすにはDockerが必要です。",
+  "Docker Desktop is a free app that runs Nurlai in the background. Install it and open it once.":
+    "Docker Desktopは、Nurlaiをバックグラウンドで動かす無料のアプリです。インストールして一度開いてください。",
   "Install Docker Engine and start it.": "Docker Engineをインストールして起動してください。",
   "Download Docker Desktop": "Docker Desktopをダウンロード",
   "Install Docker": "Dockerをインストール",
@@ -226,14 +226,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "Starting {app}…": "{app}を起動しています…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Dockerはインストールされていますが、実行されていません。続行するにはDockerサービスを起動してください。",
-  "Rakazo stopped unexpectedly.": "Rakazo が突然停止しました。",
+  "Nurlai stopped unexpectedly.": "Nurlai が突然停止しました。",
   Reload: "再読み込み",
   "Mac app control": "Macアプリの操作",
   "Set up Mac app control": "Macアプリの操作を設定",
-  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
-    "コマンドはすでに使用できます。アプリを操作するには、システム設定でRakazoのアクセシビリティと画面収録を許可してから、Rakazoを再起動してください。",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Nurlai in System Settings, then restart Nurlai.":
+    "コマンドはすでに使用できます。アプリを操作するには、システム設定でNurlaiのアクセシビリティと画面収録を許可してから、Nurlaiを再起動してください。",
   "Open System Settings": "システム設定を開く",
-  "Restart Rakazo": "Rakazoを再起動",
+  "Restart Nurlai": "Nurlaiを再起動",
   "Not Now": "今はしない",
-  "Restart Rakazo to finish setup": "Rakazoを再起動して設定を完了",
+  "Restart Nurlai to finish setup": "Nurlaiを再起動して設定を完了",
 };

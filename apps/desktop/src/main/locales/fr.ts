@@ -3,7 +3,7 @@ export const FR_MESSAGES: Record<string, string> = {
   "Check for Updates…": "Rechercher des mises à jour…",
   "Computer Access…": "Accès à l’ordinateur…",
   "Revoke Local Computer Access": "Révoquer l’accès à l’ordinateur local",
-  "Change Rakazo Server…": "Changer de serveur Rakazo…",
+  "Change Nurlai Server…": "Changer de serveur Nurlai…",
   "Hide {name}": "Masquer {name}",
   "Hide Others": "Masquer les autres",
   "Show All": "Tout afficher",
@@ -35,12 +35,12 @@ export const FR_MESSAGES: Record<string, string> = {
   Close: "Fermer",
   "Close Window": "Fermer la fenêtre",
   "Bring All to Front": "Tout ramener au premier plan",
-  "Rakazo {version} is ready to install.": "Rakazo {version} est prêt à être installé.",
+  "Nurlai {version} is ready to install.": "Nurlai {version} est prêt à être installé.",
   Restart: "Redémarrer",
   Later: "Plus tard",
   "Could not install the update.": "Impossible d’installer la mise à jour.",
   "Could not check for updates.": "Impossible de rechercher des mises à jour.",
-  "Rakazo is up to date.": "Rakazo est à jour.",
+  "Nurlai is up to date.": "Nurlai est à jour.",
   "Version {version}": "Version {version}",
   "Automatic updates are turned off for this install.":
     "Les mises à jour automatiques sont désactivées pour cette installation.",
@@ -48,12 +48,12 @@ export const FR_MESSAGES: Record<string, string> = {
     "Les mises à jour automatiques ne fonctionnent que dans une version installée.",
   "No desktop releases are published for this build yet.":
     "Aucune version de bureau n’est encore publiée pour cette build.",
-  "Move Rakazo to Applications to install updates.":
-    "Déplacez Rakazo dans Applications pour installer les mises à jour.",
+  "Move Nurlai to Applications to install updates.":
+    "Déplacez Nurlai dans Applications pour installer les mises à jour.",
   "Free up disk space to install updates.":
     "Libérez de l’espace disque pour installer les mises à jour.",
-  "This update could not be verified. Reinstall Rakazo from a trusted download.":
-    "Impossible de vérifier cette mise à jour. Réinstallez Rakazo depuis un téléchargement fiable.",
+  "This update could not be verified. Reinstall Nurlai from a trusted download.":
+    "Impossible de vérifier cette mise à jour. Réinstallez Nurlai depuis un téléchargement fiable.",
   "The update could not be completed. Try again later.":
     "Impossible de terminer la mise à jour. Réessayez plus tard.",
   "Could not reach the update server.": "Impossible de joindre le serveur de mises à jour.",
@@ -72,14 +72,14 @@ export const FR_MESSAGES: Record<string, string> = {
     "Une connexion est déjà en cours. Annulez-la et réessayez.",
   "Could not open browser sign-in. Close other sign-in attempts and retry.":
     "Impossible d’ouvrir la connexion dans le navigateur. Fermez les autres tentatives de connexion et réessayez.",
-  "Sign-in callback rejected. Return to Rakazo to retry.":
-    "La réponse de connexion a été refusée. Revenez à Rakazo pour réessayer.",
-  "You can close this tab and return to Rakazo.":
-    "Vous pouvez fermer cet onglet et revenir à Rakazo.",
-  "Set up Rakazo": "Configurer Rakazo",
-  "Quit Rakazo": "Quitter Rakazo",
-  "Welcome to Rakazo": "Bienvenue dans Rakazo",
-  "Choose where Rakazo runs.": "Choisissez où Rakazo s’exécute.",
+  "Sign-in callback rejected. Return to Nurlai to retry.":
+    "La réponse de connexion a été refusée. Revenez à Nurlai pour réessayer.",
+  "You can close this tab and return to Nurlai.":
+    "Vous pouvez fermer cet onglet et revenir à Nurlai.",
+  "Set up Nurlai": "Configurer Nurlai",
+  "Quit Nurlai": "Quitter Nurlai",
+  "Welcome to Nurlai": "Bienvenue dans Nurlai",
+  "Choose where Nurlai runs.": "Choisissez où Nurlai s’exécute.",
   Instance: "Instance",
   "This computer": "Cet ordinateur",
   "Existing instance": "Instance existante",
@@ -92,14 +92,14 @@ export const FR_MESSAGES: Record<string, string> = {
   Continue: "Continuer",
   Retry: "Réessayer",
   "Getting ready…": "Préparation…",
-  "Downloading Rakazo…": "Téléchargement de Rakazo…",
-  "Starting Rakazo…": "Démarrage de Rakazo…",
+  "Downloading Nurlai…": "Téléchargement de Nurlai…",
+  "Starting Nurlai…": "Démarrage de Nurlai…",
   "Almost ready…": "Presque prêt…",
-  "Rakazo is ready.": "Rakazo est prêt.",
+  "Nurlai is ready.": "Nurlai est prêt.",
   "{size} downloaded": "{size} téléchargés",
   "Connecting…": "Connexion…",
   "Checking…": "Vérification…",
-  "Rakazo answered at {url}.": "Rakazo a répondu à {url}.",
+  "Nurlai answered at {url}.": "Nurlai a répondu à {url}.",
   "Enter a server address first.": "Saisissez d’abord une adresse de serveur.",
   "Could not save that address.": "Impossible d’enregistrer cette adresse.",
   "Could not save that address. Try again.": "Impossible d’enregistrer cette adresse. Réessayez.",
@@ -109,17 +109,17 @@ export const FR_MESSAGES: Record<string, string> = {
     "Impossible de démarrer la stack locale. Réessayez.",
   "Could not run the connection check. Try again.": "Impossible de tester la connexion. Réessayez.",
   "Setup bridge unavailable.": "Le pont de configuration n’est pas disponible.",
-  "Setup could not start. Quit Rakazo and try again.":
-    "Impossible de lancer la configuration. Quittez Rakazo et réessayez.",
+  "Setup could not start. Quit Nurlai and try again.":
+    "Impossible de lancer la configuration. Quittez Nurlai et réessayez.",
   "Enter a server address.": "Saisissez une adresse de serveur.",
   "Enter a valid http:// or https:// address.": "Saisissez une adresse http:// ou https:// valide.",
   "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.":
     "Saisissez une adresse de serveur valide. Les serveurs publics exigent HTTPS ; une nouvelle instance locale doit utiliser localhost.",
   "Invalid custom headers": "En-têtes personnalisés non valides",
-  "That address redirects elsewhere. Enter the final Rakazo server address.":
-    "Cette adresse redirige ailleurs. Saisissez l’adresse finale du serveur Rakazo.",
-  "That address did not respond like a Rakazo server.":
-    "Cette adresse n’a pas répondu comme un serveur Rakazo.",
+  "That address redirects elsewhere. Enter the final Nurlai server address.":
+    "Cette adresse redirige ailleurs. Saisissez l’adresse finale du serveur Nurlai.",
+  "That address did not respond like a Nurlai server.":
+    "Cette adresse n’a pas répondu comme un serveur Nurlai.",
   "The server answered with HTTP {status}.": "Le serveur a répondu avec HTTP {status}.",
   "Timed out reaching that address.": "Délai dépassé pour joindre cette adresse.",
   "Nothing is listening at that address yet.": "Rien n’écoute encore à cette adresse.",
@@ -144,8 +144,8 @@ export const FR_MESSAGES: Record<string, string> = {
     "Impossible d’enregistrer la configuration. L’instance précédente a été restaurée.",
   "Connected, but could not save setup for the next launch. Try Continue again.":
     "Connecté, mais impossible d’enregistrer la configuration pour le prochain lancement. Cliquez à nouveau sur Continuer.",
-  "The app-managed Rakazo services are not ready. Retry setup.":
-    "Les services Rakazo gérés par l’app ne sont pas prêts. Relancez la configuration.",
+  "The app-managed Nurlai services are not ready. Retry setup.":
+    "Les services Nurlai gérés par l’app ne sont pas prêts. Relancez la configuration.",
   "Docker is installed, but Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin.":
     "Docker est installé, mais Docker Compose est absent. Installez Docker Desktop ou le docker-compose-plugin.",
   "Could not check Docker Compose. Check the output below, then retry.":
@@ -166,10 +166,10 @@ export const FR_MESSAGES: Record<string, string> = {
     "Docker ne répond plus. Démarrez Docker, puis réessayez.",
   "Docker Compose is missing. Install Docker Desktop or the docker-compose-plugin, then retry.":
     "Docker Compose est absent. Installez Docker Desktop ou le docker-compose-plugin, puis réessayez.",
-  "Downloading Rakazo images failed. Check the output below, then retry.":
-    "Le téléchargement des images Rakazo a échoué. Consultez la sortie ci-dessous, puis réessayez.",
-  "Rakazo services did not start. Check the output below, then retry.":
-    "Les services Rakazo n’ont pas démarré. Consultez la sortie ci-dessous, puis réessayez.",
+  "Downloading Nurlai images failed. Check the output below, then retry.":
+    "Le téléchargement des images Nurlai a échoué. Consultez la sortie ci-dessous, puis réessayez.",
+  "Nurlai services did not start. Check the output below, then retry.":
+    "Les services Nurlai n’ont pas démarré. Consultez la sortie ci-dessous, puis réessayez.",
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "La stack a démarré, mais l’app web n’a pas répondu. Réessayez et consultez la sortie ci-dessous.",
   "Could not prepare the local stack. Retry.": "Impossible de préparer la stack locale. Réessayez.",
@@ -193,15 +193,15 @@ export const FR_MESSAGES: Record<string, string> = {
   "Chat Details": "Détails de la discussion",
   Help: "Aide",
   "Keyboard Shortcuts": "Raccourcis clavier",
-  "Downloading Rakazo failed. Check the internet connection, then retry.":
-    "Le téléchargement de Rakazo a échoué. Vérifiez la connexion Internet, puis réessayez.",
+  "Downloading Nurlai failed. Check the internet connection, then retry.":
+    "Le téléchargement de Nurlai a échoué. Vérifiez la connexion Internet, puis réessayez.",
   "Could not move your data from Docker. Check the output below, then retry.":
     "Impossible de transférer vos données depuis Docker. Consultez la sortie ci-dessous, puis réessayez.",
   "The computer runtime already running is too old. Update or quit it, then retry.":
     "L’environnement d’exécution des ordinateurs déjà lancé est trop ancien. Mettez-le à jour ou quittez-le, puis réessayez.",
-  "Your Rakazo data is in a different computer runtime. Quit the one running, then retry.":
-    "Vos données Rakazo se trouvent dans un autre environnement d’exécution des ordinateurs. Quittez celui qui est lancé, puis réessayez.",
-  "Run Rakazo without Docker?": "Utiliser Rakazo sans Docker ?",
+  "Your Nurlai data is in a different computer runtime. Quit the one running, then retry.":
+    "Vos données Nurlai se trouvent dans un autre environnement d’exécution des ordinateurs. Quittez celui qui est lancé, puis réessayez.",
+  "Run Nurlai without Docker?": "Utiliser Nurlai sans Docker ?",
   "Your bots and data move over. Docker is stopped, not removed.":
     "Vos bots et vos données sont transférés. Docker est arrêté, pas supprimé.",
   Move: "Transférer",
@@ -210,12 +210,12 @@ export const FR_MESSAGES: Record<string, string> = {
   "Your data stays on this computer.": "Vos données restent sur cet ordinateur.",
   "Connect to a server you or your team already run.":
     "Connectez-vous à un serveur que vous ou votre équipe exploitez déjà.",
-  "Rakazo needs Docker Desktop to run on this computer.":
-    "Rakazo a besoin de Docker Desktop pour fonctionner sur cet ordinateur.",
-  "Rakazo needs Docker to run on this computer.":
-    "Rakazo a besoin de Docker pour fonctionner sur cet ordinateur.",
-  "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.":
-    "Docker Desktop est une app gratuite qui exécute Rakazo en arrière-plan. Installez-la et ouvrez-la une fois.",
+  "Nurlai needs Docker Desktop to run on this computer.":
+    "Nurlai a besoin de Docker Desktop pour fonctionner sur cet ordinateur.",
+  "Nurlai needs Docker to run on this computer.":
+    "Nurlai a besoin de Docker pour fonctionner sur cet ordinateur.",
+  "Docker Desktop is a free app that runs Nurlai in the background. Install it and open it once.":
+    "Docker Desktop est une app gratuite qui exécute Nurlai en arrière-plan. Installez-la et ouvrez-la une fois.",
   "Install Docker Engine and start it.": "Installez Docker Engine et démarrez-le.",
   "Download Docker Desktop": "Télécharger Docker Desktop",
   "Install Docker": "Installer Docker",
@@ -224,14 +224,14 @@ export const FR_MESSAGES: Record<string, string> = {
   "Starting {app}…": "Démarrage de {app}…",
   "Docker is installed but not running. Start the Docker service to continue.":
     "Docker est installé mais ne fonctionne pas. Démarrez le service Docker pour continuer.",
-  "Rakazo stopped unexpectedly.": "Rakazo s’est arrêté de façon inattendue.",
+  "Nurlai stopped unexpectedly.": "Nurlai s’est arrêté de façon inattendue.",
   Reload: "Recharger",
   "Mac app control": "Contrôle des apps du Mac",
   "Set up Mac app control": "Configurer le contrôle des apps du Mac",
-  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
-    "Les commandes fonctionnent déjà. Pour utiliser les apps, autorisez Accessibilité et Enregistrement de l’écran pour Rakazo dans Réglages Système, puis redémarrez Rakazo.",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Nurlai in System Settings, then restart Nurlai.":
+    "Les commandes fonctionnent déjà. Pour utiliser les apps, autorisez Accessibilité et Enregistrement de l’écran pour Nurlai dans Réglages Système, puis redémarrez Nurlai.",
   "Open System Settings": "Ouvrir Réglages Système",
-  "Restart Rakazo": "Redémarrer Rakazo",
+  "Restart Nurlai": "Redémarrer Nurlai",
   "Not Now": "Pas maintenant",
-  "Restart Rakazo to finish setup": "Redémarrez Rakazo pour terminer la configuration",
+  "Restart Nurlai to finish setup": "Redémarrez Nurlai pour terminer la configuration",
 };

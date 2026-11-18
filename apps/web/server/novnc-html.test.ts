@@ -538,7 +538,7 @@ describe("noVNC frame state report", () => {
     expect(p.posted.at(-1)).toEqual({ rakazoScreen: "failed" });
   });
 
-  it("treats a Rakazo embed page that built its viewer as connecting", () => {
+  it("treats a Nurlai embed page that built its viewer as connecting", () => {
     const p = page({ canvas: true });
     p.mutate();
     expect(p.posted).toEqual([{ rakazoScreen: "loading" }, { rakazoScreen: "connecting" }]);

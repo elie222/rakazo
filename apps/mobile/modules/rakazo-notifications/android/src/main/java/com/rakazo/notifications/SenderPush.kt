@@ -34,7 +34,7 @@ internal object SenderPush {
   fun notificationId(threadId: String) = "push:$threadId".hashCode()
 
   /**
-   * Decides a message push without Android calls, so the policy stays unit-testable. A Rakazo
+   * Decides a message push without Android calls, so the policy stays unit-testable. A Nurlai
    * push with no stored session belongs to an account that signed out or left for another
    * server; it is dropped here, because handing it back to Expo would still show it.
    */

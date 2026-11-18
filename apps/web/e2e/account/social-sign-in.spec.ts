@@ -210,7 +210,7 @@ test("one provider spans the chooser row", async ({ page }, testInfo) => {
 test("sign-in hides the chooser when none are configured", async ({ page }, testInfo) => {
   await mockSignedOut(page, []);
   await page.goto("/sign-in");
-  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to Nurlai" })).toBeVisible();
   await expect(page.getByText("Welcome back")).toHaveCount(0);
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toBeVisible();

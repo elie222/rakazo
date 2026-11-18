@@ -5,7 +5,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 const styles = readFileSync(path.resolve(import.meta.dirname, "../../web/src/styles.css"), "utf8");
 const fixture = `<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Rakazo window drag</title><style>${styles}</style></head>
+  <head><meta charset="utf-8"><title>Nurlai window drag</title><style>${styles}</style></head>
   <body>
     <main>Desktop fixture ready</main>
     <header class="app-drag" id="conversation-header">

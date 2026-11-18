@@ -1,5 +1,5 @@
 appId: com.rakazo.app
-name: Rakazo organizations
+name: Nurlai organizations
 tags:
   - screenshots
 ---
@@ -8,7 +8,7 @@ tags:
     permissions:
       notifications: deny
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    visible: "Sign up for Nurlai|Pixel Launcher isn't responding"
     timeout: 30000
 - runFlow:
     when:
@@ -16,7 +16,7 @@ tags:
     commands:
       - tapOn: "Close app"
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo"
+    visible: "Sign up for Nurlai"
     timeout: 30000
 - tapOn: "Sign in"
 - runFlow: helpers/server.yaml

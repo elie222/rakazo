@@ -73,8 +73,8 @@ final class IncomingCalls: NSObject, PKPushRegistryDelegate, CXProviderDelegate,
     declined = declined.filter { $0.value > Date() }
     if (calls[id] != nil || declined[id] != nil) && !mandatory { completion(); return }
     let update = CXCallUpdate()
-    update.remoteHandle = CXHandle(type: .generic, value: call["botName"] ?? "Rakazo")
-    update.localizedCallerName = call["botName"] ?? "Rakazo"
+    update.remoteHandle = CXHandle(type: .generic, value: call["botName"] ?? "Nurlai")
+    update.localizedCallerName = call["botName"] ?? "Nurlai"
     update.hasVideo = false
     update.supportsHolding = false
     update.supportsGrouping = false

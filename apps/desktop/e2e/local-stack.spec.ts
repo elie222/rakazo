@@ -11,7 +11,7 @@ import type { RakazoDesktop } from "@rakazo/contracts";
 import { prepareHostComputer } from "../src/main/this-computer/host-computer.js";
 import { shownWindow } from "./shown-window.js";
 
-const APP_MARKER = "Local Rakazo stack ready";
+const APP_MARKER = "Local Nurlai stack ready";
 const IMAGE_TAG = "v9.9.9";
 const STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
@@ -59,7 +59,7 @@ test.beforeAll(async () => {
     }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rakazo</title></head><body><main>${APP_MARKER}</main></body></html>`,
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Nurlai</title></head><body><main>${APP_MARKER}</main></body></html>`,
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -146,7 +146,7 @@ async function launch(mode: FakeDockerMode | "missing") {
   const env: NodeJS.ProcessEnv = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
-  // A first launch opens Rakazo Cloud; these specs stay offline and start in setup instead.
+  // A first launch opens Nurlai Cloud; these specs stay offline and start in setup instead.
   if (!existsSync(path.join(userData, "setup.json"))) env.RAKAZO_FORCE_SETUP = "1";
   return electron.launch({
     args: ["."],
@@ -190,7 +190,7 @@ test("This computer installs and starts the stack, then opens the app", async ()
 
   const appWindowPromise = app.waitForEvent("window");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Nurlai…");
   await expect(setup.getByRole("button", { name: "Continue" })).toBeDisabled();
   // Docker output stays behind the details toggle; the phase, the bar, and the size show by default.
   await expect(setup.locator("#stack-detail")).toHaveText("412 MB downloaded");
@@ -246,7 +246,7 @@ test("without Docker the app offers the download and continues once Docker is in
   await setup.getByRole("button", { name: "Continue" }).click();
   const docker = process.platform === "linux" ? "Docker" : "Docker Desktop";
   await expect(setup.locator("#stack-phase")).toHaveText(
-    `Rakazo needs ${docker} to run on this computer.`,
+    `Nurlai needs ${docker} to run on this computer.`,
   );
   // Installing Docker is a step, not a failure.
   await expect(setup.locator("#stack-phase")).not.toHaveAttribute("data-tone");
@@ -280,7 +280,7 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   await setup.getByRole("radio", { name: /This computer/ }).check();
 
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Nurlai…");
 
   // Fake docker sleeps during pull; leave This computer before ready so followStack must not save.
   await setup.getByRole("radio", { name: /Existing instance/ }).check();

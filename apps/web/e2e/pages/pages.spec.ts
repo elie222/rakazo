@@ -390,7 +390,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   );
   await expect(outside.getByRole("heading", { name: "Signups dashboard", level: 1 })).toBeVisible();
   await expect(outside.getByRole("button", { name: "Download PDF" })).toBeVisible();
-  await expect(outside.getByRole("link", { name: "Open Rakazo" })).toBeVisible();
+  await expect(outside.getByRole("link", { name: "Open Nurlai" })).toBeVisible();
   await expect(pageFrame(outside, "Signups dashboard").getByText("$12,400")).toBeVisible();
   // There is no chat beside a shared page, so its reply buttons do nothing.
   await expect(
@@ -501,7 +501,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
   await outside.reload();
   await expect(outside.getByRole("heading", { name: "This page isn't available" })).toBeVisible();
-  await expect(outside.getByRole("link", { name: "Open Rakazo" })).toBeVisible();
+  await expect(outside.getByRole("link", { name: "Open Nurlai" })).toBeVisible();
   await captureScreenshot(outside, testInfo, "page-public-unavailable");
   // Busy or unreachable is not gone: the visitor is asked to try again.
   await outside.route("**/api/v1/pages/shared/**", (route) => route.fulfill({ status: 503 }));

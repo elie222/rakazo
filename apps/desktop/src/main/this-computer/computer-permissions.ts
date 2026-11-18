@@ -54,7 +54,7 @@ export function createComputerPermissionSetup(deps: {
         deps.restart();
         return;
       }
-      // Resolves only when the person returns to Rakazo.
+      // Resolves only when the person returns to Nurlai.
       await deps.openSettings();
     }
   }

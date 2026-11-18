@@ -4,7 +4,7 @@ appId: com.rakazo.app
 - launchApp:
     stopApp: true
 - extendedWaitUntil:
-    visible: "Account|Sign up for Rakazo|Sign in to Rakazo"
+    visible: "Account|Sign up for Nurlai|Sign in to Nurlai"
     timeout: 40000
 - runFlow:
     when:
@@ -17,5 +17,5 @@ appId: com.rakazo.app
           timeout: 15000
       - tapOn: "Sign out"
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo|Sign in to Rakazo"
+    visible: "Sign up for Nurlai|Sign in to Nurlai"
     timeout: 20000

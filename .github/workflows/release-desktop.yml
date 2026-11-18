@@ -214,7 +214,7 @@ jobs:
           PASSKEY_ENTITLEMENTS: ${{ steps.passkeys.outputs.entitlements }}
         run: |
           set -euo pipefail
-          app="apps/desktop/out/mac-universal/Rakazo.app"
+          app="apps/desktop/out/mac-universal/Nurlai.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           # Without this entitlement the hardened runtime silences the microphone.
           # Check the app and every helper it signs, and require the value to be true.
@@ -254,7 +254,7 @@ jobs:
           set -euo pipefail
           bundle="$RUNNER_TEMP/server-bundle/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
           cmp "$RUNNER_TEMP/server-bundle/server-bundle.json" \
-            "apps/desktop/out/mac-universal/Rakazo.app/Contents/Resources/server-bundle.json"
+            "apps/desktop/out/mac-universal/Nurlai.app/Contents/Resources/server-bundle.json"
           node -e '
             const [descriptor, file] = process.argv.slice(1);
             const { sha256, size } = JSON.parse(require("node:fs").readFileSync(descriptor, "utf8"));
@@ -268,7 +268,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app="apps/desktop/out/mac-universal/Rakazo.app"
+          app="apps/desktop/out/mac-universal/Nurlai.app"
           native="$app/Contents/Resources/app.asar.unpacked/node_modules"
           lipo "$native/@koromix/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
           lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
@@ -282,7 +282,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements")" = true
           rm -f "$entitlements"
           "$speech" xx < /dev/null | grep -Fq '"language-not-supported"'
-          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
+          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Nurlai" -e '
             const { createRequire } = require("node:module");
             const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);
             const koffi = appRequire("koffi");
@@ -542,7 +542,7 @@ jobs:
           node scripts/release/desktop-release.mjs notes "$RELEASE_VERSION" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" release-artifacts/* \
             --draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes \
-            --title "Rakazo $RELEASE_TAG" --verify-tag
+            --title "Nurlai $RELEASE_TAG" --verify-tag
       - name: Publish the completed release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

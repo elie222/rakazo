@@ -5,7 +5,7 @@ import { darkTokens } from "../src/index.ts";
 
 const root = new URL("../../../", import.meta.url);
 const path = (name: string) => fileURLToPath(new URL(name, root));
-const source = path("packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png");
+const source = path("packages/ui-tokens/assets/Nurlai.icon/Assets/orange-bot.png");
 
 // Match the Icon Composer portrait: the character sits 90 points below center.
 const portrait = await sharp(source).resize(1024, 1024).png().toBuffer();

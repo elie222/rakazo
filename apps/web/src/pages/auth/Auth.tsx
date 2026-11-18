@@ -89,7 +89,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     ) : presented && mode === "in" ? (
       <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
-      <Trans>Sign in to Rakazo</Trans>
+      <Trans>Sign in to Nurlai</Trans>
     ) : mode === "up" ? (
       <Trans>Create your account</Trans>
     ) : (

@@ -6,7 +6,7 @@ import { t, withDetail } from "../i18n.js";
  * (`data-ready` / shell-ready mark) or a route surface the web app marks with
  * `data-rakazo-surface` (auth, onboarding) so a bare Suspense fallback or
  * pre-bootstrap ShellPage cannot pass. Only a usable page may carry that marker,
- * never a loading state. Plain e2e fixtures omit the Rakazo app-state marker.
+ * never a loading state. Plain e2e fixtures omit the Nurlai app-state marker.
  * Runs in the renderer.
  */
 export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
@@ -41,7 +41,7 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
     performance.getEntriesByName("rk:renderer:session-committed").length > 0;
   if (sessionReady && surfaceReady) return "ready";
 
-  // Desktop e2e fixtures mount a plain page without Rakazo app-state markers.
+  // Desktop e2e fixtures mount a plain page without Nurlai app-state markers.
   if (appState === null) {
     const bodyText = (document.body?.innerText || "").trim();
     if (bodyText.includes("Opening your Space")) return "pending";

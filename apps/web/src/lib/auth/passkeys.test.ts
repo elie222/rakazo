@@ -52,7 +52,7 @@ describe("passkeysSupported", () => {
       },
     });
     await expect(passkeysSupported("app.rakazo.com", mac(["app.rakazo.com"]))).resolves.toBe(true);
-    await expect(passkeysSupported("App.Rakazo.com", mac(["app.rakazo.com"]))).resolves.toBe(true);
+    await expect(passkeysSupported("App.Nurlai.com", mac(["app.rakazo.com"]))).resolves.toBe(true);
     await expect(passkeysSupported("app.rakazo.com", mac([]))).resolves.toBe(false);
     await expect(passkeysSupported("app.rakazo.com", mac())).resolves.toBe(false);
     await expect(passkeysSupported("app.rakazo.com", mac(new Error("ipc")))).resolves.toBe(false);

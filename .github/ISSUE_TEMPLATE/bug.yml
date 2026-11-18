@@ -1,5 +1,5 @@
 name: Bug report
-description: Something is broken in Rakazo
+description: Something is broken in Nurlai
 title: "[Bug]: "
 labels:
   - bug
@@ -55,7 +55,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Rakazo version or commit
+      label: Nurlai version or commit
       placeholder: v0.1.0 or abc1234
     validations:
       required: true

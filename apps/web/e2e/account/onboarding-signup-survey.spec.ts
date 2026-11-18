@@ -16,7 +16,7 @@ test("new users answer the signup survey before their first chat", async ({ page
 
   await signup(page, `survey-${Date.now()}@rakazo.test`, "password12", "Survey");
 
-  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome to Nurlai" })).toBeVisible();
   await expect(page).toHaveURL(/\/onboarding\/survey$/);
   await expect(page.getByRole("combobox", { name: "How big is your team?" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "01-signup-survey");
@@ -25,7 +25,7 @@ test("new users answer the signup survey before their first chat", async ({ page
   await chooseOption(page.getByRole("combobox", { name: "How big is your team?" }), "11–50");
   await page.getByLabel("How did you hear about us?").fill("A friend");
   await page
-    .getByLabel("What do you most want Rakazo to help with?")
+    .getByLabel("What do you most want Nurlai to help with?")
     .fill("  Keep my inbox at zero ");
   await captureScreenshot(page, testInfo, "02-signup-survey-filled");
 

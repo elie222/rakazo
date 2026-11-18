@@ -96,7 +96,7 @@ jobs:
           VERSION_CODE: ${{ steps.build.outputs.version_code }}
         run: |
           set -euo pipefail
-          title="Rakazo for Android $VERSION ($VERSION_CODE)"
+          title="Nurlai for Android $VERSION ($VERSION_CODE)"
           if ! gh release view "$RELEASE_TAG" --json tagName > /dev/null 2> "$RUNNER_TEMP/view.err"; then
             if ! grep -q "release not found" "$RUNNER_TEMP/view.err"; then
               cat "$RUNNER_TEMP/view.err" >&2

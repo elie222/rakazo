@@ -7,7 +7,7 @@ name: Android live working status demonstration
       notifications: allow
 # A cold API 34 emulator can show a launcher ANR over the healthy app.
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    visible: "Sign up for Nurlai|Pixel Launcher isn't responding"
     timeout: 60000
 - runFlow:
     when:
@@ -15,7 +15,7 @@ name: Android live working status demonstration
     commands:
       - tapOn: "Close app"
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo"
+    visible: "Sign up for Nurlai"
     timeout: 30000
 - tapOn: "Sign in"
 - runFlow: helpers/server.yaml

@@ -47,7 +47,7 @@ export type McpServerDraft = {
   envRows: EnvRow[];
 };
 
-/** How an env value asks Rakazo to inject the granted OAuth access token. */
+/** How an env value asks Nurlai to inject the granted OAuth access token. */
 const oauthEnvReference = "{{oauth.access_token}}";
 
 let nextEnvRowId = 0;

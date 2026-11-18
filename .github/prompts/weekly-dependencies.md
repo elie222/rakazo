@@ -1,4 +1,4 @@
-Update Rakazo's dependencies in one small, reviewable batch. Follow AGENTS.md.
+Update Nurlai's dependencies in one small, reviewable batch. Follow AGENTS.md.
 
 Use npm-check-updates to inspect the workspaces, review relevant release notes,
 and apply worthwhile patch releases. You own the investigation, edits, lockfile,

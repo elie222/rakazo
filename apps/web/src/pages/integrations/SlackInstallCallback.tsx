@@ -32,7 +32,7 @@ export function SlackInstallCallbackPage() {
           <Trans>Could not connect</Trans>
         </div>
         <Button type="button" className="mt-5" onClick={() => navigate("/app?settings=messaging")}>
-          <Trans>Return to Rakazo</Trans>
+          <Trans>Return to Nurlai</Trans>
         </Button>
       </div>
     </div>

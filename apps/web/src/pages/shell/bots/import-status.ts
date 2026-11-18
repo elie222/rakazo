@@ -52,8 +52,8 @@ export function useImportStatusText() {
         return t`Contains code to run`;
       case "unsupported":
         return value.reason === "not_in_catalog"
-          ? t`Not in Rakazo's catalog`
-          : t`Not supported in Rakazo`;
+          ? t`Not in Nurlai's catalog`
+          : t`Not supported in Nurlai`;
     }
   };
   return { need, status };

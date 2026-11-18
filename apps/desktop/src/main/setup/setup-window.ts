@@ -112,7 +112,7 @@ type SetupIpcDeps = {
   settleLocalStack: () => Promise<void>;
 };
 
-/** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
+/** The setup window's IPC. The channel map keeps a connected Nurlai server from calling any of it. */
 export function registerSetupIpc({
   userDataDir,
   appOpener,
@@ -170,7 +170,7 @@ export function registerSetupIpc({
         if (managedUrl === null || !(await desktop.localStack.matchesDesiredStack())) {
           return {
             ok: false,
-            error: t("The app-managed Rakazo services are not ready. Retry setup."),
+            error: t("The app-managed Nurlai services are not ready. Retry setup."),
           };
         }
         openSetup = { mode: "new", serverUrl: managedUrl };

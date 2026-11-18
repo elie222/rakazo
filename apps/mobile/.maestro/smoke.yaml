@@ -1,17 +1,17 @@
 appId: com.rakazo.app
-name: Rakazo mobile smoke
+name: Nurlai mobile smoke
 ---
 - launchApp:
     clearState: true
 
-- assertVisible: "Sign up for Rakazo"
+- assertVisible: "Sign up for Nurlai"
 - assertVisible: "Name"
 - tapOn: "Sign in"
 - runFlow:
     when:
       true: ${typeof RAKAZO_MOBILE_API_URL !== "undefined" && RAKAZO_MOBILE_API_URL != null && RAKAZO_MOBILE_API_URL.trim() !== ""}
     file: helpers/server.yaml
-- assertVisible: "Sign in to Rakazo"
+- assertVisible: "Sign in to Nurlai"
 - tapOn: "Email"
 - inputText: ${RAKAZO_E2E_EMAIL}
 - tapOn: "Password"

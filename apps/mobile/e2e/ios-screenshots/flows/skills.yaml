@@ -12,9 +12,9 @@ name: Skills
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-skills
-- tapOn: "Rakazo"
+- tapOn: "Nurlai"
 - extendedWaitUntil:
-    visible: ".*name: Rakazo.*"
+    visible: ".*name: Nurlai.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000

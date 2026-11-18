@@ -18,7 +18,7 @@ export const SCREEN_LOCKED_MESSAGE =
 export const SCREEN_DRIVER_DOWNLOAD_MESSAGE =
   "Screen control couldn't be set up on this computer. Ask the user to check their internet connection, then try again.";
 export const SCREEN_PERMISSION_MESSAGE =
-  "Rakazo needs Accessibility and Screen Recording access on this Mac. Ask the user to allow Rakazo in System Settings > Privacy & Security, quit and reopen Rakazo, then try again.";
+  "Nurlai needs Accessibility and Screen Recording access on this Mac. Ask the user to allow Nurlai in System Settings > Privacy & Security, quit and reopen Nurlai, then try again.";
 
 /** The parts of Electron's macOS permission API this uses. */
 export interface ScreenPermissionApi {
