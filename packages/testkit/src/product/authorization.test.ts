@@ -244,6 +244,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
+      ["models/sharedDeployment"],
+      [
+        "models/setSharedDeployment",
+        { provider: "openai", modelId: "gpt-5", method: "api_key", apiKey: "fake-key" },
+      ],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
@@ -2446,6 +2451,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
       expect((await rpc<Actor>(app, cookie, "me")).isDeploymentOwner).toBe(false);
       await expectForbidden(app, cookie, "deployment/get", {});
       await expectForbidden(app, cookie, "deployment/update", { signupsEnabled: false });
+      await expectForbidden(app, cookie, "models/sharedDeployment", {});
+      await expectForbidden(app, cookie, "models/setSharedDeployment", {
+        provider: "openai",
+        modelId: "gpt-5",
+        method: "api_key",
+        apiKey: "fake-key",
+      });
       await expectForbidden(app, cookie, "security/events", {});
       await expectForbidden(app, cookie, "updater/status", {});
       await expectForbidden(app, cookie, "updater/check", {});
