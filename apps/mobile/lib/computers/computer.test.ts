@@ -200,11 +200,12 @@ describe("screen stream identity", () => {
 
 describe("computer copy", () => {
   it("matches the web pane while booting or asleep, and names the computer while in control", () => {
-    expect(previewPlaceholder("stopped", false, "Chief")).toBe("Computer is stopped");
-    expect(previewPlaceholder("suspended", false, "Chief")).toBe(
+    expect(previewPlaceholder("stopped", false)).toBe("Computer is stopped");
+    expect(previewPlaceholder("suspended", false)).toBe(
       "Computer is asleep. Take control to wake it.",
     );
-    expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
+    expect(previewPlaceholder("running", true)).toBe("Booting live desktop…");
+    expect(previewPlaceholder("running", false)).toBe("Connecting to the screen…");
     expect(
       controlLabel(
         computer({

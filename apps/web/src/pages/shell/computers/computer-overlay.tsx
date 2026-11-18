@@ -18,7 +18,7 @@ import {
   windowChromeKind,
 } from "../../../lib/platform/desktop";
 import { ComputerReleaseActions } from "./computer-release-actions";
-import { computerLabel, DesktopKindEmptyState } from "./computer-view";
+import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerOverlayProps = {
   bot: Bot;
@@ -228,7 +228,7 @@ export function ComputerOverlay({
                     </Button>
                   </div>
                 ) : (
-                  computerLabel(computer?.mode, bot.name)
+                  computerPlaceholder(computer?.state, false)
                 ))}
             </div>
           )}

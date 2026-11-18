@@ -437,10 +437,10 @@ export default function Computer() {
     />
   ) : null;
   const placeholder =
-    screenError ??
+    (computer?.state === "running" || !screenOriginError ? screenError : null) ??
     (unreachableScreen
       ? t`Could not load the desktop. This device cannot reach the screen URL.`
-      : previewPlaceholder(computer?.state, booting, name, computer?.mode));
+      : previewPlaceholder(computer?.state, booting));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   // Retrying cannot help once the hours are spent; only a plan change can.

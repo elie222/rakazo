@@ -74,9 +74,20 @@ test("a retrying computer can be closed and keeps booting without a stale error 
   await expect(close).toHaveCount(0);
   expect(held).toHaveLength(1);
 
+  let holdScreen = true;
+  const heldScreens: Route[] = [];
+  await page.route("**/rpc/computer/screenUrl", (route) => {
+    if (!holdScreen) return route.fallback();
+    heldScreens.push(route);
+  });
   staleError = false;
   const response = await held[0]!.fetch();
   await held[0]!.fulfill({ response });
+  await expect.poll(() => heldScreens.length).toBeGreaterThan(0);
+  await expect(preview).toContainText("Connecting to the screen…");
+  await captureScreenshot(page, testInfo, "computer-connecting-screen");
+  holdScreen = false;
+  await Promise.all(heldScreens.map((route) => route.fallback()));
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await expect(close).toHaveCount(0);
 });

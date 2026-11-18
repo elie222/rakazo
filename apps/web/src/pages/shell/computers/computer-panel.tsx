@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../../components/computers/ComputersUnavailableHint";
 import { runsOnUserMachine } from "../../../lib/computers/computer-sandbox";
 import { screenFrames, screenIframeSandbox } from "../../../lib/computers/computer-screen";
-import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
+import { computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
   bot: Bot;
@@ -181,12 +181,7 @@ function ComputerPreview({
                   onOpenComputerSettings={onOpenComputerSettings}
                 />
               ) : (
-                (computerBooting ??
-                computerPlaceholder(
-                  computer?.state,
-                  booting,
-                  computerLabel(computer?.mode, bot.name),
-                ))
+                (computerBooting ?? computerPlaceholder(computer?.state, booting))
               ))}
           </div>
         )}

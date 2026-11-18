@@ -167,8 +167,8 @@ async function hasLiveForeignRunLease(
 }
 
 export class ComputerBusyError extends ClientError {
-  constructor() {
-    super("CONFLICT", "Computer is busy");
+  constructor(message = "Computer is busy") {
+    super("CONFLICT", message);
     this.name = "ComputerBusyError";
   }
 }
@@ -507,7 +507,9 @@ export async function provisionComputer(
       });
       if (claim.count !== 1) throw busy("restore_claim_lost");
     };
+    const providerStarted = performance.now();
     let ref = await provision();
+    const providerReady = performance.now();
     provisioned = ref;
     await markReplacement(ref);
     try {
@@ -541,6 +543,7 @@ export async function provisionComputer(
         operation: ref.fresh ? "replaced" : "resumed",
       });
     }
+    const prepared = performance.now();
     // Provision chooses its kind again, so a host change since the check above can mount a cache
     // that was not brought up to date. Failing rolls this computer back; the next start downloads.
     if (cache && !hydrated && sandboxKindCapabilities(ref.kind).serverHomeMount === "always")
@@ -628,6 +631,8 @@ export async function provisionComputer(
       provider: ref.kind,
       operation: replacement ? "create" : ref.started ? "resume" : "reuse",
       durationMs: Math.round(performance.now() - started),
+      providerReadyMs: Math.round(providerReady - providerStarted),
+      preparationMs: Math.round(prepared - providerReady),
     });
     return ref;
   } catch (error) {

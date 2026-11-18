@@ -170,14 +170,9 @@ export function nextLoadedScreenUrl(
   return retainScreenSource(held, next, now);
 }
 
-export function previewPlaceholder(
-  state: string | undefined,
-  booting: boolean,
-  name: string,
-  mode?: ComputerMode,
-): string {
+export function previewPlaceholder(state: string | undefined, booting: boolean): string {
   if (state === "booting" || booting) return t`Booting live desktop…`;
-  if (state === "running") return computerLabel(mode, name);
+  if (state === "running") return t`Connecting to the screen…`;
   if (state === "suspended") return t`Computer is asleep. Take control to wake it.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;

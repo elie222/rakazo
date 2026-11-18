@@ -12,13 +12,9 @@ export function DesktopKindEmptyState({ className }: { className?: string }) {
   );
 }
 
-export function computerPlaceholder(
-  state: ComputerStatus["state"] | undefined,
-  booting: boolean,
-  label: string,
-) {
+export function computerPlaceholder(state: ComputerStatus["state"] | undefined, booting: boolean) {
   if (state === "booting" || booting) return t`Booting live desktop…`;
-  if (state === "running") return label;
+  if (state === "running") return t`Connecting to the screen…`;
   if (state === "suspended") return t`Computer is asleep. Open it to wake.`;
   if (state === "error") return t`Computer failed to boot`;
   return t`Computer is stopped`;
