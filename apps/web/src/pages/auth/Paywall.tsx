@@ -1,12 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
+import { paymentOverdue } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { AccountMenu } from "../../components/account/AccountMenu";
 import { CreditChoice } from "../../components/billing/ModelCredits";
 import { useSignOut } from "../../lib/auth/sign-out";
-import { formatBillingPrice } from "../../lib/billing";
+import { formatBillingPrice } from "../../lib/billing/billing";
 import type { RpcClient } from "../../lib/query/rpc";
 import { AuthFrame, submitClass } from "./Auth";
 
@@ -21,7 +22,8 @@ export function PaywallPage({
   /** Opened from the app rather than required, so it closes instead of logging out. */
   dismissible?: boolean;
 }) {
-  return status.funding !== undefined ? (
+  // A new plan would bill beside the overdue one, so only the billing portal is offered.
+  return status.funding !== undefined && !(paymentOverdue(status) && !dismissible) ? (
     <CreditChoice status={status} client={client} dismissible={dismissible} />
   ) : (
     <LegacyPaywallPage status={status} client={client} />
@@ -33,8 +35,8 @@ function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut("/sign-in", setError);
-  // An unpaid or paused subscription resumes from the portal; a new checkout would bill twice.
-  const resumable = status.state === "unpaid" || status.state === "paused";
+  // An overdue subscription resumes from the portal; a new checkout would bill twice.
+  const resumable = paymentOverdue(status);
   const showCheckout = status.canManage && !resumable;
   const showPortal =
     status.canManage &&
@@ -68,8 +70,9 @@ function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: 
     t`Any model, with your own key`,
     t`Web, desktop and mobile apps`,
   ];
-  const title =
-    status.canManage && status.price
+  const title = resumable
+    ? t`Payment failed`
+    : status.canManage && status.price
       ? formatBillingPrice(status.price, i18n.locale || "en")
       : t`Subscription required`;
 
@@ -88,7 +91,7 @@ function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: 
             {error}
           </p>
         ) : null}
-        {status.canManage ? (
+        {status.canManage && !resumable ? (
           <ul className="mb-9 flex flex-col gap-3 text-body-lg">
             {included.map((item) => (
               <li key={item} className="flex items-center gap-3">

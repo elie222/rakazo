@@ -500,6 +500,9 @@ export function userTurnInstructions(parts: {
   ];
 }
 
+/** How much of its chat a run reads: all of it, only its latest messages, or none. */
+export type HistoryReach = "all" | "recent" | "none";
+
 export function threadContextForRun<T extends { id?: string; role: string }>(
   trigger: string,
   context: {
@@ -509,6 +512,7 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   },
   messagingChannelRun: boolean,
   sourceMessageId?: string | null,
+  reach: HistoryReach = runReadsThreadHistory(trigger) ? "all" : "none",
 ) {
   // The current reaction is supplied with its target in the prompt, once.
   if (trigger === "reaction" && sourceMessageId) {
@@ -517,9 +521,9 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
       messages: context.messages.filter((message) => message.id !== sourceMessageId),
     };
   }
-  // Routine runs stay isolated from thread history. The creation intro does
-  // too: a message that arrives during it waits and is answered afterward.
-  if (!runReadsThreadHistory(trigger)) {
+  // The creation intro reads no history: a message that arrives during it waits and is answered
+  // afterward.
+  if (reach === "none") {
     return {
       messages: [] as T[],
       summary: null,
@@ -527,7 +531,9 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
       includeSemanticRecall: false,
     };
   }
-  return messagingChannelRun
+  // A routine reads only its owner's and the bot's messages; a summary of the whole chat would
+  // bring everyone else's back in.
+  return messagingChannelRun || trigger === "routine"
     ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
     : { ...context, includeSemanticRecall: true };
 }

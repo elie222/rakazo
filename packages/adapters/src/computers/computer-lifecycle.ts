@@ -37,13 +37,6 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sandboxAllowanceUsedUp } from "../sandboxes/sandbox-allowance.js";
-import {
-  isSandboxDamagedError,
-  isSandboxGoneError,
-  isSandboxUnsafeStopError,
-} from "../sandboxes/sandbox-errors.js";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { resolveAgentHomePath } from "../storage/home.js";
 import { ObjectAgentHomeStore } from "../storage/home-object-store.js";
 import {
@@ -52,6 +45,13 @@ import {
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
+import { sandboxAllowanceUsedUp } from "./sandbox/sandbox-allowance.js";
+import {
+  isSandboxDamagedError,
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+} from "./sandbox/sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import {
   clearInactiveUserComputerControl,
   endTeachingWithLease,
@@ -1348,6 +1348,14 @@ export async function replaceComputer(
         // A gone sandbox has nothing left to checkpoint; the replacement restores
         // the last recorded revision instead of failing the whole replacement.
         if (exported || (!isSandboxGoneError(error) && mode !== "recover")) throw error;
+        getLogger().warn("computer.checkpoint_skipped", {
+          "computer.id": computerId,
+          "bot.id": botId,
+          action: mode,
+          "error.type": error instanceof Error ? error.name : "UnknownFailure",
+          homeRevisionAt: existing.homeRevisionAt,
+          reason: isSandboxGoneError(error) ? "sandbox_gone" : "checkpoint_failed",
+        });
       }
       if (revision !== undefined) {
         const recorded = await deps.prisma.computer.updateMany({

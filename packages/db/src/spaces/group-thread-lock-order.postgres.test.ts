@@ -1,7 +1,7 @@
 import { deferred } from "@rakazo/core/test-async";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createRepos } from "../bots/repos.js";
+import { createRepos } from "../bots/bot-repository.js";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsSystem, runAsTenant } from "../database/row-security.js";

@@ -3,6 +3,12 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Speaker } from "./tts.js";
+import { invalidateVoiceConsent } from "./voice-consent.js";
+
+vi.mock("./voice-consent.js", () => ({
+  ensureVoiceConsent: vi.fn(async () => undefined),
+  invalidateVoiceConsent: vi.fn(),
+}));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -59,6 +65,24 @@ function stubAudio(play: (audio: { onended: (() => void) | null }) => Promise<vo
 }
 
 describe("Speaker", () => {
+  it("forgets cached disclosure when the server requires current consent", async () => {
+    stubAudio(async () => undefined);
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json(
+        { error: "Review voice data sharing before continuing.", code: "AI_CONSENT_REQUIRED" },
+        { status: 403 },
+      ),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Synthetic reply"]);
+    await expect(speaker.speak("Synthetic reply")).resolves.toBe(
+      "Review voice data sharing before continuing.",
+    );
+    expect(invalidateVoiceConsent).toHaveBeenCalledOnce();
+  });
   it("plays every clip through the element a tap unlocked", async () => {
     const played: string[] = [];
     const elements = stubAudio((audio) => {

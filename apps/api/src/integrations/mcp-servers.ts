@@ -16,7 +16,7 @@ import { getLogger } from "@rakazo/logging";
 import { isAdmin } from "../auth/admins.js";
 import type { RouterDeps } from "../router.js";
 import { computerContext } from "../routes/shared.js";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/availability.js";
+import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
 import { dismissMcpServerApprovals } from "./mcp-approval.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { legacyMcpArgs } from "./mcp-material.js";

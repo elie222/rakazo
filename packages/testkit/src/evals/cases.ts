@@ -74,7 +74,13 @@ export type Evidence = {
   calls: ServiceCall[];
   /** The bot under test, to tell its calls from a peer's. */
   subjectBotId?: string;
-  routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
+  routines: Array<{
+    name: string;
+    prompt: string;
+    crons: string[];
+    active: boolean;
+    inChat?: boolean;
+  }>;
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;
   memory: string;

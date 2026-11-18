@@ -12,9 +12,9 @@ import {
   Input,
 } from "@rakazo/ui-web";
 import { useId, useState } from "react";
-import { openOrganizationSpace, organizationsQuery } from "../../lib/auth/organizations";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+import { openOrganizationSpace, organizationsQuery } from "../../lib/spaces/organizations";
 
 /** Creates an organization and moves into it, where onboarding sets up its first bot. */
 export function CreateOrganizationDialog({

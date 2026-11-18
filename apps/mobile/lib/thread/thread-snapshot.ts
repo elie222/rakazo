@@ -24,7 +24,10 @@ function equalValue(previous: unknown, next: unknown): boolean {
   );
 }
 
-/** Compare projected screen snapshots; the replay cursor stays current in snapRef. */
+/**
+ * Compare projected screen snapshots; the replay cursor stays current in snapRef. A changed
+ * snapshot keeps each unchanged message's object, so its row is not drawn again.
+ */
 export function reconcileVisibleThreadSnapshot(
   previous: MobileSnapshot | null,
   next: MobileSnapshot | null,
@@ -32,7 +35,20 @@ export function reconcileVisibleThreadSnapshot(
   if (previous === next || !previous || !next) return next;
   const { cursor: _previousCursor, ...previousVisible } = previous;
   const { cursor: _nextCursor, ...nextVisible } = next;
-  return equalValue(previousVisible, nextVisible) ? previous : next;
+  if (equalValue(previousVisible, nextVisible)) return previous;
+  const shown = new Map(previous.messages.map((message) => [message.id, message]));
+  let kept = 0;
+  const messages = next.messages.map((message) => {
+    const before = shown.get(message.id);
+    if (!before || !equalValue(before, message)) return message;
+    kept += 1;
+    return before;
+  });
+  if (kept === 0) return next;
+  const unchanged =
+    kept === previous.messages.length &&
+    messages.every((message, index) => message === previous.messages[index]);
+  return { ...next, messages: unchanged ? previous.messages : messages };
 }
 
 /** A group chat's members in its order, once the chat or its group list has loaded them. */

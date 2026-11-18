@@ -6,6 +6,7 @@ import { deferred } from "@rakazo/core/test-async";
 import sharp from "sharp";
 import { fetch as undiciFetch } from "undici";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolveHostname } from "../network/network-address.js";
 import type { FaviconResolver } from "./favicon.js";
 import {
   createFaviconResolver,
@@ -14,7 +15,6 @@ import {
   faviconOrigin,
   iconCandidates,
 } from "./favicon.js";
-import type { ResolveHostname } from "./network-address.js";
 
 type Reply = { status?: number; headers?: Record<string, string>; body?: Uint8Array | string };
 

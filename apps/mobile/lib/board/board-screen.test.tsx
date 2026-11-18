@@ -31,7 +31,7 @@ vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
-vi.mock("../../components/board/board-list", () => ({
+vi.mock("./board-list", () => ({
   BoardList: ({
     sections,
     error,

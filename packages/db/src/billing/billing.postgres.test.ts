@@ -113,11 +113,20 @@ describePostgres("billing accounts (PostgreSQL)", () => {
     expect(first?.subscribedAt).toBeInstanceOf(Date);
     expect(first?.paidAt).toBeNull();
 
+    // Active comes before the trial's charge is collected, so it is not yet a payment.
     await syncBillingSnapshot(prisma, customerId, async () => ({ ...snapshot, status: "active" }));
+    const unpaid = await billingAccountForOrganization(prisma, organizationId);
+    expect(unpaid).toMatchObject({ status: "active", paidAt: null });
+
+    const paidAt = new Date("2026-01-02T03:04:05Z");
+    await syncBillingSnapshot(prisma, customerId, async () => ({
+      ...snapshot,
+      status: "active",
+      paidAt,
+    }));
     const second = await billingAccountForOrganization(prisma, organizationId);
-    expect(second?.status).toBe("active");
     expect(second?.subscribedAt).toEqual(first?.subscribedAt);
-    expect(second?.paidAt).toBeInstanceOf(Date);
+    expect(second?.paidAt).toEqual(paidAt);
 
     await syncBillingSnapshot(prisma, customerId, async () => null);
     const cleared = await billingAccountForOrganization(prisma, organizationId);

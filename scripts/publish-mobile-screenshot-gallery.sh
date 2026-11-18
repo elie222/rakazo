@@ -33,7 +33,7 @@ gallery_url="$public_base_url/runs/$run_key/index.html"
 gallery_dir="$GITHUB_WORKSPACE/.tmp/mobile-screenshot-gallery"
 
 MOBILE_SCREENSHOTS_URL="$gallery_url" \
-  pnpm exec tsx packages/testkit/src/cli/generate-mobile-screenshot-gallery.ts \
+  pnpm exec tsx packages/testkit/src/screenshots/generate-mobile-screenshot-gallery.ts \
     test-report/mobile-screenshots/screenshots \
     "$gallery_dir"
 

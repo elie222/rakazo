@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AppEmulator } from "../../apps/app-emulator.js";
 import { fileId } from "../../apps/files.js";
-import { DANA, studioFacts } from "../../apps/fixtures/studio.js";
 import { mailThreadId } from "../../apps/mail.js";
 import { noteId } from "../../apps/notes.js";
 import type { EvalCase, Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
+import { DANA, studioFacts } from "../fixtures/studio.js";
 import { APPS_EVAL_CASES, APPS_JUDGE_CALIBRATION, APPS_JUDGE_VERSION } from "./apps.js";
 
 const now = new Date("2026-11-06T16:30:00Z");

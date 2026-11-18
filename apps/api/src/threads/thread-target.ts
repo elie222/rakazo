@@ -40,6 +40,7 @@ import {
   loadMessageAuthor,
   lockSpaceGroup,
   retireWaitingQuestionInTransaction,
+  runHoldsChat,
   SpaceDeletionInProgressError,
   spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -656,6 +657,7 @@ export async function sendThreadMessage(
             modelId: true,
             modelPinned: true,
             thinkingLevel: true,
+            routine: { select: { inChat: true } },
           },
         });
         if (input.imageHandling === "confirm") {
@@ -747,7 +749,8 @@ export async function sendThreadMessage(
           : activeRuns.filter(
               (run) =>
                 QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
-                !messageBypassesTakeoverWait(run),
+                !messageBypassesTakeoverWait(run) &&
+                runHoldsChat(run),
             );
         const active =
           holdingRuns.find((run) => steersMessageFrom(run, actor)) ??
@@ -878,6 +881,7 @@ export async function sendThreadMessage(
           modelProvider: true,
           modelId: true,
           modelPinned: true,
+          routine: { select: { inChat: true } },
           thinkingLevel: true,
           updatedAt: true,
         },
@@ -987,7 +991,12 @@ export async function sendThreadMessage(
           }
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
+        if (
+          !STEERABLE_RUN_STATUSES.has(run.status) ||
+          messageBypassesTakeoverWait(run) ||
+          !runHoldsChat(run)
+        )
+          continue;
         const current = activeByBotId.get(run.botId);
         if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }

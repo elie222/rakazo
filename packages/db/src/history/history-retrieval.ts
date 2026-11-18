@@ -15,6 +15,7 @@ import {
   INDEXED_MESSAGE,
   UNINDEXED_MESSAGE,
 } from "../encryption/content-encryption.js";
+import { routineReadableSql } from "../threads/messages.js";
 import {
   historyAttachmentBlocks,
   historyMessageText,
@@ -36,6 +37,11 @@ export interface HistoryScope {
   searchAt?: Date;
   /** Server-captured history boundary. Search excludes the active request and later messages. */
   searchBeforeSeq?: number;
+  /**
+   * A routine's owner: the run acts with their accounts and nobody vouches for anyone else's
+   * words, so it reads only their messages and this bot's replies in turns they started.
+   */
+  ownerOnly?: string;
 }
 interface HistoryRow {
   id: string;
@@ -192,6 +198,7 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
       )))`
         : Prisma.empty
     }
+    ${scope.ownerOnly ? Prisma.sql`AND ${routineReadableSql(scope.ownerOnly, scope.botId)}` : Prisma.empty}
   `;
 }
 /** Raw reads bypass the client extension, so decrypt here. */

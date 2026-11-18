@@ -227,8 +227,8 @@ ${script}`;
       const trustedFiles = [
         "package.json",
         "scripts/publish-playwright-report.sh",
-        "packages/testkit/src/cli/generate-playwright-report-dashboard.ts",
-        "packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts",
+        "packages/testkit/src/screenshots/generate-playwright-report-dashboard.ts",
+        "packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts",
         "packages/testkit/src/screenshots/playwright-report-dashboard.ts",
         "packages/testkit/src/screenshots/playwright-pr-screenshot-comment.ts",
         "packages/testkit/src/screenshot-commit-marker.json",
@@ -249,7 +249,7 @@ ${script}`;
         );
         replacements["scripts/publish-playwright-report.sh"] =
           'printf "%s" "$AWS_SECRET_ACCESS_KEY" > "$ATTACK_MARKER"; exit 90';
-        replacements["packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts"] =
+        replacements["packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts"] =
           'import { writeFileSync } from "node:fs"; writeFileSync(process.env.ATTACK_MARKER, process.env.GH_TOKEN);';
         const archive = makeArchive(root, {
           ...replacements,
@@ -342,7 +342,7 @@ else:
           [
             "--import",
             "tsx",
-            "packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts",
+            "packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts",
             path.join(checkout, ".tmp/playwright-dashboard/screenshots/review.json"),
             changedPaths,
           ],

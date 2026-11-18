@@ -15,13 +15,13 @@ import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { win32NtRelativeAvailable } from "../../providers/computer/desktop/desktop-sandbox-win32-path.js";
-import { assertSandboxReadLimit } from "../../sandboxes/sandbox-test-support.js";
 import { LocalAgentHomeStore } from "../../storage/home.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
 } from "../computer-workspace.js";
+import { assertSandboxReadLimit } from "../sandbox/sandbox-test-support.js";
 import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";

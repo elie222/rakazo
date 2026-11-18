@@ -174,6 +174,7 @@ function RoutineShot() {
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
+    inChat: false,
     watch: null,
   });
   return (

@@ -9,7 +9,7 @@ import { BrowserRouter, useLocation } from "react-router-dom";
 import { App } from "./App";
 import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
-import { captureReferral } from "./lib/auth/referral";
+import { captureReferral } from "./lib/billing/referral";
 import { webLogoAvatarActivity } from "./lib/bots/logo-avatar-activity";
 import { applyUiDirection } from "./lib/locale/apply-ui-direction";
 import { resolveUiLocale } from "./lib/locale/ui-locale";

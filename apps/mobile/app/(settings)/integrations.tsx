@@ -29,7 +29,6 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -47,6 +46,7 @@ import type {
 } from "../../components/integrations/add-custom-integration";
 import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
 import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
 import type { ConnectionTool } from "../../components/integrations/integration-detail";
 import { IntegrationDetail } from "../../components/integrations/integration-detail";
 import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integrations/integration-plugins";
@@ -62,7 +62,7 @@ import { Chevron } from "../../components/ui/row-accessories";
 import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { loadLastBotId } from "../../lib/home/last-bot";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
 import type {
   IntegrationsCacheScope,
   IntegrationsSnapshot,
@@ -74,6 +74,7 @@ import {
   readIntegrationsCache,
   writeIntegrationsCache,
 } from "../../lib/integrations/integrations-cache";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   browsablePlugins,
@@ -146,7 +147,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -256,6 +256,11 @@ export default function Integrations() {
           matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
+  const noMatch =
+    catalogsReady &&
+    filtering &&
+    catalogApps.length + pluginMatches.length + brandMatches.length + savedServerMatches.length ===
+      0;
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
 
   const detailItem = useMemo(() => {
@@ -456,16 +461,6 @@ export default function Integrations() {
       };
     }, []),
   );
-
-  useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -840,15 +835,8 @@ export default function Integrations() {
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await retryRefresh(isCurrent);
-      }
+      await signInToMcpServer(rpc, serverId);
+      if (isCurrent()) await retryRefresh(isCurrent);
     } catch (reason) {
       if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
     } finally {
@@ -954,6 +942,18 @@ export default function Integrations() {
           <Text numberOfLines={1} style={styles.title}>
             {label}
           </Text>
+          {item.chatApp && !connected ? (
+            <Text style={styles.secondary}>
+              {t`Tools for your bot.`}{" "}
+              <Text
+                accessibilityRole="link"
+                onPress={() => router.push("/messaging")}
+                style={styles.inlineLink}
+              >
+                {t`Chat from ${ph({ name: label })}`}
+              </Text>
+            </Text>
+          ) : null}
         </View>
         {renderCatalogActions(item, label)}
       </>
@@ -1142,6 +1142,7 @@ export default function Integrations() {
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
                 onConnect={() => void connect(detailItem)}
+                onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (
               <>
@@ -1211,13 +1212,19 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogsReady &&
-                catalogApps.length === 0 &&
-                pluginMatches.length === 0 &&
-                brandMatches.length === 0 &&
-                savedServerMatches.length === 0 &&
-                filtering ? (
+                {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
+                ) : null}
+                {catalogsReady ? (
+                  <IntegrationCatalogSearch
+                    query={query}
+                    hidden={Boolean(category)}
+                    noLocalMatch={noMatch}
+                    onChanged={(serverId) => {
+                      if (serverId) setOauthServerId(serverId);
+                      void retryRefresh();
+                    }}
+                  />
                 ) : null}
 
                 {!category && renderedApps.length < catalogApps.length ? (

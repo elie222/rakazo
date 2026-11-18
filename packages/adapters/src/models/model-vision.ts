@@ -1,6 +1,9 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "../cli-models/claude-code/provider.js";
+import {
+  CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModel,
+} from "../providers/cli-model/claude-code/provider.js";
 import { piBaseRegistry } from "../runtime/pi/models/pi-base-registry.js";
 import { liveModelSibling, withLiveImageInput } from "../runtime/pi/models/pi-live-model.js";
 import { CHATGPT_OAUTH_PROVIDER } from "../runtime/pi/models/pi-oauth.js";

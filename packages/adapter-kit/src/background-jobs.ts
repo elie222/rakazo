@@ -1,3 +1,4 @@
+import { LifecycleEmailKind } from "@rakazo/contracts";
 import { z } from "zod";
 import type {
   BackgroundJob,
@@ -101,6 +102,17 @@ const payloadSchemas = {
     userId: z.string().min(1),
     ticketId: z.string().min(1),
     tokenDigest: z.string().min(1),
+  }),
+  "email.lifecycle": z.object({
+    kind: LifecycleEmailKind,
+    organizationId: z.string().min(1),
+    userId: z.string().min(1),
+    message: z.object({
+      subject: z.string().min(1),
+      text: z.string().min(1),
+      html: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    }),
   }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
@@ -449,5 +461,27 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
     payload: { jobId },
     replaceKey: `media.poll:${jobId}`,
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+/** A few tries ride out a database or queue blip; a send that was claimed is never repeated. */
+const LIFECYCLE_EMAIL_MAX_ATTEMPTS = 5;
+
+/**
+ * One lifecycle mail for one owner of one organization, due at `availableAt`. Keyed by kind,
+ * person and organization, so scheduling it again moves the one job, and a person's mails share
+ * a queue, so two that are due together run one after the other.
+ */
+export function lifecycleEmailJob(
+  payload: BackgroundJobPayloads["email.lifecycle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "email.lifecycle",
+    payload,
+    availableAt,
+    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}:${payload.organizationId}`,
+    queueName: `email.lifecycle:${payload.userId}`,
+    maxAttempts: LIFECYCLE_EMAIL_MAX_ATTEMPTS,
   };
 }
