@@ -283,6 +283,7 @@ export * from "./storage/artifacts.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
 export * from "./storage/storage-migration.js";
+export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";
 export * from "./tasks/scratchpad-tools.js";
 export * from "./tasks/task-catalog.js";
