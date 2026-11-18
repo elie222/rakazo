@@ -64,6 +64,13 @@ export function OutgoingDraftCard({
           />
           <Text style={caption}>{t`${draft.source} draft`}</Text>
         </View>
+        {open && block.detail ? (
+          <Text
+            style={[styles.warning, { borderStartColor: tokens.warning, color: tokens.foreground }]}
+          >
+            {block.detail}
+          </Text>
+        ) : null}
         {shown.kind === "email" ? (
           open && values.kind === "email" ? (
             <TextInput
@@ -160,6 +167,7 @@ const styles = StyleSheet.create({
   },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 12 },
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
+  warning: { ...typeScale.secondary, borderStartWidth: 2, paddingStart: 10 },
   input: { padding: 0 },
   recipient: {
     flexDirection: "row",

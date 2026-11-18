@@ -14,7 +14,8 @@ export const OutgoingDraftValues = z.discriminatedUnion("kind", [
     .refine(({ subject, body }) => subject.trim().length > 0 || body.trim().length > 0),
   z.strictObject({
     kind: z.literal("message"),
-    to: z.string().regex(/^(?:[CDGU][A-Z0-9]{1,31}|#[a-z0-9_-]{1,80})$/),
+    // The connector owns its destination format. A review card takes one bounded, visible line.
+    to: z.string().min(1).max(254).regex(/^\S+$/),
     body: z
       .string()
       .max(16_000)

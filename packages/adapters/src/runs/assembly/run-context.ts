@@ -19,7 +19,10 @@ import type {
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
-import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
+import {
+  isToolEffectIdempotencyKey,
+  toolEffectIdempotencyKey,
+} from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -450,6 +453,26 @@ export function nextMutatingEffectOccurrence(
   const effects = ctx.state.effects;
   const fingerprint = toolEffectIdempotencyKey(ctx.runId, toolName, args);
   const approved = approvedKey ? approvedEffectOccurrence(approvedKey, fingerprint) : undefined;
+  // An edited approval keeps its original identity so a saved pre-edit call can recover after
+  // execution. Reserve that occurrence when there was no saved turn to reserve it for us.
+  if (
+    approved === undefined &&
+    approvedKey &&
+    isToolEffectIdempotencyKey(approvedKey, ctx.runId, toolName)
+  ) {
+    const prefix = `${ctx.runId}:${toolName}:`;
+    const [digest] = approvedKey.slice(prefix.length).split(":");
+    const originalFingerprint = prefix + digest;
+    const originalOccurrence = approvedEffectOccurrence(approvedKey, originalFingerprint) ?? 0;
+    if ((effects.counts.get(originalFingerprint) ?? 0) <= originalOccurrence) {
+      effects.occurrences.push({
+        executionId,
+        fingerprint: originalFingerprint,
+        occurrence: originalOccurrence,
+      });
+      effects.counts.set(originalFingerprint, originalOccurrence + 1);
+    }
+  }
   const previous = effects.restoredPending;
   if (previous?.executionId === executionId) {
     effects.restoredPending = undefined;

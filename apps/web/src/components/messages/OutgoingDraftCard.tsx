@@ -59,6 +59,11 @@ export function OutgoingDraftCard({
           <Icon aria-hidden="true" className="size-4 shrink-0" />
           {t`${draft.source} draft`}
         </div>
+        {open && block.detail ? (
+          <p className="mt-3 whitespace-pre-wrap break-words border-s-2 border-warning ps-3 text-body-sm">
+            {block.detail}
+          </p>
+        ) : null}
         <fieldset disabled={answer.pending} className="mt-4 min-w-0">
           {shown.kind === "email" ? (
             open && values.kind === "email" ? (

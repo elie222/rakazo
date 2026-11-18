@@ -75,11 +75,15 @@ export function buildApprovalAskBlock(
     ? outgoingDraftForApproval(options, args, secrets)
     : undefined;
   if (draft) {
+    const reviewReason = options?.reviewReason?.trim();
     return {
       kind: "ask",
       approvalEffectId: effectId,
       text: draft.source,
       outgoingDraft: draft,
+      detail: reviewReason
+        ? truncate(redactSecrets(reviewReason, secrets), MAX_APPROVAL_DETAIL_LENGTH)
+        : undefined,
       status: "pending",
       actions: [
         { id: "allow", label: "Send" },

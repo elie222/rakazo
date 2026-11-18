@@ -61,6 +61,27 @@ describe("buildApprovalAskBlock", () => {
     ).not.toHaveProperty("outgoingDraft");
   });
 
+  it("keeps the redacted checker warning on the draft card", () => {
+    const block = buildApprovalAskBlock(
+      "effect",
+      "send_message",
+      { channel: "C123", text: "Status update" },
+      ["private-name"],
+      {
+        allowOutgoingDraft: true,
+        reviewReason: "This posts to private-name",
+        outgoingDraft: {
+          kind: "message",
+          source: "Team chat",
+          keys: { to: "channel", body: "text" },
+        },
+      },
+    );
+    expect(block).toHaveProperty("outgoingDraft");
+    expect(block).toHaveProperty("detail", expect.stringContaining("This posts to"));
+    expect(block).toHaveProperty("detail", expect.not.stringContaining("private-name"));
+  });
+
   it("previews a subject-only email with the recipient alias", () => {
     const outgoingDraft = {
       kind: "email" as const,
