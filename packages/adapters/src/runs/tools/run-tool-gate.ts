@@ -33,6 +33,7 @@ import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
 import {
@@ -892,7 +893,10 @@ async function reviewToolCall(
         },
         candidate,
       );
-    const included = injectedReview ? null : await includedAutoReviewChecker(deps);
+    // The fallback is extra: failing to look it up must not keep the chosen checkers from running.
+    const included = injectedReview
+      ? null
+      : await bestEffort("auto_review.included_checker", includedAutoReviewChecker(deps));
     const includedIsPrimary =
       included &&
       checker &&

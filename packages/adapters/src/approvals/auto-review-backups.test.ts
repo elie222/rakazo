@@ -97,6 +97,22 @@ describe("approval model backups", () => {
     expect(result.decision).toBe("pass");
     expect(review).toHaveBeenNthCalledWith(2, included);
   });
+  it("keeps the member's failure cause when the included reviewer also fails", async () => {
+    const review = vi
+      .fn<() => Promise<AutoReviewResult>>()
+      .mockRejectedValueOnce(new HostedModelCreditsRequiredError("fake detail"))
+      .mockResolvedValue({ decision: "error", model: "included", reason: "Checker timed out." });
+    const result = await reviewWithBackups(
+      [
+        { provider: "fixture", model: "checker", role: "member" },
+        { provider: "fixture", model: "checker", included: true, role: "default" },
+      ],
+      review,
+      new AbortController().signal,
+    );
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(result.reason).toBe(AUTO_REVIEW_FAILURE_REASONS.credits_required);
+  });
   it("keeps a deliberate ask from the first reviewer away from the included reviewer", async () => {
     const review = vi.fn(async () => ({ decision: "ask" as const, model: "member" }));
     await reviewWithBackups(

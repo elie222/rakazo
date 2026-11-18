@@ -31,6 +31,7 @@ export async function reviewWithBackups(
     ]);
     if (seen.has(key)) continue;
     seen.add(key);
+    const earlier = seen.size > 1 ? result : undefined;
     try {
       result = await review(candidate);
     } catch (error) {
@@ -49,6 +50,8 @@ export async function reviewWithBackups(
       };
     }
     if (result.decision !== "error") return result;
+    // The owner can act on why their own choice failed, not on why the fallback did.
+    if (candidate.included && earlier) result = earlier;
   }
   return result;
 }
