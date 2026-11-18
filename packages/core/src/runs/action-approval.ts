@@ -256,8 +256,6 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "list_fleet",
   "list_secrets",
   "message_user",
-  // Only confirms the bot's own post.
-  "post_to_group",
   "read_history",
   "recall_memory",
   "reflect_memory",
