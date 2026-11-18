@@ -681,7 +681,7 @@ function SpaceShell() {
   // and a reopened group chat is on its way to that group.
   const showNewBotPrompt =
     initialBotsLoaded &&
-    !active &&
+    bots.length === 0 &&
     !activeGroup &&
     !routeChat?.groupId &&
     (groups.length > 0 ||
