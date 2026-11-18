@@ -229,23 +229,28 @@ describe("screen proxy token carriage", () => {
     },
   );
 
-  it("keeps the token out of everything the browser holds", async () => {
-    const { origin, screenOrigin } = await startProxy();
-    const page = new URL(
-      addScreenProxyCapability(
-        providerUrl(screenOrigin, "embed.html"),
-        secret,
-        origin,
-        scope,
-        undefined,
-      ),
-    );
-    const held = [page.toString(), embedSocketPath(page), novncSocketPath(page)];
-    for (const value of held) {
-      expect(value).not.toContain(viewToken);
-      expect(value).not.toContain("token");
-    }
-    // The sealed capability itself is the only thing the browser names.
-    expect(page.pathname).toBe(embedSocketPath(page).replace(/\/websockify$/, "/embed.html"));
-  });
+  it.each(["embed.html", "vnc.html"] as const)(
+    "keeps the token out of everything the browser holds for a %s screen",
+    async (shape) => {
+      const { origin, screenOrigin } = await startProxy();
+      const page = new URL(
+        addScreenProxyCapability(
+          providerUrl(screenOrigin, shape),
+          secret,
+          origin,
+          scope,
+          undefined,
+        ),
+      );
+      // Whichever socket path the page builds, the token stays inside the capability it names.
+      const held = [page.toString(), embedSocketPath(page), novncSocketPath(page)];
+      for (const value of held) {
+        expect(value).not.toContain(viewToken);
+        expect(value).not.toContain("token");
+      }
+      if (shape === "embed.html") {
+        expect(page.pathname).toBe(embedSocketPath(page).replace(/\/websockify$/, "/embed.html"));
+      }
+    },
+  );
 });
