@@ -20,6 +20,17 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "POST /api/v1/bots/:botId/github": "a body signature made with the bot's webhook secret",
   "GET /api/v1/email/unsubscribe": "a signed token in the link, bound to one user",
   "POST /api/v1/email/unsubscribe": "a signed token in the link, bound to one user",
+  "GET /api/meetings/media": "public: static meeting camera page, no session data",
+  "GET /api/meetings/media/tile.css": "public: static camera tile styles",
+  "GET /api/meetings/media/mark.webp": "public: static camera tile mark",
+  "GET /api/meetings/media/bridge.js": "public: static camera media bridge",
+  "GET /api/meetings/media/audio-worklet.js": "public: static audio worklet",
+  "GET /api/meetings/media/session": "a signed expiring bearer grant scoped to one meeting",
+  "POST /api/meetings/media/turn": "a signed expiring bearer grant scoped to one admitted meeting",
+  "GET /api/meetings/calendar/oauth/callback":
+    "a fixed mobile callback relay; web OAuth completion needs a signed-in session and one-time state",
+  "POST /api/meetings/calendar/webhook": "the calendar provider’s timestamped body signature",
+  "POST /api/meetings/events": "the meeting provider’s timestamped body signature",
   "POST /api/v1/email/inbound": "the mail relay's shared secret as a bearer token",
   "ALL /api/v1/messaging/webhook/:provider": "the platform's signature, checked by its adapter",
   "GET /api/v1/messaging/install/slack/callback":

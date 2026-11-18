@@ -99,7 +99,22 @@ const payloadSchemas = {
   "meeting.calendar-sync": z.object({ connectionId: z.string().min(1) }),
   "meeting.work": z.object({
     sessionId: z.string().min(1),
-    action: z.enum(["join", "leave", "expire", "transcript", "cleanup"]),
+    action: z.enum([
+      "join",
+      "leave",
+      "expire",
+      "reconcile",
+      "transcript",
+      "transcript-check",
+      "cleanup",
+    ]),
+    detached: z
+      .object({
+        provider: z.string().min(1),
+        externalId: z.string().min(1).optional(),
+        recordingId: z.string().min(1).optional(),
+      })
+      .optional(),
   }),
   "purchase.poll": z.object({ purchaseId: z.string().min(1) }),
   "media.poll": z.object({ jobId: z.string().min(1) }),

@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useMeetingQuestion } from "@rakazo/chat-ui/hooks";
 import { transcriptTime } from "@rakazo/i18n/meeting";
 import { Button, Input } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
@@ -20,8 +21,7 @@ export function MeetingTranscript({
   onRemoved: () => void;
 }) {
   const { t } = useLingui();
-  const [question, setQuestion] = useState("");
-  const [exchange, setExchange] = useState<{ question: string; answer: string }>();
+  const question = useMeetingQuestion();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const queries = useSpaceQueries();
   const client = useQueryClient();
@@ -30,10 +30,7 @@ export function MeetingTranscript({
   useEventListener(window, "focus", () => void transcript.refetch({ cancelRefetch: false }));
   const ask = useSave({
     save: (question: string, rpc) => rpc.meetings.ask({ id, question }),
-    onSaved: ({ answer }, question) => {
-      setExchange({ question, answer });
-      setQuestion("");
-    },
+    onSaved: question.onAnswered,
   });
   const removal = useSave({
     save: (_, rpc) => rpc.meetings.deleteTranscript({ id }),
@@ -80,16 +77,16 @@ export function MeetingTranscript({
         className="flex flex-col gap-2 border-t pt-4"
         onSubmit={(event) => {
           event.preventDefault();
-          if (question.trim() && !ask.pending && !removal.pending) ask.run(question.trim());
+          question.submit(ask.run, ask.pending || removal.pending);
         }}
       >
-        {exchange ? (
+        {question.exchange ? (
           <div role="status" className="rounded-lg bg-muted p-3">
             <p className="font-medium" dir="auto">
-              {exchange.question}
+              {question.exchange.question}
             </p>
             <p className="mt-1 whitespace-pre-wrap break-words" dir="auto">
-              {exchange.answer}
+              {question.exchange.answer}
             </p>
           </div>
         ) : null}
@@ -100,14 +97,14 @@ export function MeetingTranscript({
           <Input
             id="meeting-question"
             autoComplete="off"
-            value={question}
+            value={question.draft}
             disabled={ask.pending || removal.pending}
             onChange={(event) => {
               ask.reset();
-              setQuestion(event.target.value);
+              question.setDraft(event.target.value);
             }}
           />
-          <Button type="submit" disabled={ask.pending || removal.pending || !question.trim()}>
+          <Button type="submit" disabled={ask.pending || removal.pending || !question.canAsk}>
             {ask.pending ? <Trans>Asking…</Trans> : <Trans>Ask</Trans>}
           </Button>
         </div>

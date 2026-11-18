@@ -12,7 +12,15 @@ import type { Actor, MeetingPlatform } from "@rakazo/contracts";
 import { MeetingPlatformSchema, MeetingStatusSchema, MeetingTurnSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { LeaseHeldError, runAsSystem, runAsSystemInTransaction, withLease } from "@rakazo/db";
+import {
+  JsonColumnMismatchError,
+  LeaseHeldError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+  runAsSystem,
+  runAsSystemInTransaction,
+  withLease,
+} from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 
 const MINUTE = 60_000;
@@ -20,9 +28,11 @@ const WORK_TIMEOUT = 25_000;
 const BACKUP_AFTER = WORK_TIMEOUT + 5_000;
 export const MEETING_SESSION_DURATION = 2 * 60 * MINUTE + 5 * MINUTE;
 export const MEETING_DAILY_LIMIT = 20;
+const TRANSCRIPT_DEADLINE = 15 * MINUTE;
 
 type Work = BackgroundJobPayloads["meeting.work"];
 type JobAction = Work["action"];
+type Job = Extract<BackgroundJob, { name: "meeting.work" }>;
 type Session = Awaited<ReturnType<PrismaClient["meetingSession"]["findUniqueOrThrow"]>>;
 const errors = {
   admission: "The bot wasn’t admitted to the meeting.",
@@ -58,7 +68,7 @@ export function parseMeetingUrl(input: string): {
   throw badUrl();
 }
 
-function workJob(sessionId: string, action: JobAction, availableAt = new Date()): BackgroundJob {
+function workJob(sessionId: string, action: JobAction, availableAt = new Date()): Job {
   return {
     name: "meeting.work",
     payload: { sessionId, action },
@@ -251,7 +261,7 @@ export class MeetingService {
     if (row.status !== "ready" || row.transcript === null) {
       throw new ClientError("NOT_FOUND", "The meeting transcript is unavailable.");
     }
-    return { botId: row.botId, turns: MeetingTurnSchema.array().parse(JSON.parse(row.transcript)) };
+    return { botId: row.botId, turns: readMeetingTurns(row.id, row.transcript) };
   }
 
   async deleteTranscript(actor: Actor, sessionId: string) {
@@ -266,6 +276,8 @@ export class MeetingService {
         await this.deps.jobs.enqueueIn(tx, workJob(sessionId, "cleanup"));
     });
     await this.notify(actor.spaceId);
+    if (row.recordingId && row.provider === this.providerId)
+      await this.attempt(sessionId, "cleanup");
   }
 
   parseWebhook(body: string, headers: Headers) {
@@ -299,6 +311,52 @@ export class MeetingService {
     for (const action of actions) void this.attempt(row.id, action);
   }
 
+  async recordBotRetirements(
+    tx: Prisma.TransactionClient,
+    bot: { spaceId: string; id: string },
+  ): Promise<Job[]> {
+    if (!this.providerId) return [];
+    const sessions = await runAsSystemInTransaction(
+      tx,
+      "find provider sessions for deleted bot",
+      () =>
+        tx.meetingSession.findMany({
+          where: {
+            botId: bot.id,
+            spaceId: bot.spaceId,
+            provider: this.providerId,
+            OR: [{ externalId: { not: null }, closedAt: null }, { recordingId: { not: null } }],
+          },
+          select: { id: true, provider: true, externalId: true, recordingId: true, closedAt: true },
+        }),
+    );
+    const retirements = sessions.map((row) => {
+      const job = workJob(row.id, "expire", new Date(Date.now() + BACKUP_AFTER));
+      job.payload.detached = {
+        provider: row.provider,
+        externalId: row.closedAt ? undefined : (row.externalId ?? undefined),
+        recordingId: row.recordingId ?? undefined,
+      };
+      return job;
+    });
+    if (retirements.length) await this.deps.jobs.enqueueManyIn(tx, retirements);
+    return retirements;
+  }
+
+  async retireDeletedBotSessions(jobs: readonly Job[]) {
+    await Promise.all(
+      jobs.map(async (job) => {
+        await bestEffort(
+          "retire deleted bot meeting",
+          (async () => {
+            await this.work(job.payload);
+            await this.deps.jobs.cancel(job.replaceKey!);
+          })(),
+        );
+      }),
+    );
+  }
+
   async work(payload: Work) {
     const { prisma } = this.deps;
     return runAsSystem("perform meeting recovery work", () =>
@@ -311,7 +369,22 @@ export class MeetingService {
             where: { id: payload.sessionId, provider: this.providerId },
             omit: { meetingUrl: false },
           });
-          if (!row) return;
+          if (!row) {
+            const retired = payload.detached;
+            if (retired?.provider === this.providerId && retired) {
+              const provider = this.provider();
+              if (retired.externalId) {
+                const current = await provider.get(retired.externalId, signal);
+                if (current && !["ended", "processing"].includes(current.status ?? "")) {
+                  await provider.leave(retired.externalId, signal);
+                }
+                if (current?.recordingId)
+                  await provider.deleteRecording(current.recordingId, signal);
+              }
+              if (retired.recordingId) await provider.deleteRecording(retired.recordingId, signal);
+            }
+            return;
+          }
           switch (payload.action) {
             case "join":
               return this.dispatch(row, signal);
@@ -319,17 +392,15 @@ export class MeetingService {
             case "expire":
               await this.remove(row, signal);
               break;
+            case "reconcile":
+              await this.reconcile(row, signal);
+              break;
             case "transcript":
-              await this.importTranscript(row, signal);
+            case "transcript-check":
+              await this.importTranscript(row, signal, payload.action === "transcript-check");
               break;
             case "cleanup":
-              if (row.recordingId) {
-                await this.provider().deleteRecording(row.recordingId, signal);
-                await prisma.meetingSession.updateMany({
-                  where: { id: row.id, recordingId: row.recordingId },
-                  data: { recordingId: null },
-                });
-              }
+              await this.cleanupRecording(row, signal);
               break;
           }
         },
@@ -367,14 +438,23 @@ export class MeetingService {
       botName: `${bot.name.slice(0, 88)} · Rakazo`,
       expiresAt: row.expiresAt,
     };
-    const request = this.deps.buildJoin ? await this.deps.buildJoin(input) : input;
     const { count } = await prisma.meetingSession.updateMany({
       where: { id: row.id, requestedAt: null, externalId: null, status: "joining" },
       data: { requestedAt: new Date() },
     });
     if (!count) return;
     try {
-      await this.observe(row.id, await provider.join(request, signal));
+      const request = this.deps.buildJoin ? await this.deps.buildJoin(input) : input;
+      const observation = await provider.join(request, signal);
+      await this.observe(row.id, observation);
+      // The bot record can be deleted while a vendor request is in flight.
+      if (!(await prisma.meetingSession.count({ where: { id: row.id } }))) {
+        const cleanup = workJob(row.id, "expire", new Date(Date.now() + BACKUP_AFTER));
+        cleanup.payload.detached = { provider: row.provider, externalId: observation.externalId };
+        await jobs.enqueue(cleanup);
+        await provider.leave(observation.externalId, signal);
+        await jobs.cancel(workKey(row.id, "expire"));
+      }
     } catch (error) {
       if (!(error instanceof MeetingJoinRejected)) throw error;
       if (error.retryAfterMs === undefined) {
@@ -431,11 +511,24 @@ export class MeetingService {
           await jobs.cancel(workKey(row.id, action));
         }
       }
+    } else {
+      await jobs.enqueue(workJob(row.id, "reconcile", new Date(Date.now() + BACKUP_AFTER)));
     }
     await this.notify(row.spaceId);
   }
 
-  private async importTranscript(row: Session, signal: AbortSignal) {
+  private async reconcile(row: Session, signal: AbortSignal) {
+    if (!row.externalId || ["joined", "ready", "ended"].includes(row.status)) return;
+    const provider = this.provider();
+    const current = await provider.get(row.externalId, signal);
+    if (!current) {
+      await this.finish(row, "ended");
+      return;
+    }
+    await this.observe(row.id, current);
+  }
+
+  private async importTranscript(row: Session, signal: AbortSignal, deadline = false) {
     const { prisma, jobs } = this.deps;
     const provider = this.provider();
     if (!row.recordingId || row.status !== "processing") return;
@@ -444,11 +537,25 @@ export class MeetingService {
       await this.finish(row, "ended");
       return;
     }
-    const artifact = await provider.requestTranscript(row.recordingId, signal);
+    const artifact =
+      deadline && row.transcriptId
+        ? { id: row.transcriptId, ready: await provider.transcriptReady(row.transcriptId, signal) }
+        : await provider.requestTranscript(row.recordingId, signal);
     if (!artifact.ready) {
-      await prisma.meetingSession.updateMany({
-        where: { id: row.id, status: "processing", transcriptId: null },
-        data: { transcriptId: artifact.id },
+      if (deadline) {
+        await this.finish(row, "failed", errors.transcript);
+        return;
+      }
+      await prisma.$transaction(async (tx) => {
+        const { count } = await tx.meetingSession.updateMany({
+          where: { id: row.id, status: "processing", transcriptId: null },
+          data: { transcriptId: artifact.id },
+        });
+        if (count || row.transcriptId)
+          await jobs.enqueueIn(tx, {
+            ...workJob(row.id, "transcript-check", new Date(Date.now() + TRANSCRIPT_DEADLINE)),
+            keepExisting: true,
+          });
       });
       return;
     }
@@ -459,9 +566,24 @@ export class MeetingService {
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
         data: { status: "ready", transcript: JSON.stringify(turns), transcriptId: artifact.id },
       });
-      if (count) await jobs.enqueueIn(tx, workJob(row.id, "cleanup"));
+      if (count) {
+        const cleanup = workJob(row.id, "cleanup", new Date(Date.now() + BACKUP_AFTER));
+        cleanup.payload.detached = { provider: row.provider, recordingId: row.recordingId! };
+        await jobs.enqueueIn(tx, cleanup);
+      }
     });
     await this.notify(row.spaceId);
+    await this.cleanupRecording({ ...row, recordingId: row.recordingId }, signal);
+    await jobs.cancel(workKey(row.id, "cleanup"));
+  }
+
+  private async cleanupRecording(row: Session, signal: AbortSignal) {
+    if (!row.recordingId) return;
+    await this.provider().deleteRecording(row.recordingId, signal);
+    await this.deps.prisma.meetingSession.updateMany({
+      where: { id: row.id, recordingId: row.recordingId },
+      data: { recordingId: null },
+    });
   }
 
   private async observe(id: string, event: MeetingObservation): Promise<JobAction[]> {
@@ -483,6 +605,19 @@ export class MeetingService {
             where: { id },
             data: { externalId: event.externalId, meetingUrl: null, ...next.data },
           });
+        }
+        if (
+          (!row.externalId &&
+            (!event.status || event.status === "joining" || event.status === "waiting")) ||
+          (!row.closedAt && event.status === "processing" && !event.recordingId)
+        ) {
+          const wait = event.status === "processing" ? 2 * MINUTE : 4 * MINUTE;
+          await jobs.enqueueIn(tx, workJob(id, "reconcile", new Date(Date.now() + wait)));
+        }
+        if (!row.externalId && !row.closedAt) {
+          const expiry = workJob(id, "expire", row.expiresAt);
+          expiry.payload.detached = { provider: row.provider, externalId: event.externalId };
+          await jobs.enqueueIn(tx, expiry);
         }
         for (const action of next.actions) {
           await jobs.enqueueIn(tx, workJob(id, action, new Date(Date.now() + BACKUP_AFTER)));
@@ -591,4 +726,22 @@ function nextObservation(
     },
     actions,
   };
+}
+
+function readMeetingTurns(id: string, transcript: string) {
+  const row = { table: "meeting_sessions", column: "transcript", id };
+  try {
+    let value: unknown;
+    try {
+      value = JSON.parse(transcript);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new JsonColumnMismatchError(row);
+      throw error;
+    }
+    return readJsonColumn(MeetingTurnSchema.array(), value, row, "reject");
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce("Stored meeting transcript is invalid", error.row);
+    throw new ClientError("SERVICE_UNAVAILABLE", "This transcript couldn’t be read.");
+  }
 }

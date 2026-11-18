@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { canLeaveMeeting } from "@rakazo/contracts";
 import { meetingPlatformLabel, meetingStatusLabel, meetingTime } from "@rakazo/i18n/meeting";
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -116,10 +117,7 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                 <ul aria-label={t`Recent meetings`} className="divide-y border-t">
                   {list.data.meetings.map((meeting) => {
                     const canRead = meeting.transcriptAvailable;
-                    const canLeave =
-                      meeting.status === "joining" ||
-                      meeting.status === "waiting" ||
-                      meeting.status === "joined";
+                    const canLeave = canLeaveMeeting(meeting.status);
                     return (
                       <li key={meeting.id} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">

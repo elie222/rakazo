@@ -24,7 +24,7 @@ export async function configuredMeetingCalendar(
   const secret =
     source.MEETING_CALENDAR_WEBHOOK_SECRET?.trim() || source.MEETING_WEBHOOK_SECRET?.trim();
   const region = source.MEETING_REGION?.trim();
-  const prefix = source.MEETING_WEBHOOK_SIGNATURE?.trim() ?? "webhook";
+  const prefix = source.MEETING_WEBHOOK_SIGNATURE?.trim() || "webhook";
   if (
     !apiKey ||
     !secret?.startsWith("whsec_") ||
