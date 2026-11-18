@@ -689,6 +689,18 @@ export async function selectRunTools(
         orderBy: { createdAt: "asc" },
         take: BOT_DIRECTORY_LIMIT,
       });
+  // Another group the bot belongs to, which post_to_group can post into.
+  const otherGroups = await deps.prisma.chatGroup.findMany({
+    where: {
+      spaceId: run.spaceId,
+      archivedAt: null,
+      thread: { isNot: null },
+      members: { some: { botId: bot.id } },
+      ...(conversationThread.groupId ? { id: { not: conversationThread.groupId } } : {}),
+    },
+    select: { id: true },
+    take: 1,
+  });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
@@ -717,6 +729,7 @@ export async function selectRunTools(
         : bot.disabledBuiltinTools,
       fleetManagement: bot.fleetManagement,
       hasTeammates: teammates.length > 0,
+      hasGroups: otherGroups.length > 0,
       followUpFromUser: sourceMessage?.role === "user",
       userComputer: userComputerShell,
       userComputerScreen,
