@@ -574,6 +574,7 @@ describe("thread lock transaction budget", () => {
         deleteMany: vi.fn(),
       },
       event: { deleteMany: vi.fn(), create: vi.fn().mockResolvedValue(event(1)) },
+      toolCallRecord: { deleteMany: vi.fn() },
       bot: { update: vi.fn() },
     };
     const $transaction = vi.fn(async (work: (client: typeof tx) => unknown) => work(tx));
@@ -5214,6 +5215,7 @@ describe("clearThread", () => {
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
       artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
+      toolCallRecord: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -5302,6 +5304,7 @@ describe("clearThread", () => {
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
       artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
+      toolCallRecord: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({

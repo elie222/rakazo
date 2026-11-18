@@ -2745,6 +2745,7 @@ describe("computer execution leases", () => {
       },
       message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
       artifact: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
+      toolCallRecord: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
