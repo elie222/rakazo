@@ -357,6 +357,34 @@ describe("DesktopUpdateController", () => {
     });
   });
 
+  it("tells subscribers about each step so the menu can show progress", async () => {
+    let fake: ReturnType<typeof fakeUpdater>;
+    fake = fakeUpdater({
+      checkForUpdates: vi.fn(async () => {
+        fake.emit("checking-for-update");
+        fake.emit("update-available", { version: "0.2.0" });
+      }),
+      downloadUpdate: vi.fn(async () => {
+        fake.emit("download-progress", { percent: 40 });
+        fake.emit("update-downloaded", { version: "0.2.0" });
+      }),
+    });
+    const controller = new DesktopUpdateController(packaged, async () => fake.updater, clock);
+    const seen: string[] = [];
+    controller.subscribe((state) => seen.push(`${state.phase}:${state.percent ?? "-"}`));
+
+    await controller.check(true);
+    await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+
+    expect(seen).toEqual([
+      "checking:-",
+      "available:-",
+      "downloading:0",
+      "downloading:40",
+      "ready:100",
+    ]);
+  });
+
   it("joins manual downloads to the automatic download already in flight", async () => {
     const download = deferred();
     let fake: ReturnType<typeof fakeUpdater>;
