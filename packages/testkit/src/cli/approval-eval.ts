@@ -33,7 +33,8 @@ type ApprovalValues = {
 
 /**
  * Live calibration of the Auto approval reviewer against reviewed cases. The reviewer is the
- * product's own adapter, selected from a model connection or the same env the product reads.
+ * product's own adapter: the deployed decision reviewer by default, or one chosen by a model
+ * connection or the same env the product reads.
  */
 export async function runApprovalSuite(
   values: ApprovalValues,
@@ -137,8 +138,19 @@ export async function runApprovalSuite(
       );
     connection = { ...parsed.data, modelId: parsed.data.modelId, headers: parsed.data.headers };
   } else {
-    // The same selection the product makes from RAKAZO_AUTO_REVIEW_* and the deployment model.
-    const checker = autoReview.resolveAutoReviewChecker(process.env);
+    // The deployed reviewer by default, so scores describe what Auto mode actually does; set
+    // RAKAZO_AUTO_REVIEW_* (or pass --connection) to score another one. Otherwise this is the
+    // same selection the product makes from those settings and the deployment model.
+    const chosen = process.env.RAKAZO_AUTO_REVIEW_PROVIDER?.trim();
+    if (!chosen && !autoReview.typesafeApiKey(process.env))
+      return notRun(
+        "Approval evals use the deployed decision reviewer by default and its key is not in env; add it, or choose another reviewer with --connection or RAKAZO_AUTO_REVIEW_PROVIDER",
+      );
+    const checker = autoReview.resolveAutoReviewChecker(
+      chosen
+        ? process.env
+        : { ...process.env, RAKAZO_AUTO_REVIEW_PROVIDER: autoReview.JEV_AUTO_REVIEW_PROVIDER },
+    );
     const envKeys: Record<string, string | undefined> = {
       [autoReview.JEV_AUTO_REVIEW_PROVIDER]: autoReview.typesafeApiKey(process.env),
       openrouter: process.env.OPENROUTER_API_KEY?.trim(),
