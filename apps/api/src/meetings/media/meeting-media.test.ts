@@ -56,7 +56,7 @@ const voiceDeps = {
   secrets: {} as VoiceDeps["secrets"],
 };
 
-function fixture(modelText: string, recentTranscript?: string) {
+function fixture(modelText: string) {
   const run = vi.fn<AgentRuntime["run"]>(async function* () {
     yield { type: "done", text: modelText };
   });
@@ -80,13 +80,13 @@ function fixture(modelText: string, recentTranscript?: string) {
     resolveModel,
     signingSecret: "emulator-secret",
     publicOrigin: "https://rakazo.example.test",
+    voiceReady: async () => true,
     loadSession: async () => ({
       actor,
       botId: "emulator-bot",
       botName: "Atlas",
       voice: true,
       admitted: true,
-      recentTranscript,
     }),
   });
   const app = new Hono();
@@ -122,10 +122,7 @@ describe("live meeting voice", () => {
   });
 
   it("transcribes a turn, uses meeting-only context and voices an addressed reply", async () => {
-    const { run, resolveModel, say } = fixture(
-      '{"reply":"The demo is Thursday."}',
-      "Taylor: The demo is Thursday.",
-    );
+    const { run, resolveModel, say } = fixture('{"reply":"The demo is Thursday."}');
     expect((await say()).status).toBe(200);
     expect(resolveModel).toHaveBeenCalledExactlyOnceWith(actorForRun());
     expect(resolveModel.mock.invocationCallOrder[0]).toBeLessThan(
@@ -141,7 +138,7 @@ describe("live meeting voice", () => {
     expect(request).toMatchObject({ tools: [], history: [] });
     expect(JSON.parse(request.prompt)).toEqual({
       participantName: "Atlas",
-      earlierMeeting: "Taylor: The demo is Thursday.",
+      earlierMeeting: "",
       latestUtterance: "Atlas, when is the demo?",
     });
     expect(synthesizeVoice).toHaveBeenCalledWith(

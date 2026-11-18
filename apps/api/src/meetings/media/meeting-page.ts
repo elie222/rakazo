@@ -52,8 +52,8 @@ registerProcessor("meeting-input", MeetingInput);
 
 export const meetingBridgeScript = `
 const base = ${JSON.stringify(MEETING_MEDIA_PATH)};
+// Keep the signed grant through reloads. The fragment is never sent in HTTP requests.
 const grant = location.hash.slice(1);
-history.replaceState(null, "", location.pathname);
 const headers = { Authorization: "Bearer " + grant };
 const sampleRate = ${MEETING_SAMPLE_RATE};
 const noiseThreshold = 0.025;

@@ -26,10 +26,9 @@ export interface MeetingMediaSession {
   actor: Actor;
   botId: string;
   botName: string;
-  /** A branding-only camera never requests the microphone. */
+  /** Whether this deployment has enabled voice for the camera page. */
   voice: boolean;
   admitted: boolean;
-  recentTranscript?: string;
 }
 
 type ActiveSession = MeetingMediaSession & { sessionId: string; recentSpeech: string };
@@ -37,7 +36,9 @@ type ActiveSession = MeetingMediaSession & { sessionId: string; recentSpeech: st
 export function createMeetingMediaBridge(deps: {
   signingSecret: string;
   publicOrigin: string;
+  /** Revalidate session access without resolving speech connections. */
   loadSession: (sessionId: string) => Promise<MeetingMediaSession | null>;
+  voiceReady: (session: MeetingMediaSession, signal: AbortSignal) => Promise<boolean>;
   respond: (
     session: ActiveSession,
     audio: Uint8Array,
@@ -96,7 +97,8 @@ export function createMeetingMediaBridge(deps: {
       app.get(`${MEETING_MEDIA_PATH}/session`, async (c) => {
         const session = await authenticate(c.req.raw);
         if (!session) return c.body(null, 401, NO_STORE);
-        return c.json({ botName: session.botName, voice: session.voice }, 200, NO_STORE);
+        const voice = session.voice && (await deps.voiceReady(session, c.req.raw.signal));
+        return c.json({ botName: session.botName, voice }, 200, NO_STORE);
       });
       app.post(`${MEETING_MEDIA_PATH}/turn`, async (c) => {
         const session = await authenticate(c.req.raw);
@@ -114,6 +116,8 @@ export function createMeetingMediaBridge(deps: {
         if (!bytes) return c.body(null, 413, NO_STORE);
         if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
 
+        signal.throwIfAborted();
+        if (!(await deps.voiceReady(session, signal))) return c.body(null, 403, NO_STORE);
         signal.throwIfAborted();
         const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), session.grant);
         const turn = await deps.respond(

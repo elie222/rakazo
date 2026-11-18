@@ -30,14 +30,12 @@ type ReplyModel = AgentRunRequest["model"];
 const replySchema = z.object({ reply: z.string().trim().min(1).max(420).nullable() });
 
 export function createMeetingMedia(
-  deps: VoiceDeps & {
-    /** This runtime must be constructed without persistent session recording. */
-    runtime: AgentRuntime;
-    resolveModel: (scope: ModelScope) => Promise<ReplyModel>;
-    signingSecret: string;
-    publicOrigin: string;
-    loadSession: (sessionId: string) => Promise<MeetingMediaSession | null>;
-  },
+  deps: VoiceDeps &
+    Omit<Parameters<typeof createMeetingMediaBridge>[0], "respond"> & {
+      /** This runtime must be constructed without persistent session recording. */
+      runtime: AgentRuntime;
+      resolveModel: (scope: ModelScope) => Promise<ReplyModel>;
+    },
 ) {
   const bridge = createMeetingMediaBridge({
     ...deps,
@@ -143,7 +141,7 @@ Bot: ${answer}`,
         instructions: meetingReplyInstructions(),
         prompt: JSON.stringify({
           participantName: session.botName,
-          earlierMeeting: session.recentTranscript?.slice(-6_000) || session.recentSpeech,
+          earlierMeeting: session.recentSpeech,
           latestUtterance: utterance,
         }),
         history: [],

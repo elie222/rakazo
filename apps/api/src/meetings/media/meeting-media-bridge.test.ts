@@ -39,6 +39,8 @@ describe("meeting media bridge", () => {
     expect(response.headers.get("content-type")).toBe("audio/wav");
     expect(Buffer.from(await response.arrayBuffer()).readUInt32LE(24)).toBe(MEETING_SAMPLE_RATE);
     expect(emulator.received).toHaveLength(1);
+    // One start check and one paid-turn check. The post-turn ACL has no credential lookup.
+    expect(emulator.readinessChecks).toBe(2);
     const recorded = Buffer.from(emulator.received[0]!);
     expect(recorded.toString("ascii", 0, 4)).toBe("RIFF");
     expect(recorded.readUInt32LE(40)).toBe(MEETING_SAMPLE_RATE);
@@ -69,6 +71,15 @@ describe("meeting media bridge", () => {
     emulator.setSilent(true);
     expect((await turn()).status).toBe(204);
     expect(emulator.received).toHaveLength(1);
+  });
+
+  it("keeps the camera branded while blocking capture and paid turns when voice becomes unavailable", async () => {
+    const { emulator, session, turn } = fixture();
+    emulator.setVoiceAvailable(false);
+
+    expect(await (await session()).json()).toEqual({ botName: "Atlas", voice: false });
+    expect((await turn()).status).toBe(403);
+    expect(emulator.received).toHaveLength(0);
   });
 
   it("drops a queued spoken reply when leave revokes the session", async () => {

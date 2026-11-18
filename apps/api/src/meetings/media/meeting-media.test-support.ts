@@ -34,6 +34,8 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
   const received: Uint8Array[] = [];
   let revoked = false;
   let silent = false;
+  let voiceAvailable = true;
+  let readinessChecks = 0;
   let beforeReply: (() => Promise<void>) | undefined;
 
   const bridge = createMeetingMediaBridge({
@@ -41,6 +43,10 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
     publicOrigin,
     loadSession: async (sessionId) =>
       !revoked && sessionId === DEMO_MEDIA_SESSION ? session : null,
+    voiceReady: async () => {
+      readinessChecks++;
+      return voiceAvailable;
+    },
     respond: async (_session, audio, signal) => {
       received.push(audio);
       await beforeReply?.();
@@ -59,11 +65,17 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
     bridge,
     received,
     session,
+    get readinessChecks() {
+      return readinessChecks;
+    },
     revoke: () => {
       revoked = true;
     },
     setSilent: (value: boolean) => {
       silent = value;
+    },
+    setVoiceAvailable: (value: boolean) => {
+      voiceAvailable = value;
     },
     beforeReply: (work: () => Promise<void>) => {
       beforeReply = work;
