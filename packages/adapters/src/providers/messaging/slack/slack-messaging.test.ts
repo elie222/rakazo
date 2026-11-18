@@ -3,8 +3,8 @@ import type * as SlackAdapterModule from "@chat-adapter/slack";
 import type { AdapterContext, MessagingInboundMessage } from "@rakazo/adapter-kit";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 
 type SlackRequest = { method: string; params: Record<string, string> };
 

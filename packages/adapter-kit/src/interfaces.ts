@@ -91,6 +91,7 @@ import type {
   VoiceInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
   WebFetchCapabilities,
   WebFetchRequest,
@@ -641,7 +642,10 @@ export interface VoiceProvider {
     options?: { language?: string },
   ): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
-  transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+  transcribe?(
+    request: VoiceTranscribeRequest,
+    context: AdapterContext,
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }>;
 }
 
 /**
@@ -655,6 +659,8 @@ export interface MessagingSurface {
   describe(): AdapterDescriptor<{ providers: string[] }>;
   /** Enabled platforms and what each supports. */
   platforms(): MessagingPlatformDescriptor[];
+  /** Resolve public linking destinations on demand, including recovery after a startup outage. */
+  resolveAddresses?(signal?: AbortSignal): Promise<Record<string, string>>;
   /**
    * Verify and process one platform webhook request. Parsed events reach the
    * sink registered via onInbound before the returned response resolves.

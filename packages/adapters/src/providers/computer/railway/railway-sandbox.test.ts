@@ -17,14 +17,14 @@ import {
 } from "railway";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import { LinuxDesktop } from "../../../linux-desktop.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { LinuxDesktop } from "../../../computers/screens/linux-desktop.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };

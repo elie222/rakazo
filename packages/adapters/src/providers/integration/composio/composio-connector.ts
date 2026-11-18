@@ -14,9 +14,9 @@ import type {
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { humanizeToolName } from "@rakazo/core";
+import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
-import { collectPages, filterCatalog } from "../../../connector-catalog.js";
-import { isVitestRuntime } from "../../../test-runtime.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
@@ -147,6 +147,13 @@ function activeSlugs(toolkits: ToolkitConnection[]): string[] {
   return toolkits
     .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
     .map((toolkit) => toolkit.slug);
+}
+
+/** Names the directory gets wrong: this toolkit only signs in to a business account. */
+const TOOLKIT_NAMES = new Map([["whatsapp", "WhatsApp Business"]]);
+
+export function toolkitDisplayName(toolkit: { slug: string; name: string }): string {
+  return TOOLKIT_NAMES.get(composioSlugKey(toolkit.slug)) ?? toolkit.name;
 }
 
 function composioSlugKey(slug: string): string {
@@ -297,7 +304,23 @@ export type PluginConnectionRow = {
   provider: string;
   status: string;
   displayName: string;
+  /** When the row last changed; for a pending row, when its authorization began. */
+  updatedAt?: Date;
 };
+
+/**
+ * Composio expires an authorization nobody finished about ten minutes after it began. Until
+ * then the person may still be on the app's sign-in page, so the row is not abandoned yet.
+ */
+export const AUTHORIZATION_WINDOW_MS = 15 * 60 * 1000;
+
+function stillAuthorizing(row: PluginConnectionRow, now: number): boolean {
+  return (
+    row.status === "pending" &&
+    row.updatedAt !== undefined &&
+    now - row.updatedAt.getTime() < AUTHORIZATION_WINDOW_MS
+  );
+}
 
 export function needsLivePluginSync(rows: { status: string }[]): boolean {
   return rows.some((row) => row.status === "pending" || row.status === "error");
@@ -341,6 +364,7 @@ export function pickReusableConnection<T extends { id: string; status: string }>
 export function planLiveConnectionSync(
   rows: PluginConnectionRow[],
   liveSlugs: string[],
+  now = Date.now(),
 ): { connectIds: string[]; revokeIds: string[] } {
   const live = new Set(liveSlugs.map(composioSlugKey).filter(Boolean));
   const connectIds: string[] = [];
@@ -370,6 +394,8 @@ export function planLiveConnectionSync(
     .filter((row) => {
       if (row.status !== "pending" && row.status !== "error") return false;
       if (connectIdSet.has(row.id)) return false;
+      // Revoking it would cancel a sign-in the person is in the middle of.
+      if (stillAuthorizing(row, now)) return false;
       // Keep only in-flight additional-account pendings; clear abandoned errors
       // so live sync does not keep re-listing forever after a failed attempt.
       if (row.status === "pending" && previouslyConnected.has(composioSlugKey(row.provider))) {
@@ -553,7 +579,7 @@ export class ComposioConnector implements ComposioProvider {
     ]);
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
-      name: toolkit.name,
+      name: toolkitDisplayName(toolkit),
       logo: toolkit.logo ?? null,
       noAuth: Boolean(toolkit.isNoAuth),
       ...(!toolkit.isNoAuth && needsSetup.has(composioSlugKey(toolkit.slug))

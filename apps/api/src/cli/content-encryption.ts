@@ -27,8 +27,8 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
-import { createSecretMigrationRepository } from "../secret-migration.js";
+import { moveMcpArgsIntoSecrets } from "../integrations/mcp-args-migration.js";
+import { createSecretMigrationRepository } from "./secret-migration.js";
 
 loadRootEnv();
 await unwrapEnvFromKeyManager();

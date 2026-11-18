@@ -13,11 +13,11 @@ describe("RakazoIntents", () => {
   it("reads the secure-store keys the app writes", () => {
     const swift = read("ios-intents/RakazoIntents.swift");
     for (const [file, name] of [
-      ["lib/session.ts", "SESSION_KEY"],
-      ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
-      ["lib/api.ts", "SPACE_KEY"],
-      ["lib/last-bot.ts", "LAST_BOT_KEY"],
-      ["lib/server-headers.ts", "SERVER_HEADERS_KEY"],
+      ["lib/api/session.ts", "SESSION_KEY"],
+      ["lib/api/server-config.ts", "API_BASE_STORAGE_KEY"],
+      ["lib/api/api.ts", "SPACE_KEY"],
+      ["lib/inbox/last-bot.ts", "LAST_BOT_KEY"],
+      ["lib/api/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
       expect(key, `${name} in ${file}`).toBeTruthy();
@@ -36,7 +36,7 @@ describe("RakazoIntents", () => {
   });
 
   it("falls back to the app's own default server", () => {
-    const local = constant("lib/server-config.ts", "LOCAL_API");
+    const local = constant("lib/api/server-config.ts", "LOCAL_API");
     expect(read("plugins/with-app-intents.js")).toContain(`"${local}"`);
   });
 });

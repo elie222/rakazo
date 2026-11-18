@@ -8,12 +8,12 @@ import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NativeActionButton } from "../components/native-action-button";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
-import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
-import { currentApiBase } from "../lib/api";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { HEADER_CONTROL_SIZE } from "../lib/native-controls";
+import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { currentApiBase } from "../lib/api/api";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import {
   getLatestPage,
   offerPageReply,
@@ -22,7 +22,7 @@ import {
   pageDocument,
   pageMessage,
   pageTapStart,
-} from "../lib/pages";
+} from "../lib/pages/pages";
 
 type Loaded =
   | { status: "loading" }

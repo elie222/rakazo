@@ -6,38 +6,42 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAccountDeletion } from "../../components/account-deletion";
-import { NameDialog } from "../../components/name-dialog";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { createAccountNameEditor } from "../../lib/account-name-editor";
-import { rpc } from "../../lib/api";
+import { useAccountDeletion } from "../../components/settings/account-deletion";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { NameDialog } from "../../components/ui/name-dialog";
+import { createAccountNameEditor } from "../../lib/account/account-name-editor";
+import { rpc } from "../../lib/api/api";
+import type { MobileMe } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
 import {
   fetchAccountSecurity,
   passwordResetCapabilities,
   updateAccountName,
-} from "../../lib/api-auth";
-import { mobileTokens } from "../../lib/appearance";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
-import type { MobileMe } from "../../lib/mobile-types";
-import { useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import type { MobilePasskey } from "../../lib/passkey";
+} from "../../lib/auth/api-auth";
+import type { MobilePasskey } from "../../lib/auth/passkey";
 import {
   addPasskey,
   deletePasskey,
   listPasskeys,
   passkeysAvailable,
   renamePasskey,
-} from "../../lib/passkey";
-import { promptSectionName } from "../../lib/section-name-prompt";
-import { createSettingsPageStyles } from "../../lib/settings-page-styles";
-import { useSideInsets } from "../../lib/side-insets";
-import { continueWithSso } from "../../lib/sso";
+} from "../../lib/auth/passkey";
+import { continueWithSso } from "../../lib/auth/sso";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { promptSectionName } from "../../lib/inbox/sections/section-name-prompt";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 import {
   loadTrustedLinkSites,
   removeTrustedLinkSite,
   useTrustedLinkSites,
-} from "../../lib/trusted-link-sites";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/settings/trusted-link-sites";
 
 /** Who the person is and how they sign in: name, password, passkeys, trusted sites, deletion. */
 export default function Profile() {

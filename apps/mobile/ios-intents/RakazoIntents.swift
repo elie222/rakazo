@@ -125,7 +125,7 @@ struct StartVoiceChatIntent: AppIntent {
   }
 }
 
-/// The single record written by lib/last-bot.ts; legacy ids have no verified owner.
+/// The single record written by lib/inbox/last-bot.ts; legacy ids have no verified owner.
 private struct SavedLastBot: Decodable {
   let botId: String
   let spaceId: String?
@@ -381,7 +381,7 @@ private struct RakazoSession {
   let selectedSpaceId: String?
   let headers: [String: String]
 
-  // The keys lib/session.ts, lib/server-config.ts and lib/api.ts keep in expo-secure-store.
+  // The keys lib/api/session.ts, lib/api/server-config.ts and lib/api/api.ts keep in expo-secure-store.
   static func load() throws -> RakazoSession {
     guard let token = secureStoreItem("rakazo.session_token"), !token.isEmpty else {
       throw MessageBotError.signedOut
@@ -398,7 +398,7 @@ private struct RakazoSession {
       headers: serverHeaders(for: apiBase))
   }
 
-  /// The headers lib/server-headers.ts saved for this server, such as an access proxy's.
+  /// The headers lib/api/server-headers.ts saved for this server, such as an access proxy's.
   private static func serverHeaders(for apiBase: String) -> [String: String] {
     guard let stored = secureStoreItem("rakazo.server_headers")?.data(using: .utf8),
       let saved = try? JSONDecoder().decode(SavedHeaders.self, from: stored),
@@ -515,7 +515,7 @@ private struct RakazoSession {
     guard (200..<300).contains(status) else { throw MessageBotError.server(nil) }
   }
 
-  /// Calls an oRPC procedure the way lib/api.ts does.
+  /// Calls an oRPC procedure the way lib/api/api.ts does.
   func rpc<Output: Decodable>(
     _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval = 60
   ) async throws -> Output {

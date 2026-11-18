@@ -49,6 +49,11 @@
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
     },
+    "./node/test-runtime": {
+      "types": "./src/node/test-runtime.ts",
+      "development": "./src/node/test-runtime.ts",
+      "default": "./src/node/test-runtime.ts"
+    },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",

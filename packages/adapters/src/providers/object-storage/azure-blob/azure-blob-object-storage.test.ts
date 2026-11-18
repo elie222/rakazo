@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { objectStorageConformance } from "../../../object-storage.test-support.js";
+import { objectStorageConformance } from "../../../storage/object-storage.test-support.js";
 import { AzureBlobObjectStorage, azureBlobConfigFromEnv } from "./azure-blob-object-storage.js";
 
 /**
