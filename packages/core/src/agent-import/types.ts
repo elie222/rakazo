@@ -266,3 +266,14 @@ export type AgentImportReader = {
   read: (path: string) => Promise<string> | string;
   size: (path: string) => number | undefined;
 };
+
+/**
+ * Text as a fenced block, so a reader takes it as quoted data. The fence is longer than the
+ * text's longest run of backticks, found in one pass whatever the text's length.
+ */
+export function fencedBlock(text: string): string {
+  let longest = 2;
+  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const fence = "`".repeat(longest + 1);
+  return `${fence}\n${text}\n${fence}`;
+}

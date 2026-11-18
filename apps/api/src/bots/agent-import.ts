@@ -36,6 +36,7 @@ import {
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
+  fencedBlock,
   messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
@@ -377,7 +378,7 @@ export function leftoverMessages(leftovers: AgentImportLeftover[]): string[] {
   const messages: string[][] = [[opening]];
   let size = opening.length;
   for (const item of leftovers) {
-    const part = `## ${item.title}\n\n${quoted(item.content.trim())}`;
+    const part = `## ${item.title}\n\n${fencedBlock(item.content.trim())}`;
     if (size + part.length + closing.length + 6 > THREAD_MESSAGE_TEXT_MAX_LENGTH) {
       messages.push([]);
       size = 0;
@@ -387,13 +388,6 @@ export function leftoverMessages(leftovers: AgentImportLeftover[]): string[] {
   }
   messages.at(-1)!.push(closing);
   return messages.map((parts) => parts.join("\n\n"));
-}
-
-/** Export text as a fenced block, so the bot reads it as quoted data and not its own words. */
-function quoted(text: string): string {
-  const longest = Math.max(2, ...(text.match(/`+/g) ?? []).map((run) => run.length));
-  const fence = "`".repeat(longest + 1);
-  return `${fence}\n${text}\n${fence}`;
 }
 
 /** A bot to create from a plan: an import's files or a template build it. */

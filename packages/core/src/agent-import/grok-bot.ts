@@ -15,7 +15,7 @@ import { nextCronDateAcrossStrict } from "../routines/schedule.js";
 import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
 import type { AgentImportParse } from "./types.js";
-import { freeName, memoryItem, renameSkillMd, skillItem } from "./types.js";
+import { fencedBlock, freeName, memoryItem, renameSkillMd, skillItem } from "./types.js";
 
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
@@ -694,13 +694,12 @@ function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLef
 }
 
 /**
- * A leftover is posted whole in one chat message, inside a fence longer than its longest run of
- * backticks and beside a heading and two short lines; one that cannot fit is left out.
+ * A leftover is posted whole in one chat message, fenced, beside a heading and two short lines;
+ * one that cannot fit is left out. Its length is checked first, so a long one is never scanned.
  */
 function fitsChatMessage(item: AgentImportLeftover): boolean {
-  const fence = Math.max(2, ...(item.content.match(/`+/g) ?? []).map((run) => run.length)) + 1;
-  const around = 2 * fence + 200;
-  return item.title.length + item.content.length + around <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
+  const room = THREAD_MESSAGE_TEXT_MAX_LENGTH - 200 - item.title.length;
+  return item.content.length <= room && fencedBlock(item.content.trim()).length <= room;
 }
 
 /**

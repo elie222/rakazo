@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { GrokBot, RoutineTriggersAvailable } from "./index.js";
 import {
   combineImportedInstructions,
+  fencedBlock,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
   grokBotExportJson,
@@ -304,6 +305,12 @@ describe("a Grok Bot as an import plan", () => {
     const parsed = plan({ ...bot!, routines: [routine("Fits", 90_000), routine("Long", 100_000)] });
     expect(parsed.leftovers.map((item) => item.title)).toEqual(["Fits"]);
     expect(parsed.skipped).toContainEqual({ path: "routines: Long", reason: "unsupported" });
+  });
+
+  it("fences text with many separate backticks without running out of arguments", () => {
+    const text = "` ".repeat(40_000);
+    expect(fencedBlock(text)).toBe(`\`\`\`\n${text}\n\`\`\``);
+    expect(fencedBlock("```\nrun\n```")).toBe("````\n```\nrun\n```\n````");
   });
 
   it("keeps a skill's own metadata and an entry's own lines", () => {
