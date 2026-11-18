@@ -346,7 +346,7 @@ export async function runApprovalSuite(
   try {
     if (isJev && variant.id !== "current") {
       return notRun(
-        "Variants run through the decision protocol over OpenRouter or a catalog model",
+        "Variants need a decision-protocol host for this model; pass --provider with one that serves it",
       );
     } else if (isJev) {
       const { JevAutoReviewProvider } = await import(
@@ -510,6 +510,7 @@ function storedApprovalRun(
 ): StoredReport {
   const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   const inputs = {
+    fixtureVersion: report.fixtureVersion,
     connection: report.connection,
     variant: report.variant,
     variantsVersion: report.variantsVersion,
