@@ -115,6 +115,15 @@ export function AgentImportPlanReview({
   // A label that itself looks like a key is replaced by its kind and position.
   const safeLabel = (label: string, containsKey: boolean | undefined, fallback: string) =>
     containsKey && looksLikeCredential(label) ? fallback : label;
+  // A Grok Bot export has no files: its memory is named for what it holds, not the file the
+  // import writes it to. A second document of the same kind is numbered.
+  const grokMemoryTitle = (path: string) => {
+    if (plan.source !== "grok_bot") return null;
+    const [, stem, part] = /^(MEMORY|USER)(?:-(\d+))?\.md$/.exec(path) ?? [];
+    if (!stem) return null;
+    const name = stem === "USER" ? t`About you` : t`What it remembers`;
+    return part ? t`${name} ${part}` : name;
+  };
   const skillLabel = (index: number) => {
     const position = index + 1;
     return t`Skill ${position}`;
@@ -254,7 +263,11 @@ export function AgentImportPlanReview({
                   const { spacePath: savedAs } = entry;
                   const position = index + 1;
                   const fallback = t`Memory ${position}`;
-                  const title = safeLabel(entry.title, entry.containsKey, fallback);
+                  const title = safeLabel(
+                    grokMemoryTitle(entry.path) ?? entry.title,
+                    entry.containsKey,
+                    fallback,
+                  );
                   const destination = destinations[entry.id] ?? "bot";
                   const renamed = destination === "space" && savedAs !== entry.path;
                   return item(
