@@ -5,7 +5,7 @@ import {
   meetingMediaSignature,
 } from "@rakazo/adapters/meeting-media";
 import type { Actor } from "@rakazo/contracts";
-import { requestDeadline } from "@rakazo/core";
+import { pollUntil, requestDeadline } from "@rakazo/core";
 import { timingSafeStringEqual } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { readBoundedBytes } from "../../http/http-body.js";
@@ -105,7 +105,24 @@ export function createMeetingMediaBridge(deps: {
       app.get(`${MEETING_MEDIA_PATH}/session`, async (c) => {
         const session = await authenticate(c.req.raw);
         if (!session) return c.body(null, 401, NO_STORE);
-        const voice = session.voice && (await deps.voiceReady(session, c.req.raw.signal)) === true;
+        const request = c.req.raw;
+        const voice =
+          session.voice &&
+          (
+            await pollUntil(
+              async () => {
+                const readiness = await deps.voiceReady(session, request.signal);
+                return readiness === "retry" ? null : { ready: readiness };
+              },
+              {
+                intervalMs: 500,
+                timeoutMs: 3_000,
+                signal: request.signal,
+                onTimeout: () => ({ ready: false }),
+              },
+            )
+          ).ready;
+        if (voice && !(await authenticate(request))?.voice) return c.body(null, 401, NO_STORE);
         return c.json({ botName: session.botName, voice }, 200, NO_STORE);
       });
       app.post(`${MEETING_MEDIA_PATH}/turn`, async (c) => {
@@ -127,20 +144,36 @@ export function createMeetingMediaBridge(deps: {
           if (!bytes) return c.body(null, 413, NO_STORE);
           if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
           signal.throwIfAborted();
-          const readiness = await deps.voiceReady(session, signal);
+          const current = await authenticate(c.req.raw);
+          if (!current?.admitted || !current.voice) return c.body(null, 401, NO_STORE);
+          const readiness = await deps.voiceReady(current, signal);
           if (readiness === "retry") return c.body(null, 204, NO_STORE);
           if (!readiness) return c.body(null, 403, NO_STORE);
+          const verified = await authenticate(c.req.raw);
           signal.throwIfAborted();
-          const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), session.grant);
+          if (
+            !verified?.admitted ||
+            !verified.voice ||
+            verified.actor.userId !== current.actor.userId
+          ) {
+            return c.body(null, 401, NO_STORE);
+          }
+          const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), verified.grant);
           const turn = await deps.respond(
-            { ...session, recentSpeech },
+            { ...verified, recentSpeech },
             meetingAudioWav(bytes),
             signal,
           );
           signal.throwIfAborted();
-          const current = await authenticate(c.req.raw);
+          const afterTurn = await authenticate(c.req.raw);
           signal.throwIfAborted();
-          if (!current?.admitted || !current.voice) return c.body(null, 401, NO_STORE);
+          if (
+            !afterTurn?.admitted ||
+            !afterTurn.voice ||
+            afterTurn.actor.userId !== verified.actor.userId
+          ) {
+            return c.body(null, 401, NO_STORE);
+          }
           const headers = turn.context
             ? { ...NO_STORE, [CONTEXT_HEADER]: context.seal(turn.context, session.grant) }
             : NO_STORE;
