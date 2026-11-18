@@ -227,7 +227,25 @@ export async function provisionComputer(
   onProgress?: ComputerUpdateProgress,
 ): Promise<ComputerRef> {
   const started = performance.now();
+  let providerReadyMs = 0;
+  let preparationMs = 0;
+  const prepare = async (ref: ComputerRef) => {
+    const start = performance.now();
+    try {
+      await deps.sandbox.prepare(ref, context);
+    } finally {
+      preparationMs += performance.now() - start;
+    }
+  };
   const log = getLogger().child({ "computer.id": computerId, "run.id": context.runId });
+  const logProvisioned = (ref: ComputerRef, operation: "create" | "resume" | "reuse") =>
+    log.info("computer.provisioned", {
+      provider: ref.kind,
+      operation,
+      durationMs: Math.round(performance.now() - started),
+      providerReadyMs: Math.round(providerReadyMs),
+      preparationMs: Math.round(preparationMs),
+    });
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   // A refusal reaches the bot only as "Computer is busy", so the cause is logged here.
   const busy = (reason: string) => {
@@ -261,7 +279,10 @@ export async function provisionComputer(
     deps.sandbox.isRunning
   ) {
     const ref = toComputerRef(existing);
-    if (await confirmedRunning(deps.sandbox, ref, context)) {
+    const checking = performance.now();
+    const running = await confirmedRunning(deps.sandbox, ref, context);
+    providerReadyMs += performance.now() - checking;
+    if (running) {
       context.signal.throwIfAborted();
       const runningSince = existing.runningSince ?? new Date();
       const retained = await deps.prisma.computer.updateMany({
@@ -279,7 +300,7 @@ export async function provisionComputer(
       });
       if (retained.count !== 1) throw busy("running_claim_lost");
       await recordComputerRunStart(deps.prisma, existing, runningSince);
-      const damaged = await deps.sandbox.prepare(ref, context).then(
+      const damaged = await prepare(ref).then(
         () => false,
         (error: unknown) => {
           // Only the reconnect claim below can stop a damaged system back to its last good copy.
@@ -295,11 +316,7 @@ export async function provisionComputer(
           context.botId,
           context,
         );
-        log.info("computer.provisioned", {
-          provider: ref.kind,
-          operation: "reuse",
-          durationMs: Math.round(performance.now() - started),
-        });
+        logProvisioned(ref, "reuse");
         return ref;
       }
       context.signal.throwIfAborted();
@@ -473,8 +490,6 @@ export async function provisionComputer(
             context,
           ),
       );
-    let providerReadyMs = 0;
-    let preparationMs = 0;
     const provision = async () => {
       const start = performance.now();
       try {
@@ -486,14 +501,6 @@ export async function provisionComputer(
         return await provisionAt(undefined);
       } finally {
         providerReadyMs += performance.now() - start;
-      }
-    };
-    const prepare = async (ref: ComputerRef) => {
-      const start = performance.now();
-      try {
-        await deps.sandbox.prepare(ref, context);
-      } finally {
-        preparationMs += performance.now() - start;
       }
     };
     // A new machine under the stored name, or any machine of a reclaimed boot, is incomplete until
@@ -637,13 +644,7 @@ export async function provisionComputer(
       runningSince,
       existing.state === "running" ? "gone" : "reconciled",
     );
-    log.info("computer.provisioned", {
-      provider: ref.kind,
-      operation: replacement ? "create" : ref.started ? "resume" : "reuse",
-      durationMs: Math.round(performance.now() - started),
-      providerReadyMs: Math.round(providerReadyMs),
-      preparationMs: Math.round(preparationMs),
-    });
+    logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
     return ref;
   } catch (error) {
     log.warn("computer.provision_failed", {

@@ -1,3 +1,4 @@
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { describe, expect, it, vi } from "vitest";
 import type { ComputerStatus } from "./computer.js";
 import {
@@ -6,7 +7,6 @@ import {
   fromScreenPage,
   isProxiedScreenPage,
   nextLoadedScreenUrl,
-  previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_RENEW_MS,
@@ -200,12 +200,12 @@ describe("screen stream identity", () => {
 
 describe("computer copy", () => {
   it("matches the web pane while booting or asleep, and names the computer while in control", () => {
-    expect(previewPlaceholder("stopped", false)).toBe("Computer is stopped");
-    expect(previewPlaceholder("suspended", false)).toBe(
+    expect(computerPreviewPlaceholder("stopped", false)).toBe("Computer is stopped");
+    expect(computerPreviewPlaceholder("suspended", false, "takeControl")).toBe(
       "Computer is asleep. Take control to wake it.",
     );
-    expect(previewPlaceholder("running", true)).toBe("Booting live desktop…");
-    expect(previewPlaceholder("running", false)).toBe("Connecting to the screen…");
+    expect(computerPreviewPlaceholder("running", true)).toBe("Booting live desktop…");
+    expect(computerPreviewPlaceholder("running", false)).toBe("Connecting to the screen…");
     expect(
       controlLabel(
         computer({
