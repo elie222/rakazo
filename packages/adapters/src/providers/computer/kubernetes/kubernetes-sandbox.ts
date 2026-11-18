@@ -12,11 +12,17 @@ import type {
 } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
-import type { RawExecEvent } from "../../../exec-computer.js";
-import { RawExecChannel, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
-import { ImageComputerSandbox, READY_PORT } from "../../../image-computer-sandbox.js";
-import { deleteUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
+import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
+import {
+  RawExecChannel,
+  COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
+} from "../../../computers/sandbox/exec-computer.js";
+import {
+  ImageComputerSandbox,
+  READY_PORT,
+} from "../../../computers/sandbox/image-computer-sandbox.js";
+import { deleteUnreferencedMachine } from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
 
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // The Compose stack's default image. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in

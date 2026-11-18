@@ -12,7 +12,7 @@ const include = [
   "apps/desktop/src/**/*.test.ts",
   "apps/web/src/**/*.test.{ts,tsx}",
   "apps/web/server/**/*.test.ts",
-  "apps/mobile/lib/**/*.test.{ts,tsx}",
+  "apps/mobile/{lib,components}/**/*.test.{ts,tsx}",
   "apps/mobile/plugins/**/*.test.js",
   "apps/api/src/**/*.test.ts",
   "apps/worker/src/**/*.test.ts",
@@ -60,6 +60,13 @@ export default defineConfig({
         find: /^@lingui\/react\/macro$/,
         replacement: fileURLToPath(
           new URL("./packages/testkit/src/lingui-react-macro.ts", import.meta.url),
+        ),
+      },
+      {
+        // A native view; tests see its Markdown as text.
+        find: /^react-native-enriched-markdown$/,
+        replacement: fileURLToPath(
+          new URL("./packages/chat-ui/src/enriched-markdown-test-stub.tsx", import.meta.url),
         ),
       },
       // Native-only transitive deps of the renderer contain uncompiled Flow

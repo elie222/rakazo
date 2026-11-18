@@ -10,6 +10,7 @@ import { computerImageEnsurer } from "./computer-image.js";
 import {
   assertComputerMountSources,
   COMPUTER_IMAGE,
+  resolveComputerBrowserProxyPacUrl,
   resolveComputerComputeGpus,
   resolveComputerDns,
   resolveComputerEgressMode,
@@ -36,6 +37,7 @@ export const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SC
 export const computerEgressSetting = resolveComputerEgressMode();
 export const computerDns = resolveComputerDns();
 export const computerComputeGpus = resolveComputerComputeGpus();
+export const computerBrowserProxyPacUrl = resolveComputerBrowserProxyPacUrl();
 export const computerMounts = resolveComputerMounts(undefined, [dataDir, dockerSocketPath]);
 // Docker follows symlinks in a bind source, so also check where a locally visible source points.
 assertComputerMountSources(

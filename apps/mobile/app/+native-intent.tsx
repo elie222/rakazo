@@ -1,5 +1,6 @@
-import { receiveIncomingShare } from "../lib/incoming-share";
-import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-sheet";
+import { MOBILE_MCP_OAUTH_CALLBACK_URL } from "@rakazo/contracts";
+import { receiveIncomingShare } from "../lib/composer/incoming-share";
+import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings/settings-sheet";
 
 /** A link to a screen outside settings closes the settings sheet first, so the screen opens on
  * the root stack instead of over the sheet. Settings links open inside the sheet. Something
@@ -7,6 +8,8 @@ import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
   const isShare = linkScreen(path) === "expo-sharing";
   receiveIncomingShare(isShare, initial);
+  // The in-app browser already handed this to the sign-in that opened it; stay put.
+  if (linkScreen(path) === linkScreen(MOBILE_MCP_OAUTH_CALLBACK_URL)) return "";
   if (!isSettingsLink(path)) closeSettingsSheet();
   return isShare ? "/share" : path;
 }

@@ -7,15 +7,15 @@ import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { LongPressMenu } from "../components/long-press-menu";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
-import { useTextEditDialog } from "../components/profile-edit-dialog";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { formatActivityRelativeTime } from "../lib/activity";
-import { rpc } from "../lib/api";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { getLatestPage, removePage, renamePage } from "../lib/pages";
-import { usePagedPages } from "../lib/use-paged-pages";
+import { useTextEditDialog } from "../components/bots/profile-edit-dialog";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { LongPressMenu } from "../components/ui/long-press-menu";
+import { rpc } from "../lib/api/api";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
+import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
+import { usePagedPages } from "../lib/pages/use-paged-pages";
 
 /** The bot's pages, pinned first and then most recently updated. */
 export default function PagesScreen() {

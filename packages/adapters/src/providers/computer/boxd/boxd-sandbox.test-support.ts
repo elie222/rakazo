@@ -11,7 +11,10 @@ import type {
 import { ConflictError, FilesystemError, NotFoundError } from "@boxd-sh/sdk";
 import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
-import { desktopCommandResponder, simpleCommand } from "../../../linux-desktop.test-support.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
 import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 

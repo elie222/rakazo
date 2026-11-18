@@ -1,8 +1,8 @@
 import { ResponseTooLargeError } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
-import type { LocalServiceConnection } from "../../../local-service-endpoint.js";
-import { fetchLocalService, parseServiceBaseUrl } from "../../../local-service-endpoint.js";
-import { readBodyCapped } from "../../../web-ssrf.js";
+import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
+import { fetchLocalService, parseServiceBaseUrl } from "../../../network/local-service-endpoint.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
 export const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";

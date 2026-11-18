@@ -87,11 +87,11 @@ class ChangedAreasTests(unittest.TestCase):
             ("apps/www/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("apps/worker/src/index.ts", expect("web", "server")),
             ("packages/adapters/src/slack.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/scripted-runtime.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/runtime/scripted-runtime.ts", expect("web", "e2e", "server")),
+            ("packages/adapters/src/computers/host/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/computers/computer-workspace.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",
@@ -116,10 +116,11 @@ class ChangedAreasTests(unittest.TestCase):
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
             (".agents/skills/translate/catalog-gaps.ts", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
-            ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/core/src/runs/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
             (".github/workflows/playwright.yml", expect(*AREAS)),
+            (".github/workflows/test-suites.yml", expect(*AREAS)),
             (".github/actions/setup-workspace/action.yml", expect(*AREAS)),
             (".github/scripts/restore-postgres-image.sh", expect(*AREAS)),
             (".github/actions/start-postgres/action.yml", expect(*AREAS)),
@@ -207,8 +208,8 @@ class ChangedAreasTests(unittest.TestCase):
 
     def test_marketing_screenshots_follow_the_packages_the_site_imports(self):
         cases = [
-            ("packages/contracts/src/client-build.ts", expect(*EVERY_BROWSER_AREA)),
-            ("packages/db/src/client.ts", expect(*PRODUCT)),
+            ("packages/contracts/src/clients/client-build.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/db/src/database/client.ts", expect(*PRODUCT)),
             ("apps/api/src/server.ts", expect(*PRODUCT)),
         ]
         for path, expected in cases:

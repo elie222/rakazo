@@ -1,7 +1,7 @@
 import type { DesktopMenuCommand } from "@rakazo/contracts";
 import { isDesktopMenuCommand } from "@rakazo/contracts";
 import { useEffect, useEffectEvent } from "react";
-import { desktopBridge } from "../../lib/desktop";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { useEventListener } from "../../lib/use-event-listener";
 
 export type ShellShortcut =

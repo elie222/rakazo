@@ -2,7 +2,7 @@ import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamable
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { McpSession } from "../../../mcp-transport.js";
+import { McpSession } from "../../../mcp/mcp-transport.js";
 import { WuyingMcpTools } from "./wuying-sandbox.js";
 
 const signal = new AbortController().signal;

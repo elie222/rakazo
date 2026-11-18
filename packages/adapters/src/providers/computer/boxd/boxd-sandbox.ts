@@ -31,30 +31,39 @@ import {
   BASE_SNAPSHOT_BUILD_TIMEOUT_MS,
   BaseSnapshotCache,
   computerSnapshotName,
-} from "../../../computer-base-snapshot.js";
+} from "../../../computers/computer-base-snapshot.js";
+import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../computers/sandbox/sandbox-command-events.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  shellExportScript,
+  sourceEnvironmentCommand,
+} from "../../../computers/sandbox/sandbox-shell-environment.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
-} from "../../../computer-support.js";
-import { PortableFileBatcher } from "../../../computer-workspace.js";
+} from "../../../computers/screens/computer-support.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
-} from "../../../linux-desktop.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents, timedOutCommandEvents } from "../../../sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { shellExportScript, sourceEnvironmentCommand } from "../../../sandbox-shell-environment.js";
+} from "../../../computers/screens/linux-desktop.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
-} from "../../../workspace-save-policy.js";
+} from "../../../storage/workspace-save-policy.js";
 
 const DISPLAY_START = 20;
 const HOME = "/home/boxd";

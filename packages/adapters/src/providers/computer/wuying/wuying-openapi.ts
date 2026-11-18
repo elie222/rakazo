@@ -1,5 +1,5 @@
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
 
 /** Desktop states the ECD API reports; anything else is treated as in transition. */
 export type WuyingDesktopStatus = string;
