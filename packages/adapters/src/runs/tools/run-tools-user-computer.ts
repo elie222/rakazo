@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
+import type { ApprovalMode } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { z } from "zod";
@@ -59,8 +60,8 @@ export function userComputerOwner(input: {
 }
 
 /**
- * The user's own computer always asks a person first, in every approval mode and whatever the
- * rules allow, until they choose "Allow in this space"; a block still refuses it. These tools run
+ * The user's own computer asks a person first in Ask and Auto, whatever the rules allow, until they
+ * choose "Allow in this space"; Never ask runs it, since pairing was consent, and a block refuses it. These tools run
  * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
  * this space traces back to that approval. Removing every paired computer ends it, so pairing again
  * asks again. Screen control is approved per app.
@@ -70,8 +71,11 @@ export async function userComputerGate(
   blocked: boolean,
   name: string,
   args: Record<string, unknown>,
+  mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
+  // Pairing the desktop was the owner's consent; Never ask does not ask again.
+  if (mode === "never") return "allow";
   const { deps, run } = ctx;
   const pairedSince = await deps.userDevices?.pairedSince(run.userId);
   if (!pairedSince) return "ask";

@@ -72,11 +72,11 @@ describe("userComputerGate", () => {
       run: { spaceId: "space-1", userId: "user-1" },
     } as unknown as RunContext;
     await expect(
-      userComputerGate(ctx, false, "user_computer_observe", { app: "mail" }),
+      userComputerGate(ctx, false, "user_computer_observe", { app: "mail" }, "ask"),
     ).resolves.toBe("allow");
     expect(findMany).toHaveBeenCalledTimes(3);
     await expect(
-      userComputerGate(ctx, false, "user_computer_observe", { app: "Notes" }),
+      userComputerGate(ctx, false, "user_computer_observe", { app: "Notes" }, "ask"),
     ).resolves.toBe("ask");
   });
 });

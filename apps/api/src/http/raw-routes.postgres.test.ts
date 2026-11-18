@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AppHandles } from "../app.js";
 import { createApp } from "../app.js";
 import { loadEnv } from "../env.js";
@@ -17,6 +17,7 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
 
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), "rakazo-raw-routes-"));
+    vi.stubEnv("MEETING_PROVIDER", "emulator");
     // Every optional feature that mounts a raw route is switched on.
     handles = await createApp({
       databaseUrl: databaseUrl!,
@@ -37,6 +38,7 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
   });
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await handles?.stop();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -75,6 +77,14 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
         "caller by a signed link, a shared secret or a signature, add it to SESSIONLESS_ROUTES " +
         "with how. If only one branch of it answers, add that branch by its query.",
     ).toEqual([]);
+  });
+
+  it("rejects unsigned meeting events", async () => {
+    const response = await handles.app.request("/api/meetings/events", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(response.status).toBe(401);
   });
 
   it("reviews only routes the app registers", () => {

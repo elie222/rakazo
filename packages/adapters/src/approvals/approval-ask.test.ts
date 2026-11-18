@@ -163,16 +163,17 @@ describe("bot management approval cards", () => {
       detail: "Members: Scout, Writer\nPrompt: use [redacted]",
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: toolName.startsWith("set_child_")
-        ? [
-            { id: "allow", label: "Allow once" },
-            { id: "deny", label: "Deny" },
-          ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+      actions:
+        toolName === "set_child_instructions"
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
     });
   });
 
@@ -215,7 +216,12 @@ describe("bot management approval cards", () => {
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {
-    const block = buildApprovalAskBlock("effect-1", "set_child_bot_model", { bot_id: "bot-a" }, []);
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "set_child_instructions",
+      { bot_id: "bot-a" },
+      [],
+    );
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.actions?.map((action) => action.id)).toEqual(["allow", "deny"]);
   });

@@ -47,3 +47,7 @@ missed call shows **Call back** in the chat.
 
 The mobile app uses your phone's own speech recognition and voices for calls. Pick a
 **Device voice** in a bot's settings. On Android, a call keeps going with the screen off.
+
+## Join a meeting
+
+Open **Meetings** in a bot chat to send the bot to a Zoom or Google Meet call and get a speaker-labeled transcript. See [Meeting bots](./self-host-meetings.md) for server setup.

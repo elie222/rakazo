@@ -22,6 +22,7 @@ model AiDataConsent {
 }
 
 model User {
+  meetingSessions MeetingSession[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
   id                          String                       @id
@@ -656,6 +657,7 @@ model Member {
 }
 
 model Space {
+  meetingSessions MeetingSession[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -1003,6 +1005,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
   spaceId           String
@@ -2932,4 +2935,36 @@ model SpeechCost {
   @@index([spaceId, createdAt], map: "speech_costs_space")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
+}
+
+/// A bot's attendance and transcript import, scoped to the member who requested it.
+model MeetingSession {
+  id           String    @id @default(cuid())
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  platform     String
+  status       String
+  meetingUrl   String?   @db.Text
+  activeKey    String?   @unique
+  externalId   String?
+  recordingId  String?
+  transcriptId String?
+  transcript   String?   @db.Text
+  error        String?
+  requestedAt  DateTime?
+  receivedAt   DateTime?
+  closedAt     DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([spaceId, userId, botId, createdAt])
+  @@index([spaceId, createdAt])
+  @@index([userId])
+  @@unique([provider, externalId])
+  @@map("meeting_sessions")
 }

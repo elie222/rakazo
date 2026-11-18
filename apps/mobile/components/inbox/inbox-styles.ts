@@ -35,6 +35,11 @@ export function createInboxStyles() {
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
+      gap: 8,
+    },
+    headerGroup: {
+      flexDirection: "row",
+      alignItems: "center",
       padding: 2,
     },
     headerCircle: {
@@ -93,7 +98,7 @@ export function createInboxStyles() {
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: INBOX_ROW.padding,
-      paddingVertical: 14,
+      paddingVertical: 10,
       gap: INBOX_ROW.gap,
     },
     rowSelected: {
@@ -188,11 +193,13 @@ export function createInboxStyles() {
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: 16,
-      paddingTop: 8,
     },
+    // Headings keep a 44pt target, with the spare height above the title so it sits close to
+    // the chats it heads.
     spaceSelect: {
       flex: 1,
       minHeight: 44,
+      paddingTop: 16,
       justifyContent: "center",
     },
     spaceTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
@@ -222,8 +229,7 @@ export function createInboxStyles() {
       alignItems: "center",
       gap: 6,
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 4,
+      paddingTop: 18,
     },
     archivedRow: { flex: 0, width: "100%" },
     sectionTitle: {

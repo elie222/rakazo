@@ -54,7 +54,7 @@ function dispatchContext(tainted: boolean) {
     thread: { id: "thread-1" },
     source: { ownerStartedRun: true },
     runId: "run-1",
-    state: { tainted, handedOff: false, ownerSettingsRefused: false },
+    state: { tainted, handedOff: false },
     trust: {
       loadAutoReviewPreference: async () => ({ enabled: true, skipApprovals: false }),
       receivedOutsideMessage: async () => false,
@@ -198,13 +198,6 @@ describe("dispatchTool audit outcomes", () => {
     });
     await applyTool(ctx as never, "read_inbox", {}, "call-1");
     expect(ctx.state.tainted).toBe(true);
-    const result = await applyTool(
-      ctx as never,
-      "update_bot",
-      { model: "another-model" },
-      "call-2",
-    );
-    expect(result).toEqual({ error: expect.stringContaining("outside content") });
   });
 
   type Refusal = (tools: { disabled: Set<string> }) => unknown;
@@ -291,67 +284,6 @@ describe("dispatchTool audit outcomes", () => {
           connectorId: "remote",
           connectionId: "connection-1",
         },
-      },
-    ]);
-  });
-
-  it("records every owner-settings refusal of update_preferences as a failure", async () => {
-    const ctx = dispatchContext(true);
-    const first = await applyTool(
-      ctx as never,
-      "update_preferences",
-      { marketingEmails: false },
-      "call-1",
-    );
-    expect(first).toEqual({ error: expect.stringContaining("outside content") });
-    const repeat = await applyTool(
-      ctx as never,
-      "update_preferences",
-      { marketingEmails: false },
-      "call-2",
-    );
-    expect(repeat).toMatchObject({ terminate: true, details: { refused: "owner-settings" } });
-    expect(audited.map((entry) => entry.outcome)).toEqual(["failure", "failure"]);
-    expect(audited[1]!.metadata).toEqual({
-      effectId: "effect-update_preferences",
-      autoApproved: false,
-    });
-  });
-
-  it("ends the turn on a repeated update_bot owner-settings refusal", async () => {
-    const ctx = dispatchContext(true);
-    const first = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-1");
-    expect(first).toEqual({ error: expect.stringContaining("outside content") });
-    const repeat = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-2");
-    expect(repeat).toMatchObject({
-      kind: "agent_tool_result",
-      terminate: true,
-      details: { refused: "owner-settings" },
-      content: [{ type: "text", text: expect.stringContaining("fresh chat") }],
-    });
-    // The refusal returns before the gate records an effect, so it writes no audit row;
-    // the refusal marker itself is audited as a failure wherever a refused call is audited.
-    expect(audited).toEqual([]);
-  });
-
-  it("records the shared refusal a repeated update_bot change triggers as a failure", async () => {
-    const ctx = dispatchContext(true);
-    const refused = await applyTool(ctx as never, "update_bot", { model: "test-model" }, "call-1");
-    expect(refused).toEqual({ error: expect.stringContaining("outside content") });
-    // The refusal state is shared per run, so the next owner-settings change ends the turn
-    // through update_preferences, whose audited call must record the refusal as a failure.
-    const repeat = await applyTool(
-      ctx as never,
-      "update_preferences",
-      { marketingEmails: false },
-      "call-2",
-    );
-    expect(repeat).toMatchObject({ terminate: true, details: { refused: "owner-settings" } });
-    expect(audited).toEqual([
-      {
-        tool: "update_preferences",
-        outcome: "failure",
-        metadata: { effectId: "effect-update_preferences", autoApproved: false },
       },
     ]);
   });

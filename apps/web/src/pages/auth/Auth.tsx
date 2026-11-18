@@ -61,14 +61,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
-  const passkey = usePasskeySignIn({
-    // A passkey only signs in to an existing account, so it skips new-account onboarding.
-    onSignedIn: () => {
-      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
-      enterApp();
-    },
-    onError: setError,
-  });
+  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
@@ -93,8 +86,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
-    ) : chooser ? (
-      <Trans>Welcome to Rakazo</Trans>
     ) : presented && mode === "in" ? (
       <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
@@ -356,7 +347,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   setError(null);
                   navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
                 }}
-                onPasskey={passkey.supported ? passkey.start : undefined}
+                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
               />
               {error ? (
                 <p
@@ -366,6 +357,23 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
+              <p className="mt-8 text-center text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                )}
+              </p>
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (

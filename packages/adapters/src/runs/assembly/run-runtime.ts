@@ -216,7 +216,7 @@ type SetByRunRuntime =
   | "connector"
   | "connectors"
   | "userCloudAgents"
-  | "listConnectedPluginSlugs"
+  | "listConnectedPlugins"
   | "secrets"
   | "mcpAllowPrivateEndpoint"
   | "deploymentModelKey"
@@ -241,10 +241,12 @@ export function createRunRuntime(
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
     /** Answers the lifecycle-mail job where account mail is configured. */
+    meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
     lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
+  const { messaging, isMessagingInstallationActive, lifecycleEmail, meetingWork, ...executorDeps } =
+    deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -285,8 +287,7 @@ export function createRunRuntime(
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
     userCloudAgents: connectors.userCloudAgents,
-    listConnectedPluginSlugs: (userId) =>
-      connectors.integrationSettings.listConnectedPluginSlugs(userId),
+    listConnectedPlugins: (userId) => connectors.integrationSettings.listConnectedPlugins(userId),
     secrets: [
       env.deploymentModelKey ?? "",
       localModelsApiKey() ?? "",
@@ -341,6 +342,7 @@ export function createRunRuntime(
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     lifecycleEmail,
+    meetingWork,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }

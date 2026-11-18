@@ -122,6 +122,8 @@ export function selectBuiltinToolsForRun(options: {
   fleetManagement?: boolean;
   /** False when the Space has no other bot to message. */
   hasTeammates?: boolean;
+  /** The bot belongs to a group other than the one this run is in. */
+  hasGroups?: boolean;
   /** A follow-up run whose source message the user wrote. */
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
@@ -136,7 +138,11 @@ export function selectBuiltinToolsForRun(options: {
   emailSend?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
-  const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  const ownerStartedRun = isOwnerStartedRun(
+    options.trigger,
+    Boolean(options.followUpFromUser),
+    options.messagingChannelRun,
+  );
   // Claiming is offered only in the owner's own chat, so once the bot claims an address there it
   // can read the mail that follows, such as a sign-up code, in the same run.
   const emailClaimOffered =
@@ -178,6 +184,7 @@ export function selectBuiltinToolsForRun(options: {
       // Alone in its Space a bot has nobody to message. A bot it creates gets its first task
       // from spawn_bot, and its reply starts a run that offers message_bot.
       (options.hasTeammates !== false || tool.name !== "message_bot") &&
+      (options.hasGroups === true || tool.name !== "post_to_group") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||
@@ -249,16 +256,18 @@ const FOLLOW_UP_TOOL_NAMES = [
 ];
 
 /**
- * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
- * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
- * are not, and some of them would need approval for every schedule.
+ * Whether this run can set its own follow-ups. Only a conversation the owner started can tell
+ * what is still open with them; a routine, webhook, channel, subagent or hand-off from another
+ * bot cannot.
  */
 export function followUpsOffered(
   tools: readonly { name: string }[],
   ownerStartedRun: boolean,
+  trigger: string,
 ): boolean {
   return (
     ownerStartedRun &&
+    trigger !== "routine" &&
     FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
   );
 }

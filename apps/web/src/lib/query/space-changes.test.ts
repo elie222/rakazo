@@ -18,6 +18,8 @@ it("marks only the reads a change kind covers as stale", async () => {
     usage: key("usage", "breakdown"),
     routines: key("routines", "list"),
     bots: key("bots", "list"),
+    meetings: key("meetings", "list"),
+    transcript: key("meetings", "transcript"),
     me: key("me"),
     roles: key("models", "role"),
     deployment: key("models", "sharedDeployment"),
@@ -38,6 +40,18 @@ it("marks only the reads a change kind covers as stale", async () => {
     "history",
     "usage",
     "routines",
+    "me",
+    "roles",
+    "deployment",
+  ]);
+  await spaceChanged("meetings", client);
+  expect(invalidated()).toEqual([
+    "runs",
+    "history",
+    "usage",
+    "routines",
+    "meetings",
+    "transcript",
     "me",
     "roles",
     "deployment",
