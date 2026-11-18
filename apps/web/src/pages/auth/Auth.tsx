@@ -61,7 +61,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
-  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
+  const passkey = usePasskeySignIn({
+    // A passkey only signs in to an existing account, so it skips new-account onboarding.
+    onSignedIn: () => {
+      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
+      enterApp();
+    },
+    onError: setError,
+  });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";

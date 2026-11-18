@@ -250,6 +250,22 @@ it("offers a supported passkey in the chooser", async () => {
   expect(button("Continue with passkey")).toBeDefined();
 });
 
+it("sends a passkey sign-in from sign up to the app rather than onboarding", async () => {
+  vi.mocked(usePasskeysSupported).mockReturnValue(true);
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/sign-up"]}>
+        <AuthPage mode="up" />
+        <LocationProbe />
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () => button("Continue with passkey")!.click());
+  expect(authClient.signIn.passkey).toHaveBeenCalled();
+  expect(host.querySelector("[data-testid=location]")!.textContent).toBe("/sign-in");
+});
+
 it("hides SSO in password recovery", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
   await render("forgot");
