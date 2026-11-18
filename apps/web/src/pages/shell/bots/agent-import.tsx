@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
+import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import type { AgentImportAssistant } from "@rakazo/core";
 import { AGENT_IMPORT_ASSISTANTS, AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
 import { Button, CopyTextFallback, Spinner, Textarea, useCopyText } from "@rakazo/ui-web";
@@ -209,7 +210,8 @@ export function AgentImportForm({
         includeSecrets,
         skillFiles,
         name: name.trim(),
-        description: description.trim(),
+        // The review has no field for it, so an over-long suggestion is cut, never refused.
+        description: description.trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
         computerMode: "team",
         selection: {
           instructions: selectedInstructions.map((item) => item.id),

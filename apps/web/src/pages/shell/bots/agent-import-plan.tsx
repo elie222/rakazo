@@ -34,7 +34,7 @@ const triggerClass =
 
 /**
  * What a read source would import: the new bot's name, then one row per kind of thing, with
- * a box per item inside. A row starts open only when something in it is left unticked.
+ * a box per item inside. A row starts open only when something in it is not being imported.
  */
 export function AgentImportPlanReview({
   ids,
@@ -166,15 +166,10 @@ export function AgentImportPlanReview({
     entries: readonly { id: string; off?: boolean }[],
     body: ReactNode,
   ) => {
-    const pickable = entries.filter((entry) => !entry.off);
-    const picked = pickable.filter((entry) => !unchecked.has(entry.id)).length;
+    const picked = entries.filter((entry) => !entry.off && !unchecked.has(entry.id)).length;
     const total = entries.length;
     return (
-      <Collapsible
-        className={sectionClass}
-        data-testid={testId}
-        defaultOpen={picked < pickable.length}
-      >
+      <Collapsible className={sectionClass} data-testid={testId} defaultOpen={picked < total}>
         <div className="flex items-center gap-3">
           <h3 className={`min-w-0 flex-1 ${headingClass}`}>
             <CollapsibleTrigger className={triggerClass}>

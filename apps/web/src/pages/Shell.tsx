@@ -1441,10 +1441,7 @@ function SpaceShell() {
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
           messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
-          onOpenBot={(bot) => {
-            openCreatedBot(bot);
-            void refreshBots().catch(() => undefined);
-          }}
+          onOpenBot={openCreatedBot}
         />
       </Suspense>
 
