@@ -657,12 +657,18 @@ it("shows bots already linked elsewhere as unavailable", async () => {
   // The only bot answers Telegram: Connect still opens the menu, which says why.
   expect(rowButton("WhatsApp", "Connect").disabled).toBe(false);
   expect(rowButton("WhatsApp", "Chief").disabled).toBe(true);
+});
+
+it("links a free bot when another is already linked elsewhere", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([identity]),
+    providers: ["telegram", "whatsapp"],
+  });
   api.bots.list.mockResolvedValue([
     { id: "bot-1", name: "Chief" },
     { id: "bot-2", name: "Team" },
   ]);
-  await act(async () => client.invalidateQueries());
-  await act(async () => vi.advanceTimersByTimeAsync(0));
+  await renderOverlay();
   await act(async () => rowButton("WhatsApp", "Team").click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
 });

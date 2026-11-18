@@ -279,7 +279,12 @@ export default function MessagingSettings() {
         disabled={disabled}
         onChange={(botId) => startLink(row, provider, botId)}
       >
-        <View accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+        <View
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          accessibilityState={{ disabled }}
+        >
           <Text style={[styles.link, disabled && styles.disabled]}>{label}</Text>
         </View>
       </MenuPickerMenu>
