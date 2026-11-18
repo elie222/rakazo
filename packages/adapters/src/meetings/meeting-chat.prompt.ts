@@ -1,5 +1,8 @@
 import { READ_MEETING_TRANSCRIPT } from "./meeting-chat.tool-definition.js";
 
+export const TRANSCRIPT_RESULT_OMITTED =
+  "This meeting tool result was omitted from the saved turn. Read it again if needed.";
+
 type RecentMeeting = {
   id: string;
   platform: string;

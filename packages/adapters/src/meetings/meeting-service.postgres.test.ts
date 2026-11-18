@@ -22,6 +22,7 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
         ready: false,
       }));
     const events = createThreadEvents(prisma);
+    const publish = vi.spyOn(events, "publishSpaceChange");
     const service = new MeetingService({ prisma, jobs, provider, events });
     const organizationId = randomUUID();
     const userId = randomUUID();
@@ -62,6 +63,7 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
         const { meetings } = await service.list(actor, botId);
         const sessionId = meetings[0]!.id;
         await service.leave(actor, sessionId);
+        expect(publish).not.toHaveBeenCalledWith(spaceId, "artifacts");
         const pending = await prisma.meetingSession.findUniqueOrThrow({ where: { id: sessionId } });
         expect(pending.transcriptId).toBe(`transcript-recording-${sessionId}`);
         expect(pending.status).toBe("processing");
@@ -77,6 +79,7 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
         }));
         // A completion webhook is optional once Graphile holds the deadline check.
         await service.work({ sessionId, action: "transcript-check" });
+        expect(publish).toHaveBeenCalledWith(spaceId, "artifacts");
         const result = await service.transcript(actor, sessionId);
         expect(result.turns[0]?.speaker).toBe("Alex Rivera");
         return sessionId;

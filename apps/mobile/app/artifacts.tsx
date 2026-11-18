@@ -90,6 +90,7 @@ export default function ArtifactsScreen() {
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
+  const requestedPagesRef = useRef(1);
   const generationRef = useRef(0);
   const loadingPageRef = useRef(false);
   const [loadingPage, setLoadingPage] = useState(false);
@@ -124,6 +125,7 @@ export default function ArtifactsScreen() {
 
   const load = useCallback(
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
+      const pageCount = mode === "replace" ? 1 : requestedPagesRef.current;
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
       setLoadingPage(true);
@@ -133,17 +135,27 @@ export default function ArtifactsScreen() {
       setSearchPageFailed(false);
       setLoadError(null);
       if (mode === "replace") {
+        requestedPagesRef.current = 1;
         setItems(null);
         setNext(null);
       }
       try {
-        const page = await listSpaceArtifacts({
+        const input = {
           botId: botId ?? undefined,
           madeByBots,
           limit: PAGE_SIZE,
-        });
+        };
+        let page = await listSpaceArtifacts(input);
+        const nextItems = [...page.items];
+        let loaded = 1;
+        while (loaded < pageCount && page.nextCursor && generation === generationRef.current) {
+          page = await listSpaceArtifacts({ ...input, cursor: page.nextCursor });
+          nextItems.push(...page.items);
+          loaded++;
+        }
         if (generation !== generationRef.current) return;
-        setItems(page.items);
+        requestedPagesRef.current = loaded;
+        setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
@@ -168,7 +180,7 @@ export default function ArtifactsScreen() {
     }, [load]),
   );
   useSpaceChanges(
-    "meetings",
+    "artifacts",
     () => load(activeBotIdRef.current, madeByBotsRef.current, "refresh"),
     focused,
   );
@@ -177,6 +189,7 @@ export default function ArtifactsScreen() {
     if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
+    requestedPagesRef.current++;
     setLoadingMore(true);
     try {
       const page = await listSpaceArtifacts({
@@ -190,7 +203,10 @@ export default function ArtifactsScreen() {
       setNext(page.nextCursor ? { cursor: page.nextCursor, botId: activeBotId, madeByBots } : null);
       setSearchPageFailed(false);
     } catch {
-      if (generation === generationRef.current) setSearchPageFailed(true);
+      if (generation === generationRef.current) {
+        requestedPagesRef.current--;
+        setSearchPageFailed(true);
+      }
     } finally {
       if (generation === generationRef.current) {
         loadingMoreRef.current = false;

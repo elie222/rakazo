@@ -239,41 +239,38 @@ export class MeetingService {
     if (row.status !== "ready" || row.transcript === null)
       throw new ClientError("NOT_FOUND", "The meeting transcript is unavailable.");
     const artifact = meetingTranscriptArtifact(row, readMeetingTurns(row.id, row.transcript));
-    await this.deps.prisma.$transaction(async (tx) => {
+    const artifactAdded = await this.deps.prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, userId: actor.userId, spaceId: actor.spaceId, status: "ready" },
         data: { shareTranscript: true },
       });
-      if (count)
-        await tx.artifact.upsert({
-          where: { meetingSessionId: row.id },
-          create: artifact,
-          update: {},
-        });
+      if (!count) return false;
+      const saved = await tx.artifact.createMany({ data: artifact, skipDuplicates: true });
+      return saved.count > 0;
     });
-    await this.notify(row.spaceId);
+    await this.notify(row.spaceId, artifactAdded);
   }
 
   async deleteTranscript(actor: Actor, sessionId: string) {
     const row = await this.session(actor, sessionId);
     if (row.status !== "ready") return;
-    await this.deps.prisma.$transaction(async (tx) => {
+    const artifactDeleted = await this.deps.prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: sessionId, status: "ready" },
         data: { transcript: null, status: "ended" },
       });
-      if (count) {
-        await tx.artifact.deleteMany({
-          where: { spaceId: row.spaceId, meetingSessionId: row.id },
-        });
-      }
-      if (count && row.recordingId)
+      if (!count) return false;
+      const deleted = await tx.artifact.deleteMany({
+        where: { spaceId: row.spaceId, meetingSessionId: row.id },
+      });
+      if (row.recordingId)
         await this.deps.jobs.enqueueIn(
           tx,
           workJob(sessionId, "cleanup", new Date(Date.now() + BACKUP_AFTER)),
         );
+      return deleted.count > 0;
     });
-    await this.notify(actor.spaceId);
+    await this.notify(actor.spaceId, artifactDeleted);
     if (row.recordingId && row.provider === this.providerId)
       await this.attempt(sessionId, "cleanup");
   }
@@ -592,7 +589,7 @@ export class MeetingService {
     }
     const bot = await prisma.bot.findUnique({ where: { id: row.botId }, select: { name: true } });
     const turns = await provider.downloadTranscript(artifact.id, signal, { selfName: bot?.name });
-    await prisma.$transaction(async (tx) => {
+    const artifactAdded = await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
         data: {
@@ -610,8 +607,9 @@ export class MeetingService {
         cleanup.payload.detached = { provider: row.provider, recordingId: row.recordingId! };
         await jobs.enqueueIn(tx, cleanup);
       }
+      return Boolean(count && row.shareTranscript);
     });
-    await this.notify(row.spaceId);
+    await this.notify(row.spaceId, artifactAdded);
     await this.cleanupRecording({ ...row, recordingId: row.recordingId }, signal);
     await jobs.cancel(workKey(row.id, "cleanup"));
   }
@@ -721,8 +719,13 @@ export class MeetingService {
       throw new ClientError("FORBIDDEN", "Meetings are unavailable in this Space.");
   }
 
-  private notify(spaceId: string) {
-    return this.deps.events.publishSpaceChange?.(spaceId, "meetings");
+  private async notify(spaceId: string, artifactsChanged = false) {
+    const meetings = this.deps.events.publishSpaceChange?.(spaceId, "meetings");
+    if (artifactsChanged) {
+      await Promise.all([meetings, this.deps.events.publishSpaceChange?.(spaceId, "artifacts")]);
+      return;
+    }
+    await meetings;
   }
 }
 
