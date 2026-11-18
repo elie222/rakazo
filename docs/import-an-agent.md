@@ -48,10 +48,10 @@ event routine's prompt starts with its original trigger and details, such as the
 repository, so the bot knows what it was for.
 
 Routines whose schedule could not be read, or whose event this server does not receive, are
-listed under **Set up in chat**. The new bot's chat opens with them, with their trigger and full
-instruction. Tell the bot which ones to set up; nothing runs until you do, and nothing is added
-to its memory for them. Connected apps with a remote MCP address become MCP servers you
-sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
+handed to the new bot: its chat opens with them, with their trigger and full instruction, along
+with the apps to connect again. Tell the bot which ones to set up; nothing runs until you do, and
+nothing is added to its memory for them. Connected apps with a remote MCP address become MCP
+servers you sign in to again. Chats, files on the
 Bot's computer and sign-ins stay in Grok Bot.
 
 ## From another assistant
@@ -65,8 +65,8 @@ For ChatGPT, Claude, Gemini or any other assistant:
 ## Choose what comes along
 
 Before anything is created, you name the bot and see what the import found, one row per kind of
-item. Open a row to read its items and tick what to keep; a row that still has something to
-decide starts open:
+item. Everything is ticked to start with; open a row to read its items and untick what you do
+not want:
 
 | Item                                         | Becomes                                                                  |
 | -------------------------------------------- | ------------------------------------------------------------------------ |
@@ -78,8 +78,8 @@ decide starts open:
 | Scheduled jobs and Grok Bot routines         | Routines, paused until you turn them on                                  |
 | API keys                                     | Model connections, only when you tick **Include API keys**               |
 
-Anything that runs code or acts on its own (skills, MCP servers, routines) starts unticked, as do
-untouched defaults the old agent wrote and text that looks like it contains a key. **Not
+Routines arrive paused, and the bot asks before it uses an MCP server. Untouched defaults the
+old agent wrote and text that looks like it contains a key start unticked. **Not
 imported** lists what was left out and why, such as files only the old runtime uses.
 
 ## After the import

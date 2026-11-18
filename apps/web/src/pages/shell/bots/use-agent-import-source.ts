@@ -99,16 +99,14 @@ export function useAgentImportSource() {
       if (read !== latestRead.current) return;
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Anything that runs or acts (skills, MCP servers, routines) starts unticked, as do
-      // untouched defaults the source wrote: the user ticks each one they want.
+      // Everything starts ticked but the untouched defaults the source wrote. Routines arrive
+      // paused, and the bot asks before it uses an MCP server.
       const flagged = [
-        ...found.skills,
-        ...found.mcpServers,
-        ...found.routines,
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
-        // Key-looking text reaches a bot only when the user ticks it.
-        ...[...found.instructions, ...found.memory, ...found.leftovers].filter(
+        // Key-looking text reaches a bot only when the user ticks it; a leftover has no box,
+        // so one that looks like it holds a key is never handed over.
+        ...[...found.instructions, ...found.memory, ...found.skills, ...found.leftovers].filter(
           (item) => item.containsKey,
         ),
       ].map((item) => item.id);

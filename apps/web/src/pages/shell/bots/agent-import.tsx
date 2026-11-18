@@ -1,10 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import type { AgentImportAssistant } from "@rakazo/core";
 import { AGENT_IMPORT_ASSISTANTS, AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
 import { Button, CopyTextFallback, Spinner, Textarea, useCopyText } from "@rakazo/ui-web";
-import { ArrowLeft, MessagesSquare, X } from "lucide-react";
+import { ArrowLeft, Check, Copy, MessagesSquare, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useId, useState } from "react";
 import { rpc } from "../../../lib/query/rpc";
@@ -15,12 +15,19 @@ import { useAgentImportSource } from "./use-agent-import-source";
 /** What the import comes from: a named assistant, or any other one that can answer a prompt. */
 type Origin = AgentImportAssistant["id"] | "another";
 
+/** One of the bot colours per card, so each origin is told apart at a glance. */
+const ORIGIN_COLORS = ["orange", "violet", "cyan", "blue"].map(
+  (id) => BOT_COLOR_LIST.find((color) => color.id === id)!.hex,
+);
+
 function OriginCard({
   name,
+  color,
   icon,
   onClick,
 }: {
   name: string;
+  color: string;
   icon?: ReactNode;
   onClick: () => void;
 }) {
@@ -32,7 +39,10 @@ function OriginCard({
     >
       <span
         aria-hidden
-        className="grid size-9 shrink-0 place-items-center rounded-lg border border-border/60 bg-muted text-body font-medium text-foreground"
+        style={{
+          backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${color} 65%, white), ${color})`,
+        }}
+        className="grid size-9 shrink-0 place-items-center rounded-lg text-body font-semibold text-white"
       >
         {icon ?? name.charAt(0)}
       </span>
@@ -85,9 +95,28 @@ function PromptReplySteps({
       <ol className="list-decimal space-y-5 ps-5 text-body text-foreground">
         <li>
           <p>{send}</p>
-          <Button variant="outline" className="mt-2" onClick={() => copy(prompt)}>
-            {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
-          </Button>
+          {/* The start of the prompt, so it is plain what is being sent; Copy takes all of it. */}
+          <div className="relative mt-2 rounded-lg border border-border/60 bg-background">
+            <p
+              data-testid="agent-import-prompt"
+              className="h-24 overflow-hidden whitespace-pre-wrap px-3 py-2 pe-11 text-body-sm text-muted-foreground mask-b-from-40%"
+            >
+              {prompt}
+            </p>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute end-1.5 top-1.5"
+              aria-label={copied ? t`Copied` : t`Copy prompt`}
+              onClick={() => copy(prompt)}
+            >
+              {copied ? (
+                <Check size={16} strokeWidth={1.8} />
+              ) : (
+                <Copy size={16} strokeWidth={1.8} />
+              )}
+            </Button>
+          </div>
           <CopyTextFallback
             open={copyFailed}
             onOpenChange={resetCopy}
@@ -96,9 +125,21 @@ function PromptReplySteps({
           />
         </li>
         <li>
-          <label htmlFor={replyId}>
-            <Trans>Paste the reply</Trans>
-          </label>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor={replyId}>
+              <Trans>Paste the reply</Trans>
+            </label>
+            {/* The other way to hand the reply over, so it sits with the box it replaces. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-me-2 text-muted-foreground"
+              disabled={busy}
+              onClick={() => fileInput?.click()}
+            >
+              <Trans>Choose file</Trans>
+            </Button>
+          </div>
           <Textarea
             id={replyId}
             value={reply}
@@ -121,9 +162,6 @@ function PromptReplySteps({
           <div className="mt-3 flex items-center gap-2">
             <Button disabled={!reply.trim() || busy} onClick={onContinue}>
               <Trans>Continue</Trans>
-            </Button>
-            <Button variant="outline" disabled={busy} onClick={() => fileInput?.click()}>
-              <Trans>Choose file</Trans>
             </Button>
             {busy ? <Reading /> : null}
           </div>
@@ -234,6 +272,7 @@ export function AgentImportForm({
             .map((item) => item.id),
           routines: chosen(plan.routines).map((item) => item.id),
           apiKeys: chosen(plan.apiKeys).map((item) => item.id),
+          // Not asked about: what the import cannot set up always goes to the new bot's chat.
           leftovers: chosen(plan.leftovers).map((item) => item.id),
         },
       });
@@ -257,11 +296,17 @@ export function AgentImportForm({
     if (!origin)
       return (
         <div data-testid="agent-import-choose" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {AGENT_IMPORT_ASSISTANTS.map((item) => (
-            <OriginCard key={item.id} name={item.name} onClick={() => setOrigin(item.id)} />
+          {AGENT_IMPORT_ASSISTANTS.map((item, index) => (
+            <OriginCard
+              key={item.id}
+              name={item.name}
+              color={ORIGIN_COLORS[index % ORIGIN_COLORS.length]!}
+              onClick={() => setOrigin(item.id)}
+            />
           ))}
           <OriginCard
             name={t`Another assistant`}
+            color={ORIGIN_COLORS.at(-1)!}
             icon={<MessagesSquare size={16} strokeWidth={1.8} />}
             onClick={() => setOrigin("another")}
           />

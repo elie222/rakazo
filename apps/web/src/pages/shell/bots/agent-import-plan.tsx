@@ -276,8 +276,8 @@ export function AgentImportPlanReview({
                           setDestinations((current) => ({ ...current, [entry.id]: value }))
                         }
                         options={[
-                          { value: "bot", label: t`This bot` },
-                          { value: "space", label: t`All bots` },
+                          { value: "bot", label: t`Only this bot` },
+                          { value: "space", label: t`All my bots` },
                         ]}
                       />
                       {entry.containsKey || entry.stock
@@ -401,24 +401,6 @@ export function AgentImportPlanReview({
                     statusNote(entry.status, entry.warnings),
                   ),
                 )}
-              </ul>,
-            )
-          : null}
-        {plan.leftovers.length
-          ? section(
-              "agent-import-leftovers",
-              <Trans>Set up in chat</Trans>,
-              plan.leftovers,
-              <ul>
-                {plan.leftovers.map((entry, index) => {
-                  const position = index + 1;
-                  return item(
-                    entry.id,
-                    safeLabel(entry.title, entry.containsKey, t`Routine ${position}`),
-                    entry.content,
-                    entry.containsKey ? note(keyNote) : undefined,
-                  );
-                })}
               </ul>,
             )
           : null}

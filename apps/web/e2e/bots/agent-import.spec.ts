@@ -132,7 +132,11 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   await origin(panel, "Another assistant").click();
   const another = panel.getByTestId("agent-import-another");
-  await expect(another.getByRole("button")).toHaveText(["Copy prompt", "Continue", "Choose file"]);
+  await expect(another.getByRole("button")).toHaveCount(3);
+  for (const name of ["Copy prompt", "Choose file", "Continue"]) {
+    await expect(another.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  await expect(another.getByTestId("agent-import-prompt")).toContainText("# Skills");
   await captureScreenshot(page, testInfo, "agent-import-prompt");
   await another.getByRole("textbox", { name: "Paste the reply" }).fill("Just chatting.");
   await another.getByRole("button", { name: "Continue" }).click();
@@ -177,13 +181,15 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     }
   }
   const skills = homePreview.getByTestId("agent-import-skills");
-  await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
-  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
+  // Everything the import found starts ticked.
+  await expect(skills.getByRole("checkbox", { name: "cleanup" })).toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
   await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
   // A ready item needs no label: the checkbox says enough.
   await expect(homePreview.getByText("Ready", { exact: true })).toHaveCount(0);
   const mcp = homePreview.getByTestId("agent-import-mcp");
-  await expect(mcp.getByRole("checkbox", { name: "docs" })).not.toBeChecked();
+  await expandRow(homePreview, "agent-import-mcp");
+  await expect(mcp.getByRole("checkbox", { name: "docs" })).toBeChecked();
   await expect(mcp.getByText("Credentials: Authorization", { exact: true })).toBeVisible();
   await expect(mcp.getByRole("checkbox", { name: "files" })).toBeDisabled();
   await expect(mcp.getByText("Not supported in Rakazo", { exact: true })).toBeVisible();
@@ -191,8 +197,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   // Choices made before the opt-in survive it, in both directions.
   const nameBox = homePreview.getByRole("textbox", { name: "Name" });
   await nameBox.fill("Home bot");
-  await skills.getByRole("checkbox", { name: "inbox-triage" }).click();
-  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
+  await skills.getByRole("checkbox", { name: "cleanup" }).click();
+  await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await homePreview
     .getByTestId("agent-import-instructions")
     .getByRole("button", { name: "SOUL.md", exact: true })
@@ -266,7 +272,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   for (const [section, names, ticked] of [
     ["agent-import-instructions", ["SOUL.md", "AGENTS.md"], true],
     ["agent-import-memory", ["MEMORY.md", "USER.md"], true],
-    ["agent-import-skills", ["weekly-review"], false],
+    ["agent-import-skills", ["weekly-review"], true],
   ] as const) {
     await expandRow(preview, section);
     const boxes = preview.getByTestId(section).getByRole("checkbox");
@@ -298,6 +304,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   await preview.getByRole("checkbox", { name: "USER.md", exact: true }).click();
   await expect(preview.getByRole("checkbox", { name: "USER.md", exact: true })).not.toBeChecked();
+  await preview.getByRole("checkbox", { name: "weekly-review", exact: true }).click();
   await clickAndWaitForRpc(
     page,
     panel.getByRole("button", { name: "Create", exact: true }),
@@ -335,8 +342,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     documentPreview.getByTestId("agent-import-memory").getByRole("checkbox"),
   ).toHaveCount(2);
   await expect(documentPreview.getByRole("checkbox", { name: "About me" })).toBeChecked();
-  await expect(documentPreview.getByRole("checkbox", { name: "trip-planner" })).not.toBeChecked();
-  await documentPreview.getByRole("checkbox", { name: "trip-planner" }).click();
+  await expandRow(documentPreview, "agent-import-skills");
+  await expect(documentPreview.getByRole("checkbox", { name: "trip-planner" })).toBeChecked();
   await expect(documentPreview.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   await clickAndWaitForRpc(
     page,
@@ -423,27 +430,17 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   const routine = preview.getByRole("checkbox", { name: "Monday review" });
   const webhookRoutine = preview.getByRole("checkbox", { name: "Triage issues" });
   const emailRoutine = preview.getByRole("checkbox", { name: "Receipts" });
-  await expect(skill).not.toBeChecked();
-  await expect(routine).not.toBeChecked();
-  await expect(webhookRoutine).not.toBeChecked();
-  // This server has no Slack, so that routine is left for the bot to set up in chat.
-  await expandRow(preview, "agent-import-leftovers");
-  await expect(
-    preview.getByTestId("agent-import-leftovers").getByRole("checkbox", { name: "Support pings" }),
-  ).toBeChecked();
+  await expandRow(preview, "agent-import-skills");
+  await expandRow(preview, "agent-import-routines");
+  for (const box of [skill, routine, webhookRoutine, emailRoutine]) await expect(box).toBeChecked();
+  // What the import cannot set up goes to the new bot's chat without being asked about.
+  await expect(preview.getByTestId("agent-import-leftovers")).toHaveCount(0);
+  await expect(preview.getByTestId("agent-import-skipped")).toHaveCount(0);
   const routinesSection = preview.getByTestId("agent-import-routines");
   await expect(routinesSection).toContainText("Point its source at the new webhook");
   await expect(routinesSection).toContainText("Needs an email address");
-  await preview.getByRole("button", { name: "Not imported" }).click();
-  await expect(preview.getByTestId("agent-import-skipped")).toContainText(
-    "apps: GmailConnect it again",
-  );
   await captureScreenshot(page, testInfo, "agent-import-grok-preview");
 
-  await skill.click();
-  await routine.click();
-  await webhookRoutine.click();
-  await emailRoutine.click();
   await clickAndWaitForRpc(
     page,
     panel.getByRole("button", { name: "Create", exact: true }),
@@ -454,7 +451,9 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   expect((await rpc<Bot>(page, "bots/get", { botId })).instructions).toBe("Keep replies short.");
   const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId });
   expect(memory.map((doc) => doc.path).sort()).toEqual(["MEMORY.md", "USER.md"]);
+  // This server has no Slack, so that routine is handed over, with the app to connect again.
   await expect(page.getByText("The import could not set these up:").first()).toBeVisible();
+  await expect(page.getByText("A connected app. Connect it again.").first()).toBeVisible();
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.map((item) => item.name)).toContain("weekly-account-health");
   const routines = await rpc<Routine[]>(page, "routines/list", { botId });

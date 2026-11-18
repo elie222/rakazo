@@ -651,7 +651,11 @@ const MEMORY_ENTRY_LIMIT = AGENT_IMPORT_MAX_FILE_LENGTH / 4;
  * Bullets in documents no longer than an imported file: `MEMORY.md`, then `MEMORY-2.md`, ...
  * Entries stay whole and in order.
  */
-function memoryDocuments(stem: string, lines: readonly string[]): AgentImportMemory[] {
+function memoryDocuments(
+  stem: string,
+  label: string,
+  lines: readonly string[],
+): AgentImportMemory[] {
   const parts: string[][] = [];
   let size = 0;
   for (const line of lines) {
@@ -667,7 +671,8 @@ function memoryDocuments(stem: string, lines: readonly string[]): AgentImportMem
   }
   return parts.map((part, index) => {
     const path = index === 0 ? `${stem}.md` : `${stem}-${index + 1}.md`;
-    return memoryItem(path, path, path, bullets(part));
+    // Named for what it holds: the file name means nothing to someone who never saw the file.
+    return memoryItem(path, index === 0 ? label : `${label} ${index + 1}`, path, bullets(part));
   });
 }
 
@@ -741,8 +746,8 @@ export function parseGrokBot(
   const skillNames = grokSkillNames(bot);
   const leftovers = toSetUp.map((routine, index) => routineLeftover(routine, index, skillNames));
   const memory: AgentImportMemory[] = [
-    ...memoryDocuments("MEMORY", memories),
-    ...memoryDocuments("USER", userFacts),
+    ...memoryDocuments("MEMORY", "What it remembers", memories),
+    ...memoryDocuments("USER", "About you", userFacts),
   ];
   const skills = grokSkills(bot);
   const instructions = bot.instructions;
