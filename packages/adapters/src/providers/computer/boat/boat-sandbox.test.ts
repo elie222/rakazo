@@ -77,6 +77,48 @@ async function boat() {
   return { api, provider, computer };
 }
 
+describe("stopped workspace files", () => {
+  it("reads the stopped disk without starting the sandbox", async () => {
+    const { api, computer, provider } = await boat();
+    const resume = vi.spyOn(api, "resume");
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+
+    expect(
+      await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).toEqual(bytes);
+    expect(
+      await provider.readStoppedFile(computer, "missing.txt", context, { maxBytes: 100 }),
+    ).toBeUndefined();
+    expect(
+      await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 4 }),
+    ).toBeUndefined();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it("ignores earlier snapshots after a forced stop or a newer Rakazo checkpoint", async () => {
+    const { api, computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+    vi.setSystemTime(Date.now() + 1);
+
+    const download = vi.spyOn(api, "getSnapshotFileRaw");
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, {
+        maxBytes: 100,
+        savedAt: new Date(),
+      }),
+    ).resolves.toBeUndefined();
+    await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
+  });
+});
+
 /** The script of every command the adapter sent, without the timeout wrapper. */
 function scripts(command: { mock: { calls: [unknown, ...unknown[]][] } }): string[] {
   return command.mock.calls

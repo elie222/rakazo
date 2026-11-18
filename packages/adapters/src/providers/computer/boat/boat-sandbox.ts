@@ -99,6 +99,7 @@ import {
   callerSignal,
   wrapBoatCall,
 } from "./boat-errors.js";
+import { readBoatStoppedFile } from "./boat-stopped-file.js";
 
 const DISPLAY_START = 20;
 const BOAT_API_BASE = "https://boat.dev/api/v1";
@@ -155,7 +156,10 @@ const BOAT_API_METHODS = [
   "createDownloadUrl",
   "createUploadUrl",
   "get",
+  "getLatestSandboxSnapshot",
   "getSavedSnapshot",
+  "getSnapshotFileRaw",
+  "getStop",
   "hostPort",
   "recover",
   "resume",
@@ -665,6 +669,20 @@ export class BoatSandboxProvider implements SandboxProvider {
       workspacePath(BOAT_WORKSPACE, filePath),
       context.signal,
       options?.maxBytes,
+    );
+  }
+
+  readStoppedFile(
+    ...[computer, filePath, context, options]: Parameters<
+      NonNullable<SandboxProvider["readStoppedFile"]>
+    >
+  ) {
+    return readBoatStoppedFile(
+      this.client,
+      this.id(computer),
+      workspacePath(BOAT_WORKSPACE, filePath),
+      context.signal,
+      options,
     );
   }
 
@@ -1695,7 +1713,10 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
     createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
     createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
     get: sandboxCall(api.get.bind(api), true, BOAT_GET_TIMEOUT_MS),
+    getLatestSandboxSnapshot: boatCall(api.getLatestSandboxSnapshot.bind(api), true),
     getSavedSnapshot: boatCall(api.getSavedSnapshot.bind(api), true),
+    getSnapshotFileRaw: boatCall(api.getSnapshotFileRaw.bind(api), true),
+    getStop: boatCall(api.getStop.bind(api), true),
     hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
     resume: startCall("resume", sandboxCall(api.resume.bind(api), true, BOAT_RESUME_TIMEOUT_MS)),
