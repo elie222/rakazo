@@ -28,32 +28,31 @@ Object.assign(process.env, {
   SCREEN_PROXY_SECRET: "mobile-perf-screen-secret-over-32-characters",
 });
 
-const dataDir = await mkdtemp(path.join(os.tmpdir(), "rakazo-mobile-perf-"));
-// Always its own container: a CI_POSTGRES_URL server can be shared with other runs.
-delete process.env.CI_POSTGRES_URL;
-const postgres = await startPostgres();
-const stops: Array<() => Promise<unknown>> = [
-  () => rm(dataDir, { recursive: true, force: true }),
-  () => postgres.stop(),
-];
-let stopping = false;
-async function stop(code: number) {
-  if (stopping) return;
-  stopping = true;
-  for (const step of stops.reverse()) await step().catch((error: unknown) => console.error(error));
-  process.exit(code);
-}
-process.once("SIGINT", () => void stop(0));
-process.once("SIGTERM", () => void stop(0));
+// Ctrl-C only marks the stack to stop, so a step already starting finishes and is cleaned up.
+const interrupted = new AbortController();
+process.once("SIGINT", () => interrupted.abort());
+process.once("SIGTERM", () => interrupted.abort());
 
+const dataDir = await mkdtemp(path.join(os.tmpdir(), "rakazo-mobile-perf-"));
+const stops: Array<() => Promise<unknown>> = [() => rm(dataDir, { recursive: true, force: true })];
 try {
-  const backend = await startIosScreenshotBackend({
-    root,
-    serverUrl: postgres.getConnectionUri(),
-    port: apiPort,
-    dataDir,
-  });
+  // Always its own container: a CI_POSTGRES_URL server can be shared with other runs.
+  delete process.env.CI_POSTGRES_URL;
+  const postgres = await startPostgres(interrupted.signal);
+  stops.push(() => postgres.stop());
+  if (!interrupted.signal.aborted) await serve(postgres.getConnectionUri());
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
+} finally {
+  for (const stop of stops.reverse()) await stop().catch((error: unknown) => console.error(error));
+  process.exit();
+}
+
+async function serve(serverUrl: string) {
+  const backend = await startIosScreenshotBackend({ root, serverUrl, port: apiPort, dataDir });
   stops.push(() => backend.stop());
+  if (interrupted.signal.aborted) return;
   await seed(backend);
 
   let appUrl = backend.apiUrl;
@@ -62,6 +61,7 @@ try {
     stops.push(() => proxy.close());
     appUrl = proxy.url;
   }
+  if (interrupted.signal.aborted) return;
   console.log(
     [
       "",
@@ -70,9 +70,7 @@ try {
       "Ctrl-C stops the stack.",
     ].join("\n"),
   );
-} catch (error) {
-  console.error(error);
-  await stop(1);
+  await new Promise((resolve) => interrupted.signal.addEventListener("abort", resolve));
 }
 
 /** A paid account past onboarding, with 100-message chats in two Spaces. */

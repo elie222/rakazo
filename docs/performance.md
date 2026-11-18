@@ -94,8 +94,8 @@ uses the next port).
 Build a Release simulator app pointed at the printed URL, then sign in with **Password**:
 
 ```sh
-EXPO_PUBLIC_API_URL=http://127.0.0.1:3121 pnpm --filter @rakazo/mobile exec expo run:ios --configuration Release
+EXPO_PUBLIC_API_URL=<printed URL> pnpm --filter @rakazo/mobile exec expo run:ios --configuration Release
 ```
 
 Simulators run on a remote Mac. The API listens on loopback only, so run the stack on that Mac, or
-forward its port there (`ssh -R 3121:127.0.0.1:3121 <mac>`).
+forward the printed port there (`ssh -R <port>:127.0.0.1:<port> <mac>`).
