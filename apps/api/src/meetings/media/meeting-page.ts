@@ -149,7 +149,7 @@ function frame({ data: samples }) {
   const frames = utterance;
   utterance = [];
   voiced = 0;
-  if (pending) queued ??= frames;
+  if (pending) queued = [...(queued ?? []), ...frames].slice(-maxTurnFrames);
   else void respond(frames);
 }
 
