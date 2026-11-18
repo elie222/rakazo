@@ -1,12 +1,14 @@
 import { ORPCError } from "@orpc/server";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   lockMcpOAuthMaterial,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
   recordMcpServerHealth,
+  wakeRun,
 } from "@rakazo/adapters";
-import { MCP_OAUTH_REDIRECT_MISMATCH } from "@rakazo/contracts";
+import type { Actor, McpOAuthClientKind } from "@rakazo/contracts";
+import { MCP_OAUTH_REDIRECT_MISMATCH, McpServerConfigInput } from "@rakazo/contracts";
+import { ClientError, customMcpServerInput } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
@@ -17,17 +19,11 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../availability.js";
-import {
   queueMcpConnectedRun,
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
-} from "../mcp-approval.js";
-import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
+} from "../integrations/mcp-approval.js";
+import { buildMcpUpdateMaterial, legacyMcpArgs } from "../integrations/mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
@@ -36,7 +32,13 @@ import {
   MCP_OAUTH_PENDING_MESSAGE,
   mcpAssignmentDto,
   mcpServerDto,
-} from "../mcp-servers.js";
+} from "../integrations/mcp-servers.js";
+import {
+  assertNameFreeWhereAvailable,
+  lockOwner,
+  serverAvailability,
+  serverSecretSpace,
+} from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -54,6 +56,94 @@ export function mcpRoutes(ctx: RouterContext) {
     announceMcpServer,
     authed,
   } = ctx;
+  /** Gives the bot the server, closing any card that asked for it. */
+  async function approveMcpAssignment(
+    actor: Actor,
+    input: { botId: string; serverId: string; threadId?: string },
+  ) {
+    const row = await resolveMcpApprovalCards(
+      onboardingDeps,
+      actor,
+      {
+        botId: input.botId,
+        serverId: input.serverId,
+        status: "connected",
+        threadId: input.threadId,
+      },
+      async (tx, decision) => {
+        if (!decision.assign) throw new IsolationError();
+        const [bot, server] = await Promise.all([
+          tx.bot.findFirst({
+            where: { id: input.botId, spaceId: actor.spaceId },
+            select: { id: true },
+          }),
+          tx.mcpServer.findFirst({
+            where: { id: input.serverId, ...availableInSpace(actor), enabled: true },
+            select: { id: true },
+          }),
+        ]);
+        if (!bot || !server) throw new IsolationError();
+        const assignment = await tx.botMcpServer.upsert({
+          where: { botId_serverId: { botId: bot.id, serverId: server.id } },
+          create: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId: bot.id,
+            serverId: server.id,
+            allowAllTools: true,
+            allowedTools: [],
+          },
+          update: {},
+        });
+        const runId =
+          input.threadId && decision.resolved
+            ? await queueMcpConnectedRun(tx, actor, {
+                botId: bot.id,
+                serverId: server.id,
+                threadId: input.threadId,
+              })
+            : null;
+        return { assignment, runId };
+      },
+    );
+    if (!row) throw new IsolationError();
+    if (row.runId) await wakeRun(deps.jobs, row.runId);
+    return mcpAssignmentDto(row.assignment);
+  }
+
+  /** Starts a sign-in on the registered web callback; `botId` gets the server once it finishes. */
+  async function beginMcpOAuth(
+    actor: Actor,
+    input: { serverId: string; redirectUri?: string; client?: McpOAuthClientKind; botId?: string },
+  ) {
+    const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
+    // Native clients omit the redirect; the registered web callback is always used.
+    if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "The sign-in address does not match this server's configuration.",
+        MCP_OAUTH_REDIRECT_MISMATCH,
+      );
+    }
+    try {
+      return await mcpOAuth.begin({
+        ...input,
+        redirectUri: expectedRedirect,
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+      });
+    } catch (error) {
+      if (error instanceof McpOAuthClientRequiredError)
+        await recordMcpServerHealth(
+          deps.prisma,
+          input.serverId,
+          { status: "error", message: error.message },
+          error.revision,
+        );
+      throw error;
+    }
+  }
+
   return {
     mcp: {
       servers: {
@@ -94,14 +184,56 @@ export function mcpRoutes(ctx: RouterContext) {
             )
             .catch((error: unknown) => {
               // The slug comes from the name, so this is a second server with the same name.
-              if (isUniqueViolation(error)) {
-                throw new ORPCError("CONFLICT", {
-                  message: "An MCP server with that name already exists.",
-                });
-              }
+              if (isUniqueViolation(error))
+                throw new ClientError("CONFLICT", "An MCP server with that name already exists.");
               throw error;
             });
           return announceMcpServer(row, context.actor);
+        }),
+        connect: authed.mcp.servers.connect.handler(async ({ context, input }) => {
+          const { actor } = context;
+          const config = McpServerConfigInput.parse(
+            customMcpServerInput(input.name, input.endpoint),
+          );
+          // The same address in another form ("https://host/" for "https://host") is the same server.
+          const endpoint = new URL(input.endpoint).href;
+          const stored = await prepareMcpServer(actor, config);
+          const { row, created } = await persistPreparedSecret(
+            deps.prisma,
+            deps.secrets,
+            stored ?? undefined,
+            () =>
+              deps.prisma.$transaction(async (tx) => {
+                // Two connects to the same new address share one server.
+                await lockOwner(tx, actor.userId, "mcp-connect");
+                const rows = await tx.mcpServer.findMany({
+                  where: { ...availableInSpace(actor), enabled: true, endpoint: { not: null } },
+                  include: { availableIn: AVAILABILITY_SELECT },
+                  orderBy: { createdAt: "asc" },
+                });
+                const existing = rows.find(
+                  (row) => URL.canParse(row.endpoint!) && new URL(row.endpoint!).href === endpoint,
+                );
+                if (existing) return { row: existing, created: false };
+                return {
+                  row: await insertMcpServer(tx, actor, config, stored, { everywhere: true }),
+                  created: true,
+                };
+              }),
+          );
+          const server = created
+            ? await announceMcpServer(row, actor)
+            : mcpServerDto(row, await mcpOAuth.summaryFor(row, actor));
+          const serverId = row.id;
+          const signIn = await beginMcpOAuth(actor, {
+            serverId,
+            redirectUri: input.redirectUri,
+            client: input.client,
+            botId: input.botId,
+          });
+          if (signIn.status !== "authorization_required" && input.botId)
+            await approveMcpAssignment(actor, { botId: input.botId, serverId });
+          return { server, signIn };
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -436,68 +568,9 @@ export function mcpRoutes(ctx: RouterContext) {
           });
           return rows.map(mcpAssignmentDto);
         }),
-        approve: authed.mcp.assignments.approve.handler(async ({ context, input }) => {
-          const row = await resolveMcpApprovalCards(
-            onboardingDeps,
-            context.actor,
-            {
-              botId: input.botId,
-              serverId: input.serverId,
-              status: "connected",
-              threadId: input.threadId,
-            },
-            async (tx, decision) => {
-              if (!decision.assign) throw new IsolationError();
-              const [bot, server] = await Promise.all([
-                tx.bot.findFirst({
-                  where: {
-                    id: input.botId,
-                    spaceId: context.actor.spaceId,
-                  },
-                  select: { id: true },
-                }),
-                tx.mcpServer.findFirst({
-                  where: {
-                    id: input.serverId,
-                    ...availableInSpace(context.actor),
-                    enabled: true,
-                  },
-                  select: { id: true },
-                }),
-              ]);
-              if (!bot || !server) throw new IsolationError();
-              const assignment = await tx.botMcpServer.upsert({
-                where: { botId_serverId: { botId: bot.id, serverId: server.id } },
-                create: {
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                  botId: bot.id,
-                  serverId: server.id,
-                  allowAllTools: true,
-                  allowedTools: [],
-                },
-                update: {},
-              });
-              const runId =
-                input.threadId && decision.resolved
-                  ? await queueMcpConnectedRun(tx, context.actor, {
-                      botId: bot.id,
-                      serverId: server.id,
-                      threadId: input.threadId,
-                    })
-                  : null;
-              return { assignment, runId };
-            },
-          );
-          if (!row) throw new IsolationError();
-          if (row.runId) {
-            // The queued run is durable; a missed wake is repaired by the reconciler.
-            await deps.jobs.enqueue(runContinueJob(row.runId)).catch((error) => {
-              getLogger().error("mcp connected enqueue", error);
-            });
-          }
-          return mcpAssignmentDto(row.assignment);
-        }),
+        approve: authed.mcp.assignments.approve.handler(({ context, input }) =>
+          approveMcpAssignment(context.actor, input),
+        ),
         dismiss: authed.mcp.assignments.dismiss.handler(async ({ context, input }) => {
           // Not now resolves the card only. Assignments are never touched
           // here: a stale card must not delete a live connection, and server
@@ -585,71 +658,42 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
       },
       oauth: {
-        begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
-          try {
-            const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
-            // Native clients omit the redirect; the registered web callback is always used.
-            if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
-              throw new ORPCError(MCP_OAUTH_REDIRECT_MISMATCH, {
-                status: 400,
-                message: "The sign-in address does not match this server's configuration.",
-              });
-            }
-            return await mcpOAuth.begin({
-              ...input,
-              redirectUri: expectedRedirect,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-            });
-          } catch (error) {
-            if (error instanceof ORPCError) throw error;
-            if (error instanceof McpOAuthClientRequiredError) {
-              await recordMcpServerHealth(
-                deps.prisma,
-                input.serverId,
-                { status: "error", message: error.message },
-                error.revision,
-              );
-              throw new ORPCError(error.code, { status: 400, message: error.message });
-            }
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not start MCP OAuth",
-            });
-          }
-        }),
+        begin: authed.mcp.oauth.begin.handler(({ context, input }) =>
+          beginMcpOAuth(context.actor, input),
+        ),
         complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
-          try {
-            const { serverId, revision } = await mcpOAuth.complete({
-              ...input,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
+          const { serverId, revision, botId } = await mcpOAuth.complete({
+            ...input,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          });
+          // A check from before the sign-in would otherwise still read as failing. Only this
+          // sign-in's revision: an edit since then has its own health and its own check.
+          await recordMcpServerHealth(
+            deps.prisma,
+            serverId,
+            { status: "unknown", message: null },
+            revision,
+          );
+          // The account is connected now: check the server so it shows ok/error.
+          void (async () => {
+            const server = await deps.prisma.mcpServer.findFirst({
+              where: { id: serverId, revision, ...availableInSpace(context.actor) },
             });
-            // A check from before the sign-in would otherwise still read as failing. Only this
-            // sign-in's revision: an edit since then has its own health and its own check.
-            await recordMcpServerHealth(
-              deps.prisma,
-              serverId,
-              { status: "unknown", message: null },
-              revision,
-            );
-            // The account is connected now: check the server so it shows ok/error.
-            void (async () => {
-              const server = await deps.prisma.mcpServer.findFirst({
-                where: { id: serverId, revision, ...availableInSpace(context.actor) },
-              });
-              if (server)
-                await beginMcpProbe(
-                  server,
-                  context.actor,
-                  await mcpOAuth.summaryFor(server, context.actor),
-                );
-            })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
-            return { ok: true as const };
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not complete MCP OAuth",
+            if (server)
+              await beginMcpProbe(
+                server,
+                context.actor,
+                await mcpOAuth.summaryFor(server, context.actor),
+              );
+          })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
+          // A bot removed since the sign-in began has nothing to get. Any other failure fails
+          // the call: signing in again finds the server connected and gives it to the bot.
+          if (botId)
+            await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) => {
+              if (!(error instanceof IsolationError)) throw error;
             });
-          }
+          return { ok: true as const };
         }),
         disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
           const revision = await mcpOAuth.disconnect({

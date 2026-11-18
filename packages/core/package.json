@@ -10,19 +10,24 @@
       "default": "./src/index.ts"
     },
     "./user-error": {
-      "types": "./src/user-error.ts",
-      "development": "./src/user-error.ts",
-      "default": "./src/user-error.ts"
+      "types": "./src/primitives/user-error.ts",
+      "development": "./src/primitives/user-error.ts",
+      "default": "./src/primitives/user-error.ts"
     },
     "./message-quote": {
-      "types": "./src/message-quote.ts",
-      "development": "./src/message-quote.ts",
-      "default": "./src/message-quote.ts"
+      "types": "./src/messages/message-quote.ts",
+      "development": "./src/messages/message-quote.ts",
+      "default": "./src/messages/message-quote.ts"
     },
     "./screen-reconnect": {
-      "types": "./src/screen-reconnect.ts",
-      "development": "./src/screen-reconnect.ts",
-      "default": "./src/screen-reconnect.ts"
+      "types": "./src/computers/screen-reconnect.ts",
+      "development": "./src/computers/screen-reconnect.ts",
+      "default": "./src/computers/screen-reconnect.ts"
+    },
+    "./test-async": {
+      "types": "./src/primitives/async.test-support.ts",
+      "development": "./src/primitives/async.test-support.ts",
+      "default": "./src/primitives/async.test-support.ts"
     },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
@@ -34,15 +39,25 @@
       "development": "./src/node/shutdown-signals.ts",
       "default": "./src/node/shutdown-signals.ts"
     },
+    "./node/sealed-box": {
+      "types": "./src/node/sealed-box.ts",
+      "development": "./src/node/sealed-box.ts",
+      "default": "./src/node/sealed-box.ts"
+    },
     "./node/approval-effect-key": {
-      "types": "./src/approval-effect-key.ts",
-      "development": "./src/approval-effect-key.ts",
-      "default": "./src/approval-effect-key.ts"
+      "types": "./src/node/approval-effect-key.ts",
+      "development": "./src/node/approval-effect-key.ts",
+      "default": "./src/node/approval-effect-key.ts"
     },
     "./node/screen-proxy-response": {
       "types": "./src/node/screen-proxy-response.ts",
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
+    },
+    "./node/test-runtime": {
+      "types": "./src/node/test-runtime.ts",
+      "development": "./src/node/test-runtime.ts",
+      "default": "./src/node/test-runtime.ts"
     },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
@@ -65,14 +80,39 @@
       "default": "./src/node/screen-capability.ts"
     },
     "./egress": {
-      "types": "./src/egress.ts",
-      "development": "./src/egress.ts",
-      "default": "./src/egress.ts"
+      "types": "./src/primitives/egress.ts",
+      "development": "./src/primitives/egress.ts",
+      "default": "./src/primitives/egress.ts"
+    },
+    "./signup-attribution": {
+      "types": "./src/account/browser-signup-attribution.ts",
+      "development": "./src/account/browser-signup-attribution.ts",
+      "default": "./src/account/browser-signup-attribution.ts"
     },
     "./query": {
-      "types": "./src/query.ts",
-      "development": "./src/query.ts",
-      "default": "./src/query.ts"
+      "types": "./src/primitives/query.ts",
+      "development": "./src/primitives/query.ts",
+      "default": "./src/primitives/query.ts"
+    },
+    "./node/prompt-source-version": {
+      "types": "./src/node/prompt-source-version.ts",
+      "development": "./src/node/prompt-source-version.ts",
+      "default": "./src/node/prompt-source-version.ts"
+    },
+    "./node/secrets-guard": {
+      "types": "./src/node/secrets-guard.ts",
+      "development": "./src/node/secrets-guard.ts",
+      "default": "./src/node/secrets-guard.ts"
+    },
+    "./node/screen-lease": {
+      "types": "./src/node/screen-lease.ts",
+      "development": "./src/node/screen-lease.ts",
+      "default": "./src/node/screen-lease.ts"
+    },
+    "./node/sandbox-command": {
+      "types": "./src/node/sandbox-command.ts",
+      "development": "./src/node/sandbox-command.ts",
+      "default": "./src/node/sandbox-command.ts"
     }
   },
   "scripts": {

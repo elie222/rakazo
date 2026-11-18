@@ -1,31 +1,32 @@
 import type {
   Bot,
   BotAvatarSet,
+  LabFeature,
   Me,
   Space,
   SpaceMemoryConfig,
-  UsageSummary,
 } from "@rakazo/contracts";
+import { parseLabs } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useCallback } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
-import type { connectedAppMarks } from "../../lib/connected-apps";
-import type { SpaceQueries } from "../../lib/query";
-import { queryClient } from "../../lib/query";
-import type { createSpaceRpc } from "../../lib/rpc";
-import type { ShellOverlay } from "../shell-overlay";
-import { FALLBACK_BOT_COLOR } from "./chat-shared";
+import { setLabs } from "../../lib/bootstrap";
+import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
+import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
+import type { SpaceQueries } from "../../lib/query/query";
+import { queryClient } from "../../lib/query/query";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { FALLBACK_BOT_COLOR } from "./chat/chat-shared";
+import type { ShellOverlay } from "./shell-overlay-url";
 
 const SettingsOverlay = lazyOverlay(() =>
-  import("../SettingsOverlay").then((module) => module.SettingsOverlay),
+  import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay),
 );
 const PeerMessagesOverlay = lazyOverlay(() =>
-  import("../PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
+  import("../settings/PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
 );
 const PluginsOverlay = lazyOverlay(() =>
-  import("../PluginsOverlay").then((module) => module.PluginsOverlay),
+  import("../plugins/PluginsOverlay").then((module) => module.PluginsOverlay),
 );
 const SkillsDialog = lazyOverlay(() =>
   import("../../components/integrations/skills-dialog").then((module) => module.SkillsDialog),
@@ -36,7 +37,7 @@ const BotTemplatesDialog = lazyOverlay(() =>
   ),
 );
 const McpServersOverlay = lazyOverlay(() =>
-  import("../McpServersOverlay").then((module) => module.McpServersOverlay),
+  import("../integrations/McpServersOverlay").then((module) => module.McpServersOverlay),
 );
 
 /** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
@@ -56,6 +57,7 @@ export function AppOverlays({
   setOverlay,
   activeBotId,
   stdioEnabled,
+  messagingEnabled,
   onConnectedAppsChange,
   onOpenBot,
 }: {
@@ -63,6 +65,8 @@ export function AppOverlays({
   setOverlay: (next: ShellOverlay) => void;
   activeBotId: string | undefined;
   stdioEnabled: boolean;
+  /** Messaging settings can be opened; a link there is shown only then. */
+  messagingEnabled: boolean;
   onConnectedAppsChange: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onOpenBot: (bot: Bot) => void;
 }) {
@@ -76,6 +80,11 @@ export function AppOverlays({
           onClose={() => setOverlay(null)}
           onOpenMcp={() => setOverlay({ kind: "mcp" })}
           onOpenTemplates={openTemplates}
+          onOpenMessaging={
+            messagingEnabled
+              ? () => setOverlay({ kind: "settings", section: "messaging", spaceId: null })
+              : undefined
+          }
         />
       ) : null}
       {overlay?.kind === "skills" ? (
@@ -134,7 +143,7 @@ export function SettingsOverlays({
   settingsSpace: Space | null;
   showSettings: boolean;
   spaces: Space[];
-  renameSpace: (spaceId: string, name: string) => Promise<void>;
+  renameSpace: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   removeSpace: (spaceId: string) => Promise<void>;
   leftSpace: (spaceId: string, activeSpaceId: string) => Promise<void>;
   refreshSpaces: () => Promise<void>;
@@ -151,11 +160,6 @@ export function SettingsOverlays({
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
-  // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
-  const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
-  const usage: UsageSummary | null = usageQuery.data ?? null;
-  const refetchUsage = usageQuery.refetch;
-  const refreshUsage = useCallback(() => void refetchUsage(), [refetchUsage]);
   const voiceStatusKey = queries.voice.status.queryKey();
   return (
     <>
@@ -179,8 +183,6 @@ export function SettingsOverlays({
             await refetchSession();
           }}
           email={user?.email}
-          usage={usage}
-          onUsageOpen={refreshUsage}
           section={overlay.section}
           onSectionChange={(section) => setOverlay({ ...overlay, section })}
           billingEnabled={bootstrapMe?.billingEnabled === true}
@@ -193,8 +195,8 @@ export function SettingsOverlays({
           messagingEnabled={messagingEnabled}
           paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
-          onTimezoneChange={async (timezone) => {
-            const nextMe = await rpc.preferences.update({ timezone });
+          onTimezoneChange={async (timezone, client) => {
+            const nextMe = await client.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
@@ -204,8 +206,24 @@ export function SettingsOverlays({
               prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
             );
             // Unpinned bots were restyled with it. The save already succeeded, so a failed
-            // refresh only waits for the roster's next poll.
+            // refresh only waits for the roster's next re-read.
             void refreshSpaces().catch(() => undefined);
+          }}
+          labs={parseLabs(bootstrapMe?.labs)}
+          labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
+          onLabsChange={async (labs, client) => {
+            const previous = parseLabs(bootstrapMe?.labs);
+            const apply = (next: LabFeature[]) => {
+              setLabs(next);
+              setBootstrapMe((prev) => (prev ? { ...prev, labs: next } : prev));
+            };
+            apply(labs);
+            try {
+              apply((await client.preferences.update({ labs })).labs);
+            } catch (error) {
+              apply(previous);
+              throw error;
+            }
           }}
           onAccountImported={refreshSpaces}
           onImportAgent={() => {
@@ -217,6 +235,7 @@ export function SettingsOverlays({
             void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
           }}
           onVoiceStatusMaybeChanged={async () => {
+            invalidateVoiceConsent();
             try {
               queryClient.setQueryData(
                 voiceStatusKey,

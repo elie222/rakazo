@@ -21,7 +21,9 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/apps/www/.astro",
+      "!**/apps/www/.vercel",
+      "!**/apps/www/**/*.{css,json,mjs}"
     ]
   },
   "plugins": [
@@ -30,9 +32,12 @@
       "includes": [
         "**/apps/web/src/**/*.tsx",
         "**/packages/ui-web/src/**/*.tsx",
+        "**/apps/mobile/**/*.tsx",
+        "**/packages/chat-ui/**/*.tsx",
         "!**/*.test.tsx",
         "!**/packages/ui-web/src/bot-avatar.tsx",
-        "!**/apps/web/src/pages/WindowChrome.tsx"
+        "!**/apps/mobile/components/bots/bot-avatar.tsx",
+        "!**/apps/web/src/components/WindowChrome.tsx"
       ]
     },
     {
@@ -52,13 +57,30 @@
       "preset": "recommended",
       "style": {
         "noNonNullAssertion": "off",
-        "useImportType": { "level": "error", "options": { "style": "separatedType" } }
+        "useImportType": { "level": "error", "options": { "style": "separatedType" } },
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": [
+                  "@{alicloud,aws-sdk,axiomhq,azure,boatdev,boxd-sh,chat-adapter}/**",
+                  "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
+                  "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
+                  "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
+                  "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}/**"
+                ],
+                "message": "This is a vendor SDK. Extend the provider-neutral interface in `@rakazo/adapter-kit`, implement it in `packages/adapters`, and load the SDK there with `import()`."
+              }
+            ]
+          }
+        }
       },
       "correctness": {
         "useExhaustiveDependencies": "off"
       },
       "suspicious": {
-        "noExplicitAny": "off",
+        "noExplicitAny": "error",
         "noArrayIndexKey": "off"
       },
       "a11y": {
@@ -150,6 +172,27 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    // Adapters are where vendor SDKs live. The monitoring and logging sinks and the screenshot
+    // publisher load theirs on demand.
+    {
+      "includes": [
+        "packages/adapters/**",
+        "apps/desktop/src/main/system/monitoring.ts",
+        "apps/web/src/lib/platform/monitoring.ts",
+        "apps/mobile/lib/platform/monitoring.ts",
+        "packages/logging/src/sentry.ts",
+        "packages/logging/src/sentry.test.ts",
+        "packages/logging/src/axiom-sink.ts",
+        "packages/testkit/src/screenshots/ios-screenshot-publish.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
           }
         }
       }

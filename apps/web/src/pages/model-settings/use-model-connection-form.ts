@@ -5,8 +5,6 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  DEFAULT_MODEL_CONTEXT_WINDOW,
-  DEFAULT_MODEL_MAX_TOKENS,
   modelHeadersInput,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -14,22 +12,23 @@ import {
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
-  clampCatalogThinkingLevel,
-  compatibleThinkingLevels,
   createModelProbe,
   initialModelProbeState,
+  modelConnectionFormSecrets,
+  sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import type { ModelPreflightFailure } from "../../lib/models/model-connection-preflight";
 import {
   classifyModelConnectionFailure,
   modelPreflightSuccessMessage,
   runModelConnectionPreflight,
   unavailableSelectedModel,
-} from "../../lib/model-connection-preflight";
-import type { RpcClient } from "../../lib/rpc";
+} from "../../lib/models/model-connection-preflight";
+import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
 
@@ -57,24 +56,19 @@ export function useModelConnectionForm({
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [region, setRegion] = useState("global");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
-  const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
-  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
-  const [supportsImages, setSupportsImages] = useState(false);
-  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<
-    "api-key" | "sign-in" | "compatible" | null
-  >(null);
+  const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
   const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
   const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
   const preflightRevisionRef = useRef(0);
@@ -86,23 +80,26 @@ export function useModelConnectionForm({
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   // The catalog names the IDs a provider needs besides its key.
-  const { needsRouting, needsGateway, routingReady } = modelRoutingForm(selected?.routingFields, {
-    accountId,
-    gatewayId,
-  });
+  const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
+    selected?.routingFields,
+    {
+      accountId,
+      gatewayId,
+      projectId,
+      region,
+    },
+    credential,
+  );
 
   function applyFields(fields: ConnectionFormFields) {
     setEnabledModelIds(fields.enabledModelIds);
     setBaseUrl(fields.baseUrl);
     setApiProtocol(fields.apiProtocol);
-    setReasoning(fields.reasoning);
     setThinkingLevel(fields.thinkingLevel);
-    setMaxTokens(fields.maxTokens);
-    setContextWindow(fields.contextWindow);
-    setSupportsImages(fields.supportsImages);
-    setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
     setAccountId(fields.accountId);
     setGatewayId(fields.gatewayId);
+    setProjectId(fields.projectId ?? "");
+    setRegion(fields.region ?? "global");
   }
 
   function invalidatePreflight() {
@@ -145,23 +142,15 @@ export function useModelConnectionForm({
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        thinkingLevel,
-        reasoning ? compatibleThinkingLevels(nextProtocol) : [],
-      ) as ThinkingLevel | null,
-    );
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
   }
 
-  function stageCompatibleModelId(nextModelId: string) {
-    setModelId(nextModelId);
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
-        reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-      ) as ThinkingLevel | null,
+  /** A failed connection's message, without the credentials this form holds. */
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
     );
   }
 
@@ -188,8 +177,7 @@ export function useModelConnectionForm({
         if (!stillCurrent()) return;
         const current = modelIdRef.current;
         const next = current.trim() || models[0] || "";
-        if (next !== current) stageCompatibleModelId(next);
-        else setModelId(next);
+        setModelId(next);
         onModelsFound?.(models, current.trim());
         const unavailable = unavailableSelectedModel(current, models);
         if (unavailable) {
@@ -203,7 +191,12 @@ export function useModelConnectionForm({
       },
       onError: (err) => {
         if (!stillCurrent()) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
+        setPreflightFailure(
+          classifyModelConnectionFailure(err, {
+            modelId,
+            secrets: modelConnectionFormSecrets({ apiKey, headerRows }),
+          }),
+        );
         setNotice(null);
       },
     });
@@ -211,7 +204,7 @@ export function useModelConnectionForm({
 
   /** Shows `test`'s result unless the form changed while it ran; `test` may stop early the same way. */
   async function runPreflight(
-    target: "api-key" | "sign-in",
+    target: "api-key",
     test: (stillCurrent: () => boolean) => Promise<PreflightOutcome | undefined>,
   ) {
     const revision = preflightRevisionRef.current;
@@ -233,7 +226,6 @@ export function useModelConnectionForm({
     if (!selected?.catalogProbe) return;
     await runPreflight("api-key", async () => {
       const result = await runModelConnectionPreflight({
-        authKind: "api-key",
         provider: selected.provider,
         apiKey,
         modelId: selected.id,
@@ -252,18 +244,19 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     routingReady,
-    contextWindow,
     enabledModelIds,
     error,
     gatewayId,
+    projectId,
+    region,
     headerRows,
     invalidatePreflight,
     needsRouting,
     needsGateway,
+    needsProject,
     isOpenAiCompatible,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     modelProbe,
     modelsForProvider,
@@ -277,27 +270,21 @@ export function useModelConnectionForm({
     probeServerModels,
     probing,
     provider,
-    reasoning,
     resetOpenAiCompatibleProbe,
     runPreflight,
     selected,
     setAccountId,
     setApiKey,
-    setContextWindow,
     setEnabledModelIds,
     setError,
     setGatewayId,
+    setProjectId,
+    setRegion,
     setHeaderRows,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
     setModelId,
     setNotice,
     setProvider,
-    setReasoning,
-    setSupportsImages,
     setThinkingLevel,
-    stageCompatibleModelId,
-    supportsImages,
     testApiKeyConnection,
     thinkingLevel,
     updateApiKey,

@@ -1,6 +1,11 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
-import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import type {
+  PartnerProgram,
+  ProductAnalytics,
+  TransactionalEmailProvider,
+} from "@rakazo/adapter-kit";
+import { LAST_SIGN_IN_COOKIE, PartnerClickId, SignupAttribution } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -8,15 +13,19 @@ import {
   MAX_PASSWORD_LENGTH,
   MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
+  partnerClickFromHeaders,
+  signupAttributionFromHeaders,
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  OwnedOrganizationHasMembersError,
   personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -27,7 +36,7 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { parseSetCookieHeader } from "better-auth/cookies";
-import { emailOTP, organization } from "better-auth/plugins";
+import { emailOTP, lastLoginMethod, organization } from "better-auth/plugins";
 import {
   ACCOUNT_EXPORT_TOKEN_PREFIX,
   consumeAccountExportToken,
@@ -39,6 +48,7 @@ import {
   sessionForAuthHook,
   signedBearer,
 } from "./account-security.js";
+import { createAppleClientSecretCache } from "./apple-client-secret.js";
 import { breachedPasswordCheck } from "./breached-password.js";
 import { DEACTIVATED_AT_FIELD } from "./directory.js";
 import type { EmailLocaleOf } from "./email.js";
@@ -47,6 +57,15 @@ import { hasRecentIdentityConfirmation, identityConfirmation } from "./identity-
 import type { OidcConfig } from "./oidc.js";
 import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 import { passkeyRelyingParty } from "./passkey.js";
+import type { AppleProviderConfig, GoogleProviderConfig, SocialAuthConfig } from "./social.js";
+import {
+  appleUserInfo,
+  googleEmailVerified,
+  isBuiltinAuthorizationURL,
+  requestProviderId,
+  socialTrustedOrigins,
+} from "./social.js";
+import { socialCallbackProtection } from "./social-callback-protection.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
@@ -60,7 +79,12 @@ export {
 } from "./email.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
+export { modelConnectionEmail } from "./model-connection-email.js";
 export type { OidcConfig } from "./oidc.js";
+export {
+  organizationInvitationEmail,
+  spaceInvitationEmail,
+} from "./organization-invitation-email.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {
   integrationClaimConfirmEmail,
@@ -69,14 +93,19 @@ export {
   pluginSubmissionReviewedEmail,
 } from "./plugin-submission-email.js";
 export { referralEmail } from "./referral-email.js";
+export type { SocialAuthConfig } from "./social.js";
+export { publicSignInProviders, socialAuthFromFields } from "./social.js";
 export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {
   analytics?: ProductAnalytics;
+  partnerProgram?: PartnerProgram;
   passwordAuth?: boolean;
   /** Opt-in: rejects new passwords found in Have I Been Pwned. Calls an outside service. */
   breachedPasswordCheck?: boolean;
   oidc?: OidcConfig;
+  /** Google and Apple, each present only when its credentials are set. */
+  social?: SocialAuthConfig;
   secret: string;
   baseURL: string;
   webOrigin: string;
@@ -91,6 +120,8 @@ export interface AuthEnv {
   logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /** Runs once the account is gone. */
+  afterDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
   afterDeleteSession?: (session: AuthSession) => Promise<void>;
   /** Runs when a password change replaces the caller's own session instead of ending it. */
@@ -210,7 +241,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
       if (await hasAdmittedAccount(tx, userId)) return false;
       // Committed before the lock is released, so the next signup sees it.
-      await bootstrapUserSpace(prisma, { id: userId }, env);
+      await bootstrapUserSpace(prisma, { id: userId });
       return true;
     });
   /** The directory provisioned this account, so it is admitted whatever the signup policy. */
@@ -241,20 +272,34 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     env.passwordAuth === false
       ? null
       : passkeyRelyingParty(env.webOrigin, env.androidAppCertFingerprints);
+  const google = env.social?.providers.find(
+    (provider): provider is GoogleProviderConfig => provider.id === "google",
+  );
+  const apple = env.social?.providers.find(
+    (provider): provider is AppleProviderConfig => provider.id === "apple",
+  );
+  const appleSecret = apple ? createAppleClientSecretCache(apple) : undefined;
   // Better Auth's own token key, so every stored token shares one cipher and key.
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
+  const attributionField = {
+    type: "string",
+    required: false,
+    input: false,
+    returned: false,
+  } as const;
   const auth = betterAuth({
     appName: "Rakazo",
     logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: [
+    trustedOrigins: (request) => [
       ...buildTrustedOrigins({
         origins: [env.webOrigin, env.baseURL],
         extraOrigins: env.extraOrigins,
       }),
       APP_SCHEME_ORIGIN,
+      ...socialTrustedOrigins(env.social, request),
     ],
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
@@ -274,6 +319,35 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     },
     rateLimit: authRateLimitOptions(),
     advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
+    socialProviders: {
+      ...(google
+        ? {
+            google: {
+              clientId: google.clientId,
+              clientSecret: google.clientSecret,
+              mapProfileToUser: async (profile) => ({
+                // An explicit link already proves control of the local account through
+                // signed OAuth state; historical mailbox proof alone never admits signup.
+                emailVerified:
+                  googleEmailVerified(profile) ||
+                  (profile.email_verified === true && Boolean((await getOAuthState())?.link)),
+              }),
+            },
+          }
+        : {}),
+      ...(apple && appleSecret
+        ? {
+            apple: {
+              clientId: apple.clientId,
+              get clientSecret() {
+                return appleSecret.current();
+              },
+              getUserInfo: async (token: Parameters<typeof appleUserInfo>[1]) =>
+                appleUserInfo(prisma, token, Boolean((await getOAuthState())?.link)),
+            },
+          }
+        : {}),
+    },
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: env.passwordAuth !== false,
@@ -322,15 +396,57 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     },
     user: {
       // Set by the directory; read with every session so a deactivated account is refused.
-      additionalFields: DEACTIVATED_AT_FIELD,
+      additionalFields: {
+        ...DEACTIVATED_AT_FIELD,
+        signupSurface: attributionField,
+        signupUtmSource: attributionField,
+        signupUtmMedium: attributionField,
+        signupUtmCampaign: attributionField,
+        signupUtmContent: attributionField,
+        signupUtmTerm: attributionField,
+        signupReferringDomain: attributionField,
+        signupPartnerClickId: attributionField,
+      },
       validateUserInfo: async ({ user, source }, ctx) => {
-        if (source.method !== "oauth" || source.oauth?.providerId !== "oidc") return;
-        const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
-        if (typeof expectedUser === "string" && user.id !== expectedUser)
+        if (source.method !== "oauth") return;
+        const providerId = source.oauth?.providerId;
+        const reauthentication = (await getOAuthState())?.serverContext;
+        const expectedUser = reauthentication?.reauthUserId;
+        if (
+          typeof expectedUser === "string" &&
+          (source.action !== "sign-in" || user.id !== expectedUser)
+        )
           return { error: "REAUTHENTICATION_REQUIRED" };
+        if (typeof expectedUser === "string") {
+          const current = await sessionForAuthHook(ctx);
+          if (current && current.session.token !== reauthentication?.reauthSessionToken)
+            return { error: "REAUTHENTICATION_REQUIRED" };
+        }
+        const builtinSocial = providerId === "google" || providerId === "apple";
+        if (!builtinSocial && providerId !== "oidc") return;
         const verified = user.emailVerified === true;
         const email = String(user.email ?? "").toLowerCase();
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
+        if (source.action === "create-user") {
+          const policy = await admission();
+          const bypassAllowlist = providerId === "oidc" && env.oidc?.allowSignupBypass;
+          if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
+          if (!bypassAllowlist && !emailAllowed(email, policy.allowlist))
+            return { error: "EMAIL_NOT_ALLOWED" };
+          if (!verified && (builtinSocial || (!bypassAllowlist && policy.allowlist.length > 0)))
+            return { error: "EMAIL_VERIFICATION_REQUIRED" };
+          return;
+        }
+        if (builtinSocial) {
+          // A verified provider email may join an account whose address is already verified.
+          if (source.action === "link-account") {
+            if (!verified) return { error: "unable_to_link_account" };
+            const target = await ctx.context.internalAdapter.findUserById(String(user.id));
+            if (!target?.emailVerified) return { error: "unable_to_link_account" };
+            if (target.email.toLowerCase() !== email) return { error: "email_does_not_match" };
+          }
+          return;
+        }
         if (source.action === "link-account") {
           if (!verified) return { error: "unable_to_link_account" };
           // Without a link request, this is sign-in finding an account with the same email.
@@ -347,15 +463,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               (env.email || (await sessionForAuthHook(ctx))?.user.id !== target.id))
           )
             return { error: "unable_to_link_account" };
-          return;
-        }
-        if (source.action === "create-user") {
-          const policy = await admission();
-          if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
-          if (!env.oidc?.allowSignupBypass && !emailAllowed(email, policy.allowlist))
-            return { error: "EMAIL_NOT_ALLOWED" };
-          if (!env.oidc?.allowSignupBypass && policy.allowlist.length > 0 && !verified)
-            return { error: "EMAIL_VERIFICATION_REQUIRED" };
           return;
         }
         if (source.action === "sign-in" && user.id) {
@@ -381,7 +488,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           try {
             await env.beforeDeleteUser?.(user.id);
           } catch (error) {
-            if (error instanceof SpaceDeletionInProgressError)
+            if (
+              error instanceof SpaceDeletionInProgressError ||
+              error instanceof OwnedOrganizationHasMembersError
+            )
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }
@@ -401,10 +511,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });
+          await env.afterDeleteUser?.(user.id);
         },
       },
     },
     plugins: [
+      socialCallbackProtection(),
       signedBearer,
       expo(),
       accountSecurity(
@@ -447,6 +559,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }) as BetterAuthPlugin,
           ]
         : []),
+      // Marks the method on the sign-in page; written only alongside a new session cookie.
+      lastLoginMethod({ cookieName: LAST_SIGN_IN_COOKIE }),
       organization({
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,
@@ -455,11 +569,26 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        const providerId = requestProviderId(ctx);
+        if (
+          (ctx.path === "/sign-in/social" || ctx.path === "/link-social") &&
+          ctx.body?.idToken &&
+          (providerId === "google" || providerId === "apple")
+        )
+          throw new APIError("FORBIDDEN", { message: "Browser sign-in required" });
+
+        if (ctx.path === "/sign-in/social") {
+          await addOAuthServerContext({
+            signupAttribution: signupAttributionFromHeaders(ctx.headers),
+            partnerClickId: partnerClickFromHeaders(ctx.headers),
+          });
+        }
         if (
           ctx.path === "/sign-in/social" &&
-          ctx.body?.provider === "oidc" &&
+          typeof providerId === "string" &&
           ctx.body?.additionalData?.reauthenticate === true
         ) {
+          if (providerId !== "oidc") throw new APIError("FORBIDDEN");
           const session = await sessionForAuthHook(ctx);
           if (!session || isMessagingEmail(session.user.email)) throw new APIError("UNAUTHORIZED");
           const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
@@ -473,17 +602,22 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             .map((account) => account.accountId);
           if (!accountIds.length || ctx.body.idToken) throw new APIError("FORBIDDEN");
           await addOAuthServerContext({
+            reauthProviderId: providerId,
             reauthUserId: session.user.id,
             reauthSessionToken: session.session.token,
             reauthAccountIds: accountIds,
             reauthStartedAt: Math.floor(Date.now() / 1_000),
           });
         }
-        if (
-          ctx.path === "/expo-authorization-proxy" &&
-          !(await discovery?.isAuthorizationURL(String(ctx.query?.authorizationURL ?? "")))
-        ) {
-          throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
+        if (ctx.path === "/expo-authorization-proxy") {
+          const authorizationURL = String(ctx.query?.authorizationURL ?? "");
+          const builtin =
+            env.social?.providers.some((provider) =>
+              isBuiltinAuthorizationURL(provider.id, authorizationURL),
+            ) ?? false;
+          if (!(builtin || (await discovery?.isAuthorizationURL(authorizationURL)))) {
+            throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
+          }
         }
         for (const value of [ctx.body?.email, ctx.body?.newEmail]) {
           if (typeof value === "string" && isMessagingEmail(value)) {
@@ -703,7 +837,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Registration is closed",
                 });
               }
-              if (!env.singleAccount) await bootstrapUserSpace(prisma, user, env);
+              if (!env.singleAccount) await bootstrapUserSpace(prisma, user);
               else if (!(await admitSoleAccount(user.id)))
                 throw new APIError("FORBIDDEN", {
                   code: "REGISTRATION_CLOSED",
@@ -728,11 +862,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               });
             }
             const context =
-              ctx && isOidcCallback(ctx) ? (await getOAuthState())?.serverContext : undefined;
+              ctx && ctx.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext
+                : undefined;
             // Set only after ID-token verification and exact linked-account binding.
             if (
               ctx &&
-              context?.reauthUserId === session.userId &&
+              context?.reauthProviderId === "oidc" &&
+              context.reauthUserId === session.userId &&
               typeof context.reauthExpiresAt === "number" &&
               context.reauthExpiresAt > Date.now()
             ) {
@@ -744,7 +881,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               await recordSecurityEvent({
                 type: "auth.identity.confirmed",
                 userId: session.userId,
-                metadata: { method: "sso" },
+                metadata: {
+                  method: "sso",
+                  providerId: "oidc",
+                },
               });
             }
             const previous = replacedSession(ctx);
@@ -769,9 +909,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       user: {
         create: {
           after: async (user, ctx) => {
+            const attribution = SignupAttribution.safeParse({
+              surface: user.signupSurface ?? undefined,
+              utmSource: user.signupUtmSource ?? undefined,
+              utmMedium: user.signupUtmMedium ?? undefined,
+              utmCampaign: user.signupUtmCampaign ?? undefined,
+              utmContent: user.signupUtmContent ?? undefined,
+              utmTerm: user.signupUtmTerm ?? undefined,
+              referringDomain: user.signupReferringDomain ?? undefined,
+            });
             env.analytics?.capture(
               user.id,
-              { name: "account_created" },
+              { name: "account_created", ...(attribution.success ? attribution.data : {}) },
               { id: user.id, at: user.createdAt },
             );
             await recordSecurityEvent({
@@ -779,14 +928,50 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               userId: user.id,
               metadata: { via: ctx?.path ?? null },
             });
+            // Never holds up the signup it reports.
+            const partnerClick = PartnerClickId.safeParse(user.signupPartnerClickId);
+            if (env.partnerProgram && partnerClick.success)
+              void bestEffort(
+                "partner program signup",
+                env.partnerProgram.trackSignup({
+                  clickId: partnerClick.data,
+                  customerId: user.id,
+                  name: user.name,
+                  email: user.email,
+                }),
+              );
           },
-          before: async (user) => {
+          before: async (user, ctx = null) => {
             if (isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
+            const callbackAttribution = SignupAttribution.safeParse(
+              ctx?.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext?.signupAttribution
+                : undefined,
+            );
+            const attribution = callbackAttribution.success
+              ? callbackAttribution.data
+              : signupAttributionFromHeaders(ctx?.headers);
+            const callbackClick = PartnerClickId.safeParse(
+              ctx?.path === "/callback/:id"
+                ? (await getOAuthState())?.serverContext?.partnerClickId
+                : undefined,
+            );
+            const partnerClickId = callbackClick.success
+              ? callbackClick.data
+              : partnerClickFromHeaders(ctx?.headers);
             return {
               data: {
                 ...user,
+                signupSurface: attribution.surface,
+                signupUtmSource: attribution.utmSource,
+                signupUtmMedium: attribution.utmMedium,
+                signupUtmCampaign: attribution.utmCampaign,
+                signupUtmContent: attribution.utmContent,
+                signupUtmTerm: attribution.utmTerm,
+                signupReferringDomain: attribution.referringDomain,
+                signupPartnerClickId: partnerClickId,
                 ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
               },
             };
@@ -821,7 +1006,9 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       issueAccountExportToken((await auth.$context).internalAdapter, userId),
     consumeAccountExportToken: async (token: string) =>
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
-    disposeOidcDiscovery: () => discovery?.dispose(),
+    disposeOidcDiscovery: () => {
+      discovery?.dispose();
+    },
   });
 }
 

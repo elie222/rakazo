@@ -2,13 +2,16 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveSupervisorToken, uploadSizeFromEnv } from "@rakazo/core";
+import { uploadSizeFromEnv } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import Docker from "dockerode";
 import { computerImageEnsurer } from "./computer-image.js";
 import {
   assertComputerMountSources,
   COMPUTER_IMAGE,
+  resolveComputerBrowserProxyPacUrl,
+  resolveComputerComputeGpus,
   resolveComputerDns,
   resolveComputerEgressMode,
   resolveComputerMounts,
@@ -33,6 +36,8 @@ export const supervisorToken = resolveSupervisorToken(process.env);
 export const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
 export const computerEgressSetting = resolveComputerEgressMode();
 export const computerDns = resolveComputerDns();
+export const computerComputeGpus = resolveComputerComputeGpus();
+export const computerBrowserProxyPacUrl = resolveComputerBrowserProxyPacUrl();
 export const computerMounts = resolveComputerMounts(undefined, [dataDir, dockerSocketPath]);
 // Docker follows symlinks in a bind source, so also check where a locally visible source points.
 assertComputerMountSources(

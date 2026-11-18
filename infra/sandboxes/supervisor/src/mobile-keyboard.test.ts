@@ -20,9 +20,39 @@ type TouchEventLike = {
 
 /** A fake noVNC surface: a 200x100 canvas at (0,100) inside a 200x300 free area. */
 function trackpadFixture() {
+  // The surface's zoom transform moves both boxes, as a browser would.
+  const style = { transform: "", transformOrigin: "" };
+  const transform = (): [number, number, number] => {
+    const match = style.transform.match(/translate\((.+)px, (.+)px\) scale\((.+)\)/);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 1];
+  };
+  const box = (top: number, height: number) => {
+    const [x, y, zoom] = transform();
+    const rect = { left: x, top: y + top * zoom, width: 200 * zoom, height: height * zoom };
+    return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height };
+  };
+  const viewListeners = new Map<string, (event: unknown) => void>();
+  const viewControls = {
+    hidden: true,
+    addEventListener: (type: string, listener: (event: unknown) => void) =>
+      viewListeners.set(type, listener),
+    removeEventListener: () => {},
+  };
+  const view = (action: string) =>
+    viewListeners.get("click")?.({
+      target: { closest: () => ({ dataset: { view: action } }) },
+    });
   const listeners = new Map<string, (event: TouchEventLike) => void>();
   const buttonListeners = new Map<string, () => void>();
-  const mouseEvents: { type: string; clientX: number; clientY: number }[] = [];
+  const mouseEvents: { type: string; clientX: number; clientY: number; button?: number }[] = [];
+  const wheelDeltas: number[] = [];
+  const pointer = {
+    hidden: true,
+    style: { transform: "" },
+    toggleAttribute(name: string, hidden: boolean) {
+      if (name === "hidden") this.hidden = hidden;
+    },
+  };
   const overlay = {
     style: { display: "none" },
     events: [] as string[],
@@ -33,16 +63,20 @@ function trackpadFixture() {
     },
   };
   const canvas = {
-    getBoundingClientRect: () => ({
-      left: 0,
-      top: 100,
-      right: 200,
-      bottom: 200,
-      width: 200,
-      height: 100,
-    }),
-    dispatchEvent: (event: { type: string; clientX: number; clientY: number }) => {
-      mouseEvents.push({ type: event.type, clientX: event.clientX, clientY: event.clientY });
+    getBoundingClientRect: () => box(100, 100),
+    dispatchEvent: (event: {
+      type: string;
+      clientX: number;
+      clientY: number;
+      button?: number;
+      deltaY?: number;
+    }) => {
+      if (event.type === "wheel") {
+        wheelDeltas.push(event.deltaY ?? 0);
+        return true;
+      }
+      const { type, clientX, clientY, button } = event;
+      mouseEvents.push({ type, clientX, clientY, ...(button ? { button } : {}) });
       if (event.type === "mousedown") overlay.style.display = "";
       return true;
     },
@@ -53,6 +87,10 @@ function trackpadFixture() {
     removeEventListener: () => {},
     querySelector: () => canvas,
     classList: { toggle: () => {}, remove: () => {} },
+    style,
+    clientWidth: 200,
+    clientHeight: 300,
+    getBoundingClientRect: () => box(0, 300),
   };
   const button = {
     hidden: true,
@@ -66,8 +104,14 @@ function trackpadFixture() {
   const documentTarget = {
     getElementById: (id: string) => (id === "noVNC_mouse_capture_elem" ? overlay : null),
   };
-  const detach = attachMobileTrackpad(rfb, { button, surface, documentTarget, sensitivity: 1 });
-  buttonListeners.get("click")?.();
+  const detach = attachMobileTrackpad(rfb, {
+    button,
+    surface,
+    pointer,
+    viewControls,
+    documentTarget,
+    sensitivity: 1,
+  });
   const touch = (
     type: string,
     identifier: number,
@@ -75,9 +119,11 @@ function trackpadFixture() {
     clientY: number,
     others: TouchLike[] = [],
     batched: TouchLike[] = [],
+    targetTouches?: TouchLike[],
   ) => {
     const changed = [{ identifier, clientX, clientY }, ...batched];
     const event: TouchEventLike = {
+      ...(targetTouches ? { targetTouches } : {}),
       changedTouches: changed,
       touches: type === "touchend" || type === "touchcancel" ? others : [...changed, ...others],
       defaultPrevented: false,
@@ -89,7 +135,20 @@ function trackpadFixture() {
     listeners.get(type)?.(event);
     return event;
   };
-  return { touch, mouseEvents, overlay, detach };
+  const toggle = () => buttonListeners.get("click")?.();
+  return {
+    touch,
+    canvas,
+    toggle,
+    view,
+    viewControls,
+    style,
+    mouseEvents,
+    wheelDeltas,
+    pointer,
+    overlay,
+    detach,
+  };
 }
 
 function preventableEvent(target: unknown) {
@@ -258,7 +317,7 @@ describe("mobile computer keyboard", () => {
     expect(isTouchBrowser({ maxTouchPoints: 0 }, {})).toBe(false);
   });
 
-  it("enables a visible relative-pointer mode", () => {
+  it("starts in trackpad mode and toggles back to direct touch", () => {
     const listeners = new Map<string, () => void>();
     const classes = new Set<string>();
     const button = {
@@ -275,15 +334,50 @@ describe("mobile computer keyboard", () => {
       removeEventListener: () => {},
       querySelector: () => null,
       classList: { toggle: () => {}, remove: () => {} },
+      style: {},
     };
-    const rfb = { viewOnly: false, showDotCursor: false };
-    const detach = attachMobileTrackpad(rfb, { button, surface, documentTarget: {} });
-    listeners.get("click")?.();
+    const detach = attachMobileTrackpad(
+      { viewOnly: false },
+      { button, surface, documentTarget: {} },
+    );
     expect(button.hidden).toBe(false);
-    expect(rfb.showDotCursor).toBe(true);
     expect(classes.has("active")).toBe(true);
+    listeners.get("click")?.();
+    expect(classes.has("active")).toBe(false);
     detach();
-    expect(rfb.showDotCursor).toBe(false);
+  });
+
+  it("turns the trackpad off for a moving mouse but not a still browser move", () => {
+    const classes = new Set<string>();
+    const surfaceListeners = new Map<string, (event: object) => void>();
+    const button = {
+      hidden: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      setAttribute: () => {},
+      classList: {
+        toggle: (name: string, on: boolean) => (on ? classes.add(name) : classes.delete(name)),
+      },
+    };
+    const surface = {
+      addEventListener: (type: string, listener: (event: object) => void) =>
+        surfaceListeners.set(type, listener),
+      removeEventListener: () => {},
+      querySelector: () => null,
+      classList: { toggle: () => {}, remove: () => {} },
+      style: {},
+    };
+    const detach = attachMobileTrackpad(
+      { viewOnly: false },
+      { button, surface, documentTarget: {} },
+    );
+    const move = surfaceListeners.get("mousemove");
+    move?.({ isTrusted: true, movementX: 0, movementY: 0 });
+    move?.({ isTrusted: false, movementX: 4, movementY: 2 });
+    expect(classes.has("active")).toBe(true);
+    move?.({ isTrusted: true, movementX: 4, movementY: 2 });
+    expect(classes.has("active")).toBe(false);
+    detach();
   });
 
   it("ships and initializes the keyboard bridge in the computer image", () => {
@@ -413,26 +507,48 @@ describe("mobile computer keyboard", () => {
 
 describe("mobile trackpad touches", () => {
   const stubMouseEvent = () => {
-    const previous = (globalThis as { MouseEvent?: unknown }).MouseEvent;
-    (globalThis as { MouseEvent?: unknown }).MouseEvent = class {
+    const events = globalThis as { MouseEvent?: unknown; WheelEvent?: unknown };
+    const previous = { mouse: events.MouseEvent, wheel: events.WheelEvent };
+    const Fake = class {
       type: string;
       clientX: number;
       clientY: number;
-      constructor(type: string, init: { clientX: number; clientY: number }) {
+      button?: number;
+      deltaY?: number;
+      constructor(
+        type: string,
+        init: { clientX: number; clientY: number; button?: number; deltaY?: number },
+      ) {
         this.type = type;
         this.clientX = init.clientX;
         this.clientY = init.clientY;
+        this.button = init.button;
+        this.deltaY = init.deltaY;
       }
     };
+    events.MouseEvent = Fake;
+    events.WheelEvent = Fake;
     return () => {
-      (globalThis as { MouseEvent?: unknown }).MouseEvent = previous;
+      events.MouseEvent = previous.mouse;
+      events.WheelEvent = previous.wheel;
     };
   };
 
-  it("moves the pointer relative to a drag in the free area and clicks where it is on a tap", () => {
+  const withTrackpad = (run: (fixture: ReturnType<typeof trackpadFixture>) => void) => {
     const restore = stubMouseEvent();
     try {
       const fixture = trackpadFixture();
+      run(fixture);
+      fixture.detach();
+    } finally {
+      restore();
+    }
+  };
+  const mouseDowns = (fixture: ReturnType<typeof trackpadFixture>) =>
+    fixture.mouseEvents.filter((event) => event.type === "mousedown");
+
+  it("moves the pointer relative to a drag and clicks where it is on a tap", () => {
+    withTrackpad((fixture) => {
       expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 100, clientY: 150 });
       const start = fixture.touch("touchstart", 1, 50, 250);
       expect(start.defaultPrevented).toBe(true);
@@ -445,103 +561,257 @@ describe("mobile trackpad touches", () => {
       expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousedown", clientX: 120, clientY: 160 });
       expect(fixture.overlay.events).toEqual(["mouseup"]);
       expect(fixture.overlay.style.display).toBe("none");
-      fixture.detach();
-    } finally {
-      restore();
-    }
+    });
   });
 
-  it("leaves touches on the desktop to noVNC and follows the pointer there", () => {
-    const restore = stubMouseEvent();
-    try {
-      const fixture = trackpadFixture();
+  it("keeps touches on the desktop relative, so the finger never clicks under itself", () => {
+    withTrackpad((fixture) => {
       const start = fixture.touch("touchstart", 1, 40, 120);
-      expect(start.defaultPrevented).toBe(false);
-      const end = fixture.touch("touchend", 1, 40, 120);
-      expect(end.defaultPrevented).toBe(false);
-      expect(fixture.mouseEvents.filter((event) => event.type === "mousedown")).toHaveLength(0);
-      fixture.touch("touchstart", 2, 100, 250);
-      fixture.touch("touchmove", 2, 110, 250);
-      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 50, clientY: 120 });
-      fixture.detach();
-    } finally {
-      restore();
-    }
-  });
-
-  it("follows a drag on the desktop so the next free-area move continues from there", () => {
-    const restore = stubMouseEvent();
-    try {
-      const fixture = trackpadFixture();
-      fixture.touch("touchstart", 1, 40, 120);
-      fixture.touch("touchmove", 1, 90, 170);
-      fixture.touch("touchend", 1, 90, 170);
-      fixture.touch("touchstart", 2, 100, 250);
-      fixture.touch("touchmove", 2, 110, 250);
-      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 100, clientY: 170 });
-      fixture.detach();
-    } finally {
-      restore();
-    }
-  });
-
-  it("ignores extra fingers during a free-area gesture and never clicks for them", () => {
-    const restore = stubMouseEvent();
-    try {
-      const fixture = trackpadFixture();
-      fixture.touch("touchstart", 1, 50, 250);
-      fixture.touch("touchmove", 1, 60, 250);
-      const second = fixture.touch("touchstart", 2, 150, 280, [
-        { identifier: 1, clientX: 60, clientY: 250 },
-      ]);
-      expect(second.defaultPrevented).toBe(true);
-      fixture.touch("touchmove", 2, 120, 280, [{ identifier: 1, clientX: 60, clientY: 250 }]);
-      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 110, clientY: 150 });
-      fixture.touch("touchend", 2, 120, 280, [{ identifier: 1, clientX: 60, clientY: 250 }]);
-      expect(fixture.mouseEvents.filter((event) => event.type === "mousedown")).toHaveLength(0);
-      fixture.touch("touchmove", 1, 70, 250);
-      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 120, clientY: 150 });
-      fixture.detach();
-    } finally {
-      restore();
-    }
-  });
-
-  it("classifies every touch of a batched touchstart", () => {
-    const restore = stubMouseEvent();
-    try {
-      const fixture = trackpadFixture();
-      // One finger lands on the desktop and another in the free area in the same event.
-      const start = fixture.touch(
-        "touchstart",
-        1,
-        40,
-        120,
-        [],
-        [{ identifier: 2, clientX: 100, clientY: 250 }],
-      );
       expect(start.defaultPrevented).toBe(true);
-      fixture.touch("touchmove", 2, 110, 250, [{ identifier: 1, clientX: 40, clientY: 120 }]);
-      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 50, clientY: 120 });
-      fixture.detach();
-    } finally {
-      restore();
+      fixture.touch("touchmove", 1, 50, 125);
+      fixture.touch("touchend", 1, 50, 125);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 110, clientY: 155 });
+      fixture.touch("touchstart", 2, 10, 110);
+      fixture.touch("touchend", 2, 10, 110);
+      expect(mouseDowns(fixture)).toEqual([{ type: "mousedown", clientX: 110, clientY: 155 }]);
+    });
+  });
+
+  it("draws the pointer at the cursor and hides it in direct touch", () => {
+    withTrackpad((fixture) => {
+      expect(fixture.pointer.hidden).toBe(false);
+      expect(fixture.pointer.style.transform).toBe("translate(100px, 150px)");
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 60, 255);
+      expect(fixture.pointer.style.transform).toBe("translate(110px, 155px)");
+      fixture.toggle();
+      expect(fixture.pointer.hidden).toBe(true);
+      const start = fixture.touch("touchstart", 2, 40, 120);
+      expect(start.defaultPrevented).toBe(false);
+    });
+  });
+
+  it("keeps the pointer on the desktop", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 100, 250);
+      fixture.touch("touchmove", 1, 400, 0);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 199, clientY: 100 });
+    });
+  });
+
+  it("scrolls with two fingers without moving or clicking", () => {
+    withTrackpad((fixture) => {
+      const first = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchstart", 2, 90, 250, [first]);
+      fixture.touch("touchmove", 2, 90, 190, [{ ...first, clientY: 190 }]);
+      expect(fixture.wheelDeltas).toEqual([60]);
+      fixture.touch("touchend", 2, 90, 190, [first]);
+      fixture.touch("touchend", 1, 50, 190);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 100, clientY: 150 });
+    });
+  });
+
+  it("does not right-click after slow scrolling or a canceled finger", () => {
+    for (const cancel of [false, true]) {
+      withTrackpad((fixture) => {
+        const first = { identifier: 1, clientX: 50, clientY: 250 };
+        fixture.touch("touchstart", 1, 50, 250);
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (!cancel) {
+          for (let delta = 1; delta <= 10; delta++) {
+            fixture.touch("touchmove", 2, 90, 250 - delta, [{ ...first, clientY: 250 - delta }]);
+          }
+        }
+        fixture.touch(cancel ? "touchcancel" : "touchend", 2, 90, 245, [first]);
+        fixture.touch("touchend", 1, 50, 245);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
     }
+  });
+
+  it("does not click after slow aiming, a third finger, or remaining-finger movement", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      for (let x = 51; x <= 60; x++) fixture.touch("touchmove", 1, x, 250);
+      fixture.touch("touchend", 1, 60, 250);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+    });
+    for (const thirdFinger of [false, true]) {
+      withTrackpad((fixture) => {
+        const first = { identifier: 1, clientX: 50, clientY: 250 };
+        const second = { identifier: 2, clientX: 90, clientY: 250 };
+        fixture.touch("touchstart", 1, 50, 250);
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (thirdFinger) {
+          fixture.touch("touchstart", 3, 100, 250, [first, second]);
+          fixture.touch("touchend", 3, 100, 250, [first, second]);
+        }
+        fixture.touch("touchend", 2, 90, 250, [first]);
+        if (!thirdFinger) fixture.touch("touchmove", 1, 60, 250);
+        fixture.touch("touchend", 1, 60, 250);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
+    }
+  });
+
+  it("allows small fingertip movement during taps", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 51, 251);
+      fixture.touch("touchend", 1, 51, 251);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+    });
+    withTrackpad((fixture) => {
+      const first = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchstart", 2, 90, 250, [first]);
+      fixture.touch("touchmove", 2, 90, 251, [{ ...first, clientY: 251 }]);
+      fixture.touch("touchend", 2, 90, 251, [first]);
+      fixture.touch("touchend", 1, 50, 251);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+      expect(fixture.wheelDeltas).toHaveLength(0);
+    });
+  });
+
+  it("does not right-click for pinches or a second finger added during a drag", () => {
+    for (const pinch of [false, true]) {
+      withTrackpad((fixture) => {
+        fixture.touch("touchstart", 1, 50, 250);
+        if (!pinch) fixture.touch("touchmove", 1, 60, 250);
+        const first = { identifier: 1, clientX: pinch ? 50 : 60, clientY: 250 };
+        fixture.touch("touchstart", 2, 90, 250, [first]);
+        if (pinch) fixture.touch("touchmove", 2, 110, 250, [{ ...first, clientX: 30 }]);
+        fixture.touch("touchend", 2, 110, 250, [first]);
+        fixture.touch("touchend", 1, first.clientX, 250);
+        expect(mouseDowns(fixture)).toHaveLength(0);
+      });
+    }
+  });
+
+  it("ignores fingers held on separate controls", () => {
+    withTrackpad((fixture) => {
+      const control = { identifier: 2, clientX: 300, clientY: 400 };
+      const screen = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250, [control], [], [screen]);
+      fixture.touch("touchmove", 1, 70, 250, [control], [], [{ ...screen, clientX: 70 }]);
+      fixture.touch("touchend", 1, 70, 250, [control], [], []);
+      expect(fixture.mouseEvents.at(-1)).toMatchObject({ type: "mousemove", clientX: 120 });
+      expect(fixture.wheelDeltas).toHaveLength(0);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+    });
+  });
+
+  it("right-clicks for a fresh batched tap after a lost drag end", () => {
+    withTrackpad((fixture) => {
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 70, 250);
+      const second = { identifier: 3, clientX: 90, clientY: 250 };
+      fixture.touch("touchstart", 2, 50, 250, [], [second]);
+      fixture.touch("touchend", 2, 50, 250, [second]);
+      fixture.touch("touchend", 3, 90, 250);
+      expect(mouseDowns(fixture)).toHaveLength(1);
+      expect(mouseDowns(fixture)[0]?.button).toBe(2);
+    });
+  });
+
+  it("right-clicks on a two-finger tap", () => {
+    withTrackpad((fixture) => {
+      const first = { identifier: 1, clientX: 50, clientY: 250 };
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchstart", 2, 90, 250, [first]);
+      fixture.touch("touchend", 2, 90, 250, [first]);
+      expect(mouseDowns(fixture)).toHaveLength(0);
+      fixture.touch("touchend", 1, 50, 250);
+      expect(mouseDowns(fixture)).toEqual([
+        { type: "mousedown", clientX: 100, clientY: 150, button: 2 },
+      ]);
+    });
   });
 
   it("starts a fresh gesture when a previous touch never reported its end", () => {
-    const restore = stubMouseEvent();
-    try {
-      const fixture = trackpadFixture();
+    withTrackpad((fixture) => {
       fixture.touch("touchstart", 1, 50, 250);
       fixture.touch("touchmove", 1, 60, 250);
       // No touchend for touch 1. The next touch must still drive the trackpad.
       fixture.touch("touchstart", 2, 150, 280);
       fixture.touch("touchmove", 2, 140, 280);
       expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 100, clientY: 150 });
-      fixture.detach();
+    });
+  });
+
+  it("scrolls at the pointer with the view buttons", () => {
+    withTrackpad((fixture) => {
+      expect(fixture.viewControls.hidden).toBe(false);
+      fixture.view("scroll-down");
+      fixture.view("scroll-up");
+      expect(fixture.wheelDeltas).toEqual([150, -150]);
+    });
+  });
+
+  it("preserves the desktop point after edge-follow and ignores zero-size resizes", () => {
+    let resize = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      withTrackpad((fixture) => {
+        fixture.view("zoom-in");
+        fixture.touch("touchstart", 1, 20, 150);
+        fixture.touch("touchmove", 1, 170, 150);
+        const before = fixture.pointer.style.transform;
+        resize();
+        expect(fixture.pointer.style.transform).toBe(before);
+        const box = fixture.canvas.getBoundingClientRect;
+        fixture.canvas.getBoundingClientRect = () => ({
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          right: 0,
+          bottom: 0,
+        });
+        resize();
+        fixture.canvas.getBoundingClientRect = box;
+        resize();
+        expect(fixture.pointer.style.transform).toBe(before);
+      });
     } finally {
-      restore();
+      vi.unstubAllGlobals();
     }
+  });
+
+  it("zooms around the pointer and keeps clicks on the same desktop point", () => {
+    withTrackpad((fixture) => {
+      fixture.view("zoom-in");
+      expect(fixture.style.transform).toBe("translate(-50px, -75px) scale(1.5)");
+      // The pointer stays put; noVNC gets the point it would see without the zoom.
+      expect(fixture.pointer.style.transform).toBe("translate(100px, 150px)");
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 50, clientY: 125 });
+      fixture.view("zoom-out");
+      expect(fixture.style.transform).toBe("");
+    });
+  });
+
+  it("pans a zoomed view to follow the pointer and never past the desktop", () => {
+    withTrackpad((fixture) => {
+      fixture.view("zoom-in");
+      fixture.touch("touchstart", 1, 20, 150);
+      fixture.touch("touchmove", 1, 170, 150);
+      expect(fixture.style.transform).toBe("translate(-100px, -75px) scale(1.5)");
+      expect(fixture.pointer.style.transform).toBe("translate(199px, 150px)");
+      fixture.toggle();
+      expect(fixture.style.transform).toBe("");
+      expect(fixture.viewControls.hidden).toBe(true);
+    });
   });
 });

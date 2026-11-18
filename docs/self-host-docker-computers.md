@@ -34,6 +34,13 @@ The supervisor reaches Docker at `/var/run/docker.sock` (or `//./pipe/docker_eng
 
 ## Restricted computer egress
 
+On a cloud VM, explicitly choose `SANDBOX_COMPUTER_EGRESS=restricted` after installing
+the host rules. This refuses to start computers if enforcement is missing. The default
+`auto` preserves compatibility on hosts without those rules and can allow access to
+cloud metadata and internal networks. Restricted egress also blocks intentional access
+to local models, private repositories and other LAN services. Choose `open` only when
+that network access is intended and the host is appropriately isolated.
+
 Restricted egress gives Docker computers the public internet (browsing, DNS, apt, git
 over SSH) but not the Docker host, the LAN, or link-local cloud metadata such as
 `169.254.169.254`, which on a cloud VM would hand instance credentials to anything a bot runs.
@@ -188,6 +195,57 @@ keeps a share already mounted below the source visible. Repeat it at boot, befor
 mounts, for example from a systemd mount unit the share's unit depends on). The source must
 exist on the Docker host. Recreate the supervisor after a change; each computer picks the new
 set up on its next provision, which replaces it.
+
+## GPUs for programs
+
+`SANDBOX_COMPUTER_COMPUTE_GPUS` lets programs inside every bot computer compute on the host's
+GPUs (Docker sandboxes only): `all`, or a count such as `1`, with the same meaning as
+`docker run --gpus`. A bot can then run GPU software in its own computer, such as speech
+recognition, image generation or model training. Leave it unset and computers get no GPU.
+
+The Docker host needs a GPU driver that Docker can hand to containers, which for most GPUs
+means installing the vendor's container toolkit and checking that
+`docker run --rm --gpus all <image> <the vendor's status tool>` works. The supervisor asks Docker
+for GPUs without naming a driver, so any driver Docker offers for `--gpus` is used. The computer
+image ships no GPU libraries of its own: the driver adds its own at start, and a bot installs
+the frameworks it needs in its home. When the host cannot provide the GPUs, Docker refuses to
+create the computer and the bot's computer fails to start until the setting or the host is fixed.
+
+Changing the setting replaces each computer the next time it starts; the home is kept. It does
+not change the browser, which keeps rendering pages in software.
+
+WARNING: the setting is deployment-wide, and a GPU is shared hardware. Every bot in every Space
+reaches the host's GPU driver directly, which is a larger attack surface than the rest of the
+sandbox, and nothing limits how much GPU memory or time one computer takes from the others or
+from other GPU software on the host. Enable it only when you trust every bot on the deployment
+with that.
+
+## Browser proxy
+
+Some public sites refuse connections from datacenter addresses. With
+`SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL` the bot browser sends selected sites through an HTTP
+proxy you run, and every other site connects directly as before (Docker sandboxes only). The
+value is a [proxy auto-config](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_PAC_file)
+(PAC) script: an absolute `http://` or `https://` URL the browser downloads it from, or the whole
+script as a base64 `data:` URL of at most 64 KiB, for example:
+
+```sh
+pac='function FindProxyForURL(url, host) {
+  if (dnsDomainIs(host, ".example.com")) return "PROXY proxy.example.net:3128";
+  return "DIRECT";
+}'
+echo "SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL=data:application/x-ns-proxy-autoconfig;base64,$(printf '%s' "$pac" | base64 | tr -d '\n')"
+```
+
+The supervisor refuses to start with any other kind of value, or one containing spaces. It hands
+the value to every computer, whose browser starts with `--proxy-pac-url`; page reading and the
+bot's browser actions use that same browser, so they follow the script too. Programs the bot
+runs in its terminal do not. Unset, nothing changes.
+
+Under restricted egress the computer reaches only public addresses, so the PAC URL and the
+proxy must be on public addresses as well; a proxy on the Docker host or the LAN is blocked.
+Recreate the supervisor after a change; each computer picks it up on its next start, which
+replaces it. The home and saved browser profiles are kept.
 
 ## Time zone and language
 

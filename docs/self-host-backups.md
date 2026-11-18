@@ -13,14 +13,18 @@ English | [简体中文](./zh-CN/self-host-backups.md)
 
 This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. Backup
 directories have mode `0700`, and both artifacts have mode `0600`, including on reused paths.
-A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that restore treats
-as omitted homes. Database or archive errors fail the backup. Discard the output directory of
-any failed run.
+A missing `data/` fails the backup; `RAKAZO_BACKUP_SKIP_HOMES=1` backs up only the database and
+writes an empty archive that restore treats as omitted homes. A failed dump or archive leaves a
+previous backup under the same stamp intact. Use a fresh stamp if the destination contains other
+files. The script reserves `backups/.pending/` for work in progress. If a run is killed during
+publication, check that no backup is running and recover `.pending/<stamp>/previous` if the
+original stamp is missing before clearing that stamp's staging directory.
 
 ## Restore
 
-For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
-Compose stack. The script validates and extracts the homes archive in a clean sibling directory
+For backups created by `scripts/backup.sh`, use an empty database in the development
+Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `POSTGRES_DB` settings
+(defaulting to `rakazo` in Compose). The script validates and extracts the homes archive in a clean sibling directory
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.

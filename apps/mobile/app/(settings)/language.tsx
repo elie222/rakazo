@@ -1,49 +1,47 @@
 import { useLingui } from "@lingui/react/macro";
 import { APP_LOCALE_LABELS, reportUiLocale } from "@rakazo/core";
-import { useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
-import { Checkmark } from "../../components/row-accessories";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { getActiveUiLocale, setUiLocale, useUiLocale } from "../../lib/i18n";
-import { resumeLiveNotifications } from "../../lib/live-notifications";
-import { native, useThemedStyles } from "../../lib/native";
-import { loadSessionToken } from "../../lib/session";
-import { useSideInsets } from "../../lib/side-insets";
-import type { UiLocale } from "../../lib/ui-locale";
-import { UI_LOCALES } from "../../lib/ui-locale";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { Checkmark } from "../../components/ui/row-accessories";
+import { currentApiBase, selectedSpaceId } from "../../lib/api/api";
+import { loadSessionToken } from "../../lib/api/session";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { getActiveUiLocale, setUiLocale, useUiLocale } from "../../lib/i18n/i18n";
+import type { UiLocale } from "../../lib/i18n/ui-locale";
+import { UI_LOCALES } from "../../lib/i18n/ui-locale";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { resumeLiveNotifications } from "../../lib/notifications/live-notifications";
+import { useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 export default function Language() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const locale = useUiLocale();
   const styles = useThemedStyles(createStyles);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const change = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (code: UiLocale, send) => {
+      await setUiLocale(code);
+      // Emails follow the app's language too; a failure leaves the next app start to save it.
+      void reportUiLocale(getActiveUiLocale, (locale) =>
+        send("preferences/update", { locale }),
+      ).catch(() => undefined);
+      // Native notification copy follows the locale, but a failure there must
+      // not read as a failed language change: the choice is already applied.
+      await resumeLiveNotifications(
+        currentApiBase(),
+        await loadSessionToken(),
+        selectedSpaceId() ?? "",
+      ).catch(() => undefined);
+    },
+  });
+  const saving = change.pending;
+  const error = change.error ? t`Could not change language` : null;
 
   function applyLocale(code: UiLocale) {
-    if (code === locale || saving) return;
-    setSaving(true);
-    setError(null);
-    void setUiLocale(code)
-      .then(async () => {
-        // Emails follow the app's language too; a failure leaves the next app start to save it.
-        void reportUiLocale(getActiveUiLocale, (locale) =>
-          rpc("preferences/update", { locale }),
-        ).catch(() => undefined);
-        // Native notification copy follows the locale, but a failure there must
-        // not read as a failed language change: the choice is already applied.
-        await resumeLiveNotifications(
-          currentApiBase(),
-          await loadSessionToken(),
-          selectedSpaceId() ?? "",
-        ).catch(() => undefined);
-      })
-      .catch(() => {
-        setError(t`Could not change language`);
-      })
-      .finally(() => setSaving(false));
+    if (code !== locale) change.run(code);
   }
 
   return (

@@ -81,12 +81,13 @@ export function checkPageSource(source: string): PageSourceCheck {
     };
   }
   const lineOf = lineLocator(source);
-  let tokens: ReturnType<typeof parse>["tokens"];
+  let parsed: ReturnType<typeof parse>;
   try {
-    tokens = parse(source, true, false, false).tokens;
+    parsed = parse(source, true, false, false);
   } catch (error) {
     return { ok: false, errors: [syntaxErrorText(error)] };
   }
+  const { tokens, scopes } = parsed;
   const errors: string[] = [];
   const warnings: string[] = [];
   const declared = new Set<string>();
@@ -188,7 +189,7 @@ export function checkPageSource(source: string): PageSourceCheck {
       `line ${line}: <${name}> is not a kit component. Use ${KIT_LIST}, or define ${name} in this file.`,
     );
   }
-  for (const { name, start } of moduleScopeHookCalls(tokens, source, declared)) {
+  for (const { name, start } of moduleScopeHookCalls(tokens, scopes, source, declared)) {
     errors.push(
       `line ${lineOf(start)}: ${name}() must be called inside a component, not at the top level of the file.`,
     );
@@ -313,67 +314,26 @@ function lineLocator(source: string): (offset: number) => number {
  */
 function moduleScopeHookCalls(
   tokens: Tokens,
+  scopes: ReturnType<typeof parse>["scopes"],
   source: string,
   declared: ReadonlySet<string>,
 ): { name: string; start: number }[] {
   const found: { name: string; start: number }[] = [];
-  // Braces, innermost last: a function body hides the hooks under it, an object literal does not.
-  const braces: ("function" | "other")[] = [];
-  // An arrow body without braces: the expression after `=>` belongs to the function.
-  const arrows: { paren: number; bracket: number; brace: number }[] = [];
-  let paren = 0;
-  let bracket = 0;
+  // Sucrase already records exact function ranges, including concise arrows and ASI.
+  // Range deltas make membership linear even for many nested or adjacent functions.
+  const boundaries = new Int32Array(tokens.length + 1);
+  // The parser appends the file's own scope last; it does not defer execution.
+  for (let index = 0; index < scopes.length - 1; index++) {
+    const scope = scopes[index]!;
+    if (!scope.isFunctionScope) continue;
+    boundaries[scope.startTokenIndex]! += 1;
+    boundaries[scope.endTokenIndex]! -= 1;
+  }
+  let functions = 0;
   const text = (index: number) => source.slice(tokens[index]!.start, tokens[index]!.end);
-  const closeArrows = (
-    matches: (arrow: { paren: number; bracket: number; brace: number }) => boolean,
-  ) => {
-    for (let index = arrows.length - 1; index >= 0; index--) {
-      if (matches(arrows[index]!)) arrows.splice(index, 1);
-    }
-  };
   for (let index = 0; index < tokens.length; index++) {
+    functions += boundaries[index]!;
     const token = tokens[index]!;
-    if (token.type === TokenType.braceL || token.type === TokenType.dollarBraceL) {
-      const kind = braceKind(tokens, index);
-      braces.push(kind);
-      // A brace that opens a function body ends the arrow that leads to it.
-      if (kind === "function") closeArrows((arrow) => arrow.brace === braces.length - 1);
-      continue;
-    }
-    if (token.type === TokenType.braceR) {
-      closeArrows((arrow) => arrow.brace === braces.length);
-      braces.pop();
-      continue;
-    }
-    if (token.type === TokenType.parenL) {
-      paren += 1;
-      continue;
-    }
-    if (token.type === TokenType.parenR) {
-      closeArrows((arrow) => arrow.paren === paren);
-      paren -= 1;
-      continue;
-    }
-    if (token.type === TokenType.bracketL) {
-      bracket += 1;
-      continue;
-    }
-    if (token.type === TokenType.bracketR) {
-      closeArrows((arrow) => arrow.bracket === bracket);
-      bracket -= 1;
-      continue;
-    }
-    if (token.type === TokenType.semi || token.type === TokenType.comma) {
-      closeArrows(
-        (arrow) =>
-          arrow.paren === paren && arrow.bracket === bracket && arrow.brace === braces.length,
-      );
-      continue;
-    }
-    if (token.type === TokenType.arrow) {
-      arrows.push({ paren, bracket, brace: braces.length });
-      continue;
-    }
     if (token.type !== TokenType.name) continue;
     const name = text(index);
     if (!isHookName(name, declared)) continue;
@@ -391,34 +351,10 @@ function moduleScopeHookCalls(
     )
       continue;
     // Inside a function body or an arrow body the hook runs while React renders.
-    if (braces.includes("function") || arrows.length) continue;
+    if (functions > 0) continue;
     found.push({ name, start: token.start });
   }
   return found;
-}
-
-/** A brace opens a function body, a block statement or an object literal; only the first hides a hook. */
-function braceKind(tokens: Tokens, open: number): "function" | "other" {
-  const previous = tokens[open - 1];
-  if (!previous) return "other";
-  if (previous.type === TokenType.arrow) return "function";
-  if (previous.type !== TokenType.parenR) return "other";
-  // The paren that closes here tells a function header from a control statement.
-  let depth = 1;
-  let index = open - 2;
-  for (; index >= 0; index--) {
-    const type = tokens[index]!.type;
-    if (type === TokenType.parenR) depth += 1;
-    else if (type === TokenType.parenL) {
-      depth -= 1;
-      if (depth === 0) break;
-    }
-  }
-  const before = tokens[index - 1];
-  if (!before) return "other";
-  // `function name() {` and a method `name() {` open a function; `if (...) {` does not.
-  if (before.type === TokenType._function || before.type === TokenType.name) return "function";
-  return "other";
 }
 
 /** A hook React may add later still looks like this; a page's own name does not have to. */

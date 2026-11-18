@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { isRealSandboxProvider } from "./e2e/helpers";
+import { isRealSandboxProvider } from "./e2e/helpers/helpers";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${webPort}`;

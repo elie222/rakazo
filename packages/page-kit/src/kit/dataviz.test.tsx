@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ReactElement } from "react";
-import { act } from "react";
+import { act, Fragment, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
-import { Metrics, Table } from "./data.js";
+import { Metrics, Status, Table } from "./data.js";
 import {
   CalendarHeatmap,
   ColumnSeries,
@@ -19,6 +19,7 @@ import {
   shade,
   Venn,
 } from "./dataviz.js";
+import { Page } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -27,6 +28,7 @@ afterEach(() => {
   for (const unmount of mounted.splice(0)) unmount();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function mount(element: ReactElement) {
@@ -44,6 +46,12 @@ function mount(element: ReactElement) {
 const key = (target: Element, name: string) =>
   act(() => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
+  });
+const pointer = (target: Element, type: string, pointerType = "touch") =>
+  act(() => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: 100, clientY: 50 });
+    Object.defineProperty(event, "pointerType", { value: pointerType });
+    target.dispatchEvent(event);
   });
 const tip = (root: Element) => root.querySelector(".rk-tip")?.textContent ?? null;
 /** Charts measure their box; jsdom has none, so each observed box reports this width. */
@@ -83,6 +91,54 @@ describe("charts", () => {
     const chosen = mount(<Columns points={points} emphasis="none" />);
     expect(chosen.querySelectorAll("svg > g[data-emphasis]")).toHaveLength(3);
     expect(mount(<Columns points={[]} />).textContent).toBe("No data");
+  });
+
+  it("keeps a touch selection after release and dismisses it outside the chart", () => {
+    const root = mount(<Columns points={[{ label: "Jan", value: 12 }]} />);
+    const svg = root.querySelector('svg[role="img"]')!;
+    key(svg, "Home");
+    pointer(svg, "pointerdown");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerup");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
+
+    pointer(svg, "pointerdown");
+    pointer(svg, "pointercancel");
+    pointer(svg, "pointerout");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointerdown");
+    key(svg, "Escape");
+    expect(tip(root)).toBeNull();
+    pointer(svg, "pointermove", "mouse");
+    expect(tip(root)).toBe("Jan12");
+    pointer(svg, "pointerout", "mouse");
+    expect(tip(root)).toBeNull();
+    key(svg, "Home");
+    expect(tip(root)).toBe("Jan12");
+    act(() => svg.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(tip(root)).toBeNull();
+  });
+
+  it("moves touch selection between charts without leaving the first tip open", () => {
+    const root = mount(
+      <>
+        <Columns points={[{ label: "Jan", value: 12 }]} />
+        <Columns points={[{ label: "Feb", value: 35 }]} />
+      </>,
+    );
+    const [first, second] = root.querySelectorAll('svg[role="img"]');
+    pointer(first!, "pointerdown");
+    pointer(first!, "pointerout");
+    expect(tip(root)).toBe("Jan12");
+    pointer(second!, "pointerdown");
+    pointer(second!, "pointerout");
+    expect(root.querySelectorAll(".rk-tip")).toHaveLength(1);
+    expect(tip(root)).toBe("Feb35");
+    pointer(document.body, "pointerdown");
+    expect(tip(root)).toBeNull();
   });
 
   it("stacks series to a round ceiling, marks a reference and totals the stack in its tip", () => {
@@ -372,6 +428,31 @@ describe("charts", () => {
     expect(mount(<SourceStamp source={{}} />).textContent).toBe("");
   });
 
+  it.each(["America/New_York", "America/Los_Angeles", "Asia/Tokyo"])(
+    "preserves date-only snapshots while localizing timestamps in %s",
+    (timeZone) => {
+      const DateTimeFormat = Intl.DateTimeFormat;
+      vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+        class extends DateTimeFormat {
+          constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+            super(locales, { timeZone, ...options });
+          }
+        },
+      );
+
+      expect(mount(<SourceStamp source={{ asOf: "2026-10-30" }} />).textContent).toBe(
+        "As of Oct 30, 2026",
+      );
+      const timestamp = "2026-10-30T00:00:00Z";
+      const expected = new DateTimeFormat("en", { dateStyle: "medium", timeZone }).format(
+        Date.parse(timestamp),
+      );
+      expect(mount(<SourceStamp source={{ asOf: timestamp }} />).textContent).toBe(
+        `As of ${expected}`,
+      );
+    },
+  );
+
   it("formats figures with their unit and survives a formatter that throws", () => {
     expect(formatValue(30, "%")).toBe("30%");
     expect(formatValue(-12, "$")).toBe("-$12");
@@ -621,6 +702,328 @@ describe("data display", () => {
     expect(deltas.map((d) => d.textContent)).toEqual(["Up 12%", "Up 0.3pt", "Down 3"]);
     expect(root.textContent).toContain("vs last month");
     expect(root.querySelectorAll(".rk-spark polyline")).toHaveLength(1);
+  });
+
+  it("refreshes table fades when the mounted page changes language", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (element) =>
+        ({
+          direction: element.closest("main")?.getAttribute("dir") ?? "ltr",
+        }) as CSSStyleDeclaration,
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    mounted.push(() => {
+      act(() => root.unmount());
+      container.remove();
+    });
+    const render = (lang: string) =>
+      act(() =>
+        root.render(
+          <Page title="Table" lang={lang}>
+            <Table columns={["Name"]} rows={[["Alpha"]]} />
+          </Page>,
+        ),
+      );
+    render("en");
+    const scroll = container.querySelector(".rk-table-scroll")!;
+    expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+    render("he");
+    expect(container.querySelector(".rk-table-scroll")).toBe(scroll);
+    expect(scroll.hasAttribute("data-fade-start")).toBe(true);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(false);
+    render("en");
+    expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+    expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+  });
+
+  it.each(["ltr", "rtl"])("fades the physical hidden edges in %s tables", (direction) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({ direction } as CSSStyleDeclaration);
+    const container = mount(<Table columns={["Name"]} rows={[["Alpha"]]} />);
+    const scroll = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    const edges = () => [
+      scroll.hasAttribute("data-fade-start"),
+      scroll.hasAttribute("data-fade-end"),
+    ];
+    const move = (left: number) =>
+      act(() => {
+        scroll.scrollLeft = left;
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+    const rtl = direction === "rtl";
+    expect(edges()).toEqual([rtl, !rtl]);
+    move(rtl ? -100 : 100);
+    expect(edges()).toEqual([true, true]);
+    move(rtl ? -200 : 200);
+    expect(edges()).toEqual([!rtl, rtl]);
+    // Elastic overscroll must not light up the edge already reached.
+    move(rtl ? -220 : 220);
+    expect(edges()).toEqual([!rtl, rtl]);
+    move(rtl ? 20 : -20);
+    expect(edges()).toEqual([rtl, !rtl]);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(100);
+    move(0);
+    expect(edges()).toEqual([false, false]);
+  });
+
+  it.each([false, true])(
+    "tracks scroll edges when an empty table appears (strict: %s)",
+    (strict) => {
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+      vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+      const observers: { update: () => void; disconnect: ReturnType<typeof vi.fn> }[] = [];
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          disconnect = vi.fn();
+          constructor(update: () => void) {
+            observers.push({ update, disconnect: this.disconnect });
+          }
+          observe() {}
+        },
+      );
+      const container = document.createElement("div");
+      document.body.append(container);
+      const root = createRoot(container);
+      mounted.push(() => {
+        act(() => root.unmount());
+        container.remove();
+      });
+      const draw = (visible: boolean) =>
+        act(() => {
+          const table = (
+            <Table columns={visible ? ["Name"] : []} rows={visible ? [["Alpha"]] : []} />
+          );
+          root.render(strict ? <StrictMode>{table}</StrictMode> : table);
+        });
+      draw(false);
+      expect(container.querySelector(".rk-table-scroll")).toBeNull();
+      draw(true);
+      const scroll = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+      expect(scroll.hasAttribute("data-fade-start")).toBe(false);
+      expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+      act(() => {
+        scroll.scrollLeft = 200;
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+      expect(scroll.hasAttribute("data-fade-start")).toBe(true);
+      expect(scroll.hasAttribute("data-fade-end")).toBe(false);
+      act(() => {
+        scroll.scrollLeft = 50;
+        observers.at(-1)!.update();
+      });
+      expect(scroll.hasAttribute("data-fade-end")).toBe(true);
+    },
+  );
+
+  it("cleans up a removed table and observes its replacement", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300);
+    const observers: { disconnect: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        disconnect = vi.fn();
+        constructor() {
+          observers.push(this);
+        }
+        observe() {}
+      },
+    );
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    let unmounted = false;
+    mounted.push(() => {
+      if (!unmounted) act(() => root.unmount());
+    });
+    const draw = (visible: boolean) =>
+      act(() => root.render(<Table columns={visible ? ["Name"] : []} />));
+    draw(true);
+    const old = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    const remove = vi.spyOn(old, "removeEventListener");
+    act(() => {
+      old.scrollLeft = 200;
+      old.dispatchEvent(new Event("scroll"));
+    });
+    draw(false);
+    expect(observers[0]!.disconnect).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function));
+    draw(true);
+    const current = container.querySelector<HTMLDivElement>(".rk-table-scroll")!;
+    expect(current).not.toBe(old);
+    expect(current.hasAttribute("data-fade-start")).toBe(false);
+    expect(current.hasAttribute("data-fade-end")).toBe(true);
+    expect(observers).toHaveLength(2);
+    act(() => {
+      current.scrollLeft = 200;
+      current.dispatchEvent(new Event("scroll"));
+    });
+    expect(current.hasAttribute("data-fade-start")).toBe(true);
+    act(() => {
+      old.scrollLeft = 0;
+      old.dispatchEvent(new Event("scroll"));
+    });
+    expect(current.hasAttribute("data-fade-start")).toBe(true);
+    act(() => root.unmount());
+    unmounted = true;
+    expect(observers[1]!.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("renders React node arrays in table cells like fragments", () => {
+    const tags = ["Ready", "Reviewed"].map((tag) => <Status key={tag}>{tag}</Status>);
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={[
+          [tags],
+          [<Fragment key="tags">{tags}</Fragment>],
+          [["Count: ", 0, null, false, [<strong key="nested">Nested</strong>]]],
+          [[]],
+          [{ text: tags, tone: "success" }],
+          ["Plain"],
+          [42],
+          [null],
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll("tbody td")];
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      "ReadyReviewed",
+      "ReadyReviewed",
+      "Count: 0Nested",
+      "",
+      "ReadyReviewed",
+      "Plain",
+      "42",
+      "",
+    ]);
+    expect(cells[0]!.innerHTML).toBe(cells[1]!.innerHTML);
+    expect(cells[2]!.querySelector("strong")?.textContent).toBe("Nested");
+  });
+
+  it("filters rows by labels rendered in array cells", () => {
+    const root = mount(
+      <Table
+        columns={["Tags"]}
+        rows={Array.from({ length: 16 }, (_, i) => [
+          [<Status key="tag">{i === 0 ? "Ready" : "Pending"}</Status>],
+        ])}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "Ready");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "Ready",
+    ]);
+  });
+
+  it("filters nested formatting, fragments and toned cells by their full text", () => {
+    const root = mount(
+      <Table
+        columns={["Location"]}
+        rows={[
+          [
+            <strong key="north">
+              North <em>Depot</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="south">
+              South{" "}
+              <span>
+                <em>Depot</em>
+              </span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  West <em>Depot</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          ...Array.from({ length: 13 }, (_, i) => [`Office ${i}`]),
+        ]}
+      />,
+    );
+    const filter = root.querySelector<HTMLInputElement>("input")!;
+    const search = (value: string) =>
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        setter.call(filter, value);
+        filter.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    search("Depot");
+    expect([...root.querySelectorAll("tbody td")].map((cell) => cell.textContent)).toEqual([
+      "North Depot",
+      "South Depot",
+      "West Depot",
+    ]);
+    search("North Depot");
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(root.querySelector("tbody td")?.textContent).toBe("North Depot");
+    search("Office 12");
+    expect(root.querySelector("tbody td")?.textContent).toBe("Office 12");
+  });
+
+  it("sorts nested formatted numbers by their complete value in both directions", () => {
+    const root = mount(
+      <Table
+        sortable
+        columns={["Amount"]}
+        rows={[
+          [
+            <strong key="two">
+              <em>2</em>
+            </strong>,
+          ],
+          [
+            <Fragment key="hundred">
+              1<span>00</span>
+            </Fragment>,
+          ],
+          [
+            {
+              text: (
+                <strong>
+                  1<em>2</em>
+                </strong>
+              ),
+              tone: "success",
+            },
+          ],
+          [3],
+          [
+            <span key="zero">
+              {null}
+              {false}
+              {0}
+            </span>,
+          ],
+        ]}
+      />,
+    );
+    const values = () => [...root.querySelectorAll("tbody td")].map((cell) => cell.textContent);
+    const button = root.querySelector<HTMLButtonElement>("th button")!;
+    act(() => button.click());
+    expect(values()).toEqual(["0", "2", "3", "12", "100"]);
+    act(() => button.click());
+    expect(values()).toEqual(["100", "12", "3", "2", "0"]);
+    act(() => button.click());
+    expect(values()).toEqual(["2", "100", "12", "3", "0"]);
   });
 
   it("sorts figures as numbers, filters long tables and pages very long ones", () => {

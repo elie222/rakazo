@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall } from "@rakazo/contracts";
+import { pluginSite } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -13,29 +14,27 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { PluginIcon } from "../../components/plugin-icon";
-import { Chevron } from "../../components/row-accessories";
-import { SkillSymbol } from "../../components/skill-symbol";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { Chevron } from "../../components/ui/row-accessories";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
   pluginParams,
-  pluginSite,
   pluginSkillCount,
   skillPacks,
-} from "../../lib/plugin-marketplace";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { useSideInsets } from "../../lib/side-insets";
+} from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 
 const LOGO_SIZE = 32;
 
 /** Your skills in this space, the skills plugins added, and skill packs to browse. */
 export default function SkillsScreen() {
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -74,27 +73,13 @@ export default function SkillsScreen() {
         ? "partial"
         : "ready";
 
-  useLayoutEffect(() => {
-    const toggle = () => setImporting((open) => !open);
-    navigation.setOptions(
-      iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              { type: "button" as const, label: t`From GitHub`, onPress: toggle },
-            ],
-          }
-        : {
-            headerRight: () => (
-              <NativeActionButton
-                fill={false}
-                label={t`From GitHub`}
-                onPress={toggle}
-                prominence="secondary"
-              />
-            ),
-          },
-    );
-  }, [navigation, t]);
+  useScreenHeader({
+    action: {
+      label: t`From GitHub`,
+      prominence: "secondary",
+      onPress: () => setImporting((open) => !open),
+    },
+  });
 
   const installed = new Set(installs.map((row) => row.source));
   const packs = skillPacks(entries, query);

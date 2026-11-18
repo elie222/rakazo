@@ -13,13 +13,13 @@ import type {
 import type {
   CloudAgentConnection,
   CodexLiveCatalog,
-  ComposioProvider,
   ConnectorRegistry,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
   McpOAuthBroker,
   MemoryProviderResolver,
+  MessagingDelivery,
   MessagingInstallations,
   PiOAuthLogins,
   PlanLimitsReader,
@@ -29,13 +29,15 @@ import type {
   PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
+  UserCloudAgents,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { NavLink } from "@rakazo/contracts";
+import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
-import type { BillingService } from "./billing.js";
+import type { BillingService } from "./billing/billing.js";
+import type { VoiceDeps } from "./calls/voice.js";
 import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
@@ -58,10 +60,10 @@ import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
 import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import { threadsRoutes } from "./routes/threads.js";
-import type { VoiceDeps } from "./voice.js";
 
-export { nextConnectionLabel } from "./model-credentials.js";
-export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
+export { botIntroPrompt } from "./bots/hidden-turns.prompt.js";
+export { nextConnectionLabel } from "./models/model-credentials.js";
+export { enqueueBotIntroRun } from "./routes/bots.js";
 export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
 
@@ -73,6 +75,7 @@ export interface RouterDeps {
   notifications?: NotificationProvider;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
+  userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;
@@ -86,7 +89,7 @@ export interface RouterDeps {
   memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   secrets: SecretStore;
-  oauthLogins: PiOAuthLogins;
+  oauthLogins: PiOAuthLogins<ModelCredential>;
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;
   providerCatalog?: ProviderCatalogCache;
@@ -105,7 +108,6 @@ export interface RouterDeps {
     provider: string,
   ) => void;
   integrationSettings?: IntegrationProviderSettings;
-  composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
   /** Probes MCP server health; without it servers are never probed from here. */
   mcp?: Pick<McpConnector, "probe">;
@@ -116,10 +118,13 @@ export interface RouterDeps {
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
+  /** Sends replies to the chat apps people message from; absent without one. */
+  messagingDelivery?: MessagingDelivery;
   messaging?: {
     enabled: boolean;
     providers: string[];
     addresses: Record<string, string>;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     openSignup: boolean;
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
@@ -128,11 +133,13 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
-    ticketBoardEnabled?: boolean;
     navLinks?: NavLink[];
     adminEmails?: string[];
+    /** Labs features this deployment turns on for every account. */
+    deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
@@ -147,6 +154,8 @@ export interface RouterDeps {
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;
+    /** Keys the hash that names an invited address in the security log, so it can't be guessed. */
+    invitationRecipientKey: string;
     sandboxProvider: string;
     gitSha?: string;
     integrationsCatalogUrl?: string;

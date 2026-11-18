@@ -1,32 +1,21 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  MAX_MODEL_CONTEXT_WINDOW,
-  MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  parseModelContextWindow,
-  parseModelMaxImagesPerPrompt,
-  parseModelMaxTokens,
 } from "@rakazo/contracts";
-import {
-  clampCatalogThinkingLevel,
-  compatibleThinkingLevels,
-  connectionFormFields,
-  pickCatalogModelId,
-  popularModelProvidersFirst,
-} from "@rakazo/core";
+import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { rpc } from "../../lib/rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { errorText } from "../../lib/user-error";
+import { providerDisplayName } from "../../lib/models/localized-provider-hint";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { analyticsSurface } from "../../lib/platform/desktop";
+import { rpc } from "../../lib/query/rpc";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
@@ -83,26 +72,22 @@ export function useOnboardingModel({
     apiKey,
     apiProtocol,
     baseUrl,
+    connectionErrorText,
     routingReady,
-    contextWindow,
     gatewayId,
+    projectId,
+    region,
     headerRows,
-    needsRouting,
     isOpenAiCompatible,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     modelsForProvider,
     openConnection,
     provider,
-    reasoning,
     selected,
     setError,
     setProvider,
-    supportsImages,
-    thinkingLevel,
   } = form;
-  const [codeCopied, copyOAuthCode] = useCopyText();
+  const [codeCopied, copyText] = useCopyText();
 
   const signIn = useModelOAuthSignIn({
     onClearError: () => setError(null),
@@ -112,6 +97,12 @@ export function useOnboardingModel({
     },
   });
   const { oauthPending, cancelOAuthAttempt, startSubscriptionSignIn } = signIn;
+  const copyOAuthCode = (code: string) => {
+    const loginId = signIn.oauth?.loginId;
+    void copyText(code).then((copied) => {
+      if (copied) signIn.reportSignInStep("code_copied", loginId);
+    });
+  };
 
   const providers = useMemo(() => {
     const seen = new Map<string, ModelCatalogEntry>();
@@ -238,77 +229,46 @@ export function useOnboardingModel({
     );
   }
 
-  function stagedThinkingLevel(): ThinkingLevel | null {
-    return clampCatalogThinkingLevel(
-      thinkingLevel,
-      reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-    ) as ThinkingLevel | null;
-  }
-
   async function saveModel() {
     if (!canSaveModel) return;
     setError(null);
     try {
       if (isOpenAiCompatible) {
-        const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
-          maxImagesPerPrompt,
-          supportsImages,
-        );
-        if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
-          setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
-          return;
-        }
-        const maxImagesPerPromptInput =
-          supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-
-        const parsedMaxTokens = parseModelMaxTokens(maxTokens);
-        if (parsedMaxTokens === undefined) {
-          setError(
-            t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
-          );
-          return;
-        }
-        const parsedContextWindow = parseModelContextWindow(contextWindow);
-        if (parsedContextWindow === undefined) {
-          setError(
-            t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
-          );
-          return;
-        }
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
           apiProtocol,
           headers: modelHeadersInput(headerRows),
           modelId: modelId.trim(),
-          reasoning,
-          thinkingLevel: stagedThinkingLevel(),
-          maxTokens: parsedMaxTokens,
-          contextWindow: parsedContextWindow,
-          supportsImages,
-          maxImagesPerPrompt: maxImagesPerPromptInput,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       } else if (apiKey) {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...modelRoutingInput(selected?.routingFields, {
+            accountId,
+            gatewayId,
+            projectId,
+            region,
+          }),
           modelId,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       }
       onConnected();
     } catch (err) {
-      setError(errorText(err, t`Could not save model`));
+      setError(connectionErrorText(err, t`Could not save model`));
     }
   }
 
   async function fundWithCredits() {
     setError(null);
     try {
-      await rpc.billing.selectFunding({ funding: "credits" });
+      await rpc.billing.selectFunding({ funding: "credits", surface: analyticsSurface() });
       window.location.assign("/onboarding");
     } catch {
       setError(t`Could not open billing`);

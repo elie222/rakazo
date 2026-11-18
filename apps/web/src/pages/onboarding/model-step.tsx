@@ -1,9 +1,8 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   Button,
+  Disclosure,
   Input,
-  ModelThinkingOptions,
   Select,
   SelectContent,
   SelectGroup,
@@ -13,12 +12,12 @@ import {
   SelectValue,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
-import { FoundModelPicker } from "../../components/FoundModelPicker";
+import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
-} from "../../components/ModelConnectionPreflightNotice";
-import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+} from "../../components/models/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -38,12 +37,15 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     error,
     fundWithCredits,
     gatewayId,
+    projectId,
+    region,
     invalidatePreflight,
     isOpenAiCompatible,
     modelId,
     modelItems,
     modelsForProvider,
     needsGateway,
+    needsProject,
     needsRouting,
     notice,
     preflightFailure,
@@ -58,6 +60,8 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     selected,
     setAccountId,
     setGatewayId,
+    setProjectId,
+    setRegion,
     setModelId,
     setThinkingLevel,
     subscriptionSignIn,
@@ -116,26 +120,30 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 htmlFor={`${fieldId}-account-id`}
                 className="block text-body font-medium text-foreground"
               >
-                <Trans>Account ID</Trans>
+                {needsProject ? <Trans>Project ID</Trans> : <Trans>Account ID</Trans>}
                 <Input
                   id={`${fieldId}-account-id`}
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
+                  value={needsProject ? projectId : accountId}
+                  onChange={(event) =>
+                    (needsProject ? setProjectId : setAccountId)(event.target.value)
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   className="mt-2"
                 />
               </label>
-              {needsGateway ? (
+              {needsGateway || needsProject ? (
                 <label
                   htmlFor={`${fieldId}-gateway-id`}
                   className="block text-body font-medium text-foreground"
                 >
-                  <Trans>Gateway ID</Trans>
+                  {needsProject ? <Trans>Region</Trans> : <Trans>Gateway ID</Trans>}
                   <Input
                     id={`${fieldId}-gateway-id`}
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
+                    value={needsProject ? region : gatewayId}
+                    onChange={(event) =>
+                      (needsProject ? setRegion : setGatewayId)(event.target.value)
+                    }
                     autoComplete="off"
                     spellCheck={false}
                     className="mt-2"
@@ -188,10 +196,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 disabled={preflightTesting || apiKey.trim().length < 8}
                 onClick={() => void testApiKeyConnection()}
               >
-                {modelPreflightTestingLabel(
-                  preflightTesting && preflightTarget === "api-key",
-                  "api-key",
-                )}
+                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
               </Button>
               {preflightTarget === "api-key" ? (
                 <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
@@ -255,31 +260,19 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
   const { t } = useLingui();
   const {
     baseUrl,
-    contextWindow,
     headerRows,
     invalidatePreflight,
     manualModelId,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     preflightFailure,
     preflightTarget,
     probeModels,
     probeServerModels,
     probing,
-    reasoning,
     resetOpenAiCompatibleProbe,
-    setContextWindow,
     setHeaderRows,
     setManualModelId,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
     setModelId,
-    setReasoning,
-    setSupportsImages,
-    setThinkingLevel,
-    supportsImages,
-    thinkingLevel,
     updateBaseUrl,
   } = model;
 
@@ -352,39 +345,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
           </Button>
         ) : null}
       </div>
-      <ModelThinkingOptions
-        reasoning={reasoning}
-        onReasoningChange={(value) => {
-          setReasoning(value);
-          if (!value) setThinkingLevel(null);
-        }}
-        advancedLabel={t`Advanced`}
-        thinkingLabel={t`Supports thinking`}
-        thinkingLevel={thinkingLevel}
-        onThinkingLevelChange={(value) => setThinkingLevel(value as ThinkingLevel | null)}
-        thinkingLevelOptions={[
-          { value: "minimal", label: t`Minimal` },
-          { value: "low", label: t`Low` },
-          { value: "medium", label: t`Medium` },
-          { value: "high", label: t`High` },
-          { value: "xhigh", label: t`Extra high` },
-          { value: "max", label: t`Max` },
-        ]}
-        thinkingLevelLabel={t`Reasoning effort`}
-        thinkingLevelDefaultLabel={t`Default`}
-        maxTokens={maxTokens}
-        onMaxTokensChange={setMaxTokens}
-        maxTokensLabel={t`Maximum output tokens`}
-        contextWindow={contextWindow}
-        onContextWindowChange={setContextWindow}
-        contextWindowLabel={t`Context limit`}
-        supportsImages={supportsImages}
-        onSupportsImagesChange={setSupportsImages}
-        imagesLabel={t`Supports images`}
-        maxImagesPerPrompt={maxImagesPerPrompt}
-        onMaxImagesPerPromptChange={setMaxImagesPerPrompt}
-        maxImagesLabel={t`Maximum images per request`}
-      >
+      <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
         <ModelHeadersEditor
           rows={headerRows}
           onChange={(rows) => {
@@ -393,7 +354,7 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             invalidatePreflight();
           }}
         />
-      </ModelThinkingOptions>
+      </Disclosure>
     </div>
   );
 }
@@ -406,6 +367,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     cancelOAuthAttempt,
     codeCopied,
     copyOAuthCode,
+    reportSignInStep,
     oauth,
     oauthPending,
     pasteCode,
@@ -426,6 +388,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                   Sign in at{" "}
                   <a
                     href={oauth.verificationUri}
+                    onClick={() => reportSignInStep("page_opened")}
                     target="_blank"
                     rel="noreferrer"
                     className="text-foreground underline"
@@ -463,6 +426,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                     Open{" "}
                     <a
                       href={oauth.verificationUri}
+                      onClick={() => reportSignInStep("page_opened")}
                       target="_blank"
                       rel="noreferrer"
                       className="text-foreground underline"
@@ -476,6 +440,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
                     A sign-in tab opened at{" "}
                     <a
                       href={oauth.verificationUri}
+                      onClick={() => reportSignInStep("page_opened")}
                       target="_blank"
                       rel="noreferrer"
                       className="text-foreground underline"

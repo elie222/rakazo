@@ -1,7 +1,8 @@
-# Import an OpenClaw, Hermes or ChatGPT agent
+# Import an OpenClaw, Hermes, Grok Bot or ChatGPT agent
 
-Moving from OpenClaw, Hermes Agent or another assistant such as ChatGPT or Claude? Rakazo can turn
-it into a new bot, with its instructions, memory and skills, next to the bots you already have.
+Moving from OpenClaw, Hermes Agent, Grok Bot or another assistant such as ChatGPT or Claude? Rakazo
+can turn it into a new bot, with its instructions, memory and skills, next to the bots you already
+have.
 
 Open **Settings → General** and choose **Import an agent**. Import is available in the web app
 and the desktop app.
@@ -15,6 +16,42 @@ Choose either:
 
 The folder or backup is read on your device. Only the files the import uses are sent, and
 `.env` and `auth.json` are read only if you tick **Include API keys**.
+
+## From Grok Bot
+
+Grok Bot has no export button, so each Bot writes down its own setup:
+
+1. Under **Grok Bot**, choose **Copy prompt** and send it to the Bot in Grok Bot. It asks the Bot to
+   write its instructions, memory, skills, routines and connected apps as a `grok-bot-export` JSON
+   file, without changing anything or including passwords or keys.
+2. Paste the Bot's whole reply and choose **Continue**, or choose **Choose file** for the file it
+   made. A Bot that split its export into several parts: paste or choose all of them together.
+   When one reply holds several Bots, pick the one to import; import each Bot separately.
+
+Exports written for Hermes Agent's or OpenMausBot's Grok Bot importers use the same format and
+import here too.
+
+Routines come over paused, on the matching trigger:
+
+| Grok Bot trigger                   | Becomes                                                             |
+| ---------------------------------- | ------------------------------------------------------------------- |
+| Schedule                           | The same schedule                                                   |
+| Webhook, Linear, Sentry, PagerDuty | A webhook trigger                                                   |
+| GitHub                             | A Git event trigger                                                 |
+| Slack                              | A Slack message trigger, when this server has Slack                 |
+| Email                              | An email trigger for mail from you, when this server receives email |
+
+Turn each one off in Grok Bot before you turn it on here, so it doesn't run twice. Point a
+webhook or Git routine's source at the address its trigger shows here. Give the bot an email
+address before an email routine can run, and connect it to Slack before a Slack routine can. An
+event routine's prompt starts with its original trigger and details, such as the channel or
+repository, so the bot knows what it was for.
+
+Routines whose schedule could not be read, or whose event this server does not receive, are
+saved in the bot's memory as `grok-bot-routines.md`, with their trigger and full instruction, so
+you can set them up by hand. Connected apps with a remote MCP address become MCP servers you
+sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
+Bot's computer and sign-ins stay in Grok Bot.
 
 ## From another assistant
 
@@ -35,7 +72,7 @@ Before anything is created, you see every item the import found and tick what to
 | Skills                                       | Skills in the library all your bots share                                |
 | Model                                        | The bot's model, when you have that provider connected or import its key |
 | MCP servers                                  | MCP servers the bot asks before using                                    |
-| Scheduled jobs                               | Routines, paused until you turn them on                                  |
+| Scheduled jobs and Grok Bot routines         | Routines, paused until you turn them on                                  |
 | API keys                                     | Model connections, only when you tick **Include API keys**               |
 
 Anything that runs code or acts on its own (skills, MCP servers, routines) starts unticked, as do

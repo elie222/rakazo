@@ -1,13 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type {
-  CapabilityInstall,
-  Connection,
-  ConnectionCatalogItem,
-  McpServer,
-  PluginPart,
-  PluginPreview,
-} from "@rakazo/contracts";
+import type { McpServer, PluginPart } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import {
   catalogItemKey,
@@ -15,15 +8,9 @@ import {
   installedPluginParts,
   isCatalogItemConnected,
 } from "@rakazo/core";
-import type { NativeStackNavigationOptions } from "expo-router";
-import {
-  Redirect,
-  useFocusEffect,
-  useLocalSearchParams,
-  useNavigation,
-  useRouter,
-} from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -35,25 +22,27 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { SkillSymbol } from "../../components/skill-symbol";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
   useOwnSpaces,
-} from "../../components/space-availability";
-import { rpc } from "../../lib/api";
-import { useAppForeground } from "../../lib/app-foreground";
-import { mobileTokens } from "../../lib/appearance";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
-import { sourceHref } from "../../lib/plugin-marketplace";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../components/settings/space-availability";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
+import { sourceHref } from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import type { SaveSend } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 const SKILLS_SHOWN = 5;
 
@@ -65,82 +54,73 @@ export default function PluginRoute() {
 
 function PluginScreen() {
   const params = useLocalSearchParams<PluginParams>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
-  const foreground = useAppForeground();
-  const [installs, setInstalls] = useState<CapabilityInstall[]>([]);
-  const [allServers, setAllServers] = useState<McpServer[]>([]);
-  const [assigned, setAssigned] = useState(new Set<string>());
-  const [botId, setBotId] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const [preview, setPreview] = useState<PluginPreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [lastBotId, setLastBotId] = useState<string | null>(null);
   const [allSkills, setAllSkills] = useState(false);
-  const [managedApp, setManagedApp] = useState<ConnectionCatalogItem | null>(null);
-  const [connections, setConnections] = useState<Connection[]>([]);
   const [noAuth, setNoAuth] = useState(new Set<string>());
-  const [attempt, setAttempt] = useState(0);
-  const live = useRef(true);
-
-  const managed = Boolean(params.managedConnectorId && params.managedSlug);
-  const load = useCallback(async () => {
-    const [installRows, serverRows, lastBot, managedState] = await Promise.all([
-      rpc("capabilities/list"),
-      rpc("mcp/servers/list"),
-      loadLastBotId(),
-      managed
-        ? Promise.all([rpc("connections/catalog"), rpc("connections/list")])
-        : Promise.resolve(null),
-    ]);
-    const assignments = lastBot
-      ? await rpc("mcp/assignments/list", { botId: lastBot }).catch(() => [])
-      : [];
-    if (!live.current) return;
-    if (managedState) {
-      const [catalog, connectionRows] = managedState;
-      setManagedApp(
-        catalog.find(
-          (item) =>
-            item.connectorId === params.managedConnectorId && item.slug === params.managedSlug,
-        ) ?? null,
-      );
-      setConnections(connectionRows);
-    }
-    setInstalls(installRows);
-    setAllServers(serverRows);
-    setBotId(lastBot);
-    setAssigned(new Set(assignments.map((row) => row.serverId)));
-    setLoaded(true);
-  }, [managed, params.managedConnectorId, params.managedSlug]);
 
   useFocusEffect(
     useCallback(() => {
-      live.current = true;
-      void load().catch((reason) => {
-        if (live.current) setError(errorText(reason, t`Could not load plugin`));
-      });
-      return () => {
-        live.current = false;
-      };
-    }, [load, t]),
+      void loadLastBotId()
+        .catch(() => "")
+        .then(setLastBotId);
+    }, []),
+  );
+  const botId = lastBotId ?? "";
+
+  const managed = Boolean(params.managedConnectorId && params.managedSlug);
+  const installsRead = rpcQuery("capabilities/list");
+  const serversRead = rpcQuery("mcp/servers/list");
+  const catalogRead = rpcQuery("connections/catalog");
+  const connectionsRead = rpcQuery("connections/list");
+  const assignmentsRead = rpcQuery("mcp/assignments/list", { botId });
+  // Sign-in finishes in the browser, so coming back is the moment to look again.
+  const installsQuery = useScreenQuery(installsRead);
+  const serversQuery = useScreenQuery(serversRead);
+  const catalogQuery = useScreenQuery(catalogRead, { enabled: managed });
+  const connectionsQuery = useScreenQuery(connectionsRead, { enabled: managed });
+  const assignmentsQuery = useScreenQuery(assignmentsRead, { enabled: Boolean(botId) });
+  const reads = [installsRead, serversRead, catalogRead, connectionsRead, assignmentsRead].map(
+    (read) => read.queryKey,
   );
 
-  // Sign-in finishes in the browser, so coming back is the moment to look again.
-  useEffect(() => {
-    if (foreground && loaded) void load().catch(() => undefined);
-  }, [foreground]);
+  const installs = installsQuery.data ?? [];
+  const allServers = serversQuery.data ?? [];
+  const connections = connectionsQuery.data ?? [];
+  const managedApp =
+    catalogQuery.data?.find(
+      (item) => item.connectorId === params.managedConnectorId && item.slug === params.managedSlug,
+    ) ?? null;
+  const assigned = new Set(assignmentsQuery.data?.map((row) => row.serverId));
+  const loaded =
+    Boolean(installsQuery.data && serversQuery.data) &&
+    (!managed || Boolean(catalogQuery.data && connectionsQuery.data)) &&
+    lastBotId !== null &&
+    // Without its assignments a bot is offered every connector.
+    (!botId || !assignmentsQuery.isPending);
+  const loadFailure =
+    installsQuery.error ?? serversQuery.error ?? catalogQuery.error ?? connectionsQuery.error;
 
   // A pasted URL can differ from the normalized source the install is saved under.
-  const install = installs.find(
-    (row) =>
-      row.kind === "plugin" &&
-      (row.source === params.installedSource || row.source === preview?.installedSource),
+  const savedAs = (source: string | undefined) =>
+    installs.find((row) => row.kind === "plugin" && row.source === source);
+  const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
+  const previewQuery = useQuery(
+    {
+      ...previewRead,
+      enabled: loaded && !savedAs(params.installedSource),
+      // The plugin's publisher can change it at any time, so every visit reads it again.
+      staleTime: 0,
+    },
+    queryClient,
   );
+  const preview = previewQuery.data ?? null;
+  const previewLoading = previewQuery.isLoading;
+  const install =
+    savedAs(params.installedSource) ?? (preview ? savedAs(preview.installedSource) : undefined);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =
     install && parts.includes("connector")
@@ -148,47 +128,33 @@ function PluginScreen() {
       : [];
   const installed = Boolean(install);
   const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
-  useEffect(() => {
-    if (!loaded || installed) return;
-    let cancelled = false;
-    setPreview(null);
-    setError(null);
-    setPreviewLoading(true);
-    rpc("capabilities/pluginPreview", { source: params.source })
-      .then((result) => {
-        if (!cancelled) setPreview(result);
-      })
-      .catch((reason) => {
-        if (!cancelled) setError(errorText(reason, t`Could not preview plugin`));
-      })
-      .finally(() => {
-        if (!cancelled) setPreviewLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [loaded, installed, params.source, attempt]);
 
-  async function run(key: string, action: () => Promise<unknown>, failure: string) {
-    setPending(key);
-    setError(null);
-    try {
-      await action();
-    } catch (reason) {
-      if (live.current) setError(errorText(reason, failure));
-    } finally {
-      if (live.current) setPending(null);
-    }
-  }
+  const change = useSave({
+    save: (
+      action: { key: string; failure: string; act: (send: SaveSend) => Promise<unknown> },
+      send,
+    ) => action.act(send),
+    stale: reads,
+  });
+  const pending = change.pending ? (change.input?.key ?? null) : null;
+  const error = change.error
+    ? errorText(change.error, change.input?.failure)
+    : !installed && previewQuery.error
+      ? errorText(previewQuery.error, t`Could not preview plugin`)
+      : loadFailure
+        ? errorText(loadFailure, t`Could not load plugin`)
+        : null;
+  const run = (key: string, act: (send: SaveSend) => Promise<unknown>, failure: string) =>
+    change.run({ key, failure, act });
 
   /** The first part installs the plugin; later changes keep its pinned version. */
   const setParts = (key: string, next: PluginPart[], failure: string) =>
     run(
       key,
-      async () => {
-        if (install) await rpc("capabilities/pluginParts", { id: install.id, parts: next });
+      async (send) => {
+        if (install) await send("capabilities/pluginParts", { id: install.id, parts: next });
         else if (preview)
-          await rpc("capabilities/install", {
+          await send("capabilities/install", {
             kind: "plugin",
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
@@ -196,7 +162,6 @@ function PluginScreen() {
             config: {},
             pluginParts: next,
           });
-        await load();
       },
       failure,
     );
@@ -215,10 +180,10 @@ function PluginScreen() {
     managedApp &&
     run(
       "header",
-      async () => {
+      async (send) => {
         const result = await connectCatalogItem(managedApp, connections, {
-          begin: (input) => rpc("connections/begin", input),
-          complete: (input) => rpc("connections/complete", input),
+          begin: (input) => send("connections/begin", input),
+          complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: new AbortController().signal,
         });
@@ -228,12 +193,11 @@ function PluginScreen() {
             t`Finish connecting in the browser, then refresh this page.`,
           );
         else if (botId)
-          void rpc("onboarding/appConnected", {
+          void send("onboarding/appConnected", {
             botId,
             provider: managedApp.slug,
             connectorId: managedApp.connectorId,
           }).catch(() => undefined);
-        await load();
       },
       t`Could not connect`,
     );
@@ -241,19 +205,9 @@ function PluginScreen() {
   const signIn = (server: McpServer) =>
     run(
       server.id,
-      async () => {
-        const { webUrl } = await rpc("integrationSetup/get");
-        const started = await rpc("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required") {
-          await Linking.openURL(started.authorizationUrl);
-          return;
-        }
-        if (started.status === "authorization_not_requested")
+      async (send) => {
+        if ((await signInToMcpServer(send, server.id)) === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
-        await load();
       },
       t`Could not sign in`,
     );
@@ -261,10 +215,7 @@ function PluginScreen() {
   const enable = (server: McpServer) =>
     run(
       server.id,
-      async () => {
-        await rpc("mcp/assignments/approve", { botId, serverId: server.id });
-        await load();
-      },
+      (send) => send("mcp/assignments/approve", { botId, serverId: server.id }),
       t`Could not enable tools`,
     );
 
@@ -326,46 +277,16 @@ function PluginScreen() {
             void setParts("header", toggle(headerPart, true), t`Could not install plugin`),
           destructive: false,
         };
-  const actionDisabled = busy || (managed ? !managedApp : !ready);
-
-  // The header reads the latest action through a ref, so it only re-renders when it looks different.
-  const actionRef = useRef(action);
-  actionRef.current = action;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: params.name,
-      headerRight: iosAtLeast(26)
-        ? undefined
-        : () => (
-            <NativeActionButton
-              disabled={actionDisabled}
-              fill={false}
-              label={action.label}
-              onPress={() => void actionRef.current.onPress()}
-              prominence={
-                action.destructive ? "destructive" : managedConnected ? "secondary" : "primary"
-              }
-            />
-          ),
-      ...(iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                label: action.label,
-                ...(action.destructive
-                  ? { tintColor: mobileTokens().destructive }
-                  : managedConnected
-                    ? {}
-                    : { variant: "prominent" as const, tintColor: mobileTokens().primary }),
-                disabled: actionDisabled,
-                onPress: () => void actionRef.current.onPress(),
-              },
-            ],
-          }
-        : {}),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, params.name, action.label, action.destructive, actionDisabled, managedConnected]);
+  useScreenHeader({
+    title: params.name,
+    action: {
+      label: action.label,
+      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
+      disabled: managed ? !managedApp : !ready,
+      busy,
+      onPress: action.onPress,
+    },
+  });
 
   const description = detail?.description || params.description;
   const skills = detail?.skills ?? [];
@@ -410,7 +331,7 @@ function PluginScreen() {
             kind="install"
             id={install.id}
             availability={install.availability}
-            onChanged={load}
+            stale={reads}
           />
         ) : null}
 
@@ -421,7 +342,11 @@ function PluginScreen() {
               <NativeActionButton
                 fill={false}
                 label={t`Retry`}
-                onPress={() => setAttempt((value) => value + 1)}
+                // Back to the spinner while it reads again.
+                onPress={() => {
+                  if (change.error) change.reset();
+                  void queryClient.resetQueries({ queryKey: previewRead.queryKey });
+                }}
                 prominence="secondary"
               />
             ) : null}
