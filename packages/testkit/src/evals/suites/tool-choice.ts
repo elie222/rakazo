@@ -3,7 +3,7 @@ import type { Criterion, EvalCase, Evidence } from "../cases.js";
 import { readCasesFile } from "../cases.js";
 import type { JudgeInput } from "../judge.js";
 
-export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v2";
+export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v3";
 export const TOOL_CHOICE_JUDGE_VERSION = "tool-choice-meaning-v2";
 
 /** Settings the bot writes in its own words; the judge grades them, never a substring. */
@@ -191,11 +191,7 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
       id: `at most ${max} ${tool}`,
       pass: names.filter((name) => name === tool).length <= max,
     });
-  if (calls.some((call) => call.viaUseTool || call.name === "use_tool"))
-    criteria.push({
-      id: "use_tool runs only tools find_tool loaded",
-      pass: calls.every((call) => call.name !== "use_tool" && (!call.viaUseTool || call.loaded)),
-    });
+  if (expect.replyMeans) criteria.push({ id: "replied", pass: evidence.text.trim() !== "" });
   criteria.push(...stateCriteria("bot", expect.bot, evidence.settings.bot));
   criteria.push(...stateCriteria("user", expect.user, evidence.settings.user));
   if (expect.settingsUnchanged)
@@ -206,6 +202,18 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
         !names.some((name) => SETTINGS_TOOLS.includes(name) && !isSettingsRead(calls, name)),
     });
   return criteria;
+}
+
+/** Whether the final turn ran through use_tool only tools an earlier find_tool loaded. */
+export function gradeUseTool(evidence: Evidence): Criterion[] {
+  const calls = evidence.toolCalls.filter((call) => call.step === evidence.finalStep);
+  if (!calls.some((call) => call.viaUseTool || call.name === "use_tool")) return [];
+  return [
+    {
+      id: "use_tool runs only tools find_tool loaded",
+      pass: calls.every((call) => call.name !== "use_tool" && (!call.viaUseTool || call.loaded)),
+    },
+  ];
 }
 
 /** `update_bot` with no fields only reads; providers may send omitted fields as null or blank. */
@@ -328,7 +336,7 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
       ...(parsed.clearBeforePrompt ? [{ clear: true as const }] : []),
       { ask: parsed.prompt },
     ],
-    grade: (evidence) => gradeToolChoice(parsed.expect, evidence),
+    grade: (evidence) => [...gradeToolChoice(parsed.expect, evidence), ...gradeUseTool(evidence)],
     ...(Object.keys(means).length || replyMeans
       ? {
           judge: (e: Evidence) =>

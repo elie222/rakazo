@@ -272,7 +272,11 @@ export function AgentImportForm({
             .map((item) => item.id),
           routines: chosen(plan.routines).map((item) => item.id),
           apiKeys: chosen(plan.apiKeys).map((item) => item.id),
+<<<<<<< HEAD
           // Not asked about: what the import cannot set up always goes to the new bot's chat.
+||||||| 169326fe32
+=======
+>>>>>>> origin/main
           leftovers: chosen(plan.leftovers).map((item) => item.id),
         },
       });

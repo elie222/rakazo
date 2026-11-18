@@ -31,6 +31,7 @@ x-app-environment: &app-environment # Runtime
   API_URL:
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
@@ -303,6 +304,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:

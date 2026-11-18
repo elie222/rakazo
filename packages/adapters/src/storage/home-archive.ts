@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import { isContained } from "./home.js";
@@ -62,16 +63,26 @@ export class HomeArchiveError extends Error {
 export async function* packHome(
   root: string,
   limits: HomeArchiveLimits = DEFAULT_HOME_ARCHIVE_LIMITS,
+  /** What a save may hold; the read bounds above never raise it. */
+  saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
 ): AsyncGenerator<Buffer> {
   limits = {
-    maxBytes: Math.min(limits.maxBytes, WORKSPACE_SAVE_LIMITS.maxBytes),
+    maxBytes: Math.min(limits.maxBytes, saveLimits.maxBytes),
     maxEntries: limits.maxEntries,
   };
   const resolvedRoot = await realpath(root);
   const counts = { bytes: 0, entries: 0, files: 0 };
   async function* entries() {
     yield MAGIC;
-    yield* packDirectory(resolvedRoot, resolvedRoot, "", new Set([resolvedRoot]), counts, limits);
+    yield* packDirectory(
+      resolvedRoot,
+      resolvedRoot,
+      "",
+      new Set([resolvedRoot]),
+      counts,
+      limits,
+      saveLimits.maxFiles,
+    );
     yield Buffer.from([END]);
   }
   // Entry headers are tiny; batching keeps a home of many small files to few, large writes.
@@ -96,6 +107,7 @@ async function* packDirectory(
   visited: Set<string>,
   counts: { bytes: number; entries: number; files: number },
   limits: HomeArchiveLimits,
+  maxFiles: number,
 ): AsyncGenerator<Buffer> {
   const entries = await readdir(directory).catch(skipVanished([] as string[]));
   for (const name of entries.sort()) {
@@ -116,10 +128,10 @@ async function* packDirectory(
         new Set([...visited, resolved]),
         counts,
         limits,
+        maxFiles,
       );
     } else if (info.isFile()) {
-      if (++counts.files > WORKSPACE_SAVE_LIMITS.maxFiles)
-        throw new WorkspaceTooLargeError("files");
+      if (++counts.files > maxFiles) throw new WorkspaceTooLargeError("files");
       const handle = await openContained(root, resolved);
       if (!handle) continue;
       try {

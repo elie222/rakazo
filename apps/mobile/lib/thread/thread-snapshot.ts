@@ -26,7 +26,8 @@ function equalValue(previous: unknown, next: unknown): boolean {
 
 /**
  * Compare projected screen snapshots; the replay cursor stays current in snapRef. A changed
- * snapshot keeps each unchanged message's object, so its row is not drawn again.
+ * snapshot keeps each unchanged message's object, and every other unchanged field (a group's
+ * members reach every row), so a row whose inputs did not change is not drawn again.
  */
 export function reconcileVisibleThreadSnapshot(
   previous: MobileSnapshot | null,
@@ -44,11 +45,23 @@ export function reconcileVisibleThreadSnapshot(
     kept += 1;
     return before;
   });
-  if (kept === 0) return next;
   const unchanged =
     kept === previous.messages.length &&
     messages.every((message, index) => message === previous.messages[index]);
-  return { ...next, messages: unchanged ? previous.messages : messages };
+  const before = previous as Record<string, unknown>;
+  const fields = Object.entries(next).filter(
+    ([key, value]) =>
+      key !== "messages" &&
+      key !== "cursor" &&
+      value !== before[key] &&
+      equalValue(before[key], value),
+  );
+  if (kept === 0 && fields.length === 0) return next;
+  return {
+    ...next,
+    ...Object.fromEntries(fields.map(([key]) => [key, before[key]])),
+    messages: unchanged ? previous.messages : kept === 0 ? next.messages : messages,
+  };
 }
 
 /** A group chat's members in its order, once the chat or its group list has loaded them. */

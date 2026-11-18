@@ -111,10 +111,18 @@ export function useAgentImportSource() {
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
         // Key-looking text reaches a bot only when the user ticks it.
+<<<<<<< HEAD
         ...[...found.instructions, ...found.memory, ...found.skills].filter(
           (item) => item.containsKey,
         ),
         ...found.routines.filter((item) => looksLikeCredential(item.content)),
+||||||| 169326fe32
+        ...[...found.instructions, ...found.memory].filter((item) => item.containsKey),
+=======
+        ...[...found.instructions, ...found.memory, ...found.leftovers].filter(
+          (item) => item.containsKey,
+        ),
+>>>>>>> origin/main
       ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.

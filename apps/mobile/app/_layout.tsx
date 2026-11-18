@@ -46,13 +46,16 @@ import {
   subscribeAiConsentGranted,
   subscribeApiBase,
   subscribeSessionRejected,
+  subscribeSpaceSelection,
 } from "../lib/api/api";
 import { loadApiBase } from "../lib/api/api-server";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/api/client-update";
 import {
   currentReadySessionGeneration,
+  currentSessionGeneration,
   loadSessionToken,
   registerSessionDiskCache,
+  sessionOnlyInMemory,
   subscribeSessionGeneration,
 } from "../lib/api/session";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance/appearance";
@@ -87,6 +90,7 @@ import {
   resumeLiveNotifications,
 } from "../lib/notifications/live-notifications";
 import { useNotificationResponses } from "../lib/notifications/open-notification";
+import { invalidateWatchChat } from "../lib/notifications/watch-chat";
 import { startWorkActivities } from "../lib/notifications/work-activity";
 import { setMobileMonitoringScreen } from "../lib/platform/monitoring";
 import {
@@ -291,6 +295,29 @@ function LayoutContent() {
   const [ready, setReady] = useState(false);
   useNavigatorMounted(ready);
   useNotificationResponses(ready);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let active = true;
+    const unsubscribeSpace = subscribeSpaceSelection(() =>
+      invalidateWatchChat("space", selectedSpaceId() ?? ""),
+    );
+    const unsubscribe = subscribeSessionGeneration(() => {
+      invalidateWatchChat("sessionUnavailable");
+      const generation = currentSessionGeneration();
+      if (generation !== currentReadySessionGeneration()) return;
+      void loadSessionToken().then((token) => {
+        // The native relay reads durable credentials only. A failed wipe or in-memory fallback
+        // must never re-enable an earlier bearer from the iPhone's Keychain.
+        if (active && token && generation === currentSessionGeneration() && !sessionOnlyInMemory())
+          invalidateWatchChat("sessionReady");
+      });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+      unsubscribeSpace();
+    };
+  }, []);
   const callSession = useSyncExternalStore(
     subscribeSessionGeneration,
     currentReadySessionGeneration,

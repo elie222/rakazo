@@ -315,6 +315,7 @@ async function buildPlan(
 
   // Shown with the names its skills are saved under, as the chat will show it; the write
   // renames the text as read, under the creation lock.
+<<<<<<< HEAD
   // A leftover has no box to tick, so one that looks like it holds a key is never handed to
   // the chat: it is listed as not imported instead.
   const handable = plan.leftovers.filter((item) => !item.containsKey);
@@ -333,6 +334,14 @@ async function buildPlan(
     })),
     ...appLeftovers,
   ];
+||||||| 169326fe32
+=======
+  const leftoverInputs = new Map(plan.leftovers.map((item) => [item.id, item]));
+  const leftovers = plan.leftovers.map((item) => ({
+    ...item,
+    content: renameRoutineSkillMentions(item.content, previewSkillNames),
+  }));
+>>>>>>> origin/main
 
   return {
     plan: { ...plan, model, mcpServers, routines, apiKeys, leftovers, skipped },

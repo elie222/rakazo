@@ -77,7 +77,7 @@ test("a retrying computer can be closed and keeps booting without a stale error 
   staleError = false;
   const response = await held[0]!.fetch();
   await held[0]!.fulfill({ response });
-  await expect(preview).toHaveAttribute("data-state", "running");
+  await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await expect(close).toHaveCount(0);
 });
 
@@ -168,7 +168,7 @@ test("Retry screen clears a failed takeover on a running computer", async ({ pag
 
   await openBotPanel(page);
   const preview = page.getByTestId("computer-preview");
-  await expect(preview).toHaveAttribute("data-state", "running");
+  await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
   const screen = page.locator('iframe[title="Bot screen"]');

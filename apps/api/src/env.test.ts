@@ -52,6 +52,22 @@ describe("loadEnv", () => {
   it.each(["0", "1e3", "9007199254740991"])("rejects invalid upload limit %s", (value) => {
     expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
   });
+  it("keeps the 5 GiB computer save limit unless configured", () => {
+    expect(loadEnv(base).workspaceSaveLimits).toEqual({
+      maxBytes: 5 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    expect(loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: "20" }).workspaceSaveLimits.maxBytes).toBe(
+      20 * 1024 ** 3,
+    );
+  });
+
+  it.each(["0", "-1", "abc", "1e3"])("rejects invalid computer save limit %s", (value) => {
+    expect(() => loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: value })).toThrow(
+      "WORKSPACE_SAVE_MAX_GB",
+    );
+  });
+
   it("keeps the ticket board off unless explicitly enabled", () => {
     expect(loadEnv(base).deploymentLabs).toEqual([]);
     for (const value of ["false", "1", ""])

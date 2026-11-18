@@ -49,7 +49,7 @@ export function SocialSignInButtons({
           variant="outline"
           size="xl"
           disabled={disabled}
-          className="relative w-full min-w-0 shadow-none"
+          className="relative w-full min-w-0 bg-background shadow-none"
           onClick={() => onPress(provider.id)}
         >
           {provider.presentation?.mark ? (
@@ -71,7 +71,7 @@ export function SocialSignInButtons({
           variant="outline"
           size="xl"
           disabled={disabled}
-          className="relative w-full min-w-0 shadow-none"
+          className="relative w-full min-w-0 bg-background shadow-none"
           onClick={onEmail}
         >
           <Mail />
@@ -85,7 +85,7 @@ export function SocialSignInButtons({
           variant="outline"
           size="xl"
           disabled={disabled}
-          className="relative w-full min-w-0 shadow-none"
+          className="relative w-full min-w-0 bg-background shadow-none"
           onClick={onPasskey}
         >
           <KeyRound />
