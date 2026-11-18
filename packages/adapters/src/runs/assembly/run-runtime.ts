@@ -216,7 +216,7 @@ type SetByRunRuntime =
   | "connector"
   | "connectors"
   | "userCloudAgents"
-  | "listConnectedPluginSlugs"
+  | "listConnectedPlugins"
   | "secrets"
   | "mcpAllowPrivateEndpoint"
   | "deploymentModelKey"
@@ -287,8 +287,7 @@ export function createRunRuntime(
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
     userCloudAgents: connectors.userCloudAgents,
-    listConnectedPluginSlugs: (userId) =>
-      connectors.integrationSettings.listConnectedPluginSlugs(userId),
+    listConnectedPlugins: (userId) => connectors.integrationSettings.listConnectedPlugins(userId),
     secrets: [
       env.deploymentModelKey ?? "",
       localModelsApiKey() ?? "",

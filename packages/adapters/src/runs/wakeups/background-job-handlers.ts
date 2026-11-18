@@ -22,6 +22,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { expireApprovalCard } from "../../approvals/approval-expiry.js";
 import { expireTaughtSkillTeaching } from "../../bots/teaching-session.js";
 import { settleCallRequest } from "../../calls/call-request.js";
 import type {
@@ -262,6 +263,9 @@ export function createBackgroundJobHandlers(deps: {
     }),
     "run.forget-secrets": asOwner(run, async ({ runId }) => {
       await expireRunSecrets({ ...deps, now: new Date() }, runId);
+    }),
+    "approval.expire": asOwner(run, async (payload) => {
+      await expireApprovalCard(deps, payload);
     }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });

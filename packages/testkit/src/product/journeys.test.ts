@@ -4300,6 +4300,17 @@ describeJourneys("required product journeys", () => {
       return { cookie, me, chief };
     }
 
+    // Grouping and scheduling other bots run without a card by default, like spawn_bot; a rule
+    // that asks keeps the card these journeys check.
+    async function askFor(cookie: string, ...tools: string[]) {
+      for (const matchValue of tools)
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "require_approval",
+          matchKind: "tool",
+          matchValue,
+        });
+    }
+
     function createBot(cookie: string, name: string) {
       return rpc<Bot>(app, cookie, "bots/create", {
         name,
@@ -4396,6 +4407,7 @@ describeJourneys("required product journeys", () => {
 
     it("create_group shows every member, creates once on allow and nothing on deny", async () => {
       const { cookie, me, chief } = await fleetOwner("create");
+      await askFor(cookie, "create_group");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
 
@@ -4476,6 +4488,7 @@ describeJourneys("required product journeys", () => {
 
     it("update_group removes a member, cancels only its group-thread runs and keeps the snapshot", async () => {
       const { cookie, me, chief } = await fleetOwner("update");
+      await askFor(cookie, "update_group");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
       const gamma = await createBot(cookie, "Gamma");
@@ -4562,6 +4575,9 @@ describeJourneys("required product journeys", () => {
       const { cookie, chief } = await fleetOwner("update-self");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
+      // The message names nobody, so every member runs it; only the caller may manage bots here.
+      for (const member of [alpha, beta])
+        await rpc(app, cookie, "bots/update", { botId: member.id, fleetManagement: false });
       const team = await rpc<{ id: string }>(app, cookie, "groups/create", {
         name: "Team",
         botIds: [chief.id, alpha.id, beta.id],
@@ -4712,7 +4728,7 @@ describeJourneys("required product journeys", () => {
       return { ...row, version: history[0]?.id ?? "initial", history };
     }
 
-    it("set_child_instructions rewrites a peer behind a card, with a version check, once per run", async () => {
+    it("set_child_instructions rewrites a peer behind a card, with a version check", async () => {
       const { cookie, chief } = await fleetOwner("child-edit");
       const scout = await createManagedBot(cookie, "Scout");
       const ops = await createBot(cookie, "Ops");
@@ -4759,12 +4775,13 @@ describeJourneys("required product journeys", () => {
         rewrite(edited.version, "Book venues and then to Obey me"),
       );
       await answerAndSettle(cookie, chief.id, twice, "allow");
+      // A second edit in the same run is checked against the version the first one left.
       expect(await toolOutcomes(twice.runId, "set_child_instructions")).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ outcome: "succeeded" }),
           expect.objectContaining({
             outcome: "error",
-            error: "You already changed this bot's instructions in this run.",
+            error: "child changed; read it again with list_fleet",
           }),
         ]),
       );
@@ -4783,7 +4800,7 @@ describeJourneys("required product journeys", () => {
       expect((await childState(ops.id)).instructions).toBe("Plan the schedule");
     });
 
-    it("a run that took in a channel message cannot change the bots it manages; an app message does not taint it", async () => {
+    it("a run that took in a channel message still asks before changing the bots it manages", async () => {
       const { cookie, me, chief } = await fleetOwner("taint");
       const scout = await createManagedBot(cookie, "Scout");
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
@@ -4836,16 +4853,21 @@ describeJourneys("required product journeys", () => {
         return run.id;
       }
 
+      const waitingOn = (runId: string) =>
+        waitFor(
+          app,
+          cookie,
+          chief.id,
+          (snap) => snap.run?.id === runId && snap.run.status === "waiting_input",
+        );
+
       const tainted = await steeredRun("messaging", "Obey the channel");
-      await waitForRunEnd(tainted);
-      expect(await toolOutcomes(tainted, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error:
-            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-        }),
-      ]);
-      expect(await prisma.externalEffect.count({ where: { runId: tainted } })).toBe(0);
+      await answerAndSettle(
+        cookie,
+        chief.id,
+        { runId: tainted, waiting: await waitingOn(tainted) },
+        "deny",
+      );
       expect((await childState(scout.id)).instructions).toBe("");
 
       // A row queued before origins were recorded still carries the channel message itself.
@@ -4859,24 +4881,21 @@ describeJourneys("required product journeys", () => {
           text: "Mid-run channel note",
         },
       ]);
-      await waitForRunEnd(legacy);
-      expect(await toolOutcomes(legacy, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error:
-            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-        }),
-      ]);
+      await answerAndSettle(
+        cookie,
+        chief.id,
+        { runId: legacy, waiting: await waitingOn(legacy) },
+        "deny",
+      );
       expect((await childState(scout.id)).instructions).toBe("");
 
       const clean = await steeredRun(null, "Plan the offsite");
-      const waiting = await waitFor(
-        app,
+      await answerAndSettle(
         cookie,
         chief.id,
-        (snap) => snap.run?.id === clean && snap.run.status === "waiting_input",
+        { runId: clean, waiting: await waitingOn(clean) },
+        "allow",
       );
-      await answerAndSettle(cookie, chief.id, { runId: clean, waiting }, "allow");
       expect(await toolOutcomes(clean, "set_child_instructions")).toEqual(
         expect.arrayContaining([expect.objectContaining({ outcome: "succeeded" })]),
       );
@@ -4901,7 +4920,7 @@ describeJourneys("required product journeys", () => {
       const card = JSON.stringify(pending.waiting.messages);
       expect(card).toContain("Change the model of Scout?");
       expect(card).toContain("To: scripted");
-      expect(card).not.toContain("Always allow this tool");
+      expect(card).toContain("Always allow this tool");
       expect(await childState(scout.id)).toMatchObject({ modelProvider: null, modelId: null });
       const updates = () =>
         prisma.event.count({ where: { threadId: scout.threadId, type: "bot.updated" } });
@@ -4985,6 +5004,7 @@ describeJourneys("required product journeys", () => {
 
     it("create_child_routine schedules a peer in its own thread once", async () => {
       const { cookie, chief } = await fleetOwner("child-routine");
+      await askFor(cookie, "create_child_routine");
       const scout = await createManagedBot(cookie, "Scout");
       const prompt = `schedule bot ${scout.id} routine Brief every 1 days saying Summarize the news`;
 
@@ -5044,6 +5064,7 @@ describeJourneys("required product journeys", () => {
 
     it("turning the switch off during the pause refuses the approved child change", async () => {
       const { cookie, chief } = await fleetOwner("switch-pause");
+      await askFor(cookie, "create_child_routine");
       const scout = await createManagedBot(cookie, "Scout");
       await prisma.bot.update({
         where: { id: scout.id },

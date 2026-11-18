@@ -125,6 +125,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answerMessageId: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** An approval nobody answered before an unattended run's card expired; it was not done. */
+    expired: z.literal(true).optional(),
     /** A login the user used for this run only instead of saving it. */
     remembered: z.literal(false).optional(),
     actions: z

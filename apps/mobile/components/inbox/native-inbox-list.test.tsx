@@ -73,7 +73,10 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("../../lib/layout/floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
+vi.mock("../../lib/layout/floating-header", () => ({
+  useFloatingHeaderInset: () => 0,
+  useTopBarInset: () => 0,
+}));
 vi.mock("../../lib/native/native", () => ({
   native: { page: "page" },
   useResolvedAppearance: () => "light",
