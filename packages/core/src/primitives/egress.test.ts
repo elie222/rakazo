@@ -1,6 +1,13 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { hostSite, normalizedHttpUrl, registrableDomain, sitesInText, urlSite } from "./egress.js";
+import {
+  hostSite,
+  isPublicSuffix,
+  normalizedHttpUrl,
+  registrableDomain,
+  sitesInText,
+  urlSite,
+} from "./egress.js";
 
 describe("urlSite", () => {
   it.each([
@@ -39,6 +46,20 @@ describe("urlSite", () => {
     (hostname) => {
       expect(registrableDomain(hostname)).toBe("attacker.com");
       expect(hostSite(hostname)).toBe("attacker.com");
+    },
+  );
+
+  it.each(["com", "co.uk", "github.io", "s3.amazonaws.com", "test"])(
+    "treats the public suffix %s as one",
+    (hostname) => {
+      expect(isPublicSuffix(hostname)).toBe(true);
+    },
+  );
+
+  it.each(["example.com", "docs.example.co.uk", "api.github.com", "203.0.113.10", ""])(
+    "does not treat %s as a public suffix",
+    (hostname) => {
+      expect(isPublicSuffix(hostname)).toBe(false);
     },
   );
 
