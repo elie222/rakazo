@@ -65,6 +65,25 @@ describe("tool question forms", () => {
     ]).toEqual([true, false]);
   });
 
+  it("starts an optional yes/no or choice the server gave no default unset", () => {
+    const optional: ToolQuestionField[] = [
+      { name: "ok", label: "OK", required: false, type: "boolean" },
+      {
+        name: "pick",
+        label: "Pick",
+        required: false,
+        type: "choice",
+        options: [{ value: "a", label: "A" }],
+      },
+      { name: "must", label: "Must", required: true, type: "boolean" },
+    ];
+    expect(toolQuestionInitialDraft(optional)).toEqual({
+      ok: undefined,
+      pick: undefined,
+      must: false,
+    });
+  });
+
   it("shows the answer just sent until the card itself changes", () => {
     expect(toolQuestionShownStatus("pending", "accept")).toBe("accepted");
     expect(toolQuestionShownStatus("pending", undefined)).toBe("pending");

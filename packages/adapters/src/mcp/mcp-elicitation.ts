@@ -379,12 +379,14 @@ export async function callMcpToolAsking(
   const signal = options.signal
     ? AbortSignal.any([options.signal, timedOut.signal])
     : timedOut.signal;
+  // Ends however the call does (a result, an error, a timeout), closing any question it left open.
+  const ended = new AbortController();
   const untrack = router.track({
     owner: options.asker?.owner ?? "",
     source: options.asker?.source ?? "",
     ask: options.asker?.ask,
     clock,
-    signal,
+    signal: AbortSignal.any([signal, ended.signal]),
   });
   try {
     return await client.callTool({ name, arguments: args }, undefined, {
@@ -395,6 +397,7 @@ export async function callMcpToolAsking(
     });
   } finally {
     clock.end();
+    ended.abort();
     untrack();
   }
 }

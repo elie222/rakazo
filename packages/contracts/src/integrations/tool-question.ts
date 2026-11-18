@@ -148,17 +148,18 @@ function fieldProblem(field: ToolQuestionField, value: unknown): string | undefi
 export type ToolQuestionDraft = Record<string, string | boolean | undefined>;
 
 /**
- * What a form starts with on every client: the server's defaults, a yes/no field off, and a
- * choice on its first option when the server named none.
+ * What a form starts with on every client: the server's defaults. A required yes/no field starts
+ * off and a required choice on its first option; an optional one the server gave no default
+ * starts unset, so an untouched form sends nothing for it.
  */
 export function toolQuestionInitialDraft(fields: readonly ToolQuestionField[]): ToolQuestionDraft {
   return Object.fromEntries(
     fields.map((field) => [
       field.name,
       field.type === "boolean"
-        ? (field.default ?? false)
+        ? (field.default ?? (field.required ? false : undefined))
         : field.type === "choice"
-          ? (field.default ?? field.options[0]?.value)
+          ? (field.default ?? (field.required ? field.options[0]?.value : undefined))
           : field.default === undefined
             ? undefined
             : String(field.default),

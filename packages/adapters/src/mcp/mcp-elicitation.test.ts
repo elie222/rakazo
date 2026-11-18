@@ -226,6 +226,38 @@ describe("MCP elicitation", () => {
     expect(await answered).toEqual({ action: "cancel" });
   });
 
+  it("closes an open question when its call returns", async () => {
+    const asked = deferred<AbortSignal>();
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+    });
+    const server = new McpServer({ name: "gateway", version: "1" });
+    // The server asks, then answers the call without waiting for the person.
+    server.registerTool("guarded", { description: "Asks and moves on" }, async (extra) => {
+      void extra
+        .sendRequest({ method: "elicitation/create", params: APPROVAL }, ElicitResultSchema, {
+          timeout: 60 * 60_000,
+        })
+        .catch(() => undefined);
+      await vi.waitFor(() => expect(asked).toBeDefined());
+      await asked.promise;
+      return { content: [{ type: "text", text: "done" }] };
+    });
+    const connected = server.connect(transport);
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      await connected;
+      return transport.handleRequest(new Request(input, init));
+    });
+    const gatewayServer = { fetch, capabilities: [], close: () => server.close() };
+    servers.push(gatewayServer);
+    const result = await call(gatewayServer, (_question, signal) => {
+      asked.resolve(signal);
+      return new Promise(() => undefined);
+    });
+    expect(answerOf(result)).toBe("done");
+    expect((await asked.promise).aborted).toBe(true);
+  });
+
   it("asks through a run's reused session too", async () => {
     const server = open();
     const pool = new RemoteMcpSessionCache(0);

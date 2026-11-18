@@ -51,6 +51,7 @@ function QuestionField({
   disabled: boolean;
   onChange: (value: ToolQuestionDraft[string]) => void;
 }) {
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const label = (
     <Text style={[typeScale.secondary, { color: tokens.foreground }]}>{field.label}</Text>
@@ -79,7 +80,12 @@ function QuestionField({
         <MenuPicker
           label={field.label}
           plain
-          choices={field.options.map((option) => ({ key: option.value, label: option.label }))}
+          // The native menu shows its first entry when nothing is chosen, so an optional choice
+          // offers "None" first rather than looking picked.
+          choices={[
+            ...(field.required ? [] : [{ key: "", label: t`None` }]),
+            ...field.options.map((option) => ({ key: option.value, label: option.label })),
+          ]}
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
           onChange={onChange}
