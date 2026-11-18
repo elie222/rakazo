@@ -15,9 +15,9 @@ Set the same meeting-provider configuration on the API and worker.
 | `MEETING_REGION`            | Workspace's region.                                                              |
 | `MEETING_WEBHOOK_SECRET`    | Signing secret for the workspace's status webhooks.                              |
 | `MEETING_WEBHOOK_SIGNATURE` | `webhook` by default. Set `svix` for older workspaces that use endpoint secrets. |
-| `MEETING_SPACE_IDS`         | Use `*` for all Spaces, or list Space IDs separated by commas. Empty grants no access. |
+| `MEETING_SPACE_IDS`         | Use `*` for every Space or list Space IDs. Leave empty for no access.            |
 
-App-wide access includes Spaces created after deployment.
+Separate Space IDs with commas. App-wide access includes Spaces created after deployment.
 
 Configure the status webhook to use `/api/meetings/events` on your public API origin. Subscribe to bot lifecycle events, `recording.done`, `recording.failed`, `transcript.done`, and `transcript.failed`. The operator's workspace incurs per-minute capture and transcription costs. Each Space can use or reserve up to 20 meetings per UTC day. A meeting can record for up to two hours.
 
