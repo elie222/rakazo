@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import type {
   ArtifactStore,
+  BackgroundJobPayloads,
   ConnectorProvider,
   ManagedConnectorProvider,
   MessagingSurface,
@@ -235,9 +236,11 @@ export function createRunRuntime(
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
+    /** Answers the lifecycle-mail job where account mail is configured. */
+    lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
+  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -333,6 +336,7 @@ export function createRunRuntime(
     paymentWallet: deps.paymentWallet,
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    lifecycleEmail,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }

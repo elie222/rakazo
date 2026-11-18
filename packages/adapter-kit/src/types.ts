@@ -4,6 +4,7 @@ import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   HistoryToolStep,
+  LifecycleEmailKind,
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
@@ -1048,6 +1049,17 @@ export interface BackgroundJobPayloads {
   "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
+  /**
+   * One lifecycle mail to an organization's owner, re-checked when it fires. The API writes the
+   * message when it schedules: only it holds the templates and the key that signs the
+   * unsubscribe link. The address is read when the mail is sent.
+   */
+  "email.lifecycle": {
+    kind: LifecycleEmailKind;
+    organizationId: string;
+    userId: string;
+    message: Pick<TransactionalEmail, "subject" | "text" | "html" | "headers">;
+  };
 }
 
 /**

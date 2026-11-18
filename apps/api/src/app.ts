@@ -39,6 +39,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -156,6 +157,7 @@ import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { configuredEmailProvider } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
+import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
 import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
@@ -439,6 +441,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // the local emulator lives in this process, so the emulator counts only in single-process mode.
+  const lifecycleEmailsEnabled =
+    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -471,6 +477,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
+        scheduleLifecycleEmail: lifecycleEmailsEnabled
+          ? lifecycleEmailScheduler({
+              prisma,
+              jobs,
+              webOrigin: env.webOrigin,
+              origin: env.authUrl,
+              secret: env.authSecret,
+            })
+          : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -681,6 +696,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       onTicketChange: ticketChanges,
       email: botEmail,
+      // Single-process mode answers the job here; otherwise the worker does.
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)

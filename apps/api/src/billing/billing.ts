@@ -42,6 +42,7 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isOwnerRole,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
@@ -58,11 +59,14 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
+import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
+import { MODEL_CONNECTION_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { createExperiments } from "../telemetry/experiments.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
+import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
 /** An invited organization's first trial. */
@@ -150,21 +154,13 @@ function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
   return null;
 }
 
-/**
- * How a trial ended, once that is known: true when its first charge was paid, false when the
- * subscription stopped without one, null while the trial runs or the charge is still pending
- * (a subscription turns active before its first charge is collected). A failed first charge
- * that is settled later ends it a second time, as true.
- */
-export function trialOutcome(
-  previous: Pick<BillingAccount, "status" | "trialEndsAt" | "paidAt">,
-  live: Pick<BillingSubscriptionSnapshot, "status" | "paidAt">,
-): boolean | null {
-  const unpaidTrial = previous.trialEndsAt !== null && !previous.paidAt;
-  if (unpaidTrial && needsBillingPortal(previous.status)) return live.paidAt ? true : null;
-  if (previous.status !== "trialing" && !(unpaidTrial && previous.status === "active")) return null;
-  if (live.paidAt) return true;
-  return live.status === "trialing" || live.status === "active" ? null : false;
+/** Whether this sync is the one that records a subscription starting, trial or paid. */
+function subscriptionStarted(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+  // A checkout whose first payment was still pending syncs as incomplete before it starts.
+  return (
+    hasBillingAccess(live.status) &&
+    (live.subscriptionId !== previous.subscriptionId || previous.status === "incomplete")
+  );
 }
 
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
@@ -207,6 +203,7 @@ export function createBillingService(deps: {
   analytics?: ProductAnalytics;
   experiments?: ReturnType<typeof createExperiments>;
   partnerProgram?: PartnerProgram;
+  scheduleLifecycleEmail?: ScheduleLifecycleEmail;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -323,6 +320,12 @@ export function createBillingService(deps: {
           "error.message": error instanceof Error ? error.message : String(error),
         });
       }
+    if (live && subscriptionStarted(previous, live))
+      // Not in the snapshot's transaction, so a brief queue outage is ridden out here.
+      await bestEffort(
+        "schedule the model connection email",
+        retry(() => remindToConnectModel(previous, live), { attempts: 3 }),
+      );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -381,8 +384,7 @@ export function createBillingService(deps: {
   async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
     const { analytics } = deps;
     const same = live.subscriptionId === previous.subscriptionId;
-    // A checkout whose first payment was still pending syncs as incomplete before it starts.
-    const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
+    const started = subscriptionStarted(previous, live);
     const converted = same ? trialOutcome(previous, live) : null;
     const trialEnded = converted !== null;
     const terms = planTerms(live);
@@ -402,6 +404,29 @@ export function createBillingService(deps: {
         : { name: "trial_ended", ...terms, converted: converted === true },
       { id: settled ? `${live.subscriptionId}:settled` : live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
+    );
+  }
+
+  /**
+   * An own-key plan runs nothing until its owner connects a model, so a day in they are reminded
+   * if they still have not. Concurrent syncs that both see the start queue the same keyed job.
+   * Without model credits the deployment's own model serves everyone, so nobody is asked.
+   */
+  async function remindToConnectModel(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    if (!deps.scheduleLifecycleEmail || !modelCredits) return;
+    if (!live.byokPlan || live.creditAmountCents) return;
+    const userId = await ownerUserId(previous.organizationId);
+    if (!userId) return;
+    // From the plan's own start, so every sync that sees it names the same time. A start
+    // recorded more than a day late still leaves the owner a day.
+    const now = Date.now();
+    const day = MODEL_CONNECTION_EMAIL_DELAY_MS;
+    const fromStart = (live.currentPeriodStartsAt?.getTime() ?? now) + day;
+    const dueAt = new Date(fromStart > now ? fromStart : now + day);
+    await deps.scheduleLifecycleEmail(
+      "model-connection",
+      { organizationId: previous.organizationId, userId },
+      dueAt,
     );
   }
 
@@ -431,12 +456,12 @@ export function createBillingService(deps: {
   }
 
   async function ownerUserId(organizationId: string) {
-    const owner = await prisma.member.findFirst({
+    const members = await prisma.member.findMany({
       where: { organizationId, role: { contains: "owner" } },
       orderBy: { createdAt: "asc" },
-      select: { userId: true },
+      select: { userId: true, role: true },
     });
-    return owner?.userId;
+    return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
   async function cancel(organizationId: string) {

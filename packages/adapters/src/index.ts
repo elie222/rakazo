@@ -74,6 +74,7 @@ export * from "./computers/screens/computer-tools.js";
 export * from "./email/email-emulator.js";
 export * from "./email/email-provider.js";
 export * from "./email/inbound-email.js";
+export * from "./email/lifecycle-email.js";
 export * from "./integrations/connection-cleanup.js";
 export * from "./integrations/connector-catalog.js";
 export * from "./integrations/connector-registry.js";

@@ -70,6 +70,9 @@ export function clampCatalogThinkingLevel(
   return null;
 }
 
+/** The subscriptions a person can sign in with instead of pasting an API key, as they know them. */
+export const MODEL_SUBSCRIPTION_NAMES = ["ChatGPT", "Claude"] as const;
+
 export const POPULAR_MODEL_PROVIDER_IDS = [
   "openai-codex",
   "anthropic",
