@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
   createEarlierFileQueue,
+  listCurrentTurnFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
@@ -373,6 +374,7 @@ describe("current-turn thread files", () => {
       );
       expect(files).toEqual([
         {
+          artifactId: "artifact-1",
           name: `../quarterly report${extension}`,
           mimeType,
           size: 4,
@@ -438,7 +440,13 @@ describe("current-turn thread files", () => {
       expect.objectContaining({ botId: "bot-1" }),
     );
     expect(files).toEqual([
-      { name: "photo.png", mimeType: "image/png", size: 4, path: "attachments/image-1.png" },
+      {
+        artifactId: "image-1",
+        name: "photo.png",
+        mimeType: "image/png",
+        size: 4,
+        path: "attachments/image-1.png",
+      },
     ]);
   });
 });
@@ -455,7 +463,16 @@ describe("recent thread files", () => {
         size: 8,
       };
       const get = vi.fn().mockRejectedValue(new Error("original unavailable"));
-      const readFile = vi.fn().mockResolvedValue(new TextEncoder().encode("edited"));
+      // The bot edited the copy, so its size no longer matches the stored original.
+      const listFiles = vi.fn().mockResolvedValue([
+        {
+          path:
+            computerMode === "team" ? "bots/bot/attachments/notes.txt" : "attachments/notes.txt",
+          kind: "file",
+          size: 6,
+        },
+      ]);
+      const readFile = vi.fn();
       const writeFile = vi.fn();
       const markWorkspaceDirty = vi.fn();
       const files = await materializeRecentThreadFiles(
@@ -468,7 +485,7 @@ describe("recent thread files", () => {
             },
           } as unknown as PrismaClient,
           artifacts: { get } as unknown as ArtifactStore,
-          sandbox: { readFile, writeFile } as unknown as SandboxProvider,
+          sandbox: { listFiles, readFile, writeFile } as unknown as SandboxProvider,
         },
         [{ id: "earlier", role: "user" }],
         [{ id: "earlier", blocks: [block] }],
@@ -488,11 +505,12 @@ describe("recent thread files", () => {
           markWorkspaceDirty,
         },
       );
-      expect(readFile).toHaveBeenCalledWith(
+      expect(listFiles).toHaveBeenCalledWith(
         expect.anything(),
-        computerMode === "team" ? "bots/bot/attachments/notes.txt" : "attachments/notes.txt",
+        computerMode === "team" ? "bots/bot/attachments" : "attachments",
         expect.anything(),
       );
+      expect(readFile).not.toHaveBeenCalled();
       expect(get).not.toHaveBeenCalled();
       expect(writeFile).not.toHaveBeenCalled();
       expect(markWorkspaceDirty).not.toHaveBeenCalled();
@@ -521,17 +539,16 @@ describe("recent thread files", () => {
       if (id.startsWith("missing")) throw new Error("unreadable");
       return new Uint8Array([1, 2, 3]);
     });
-    const readFile = vi.fn(async (_computer, path: string) => {
-      if (path.endsWith("existing.txt")) return new Uint8Array();
-      throw new Error("existence check failed");
-    });
+    const listFiles = vi.fn(async () => [
+      { path: "bots/bot/attachments/existing.txt", kind: "file", size: 3 },
+    ]);
     const writeFile = vi.fn().mockResolvedValue(undefined);
     const markWorkspaceDirty = vi.fn();
     const files = await materializeRecentThreadFiles(
       {
         prisma: { artifact: { findMany } } as unknown as PrismaClient,
         artifacts: { get } as unknown as ArtifactStore,
-        sandbox: { readFile, writeFile } as unknown as SandboxProvider,
+        sandbox: { listFiles, writeFile } as unknown as SandboxProvider,
       },
       ["outside", "old", "middle", "new", "current"].map((id) => ({ id, role: "user" })),
       [
@@ -615,7 +632,7 @@ describe("recent thread files", () => {
             get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
           } as unknown as ArtifactStore,
           sandbox: {
-            readFile: vi.fn().mockRejectedValue(new Error("missing")),
+            listFiles: vi.fn().mockRejectedValue(new Error("missing")),
             writeFile: vi.fn().mockResolvedValue(undefined),
           } as unknown as SandboxProvider,
         },
@@ -672,7 +689,7 @@ describe("recent thread files", () => {
         } as unknown as ArtifactStore,
         sandbox: {
           writeFile,
-          readFile: vi.fn().mockRejectedValue(new Error("missing")),
+          listFiles: vi.fn().mockRejectedValue(new Error("missing")),
         } as unknown as SandboxProvider,
       },
       [
@@ -737,7 +754,7 @@ describe("files listed by history tools", () => {
       } as unknown as PrismaClient,
       artifacts: { get: vi.fn().mockResolvedValue(new Uint8Array(5)) } as unknown as ArtifactStore,
       sandbox: {
-        readFile: vi.fn().mockRejectedValue(new Error("missing")),
+        listFiles: vi.fn().mockRejectedValue(new Error("missing")),
         writeFile,
       } as unknown as SandboxProvider,
     };
@@ -798,12 +815,129 @@ describe("earlier file queue", () => {
     queue.add([file("a"), file("b")]);
     const taken = queue.take();
     queue.copiedTo(taken, [
-      { name: "a.md", mimeType: "text/markdown", size: 1, path: "attachments/a.md" },
+      {
+        artifactId: "a",
+        name: "a.md",
+        mimeType: "text/markdown",
+        size: 1,
+        path: "attachments/a.md",
+      },
     ]);
     queue.add([file("a"), file("b")]);
     expect(queue.take().map((f) => f.artifactId)).toEqual(["b"]);
     queue.computerStarted();
     queue.add([file("a")]);
     expect(queue.take().map((f) => f.artifactId)).toEqual(["a"]);
+  });
+});
+
+describe("attachments at their stored path", () => {
+  const readablePath = "attachments/2026/11/2026-11-18_1649_Dana_photo.png";
+  const context: AdapterContext & { botId: string } = {
+    operationId: "run-1",
+    traceId: "run-1",
+    spaceId: "space-1",
+    userId: "user-1",
+    botId: "bot-1",
+    signal: new AbortController().signal,
+  };
+  const computer = { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef;
+  const block: MessageBlock = {
+    kind: "image",
+    artifactId: "image-1",
+    name: "photo.png",
+    mimeType: "image/png",
+  };
+  const setup = (
+    computerPath: string | null,
+    sandbox: { listFiles?: ReturnType<typeof vi.fn> } = {},
+  ) => {
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "image-1",
+              name: "photo.png",
+              mimeType: "image/png",
+              size: 4,
+              storageKey: "stored-1",
+              computerPath,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: {
+        get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
+      } as unknown as ArtifactStore,
+      sandbox: { writeFile, ...sandbox } as unknown as SandboxProvider,
+    };
+    const input = { context, computer: async () => computer, computerMode: "team" as const };
+    return { deps, input, writeFile };
+  };
+
+  it("lists, writes and describes a file at its stored path, under the bot's folder on a team computer", async () => {
+    const { deps, input, writeFile } = setup(readablePath);
+    const listed = await listCurrentTurnFiles(deps, [block], context);
+    expect(listed.map((file) => file.path)).toEqual([readablePath]);
+    const files = await materializeCurrentTurnFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual([readablePath]);
+    expect(writeFile).toHaveBeenCalledWith(
+      computer,
+      { path: `bots/bot-1/${readablePath}`, content: new Uint8Array([1, 2, 3, 4]) },
+      context,
+    );
+    expect(currentTurnFilesInstruction(files)).toContain(`"${readablePath}"`);
+  });
+
+  it("keeps the id path for a row with no stored path", async () => {
+    const { deps, input, writeFile } = setup(null);
+    const files = await materializeCurrentTurnFiles(deps, [block], input);
+    expect(files.map((file) => file.path)).toEqual(["attachments/image-1.png"]);
+    expect(writeFile).toHaveBeenCalledWith(
+      computer,
+      expect.objectContaining({ path: "bots/bot-1/attachments/image-1.png" }),
+      context,
+    );
+  });
+
+  it.each([
+    ["the path is listed with the same size", 4, false],
+    ["the path is listed with another size", 9, true],
+  ])("when %s, the write happens: %s", async (_name, listedSize, written) => {
+    const listFiles = vi.fn().mockResolvedValue([
+      { path: `bots/bot-1/${readablePath}`, kind: "file", size: listedSize },
+      { path: "bots/bot-1/attachments/2026/11/other.png", kind: "file", size: 4 },
+    ]);
+    const { deps, input, writeFile } = setup(readablePath, { listFiles });
+    await materializeCurrentTurnFiles(deps, [block], input);
+    expect(listFiles).toHaveBeenCalledWith(computer, "bots/bot-1/attachments/2026/11", context);
+    expect(writeFile).toHaveBeenCalledTimes(written ? 1 : 0);
+  });
+
+  it.each([
+    ["a listing that throws", vi.fn().mockRejectedValue(new Error("no such folder"))],
+    ["an empty listing", vi.fn().mockResolvedValue([])],
+  ])("writes the file after %s", async (_name, listFiles) => {
+    const { deps, input, writeFile } = setup(readablePath, { listFiles });
+    await expect(materializeCurrentTurnFiles(deps, [block], input)).resolves.toHaveLength(1);
+    expect(writeFile).toHaveBeenCalledOnce();
+  });
+
+  it("queues an earlier file again only when the copy did not return it", () => {
+    const queue = createEarlierFileQueue();
+    const taken = [
+      { ...block, artifactId: "a" },
+      { ...block, artifactId: "b" },
+    ];
+    queue.add(taken);
+    queue.take();
+    // The file was copied at its stored path, which no id-based rebuild would name.
+    queue.copiedTo(taken, [
+      { artifactId: "a", name: "photo.png", mimeType: "image/png", size: 4, path: readablePath },
+    ]);
+    queue.add(taken);
+    expect(queue.take().map((file) => file.artifactId)).toEqual(["b"]);
   });
 });

@@ -45,7 +45,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       CREATE TEMP TABLE runs (id text PRIMARY KEY, "spaceId" text, "userId" text, "threadId" text, "botId" text,
         "sourceMessageId" text, status text, "createdAt" timestamptz, "completedAt" timestamptz);
       CREATE TEMP TABLE artifacts (id text PRIMARY KEY, "spaceId" text, "userId" text, "botId" text, "groupId" text,
-        "runId" text, name text, "mimeType" text, size integer, "createdAt" timestamptz);
+        "runId" text, name text, "mimeType" text, size integer, "createdAt" timestamptz, "computerPath" text);
       INSERT INTO bots VALUES ('synthetic-bot','synthetic-space','synthetic-user',NULL);
       INSERT INTO threads VALUES ('synthetic-thread','synthetic-space','synthetic-user','synthetic-bot');
       INSERT INTO messages SELECT 'm-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
@@ -547,6 +547,18 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(read.messages.find((message) => message.messageId === "file-captioned")).toMatchObject({
       attachments: [lease],
     });
+    // A file saved under a readable name is shown at that path, in search and in a read.
+    const readable = "attachments/2026/11/2026-11-18_1649_Dana_lisbon-office-lease.md";
+    await pool.query(`UPDATE artifacts SET "computerPath" = '${readable}' WHERE id = 'art-lease'`);
+    const stored = { attachments: [{ ...lease, path: readable }] };
+    expect(
+      (await searchHistory(prisma, scope, { query: "lisbon lease" })).messages[0],
+    ).toMatchObject(stored);
+    expect(
+      (await readHistory(prisma, scope, { messageId: "file-captioned" })).messages.find(
+        (message) => message.messageId === "file-captioned",
+      ),
+    ).toMatchObject(stored);
     await pool.query("DELETE FROM artifacts WHERE id = 'art-lease'");
     const afterDelete = await readHistory(prisma, scope, { messageId: "file-captioned" });
     expect(afterDelete.messages.every((message) => !("attachments" in message))).toBe(true);
