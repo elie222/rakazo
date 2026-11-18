@@ -1,5 +1,4 @@
 import type {
-  AdapterContext,
   JobPublisher,
   JobQueueOrder,
   MessagingInboundMessage,
@@ -11,19 +10,13 @@ import {
   messagingInboundSettleQueue,
   teamChatEngageJobKey,
 } from "@rakazo/adapter-kit";
-import type {
-  MessagingDelivery,
-  OutboundLane,
-  ReceivedFile,
-  SaveReceivedFileResult,
-} from "@rakazo/adapters";
+import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
 import {
   filesNotReceivedReply,
   MESSAGING_DM_OUTBOUND_CAP,
   messagingAttachmentClientNonce,
   messagingMessageClientNonce,
   messagingWakeIdempotencyKey,
-  savedFileLine,
   sealSettleText,
   wakeRun,
 } from "@rakazo/adapters";
@@ -32,15 +25,12 @@ import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contrac
 import type { MessagingCommand } from "@rakazo/core";
 import {
   abortableDelay,
-  deadlineSignal,
   displayName,
-  localTimezone,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
   parseMessagingCommand,
   promptTextForAttachments,
   sanitizeMessagingLabel,
-  withAbort,
 } from "@rakazo/core";
 import type {
   MessagingIdentityRequest,
@@ -73,10 +63,11 @@ import {
   DIRECT_ATTACHMENT_ATTEMPTS,
   DIRECT_ATTACHMENT_TIMEOUT_MS,
   DIRECT_MESSAGE_SETTLE_BUDGET_MS,
-  RECEIVED_FILE_SAVE_TIMEOUT_MS,
   SHUTDOWN_DOWNLOAD_GRACE_MS,
   SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
+import type { SaveReceivedFile } from "./intake/received-copy.js";
+import { saveReceivedCopy } from "./intake/received-copy.js";
 import type { SenderQueue } from "./intake/sender-queue.js";
 import { createSenderQueue } from "./intake/sender-queue.js";
 import type { SettlePayload } from "./intake/settle-job.js";
@@ -111,10 +102,7 @@ export interface MessagingInboundDeps {
    * Copies each file a direct message brings into the bot's computer; set only when
    * MESSAGING_SAVE_RECEIVED_FILES is on.
    */
-  saveReceivedFile?: (
-    file: ReceivedFile & { timeZone: string },
-    context: AdapterContext,
-  ) => Promise<SaveReceivedFileResult>;
+  saveReceivedFile?: SaveReceivedFile;
   /**
    * Transcribes inbound audio with the bot owner's voice provider. On null or
    * a throw only the file reference is delivered. `signal` aborts when the
@@ -860,6 +848,7 @@ async function storeInboundMedia(
   copies: { saves: SenderQueue; receivedAt: number },
 ) {
   const saved: string[] = [];
+  const saveReceivedFile = deps.saveReceivedFile;
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
@@ -871,10 +860,17 @@ async function storeInboundMedia(
       downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
       attempts: DIRECT_ATTACHMENT_ATTEMPTS,
       reasons: true,
-      ...(deps.saveReceivedFile
+      ...(saveReceivedFile
         ? {
             onStored: async (file: { name: string; mimeType: string }, bytes: Uint8Array) => {
-              const line = await saveReceivedCopy(deps, ids, event, file, bytes, copies);
+              const line = await saveReceivedCopy(
+                { prisma: deps.prisma, saveReceivedFile },
+                ids,
+                event,
+                file,
+                bytes,
+                copies,
+              );
               if (line) saved.push(line);
             },
           }
@@ -890,59 +886,6 @@ async function storeInboundMedia(
     artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
   }
   return { artifacts, saved, unavailable };
-}
-
-/**
- * Copies one received file into the bot's computer and returns the line that says where, or
- * nothing when it was not copied. A copy that fails or takes too long never holds up the message.
- */
-async function saveReceivedCopy(
-  deps: MessagingInboundDeps,
-  ids: ProvisionedMessagingIdentity,
-  event: MessagingInboundMessage,
-  file: { name: string; mimeType: string },
-  bytes: Uint8Array,
-  { saves, receivedAt }: { saves: SenderQueue; receivedAt: number },
-): Promise<string | undefined> {
-  const save = deps.saveReceivedFile;
-  if (!save) return undefined;
-  const signal = deadlineSignal(RECEIVED_FILE_SAVE_TIMEOUT_MS);
-  const copy = async () => {
-    const [bot, owner] = await Promise.all([
-      deps.prisma.bot.findUnique({ where: { id: ids.botId }, select: { computerId: true } }),
-      deps.prisma.user.findUnique({ where: { id: ids.userId }, select: { timezone: true } }),
-    ]);
-    const computerId = bot?.computerId ?? null;
-    const operationId = `messaging-received-file:${event.provider}:${event.handle}`;
-    const received = {
-      bot: { id: ids.botId, computerId },
-      sender: event.from,
-      name: file.name,
-      mimeType: file.mimeType,
-      bytes,
-      at: new Date(receivedAt),
-      timeZone: owner?.timezone ?? localTimezone(),
-    };
-    const context: AdapterContext = {
-      operationId,
-      traceId: operationId,
-      spaceId: ids.spaceId,
-      userId: ids.userId,
-      botId: ids.botId,
-      signal,
-    };
-    // Bots on one team computer share its received folder. The save also holds the folder
-    // against other processes; this only keeps this process's saves from waiting on that.
-    return saves.run(computerId ?? `bot:${ids.botId}`, async () => {
-      signal.throwIfAborted();
-      return save(received, context);
-    });
-  };
-  const result = await bestEffort(
-    "copy a received file into the bot's computer",
-    withAbort(copy(), signal),
-  );
-  return result && "saved" in result ? savedFileLine(result.saved) : undefined;
 }
 
 /**
