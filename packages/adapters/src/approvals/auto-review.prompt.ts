@@ -43,11 +43,11 @@ export const AUTO_REVIEW_PASS =
 export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
 
-/** What the reviewer is told about the owner's earlier messages, when sent. */
 /** Each reviewer path names its inputs its own way: XML blocks in the prompt, state keys in a decision. */
 const PROMPT_FIELDS = { earlier: "owner_earlier_messages", task: "user_task" };
 const DECISION_FIELDS = { earlier: "ownerEarlierMessages", task: "userTask" };
 
+/** What the reviewer is told about the owner's earlier messages, when sent. */
 export function reviewContextNotes(
   input: Pick<AutoReviewRequest, "ownerMessages">,
   fields: { earlier: string; task: string } = PROMPT_FIELDS,
