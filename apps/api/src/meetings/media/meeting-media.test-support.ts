@@ -53,6 +53,8 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
       signal.throwIfAborted();
       if (silent) return { clip: null };
       return {
+        context: "Participant: When is the demo?",
+        spokenContext: "Participant: When is the demo?\nBot: Thursday.",
         clip: {
           bytes: meetingAudioWav(meetingTone(MEETING_SAMPLE_RATE * 2)),
           mimeType: "audio/wav",

@@ -19,8 +19,8 @@ function fixture() {
     emulator,
     app,
     headers,
-    turn: (body = new Uint8Array(meetingTone(MEETING_SAMPLE_RATE / 2))) =>
-      app.request(`${MEETING_MEDIA_PATH}/turn`, { method: "POST", headers, body }),
+    turn: (body = new Uint8Array(meetingTone(MEETING_SAMPLE_RATE / 2)), signal?: AbortSignal) =>
+      app.request(`${MEETING_MEDIA_PATH}/turn`, { method: "POST", headers, body, signal }),
     session: (authorization = headers.authorization) =>
       app.request(`${MEETING_MEDIA_PATH}/session`, { headers: { authorization } }),
   };
@@ -80,6 +80,18 @@ describe("meeting media bridge", () => {
     expect(await (await session()).json()).toEqual({ botName: "Atlas", voice: false });
     expect((await turn()).status).toBe(403);
     expect(emulator.received).toHaveLength(0);
+  });
+
+  it("treats an interrupted request as a silent result", async () => {
+    const { emulator, turn } = fixture();
+    const controller = new AbortController();
+    const reply = deferred<void>();
+    emulator.beforeReply(() => reply.promise);
+    const pending = turn(undefined, controller.signal);
+    await expect.poll(() => emulator.received.length).toBe(1);
+    controller.abort();
+    reply.resolve();
+    expect((await pending).status).toBe(204);
   });
 
   it("drops a queued spoken reply when leave revokes the session", async () => {

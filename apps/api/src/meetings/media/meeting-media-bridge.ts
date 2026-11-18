@@ -20,6 +20,7 @@ import {
 import { meetingTurnContext } from "./meeting-turn-context.js";
 
 const CONTEXT_HEADER = "x-meeting-context";
+const SPOKEN_CONTEXT_HEADER = "x-meeting-spoken-context";
 const NO_STORE = { "cache-control": "no-store" };
 
 export interface MeetingMediaSession {
@@ -43,7 +44,7 @@ export function createMeetingMediaBridge(deps: {
     session: ActiveSession,
     audio: Uint8Array,
     signal: AbortSignal,
-  ) => Promise<{ clip: SpeechClip | null; context?: string }>;
+  ) => Promise<{ clip: SpeechClip | null; context?: string; spokenContext?: string }>;
 }) {
   const context = meetingTurnContext(deps.signingSecret);
   async function authenticate(request: Request) {
@@ -116,26 +117,44 @@ export function createMeetingMediaBridge(deps: {
         if (!bytes) return c.body(null, 413, NO_STORE);
         if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
 
-        signal.throwIfAborted();
-        if (!(await deps.voiceReady(session, signal))) return c.body(null, 403, NO_STORE);
-        signal.throwIfAborted();
-        const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), session.grant);
-        const turn = await deps.respond(
-          { ...session, recentSpeech },
-          meetingAudioWav(bytes),
-          signal,
-        );
-        signal.throwIfAborted();
-        const current = await authenticate(c.req.raw);
-        if (!current?.admitted || !current.voice) return c.body(null, 401, NO_STORE);
-        const headers = turn.context
-          ? { ...NO_STORE, [CONTEXT_HEADER]: context.seal(turn.context, session.grant) }
-          : NO_STORE;
-        if (!turn.clip) return c.body(null, 204, headers);
+        try {
+          signal.throwIfAborted();
+          if (!(await deps.voiceReady(session, signal))) return c.body(null, 403, NO_STORE);
+          signal.throwIfAborted();
+          const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), session.grant);
+          const turn = await deps.respond(
+            { ...session, recentSpeech },
+            meetingAudioWav(bytes),
+            signal,
+          );
+          signal.throwIfAborted();
+          const current = await authenticate(c.req.raw);
+          if (!current?.admitted || !current.voice) return c.body(null, 401, NO_STORE);
+          const headers = turn.context
+            ? { ...NO_STORE, [CONTEXT_HEADER]: context.seal(turn.context, session.grant) }
+            : NO_STORE;
+          if (!turn.clip) return c.body(null, 204, headers);
 
-        return new Response(new Uint8Array(turn.clip.bytes), {
-          headers: { ...headers, "content-type": turn.clip.mimeType },
-        });
+          return new Response(new Uint8Array(turn.clip.bytes), {
+            headers: {
+              ...headers,
+              "content-type": turn.clip.mimeType,
+              ...(turn.spokenContext && {
+                [SPOKEN_CONTEXT_HEADER]: context.seal(turn.spokenContext, session.grant),
+              }),
+            },
+          });
+        } catch (error) {
+          if (
+            signal.aborted &&
+            (error === signal.reason ||
+              (error instanceof Error &&
+                (error.name === "AbortError" || error.name === "TimeoutError")))
+          ) {
+            return c.body(null, 204, NO_STORE);
+          }
+          throw error;
+        }
       });
     },
   };
