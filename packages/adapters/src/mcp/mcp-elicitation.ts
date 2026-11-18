@@ -11,7 +11,7 @@ import {
   TOOL_QUESTION_OPTIONS_MAX,
   TOOL_QUESTION_TEXT_MAX,
 } from "@rakazo/contracts";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 
@@ -322,10 +322,17 @@ export class McpElicitationRouter {
     const calls = [...this.calls];
     const owners = new Set(calls.map((call) => call.owner));
     const asker = calls.find((call) => call.ask);
-    if (owners.size !== 1 || !asker?.ask) return DECLINE;
+    // Each automatic decline says why, so a gateway's failed approval can be traced to its rule.
+    const decline = (reason: string) => {
+      getLogger().info("mcp.elicitation.declined", { reason, owner: asker?.owner ?? "" });
+      return DECLINE;
+    };
+    if (owners.size > 1) return decline("calls_from_several_runs");
+    if (!asker?.ask) return decline("nobody_to_ask");
     const ask = asker.ask;
     const question = toolQuestionFromElicitation(asker.source, params);
-    if (!question || this.asking.has(asker.owner)) return DECLINE;
+    if (!question) return decline("unsupported_form");
+    if (this.asking.has(asker.owner)) return decline("question_already_open");
     this.asking.add(asker.owner);
     const resumes = calls.map((call) => call.clock?.pause() ?? (() => undefined));
     // Which of the run's calls asked is unknown, so the question closes once none of them runs.
@@ -402,16 +409,16 @@ export async function callMcpToolAsking(
   }
 }
 
+/** What this client tells every server it can do: show apps, and when asked for, take questions. */
+export function mcpClientCapabilities(elicitation: boolean): ClientCapabilities {
+  return { ...MCP_APP_CLIENT_CAPABILITIES, ...(elicitation ? MCP_ELICITATION_CAPABILITIES : {}) };
+}
+
 /** A client for a remote server: it shows apps, and with a router it may be asked questions. */
 export function newRemoteMcpClient(router?: McpElicitationRouter): Client {
   const client = createMcpClient(
     { name: "rakazo", version: "0.1.0" },
-    {
-      capabilities: {
-        ...MCP_APP_CLIENT_CAPABILITIES,
-        ...(router ? MCP_ELICITATION_CAPABILITIES : {}),
-      },
-    },
+    { capabilities: mcpClientCapabilities(router !== undefined) },
   );
   router?.install(client);
   return client;

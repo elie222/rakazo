@@ -180,7 +180,9 @@ export function toolQuestionSentValues(
     const value = draft[field.name];
     if (value === undefined || value === "") continue;
     if (typeof value === "string" && field.type === "number") {
-      const number = Number(value.trim());
+      // A comma-decimal keyboard types 1,5: one comma and no point reads as the decimal mark.
+      const typed = value.trim();
+      const number = Number(/^-?\d*,\d+$/.test(typed) ? typed.replace(",", ".") : typed);
       out.push([field.name, value.trim() !== "" && Number.isFinite(number) ? number : value]);
     } else if (typeof value === "string" && field.type === "text" && field.format === "date-time") {
       const time = new Date(value);

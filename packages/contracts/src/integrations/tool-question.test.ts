@@ -23,6 +23,7 @@ describe("tool question forms", () => {
     const sent = toolQuestionSentValues(fields, { count: "1.5", at: "", __proto__: "x" });
     expect(sent.count).toBe(1.5);
     expect(toolQuestionSentValues(fields, { count: "1." }).count).toBe(1);
+    expect(toolQuestionSentValues(fields, { count: "1,5" }).count).toBe(1.5);
     // Text that is no number goes as typed, so the server names the field.
     expect(toolQuestionSentValues(fields, { count: "-" }).count).toBe("-");
   });

@@ -12,13 +12,12 @@ import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import { combineSignals } from "../integrations/connector-safety.js";
 import { dispatcherFetch, isNodeFetch } from "../network/undici-fetch.js";
-import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
 import {
   callMcpToolAsking,
-  MCP_ELICITATION_CAPABILITIES,
   McpElicitationRouter,
+  mcpClientCapabilities,
 } from "./mcp-elicitation.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
@@ -402,10 +401,7 @@ export class McpSession {
     const client = createMcpClient(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
       this.clientOptions.capabilities ?? {
-        capabilities: {
-          ...MCP_APP_CLIENT_CAPABILITIES,
-          ...(this.clientOptions.elicitation ? MCP_ELICITATION_CAPABILITIES : {}),
-        },
+        capabilities: mcpClientCapabilities(this.clientOptions.elicitation === true),
       },
     );
     if (this.clientOptions.elicitation) this.elicitation.install(client);
