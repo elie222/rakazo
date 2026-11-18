@@ -9,8 +9,15 @@ const UNFINISHED_IN_QUEUE = `
   where queues.queue_name = $1::text and jobs.key is distinct from $2::text
     and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)`;
 
-/** When the last unfinished job of queue $1, other than the one keyed $2, is due. */
-export const PENDING_UNTIL_SQL = `select max(jobs.run_at) as run_at ${UNFINISHED_IN_QUEUE}`;
+/**
+ * When the last unfinished job of queue $1 queued ahead of the one keyed $2 is due: all of them
+ * while that one is not queued. A job keeps its id when replaced, so its place is when it was
+ * first recorded.
+ */
+export const PENDING_UNTIL_SQL = `select max(jobs.run_at) as run_at ${UNFINISHED_IN_QUEUE}
+    and jobs.id < coalesce(
+      (select own.id from graphile_worker._private_jobs as own where own.key = $2::text),
+      9223372036854775807)`;
 
 /**
  * Makes the followers at the head of queue $1 due now, a millisecond apart, up to the first job
@@ -39,4 +46,37 @@ export const RELEASE_FOLLOWERS_SQL = `
 /** A job due late only so it runs after the jobs ahead of it in its named queue. */
 export function isFollowerPayload(payload: unknown): boolean {
   return (payload as { follower?: unknown } | null)?.follower === true;
+}
+
+/** A job of a named queue, as the in-memory queue applies the same rules to it. */
+export type OrderedJob = {
+  key?: string;
+  /** When it was first queued; replacing it keeps its place. */
+  place: number;
+  dueAt: number;
+  running: boolean;
+  follower: boolean;
+};
+
+/** `PENDING_UNTIL_SQL` over jobs held in memory. */
+export function lastDueAhead(jobs: OrderedJob[], exceptKey?: string): number | undefined {
+  const own = exceptKey ? jobs.find((job) => job.key === exceptKey) : undefined;
+  const ahead = jobs.filter(
+    (job) => (!exceptKey || job.key !== exceptKey) && (!own || job.place < own.place),
+  );
+  return ahead.length > 0 ? Math.max(...ahead.map((job) => job.dueAt)) : undefined;
+}
+
+/**
+ * `RELEASE_FOLLOWERS_SQL` over jobs held in memory: the followers at the head, in their order,
+ * up to the first job that is not one or is running; the job keyed `exceptKey` is left out.
+ */
+export function headFollowers<T extends OrderedJob>(jobs: T[], exceptKey?: string): T[] {
+  const queued = jobs
+    .filter((job) => job.key !== exceptKey || exceptKey === undefined)
+    .toSorted((a, b) => a.dueAt - b.dueAt);
+  const leader = queued.find((job) => job.running || !job.follower);
+  return queued.filter(
+    (job) => job.follower && !job.running && (!leader || job.dueAt < leader.dueAt),
+  );
 }

@@ -663,8 +663,9 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await publisher.enqueue(job("later", later));
       await publisher.enqueue(job("other", elsewhere, `${queueName}-other`));
       expect(await publisher.pendingUntil(queueName)).toEqual(later);
-      // A message's own job, as for its redelivery, can be left out.
+      // With a job's key, only the jobs queued ahead of it count, as for its redelivery.
       expect(await publisher.pendingUntil(queueName, keys[1])).toEqual(soon);
+      expect(await publisher.pendingUntil(queueName, keys[0])).toBeNull();
 
       // A job that used up its tries is finished, though its row stays.
       await testPool().query(

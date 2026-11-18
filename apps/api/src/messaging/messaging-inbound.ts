@@ -195,9 +195,10 @@ function beginShutdown(deps: MessagingInboundDeps, intake: DirectIntake): Shutdo
   };
   intake.shutdown = shutdown;
   intake.handingOff = shutdown;
-  shutdown.recorded = Promise.all(
-    shutdown.arrivals.map((arrival) => dueByShutdown(deps, shutdown, arrival)),
-  ).then(() => undefined);
+  // One at a time, in order, as the hand-off at the end goes.
+  shutdown.recorded = (async () => {
+    for (const arrival of shutdown.arrivals) await dueByShutdown(deps, intake, shutdown, arrival);
+  })();
   return shutdown;
 }
 
@@ -232,8 +233,11 @@ type Shutdown = {
   dueBy: number;
   /** The first writes making the jobs due by `dueBy`. */
   recorded: Promise<void>;
-  /** When each sender's last job is due meanwhile, so the next comes after it. */
-  last: Map<string, number>;
+  /**
+   * When each sender's last job is due meanwhile, so the next comes after it, and whether that
+   * time only waits for jobs ahead of it.
+   */
+  last: Map<string, { at: number; follower: boolean }>;
 };
 
 /**
@@ -410,6 +414,9 @@ async function prepareDirectEvent(
       inline: true,
       run: async () => {
         await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, arrival);
+        // A redelivery of a message that once went to its backup job: that job has nothing left
+        // to do, and must not hold the sender's next messages back.
+        if (existing) await endOwnJob(deps, existing.id, event);
       },
     };
   }
@@ -449,7 +456,7 @@ async function prepareDirectEvent(
       else {
         // It may have been waiting for its job when the shutdown started.
         if (!shutdown.arrivals.includes(arrival)) shutdown.arrivals.push(arrival);
-        await dueByShutdown(deps, shutdown, arrival);
+        await dueByShutdown(deps, intake, shutdown, arrival);
       }
       return null;
     }
@@ -544,10 +551,24 @@ async function followQueuedJobs(
   intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
 }
 
+/** The message's own job, left from an earlier delivery of it, ends; its followers are due. */
+async function endOwnJob(
+  deps: MessagingInboundDeps,
+  identityId: string,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const key = messagingInboundSettleJobKey(event.provider, event.handle);
+  await deps.prisma.$transaction(async (tx) => {
+    await deps.jobs.cancelIn(tx, key);
+    await deps.jobs.releaseFollowersIn(tx, messagingInboundSettleQueue(identityId), key);
+  });
+}
+
 /**
  * The message's backup job, already recorded, settles it instead of this process. It comes due
- * after the sender's jobs handed off before it, so their job queue keeps the order they were sent
- * in, and the sender's messages queued behind it follow it there.
+ * after the sender's jobs still queued ahead of it, read again now since some may have settled
+ * after the message arrived, so their job queue keeps the order they were sent in; the sender's
+ * messages queued behind it here follow it there.
  */
 function handOffToJob(
   deps: MessagingInboundDeps,
@@ -555,54 +576,95 @@ function handOffToJob(
   arrival: Arrival,
 ): Promise<void> {
   if (!arrival.job) return Promise.resolve();
-  const now = Date.now();
-  const after = intake.handedOff.get(arrival.sender);
-  const dueAt = Math.max(now, after === undefined ? 0 : after + 1);
-  intake.handedOff.set(arrival.sender, dueAt);
-  arrival.job.dueAt = dueAt;
-  // Due later than now only to wait for the jobs ahead of it, which make it due when they settle.
-  const follower = dueAt > now;
   return writeJob(arrival, async (job) => {
+    const { identityId, provider, handle } = job.payload;
+    const ahead = await bestEffort(
+      "read the backup jobs an inbound message waits for",
+      deps.jobs.pendingUntil(
+        messagingInboundSettleQueue(identityId),
+        messagingInboundSettleJobKey(provider, handle),
+      ),
+    );
+    // Without an answer, it keeps to what this process last knew of the queue.
+    const after = ahead === undefined ? intake.handedOff.get(arrival.sender) : ahead?.getTime();
+    const now = Date.now();
+    const dueAt = Math.max(now, after === undefined ? 0 : after + 1);
+    intake.handedOff.set(
+      arrival.sender,
+      Math.max(intake.handedOff.get(arrival.sender) ?? 0, dueAt),
+    );
+    job.dueAt = dueAt;
     const { follower: _was, ...rest } = job.payload;
     const payload: SettlePayload = {
       ...rest,
       ...(arrival.quiet ? { quiet: true } : {}),
-      ...(follower ? { follower: true } : {}),
+      // Due later than now only to wait for the jobs ahead of it, which make it due as they settle.
+      ...(dueAt > now ? { follower: true } : {}),
     };
     await bestEffort(
       "hand an inbound message to its backup job",
-      settleJobAt(deps.jobs, payload, new Date(job.dueAt)),
+      writeSettleJob(deps, payload, dueAt),
     );
     job.payload = payload;
   }).then(() => undefined);
 }
 
 /**
+ * Writes the message's backup job again under its key. A follower is written together with a
+ * release of the sender's queue, so if the jobs it waits for settled after they were read, it is
+ * due now instead of at its late time.
+ */
+async function writeSettleJob(
+  deps: MessagingInboundDeps,
+  payload: SettlePayload,
+  dueAt: number,
+): Promise<void> {
+  if (!payload.follower) return settleJobAt(deps.jobs, payload, new Date(dueAt));
+  await deps.prisma.$transaction(async (tx) => {
+    await recordSettleJob(deps.jobs, tx, payload, new Date(dueAt));
+    await deps.jobs.releaseFollowersIn(tx, messagingInboundSettleQueue(payload.identityId));
+  });
+}
+
+/**
  * During a shutdown's grace: the message's job is due by the end of it, after the sender's jobs
  * before it, so a process killed meanwhile still leaves it settling soon. A job due sooner, or
- * waiting for the jobs ahead of it, keeps its time.
+ * waiting for the jobs ahead of it, keeps its time. One that follows jobs queued elsewhere stays
+ * behind them, marked a follower so they make it due as they settle.
  */
 function dueByShutdown(
   deps: MessagingInboundDeps,
+  intake: DirectIntake,
   shutdown: Shutdown,
   arrival: Arrival,
 ): Promise<void> {
   const job = arrival.job;
   if (!job) return Promise.resolve();
-  const after = shutdown.last.get(arrival.sender);
-  const dueAt = Math.max(shutdown.dueBy, after === undefined ? 0 : after + 1);
+  const queued = intake.handedOff.get(arrival.sender);
+  const after =
+    shutdown.last.get(arrival.sender) ??
+    (queued === undefined ? undefined : { at: queued, follower: true });
+  const dueAt = Math.max(shutdown.dueBy, after ? after.at + 1 : 0);
   if (job.dueAt <= dueAt || job.payload.follower) {
-    shutdown.last.set(arrival.sender, Math.max(after ?? job.dueAt, job.dueAt));
+    shutdown.last.set(arrival.sender, {
+      at: Math.max(after?.at ?? job.dueAt, job.dueAt),
+      follower: job.payload.follower === true || after?.follower === true,
+    });
     return Promise.resolve();
   }
-  shutdown.last.set(arrival.sender, dueAt);
+  const follower = after?.follower === true && dueAt > shutdown.dueBy;
+  shutdown.last.set(arrival.sender, { at: dueAt, follower });
   job.dueAt = dueAt;
-  return writeJob(arrival, (current) =>
-    bestEffort(
+  return writeJob(arrival, async (current) => {
+    const payload: SettlePayload = follower
+      ? { ...current.payload, follower: true }
+      : current.payload;
+    await bestEffort(
       "make an inbound message's backup job due soon",
-      settleJobAt(deps.jobs, current.payload, new Date(current.dueAt)),
-    ),
-  ).then(() => undefined);
+      writeSettleJob(deps, payload, current.dueAt),
+    );
+    current.payload = payload;
+  }).then(() => undefined);
 }
 
 /** A stop quieted the message: its backup job, as due as it was, starts no turn either. */
@@ -611,7 +673,7 @@ function recordQuiet(deps: MessagingInboundDeps, arrival: Arrival): Promise<void
   return writeJob(arrival, async (job) => {
     if (job.payload.quiet) return;
     const payload = { ...job.payload, quiet: true };
-    await settleJobAt(deps.jobs, payload, new Date(job.dueAt));
+    await writeSettleJob(deps, payload, job.dueAt);
     job.payload = payload;
   }).then(() => undefined);
 }

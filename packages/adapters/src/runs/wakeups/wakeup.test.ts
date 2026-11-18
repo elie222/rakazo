@@ -175,6 +175,46 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
   });
 
+  it("releases the followers from inside the running job they waited for", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const settle = (handle: string, dueIn: number, follower: boolean) =>
+      messagingInboundSettleJob(
+        {
+          provider: "chat",
+          handle,
+          identityId: "identity-1",
+          text: "",
+          attachments: [],
+          ...(follower ? { follower: true } : {}),
+        },
+        new Date(Date.now() + dueIn),
+      );
+    const settling = settle("settling", 1_000, false);
+    target["messaging.inbound_settle"] = vi.fn(async ({ handle }) => {
+      if (handle === "settling") {
+        await queue.releaseFollowersIn(
+          { $executeRawUnsafe: vi.fn() },
+          "messaging.inbound:identity-1",
+          settling.replaceKey,
+        );
+      }
+    });
+    await queue.start(target);
+    await queue.enqueue(settling);
+    await queue.enqueue(settle("behind", 60 * 60_000, true));
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(
+      vi
+        .mocked(target["messaging.inbound_settle"])
+        .mock.calls.map(([payload]) => (payload as { handle: string }).handle),
+    ).toEqual(["settling", "behind"]);
+    await queue.close();
+  });
+
   it("delivers delayed jobs", async () => {
     vi.useFakeTimers();
     const queue = new InMemoryJobQueue();

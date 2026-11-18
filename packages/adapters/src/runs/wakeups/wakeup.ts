@@ -20,8 +20,11 @@ import { recordConnectionCleanupAttemptsExhausted } from "../../integrations/con
 import { recordHistoryCompactAttemptsExhausted } from "../../runtime/context/history-compaction.js";
 import { RunExecutionHost } from "../lifecycle/run-execution.js";
 import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";
+import type { OrderedJob } from "./named-queue-order.js";
 import {
+  headFollowers,
   isFollowerPayload,
+  lastDueAhead,
   PENDING_UNTIL_SQL,
   RELEASE_FOLLOWERS_SQL,
 } from "./named-queue-order.js";
@@ -700,10 +703,6 @@ export function createRoutineRetryNoticeReconciler(
 
 const LAST_ATTEMPT = { number: 1, max: 1 } as const;
 
-function isFollower(job: QueuedJob): boolean {
-  return isFollowerPayload(unwrapJobPayload(job.payload).payload);
-}
-
 /** Graphile's default when a job sets no cap. */
 const DEFAULT_JOB_MAX_ATTEMPTS = 25;
 
@@ -713,6 +712,8 @@ interface QueuedJob {
   availableAt?: Date;
   replaceKey?: string;
   queueName?: string;
+  /** Its place in the queue, kept when it is replaced, as Graphile keeps a job's id. */
+  place: number;
   attempts: number;
   maxAttempts: number;
 }
@@ -724,6 +725,7 @@ function toQueuedJob(job: BackgroundJob): QueuedJob {
     availableAt: job.availableAt,
     replaceKey: job.replaceKey,
     queueName: job.queueName,
+    place: 0,
     attempts: 0,
     maxAttempts: job.maxAttempts ?? DEFAULT_JOB_MAX_ATTEMPTS,
   };
@@ -736,6 +738,7 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly active = new Set<Promise<void>>();
   private readonly running = new Set<QueuedJob>();
+  private places = 0;
   private readonly failures = new Map<BackgroundJob["name"], number>();
   private readonly closingJobs: QueuedJob[] = [];
   private draining: Promise<void> | undefined;
@@ -755,6 +758,8 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
     if (job.keepExisting && existing && existing.attempts < existing.maxAttempts) {
       return;
     }
+    if (!existing) this.places += 1;
+    stored.place = existing?.place ?? this.places;
     if (this.closing) {
       this.enqueueWhileClosing(stored);
       return;
@@ -816,41 +821,36 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
 
   /** Like Graphile's: jobs scheduled, waiting out a shutdown or running count; a running one is due now. */
   async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
-    let until: number | undefined;
-    const note = (job: QueuedJob, dueAt: number) => {
-      if (job.queueName !== queueName || (exceptKey && job.replaceKey === exceptKey)) return;
-      until = Math.max(until ?? dueAt, dueAt);
-    };
-    for (const job of [...this.scheduled.values(), ...this.closingJobs]) {
-      note(job, job.availableAt?.getTime() ?? Date.now());
-    }
-    for (const job of this.running) note(job, Date.now());
-    return until === undefined ? null : new Date(until);
+    const due = lastDueAhead(this.ordered(queueName), exceptKey);
+    return due === undefined ? null : new Date(due);
   }
 
   /** Like Graphile's, though not transactional: the followers move as soon as this is called. */
-  async releaseFollowersIn(
-    _tx: JobTransaction,
-    queueName: string,
-    exceptKey?: string,
-  ): Promise<void> {
-    // A running job of the queue settles first; it releases them itself when it is done.
-    if ([...this.running].some((job) => job.queueName === queueName)) return;
-    const queued = [...this.scheduled]
-      .filter(([, job]) => job.queueName === queueName && job.replaceKey !== exceptKey)
-      .map(([timer, job]) => ({ timer, job, dueAt: job.availableAt?.getTime() ?? Date.now() }))
-      .sort((a, b) => a.dueAt - b.dueAt);
-    const firstLeader = queued.find(({ job }) => !isFollower(job));
-    const head = queued.filter(
-      ({ job, dueAt }) => isFollower(job) && (!firstLeader || dueAt < firstLeader.dueAt),
-    );
+  async releaseFollowersIn(_tx: JobTransaction, queueName: string, exceptKey?: string) {
+    const head = headFollowers(this.ordered(queueName), exceptKey);
     for (const [place, { timer, job, dueAt }] of head.entries()) {
+      if (!timer) continue;
       clearTimeout(timer);
       this.timers.delete(timer);
       this.scheduled.delete(timer);
       if (job.replaceKey) this.keyed.delete(job.replaceKey);
       this.schedule({ ...job, availableAt: new Date(Math.min(dueAt, Date.now() + place)) });
     }
+  }
+
+  /** The queue's unfinished jobs, in the shape the queue-order rules read. */
+  private ordered(queueName: string) {
+    const now = Date.now();
+    const of = (job: QueuedJob, running: boolean, timer?: ReturnType<typeof setTimeout>) => {
+      const follower = isFollowerPayload(unwrapJobPayload(job.payload).payload);
+      const dueAt = running ? now : (job.availableAt?.getTime() ?? now);
+      return { job, timer, key: job.replaceKey, place: job.place, dueAt, running, follower };
+    };
+    return [
+      ...[...this.scheduled].map(([timer, job]) => of(job, false, timer)),
+      ...this.closingJobs.map((job) => of(job, false)),
+      ...[...this.running].map((job) => of(job, true)),
+    ].filter(({ job }) => job.queueName === queueName) satisfies OrderedJob[];
   }
 
   /** Attempts and schedule for a keyed job that is still queued. */

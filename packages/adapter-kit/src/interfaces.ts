@@ -444,8 +444,8 @@ export interface JobPublisher {
  */
 export interface JobQueueOrder {
   /**
-   * When the last unfinished job of a named queue is due, leaving out the job keyed `exceptKey`;
-   * null when the queue has none.
+   * When the last unfinished job of a named queue is due; null when the queue has none. With
+   * `exceptKey`, only the jobs queued ahead of that job count, all of them while it is not queued.
    */
   pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null>;
   /**

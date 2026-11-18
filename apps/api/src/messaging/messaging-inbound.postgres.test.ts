@@ -986,4 +986,84 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       await publisher.close();
     }
   });
+
+  it("makes a message due now when the job it followed settles before its download ends", async () => {
+    const publisher = new GraphileJobPublisher(db.pool);
+    const jobs = queueWithoutRuns(publisher);
+    const ahead = `in-${randomUUID()}`;
+    const behind = `in-${randomUUID()}`;
+    const keys = [
+      messagingInboundSettleJobKey("test", ahead),
+      messagingInboundSettleJobKey("test", behind),
+    ];
+    const download = deferred();
+    try {
+      // Another instance's message, still settling there when this one arrives here.
+      await publisher.enqueue(
+        messagingInboundSettleJob(
+          { provider: "test", handle: ahead, identityId: identity.id, text: "", attachments: [] },
+          new Date(Date.now() + 60 * 60_000),
+        ),
+      );
+      await holdQueue(true);
+      const inbound = createMessagingInboundHandler({
+        prisma: db.prisma,
+        events: createThreadEvents(db.prisma),
+        jobs,
+        delivery: { recordIn: vi.fn(), send: vi.fn(async () => undefined) },
+        sandbox: {} as never,
+        provision: vi.fn(),
+        openSignup: false,
+        storeAttachment: async () => {
+          await download.promise;
+          throw new Error("not kept in this test");
+        },
+      });
+      const address = (
+        await system.messagingIdentity.findUniqueOrThrow({ where: { id: identity.id } })
+      ).address;
+      await runAsSystem("test inbound", () =>
+        inbound({
+          type: "message",
+          provider: "test",
+          handle: behind,
+          threadId: `test:${address}`,
+          isDirect: true,
+          from: address,
+          fromLabel: null,
+          channelName: null,
+          participants: [],
+          content: "",
+          mediaUrl: null,
+          attachments: [
+            { name: "clip.mov", mimeType: "video/quicktime", fetch: async () => new Uint8Array() },
+          ],
+        }),
+      );
+      expect(await jobRow(keys[1]!)).toBeDefined();
+      // The other instance settles its message, with nothing yet marked to release behind it.
+      await db.prisma.$transaction(async (tx) => {
+        await publisher.cancelIn(tx, keys[0]!);
+        await publisher.releaseFollowersIn(tx, `messaging.inbound:${identity.id}`, keys[0]);
+      });
+      const before = Date.now();
+      download.resolve();
+
+      // Its hand-off finds nothing ahead any more: due now, and no follower.
+      await vi.waitFor(async () =>
+        expect((await jobRow(keys[1]!))!.run_at.getTime()).toBeLessThanOrEqual(Date.now()),
+      );
+      expect((await jobRow(keys[1]!))!.run_at.getTime()).toBeGreaterThanOrEqual(before - 1_000);
+      const { rows } = await db.pool.query<{ payload: { payload?: { follower?: boolean } } }>(
+        "select payload from graphile_worker._private_jobs where key = $1",
+        [keys[1]],
+      );
+      expect(rows[0]!.payload.payload?.follower).toBeUndefined();
+    } finally {
+      download.resolve();
+      await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await holdQueue(false);
+      await publisher.close();
+    }
+  });
 });
