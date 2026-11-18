@@ -74,22 +74,39 @@ test("a retrying computer can be closed and keeps booting without a stale error 
   await expect(close).toHaveCount(0);
   expect(held).toHaveLength(1);
 
+  staleError = false;
+  const response = await held[0]!.fetch();
+  await held[0]!.fulfill({ response });
+  await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
+  await expect(close).toHaveCount(0);
+});
+
+test("the preview shows progress while a running computer's screen connects", async ({
+  page,
+}, testInfo) => {
+  await signup(
+    page,
+    `screen-connecting-${Date.now()}@rakazo.test`,
+    "password12",
+    "Screen Connecting",
+  );
+  await completeOnboarding(page);
+  await routeScreen(page);
   let holdScreen = true;
   const heldScreens: Route[] = [];
   await page.route("**/rpc/computer/screenUrl", (route) => {
     if (!holdScreen) return route.fallback();
     heldScreens.push(route);
   });
-  staleError = false;
-  const response = await held[0]!.fetch();
-  await held[0]!.fulfill({ response });
+  await rpc(page, "computer/boot", { botId: activeBotId(page) });
+  await openBotPanel(page);
+  const preview = page.getByTestId("computer-preview");
   await expect.poll(() => heldScreens.length).toBeGreaterThan(0);
-  await expect(preview).toContainText("Connecting to the screen…");
+  await expect(preview.getByText("Connecting to the screen…")).toBeVisible();
   await captureScreenshot(page, testInfo, "computer-connecting-screen");
   holdScreen = false;
   await Promise.all(heldScreens.map((route) => route.fallback()));
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
-  await expect(close).toHaveCount(0);
 });
 
 test("opening a computer refreshes a stale booting snapshot", async ({ page }, testInfo) => {
