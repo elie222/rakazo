@@ -5,6 +5,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
+  JobQueueReader,
   JobTransaction,
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
@@ -51,7 +52,7 @@ async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boole
 // pool per graphile-worker component: three independent pools per worker process
 // (Prisma + publisher + runner) triples the connection footprint against Postgres'
 // max_connections for no benefit, since they never need isolation from each other.
-export class GraphileJobPublisher implements JobPublisher {
+export class GraphileJobPublisher implements JobPublisher, JobQueueReader {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
 
@@ -157,6 +158,25 @@ export class GraphileJobPublisher implements JobPublisher {
     const utils = await this.getUtils();
     await utils.withPgClient(async (client) => {
       await client.query("select graphile_worker.remove_job($1::text)", [key]);
+    });
+  }
+
+  /**
+   * Counts a job queued, in backoff or running; one that used up its attempts is finished, though
+   * Graphile keeps its row until the dead-job pruner removes it.
+   */
+  async pendingUntil(queueName: string): Promise<Date | null> {
+    const utils = await this.getUtils();
+    return utils.withPgClient(async (client) => {
+      const found = await client.query<{ run_at: Date | null }>(
+        `select max(jobs.run_at) as run_at
+         from graphile_worker._private_jobs as jobs
+         join graphile_worker._private_job_queues as queues on queues.id = jobs.job_queue_id
+         where queues.queue_name = $1
+           and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)`,
+        [queueName],
+      );
+      return found.rows[0]?.run_at ?? null;
     });
   }
 
@@ -687,6 +707,7 @@ interface QueuedJob {
   payload: unknown;
   availableAt?: Date;
   replaceKey?: string;
+  queueName?: string;
   attempts: number;
   maxAttempts: number;
 }
@@ -697,17 +718,19 @@ function toQueuedJob(job: BackgroundJob): QueuedJob {
     payload: wrapJobPayload(job.payload),
     availableAt: job.availableAt,
     replaceKey: job.replaceKey,
+    queueName: job.queueName,
     attempts: 0,
     maxAttempts: job.maxAttempts ?? DEFAULT_JOB_MAX_ATTEMPTS,
   };
 }
 
-export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
+export class InMemoryJobQueue implements JobPublisher, JobQueueReader, JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly scheduled = new Map<ReturnType<typeof setTimeout>, QueuedJob>();
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly active = new Set<Promise<void>>();
+  private readonly running = new Set<QueuedJob>();
   private readonly failures = new Map<BackgroundJob["name"], number>();
   private readonly closingJobs: QueuedJob[] = [];
   private draining: Promise<void> | undefined;
@@ -782,6 +805,19 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     this.scheduled.delete(timer);
   }
 
+  /** Like Graphile's: jobs scheduled, waiting out a shutdown or running count; a running one is due now. */
+  async pendingUntil(queueName: string): Promise<Date | null> {
+    let until: number | undefined;
+    const note = (job: QueuedJob, dueAt: number) => {
+      if (job.queueName === queueName) until = Math.max(until ?? dueAt, dueAt);
+    };
+    for (const job of [...this.scheduled.values(), ...this.closingJobs]) {
+      note(job, job.availableAt?.getTime() ?? Date.now());
+    }
+    for (const job of this.running) note(job, Date.now());
+    return until === undefined ? null : new Date(until);
+  }
+
   /** Attempts and schedule for a keyed job that is still queued. */
   keyedJob(
     replaceKey: string,
@@ -845,6 +881,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   }
 
   private dispatch(handlers: BackgroundJobHandlers, job: QueuedJob): Promise<void> {
+    this.running.add(job);
     const unpacked = unwrapJobPayload(job.payload);
     const active = runCorrelatedJob({
       name: job.name,
@@ -856,7 +893,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       this.failures.set(job.name, (this.failures.get(job.name) ?? 0) + 1);
     });
     this.active.add(active);
-    void active.finally(() => this.active.delete(active));
+    void active.finally(() => {
+      this.active.delete(active);
+      this.running.delete(job);
+    });
     return active;
   }
 

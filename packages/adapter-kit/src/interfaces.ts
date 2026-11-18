@@ -437,6 +437,12 @@ export interface JobPublisher {
   close(): Promise<void>;
 }
 
+/** What a job queue still holds, for work that must not overtake jobs already queued. */
+export interface JobQueueReader {
+  /** When the last unfinished job of a named queue is due, or null when the queue has none. */
+  pendingUntil(queueName: string): Promise<Date | null>;
+}
+
 export interface JobWorkerHost {
   start(handlers: BackgroundJobHandlers): Promise<void>;
   stop(): Promise<void>;

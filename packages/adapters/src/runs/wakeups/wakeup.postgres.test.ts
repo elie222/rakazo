@@ -641,6 +641,53 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
+  it("says when the last unfinished job of a named queue is due", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const suffix = `${process.pid}-${Date.now()}`;
+    const queueName = `contract:pending-until:${suffix}`;
+    const job = (key: string, runAt: Date, queue = queueName) => ({
+      name: "history.compact" as const,
+      payload: { threadId: key },
+      availableAt: runAt,
+      replaceKey: `${queue}:${key}`,
+      queueName: queue,
+      maxAttempts: 3,
+    });
+    const soon = new Date(Date.now() + 60 * 60 * 1000);
+    const later = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const elsewhere = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const keys = [`${queueName}:soon`, `${queueName}:later`, `${queueName}-other:other`];
+    try {
+      expect(await publisher.pendingUntil(queueName)).toBeNull();
+      await publisher.enqueue(job("soon", soon));
+      await publisher.enqueue(job("later", later));
+      await publisher.enqueue(job("other", elsewhere, `${queueName}-other`));
+      expect(await publisher.pendingUntil(queueName)).toEqual(later);
+
+      // A job that used up its tries is finished, though its row stays.
+      await testPool().query(
+        "update graphile_worker._private_jobs set attempts = max_attempts where key = $1",
+        [keys[1]],
+      );
+      expect(await publisher.pendingUntil(queueName)).toEqual(soon);
+      // One on its last try while a worker holds it is not.
+      await testPool().query(
+        "update graphile_worker._private_jobs set attempts = max_attempts, locked_at = now(), locked_by = 'contract' where key = $1",
+        [keys[1]],
+      );
+      expect(await publisher.pendingUntil(queueName)).toEqual(later);
+
+      await publisher.cancel(keys[0]!);
+      await testPool().query("delete from graphile_worker._private_jobs where key = $1", [keys[1]]);
+      expect(await publisher.pendingUntil(queueName)).toBeNull();
+    } finally {
+      await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
+        keys,
+      ]);
+      await publisher.close();
+    }
+  });
+
   it("re-enqueues an exhausted job with fresh attempts", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const key = `contract:keep-exhausted:${Date.now()}`;

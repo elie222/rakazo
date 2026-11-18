@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
-import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
+import {
+  messagingInboundSettleJob,
+  messagingSendJob,
+  messagingSendJobKey,
+} from "@rakazo/adapter-kit";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -94,6 +98,38 @@ describe("InMemoryJobQueue", () => {
     await queue.enqueue({ name: "run.continue", payload: { runId: "run-2" } });
     await queue.awaitIdle();
     expect(target["run.continue"]).toHaveBeenCalledTimes(2);
+    await queue.close();
+  });
+
+  it("says when the last unfinished job of a named queue is due", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const running = deferred();
+    target["messaging.inbound_settle"] = vi.fn(() => running.promise);
+    await queue.start(target);
+    const settle = (handle: string, identityId: string, dueAt: Date) =>
+      messagingInboundSettleJob(
+        { provider: "chat", handle, identityId, text: "", attachments: [] },
+        dueAt,
+      );
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toBeNull();
+
+    const later = new Date(Date.now() + 60_000);
+    await queue.enqueue(settle("message-1", "identity-1", new Date(Date.now() + 1_000)));
+    await queue.enqueue(settle("message-2", "identity-1", later));
+    await queue.enqueue(settle("message-3", "identity-2", new Date(Date.now() + 120_000)));
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(later);
+
+    // A running job is still unfinished, and due now.
+    await queue.cancel(settle("message-2", "identity-1", later).replaceKey!);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["messaging.inbound_settle"]).toHaveBeenCalledOnce();
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(new Date(Date.now()));
+
+    running.resolve();
+    await queue.awaitIdle();
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toBeNull();
     await queue.close();
   });
 

@@ -3,6 +3,7 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   JobPublisher,
+  JobQueueReader,
   JobTransaction,
   JobWorkerHost,
   RealtimeFanout,
@@ -172,10 +173,10 @@ export class RunStarter {
 }
 
 /** Runs are durable in Postgres and start in the process that makes them due. */
-export class RunJobPublisher implements JobPublisher {
+export class RunJobPublisher implements JobPublisher, JobQueueReader {
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly background: JobPublisher,
+    private readonly background: JobPublisher & Partial<JobQueueReader>,
     private readonly starter: RunStarter,
   ) {}
 
@@ -208,6 +209,11 @@ export class RunJobPublisher implements JobPublisher {
     // The durable status is already cancelled. Legacy Graphile deliveries can
     // safely drain as no-ops; chat cancellation needs no scheduler connection.
     if (!key.startsWith("run:")) await this.background.cancel(key);
+  }
+
+  async pendingUntil(queueName: string): Promise<Date | null> {
+    if (!this.background.pendingUntil) throw new Error("This job queue cannot list what it holds");
+    return this.background.pendingUntil(queueName);
   }
 
   async close(): Promise<void> {
