@@ -632,7 +632,7 @@ export function accountRoutes(ctx: RouterContext) {
         return toVoiceStatus(cred);
       }),
       setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
-        updateVoiceSpeechModel(deps, context.actor, input),
+        updateVoiceSpeechModel(deps, context.actor, { ...input, signal: context.signal }),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
         // A named provider lists its voices even before the copy has a default voice.

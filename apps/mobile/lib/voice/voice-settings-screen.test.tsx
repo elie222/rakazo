@@ -400,7 +400,8 @@ it("picks a listed speech model and moves to a voice the new model has", async (
   mocks.rpc = async (method, input) => {
     calls.push([method, input]);
     if (method === "voice/catalog") return catalog;
-    if (method === "voice/credentials") return [credential()];
+    if (method === "voice/credentials")
+      return [{ ...credential(), voiceId: speechModel === "openai/tts" ? "alloy" : "en_paul" }];
     if (method === "voice/status")
       return { configured: true, ready: true, provider: "openrouter", voiceId: "alloy" };
     if (method === "voice/models")
@@ -414,7 +415,7 @@ it("picks a listed speech model and moves to a voice the new model has", async (
         : [{ id: "en_paul", label: "en_paul" }];
     if (method === "voice/setSpeechModel") {
       speechModel = (input as { speechModel: string }).speechModel;
-      return credential();
+      return { ...credential(), voiceId: "en_paul" };
     }
     if (method === "voice/setVoice")
       return { configured: true, ready: true, provider: "openrouter" };
@@ -432,8 +433,7 @@ it("picks a listed speech model and moves to a voice the new model has", async (
     "voice/setSpeechModel",
     { provider: "openrouter", scope: "account", speechModel: "mistral/voxtral" },
   ]);
-  expect(calls).toContainEqual([
-    "voice/setVoice",
-    { voiceId: "en_paul", provider: "openrouter", scope: "account" },
-  ]);
+  expect(calls.some(([method]) => method === "voice/setVoice")).toBe(false);
+  expect(button("Voxtral")?.getAttribute("aria-pressed")).toBe("true");
+  expect(button("en_paul")?.getAttribute("aria-pressed")).toBe("true");
 });

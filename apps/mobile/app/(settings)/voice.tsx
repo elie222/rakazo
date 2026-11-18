@@ -520,6 +520,8 @@ export default function VoiceSettings() {
       loadRevision.current++;
       edited.current.delete("speechModel");
       setSpeechModel(saved.speechModel ?? "");
+      // The server moved the voice to one the new model has.
+      if (!edited.current.has("voiceId")) setVoiceId(saved.voiceId ?? "");
       setCredentials(merge);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
       void load(selected.id, { keepForm: true, reuse: !selected.speechModels }).catch(
@@ -527,26 +529,9 @@ export default function VoiceSettings() {
       );
     } catch (err) {
       setError(errorText(err, t`Could not save that speech model`));
-      return;
     } finally {
       speechModelSave.current = null;
       setPending(null);
-    }
-    if (selected.speechModels) await followSpeechModel(selected.id);
-  }
-
-  /** A speech model has its own voices; keep the current one only if the new model has it. */
-  async function followSpeechModel(providerId: string) {
-    try {
-      const listed = await fetchFresh(queryClient, voicesRead(target, providerId), {
-        reuse: false,
-      });
-      if (providerId !== selectedProvider.current) return;
-      setVoices(listed);
-      const first = listed[0];
-      if (first && !listed.some((voice) => voice.id === voiceId)) await chooseVoice(first.id);
-    } catch (err) {
-      if (!isCancelledError(err)) setError(errorText(err, t`Could not load voice settings`));
     }
   }
 

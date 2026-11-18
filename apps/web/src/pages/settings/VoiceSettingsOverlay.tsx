@@ -112,7 +112,6 @@ export function VoiceSettingsOverlay({
   const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
   const connection = useRef({
-    voiceId,
     speechModel,
     baseUrl,
     ttsModel,
@@ -122,7 +121,6 @@ export function VoiceSettingsOverlay({
     sttApiKey,
   });
   connection.current = {
-    voiceId,
     speechModel,
     baseUrl,
     ttsModel,
@@ -409,6 +407,26 @@ export function VoiceSettingsOverlay({
     }
   }
 
+  /** The server moved the voice to one the new model has; show it with the new model's voices. */
+  async function showSavedSpeechModelVoices(providerId: string, savedVoiceId: string) {
+    const request = ++voicesRequest.current;
+    try {
+      const listed = await queryClient.fetchQuery(
+        queries.voice.voices.queryOptions({
+          input: { provider: providerId, scope },
+          staleTime: 0,
+        }),
+      );
+      if (request !== voicesRequest.current) return;
+      setVoiceList({ provider: providerId, voices: listed });
+      setVoiceId(savedVoiceId);
+    } catch (err) {
+      if (request === voicesRequest.current) {
+        setError(errorText(err, t`Could not load voice settings`));
+      }
+    }
+  }
+
   async function saveSpeechModel() {
     if (!credential || !selected?.speechModel) return;
     const next = speechModel.trim();
@@ -417,8 +435,9 @@ export function VoiceSettingsOverlay({
     speechModelSave.current = next;
     setError(null);
     markPending("voice");
+    let saved: VoiceCredential;
     try {
-      const saved = await rpc.voice.setSpeechModel({
+      saved = await rpc.voice.setSpeechModel({
         scope,
         provider: selected.id,
         speechModel: next,
@@ -437,27 +456,7 @@ export function VoiceSettingsOverlay({
       speechModelSave.current = null;
       markPending(null);
     }
-    if (selected.speechModels) await followSpeechModel(selected.id);
-  }
-
-  /** A speech model has its own voices; keep the current one only if the new model has it. */
-  async function followSpeechModel(providerId: string) {
-    try {
-      const listed = await queryClient.fetchQuery(
-        queries.voice.voices.queryOptions({
-          input: { provider: providerId, scope },
-          staleTime: 0,
-        }),
-      );
-      if (providerId !== providerRef.current) return;
-      setVoiceList({ provider: providerId, voices: listed });
-      const first = listed[0];
-      if (first && !listed.some((voice) => voice.id === connection.current.voiceId)) {
-        await chooseVoice(first.id);
-      }
-    } catch (err) {
-      setError(errorText(err, t`Could not load voice settings`));
-    }
+    if (selected.speechModels) await showSavedSpeechModelVoices(selected.id, saved.voiceId);
   }
 
   async function testVoice() {

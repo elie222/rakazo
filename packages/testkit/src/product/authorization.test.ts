@@ -505,6 +505,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/disconnect", { provider: "elevenlabs" }],
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
+      ["voice/models", { provider: "openrouter" }],
       ["voice/prepare", { text: "Nope" }],
       ["voice/setSpeechModel"],
       ["analytics/screen"],

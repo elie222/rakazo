@@ -13,11 +13,14 @@ describe("parsePcmContentType", () => {
     });
   });
 
+  it("reads a missing channel count as mono", () => {
+    expect(parsePcmContentType("audio/pcm;rate=24000")).toEqual({ sampleRate: 24000, channels: 1 });
+  });
+
   it.each([
     null,
     "audio/mpeg",
     "audio/pcm",
-    "audio/pcm;rate=24000",
     "audio/pcm;rate=abc;channels=1",
     "audio/pcm;rate=0;channels=1",
     "audio/pcm;rate=24000;channels=99",

@@ -15,7 +15,10 @@ export function parsePcmContentType(contentType: string | null): PcmFormat | und
     return param ? Number(param.slice(name.length + 1)) : Number.NaN;
   };
   const sampleRate = value("rate");
-  const channels = value("channels");
+  // Without a channel count the samples are mono.
+  const channels = params.some((entry) => entry.toLowerCase().startsWith("channels="))
+    ? value("channels")
+    : 1;
   if (!Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > 192_000) return undefined;
   if (!Number.isInteger(channels) || channels < 1 || channels > 8) return undefined;
   return { sampleRate, channels };

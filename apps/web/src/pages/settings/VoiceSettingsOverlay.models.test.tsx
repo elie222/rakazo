@@ -126,7 +126,7 @@ it("suggests the speech models a provider lists and follows the new model's voic
   ]);
   voice.setSpeechModel.mockReset().mockImplementation(async (input: { speechModel: string }) => {
     model = input.speechModel;
-    return { ...router, speechModel: input.speechModel };
+    return { ...router, speechModel: input.speechModel, voiceId: "en_paul" };
   });
   voice.setVoice.mockReset().mockResolvedValue({ ready: true, provider: "openrouter" });
   const container = document.createElement("div");
@@ -161,13 +161,8 @@ it("suggests the speech models a provider lists and follows the new model's voic
       input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     });
 
-    await vi.waitFor(() =>
-      expect(voice.setVoice).toHaveBeenCalledWith({
-        scope: "account",
-        voiceId: "en_paul",
-        provider: "openrouter",
-      }),
-    );
+    await vi.waitFor(() => expect(labelledInput(container, "Voice").value).toBe("en_paul"));
+    expect(voice.setVoice).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     container.remove();
