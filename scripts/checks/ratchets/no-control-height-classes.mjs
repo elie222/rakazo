@@ -9,7 +9,7 @@ export const include = [
 
 export const exclude = ["**/*.{test,spec}.*", "**/*.stories.*"];
 
-const OPENING = /<(Button|SelectTrigger|OptionSelect|Input)(?=[\s/>])/g;
+const OPENING = /<(Button|SelectTrigger|OptionSelect|Input)(?=[\s/><])/g;
 const HEIGHT = /^!?(?:h|min-h|size)-/;
 
 /** The end of the JSX opening tag that starts at `from`, skipping braces and strings. */
@@ -77,7 +77,9 @@ function setsHeight(token) {
  */
 function classConstants(text) {
   const constants = new Map();
-  for (const [, name, expression] of text.matchAll(/\bconst (\w+) =\s*([\s\S]*?);\s*\n/g)) {
+  for (const [, name, expression] of text.matchAll(
+    /\bconst (\w+)\s*(?::[^=]+)?=\s*([\s\S]*?);\s*\n/g,
+  )) {
     if (expression.startsWith("cva(")) continue;
     const strings = literalsIn(expression);
     if (strings.length > 0) constants.set(name, strings);
@@ -89,7 +91,10 @@ export function count(text) {
   const hits = [];
   const constants = classConstants(text);
   for (const match of text.matchAll(OPENING)) {
-    const tag = text.slice(match.index, tagEnd(text, match.index + match[0].length));
+    let from = match.index + match[0].length;
+    // Step past type arguments (`<OptionSelect<Unit>`), whose `>` does not close the tag.
+    if (text[from] === "<") from = text.indexOf(">", from) + 1;
+    const tag = text.slice(match.index, tagEnd(text, from));
     const tokens = classStrings(tag, constants).flatMap((classes) => classes.split(/\s+/));
     const grows = tokens.includes("h-auto");
     const heights = tokens.filter(
