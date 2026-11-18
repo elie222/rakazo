@@ -6,6 +6,8 @@ import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { bestEffort } from "@rakazo/logging";
 
 const GIB = 1024 ** 3;
+/** Saved homes are read back within `DEFAULT_HOME_ARCHIVE_LIMITS`, so a save cannot exceed it. */
+const MAX_SAVE_GIB = 100;
 
 /** The default most one save copies; a larger home keeps running unsaved. */
 export const WORKSPACE_SAVE_LIMITS: WorkspaceExportLimits = {
@@ -15,7 +17,8 @@ export const WORKSPACE_SAVE_LIMITS: WorkspaceExportLimits = {
 
 /**
  * The save limits a deployment runs with: `WORKSPACE_SAVE_MAX_GB` (GiB; decimals such as 0.5
- * are allowed) replaces the byte limit, and the file limit stays. Unset or empty keeps 5 GiB.
+ * are allowed, up to 100) replaces the byte limit, and the file limit stays. Unset or empty
+ * keeps 5 GiB.
  */
 export function workspaceSaveLimits(
   source: { WORKSPACE_SAVE_MAX_GB?: string } = {},
@@ -24,9 +27,9 @@ export function workspaceSaveLimits(
   if (!value) return WORKSPACE_SAVE_LIMITS;
   const gib = Number(value);
   const maxBytes = Math.floor(gib * GIB);
-  if (!/^\d+(\.\d+)?$/.test(value) || !Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+  if (!/^\d+(\.\d+)?$/.test(value) || maxBytes < 1 || gib > MAX_SAVE_GIB) {
     throw new Error(
-      "WORKSPACE_SAVE_MAX_GB must be a positive number of GiB, such as 5 or 20, within the safe byte range",
+      `WORKSPACE_SAVE_MAX_GB must be a number of GiB between 0 and ${MAX_SAVE_GIB}, such as 5 or 20`,
     );
   }
   return { ...WORKSPACE_SAVE_LIMITS, maxBytes };

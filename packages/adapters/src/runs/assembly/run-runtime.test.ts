@@ -73,4 +73,12 @@ describe("runRuntimeEnvFromProcess", () => {
   ])("reads the values the worker read before (%#)", (source) => {
     expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
   });
+
+  it("reads the computer save limit and rejects a bad one", () => {
+    const env = (WORKSPACE_SAVE_MAX_GB?: string) =>
+      runRuntimeEnvFromProcess({ NODE_ENV: "test", WORKSPACE_SAVE_MAX_GB });
+    expect(env("20").workspaceSaveLimits.maxBytes).toBe(20 * 1024 ** 3);
+    expect(env().workspaceSaveLimits.maxBytes).toBe(5 * 1024 ** 3);
+    expect(() => env("0")).toThrow("WORKSPACE_SAVE_MAX_GB");
+  });
 });
