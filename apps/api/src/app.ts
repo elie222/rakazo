@@ -824,6 +824,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runtime: meetingRuntime,
       resolveModel: executor.resolveModel,
       config: meetingMediaConfig,
+      billingEnabled: modelCreditsEnabled,
       providerId: meetingProvider.describe().id,
       enabled: (spaceId) => meetings.enabled(spaceId),
     });
