@@ -19,7 +19,8 @@
     "@rakazo/db": "workspace:*"
   },
   "devDependencies": {
+    "@rakazo/core": "workspace:*",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

@@ -24,6 +24,8 @@ export type TrialResult = {
     afterCursor: number | null;
     remainingMessages: number;
     summaryPresent: boolean;
+    /** The compaction summary the run read, synthetic like the fixture it came from. */
+    summary?: string | null;
     generation: number;
   };
   status: "passed" | "failed" | "not-run";
@@ -31,6 +33,14 @@ export type TrialResult = {
   reason: string | null;
   criteria: Criterion[];
   judgment?: Judgment;
+  /** What the trial was graded on, so a new rubric can grade it again without running the bot. */
+  evidence?: unknown;
+  /** What the offline sandbox could not do in the trial; a regrade weighs a failure as the run did. */
+  harnessIssues?: string[];
+  /** Whether this run ran the trial, or took it from a stored run with the same fingerprint. */
+  origin?: { kind: "reused" | "regraded"; fingerprint: string; startedAt: string };
+  /** Recorded behaviour; `present` is null when the judge could not grade it. */
+  observations?: Record<string, { present: boolean | null; reason?: string }>;
   assisted: false;
   cleanupFailed: boolean;
   latencyMs: number;
@@ -111,6 +121,12 @@ export function summarize(results: readonly TrialResult[]) {
       ),
       planned: trials.length,
       attempted: attempted.length,
+      /** Trials this run ran, took unchanged from the store, or took and graded again. */
+      origin: {
+        run: attempted.filter((r) => !r.origin).length,
+        reused: attempted.filter((r) => r.origin?.kind === "reused").length,
+        regraded: attempted.filter((r) => r.origin?.kind === "regraded").length,
+      },
       passed,
       failed: trials.filter((r) => r.status === "failed").length,
       notRun: trials.filter((r) => r.status === "not-run").length,
@@ -123,20 +139,88 @@ export function summarize(results: readonly TrialResult[]) {
   });
 }
 
+/** Domains reserved for examples (RFC 2606) can only hold fixture data, so they stay readable. */
+const RESERVED_DOMAIN = /(?:^|[.@])example(?:\.(?:com|net|org))?$/i;
+/** Keeps a fixture link's scheme, host and path; its query and fragment could carry anything. */
+function fixtureUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (!RESERVED_DOMAIN.test(parsed.hostname) || parsed.username || parsed.password) return null;
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Report content comes from synthetic fixtures, but model output is still untrusted. */
 export function redact(text: string, secrets: readonly string[] = []): string {
   let safe = text;
   for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length))
     safe = safe.replaceAll(secret, "[redacted]");
   return safe
-    .replace(/(?:https?|postgres(?:ql)?):\/\/[^\s<>"']+/gi, "[url]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
+    .replace(/(?:https?|postgres(?:ql)?):\/\/[^\s<>"']+/gi, (url) => fixtureUrl(url) ?? "[url]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, (email) =>
+      RESERVED_DOMAIN.test(email) ? email : "[email]",
+    )
     .replace(/(?:\/Users\/|\/home\/)[^\s"']+/g, "[local-path]")
     .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(
       /((?:api[_-]?key|access[_-]?token|password|secret|authorization)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:bearer|basic|token)\s+)?[^\s"',;&]+)/gi,
       "$1[redacted]",
     );
+}
+
+/**
+ * What a trial was graded on, as JSON. Configured secrets and credential-shaped tokens are removed;
+ * synthetic fixture paths, links and addresses stay, because a regrade must see what the live grade
+ * saw (recall checks rerun recorded commands against fixture paths). Maps and Sets (an app's
+ * drafts) are tagged so `restoreEvidence` gives judges the same shapes back.
+ */
+export function evidenceSnapshot(value: unknown, secrets: readonly string[]): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_, v) =>
+      v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v,
+    ),
+    (_, v) => (typeof v === "string" ? withoutCredentials(v, secrets) : v),
+  );
+}
+
+function withoutCredentials(text: string, secrets: readonly string[]) {
+  let safe = text;
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length))
+    safe = safe.replaceAll(secret, "[redacted]");
+  return safe.replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]");
+}
+
+export function restoreEvidence(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value), (_, v) =>
+    v && typeof v === "object" && Array.isArray(v.$map)
+      ? new Map(v.$map)
+      : v && typeof v === "object" && Array.isArray(v.$set)
+        ? new Set(v.$set)
+        : v,
+  );
+}
+
+/**
+ * Without a judge, trials of judged cases stay not-run (unqualified, never a pass) with `reason`,
+ * so the cases checked in code still run. Returns the held-back case ids.
+ */
+export function holdBackJudged(
+  trials: TrialResult[],
+  judged: ReadonlySet<string>,
+  reason: string,
+): Set<string> {
+  for (const trial of trials) if (judged.has(trial.caseId)) trial.reason = reason;
+  return new Set(trials.filter((t) => judged.has(t.caseId)).map((t) => t.caseId));
+}
+
+/** Gives the stop reason to trials not yet scheduled, keeping the reason a held-back trial already has. */
+export function stopRemaining(trials: TrialResult[], heldBack: ReadonlySet<string>): void {
+  for (const trial of trials)
+    if (!heldBack.has(trial.caseId))
+      trial.reason =
+        "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
 }
 
 export function emptyTrial(caseId: string, trial: number): TrialResult {

@@ -2,7 +2,7 @@
 
 [English](../self-host-upgrading.md) | 简体中文
 
-更新前先备份数据库、应用数据和部署配置，并确认能恢复。保留原有加密密钥，区分镜像版、源码版与生产 Compose。
+将部署迁移到新版本、处理一次性迁移，并可选择让更新器 sidecar 代为执行。更新前先[备份并演练](./self-host-backups.md)，确认能恢复，并保留原有加密密钥。
 
 ## 镜像版安装器
 
@@ -13,7 +13,8 @@
 bash install-images.sh
 ```
 
-默认的 `edge` 随主分支移动，不是固定版本。镜像下载受限时，见[受限网络](./self-host-restricted-network.md)。
+新安装默认使用 `latest`，仅跟随稳定发布，不是固定版本；必须已有稳定发布版本，安装器不会回退到主分支构建。
+安装器会保留已有 `.env` 中的标签。镜像下载受限时，见[受限网络](./self-host-restricted-network.md)。
 桌面端托管的本地实例由桌面应用管理，不要将生产 Compose 命令直接套到桌面端的数据目录。
 
 ## 生产 Compose
@@ -42,14 +43,29 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 不使用 Compose 的源码部署，应拉取代码，带 `GIT_SHA=$(git rev-parse HEAD)` 重新构建，执行 `pnpm db:migrate`，
 然后重启 API 和 worker。
 
+更新器容器（sidecar）使用自己的镜像和标签，因此升级应用时不会重建执行更新的进程。
+需要升级更新器时，明确把 `RAKAZO_UPDATER_IMAGE_TAG` 设为完整的 `sha-<提交号>` 标签，再运行：
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull updater
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  up -d --wait --pull never updater
+```
+
+更新器的 `/apply` 和 `/rollback` 在重建失败时会尽量重新部署缓存中的旧镜像；
+如果这也失败，会报告运行时可能处于混合版本。
+
 ## 独立数据库登录身份
 
 使用独立应用数据库角色的版本需要 `.env` 中的 `POSTGRES_APP_PASSWORD`。
 桌面端、镜像安装器、更新器和 `deploy-main.sh` 会在缺失时补充；其他部署应在更新前自行生成，例如 `openssl rand -hex 16`。
 缺失时 Compose 会在配置验证阶段停止。首次启动会创建 `rakazo_app`，API 和 worker 随后使用它连接。
+若功能在行级安全下异常，可在 `DATABASE_URL` 对应登录（Compose 中为 `rakazo_app`）上由超级用户执行
+`ALTER ROLE <login> BYPASSRLS;`，然后重启 API 与 worker。撤销使用 `NOBYPASSRLS` 并重启，再在日志中搜索
+`violates row-level security` 与 `without a tenant or system context`。
 
 若旧版本无法读取新版本的加密内容，不能只回滚应用镜像；需先按[内容加密迁移（英文）](../content-encryption.md#rollout)执行解密。
-行级安全异常的诊断与临时回退方法见[数据库登录升级说明（英文）](../self-host-upgrading.md#upgrading-to-the-separate-app-database-login)。
+同日发布版本还会在库内加密内容：回滚到更早版本前须先运行 `content-encryption decrypt`。
 
 ## Postgres 18 迁移
 
@@ -84,39 +100,190 @@ sudo RAKAZO_DEPLOY_DIR="$PWD" infra/compose/upgrade-postgres.sh infra/compose/do
 如需回滚应立即进行，并暂停自动部署；只有确认不再需要回滚时才能清理旧卷。
 完整迁移与清理说明见[Postgres 18 升级（英文）](../self-host-upgrading.md#upgrading-to-postgres-18)。
 
-跨越 `20260830200000_space_scope_names_and_user_credentials` 的旧安装，还需按
-[空间隐私边界迁移检查（英文）](../self-host-upgrading.md#space-privacy-boundary-migration)验证凭据归属，不能跳过停机要求。
+## 空间隐私边界迁移
 
-## 镜像标签与回滚
+跨越迁移 `20260830200000_space_scope_names_and_user_credentials` 的旧安装，必须先确认每个现有模型和语音凭据
+仍属于其空间成员。以下查询使用迁移前的 `workspaceId` 列名，结果必须为零行：
 
-每次发布会生成 `sha-<完整提交号>`；`edge` 跟随主分支；稳定的 `vX.Y.Z` 发布还生成相应版本标签。
-自动更新器选择最新稳定源码标签，但部署对应的完整 `sha-` 镜像，不使用可移动的 `latest` 或次版本标签。
-注册表标签本身不是内容摘要；需要固定内容的运维人员，可在自动更新器之外使用经过验证的镜像摘要。
+```sql
+SELECT 'model' AS credential_type, credential."id", credential."userId",
+       credential."workspaceId" AS "spaceId"
+FROM "user_model_credentials" AS credential
+LEFT JOIN "space_members" AS membership
+  ON membership."spaceId" = credential."workspaceId"
+ AND membership."userId" = credential."userId"
+WHERE membership."id" IS NULL
+UNION ALL
+SELECT 'voice', credential."id", credential."userId", credential."workspaceId"
+FROM "user_voice_credentials" AS credential
+LEFT JOIN "space_members" AS membership
+  ON membership."spaceId" = credential."workspaceId"
+ AND membership."userId" = credential."userId"
+WHERE membership."id" IS NULL;
+```
 
-更新器回滚只使用本机缓存，不从注册表重新拉取。因此接受下一次更新前不要清理上一个应用镜像，
-缓存缺失时回滚会拒绝继续，而不会在旧标签下拉取可能已变化的内容。
-完整发布机制见[镜像与标签（英文）](../self-host-upgrading.md#published-images-and-tags)。
+该迁移会重命名 API 和 worker 使用的列，因此必须协调切换，不能在线滚动迁移。
+停止旧的 API 和 worker，应用迁移后同时启动新版本。迁移的锁等待有上限：
+遇到竞争时会让迁移失败，而不是让应用流量无限排队。
 
-## 可选自动更新器
+## 已发布镜像与标签
 
-生产 Compose 的 `updater` 配置默认关闭，手动更新不需要启用。
-启用前设置独立的随机 `RAKAZO_UPDATER_TOKEN`（生产环境至少 32 字符），
-不得复用认证、监督服务或屏幕代理密钥：
+`.github/workflows/publish-server-image.yml` 将镜像发布到 `ghcr.io/<owner>/<repo>/…`，由 `${{ github.repository }}` 推导，
+因此 fork 的 CI 会写入 fork 自己的命名空间。本仓库为：
+
+| 镜像                              | 内容                                                |
+| --------------------------------- | --------------------------------------------------- |
+| `ghcr.io/elie222/rakazo/app`      | api、worker、web 与沙箱监督进程，同一镜像、不同命令 |
+| `ghcr.io/elie222/rakazo/computer` | 用作各机器人计算机的 Linux 桌面                     |
+| `ghcr.io/elie222/rakazo/updater`  | 更新器 sidecar，并包含 Docker CLI                   |
+
+`infra/compose/docker-compose.images.yml` 是无需检出仓库即可使用上述应用与计算机标签以及 Postgres 的路径。
+监督进程从应用镜像在内部网络运行（无单独发布的监督镜像，也不映射主机端口）。生产 Compose（`docker-compose.prod.yml`）
+在将 `RAKAZO_IMAGE_TAG` 设为已发布标签后也可拉取相同应用标签。
+
+从自己的 fork 部署时，将 `RAKAZO_IMAGE` 与 `RAKAZO_UPDATER_IMAGE` 指向自己的命名空间；
+fork 的 CI 无法发布到他人的命名空间。
+
+| 标签                 | 何时发布                           | 是否会移动                      |
+| -------------------- | ---------------------------------- | ------------------------------- |
+| `local`              | 无，由 `up --build` 在本地构建     | 原地重建                        |
+| `local-<完整提交号>` | 无，由 fork 更新在服务器构建       | 否                              |
+| `vX.Y.Z`、`vX.Y`     | 发布标签                           | 惯例上 minor/patch 策略不变     |
+| `latest`             | 仅稳定 `vX.Y.Z`（不含预发布）      | 是，指向最新稳定发布            |
+| `sha-<完整提交号>`   | 每次 main 提交、发布标签与手动运行 | 按源码寻址；更新器 sidecar 使用 |
+| `edge`               | 推送到 main                        | 是，指向最新 main 构建          |
+
+每次发布（含 main 合并产生的 `edge`）均为多架构（`amd64` + `arm64`）。在配置 `DEPOT_PROJECT_ID`
+时使用 Depot 原生构建，否则使用 GitHub 运行器；每个镜像组装一份 manifest。发布 CI 在稳定 `vX.Y.Z`
+出现前，GHCR 可能只有 `edge` 与 `sha-*` 标签；除非注册表中确实存在 `latest`，否则不要固定 `latest`。
+
+`docker compose up --build` 按宿主机架构构建，无需 QEMU。更新器选择最新稳定 `vX.Y.Z` 源码标签，
+但部署对应的完整 `sha-<提交号>` 镜像，而不是 `latest` 或可移动的次版本标签。回滚不访问注册表：
+仅重新部署本地 Docker 缓存中的上一标签，因此在接受下一次更新前不要清理上一应用镜像。
+
+## 更新器 sidecar
+
+生产 Compose 提供可选的 `updater` profile，运行在私有 `control` 网络。默认部署不启动它，也不需要其凭据。
+启用时设置独立的 `RAKAZO_UPDATER_TOKEN` 并显式启动 profile：
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
   --profile updater up -d --build updater
 ```
 
-更新器使用独立镜像，不会重建自己，也不更改 Postgres 或 Caddy。
-迁移顺序由 API 对 `migrate` 的依赖控制。
-拉取失败不影响正在运行的服务；重建失败会尽可能恢复旧环境和缓存镜像，但不会撤销迁移。
+在 `http://updater:7092` 暴露 `/health`、`/state`、`/plan`、`/apply`、`/rollback`，
+使用 `RAKAZO_UPDATER_TOKEN` 认证。上述命令行升级不需要 sidecar；它用于通过私有 HTTP API 自动应用/回滚。
+仅部署工具应调用这些接口；应用账号没有更新端点，应用 API 也不会收到更新器令牌。
 
-**更新器持有 Docker 套接字，权限相当于宿主机 root。** 它只在私有控制网络提供带令牌验证的接口；
-不要将其端口对外发布。普通应用账号没有更新接口，应用 API 也不持有更新令牌。
-Fork 模式会在服务器构建仓库，只能指向自己掌控且审查过的代码。
+API 无法自行更新——其镜像内没有 `.git`，容器内也没有机制重启自身——因此工作在独立的 `updater` 容器中完成：
 
-`RAKAZO_DEPLOY_DIR` 必须是 Docker 守护进程看到的实际路径，宿主机与更新器内使用同一路径。
-Linux 默认是 `/srv/rakazo`；Docker Desktop 的路径可能与终端中的路径不同，
-必须先验证挂载。多个 Compose 叠加文件和额外服务也须显式配置，详见
-[更新器部署路径与权限（英文）](../self-host-upgrading.md#the-deploy-directory-must-be-one-path)。
+- _官方仓库：_ 用 `git ls-remote --tags` 解析最新稳定发布及其源码提交，在 `.env` 中固定完整 `sha-<提交号>`
+  镜像标签，将旧标签保存在 `RAKAZO_IMAGE_TAG_PREVIOUS`，显式拉取新镜像后执行 `up -d --wait --pull never`；服务器上不构建。
+- _Fork（高级）：_ fork 没有已发布镜像，sidecar 在 `RAKAZO_DEPLOY_DIR` 中快进检出并执行 `up -d --build`，
+  需数分钟。仅指向你控制且已审查的 fork——sidecar 通过 root 等价的 Docker 套接字运行该 Compose 文件。
+
+更新与回滚串行执行。拉取失败不影响正在运行的服务；重建失败会恢复先前的环境固定值并尝试部署缓存中的旧镜像。
+Fork 构建失败也会恢复更新前的分支与提交。数据库迁移不会逆向执行。sidecar 从不重建自身，不触碰 Postgres 或 Caddy，
+也不运行迁移——该顺序由 API 对 `migrate` 的依赖保证。仅接受 `https://` 与 `ssh://` 远端；合并仅快进；
+工作树脏或未跟踪会在执行前拒绝继续。
+
+## 定时稳定版更新 {#scheduled-stable-updates}
+
+> **说明：** 以下能力在合并 [PR #5042](https://github.com/elie222/rakazo/pull/5042) 后与英文版一致；合并前仓库可能尚无 `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS` 等配置项。
+
+生产 Compose 与无需检出的 `docker-compose.images.yml` 均提供可选的 `updater` profile。**仅启动 profile 不会启用定时调度**；
+它会授予 root 等价的 Docker 访问权限，除非需要更新工具，否则保持关闭。
+
+在 Linux 上使用已发布镜像安装时，在宿主机 `.env` 中加入：
+
+```dotenv
+COMPOSE_PROFILES=updater
+RAKAZO_DEPLOY_DIR=/srv/rakazo
+RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=6
+```
+
+`RAKAZO_DEPLOY_DIR` 使用 Docker 守护进程可见的绝对路径；Docker Desktop 见下文「部署目录」一节。
+新安装由安装器生成 `RAKAZO_UPDATER_TOKEN`；旧安装可追加专用令牌（勿打印到终端）：
+
+```bash
+printf '\nRAKAZO_UPDATER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+```
+
+若堆栈使用叠加文件，将 `RAKAZO_COMPOSE_FILE` 设为与手工操作时相同的文件列表，例如
+`docker-compose.images.yml:docker-compose.override.yml`。镜像堆栈会拉取计算机镜像并默认重建一次性拉取桩与监督进程；
+已有机器人计算机保持运行。随后在部署目录启动更新器：
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml up -d updater
+docker compose --env-file .env -f docker-compose.images.yml logs --tail 50 updater
+```
+
+源码检出应使用生产 Compose 文件，而非开发用 `docker-compose.yml`。启用定时前须先按上文手动流程迁移到已发布稳定应用镜像；
+运行中镜像的字节须与缓存的源码提交镜像一致。源构建或覆盖镜像需手工迁移；更新器不会把此类字节指认为共享的稳定发布标签。
+
+然后使用 `-f infra/compose/docker-compose.prod.yml --profile updater` 启动更新器，并按上文说明构建或显式拉取其镜像。
+勿在已由 CI 部署管理的服务器上启用定时更新。
+
+首次检查在启动约六小时后运行，此后每次检查完成后再过六小时运行。有效区间为 1–168 整小时；`0` 关闭调度。
+检查仅使用官方仓库最新稳定 `vX.Y.Z` 标签，解析为完整源码提交镜像标签，并走现有 apply/健康检查/恢复路径。
+预发布与 main 构建从不自动调度。自定义镜像仓库会关闭调度（启动警告与 `/state` 中的 `autoUpdateDisabledReason`）；
+手动控制仍可用。更换计算机镜像仓库属于运维迁移：在用更新器控制前，用新仓库重建监督进程并验证匹配镜像；
+更新器拒绝与其配置仓库不一致的运行中监督进程。已是最新版本时不重建服务。
+
+**定时更新跟随稳定源码提交，不跟随注册表摘要变化。** 同一提交的镜像重建或重新发布不会触发部署；
+需从新提交发布新的稳定版本才会自动滚动。
+
+暂停调度：在 `.env` 中设 `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=0` 后执行相同的 `up -d updater`。
+手工回滚前应先暂停，否则下一次定时检查会再次应用较新发布。`/state` 报告 `autoUpdateIntervalHours` 与上次更新结果；
+调度关闭时仍可使用 `/apply` 与 `/rollback`。计算机桩使用 `pull_policy: missing`，因此普通拉取与安装器重跑会复用本地缓存的回滚镜像。
+详情与容器内调用示例见[英文升级指南](../self-host-upgrading.md#scheduled-stable-updates)。
+
+## 部署目录必须是同一路径
+
+`RAKAZO_DEPLOY_DIR` 以相同路径绑定挂载进更新器（`${RAKAZO_DEPLOY_DIR}:${RAKAZO_DEPLOY_DIR}`），这是负载相关而非仅为整洁。
+生产 Compose 默认两侧为 `/srv/rakazo`；其他布局须显式设置。更新器在容器内执行 `docker compose` 时，
+本文件中的相对绑定挂载（`../../.env`、`./Caddyfile.prod` 等）相对该路径展开；守护进程必须能解析相同字符串，
+否则会静默创建空目录。须将 `COMPOSE_PROJECT_NAME` 传入更新器；独立 sidecar 可设 `RAKAZO_COMPOSE_PROJECT_NAME`，
+否则回退为 `rakazo-prod`。
+
+- **Linux：** 守护进程与宿主共享文件系统，检出路径即可，例如 `/srv/rakazo`。
+- **Docker Desktop（Windows/macOS）：** 守护进程在虚拟机中，`C:` 在 Windows 上常映射为 `/run/desktop/mnt/host/c`，
+  因此 `C:\\Users\\you\\rakazo` 应设为 `RAKAZO_DEPLOY_DIR=/run/desktop/mnt/host/c/Users/you/rakazo`。
+  勿用 Windows 原生路径（盘符冒号会导致 `mount denied`），勿用 `/mnt/c/...`（可能静默为空目录）。
+
+部署前验证：
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
+  --profile updater run --rm updater \
+  sh -c 'git -C "$RAKAZO_DEPLOY_DIR" log --oneline -1'
+```
+
+须打印检出目录的当前 HEAD。宿主 Git 的 `core.autocrlf=true` 不阻止 `/apply`（更新器忽略仅 CR 差异）。
+
+## 叠加 Compose 文件
+
+`RAKAZO_COMPOSE_FILE` 接受列表，分隔符与 Compose 的 `COMPOSE_FILE` 相同（默认 `:`，或由 `COMPOSE_PATH_SEPARATOR` 指定）。
+每项成为独立的 `--file`，顺序与配置一致，使更新器调和与运维手工相同的堆栈：
+
+```env
+RAKAZO_COMPOSE_FILE=infra/compose/docker-compose.prod.yml:ops/compose/overlay.yml
+```
+
+每项单独校验且须位于 `RAKAZO_DEPLOY_DIR` 内。若叠加文件新增由应用镜像构建的服务，
+在逗号分隔的 `RAKAZO_UPDATE_SERVICES` 中命名（例如 `supervisor`），以便随应用一起拉取、重建与回滚。
+这些名称**追加**到内置的 `api`、`worker`、`web`，不会替换它们。
+
+## 更新器的权限
+
+更新器持有 Docker 套接字，在宿主机上等同于 root。范围尽可能收窄：
+
+- 无 `ports`，不向宿主发布端口。
+- 仅在与 API 共享的专用 `control` 网络；Caddy 未接入，反向代理无路由到更新器。
+- 除 `/health` 外，所有路由需共享 bearer 令牌，常数时间比较。
+- 进程环境仅含更新器设置；应用密钥留在 Compose 读取的挂载 `.env` 中，不加载进本容器。
+- Docker CLI 仅存在于更新器镜像；api、worker、web 保持 `cap_drop: ALL` 且无套接字。
+
+启用 `updater` profile 要求 `RAKAZO_UPDATER_TOKEN` 为独立随机值（生产至少 32 字符），
+且不同于 `BETTER_AUTH_SECRET`、`SANDBOX_SUPERVISOR_TOKEN` 与 `SCREEN_PROXY_SECRET`。
+若不愿授予该能力，请保持 profile 关闭。

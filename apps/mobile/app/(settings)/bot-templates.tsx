@@ -1,24 +1,24 @@
+import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { botTemplateCopy } from "../../lib/bot-template-copy";
-import { useI18n } from "../../lib/i18n";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { botTemplateCopy } from "../../lib/bots/bot-template-copy";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 
 /** Ready-made bots; each one's page shows an example of what it sends. */
 export default function BotTemplatesScreen() {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const templates = useQuery(rpcQuery("bots/templates"), queryClient);
   const { refetch } = templates;
   const open = (id: string) => router.push({ pathname: "/bot-template", params: { id } });
@@ -40,18 +40,18 @@ export default function BotTemplatesScreen() {
         {templates.error && !templates.data ? (
           <View style={styles.list}>
             <Text style={styles.error}>
-              {errorText(templates.error, t("Could not load templates"))}
+              {errorText(templates.error, t`Could not load templates`)}
             </Text>
             <NativeActionButton
               fill={false}
-              label={t("Retry")}
+              label={t`Retry`}
               onPress={() => void refetch()}
               prominence="secondary"
             />
           </View>
         ) : null}
         {templates.isPending ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         {templates.data?.length ? (
           <SettingsGroup>

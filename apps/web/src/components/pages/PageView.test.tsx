@@ -29,6 +29,7 @@ function mount(props: {
   document: string;
   onOpenChange?: (open: boolean) => void;
   compact?: boolean;
+  onRename?: (title: string) => void;
 }) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
@@ -39,6 +40,7 @@ function mount(props: {
           open
           onOpenChange={next.onOpenChange ?? (() => {})}
           compact={next.compact}
+          onRename={next.onRename}
           title="Plan"
           document={next.document}
           share={<button type="button">Share</button>}
@@ -106,17 +108,59 @@ it("keeps its controls clickable over the window's drag areas in the desktop app
 });
 
 it("starts its top row below the macOS window controls in the desktop app", async () => {
-  vi.stubGlobal("rakazoDesktop", { platform: "darwin" });
+  window.rakazoDesktop = { platform: "darwin" } as never;
   const mac = mount({ document: "<p>v1</p>" });
   await mac.render({ document: "<p>v1</p>" });
-  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[42px]");
+  const close = document.querySelector<HTMLElement>('[aria-label="Close page"]')!;
+  expect(close.className).toContain("top-[42px]");
+  // 72px traffic-light strip plus the 11px browser inset.
+  expect(close.style.left).toBe("83px");
   expect(document.querySelector(".app-drag")!.className).toContain("h-[70px]");
   await mac.unmount();
   document.body.replaceChildren();
+  delete window.rakazoDesktop;
   vi.unstubAllGlobals();
 
   const browser = mount({ document: "<p>v1</p>" });
   await browser.render({ document: "<p>v1</p>" });
-  expect(document.querySelector('[aria-label="Close page"]')!.className).toContain("top-[6px]");
+  const browserClose = document.querySelector<HTMLElement>('[aria-label="Close page"]')!;
+  expect(browserClose.className).toContain("top-[6px]");
+  expect(browserClose.style.left).toBe("11px");
   await browser.unmount();
+});
+
+it.each([
+  { key: "Enter", isComposing: true },
+  { key: "Escape", isComposing: true },
+  { key: "Enter", keyCode: 229 },
+  { key: "Escape", keyCode: 229 },
+])("keeps title editing open during IME composition (%o)", async (keyboard) => {
+  const onRename = vi.fn();
+  const onOpenChange = vi.fn();
+  const props = { document: "<p>v1</p>", onRename, onOpenChange };
+  const view = mount(props);
+  await view.render(props);
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>('[title="Rename"]')!.click();
+  });
+  const input = document.querySelector<HTMLInputElement>('[aria-label="Page title"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "计划");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...keyboard }));
+  });
+  expect(document.querySelector('[aria-label="Page title"]')).toBe(input);
+  expect(input.value).toBe("计划");
+  expect(onRename).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: keyboard.key }));
+  });
+  expect(document.querySelector('[aria-label="Page title"]')).toBeNull();
+  if (keyboard.key === "Enter") expect(onRename).toHaveBeenCalledWith("计划");
+  else expect(onRename).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  await view.unmount();
 });

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">שיחה פעילה</string>
+  <string name="rakazo_call_title">שיחת Rakazo</string>
+  <string name="rakazo_call_text">המיקרופון פעיל</string>
+  <string name="rakazo_call_answer">מענה</string>
+  <string name="rakazo_call_decline">דחייה</string>
+</resources>

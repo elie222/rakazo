@@ -1,8 +1,8 @@
 import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
+import { messages } from "@rakazo/i18n/locales/en/messages.po";
 import { createRoot } from "react-dom/client";
-import { messages } from "../../src/locales/en/messages.po";
-import { WindowChrome } from "../../src/pages/WindowChrome";
+import { WindowChrome } from "../../src/components/WindowChrome";
 import "../../src/styles.css";
 
 const i18n = setupI18n({

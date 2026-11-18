@@ -66,7 +66,7 @@ Under **Advanced**:
 - **Model** and **Thinking**: override the [model](./models.md) for this bot.
 - **Computer**: **Team** or **Private**. See [The bot's computer](./computer.md).
 - **Voice**: **Read replies aloud** and the bot's voice.
-- **Permissions**: **Allow cross-space bot communication** and
+- **Permissions**: **Allow cross-space bot communication** (for bots linked to chat apps only) and
   [**Manage other bots**](./fleet-management.md).
 - **Instructions**: the bot's standing instructions. You can also ask the bot in chat to change
   them, or its name, model, thinking, voice and read-aloud; instruction and setting changes
@@ -85,6 +85,6 @@ Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as
 
 - **Search** in the sidebar searches bots and conversations. Press Cmd+K (Ctrl+K on Windows and
   Linux) to jump to any bot.
-- **Activity** in the sidebar lists every run, with filters for status and date. Use it to find a
-  run that failed or is waiting on you.
+- **Activity** in the sidebar lists every run, with search by bot name and filters for status
+  and date. Use it to find a run that failed or is waiting on you.
 - **Artifacts** in the account menu lists every file bots have made, with search and a date filter.

@@ -125,7 +125,7 @@ struct StartVoiceChatIntent: AppIntent {
   }
 }
 
-/// The single record written by lib/last-bot.ts; legacy ids have no verified owner.
+/// The single record written by lib/inbox/last-bot.ts; legacy ids have no verified owner.
 private struct SavedLastBot: Decodable {
   let botId: String
   let spaceId: String?
@@ -372,7 +372,7 @@ private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
   }
 }
 
-private struct RakazoSession {
+struct RakazoSession {
   private static let transport = URLSession(
     configuration: .ephemeral, delegate: RejectRedirects(), delegateQueue: nil)
 
@@ -381,7 +381,7 @@ private struct RakazoSession {
   let selectedSpaceId: String?
   let headers: [String: String]
 
-  // The keys lib/session.ts, lib/server-config.ts and lib/api.ts keep in expo-secure-store.
+  // The keys lib/api/session.ts, lib/api/server-config.ts and lib/api/api.ts keep in expo-secure-store.
   static func load() throws -> RakazoSession {
     guard let token = secureStoreItem("rakazo.session_token"), !token.isEmpty else {
       throw MessageBotError.signedOut
@@ -398,7 +398,7 @@ private struct RakazoSession {
       headers: serverHeaders(for: apiBase))
   }
 
-  /// The headers lib/server-headers.ts saved for this server, such as an access proxy's.
+  /// The headers lib/api/server-headers.ts saved for this server, such as an access proxy's.
   private static func serverHeaders(for apiBase: String) -> [String: String] {
     guard let stored = secureStoreItem("rakazo.server_headers")?.data(using: .utf8),
       let saved = try? JSONDecoder().decode(SavedHeaders.self, from: stored),
@@ -515,7 +515,7 @@ private struct RakazoSession {
     guard (200..<300).contains(status) else { throw MessageBotError.server(nil) }
   }
 
-  /// Calls an oRPC procedure the way lib/api.ts does.
+  /// Calls an oRPC procedure the way lib/api/api.ts does.
   func rpc<Output: Decodable>(
     _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval = 60
   ) async throws -> Output {
@@ -525,6 +525,9 @@ private struct RakazoSession {
     if status == 401 { throw MessageBotError.signedOut }
     guard (200..<300).contains(status) else {
       let error = try? JSONDecoder().decode(Envelope<ServerError>.self, from: data)
+      if (400..<500).contains(status), status != 408 {
+        throw MessageBotError.rejected(status: status, message: error?.json.message)
+      }
       throw MessageBotError.server(error?.json.message)
     }
     return try JSONDecoder().decode(Envelope<Output>.self, from: data).json
@@ -552,12 +555,13 @@ private func secureStoreItem(_ key: String) -> String? {
   return nil
 }
 
-private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
+enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
   case signedOut
   case noBot
   case needsYou
   case consentRequired
   case server(String?)
+  case rejected(status: Int, message: String?)
 
   var localizedStringResource: LocalizedStringResource {
     switch self {
@@ -565,8 +569,8 @@ private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
     case .noBot: "Open a chat in Rakazo first."
     case .needsYou: "It needs you in Rakazo."
     case .consentRequired: "Review AI data sharing in Account settings before continuing."
-    case .server(let message?): "\(message)"
-    case .server(nil): "Something went wrong. Try again."
+    case .server(let message?), .rejected(_, let message?): "\(message)"
+    case .server(nil), .rejected(_, nil): "Something went wrong. Try again."
     }
   }
 }

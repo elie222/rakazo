@@ -25,7 +25,9 @@ flyctl deploy --app "$app" --config "$here/fly.toml" --image "$remote" \
   --primary-region "$REGION" --ha=false
 
 marker="<!-- rakazo-preview -->"
+commit_marker=$(python3 "$here/../../.github/scripts/pr-screenshots.py" marker "$HEAD_SHA")
 body="$marker
+$commit_marker
 **Preview:** https://$app.fly.dev · \`preview@example.com\` / \`rakazo-preview-demo\` · ${HEAD_SHA:0:7}"
 existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
   --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" |

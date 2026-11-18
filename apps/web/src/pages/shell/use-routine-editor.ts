@@ -1,21 +1,24 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
-import { cronFromPreset } from "@rakazo/core";
+import { isIdentityConfirmationRequired } from "@rakazo/contracts";
+import { cronFromPreset, localTimezone } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
-import { useCallback, useRef, useState } from "react";
-import { localTimezone } from "../../lib/local-timezone";
-import { parseModelOptionKey } from "../../lib/model-catalog";
-import type { Panel } from "../../lib/right-panel-state";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { sharedInflight } from "../../lib/shared-inflight";
-import { errorText } from "../../lib/user-error";
-import type { RoutineDraftState, RoutineEditor } from "../RoutineEditor";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
+import { parseModelOptionKey } from "../../lib/models/model-catalog";
+import type { createSpaceRpc } from "../../lib/query/rpc";
+import { sharedInflight } from "../../lib/query/shared-inflight";
+import { errorCode, errorText } from "../../lib/query/user-error";
+import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
-} from "../RoutineEditor";
+} from "../../lib/routines/routine-draft";
+import type { RoutineEditor } from "../routines/RoutineEditor";
+import type { Panel } from "./right-panel-state";
 
 export function useRoutineEditor({
   rpc,
@@ -38,8 +41,30 @@ export function useRoutineEditor({
 }) {
   const { t } = useLingui();
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraftState());
-  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<Record<string, string>>({});
-  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]) || null;
+  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<
+    Record<string, { secret: string; hideAt: number }>
+  >({});
+  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]?.secret) || null;
+  const nextHide = Object.values(revealedWebhookSecrets).reduce<number | null>(
+    (soonest, { hideAt }) => (soonest === null || hideAt < soonest ? hideAt : soonest),
+    null,
+  );
+  const untilNextHide = useMemo(
+    () => (nextHide === null ? null : Math.max(nextHide - performance.now(), 0)),
+    [nextHide],
+  );
+  useTimeout(
+    () =>
+      setRevealedWebhookSecrets((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(
+            ([, { hideAt }]) => hideAt !== nextHide && hideAt > performance.now(),
+          ),
+        ),
+      ),
+    untilNextHide,
+    nextHide,
+  );
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -47,15 +72,41 @@ export function useRoutineEditor({
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
   const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  // Bumped when a bot's key rotates or the person hides it, so a reveal that started before
+  // never shows a revoked key or brings back one they hid.
+  const webhookKeyGenerations = useRef(new Map<string, number>());
+  const bumpWebhookKeyGeneration = (botId: string) =>
+    webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRevealedWebhookSecrets((current) => ({ ...current, [botId]: result.secret }));
+      bumpWebhookKeyGeneration(botId);
+      showWebhookSecret(botId, result.secret);
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
       return result.secret;
     });
+  // A key on screen, new or read back, hides again after a while, as the Vault's values do.
+  // Each bot's key keeps its own hide time, on a clock a system time change cannot move, and one
+  // timer hides whichever is due first, so a late result for one bot never cancels another's.
+  function showWebhookSecret(botId: string, secret: string) {
+    setRevealedWebhookSecrets((current) => ({
+      ...current,
+      [botId]: { secret, hideAt: performance.now() + REVEAL_MS },
+    }));
+  }
+  function hideWebhookSecret(botId: string) {
+    setRevealedWebhookSecrets((current) => {
+      if (!(botId in current)) return current;
+      const { [botId]: _hidden, ...rest } = current;
+      return rest;
+    });
+  }
+  const webhookErrorText = (error: unknown, fallback: string) =>
+    errorCode(error) === "FORBIDDEN"
+      ? t`Only the bot's creator can set its webhook key.`
+      : errorText(error, fallback);
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
@@ -113,10 +164,47 @@ export function useRoutineEditor({
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
-        onBack: () => setPanel("routines"),
+        onBack: () => setPanel("settings"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
-          await ensureWebhookSecret(active.id);
+          const targetBotId = active.id;
+          const request = routineSaveRequest.current;
+          try {
+            await ensureWebhookSecret(targetBotId);
+          } catch (error) {
+            if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) {
+              return;
+            }
+            setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
+          }
+        },
+        onRevealWebhook: async () => {
+          const targetBotId = active.id;
+          const request = routineSaveRequest.current;
+          const generation = webhookKeyGenerations.current.get(targetBotId) ?? 0;
+          // A reveal that lands after the person left this routine, or after a rotation, shows nothing.
+          const stale = () =>
+            routineSaveRequest.current !== request ||
+            activeBotId.current !== targetBotId ||
+            (webhookKeyGenerations.current.get(targetBotId) ?? 0) !== generation;
+          try {
+            const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
+            if (stale()) return;
+            showWebhookSecret(targetBotId, secret);
+          } catch (error) {
+            // The editor asks the person to confirm it's them and tries again.
+            if (isIdentityConfirmationRequired(error)) throw error;
+            if (stale()) return;
+            setRoutineError(
+              errorCode(error) === "FORBIDDEN"
+                ? t`Only the bot's creator can see its webhook key.`
+                : errorText(error, t`Could not show the webhook key`),
+            );
+          }
+        },
+        onHideWebhook: () => {
+          bumpWebhookKeyGeneration(active.id);
+          hideWebhookSecret(active.id);
         },
         onSave: async () => {
           if (routineSavePending.current) return;
@@ -150,7 +238,9 @@ export function useRoutineEditor({
               !active.webhookConfigured &&
               !routineWebhookSecret
             ) {
-              await ensureWebhookSecret(targetBotId);
+              await ensureWebhookSecret(targetBotId).catch((error: unknown) => {
+                throw new Error(webhookErrorText(error, t`Could not create the webhook key`));
+              });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;
@@ -192,6 +282,9 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                ...(routineDraft.inChat !== targetRoutine.inChat
+                  ? { inChat: routineDraft.inChat }
+                  : {}),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel
@@ -213,6 +306,7 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                inChat: routineDraft.inChat,
                 ...routineModel,
               });
             }
@@ -270,7 +364,7 @@ export function useRoutineEditor({
             setDeleteRoutineTarget(editingRoutine);
             return;
           }
-          setPanel("routines");
+          setPanel("settings");
         },
       } satisfies ComponentProps<typeof RoutineEditor>)
     : null;
@@ -286,7 +380,7 @@ export function useRoutineEditor({
           setEditingRoutine((current) => (current?.id === target.id ? null : current));
           if (activeBotId.current !== target.botId) return;
           await refreshThread(target.botId);
-          if (activeBotId.current === target.botId) setPanel("routines");
+          if (activeBotId.current === target.botId) setPanel("settings");
         },
       }
     : null;

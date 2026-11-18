@@ -9,7 +9,7 @@ reviews:
     labels:
       - "review:cr"
   tools:
-    # Biome owns this repo's CSS (see biome.json and `pnpm lint`); Stylelint is not
+    # Biome owns this repo's CSS (see biome.jsonc and `pnpm lint`); Stylelint is not
     # installed or configured here, so its findings are about rules we do not run.
     stylelint:
       enabled: false

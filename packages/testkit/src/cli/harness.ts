@@ -6,11 +6,14 @@ import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { runAsSystem as RunAsSystem } from "@rakazo/db";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
+import { pinLocalSecretStore } from "../pin-secret-store.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
+
+if (!process.env.VERIFY_PROVIDERS) pinLocalSecretStore();
 
 const integration = process.argv.includes("--integration");
 const e2e = process.argv.includes("--e2e");
@@ -28,8 +31,10 @@ const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "novita", "daytona", "boat", "boxd"].includes(sandboxProvider)) {
-  throw new Error('Sandbox must be "fake", "e2b", "novita", "daytona", "boat", or "boxd"');
+if (!["fake", "e2b", "novita", "daytona", "boat", "boxd", "instabox"].includes(sandboxProvider)) {
+  throw new Error(
+    'Sandbox must be "fake", "e2b", "novita", "daytona", "boat", "boxd", or "instabox"',
+  );
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
@@ -51,6 +56,9 @@ if (sandboxProvider === "boat" && !process.env.BOAT_API_KEY) {
 }
 if (sandboxProvider === "boxd" && !process.env.BOXD_API_KEY) {
   throw new Error("BOXD_API_KEY is required when --sandbox=boxd");
+}
+if (sandboxProvider === "instabox" && !process.env.INSTABOX_API_KEY) {
+  throw new Error("INSTABOX_API_KEY is required when --sandbox=instabox");
 }
 
 async function main() {
@@ -80,7 +88,6 @@ async function main() {
     process.env.AGENT_RUNTIME = agentRuntime;
     process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
     if (!integration) {
-      process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
       process.env.INBOUND_EMAIL_DOMAIN = "bots.rakazo.test";
       process.env.INBOUND_EMAIL_SECRET = "test-inbound-email-secret-test-32chars";
@@ -125,14 +132,14 @@ async function main() {
       // the other suites need the database too but carry no suffix.
       const suites = [
         ...globSync("{apps,packages}/*/src/**/*.postgres.test.ts").sort(),
-        "packages/testkit/src/journeys.test.ts",
-        "packages/testkit/src/authorization.test.ts",
-        "packages/testkit/src/attachments.test.ts",
-        "packages/testkit/src/voice.test.ts",
-        "packages/testkit/src/search.test.ts",
-        "packages/testkit/src/executor-lifecycle.test.ts",
-        "packages/testkit/src/connections.test.ts",
-        "packages/testkit/src/bot-secrets.test.ts",
+        "packages/testkit/src/product/journeys.test.ts",
+        "packages/testkit/src/product/authorization.test.ts",
+        "packages/testkit/src/product/attachments.test.ts",
+        "packages/testkit/src/product/voice.test.ts",
+        "packages/testkit/src/product/search.test.ts",
+        "packages/testkit/src/product/executor-lifecycle.test.ts",
+        "packages/testkit/src/product/connections.test.ts",
+        "packages/testkit/src/product/bot-secrets.test.ts",
       ];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;
@@ -301,7 +308,7 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat" | "boxd",
+                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat" | "boxd" | "instabox",
                 providerRef: computer.providerRef!,
               },
               {
@@ -333,7 +340,8 @@ async function main() {
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
 async function managedComputers(handles: AppHandles, runAsSystem: typeof RunAsSystem) {
-  if (!["e2b", "novita", "daytona", "boat", "boxd"].includes(sandboxProvider)) return [];
+  if (!["e2b", "novita", "daytona", "boat", "boxd", "instabox"].includes(sandboxProvider))
+    return [];
   // Outside a tenant or system context the runtime login reads no rows, and nothing is destroyed.
   return runAsSystem("e2e cleanup of real test sandboxes", () =>
     handles.prisma.computer.findMany({

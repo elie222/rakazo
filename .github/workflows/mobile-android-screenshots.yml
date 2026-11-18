@@ -46,10 +46,10 @@ jobs:
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           key: mobile-android-apk-v2-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig*.json', '.github/workflows/mobile-android-screenshots.yml', 'apps/mobile/package.json', 'apps/mobile/app.json', 'apps/mobile/app.config.ts', 'apps/mobile/metro.config.js', 'apps/mobile/metro-resolver.js', 'apps/mobile/assets/**', 'apps/mobile/app/**', 'apps/mobile/components/**', 'apps/mobile/lib/**', 'apps/mobile/modules/**', 'apps/mobile/plugins/**', 'packages/chat-ui/**', 'packages/contracts/**', 'packages/core/**', 'packages/logging/**', 'packages/ui-tokens/**', 'packages/ui-web/**') }}
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:

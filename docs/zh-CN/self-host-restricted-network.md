@@ -5,12 +5,12 @@
 GitHub 或容器注册表无法访问时，可以使用自己掌控的镜像源或预先复制文件。
 这些设置只改变下载路径，模型和远程计算机提供商仍需可用的网络连接。
 
-| 失败位置 | 设置或处理方式 |
-| --- | --- |
-| 安装脚本 | 从可信镜像下载或复制到本地 |
-| Compose 文件 | `RAKAZO_DOWNLOAD_BASE`、`--local` 或 `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` |
-| 应用或计算机镜像 | `RAKAZO_IMAGE`、`RAKAZO_IMAGE_TAG`、`RAKAZO_COMPUTER_IMAGE`、`RAKAZO_COMPUTER_IMAGE_TAG` |
-| Postgres 或 busybox 镜像 | `POSTGRES_IMAGE`、`BUSYBOX_IMAGE`，或 Docker 的 `registry-mirrors` |
+| 失败位置                 | 设置或处理方式                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| 安装脚本                 | 从可信镜像下载或复制到本地                                                               |
+| Compose 文件             | `RAKAZO_DOWNLOAD_BASE`、`--local` 或 `RAKAZO_DOWNLOAD_SKIP_EXISTING=1`                   |
+| 应用或计算机镜像         | `RAKAZO_IMAGE`、`RAKAZO_IMAGE_TAG`、`RAKAZO_COMPUTER_IMAGE`、`RAKAZO_COMPUTER_IMAGE_TAG` |
+| Postgres 或 busybox 镜像 | `POSTGRES_IMAGE`、`BUSYBOX_IMAGE`，或 Docker 的 `registry-mirrors`                       |
 
 ## 安装脚本与 Compose 文件
 
@@ -59,9 +59,9 @@ bash install-images.sh --offline
 
 ```env
 RAKAZO_IMAGE=registry.example.com/mirror/rakazo/app
-RAKAZO_IMAGE_TAG=edge
+RAKAZO_IMAGE_TAG=latest
 RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/rakazo/computer
-RAKAZO_COMPUTER_IMAGE_TAG=edge
+RAKAZO_COMPUTER_IMAGE_TAG=latest
 POSTGRES_IMAGE=registry.example.com/library/postgres@sha256:<trusted-postgres-digest>
 BUSYBOX_IMAGE=registry.example.com/library/busybox@sha256:<trusted-busybox-digest>
 ```

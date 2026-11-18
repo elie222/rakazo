@@ -6,8 +6,10 @@
 // does not have; those run against a database of the branch's own on the same server, so
 // unmerged schema changes never reach the shared one.
 //
-// The database is `.env`'s DATABASE_URL when it accepts a connection. Otherwise a local
-// Postgres container (`rakazo-dev-postgres`) is started and reused by every checkout.
+// The database is `.env`'s DATABASE_URL when it is set: it must accept a
+// connection, or startup fails rather than falling back to a different one.
+// With no DATABASE_URL, a local Postgres container (`rakazo-dev-postgres`) is
+// started and reused by every checkout.
 // Setting WEB_PORT or API_PORT, in the shell or `.env`, turns off port selection. A relative
 // DATA_DIR resolves in the main checkout, so checkouts sharing the database share its files.
 // Branch databases, and their copied files, are dropped once the branch is deleted or merged.
@@ -16,7 +18,6 @@
 // https://<this machine>.<tailnet>.ts.net:<web port>. Everything still listens on loopback; the
 // Tailscale daemon forwards to it, so only devices signed in to your tailnet can reach it.
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   constants,
   cpSync,
@@ -30,6 +31,11 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BRANCH_DATABASE_COMMENT,
+  branchDatabaseName,
+  branchDatabaseOwner,
+} from "./dev-branch-databases.ts";
 import { runPnpm, spawnPnpm } from "./pnpm.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -140,9 +146,7 @@ async function startManagedPostgres() {
   try {
     run("docker", ["version", "--format", "{{.Server.Version}}"]);
   } catch {
-    throw new Error(
-      "DATABASE_URL in .env does not accept a connection and Docker is not running to start a local Postgres.",
-    );
+    throw new Error("No DATABASE_URL in .env and Docker is not running to start a local Postgres.");
   }
   const state = (() => {
     try {
@@ -194,8 +198,13 @@ async function startManagedPostgres() {
 async function sharedDatabase() {
   const url = setting("DATABASE_URL");
   const migrationUrl = setting("DATABASE_MIGRATION_URL") || url;
-  if (url && (await connects(migrationUrl))) return { url, migrationUrl };
-  if (url) log("DATABASE_URL in .env does not accept a connection; using the local container");
+  if (url) {
+    if (await connects(migrationUrl)) return { url, migrationUrl };
+    // A fallback would silently give this checkout different data than configured.
+    throw new Error(
+      "The configured database does not accept a connection. Check DATABASE_MIGRATION_URL or DATABASE_URL, or remove DATABASE_URL to use the local container.",
+    );
+  }
   return startManagedPostgres();
 }
 
@@ -246,8 +255,6 @@ function branchMigrations(branch) {
 }
 
 // Marks a finished branch database and records which repository and branch own it.
-const BRANCH_DATABASE_COMMENT = "rakazo dev branch: ";
-
 function branchDatabaseComment(branch) {
   return BRANCH_DATABASE_COMMENT + JSON.stringify({ repo: repositoryId(), branch });
 }
@@ -258,18 +265,6 @@ function repositoryId() {
 
 function currentBranch() {
   return run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root });
-}
-
-/** `<shared>_<branch>_<hash>`, within Postgres's 63-byte limit on names. */
-function branchDatabaseName(sharedName, branch) {
-  // Distinct branches can clean up to the same name; the hash keeps their databases apart.
-  const hash = createHash("sha256").update(branch).digest("hex").slice(0, 8);
-  const readable = branch
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  const prefix = `${sharedName}_${readable}`.slice(0, 63 - hash.length - 1).replace(/_+$/, "");
-  return `${prefix}_${hash}`;
 }
 
 /** A branch database's files, kept apart so deleting one never removes a file main still uses. */
@@ -294,15 +289,17 @@ async function branchDatabase(shared, sharedDataDir) {
     if (existing.rowCount && existing.rows[0].comment)
       return branchConnection(shared, name, dataDir);
     // No comment means an earlier start stopped partway; begin again.
-    if (existing.rowCount) await owner.query(`DROP DATABASE "${name}"`);
+    if (existing.rowCount) await owner.query(`DROP DATABASE ${owner.escapeIdentifier(name)}`);
     rmSync(path.dirname(dataDir), { recursive: true, force: true });
     let copied = true;
     try {
       // A copy keeps your accounts and bots; it needs no open connections to the source.
-      await owner.query(`CREATE DATABASE "${name}" TEMPLATE "${sharedName}"`);
+      await owner.query(
+        `CREATE DATABASE ${owner.escapeIdentifier(name)} TEMPLATE ${owner.escapeIdentifier(sharedName)}`,
+      );
     } catch {
       copied = false;
-      await owner.query(`CREATE DATABASE "${name}"`);
+      await owner.query(`CREATE DATABASE ${owner.escapeIdentifier(name)}`);
     }
     try {
       if (copied && existsSync(sharedDataDir)) {
@@ -310,12 +307,12 @@ async function branchDatabase(shared, sharedDataDir) {
         cpSync(sharedDataDir, dataDir, { recursive: true, mode: constants.COPYFILE_FICLONE });
       }
     } catch (error) {
-      await owner.query(`DROP DATABASE "${name}"`);
+      await owner.query(`DROP DATABASE ${owner.escapeIdentifier(name)}`);
       rmSync(path.dirname(dataDir), { recursive: true, force: true });
       throw new Error(`Could not copy ${sharedDataDir} for ${name}`, { cause: error });
     }
     await owner.query(
-      `COMMENT ON DATABASE "${name}" IS ${owner.escapeLiteral(branchDatabaseComment(branch))}`,
+      `COMMENT ON DATABASE ${owner.escapeIdentifier(name)} IS ${owner.escapeLiteral(branchDatabaseComment(branch))}`,
     );
     log(
       copied
@@ -352,19 +349,14 @@ async function pruneBranchDatabases(shared, sharedDataDir, onMain, keep) {
       [BRANCH_DATABASE_COMMENT, BRANCH_DATABASE_COMMENT.length + 1],
     );
     const repo = repositoryId();
+    const sharedName = new URL(shared.migrationUrl).pathname.slice(1);
     for (const row of rows) {
-      let branch;
-      try {
-        const parsed = JSON.parse(row.owner);
-        if (parsed.repo !== repo) continue;
-        branch = parsed.branch;
-      } catch {
-        continue;
-      }
+      const branch = branchDatabaseOwner(row, sharedName, repo);
+      if (branch === undefined) continue;
       if (branch === keep) continue;
       if ([...branchMigrations(branch)].some((name) => !onMain.has(name))) continue;
       try {
-        await owner.query(`DROP DATABASE "${row.name}"`);
+        await owner.query(`DROP DATABASE ${owner.escapeIdentifier(row.name)}`);
         rmSync(path.dirname(branchDataDir(sharedDataDir, row.name)), {
           recursive: true,
           force: true,

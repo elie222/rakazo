@@ -24,19 +24,19 @@ API responses are the same with it on or off.
 
 ## Platform scope
 
-| Surface | Status |
-| --- | --- |
-| Web | Supported |
-| Electron desktop | Supported (hosts the web UI, stores the choice in its own local storage) |
-| Expo mobile | Not included. Mobile keeps hiding tool activity, which is the previous behavior, so nothing changes there. |
+| Surface          | Status                                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Web              | Supported                                                                                                  |
+| Electron desktop | Supported (hosts the web UI, stores the choice in its own local storage)                                   |
+| Expo mobile      | Not included. Mobile keeps hiding tool activity, which is the previous behavior, so nothing changes there. |
 
 ## Tests
 
-- Unit tests: `apps/web/src/components/ToolActivityDisclosure.test.tsx`,
-  `apps/web/src/lib/tool-activity-preference.test.ts`,
-  `apps/web/src/lib/tool-activity-view.test.ts`, and
-  `apps/web/src/pages/AccountSettingsOverlay.test.tsx`.
-- UI E2E with fake data and screenshots: `apps/web/e2e/tool-activity.spec.ts` covers the
+- Unit tests: `apps/web/src/components/messages/ToolActivityDisclosure.test.tsx`,
+  `apps/web/src/lib/chat/tool-activity-preference.test.ts`,
+  `apps/web/src/lib/chat/tool-activity-view.test.ts`, and
+  `apps/web/src/pages/settings/AccountSettingsOverlay.test.tsx`.
+- UI E2E with fake data and screenshots: `apps/web/e2e/chat/tool-activity.spec.ts` covers the
   `apps/web/e2e/fixtures/tool-activity.html` fixture and one scripted-runtime chat turn in
   the real app. `apps/web/e2e/tool-activity-disclosure.spec.ts` checks the setting-off view
   on desktop and mobile widths.

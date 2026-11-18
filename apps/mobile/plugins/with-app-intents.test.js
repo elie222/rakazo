@@ -13,11 +13,11 @@ describe("RakazoIntents", () => {
   it("reads the secure-store keys the app writes", () => {
     const swift = read("ios-intents/RakazoIntents.swift");
     for (const [file, name] of [
-      ["lib/session.ts", "SESSION_KEY"],
-      ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
-      ["lib/api.ts", "SPACE_KEY"],
-      ["lib/last-bot.ts", "LAST_BOT_KEY"],
-      ["lib/server-headers.ts", "SERVER_HEADERS_KEY"],
+      ["lib/api/session.ts", "SESSION_KEY"],
+      ["lib/api/server-config.ts", "API_BASE_STORAGE_KEY"],
+      ["lib/api/api.ts", "SPACE_KEY"],
+      ["lib/inbox/last-bot.ts", "LAST_BOT_KEY"],
+      ["lib/api/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
       expect(key, `${name} in ${file}`).toBeTruthy();
@@ -36,7 +36,7 @@ describe("RakazoIntents", () => {
   });
 
   it("falls back to the app's own default server", () => {
-    const local = constant("lib/server-config.ts", "LOCAL_API");
+    const local = constant("lib/api/server-config.ts", "LOCAL_API");
     expect(read("plugins/with-app-intents.js")).toContain(`"${local}"`);
   });
 });
@@ -54,6 +54,11 @@ describe("withAppIntents prebuild", () => {
       modResults: {
         hasFile: (file) => files.has(file),
         pbxTargetByName: (name) => (name === "RakazoWidgets" ? {} : undefined),
+        pbxNativeTargetSection: () => ({
+          "app-target": { name: "Rakazo" },
+          "app-target_comment": "Rakazo",
+          "widget-target": { name: '"RakazoWidgets"' },
+        }),
         pbxXCBuildConfigurationSection: () => ({ widget: { buildSettings: widgetSettings } }),
       },
     };
@@ -82,7 +87,10 @@ describe("withAppIntents prebuild", () => {
               XcodeUtils: {
                 getProjectName: () => "Rakazo",
                 addBuildSourceFileToGroup: (input) => {
-                  added.push(input);
+                  // Like the real helper, a file already in its group is skipped.
+                  const key = `${input.groupName}/${input.filepath}`;
+                  if (!files.has(key)) added.push(input);
+                  files.add(key);
                   files.add(input.filepath);
                 },
               },
@@ -103,7 +111,14 @@ describe("withAppIntents prebuild", () => {
       "Rakazo/RakazoIntents.swift",
       "Rakazo/VoiceMessageRecorder.swift",
       "Rakazo/VoiceMessageActivity.swift",
+      "RakazoWidgets.swift",
+      "WorkLiveActivity.swift",
+      "VoiceMessageActivity.swift",
+      "WorkActivityAttributes.swift",
     ]);
+    // An existing widget target still gets every source, in its own group and build phase.
+    expect(added.slice(3).every((input) => input.targetUuid === "widget-target")).toBe(true);
+    expect(added.slice(3).every((input) => input.groupName === "RakazoWidgets")).toBe(true);
     expect(widgetSettings).toMatchObject({
       CURRENT_PROJECT_VERSION: "7",
       MARKETING_VERSION: "2.0.0",
@@ -115,7 +130,9 @@ describe("voice message Live Activity", () => {
   // EAS signs only the extensions app.json lists, under the bundle id the plugin gives them.
   it("lists the widget extension for EAS signing", () => {
     const app = JSON.parse(read("app.json")).expo;
-    const [extension] = app.extra.eas.build.experimental.ios.appExtensions;
+    const extension = app.extra.eas.build.experimental.ios.appExtensions.find(
+      ({ targetName }) => targetName === "RakazoWidgets",
+    );
     expect(read("plugins/with-app-intents.js")).toContain(`"${extension.targetName}"`);
     expect(extension.bundleIdentifier).toBe(`${app.ios.bundleIdentifier}.widgets`);
   });

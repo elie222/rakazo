@@ -9,6 +9,11 @@ The iOS and Android app can also point at a self-hosted origin at runtime. On th
 
 The app accepts plain `http://` only for a private IP, `localhost`, or a `.local` name, but Docker Compose publishes the web port on loopback by default. For LAN access, follow [Connecting a phone on the same network](#connecting-a-phone-on-the-same-network). A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
 
+If a domain login gate redirects the server probe to a browser sign-in page, use the
+app's **Server → Headers** with a dedicated access-proxy credential. See
+[connecting through a login gate](./self-host-kubernetes.md#connect-the-mobile-app-through-the-same-gate)
+for the configuration and checks; an entry key does not replace the Rakazo account login.
+
 Native apps need a setting on the server before they can use its [passkeys](./self-host-accounts.md#passkeys).
 
 ## Connecting a phone on the same network
@@ -56,13 +61,19 @@ Keys**, create a key with **Apple Push Notifications service (APNs)** enabled fo
 and download its `.p8` file. Configure these server secrets through your deployment's
 normal environment/secret manager:
 
-| Setting | Value |
-| --- | --- |
-| `APNS_VOIP_KEY_ID` | `<APNS_KEY_ID>` |
-| `APNS_VOIP_TEAM_ID` | `<APPLE_TEAM_ID>` |
-| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted |
+| Setting                 | Value                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `APNS_VOIP_KEY_ID`      | `<APNS_KEY_ID>`                                                                    |
+| `APNS_VOIP_TEAM_ID`     | `<APPLE_TEAM_ID>`                                                                  |
+| `APNS_VOIP_PRIVATE_KEY` | Contents of the `.p8` file; literal `\n` escapes are accepted                      |
 | `APNS_VOIP_ENVIRONMENT` | `sandbox` for development signing, `production` for TestFlight/App Store (default) |
-| `APNS_VOIP_BUNDLE_ID` | Your iOS bundle identifier; defaults to `com.rakazo.app` |
+| `APNS_VOIP_BUNDLE_ID`   | Your iOS bundle identifier; defaults to `com.rakazo.app`                           |
+
+Live Activities use the same APNs credentials for work-card updates. Self-hosters using the
+App Store build do not get Live Activities: sending updates requires APNs credentials authorized
+for the store bundle identifier, which self-hosters do not have. To enable them, build and sign
+your own iOS app and configure the secrets above for its bundle identifier. Without server
+support, the app skips starting the work card.
 
 The adapter uses the `<bundle identifier>.voip` topic. Keep keys on the server; never put
 them in the app or repository. Enable Push Notifications and Background Modes (Voice over

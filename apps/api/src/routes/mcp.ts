@@ -1,24 +1,14 @@
-import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
-  applyMcpSourcePreset,
-  createPluginMarketplace,
-  isTransientFetchError,
-  MCP_SOURCE_PRESETS,
+  lockMcpOAuthMaterial,
   McpOAuthClientRequiredError,
   persistPreparedSecret,
-  pluginPreviewDto,
-  prepareApiInstall,
-  prepareGraphqlInstall,
-  previewPluginInstall,
   recordMcpServerHealth,
-  sanitizeIntegrationError,
-  verifyMcpInstall,
+  wakeRun,
 } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
-import { MCP_OAUTH_REDIRECT_MISMATCH, signupSurveyAsksTeamSize } from "@rakazo/contracts";
-import { comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
+import type { Actor, McpOAuthClientKind } from "@rakazo/contracts";
+import { MCP_OAUTH_REDIRECT_MISMATCH, McpServerConfigInput } from "@rakazo/contracts";
+import { ClientError, customMcpServerInput } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
@@ -26,46 +16,29 @@ import {
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
-  spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { requireAdmin } from "../admins.js";
-import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../availability.js";
-import { searchIntegrationCatalog } from "../integration-catalog.js";
 import {
   queueMcpConnectedRun,
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
-} from "../mcp-approval.js";
-import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
+} from "../integrations/mcp-approval.js";
+import { buildMcpUpdateMaterial, legacyMcpArgs } from "../integrations/mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
   assertMcpStdioAdmin,
   assertMcpStdioCommand,
   MCP_OAUTH_PENDING_MESSAGE,
-  mayUsePrivateEndpoint,
   mcpAssignmentDto,
   mcpServerDto,
-} from "../mcp-servers.js";
+} from "../integrations/mcp-servers.js";
 import {
-  chooseFocus,
-  dismissFocus,
-  markAppConnected,
-  promptFocus,
-  startOnboarding,
-} from "../onboarding.js";
-import { installPlugin, lockPluginInstalls, setPluginParts } from "../plugin-installs.js";
-import {
-  approvedPluginEntries,
-  listPluginSubmissions,
-  reviewPluginSubmission,
-} from "../plugin-submissions.js";
+  assertNameFreeWhereAvailable,
+  lockOwner,
+  serverAvailability,
+  serverSecretSpace,
+} from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -83,293 +56,95 @@ export function mcpRoutes(ctx: RouterContext) {
     announceMcpServer,
     authed,
   } = ctx;
-  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
-  /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
-  const removeInstall = async (actor: Actor, id: string) => {
-    const notify: Array<{ threadId: string; seq: number }> = [];
-    await deps.prisma.$transaction(async (tx) => {
-      // Parts changes hold this lock while adding children; reading them without it could
-      // miss a connector committed meanwhile and leave its secret behind.
-      await lockPluginInstalls(tx, actor);
-      const existing = await tx.capabilityInstall.findFirst({
-        where: { id, ...availableInSpace(actor) },
-      });
-      if (!existing) return;
-      if (existing.kind === "plugin") {
-        const servers = await tx.mcpServer.findMany({
-          where: { installId: existing.id, userId: actor.userId },
-          select: { id: true, secretId: true },
-        });
-        for (const server of servers) {
-          notify.push(...(await removeMcpServerInTransaction(tx, actor, server)));
-        }
-        await tx.agentSkill.deleteMany({ where: { installId: existing.id } });
-      }
-      await tx.capabilityInstall.delete({ where: { id: existing.id } });
-      if (existing.secretId) {
-        const shared = await tx.capabilityInstall.count({
-          where: { secretId: existing.secretId },
-        });
-        if (shared === 0) {
-          await tx.secret.deleteMany({
-            where: { id: existing.secretId, ...itemSecretIn(actor) },
-          });
-        }
-      }
-    });
-    for (const event of notify) await deps.events.notify(event.threadId, event.seq);
-  };
-  return {
-    marketplace: {
-      catalog: authed.marketplace.catalog.handler(async ({ input }) => {
-        const [catalog, approved] = await Promise.all([
-          pluginMarketplace.catalog(input.query),
-          approvedPluginEntries(deps.prisma),
+  /** Gives the bot the server, closing any card that asked for it. */
+  async function approveMcpAssignment(
+    actor: Actor,
+    input: { botId: string; serverId: string; threadId?: string },
+  ) {
+    const row = await resolveMcpApprovalCards(
+      onboardingDeps,
+      actor,
+      {
+        botId: input.botId,
+        serverId: input.serverId,
+        status: "connected",
+        threadId: input.threadId,
+      },
+      async (tx, decision) => {
+        if (!decision.assign) throw new IsolationError();
+        const [bot, server] = await Promise.all([
+          tx.bot.findFirst({
+            where: { id: input.botId, spaceId: actor.spaceId },
+            select: { id: true },
+          }),
+          tx.mcpServer.findFirst({
+            where: { id: input.serverId, ...availableInSpace(actor), enabled: true },
+            select: { id: true },
+          }),
         ]);
-        // A plugin also listed by another registry shows once, as the version we reviewed.
-        const reviewed = new Set(approved.map((entry) => entry.installedSource));
-        return {
-          ...catalog,
-          entries: [
-            ...approved.filter((entry) => matchesPluginQuery(entry, input.query)),
-            ...catalog.entries.filter((entry) => !reviewed.has(entry.installedSource)),
-          ].sort(comparePlugins),
-        };
-      }),
-      submissions: authed.marketplace.submissions.handler(async ({ context, input }) => {
-        await requireAdmin(deps, context.actor.userId);
-        return listPluginSubmissions(deps.prisma, input.status);
-      }),
-      review: authed.marketplace.review.handler(async ({ context, input }) => {
-        await requireAdmin(deps, context.actor.userId);
-        return reviewPluginSubmission(deps, input, context.signal);
-      }),
-    },
-    capabilities: {
-      list: authed.capabilities.list.handler(async ({ context }) => {
-        const rows = await deps.prisma.capabilityInstall.findMany({
-          where: availableInSpace(context.actor),
-          include: { availableIn: AVAILABILITY_SELECT },
-        });
-        return rows.map((row) => ({
-          id: row.id,
-          kind: row.kind as "skill" | "plugin" | "mcp" | "api" | "connection",
-          name: row.name,
-          source: row.source,
-          version: row.version,
-          digest: row.digest,
-          secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
-          availability: spaceAvailability(row),
-          createdAt: row.createdAt.toISOString(),
-        }));
-      }),
-      sourcePresets: authed.capabilities.sourcePresets.handler(() => MCP_SOURCE_PRESETS),
-      catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
-        const baseUrl =
-          deps.env.integrationsCatalogUrl ??
-          (input.usePublicCatalog ? "https://integrations.sh" : undefined);
-        if (!baseUrl) return { enabled: false, results: [] };
-        try {
-          const results = await searchIntegrationCatalog({
-            baseUrl,
-            query: input.query,
-            signal: context.signal ?? new AbortController().signal,
-            fetch: deps.remoteConnectors?.fetch,
-          });
-          return { enabled: true, results };
-        } catch (error) {
-          throw new ORPCError("BAD_GATEWAY", {
-            message: error instanceof Error ? error.message : "Integration catalog search failed",
-          });
-        }
-      }),
-      install: authed.capabilities.install.handler(async ({ context, input }) => {
-        if (input.kind === "plugin") {
-          return installPlugin(
-            {
-              prisma: deps.prisma,
-              secrets: deps.secrets,
-              fetcher: deps.pluginRepoFetcher,
-              assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
-            },
-            context.actor,
-            input,
-            context.signal,
-          );
-        }
-        let source = input.source.trim();
-        let config = input.config;
-        const credential = input.credential?.trim() || undefined;
-        if (
-          credential &&
-          credential.length >= 8 &&
-          (source.includes(credential) || containsSecret(config, [credential]))
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Put credentials only in the encrypted credential field",
-          });
-        }
-        if (JSON.stringify(config).length > 2_000_000) {
-          throw new ORPCError("BAD_REQUEST", { message: "Capability configuration is too large" });
-        }
-        if (
-          credential &&
-          input.kind !== "mcp" &&
-          input.kind !== "api" &&
-          input.kind !== "graphql"
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Credentials are only accepted for MCP, API, and GraphQL tool sources",
-          });
-        }
-        try {
-          if (input.kind === "mcp") {
-            ({ source, config } = applyMcpSourcePreset(source, config));
-            const verified = await verifyMcpInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            config = verified.config;
-          }
-          if (input.kind === "api") {
-            const prepared = await prepareApiInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            source = prepared.source;
-            config = prepared.config;
-          }
-          if (input.kind === "graphql") {
-            const prepared = await prepareGraphqlInstall({
-              source,
-              config,
-              credential,
-              signal: context.signal,
-              remote: deps.remoteConnectors,
-              allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-            });
-            source = prepared.source;
-            config = prepared.config;
-          }
-        } catch (error) {
-          const message = sanitizeIntegrationError(error);
-          throw new ORPCError("BAD_REQUEST", {
-            message: credential ? message.split(credential).join("[redacted]") : message,
-          });
-        }
-        const stored = credential
-          ? await deps.secrets.put(credential, {
-              operationId: "capabilities.install",
-              traceId: "capabilities.install",
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              signal: context.signal ?? new AbortController().signal,
-            })
-          : undefined;
-        const digest = `sha256:${createHash("sha256")
-          .update(JSON.stringify({ kind: input.kind, source, config }))
-          .digest("hex")}`;
-        const row = await deps.prisma.$transaction(async (tx) => {
-          if (stored) {
-            // A source the user adds reaches all their spaces, so its secret is the account's.
-            await tx.secret.create({
-              data: {
-                id: stored.id,
-                spaceId: null,
-                userId: context.actor.userId,
-                kind: "connector",
-                ciphertext: stored.ciphertext,
-              },
-            });
-          }
-          return tx.capabilityInstall.create({
-            data: {
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              allSpaces: true,
-              kind: input.kind,
-              name: input.name.trim(),
-              source,
-              secretId: stored?.id,
-              config: config as Prisma.InputJsonValue,
-              digest,
-              version: "1.0.0",
-            },
-          });
-        });
-        return {
-          id: row.id,
-          kind: row.kind as "skill" | "plugin" | "mcp" | "api" | "connection",
-          name: row.name,
-          source: row.source,
-          version: row.version,
-          digest: row.digest,
-          secretConfigured: Boolean(row.secretId),
-          config: row.config as Record<string, unknown>,
-          availability: spaceAvailability(row),
-          createdAt: row.createdAt.toISOString(),
-        };
-      }),
-      pluginPreview: authed.capabilities.pluginPreview.handler(async ({ context, input }) => {
-        try {
-          const preview = await previewPluginInstall({
-            source: input.source,
-            signal: context.signal,
-            fetcher: deps.pluginRepoFetcher,
-          });
-          for (const server of preview.mcpServers) {
-            await assertMcpRemoteEndpoint(server.endpoint, deps);
-          }
-          // Browse lists only plugins that install completely; one that turns out partial leaves it.
-          if (preview.skipped.some((part) => part.kind !== "unsupported_field"))
-            pluginMarketplace.markUnreadable(input.source);
-          else pluginMarketplace.clearUnreadable(input.source);
-          return {
-            ...pluginPreviewDto(preview),
-            pinnedSource: `${preview.source.gitUrl}@${preview.resolvedSha}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
-            installedSource: `${preview.source.gitUrl}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
-          };
-        } catch (error) {
-          // Only content we can't support leaves browse; a slow or failing GitHub is retried.
-          if (!isTransientFetchError(error)) pluginMarketplace.markUnreadable(input.source);
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Could not preview a supported plugin from this repository",
-          });
-        }
-      }),
-      remove: authed.capabilities.remove.handler(async ({ context, input }) => {
-        await removeInstall(context.actor, input.id);
-        return { ok: true as const };
-      }),
-      pluginParts: authed.capabilities.pluginParts.handler(async ({ context, input }) => {
-        const notify: Array<{ threadId: string; seq: number }> = [];
-        const install = await setPluginParts(
-          {
-            prisma: deps.prisma,
-            secrets: deps.secrets,
-            fetcher: deps.pluginRepoFetcher,
-            assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
-            removeServer: async (tx, server) =>
-              notify.push(...(await removeMcpServerInTransaction(tx, context.actor, server))),
+        if (!bot || !server) throw new IsolationError();
+        const assignment = await tx.botMcpServer.upsert({
+          where: { botId_serverId: { botId: bot.id, serverId: server.id } },
+          create: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId: bot.id,
+            serverId: server.id,
+            allowAllTools: true,
+            allowedTools: [],
           },
-          context.actor,
-          input,
-          context.signal,
+          update: {},
+        });
+        const runId =
+          input.threadId && decision.resolved
+            ? await queueMcpConnectedRun(tx, actor, {
+                botId: bot.id,
+                serverId: server.id,
+                threadId: input.threadId,
+              })
+            : null;
+        return { assignment, runId };
+      },
+    );
+    if (!row) throw new IsolationError();
+    if (row.runId) await wakeRun(deps.jobs, row.runId);
+    return mcpAssignmentDto(row.assignment);
+  }
+
+  /** Starts a sign-in on the registered web callback; `botId` gets the server once it finishes. */
+  async function beginMcpOAuth(
+    actor: Actor,
+    input: { serverId: string; redirectUri?: string; client?: McpOAuthClientKind; botId?: string },
+  ) {
+    const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
+    // Native clients omit the redirect; the registered web callback is always used.
+    if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "The sign-in address does not match this server's configuration.",
+        MCP_OAUTH_REDIRECT_MISMATCH,
+      );
+    }
+    try {
+      return await mcpOAuth.begin({
+        ...input,
+        redirectUri: expectedRedirect,
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+      });
+    } catch (error) {
+      if (error instanceof McpOAuthClientRequiredError)
+        await recordMcpServerHealth(
+          deps.prisma,
+          input.serverId,
+          { status: "error", message: error.message },
+          error.revision,
         );
-        for (const event of notify) await deps.events.notify(event.threadId, event.seq);
-        if (!install) await removeInstall(context.actor, input.id);
-        return { install };
-      }),
-    },
+      throw error;
+    }
+  }
+
+  return {
     mcp: {
       servers: {
         list: authed.mcp.servers.list.handler(async ({ context }) => {
@@ -409,14 +184,56 @@ export function mcpRoutes(ctx: RouterContext) {
             )
             .catch((error: unknown) => {
               // The slug comes from the name, so this is a second server with the same name.
-              if (isUniqueViolation(error)) {
-                throw new ORPCError("CONFLICT", {
-                  message: "An MCP server with that name already exists.",
-                });
-              }
+              if (isUniqueViolation(error))
+                throw new ClientError("CONFLICT", "An MCP server with that name already exists.");
               throw error;
             });
           return announceMcpServer(row, context.actor);
+        }),
+        connect: authed.mcp.servers.connect.handler(async ({ context, input }) => {
+          const { actor } = context;
+          const config = McpServerConfigInput.parse(
+            customMcpServerInput(input.name, input.endpoint),
+          );
+          // The same address in another form ("https://host/" for "https://host") is the same server.
+          const endpoint = new URL(input.endpoint).href;
+          const stored = await prepareMcpServer(actor, config);
+          const { row, created } = await persistPreparedSecret(
+            deps.prisma,
+            deps.secrets,
+            stored ?? undefined,
+            () =>
+              deps.prisma.$transaction(async (tx) => {
+                // Two connects to the same new address share one server.
+                await lockOwner(tx, actor.userId, "mcp-connect");
+                const rows = await tx.mcpServer.findMany({
+                  where: { ...availableInSpace(actor), enabled: true, endpoint: { not: null } },
+                  include: { availableIn: AVAILABILITY_SELECT },
+                  orderBy: { createdAt: "asc" },
+                });
+                const existing = rows.find(
+                  (row) => URL.canParse(row.endpoint!) && new URL(row.endpoint!).href === endpoint,
+                );
+                if (existing) return { row: existing, created: false };
+                return {
+                  row: await insertMcpServer(tx, actor, config, stored, { everywhere: true }),
+                  created: true,
+                };
+              }),
+          );
+          const server = created
+            ? await announceMcpServer(row, actor)
+            : mcpServerDto(row, await mcpOAuth.summaryFor(row, actor));
+          const serverId = row.id;
+          const signIn = await beginMcpOAuth(actor, {
+            serverId,
+            redirectUri: input.redirectUri,
+            client: input.client,
+            botId: input.botId,
+          });
+          if (signIn.status !== "authorization_required" && input.botId)
+            await approveMcpAssignment(actor, { botId: input.botId, serverId });
+          return { server, signIn };
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -513,7 +330,7 @@ export function mcpRoutes(ctx: RouterContext) {
                   // so this takes it first too and the two can never wait on each other.
                   if (config.slug !== existing.slug)
                     await lockOwner(tx, context.actor.userId, "names:mcpServer");
-                  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${input.id}))`;
+                  await lockMcpOAuthMaterial(tx, input.id);
                   const current = await tx.mcpServer.findFirst({
                     where: {
                       id: input.id,
@@ -751,68 +568,9 @@ export function mcpRoutes(ctx: RouterContext) {
           });
           return rows.map(mcpAssignmentDto);
         }),
-        approve: authed.mcp.assignments.approve.handler(async ({ context, input }) => {
-          const row = await resolveMcpApprovalCards(
-            onboardingDeps,
-            context.actor,
-            {
-              botId: input.botId,
-              serverId: input.serverId,
-              status: "connected",
-              threadId: input.threadId,
-            },
-            async (tx, decision) => {
-              if (!decision.assign) throw new IsolationError();
-              const [bot, server] = await Promise.all([
-                tx.bot.findFirst({
-                  where: {
-                    id: input.botId,
-                    spaceId: context.actor.spaceId,
-                  },
-                  select: { id: true },
-                }),
-                tx.mcpServer.findFirst({
-                  where: {
-                    id: input.serverId,
-                    ...availableInSpace(context.actor),
-                    enabled: true,
-                  },
-                  select: { id: true },
-                }),
-              ]);
-              if (!bot || !server) throw new IsolationError();
-              const assignment = await tx.botMcpServer.upsert({
-                where: { botId_serverId: { botId: bot.id, serverId: server.id } },
-                create: {
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                  botId: bot.id,
-                  serverId: server.id,
-                  allowAllTools: true,
-                  allowedTools: [],
-                },
-                update: {},
-              });
-              const runId =
-                input.threadId && decision.resolved
-                  ? await queueMcpConnectedRun(tx, context.actor, {
-                      botId: bot.id,
-                      serverId: server.id,
-                      threadId: input.threadId,
-                    })
-                  : null;
-              return { assignment, runId };
-            },
-          );
-          if (!row) throw new IsolationError();
-          if (row.runId) {
-            // The queued run is durable; a missed wake is repaired by the reconciler.
-            await deps.jobs.enqueue(runContinueJob(row.runId)).catch((error) => {
-              getLogger().error("mcp connected enqueue", error);
-            });
-          }
-          return mcpAssignmentDto(row.assignment);
-        }),
+        approve: authed.mcp.assignments.approve.handler(({ context, input }) =>
+          approveMcpAssignment(context.actor, input),
+        ),
         dismiss: authed.mcp.assignments.dismiss.handler(async ({ context, input }) => {
           // Not now resolves the card only. Assignments are never touched
           // here: a stale card must not delete a live connection, and server
@@ -900,71 +658,42 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
       },
       oauth: {
-        begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
-          try {
-            const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
-            // Native clients omit the redirect; the registered web callback is always used.
-            if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
-              throw new ORPCError(MCP_OAUTH_REDIRECT_MISMATCH, {
-                status: 400,
-                message: "The sign-in address does not match this server's configuration.",
-              });
-            }
-            return await mcpOAuth.begin({
-              ...input,
-              redirectUri: expectedRedirect,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-            });
-          } catch (error) {
-            if (error instanceof ORPCError) throw error;
-            if (error instanceof McpOAuthClientRequiredError) {
-              await recordMcpServerHealth(
-                deps.prisma,
-                input.serverId,
-                { status: "error", message: error.message },
-                error.revision,
-              );
-              throw new ORPCError(error.code, { status: 400, message: error.message });
-            }
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not start MCP OAuth",
-            });
-          }
-        }),
+        begin: authed.mcp.oauth.begin.handler(({ context, input }) =>
+          beginMcpOAuth(context.actor, input),
+        ),
         complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
-          try {
-            const { serverId, revision } = await mcpOAuth.complete({
-              ...input,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
+          const { serverId, revision, botId } = await mcpOAuth.complete({
+            ...input,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          });
+          // A check from before the sign-in would otherwise still read as failing. Only this
+          // sign-in's revision: an edit since then has its own health and its own check.
+          await recordMcpServerHealth(
+            deps.prisma,
+            serverId,
+            { status: "unknown", message: null },
+            revision,
+          );
+          // The account is connected now: check the server so it shows ok/error.
+          void (async () => {
+            const server = await deps.prisma.mcpServer.findFirst({
+              where: { id: serverId, revision, ...availableInSpace(context.actor) },
             });
-            // A check from before the sign-in would otherwise still read as failing. Only this
-            // sign-in's revision: an edit since then has its own health and its own check.
-            await recordMcpServerHealth(
-              deps.prisma,
-              serverId,
-              { status: "unknown", message: null },
-              revision,
-            );
-            // The account is connected now: check the server so it shows ok/error.
-            void (async () => {
-              const server = await deps.prisma.mcpServer.findFirst({
-                where: { id: serverId, revision, ...availableInSpace(context.actor) },
-              });
-              if (server)
-                await beginMcpProbe(
-                  server,
-                  context.actor,
-                  await mcpOAuth.summaryFor(server, context.actor),
-                );
-            })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
-            return { ok: true as const };
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not complete MCP OAuth",
+            if (server)
+              await beginMcpProbe(
+                server,
+                context.actor,
+                await mcpOAuth.summaryFor(server, context.actor),
+              );
+          })().catch((error) => getLogger().error("mcp server probe after oauth failed", error));
+          // A bot removed since the sign-in began has nothing to get. Any other failure fails
+          // the call: signing in again finds the server connected and gives it to the bot.
+          if (botId)
+            await approveMcpAssignment(context.actor, { botId, serverId }).catch((error) => {
+              if (!(error instanceof IsolationError)) throw error;
             });
-          }
+          return { ok: true as const };
         }),
         disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
           const revision = await mcpOAuth.disconnect({
@@ -984,72 +713,6 @@ export function mcpRoutes(ctx: RouterContext) {
           return { ok: true as const };
         }),
       },
-    },
-    onboarding: {
-      signupSurvey: authed.onboarding.signupSurvey.handler(async ({ context, input }) => {
-        const answers = {
-          reason: input.reason || null,
-          use: input.use ?? null,
-          teamSize: signupSurveyAsksTeamSize(input.use) ? (input.teamSize ?? null) : null,
-          source: input.source || null,
-        };
-        const saved = await deps.prisma.signupSurvey.upsert({
-          where: { userId: context.actor.userId },
-          create: { userId: context.actor.userId, ...answers },
-          update: answers,
-        });
-        deps.analytics?.capture(
-          context.actor.userId,
-          {
-            name: "signup_survey_answered",
-            skipped: Object.values(answers).every((answer) => answer === null),
-            ...(answers.use ? { use: answers.use } : {}),
-            ...(answers.teamSize ? { teamSize: answers.teamSize } : {}),
-          },
-          // The first save's time keeps a resubmission a duplicate of the same event.
-          { id: context.actor.userId, at: saved.createdAt },
-        );
-        return { ok: true as const };
-      }),
-      start: authed.onboarding.start.handler(async ({ context, input }) => {
-        await startOnboarding(onboardingDeps, context.actor, input.botId);
-        return { ok: true as const };
-      }),
-      promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
-        await promptFocus(onboardingDeps, context.actor, input.botId);
-        return { ok: true as const };
-      }),
-      choose: authed.onboarding.choose.handler(async ({ context, input }) => {
-        await chooseFocus(onboardingDeps, context.actor, input.botId, input.optionId);
-        return { ok: true as const };
-      }),
-      dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
-        await dismissFocus(onboardingDeps, context.actor, input.botId);
-        return { ok: true as const };
-      }),
-      appConnected: authed.onboarding.appConnected.handler(async ({ context, input }) => {
-        await markAppConnected(
-          onboardingDeps,
-          context.actor,
-          input.botId,
-          input.provider,
-          input.connectorId,
-          input.threadId,
-          input.messageId,
-        );
-        return { ok: true as const };
-      }),
-    },
-    integrationSetup: {
-      get: authed.integrationSetup.get.handler(() => ({
-        canConfigure: false,
-        needsSetup: false,
-        webUrl: new URL("/integrations/setup", deps.env.webOrigin).toString(),
-        providers: [],
-      })),
-      save: authed.integrationSetup.save.handler(() => {
-        throw new ORPCError("FORBIDDEN");
-      }),
     },
   };
 }

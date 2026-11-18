@@ -21,6 +21,14 @@ name: Thread
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 02-attachment
+# 01-thread shows the empty composer (mic and Call); a typed draft swaps Call for Send.
+- tapOn: "Message Researcher"
+- inputText: "Summarize the launch notes"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02b-composer-typed
+- eraseText: 40
+- hideKeyboard
 - openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
 - extendedWaitUntil:
     visible: ".*The fixture launch plan is ready.*"

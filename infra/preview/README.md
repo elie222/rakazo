@@ -2,7 +2,7 @@
 
 Every pull request that changes the app gets its own live copy at `https://rakazo-pr-<number>.fly.dev`,
 linked from a comment on the pull request and updated on each push. Sign in with
-`preview@example.com` / `rakazo-preview-demo`.
+`preview@example.com` / `rakazo-preview-demo` (the sign-in page has a button for it), or sign up.
 
 A preview is one Fly.io machine holding Postgres and the whole app, with every outside service
 emulated: scripted model replies, fake computers, and emulated billing and cloud agents. Fly's
@@ -15,6 +15,9 @@ account is recreated on the next cold boot.
 Idle machines incur storage charges, including the root filesystem and the data volume; compute
 is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricing/).
 
+The weekly exploratory QA run starts the same image on its runner with `PREVIEW_HOST=localhost:8080`
+and `PREVIEW_SCHEME=http`; see [agent verification](../../docs/agent-verification.md#weekly-exploratory-qa).
+
 ## How it stays safe for forks
 
 - `preview-build.yml` runs the pull request's code to build the image, with a read-only token and
@@ -23,6 +26,9 @@ is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricin
   image and pushes it to Fly; it never runs the pull request's code or scripts.
 - A preview generates its own secrets on first boot and holds no credential for anything else. Its
   machine size comes from this directory's `fly.toml` on the default branch, not the pull request.
+- After a deploy that touches the web UI, an agent screenshots the change in the preview and a
+  separate trusted job adds the images to the pull request description. The agent has only
+  browser tools, and the browser runs as its own user, so neither can read the model login.
 - Previews live in a Fly organization used for nothing else: machines in one organization share a
   private network, and any pull request can run code in its preview.
 - The demo login is public, so never connect a real model key or account to a preview.
@@ -38,4 +44,3 @@ is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricin
 
 Until the token is set, the deploy and cleanup workflows skip themselves, but every pull request
 still builds an image, so set this up before merging the workflows.
-

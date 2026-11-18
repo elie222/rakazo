@@ -5,18 +5,26 @@ import WidgetKit
 
 @main
 struct RakazoWidgets: WidgetBundle {
-  var body: some Widget { VoiceMessageLiveActivity() }
+  var body: some Widget {
+    VoiceMessageLiveActivity()
+    WorkLiveActivity()
+  }
 }
 
 private typealias Status = VoiceMessageAttributes.ContentState.Status
 
-private extension Color {
+extension Color {
   static let destructive = Color.red
   static let muted = Color.white.opacity(0.66)
 }
 
 /// The expanded island's status row: mark, label and signal share this height.
-private let islandRow: CGFloat = 36
+let islandRow: CGFloat = 36
+
+func appMark(size: CGFloat) -> some View {
+  Image("AppMark").resizable().frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+}
 
 /// What a voice message shows on the Lock Screen and in the Dynamic Island while it records.
 struct VoiceMessageLiveActivity: Widget {
@@ -93,11 +101,6 @@ struct VoiceMessageLiveActivity: Widget {
   }
 
   // MARK: Pieces
-
-  private func appMark(size: CGFloat) -> some View {
-    Image("AppMark").resizable().frame(width: size, height: size)
-      .clipShape(RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
-  }
 
   /// The live signal: a waveform while listening, quiet dots while the bot thinks.
   @ViewBuilder

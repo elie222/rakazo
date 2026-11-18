@@ -1,5 +1,11 @@
+import { useLingui } from "@lingui/react/macro";
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
+import type {
+  BotAvatarSet,
+  LoginFieldInput,
+  MessageBlock,
+  MessageReaction,
+} from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
@@ -14,28 +20,31 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent, LayoutChangeEvent } from "react-native";
 import { Platform, View } from "react-native";
 import Animated, { useReducedMotion, ZoomIn } from "react-native-reanimated";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
-import { blockText } from "../../lib/api";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { canDoubleTapReact } from "../../lib/double-tap";
-import { useI18n } from "../../lib/i18n";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
-import { buildMessageContextMenu, messageMenuReaction } from "../../lib/message-context-menu";
-import { messageHasInlineControls, quotableMessageSegments } from "../../lib/message-presentation";
-import { messageRowLayout } from "../../lib/message-row-layout";
-import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
-import { selectableTextFromMarkdown } from "../../lib/selectable-text";
-import { ThreadReadOnlyContext } from "../../lib/thread-read-only";
-import type { UserBubble } from "../../lib/user-bubble";
-import { BotAvatar } from "../bot-avatar";
-import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
-import { presentMessageMenu } from "../message-action-menu";
-import { MessageContextMenu } from "../message-context-menu";
-import { ReplyLine } from "../reply-line";
-import { TimeSeparator } from "../time-separator";
-import { UnreadDivider } from "../unread-divider";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api/mobile-types";
+import { blockText } from "../../lib/api/mobile-types";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { canDoubleTapReact } from "../../lib/messages/double-tap";
+import { presentMessageActionSheet } from "../../lib/messages/message-action-sheet";
+import {
+  buildMessageContextMenu,
+  messageMenuReaction,
+} from "../../lib/messages/message-context-menu";
+import { hasQuotableText, messageHasInlineControls } from "../../lib/messages/message-presentation";
+import { messageRowLayout } from "../../lib/messages/message-row-layout";
+import { selectableTextFromMarkdown } from "../../lib/messages/selectable-text";
+import type { UserBubble } from "../../lib/messages/user-bubble";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { ThreadReadOnlyContext } from "../../lib/thread/thread-read-only";
+import { BotAvatar } from "../bots/bot-avatar";
+import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
+import { presentMessageMenu } from "../messages/message-action-menu";
+import { MessageContextMenu } from "../messages/message-context-menu";
 import type { MessageActionProps } from "./message-bubble";
 import { MessageBubble } from "./message-bubble";
+import { ReplyLine } from "./reply-line";
+import { TimeSeparator } from "./time-separator";
+import { UnreadDivider } from "./unread-divider";
 
 export type MessageRowActions = {
   helperToggle: (
@@ -79,6 +88,7 @@ type MessageRowProps = {
   readOnly: boolean;
   onCall: boolean;
   canAnswer: boolean;
+  separateAnswers?: ReadonlySet<MessageBlock>;
   canDismiss: boolean;
   highlighted: boolean;
   separator: boolean;
@@ -118,6 +128,7 @@ export const MessageRow = memo(function MessageRow({
   readOnly,
   onCall,
   canAnswer,
+  separateAnswers,
   canDismiss,
   highlighted,
   separator,
@@ -143,7 +154,8 @@ export const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const artifactTarget = useMemo<MobileArtifactTarget | undefined>(
     () => (groupId ? { groupId } : botId ? { botId } : undefined),
     [botId, groupId],
@@ -179,7 +191,7 @@ export const MessageRow = memo(function MessageRow({
     const includeQuote =
       !readOnly &&
       !message.id.startsWith("progress:") &&
-      quotableMessageSegments(message.role, message.blocks).length > 0;
+      hasQuotableText(message.role, message.blocks);
     const includeReact = !readOnly && canReactToThreadMessage(message);
     // The call already reads replies aloud; a second voice would talk over it.
     const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
@@ -205,20 +217,18 @@ export const MessageRow = memo(function MessageRow({
       if (codeBlocks[0]) void Clipboard.setStringAsync(codeBlocks[0]).catch(() => undefined);
     };
     const menuActions = [
-      ...(!readOnly ? [{ name: "reply", text: t("Reply"), onPress: reply }] : []),
-      ...(includeUnread
-        ? [{ name: "unread", text: t("Mark as unread"), onPress: markUnread }]
-        : []),
-      ...(includeQuote ? [{ name: "quote", text: t("Quote"), onPress: quote }] : []),
+      ...(!readOnly ? [{ name: "reply", text: t`Reply`, onPress: reply }] : []),
+      ...(includeUnread ? [{ name: "unread", text: t`Mark as unread`, onPress: markUnread }] : []),
+      ...(includeQuote ? [{ name: "quote", text: t`Quote`, onPress: quote }] : []),
       ...(includeReact
         ? [
             {
               name: "react",
-              text: t("React"),
+              text: t`React`,
               onPress: () =>
                 presentMessageActionSheet({
-                  cancel: t("Cancel"),
-                  more: t("More"),
+                  cancel: t`Cancel`,
+                  more: t`More`,
                   colorScheme,
                   actions: MESSAGE_REACTIONS.map((emoji) => ({
                     text: emoji,
@@ -228,22 +238,22 @@ export const MessageRow = memo(function MessageRow({
             },
           ]
         : []),
-      ...(includeSpeak ? [{ name: "speak", text: t("Speak message"), onPress: speakMessage }] : []),
-      ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
-      { name: "copy", text: t("Copy"), onPress: copy },
+      ...(includeSpeak ? [{ name: "speak", text: t`Speak message`, onPress: speakMessage }] : []),
+      ...(includeSelect ? [{ name: "select", text: t`Select text`, onPress: select }] : []),
+      { name: "copy", text: t`Copy`, onPress: copy },
       ...(codeBlocks.length === 1
-        ? [{ name: "copyCode", text: t("Copy code"), onPress: copyCode }]
+        ? [{ name: "copyCode", text: t`Copy code`, onPress: copyCode }]
         : []),
     ];
     const menu = buildMessageContextMenu({
       labels: {
-        reply: t("Reply"),
-        copy: t("Copy"),
-        react: t("React"),
-        quote: t("Quote"),
-        speak: t("Speak message"),
-        select: t("Select text"),
-        unread: t("Mark as unread"),
+        reply: t`Reply`,
+        copy: t`Copy`,
+        react: t`React`,
+        quote: t`Quote`,
+        speak: t`Speak message`,
+        select: t`Select text`,
+        unread: t`Mark as unread`,
       },
       reactions: MESSAGE_REACTIONS,
       include: {
@@ -267,7 +277,7 @@ export const MessageRow = memo(function MessageRow({
               ? [
                   {
                     name: "reply",
-                    text: t("Reply"),
+                    text: t`Reply`,
                     icon: "arrow-undo-outline" as const,
                     onPress: reply,
                   },
@@ -277,7 +287,7 @@ export const MessageRow = memo(function MessageRow({
               ? [
                   {
                     name: "unread",
-                    text: t("Mark as unread"),
+                    text: t`Mark as unread`,
                     icon: "mail-unread-outline" as const,
                     onPress: markUnread,
                   },
@@ -287,7 +297,7 @@ export const MessageRow = memo(function MessageRow({
               ? [
                   {
                     name: "quote",
-                    text: t("Quote"),
+                    text: t`Quote`,
                     icon: "chatbox-ellipses-outline" as const,
                     onPress: quote,
                   },
@@ -295,12 +305,12 @@ export const MessageRow = memo(function MessageRow({
               : []),
           ],
           [
-            { name: "copy", text: t("Copy"), icon: "copy-outline" as const, onPress: copy },
+            { name: "copy", text: t`Copy`, icon: "copy-outline" as const, onPress: copy },
             ...(includeSelect
               ? [
                   {
                     name: "select",
-                    text: t("Select text"),
+                    text: t`Select text`,
                     icon: "text-outline" as const,
                     onPress: select,
                   },
@@ -310,7 +320,7 @@ export const MessageRow = memo(function MessageRow({
               ? [
                   {
                     name: "speak",
-                    text: t("Speak message"),
+                    text: t`Speak message`,
                     icon: "volume-high-outline" as const,
                     onPress: speakMessage,
                   },
@@ -448,6 +458,7 @@ export const MessageRow = memo(function MessageRow({
                 bots={bots}
                 members={members}
                 canAnswer={canAnswer}
+                separateAnswers={separateAnswers}
                 canDismiss={canDismiss}
                 onAnswer={actions.answer}
                 onOpenBot={actions.openBot}

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { modelCatalogSearchText } from "@rakazo/core";
+import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -15,17 +15,20 @@ import {
 } from "@rakazo/ui-web";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useListSearch } from "../../lib/use-list-search";
 
 /** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
 
 /** A model on one connection; `providerName` is that connection's name. */
-export type RoleModelOption = ModelCatalogEntry & { credentialId?: string };
+export type RoleModelOption = ModelCatalogEntry & {
+  credentialId?: string;
+  creditOfferingId?: string;
+};
 
 const optionValue = (option: RoleModelOption) =>
-  `${option.provider}:${option.id}:${option.credentialId ?? ""}`;
+  `${option.provider}:${option.id}:${option.creditOfferingId ? `credits:${option.creditOfferingId}` : (option.credentialId ?? "")}`;
 
 /**
  * One picker for every model a role can use: connected models pick directly, and
@@ -78,7 +81,7 @@ export function RoleModelPicker({
       const name = option.providerName ?? option.provider;
       grouped.set(name, [...(grouped.get(name) ?? []), option]);
     }
-    return [...grouped];
+    return [...grouped].map(([name, entries]) => [name, newestModelsFirst(entries)] as const);
   }, [visible]);
   const needle = query.trim();
   const matchingProviders = visible.flatMap((row) => (row.provider ? [row.provider] : []));

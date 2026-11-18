@@ -1,15 +1,16 @@
 import type { Bot, Group } from "@rakazo/contracts";
+import { chatSnoozed } from "@rakazo/core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { NavigateFunction, NavigateOptions, To } from "react-router-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { guardShellNavigate } from "../../lib/space-switch";
-import type { ShellOverlay } from "../shell-overlay";
+import type { ShellOverlay } from "./shell-overlay-url";
 import {
   readShellOverlay,
   searchString,
   shellOverlaySearch,
   withShellOverlay,
-} from "../shell-overlay";
+} from "./shell-overlay-url";
+import { guardShellNavigate } from "./space-switch";
 
 /** Router access for the shell: navigation stops once it unmounts, and overlays live in the URL. */
 export function useShellNavigation() {
@@ -78,10 +79,18 @@ export function useShellNavigation() {
   };
 }
 
+/** The chat to land on: the first one in the list, so not a snoozed one while any other is listed. */
 export function firstThreadRoute(
-  bots: readonly Pick<Bot, "id">[],
-  groups: readonly Pick<Group, "id">[],
+  bots: readonly Pick<Bot, "id" | "snoozedUntil">[],
+  groups: readonly Pick<Group, "id" | "snoozedUntil">[],
+  now = Date.now(),
 ): string {
+  const listed = <T extends { snoozedUntil?: string | null }>(chats: readonly T[]) =>
+    chats.find((chat) => !chatSnoozed(chat, now));
+  const bot = listed(bots);
+  if (bot) return `/app/${bot.id}`;
+  const group = listed(groups);
+  if (group) return `/app/g/${group.id}`;
   if (bots[0]) return `/app/${bots[0].id}`;
   if (groups[0]) return `/app/g/${groups[0].id}`;
   return "/app";
