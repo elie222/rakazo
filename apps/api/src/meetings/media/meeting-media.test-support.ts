@@ -34,7 +34,7 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
   const received: Uint8Array[] = [];
   let revoked = false;
   let silent = false;
-  let voiceAvailable = true;
+  let voiceAvailable: boolean | "retry" = true;
   let readinessChecks = 0;
   let beforeReply: (() => Promise<void>) | undefined;
 
@@ -76,7 +76,7 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
     setSilent: (value: boolean) => {
       silent = value;
     },
-    setVoiceAvailable: (value: boolean) => {
+    setVoiceAvailable: (value: boolean | "retry") => {
       voiceAvailable = value;
     },
     beforeReply: (work: () => Promise<void>) => {

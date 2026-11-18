@@ -199,7 +199,8 @@ export function meetingVoiceReady(
           })),
       );
     } catch (error) {
-      if (error instanceof NoVoiceConfigured || error instanceof VoiceAccountError) return false;
+      if (error instanceof NoVoiceConfigured) return false;
+      if (error instanceof VoiceAccountError) return error.code ? false : ("retry" as const);
       throw error;
     }
   });

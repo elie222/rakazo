@@ -48,6 +48,10 @@ const download = z.array(
   }),
 );
 
+// The provider reserves this speaker ID for bot output audio with perfect diarization.
+// https://docs.recall.ai/docs/transcription-faq#who-is-participant-2147483647
+const BOT_OUTPUT_SPEAKER_ID = 2_147_483_647;
+
 const SECOND = 1000;
 const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
@@ -219,13 +223,13 @@ export class RecallMeetingProvider implements MeetingProvider {
           .filter(Boolean)
           .join(" ");
         if (!text) return [];
+        const speaker =
+          participant?.id === BOT_OUTPUT_SPEAKER_ID
+            ? options?.selfName || participant.name
+            : participant?.name;
         return [
           {
-            speaker:
-              (participant?.id === 2_147_483_647 ? options?.selfName : participant?.name)?.slice(
-                0,
-                256,
-              ) || "Unknown speaker",
+            speaker: (speaker || "Unknown speaker").slice(0, 256),
             startMs: Math.round((words[0]?.start_timestamp?.relative ?? 0) * SECOND),
             text: text.slice(0, 32_000),
           },
