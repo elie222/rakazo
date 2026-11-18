@@ -216,6 +216,7 @@ export function useComputerControls({
       : undefined;
   useEffect(() => {
     if (!panelScreenBotId || activeBotId.current !== panelScreenBotId) return;
+    if (screenAwaitsRetry.current) return;
     void refreshComputerScreen(panelScreenBotId).catch(() => undefined);
   }, [panelScreenBotId]);
 
@@ -320,6 +321,7 @@ export function useComputerControls({
     // Reopening during a boot shows it; a second boot would be refused as busy.
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
     setComputerOpen(true);
+    computerOpenRef.current = true;
     computerVisible.current = true;
     if (bootInFlight && !takeControl) {
       // An external boot may have finished since this snapshot was cached.

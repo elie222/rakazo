@@ -701,7 +701,7 @@ it("reads a running computer's screen for the bot panel without keeping it awake
   await act(async () => root.render(<Controls panel="settings" />));
   expect(rpc.computer.screenUrl).not.toHaveBeenCalled();
   await act(async () => state.commitComputer({ botId: "bot-1", state: "running" } as never));
-  expect(rpc.computer.screenUrl).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(rpc.computer.screenUrl).toHaveBeenCalledWith({ botId: "bot-1", preview: true });
   expect(state.screenUrl).toBe("https://screen.example.test/");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5 * 60_000);

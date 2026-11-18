@@ -421,7 +421,7 @@ export function useComputerState({
     const read = request ?? ++screenRequest.current;
     const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
-      load: () => rpc.computer.screenUrl({ botId: id }),
+      load: () => rpc.computer.screenUrl({ botId: id, preview: !computerOpenRef.current }),
       isCurrent: () =>
         read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&
