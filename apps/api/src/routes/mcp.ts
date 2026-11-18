@@ -9,6 +9,7 @@ import {
 import type { Actor, McpOAuthClientKind } from "@rakazo/contracts";
 import { MCP_OAUTH_REDIRECT_MISMATCH, McpServerConfigInput } from "@rakazo/contracts";
 import { ClientError, customMcpServerInput } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
@@ -125,8 +126,9 @@ export function mcpRoutes(ctx: RouterContext) {
         MCP_OAUTH_REDIRECT_MISMATCH,
       );
     }
+    let signIn: Awaited<ReturnType<typeof mcpOAuth.begin>>;
     try {
-      return await mcpOAuth.begin({
+      signIn = await mcpOAuth.begin({
         ...input,
         redirectUri: expectedRedirect,
         spaceId: actor.spaceId,
@@ -142,6 +144,13 @@ export function mcpRoutes(ctx: RouterContext) {
         );
       throw error;
     }
+    if (signIn.status !== "authorization_required") return signIn;
+    // The server names the address a browser is sent to, so it must be a web one: a
+    // "javascript:" or "data:" URL would run in the app's own origin once opened.
+    const authorizationUrl = normalizedHttpUrl(signIn.authorizationUrl);
+    if (!authorizationUrl)
+      throw new ClientError("SERVICE_UNAVAILABLE", "The server returned an invalid sign-in URL.");
+    return { ...signIn, authorizationUrl };
   }
 
   return {
