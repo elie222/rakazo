@@ -2333,7 +2333,7 @@ msgstr "聊天详情"
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Chat from {name}"
-msgstr ""
+msgstr "来自 {name} 的聊天"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -2890,7 +2890,7 @@ msgstr "重新连接"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Connect it to {app}"
-msgstr ""
+msgstr "将其连接到 {app}"
 
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Connect MCP server “{name}”"
@@ -4523,11 +4523,11 @@ msgstr "默认（{0}）"
 
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Default ({defaultLabel})"
-msgstr ""
+msgstr "默认（{defaultLabel}）"
 
 #: apps/mobile/app/chat-model.tsx
 msgid "Default ({level})"
-msgstr ""
+msgstr "默认（{level}）"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Default from Hermes"
@@ -6187,7 +6187,7 @@ msgstr "刚刚"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Keep"
-msgstr ""
+msgstr "保留"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Keep inline"
@@ -6857,7 +6857,7 @@ msgstr "模型：{model}"
 
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 msgid "Model: {model}, {detail}"
-msgstr ""
+msgstr "模型：{model}，{detail}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7042,7 +7042,7 @@ msgstr "等你回答"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Needs an email address"
-msgstr ""
+msgstr "需要电子邮件地址"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/lib/api/user-error.ts
@@ -8059,7 +8059,7 @@ msgstr "已暂停"
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Payment failed"
-msgstr ""
+msgstr "付款失败"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
@@ -8200,7 +8200,7 @@ msgstr "插件"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Point its source at the new webhook"
-msgstr ""
+msgstr "将其来源指向新的 Webhook"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
@@ -9104,7 +9104,7 @@ msgstr "运行记录"
 
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Run in the chat"
-msgstr ""
+msgstr "在聊天中运行"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -9401,7 +9401,7 @@ msgstr "搜索模型"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search more apps"
-msgstr ""
+msgstr "搜索更多应用"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -9665,7 +9665,7 @@ msgstr "分享到"
 
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Share voice data with {name}?"
-msgstr ""
+msgstr "要与 {name} 共享语音数据吗？"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -10344,7 +10344,7 @@ msgstr "切换到 {name}？"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Switch to {place} time?"
-msgstr ""
+msgstr "切换到{place}时间？"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Switch to {tierTargetName}?"
@@ -11069,7 +11069,7 @@ msgstr "工具"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Tools for your bot."
-msgstr ""
+msgstr "为你的 Bot 提供的工具。"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -11648,7 +11648,7 @@ msgstr "语音通话"
 
 #: apps/web/src/lib/calls/voice-consent.ts
 msgid "Voice data sharing was not allowed."
-msgstr ""
+msgstr "未允许共享语音数据。"
 
 #: apps/web/src/lib/calls/tts.ts
 msgid "Voice request timed out."

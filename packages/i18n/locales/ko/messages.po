@@ -2333,7 +2333,7 @@ msgstr "채팅 세부정보"
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Chat from {name}"
-msgstr ""
+msgstr "{name}에서 채팅"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -2890,7 +2890,7 @@ msgstr "다시 연결하세요"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Connect it to {app}"
-msgstr ""
+msgstr "{app}에 연결하세요"
 
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Connect MCP server “{name}”"
@@ -4523,11 +4523,11 @@ msgstr "기본값 ({0})"
 
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Default ({defaultLabel})"
-msgstr ""
+msgstr "기본값({defaultLabel})"
 
 #: apps/mobile/app/chat-model.tsx
 msgid "Default ({level})"
-msgstr ""
+msgstr "기본값({level})"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Default from Hermes"
@@ -6187,7 +6187,7 @@ msgstr "방금"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Keep"
-msgstr ""
+msgstr "유지"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Keep inline"
@@ -6857,7 +6857,7 @@ msgstr "모델: {model}"
 
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 msgid "Model: {model}, {detail}"
-msgstr ""
+msgstr "AI 모델: {model}, {detail}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7042,7 +7042,7 @@ msgstr "답변 필요"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Needs an email address"
-msgstr ""
+msgstr "이메일 주소가 필요합니다"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/lib/api/user-error.ts
@@ -8059,7 +8059,7 @@ msgstr "일시 중지됨"
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Payment failed"
-msgstr ""
+msgstr "결제에 실패했습니다"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
@@ -8200,7 +8200,7 @@ msgstr "플러그인"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Point its source at the new webhook"
-msgstr ""
+msgstr "소스가 새 웹훅을 가리키도록 설정하세요"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
@@ -9104,7 +9104,7 @@ msgstr "실행 기록"
 
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Run in the chat"
-msgstr ""
+msgstr "채팅에서 실행"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -9401,7 +9401,7 @@ msgstr "모델 검색"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search more apps"
-msgstr ""
+msgstr "앱 더 검색"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -9665,7 +9665,7 @@ msgstr "공유 대상"
 
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Share voice data with {name}?"
-msgstr ""
+msgstr "{name}과(와) 음성 데이터를 공유할까요?"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -10344,7 +10344,7 @@ msgstr "{name}(으)로 전환할까요?"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Switch to {place} time?"
-msgstr ""
+msgstr "{place} 시간으로 전환할까요?"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Switch to {tierTargetName}?"
@@ -11069,7 +11069,7 @@ msgstr "도구"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Tools for your bot."
-msgstr ""
+msgstr "봇을 위한 도구입니다."
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -11648,7 +11648,7 @@ msgstr "음성 채팅"
 
 #: apps/web/src/lib/calls/voice-consent.ts
 msgid "Voice data sharing was not allowed."
-msgstr ""
+msgstr "음성 데이터 공유가 허용되지 않았습니다."
 
 #: apps/web/src/lib/calls/tts.ts
 msgid "Voice request timed out."

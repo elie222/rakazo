@@ -2333,7 +2333,7 @@ msgstr "Détails de la discussion"
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Chat from {name}"
-msgstr ""
+msgstr "Discuter depuis {name}"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -2890,7 +2890,7 @@ msgstr "Reconnectez-le"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Connect it to {app}"
-msgstr ""
+msgstr "Connectez-le à {app}"
 
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Connect MCP server “{name}”"
@@ -4523,11 +4523,11 @@ msgstr "Par défaut ({0})"
 
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Default ({defaultLabel})"
-msgstr ""
+msgstr "Par défaut ({defaultLabel})"
 
 #: apps/mobile/app/chat-model.tsx
 msgid "Default ({level})"
-msgstr ""
+msgstr "Par défaut ({level})"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Default from Hermes"
@@ -6187,7 +6187,7 @@ msgstr "à l'instant"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Keep"
-msgstr ""
+msgstr "Conserver"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Keep inline"
@@ -6857,7 +6857,7 @@ msgstr "Modèle : {model}"
 
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 msgid "Model: {model}, {detail}"
-msgstr ""
+msgstr "Modèle : {model}, {detail}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -7042,7 +7042,7 @@ msgstr "Réponse attendue"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Needs an email address"
-msgstr ""
+msgstr "Nécessite une adresse e-mail"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/lib/api/user-error.ts
@@ -8059,7 +8059,7 @@ msgstr "En pause"
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Payment failed"
-msgstr ""
+msgstr "Échec du paiement"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
@@ -8200,7 +8200,7 @@ msgstr "Plugins"
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Point its source at the new webhook"
-msgstr ""
+msgstr "Faites pointer sa source vers le nouveau webhook"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Post a chat message when a check finds no changes. The routine won't run."
@@ -9104,7 +9104,7 @@ msgstr "Historique des exécutions"
 
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Run in the chat"
-msgstr ""
+msgstr "Exécuter dans le chat"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -9401,7 +9401,7 @@ msgstr "Rechercher des modèles"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search more apps"
-msgstr ""
+msgstr "Rechercher d'autres applications"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -9665,7 +9665,7 @@ msgstr "Partager vers"
 
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Share voice data with {name}?"
-msgstr ""
+msgstr "Partager les données vocales avec {name} ?"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -10344,7 +10344,7 @@ msgstr "Passer à {name} ?"
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
 msgid "Switch to {place} time?"
-msgstr ""
+msgstr "Passer à l'heure de {place} ?"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Switch to {tierTargetName}?"
@@ -11069,7 +11069,7 @@ msgstr "Outils"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Tools for your bot."
-msgstr ""
+msgstr "Des outils pour votre bot."
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -11648,7 +11648,7 @@ msgstr "Discussion vocale"
 
 #: apps/web/src/lib/calls/voice-consent.ts
 msgid "Voice data sharing was not allowed."
-msgstr ""
+msgstr "Le partage des données vocales n'a pas été autorisé."
 
 #: apps/web/src/lib/calls/tts.ts
 msgid "Voice request timed out."
