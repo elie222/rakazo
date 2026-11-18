@@ -13,7 +13,7 @@ import {
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
-  it("centers handoffs, inter-agent messages, and channel mirrors", () => {
+  it("centers handoffs, inter-agent messages, channel mirrors and routine changes", () => {
     const blocks = [
       { kind: "handoff", fromBotId: "a", toBotId: "b", text: "Go" },
       { kind: "bot_message_sent", toBotId: "b", toBotName: "Research", text: "Go" },
@@ -31,6 +31,7 @@ describe("mobile message presentation", () => {
         fromLabel: "Alex",
         text: "Hello from the group",
       },
+      { kind: "routine_event", change: "created", name: "Morning joke" },
     ] as MessageBlock[];
 
     for (const block of blocks) expect(isCenteredAgentEvent([block])).toBe(true);
