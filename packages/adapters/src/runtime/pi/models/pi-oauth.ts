@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { ModelOAuthBegin, SettingsScope } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -998,11 +999,12 @@ export class PiOAuthLogins<T = unknown> {
         result: value as Prisma.InputJsonValue,
       });
     } catch (error) {
-      if (!(error instanceof ModelSignInError)) {
-        getLogger().error("model sign-in not saved", error);
-      }
+      // A refusal the person can act on keeps its own words; anything else is a server fault.
+      const refusal =
+        error instanceof ModelSignInError || error instanceof ClientError ? error : undefined;
+      if (!refusal) getLogger().error("model sign-in not saved", error);
       session.state = "failed";
-      session.error = error instanceof ModelSignInError ? error.message : SIGN_IN_SAVE_FAILED;
+      session.error = refusal ? refusal.message : SIGN_IN_SAVE_FAILED;
       if (await this.writeOutcome(session, { status: "failed", error: session.error })) {
         this.report(this.pendingOf(session), { reason: "save_failed" });
       }
