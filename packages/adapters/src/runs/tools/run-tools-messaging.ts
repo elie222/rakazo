@@ -439,6 +439,10 @@ export const messagingTools: ToolHandlers = {
     if ("error" in group) return call.finish({ error: `${group.error}. Nothing was posted.` });
     const paths = filePaths(call);
     if ("error" in paths) return call.finish({ error: paths.error });
+    // A copy keeps its file name, which every member sees, so one holding a secret is refused.
+    if (paths.some((path) => redactSecrets(path, ctx.secrets) !== path)) {
+      return call.finish({ error: "one of the paths can't be shared. Nothing was posted." });
+    }
     // Copies filed under the group, so everyone in it can open them.
     const files = paths.length
       ? await savedCopies(ctx, call, paths, { botId: ctx.bot.id, groupId: group.id })

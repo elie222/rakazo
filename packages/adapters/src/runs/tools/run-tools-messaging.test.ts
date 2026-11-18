@@ -364,6 +364,19 @@ describe("posting into a group from outside it", () => {
     );
   });
 
+  it("refuses a file whose path holds a secret", async () => {
+    const { ctx } = context("computer-team");
+    (ctx as { secrets: string[] }).secrets = ["tok-123456"];
+    await expect(
+      messagingTools.post_to_group!(
+        ctx,
+        callWith("post_to_group", { group_name: "Launch", files: ["tok-123456.txt"] }),
+      ),
+    ).resolves.toEqual({ error: "one of the paths can't be shared. Nothing was posted." });
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.postToGroup).not.toHaveBeenCalled();
+  });
+
   it("posts nothing to a group it can't post in", async () => {
     const { ctx } = context("computer-team");
     mocks.findPostableGroup.mockResolvedValueOnce({ error: "you are not a member of that group" });
