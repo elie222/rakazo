@@ -303,6 +303,17 @@ function blockHistoryText(block: MessageBlock): string {
     }[block.status];
     return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
   }
+  // Whether the person answered a tool's question, never what was asked or sent: the question
+  // is the server's own text and the answer went to the server.
+  if (block.kind === "tool_question") {
+    const outcome = {
+      pending: "waiting for the user",
+      accepted: "the user answered",
+      declined: "the user declined",
+      expired: "the user did not answer",
+    }[block.status];
+    return `[${block.question.source} asked the user a question during a tool call; ${outcome}]`;
+  }
   if ("text" in block && typeof block.text === "string") return block.text;
   return "";
 }

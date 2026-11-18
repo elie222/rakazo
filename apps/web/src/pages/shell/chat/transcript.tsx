@@ -642,7 +642,10 @@ export const Transcript = memo(function Transcript({
                       peerReceipt
                         ? undefined
                         : message.blocks.some(
-                              (block) => block.kind === "ask" || block.kind === "mcp_approval",
+                              (block) =>
+                                block.kind === "ask" ||
+                                block.kind === "mcp_approval" ||
+                                block.kind === "tool_question",
                             )
                           ? "relative w-full min-w-0 max-w-xl"
                           : `relative ${
