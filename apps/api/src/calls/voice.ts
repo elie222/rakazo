@@ -39,7 +39,7 @@ import {
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
@@ -648,8 +648,12 @@ export async function updateVoiceSpeechModel(
   }
   const speechModel = speechModelValue(input.speechModel);
   // A model has its own voices, so one the new model lacks is replaced in the same save.
+  // The voices only pick a replacement, so a listing that fails does not block saving the model.
   const modelVoices = entry.speechModels
-    ? await voicesOfSpeechModel(deps, actor, input, speechModel)
+    ? await bestEffort(
+        "list the voices of a speech model",
+        voicesOfSpeechModel(deps, actor, input, speechModel),
+      )
     : undefined;
   return withTransactionRetry(() =>
     deps.prisma.$transaction(

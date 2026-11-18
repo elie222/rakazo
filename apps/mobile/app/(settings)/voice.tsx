@@ -549,6 +549,7 @@ export default function VoiceSettings() {
         scope,
       });
       setStatus(saved);
+      edited.current.delete("voiceId");
       // A cached revisit initializes the picker from credentials, not status.
       const merge = (current: VoiceCredential[] = []) =>
         current.map((entry) =>
@@ -819,6 +820,10 @@ export default function VoiceSettings() {
                   onBlur={() => {
                     const next = voiceId.trim();
                     if (next && next !== credential.voiceId) void chooseVoice(next);
+                    else if (!next) {
+                      edited.current.delete("voiceId");
+                      setVoiceId(credential.voiceId);
+                    }
                   }}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}

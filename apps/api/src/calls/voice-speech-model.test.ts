@@ -198,6 +198,21 @@ describe("updateVoiceSpeechModel", () => {
       );
     });
 
+    it("still saves the model when the voices cannot be listed", async () => {
+      const { deps, account } = speechDeps(
+        { voiceId: "alloy", isDefault: true },
+        { provider: "openrouter" },
+      );
+      modelVoices().mockRejectedValue(new Error("catalog down"));
+
+      await expect(
+        updateVoiceSpeechModel(deps, actor, { provider: "openrouter", speechModel: "a/b" }),
+      ).resolves.toMatchObject({ speechModel: "a/b", voiceId: "alloy" });
+      expect(account.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: { speechModel: "a/b" } }),
+      );
+    });
+
     it("keeps the voice when the new model lists none", async () => {
       const { deps, account } = speechDeps(
         { voiceId: "alloy", isDefault: true },
