@@ -225,6 +225,21 @@ describe("ObjectAgentHomeStore", () => {
     expect(await readFile(path.join(restored.pathFor("bot-1"), "notes.txt"), "utf8")).toBe("keep");
   });
 
+  it("stores a file removal, so every host loses it", async () => {
+    const { store, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "received/2026/10/old.mov": "x" }), context);
+
+    await store.removeFiles("bot-1", ["received/2026/10/old.mov"], context, {
+      emptyFoldersBelow: "received",
+    });
+
+    const restored = await otherHost();
+    await restored.hydrate("bot-1");
+    await expect(
+      readFile(path.join(restored.pathFor("bot-1"), "received/2026/10/old.mov")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
     const { store, rows } = await setup();
     const claimedAt = new Date("2026-01-01T00:00:00Z");

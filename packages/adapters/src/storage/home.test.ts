@@ -242,6 +242,37 @@ describe("LocalAgentHomeStore path containment", () => {
     ).rejects.toThrow(/escapes/i);
   });
 
+  it("removes only the files named, then the emptied folders below the kept one", async () => {
+    const { root, store, home } = await fixture();
+    for (const file of ["received/2026/09/old.mov", "received/2026/10/keep.mov", "notes.txt"]) {
+      await mkdir(path.dirname(path.join(home, file)), { recursive: true });
+      await writeFile(path.join(home, file), "x");
+    }
+    const outside = path.join(root, "outside-dir");
+    await mkdir(outside);
+    await writeFile(path.join(outside, "old.mov"), "x");
+    await symlink(outside, path.join(home, "received/linked"), "junction");
+
+    await store.removeFiles(
+      "bot-1",
+      [
+        "received/2026/09/old.mov",
+        "received/2026/09/missing.mov",
+        "received/linked/old.mov",
+        "received/2026",
+      ],
+      context,
+      { emptyFoldersBelow: "received" },
+    );
+
+    await expect(stat(path.join(home, "received/2026/09"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(path.join(home, "received/2026/10/keep.mov"), "utf8")).toBe("x");
+    expect(await readFile(path.join(outside, "old.mov"), "utf8")).toBe("x");
+    expect((await stat(path.join(home, "received"))).isDirectory()).toBe(true);
+  });
+
   it("never writes a binary file over one already there", async () => {
     const { store, home } = await fixture();
     await writeFile(path.join(home, "clip.mov"), "first");

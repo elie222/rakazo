@@ -11,6 +11,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
   utimes,
@@ -278,6 +279,21 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return listed.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
   }
 
+  async removeFiles(
+    botId: string,
+    paths: readonly string[],
+    _context: AdapterContext,
+    options: { emptyFoldersBelow?: string } = {},
+  ): Promise<void> {
+    await this.withBotWrite(botId, async () => {
+      await this.recoverInterruptedCommit(botId);
+      const root = this.botDir(botId);
+      for (const relative of paths) {
+        await removeContainedFile(root, relative, options.emptyFoldersBelow);
+      }
+    });
+  }
+
   /**
    * Deletes folders directly under `parent` (a Team Computer's bot folders or browser profiles)
    * and returns whether any were there. Only for a home no running computer mounts: a symlinked
@@ -506,6 +522,39 @@ function assertContained(root: string, candidate: string) {
 
 function isHiddenTopEntry(root: string, candidate: string) {
   return path.relative(root, candidate).split(path.sep)[0]!.startsWith(".");
+}
+
+/**
+ * Deletes one regular file in a home and the folders above it that this empties, up to but not
+ * including `keepFolder`. A link, a folder or a path through a link is left alone.
+ */
+async function removeContainedFile(root: string, relative: string, keepFolder?: string) {
+  const target = safeJoin(root, relative);
+  const resolvedParent = await realpath(path.dirname(target)).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!resolvedParent) return;
+  // Any link on the way makes the real folder differ from the one the path names.
+  const lexicalParent = path.relative(path.resolve(root), path.dirname(target));
+  if (resolvedParent !== path.join(await realpath(root), lexicalParent)) return;
+  const info = await lstat(target).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!info?.isFile()) return;
+  await unlink(target);
+  if (keepFolder === undefined) return;
+  const keep = safeJoin(root, keepFolder);
+  for (let folder = path.dirname(target); folder !== keep && isContained(keep, folder); ) {
+    try {
+      await rmdir(folder);
+    } catch (error) {
+      if (isMissing(error) || (error as NodeJS.ErrnoException).code === "ENOTEMPTY") return;
+      throw error;
+    }
+    folder = path.dirname(folder);
+  }
 }
 
 /** Delete one folder in a home. A symlinked parent is refused; a final symlink is unlinked. */

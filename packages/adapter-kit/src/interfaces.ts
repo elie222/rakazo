@@ -506,6 +506,16 @@ export interface AgentHomeStore {
     path: string,
     context: AdapterContext,
   ): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
+  /**
+   * Deletes the given files, skipping links, folders and paths not there, then the folders under
+   * `emptyFoldersBelow` that this leaves empty (that folder itself stays).
+   */
+  removeFiles(
+    botId: string,
+    paths: readonly string[],
+    context: AdapterContext,
+    options?: { emptyFoldersBelow?: string },
+  ): Promise<void>;
 }
 
 /**

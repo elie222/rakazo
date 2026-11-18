@@ -58,24 +58,30 @@ function writeTarget(
         deps.sandbox.writeFile(ref, { path: filePath, content }, context),
     };
   }
-  const home = {
-    list: (directory: string) => deps.home.list(computer.homeKey, directory, context),
-    write: (filePath: string, content: Uint8Array) =>
+  if (!homeHoldsReceivedFiles(deps.sandbox, computer)) return undefined;
+  return {
+    list: (directory) => deps.home.list(computer.homeKey, directory, context),
+    write: (filePath, content) =>
       deps.home.writeBinaryFile(computer.homeKey, filePath, content, context),
   };
-  // The computer works in the server's home directory itself, whatever its state.
-  if (sandboxKindCapabilities(computer.kind).serverHomeMount === "always") return home;
-  // Otherwise only a stopped computer whose next start restores the stored home gets it from
-  // there: a machine the provider kept resumes with its own disk, and a save or restore under
-  // way could replace or miss the file.
-  if (
+}
+
+/**
+ * Whether the stored home is where this computer's received files live while it is not running
+ * them itself: the computer works in the server's home directory whatever its state, or it is
+ * stopped and its next start restores the stored home. A machine the provider kept resumes with
+ * its own disk, and a save or restore under way could replace or miss the file.
+ */
+export function homeHoldsReceivedFiles(
+  sandbox: SandboxProvider,
+  computer: Pick<ComputerRow, "kind" | "state" | "providerRef">,
+): boolean {
+  if (sandboxKindCapabilities(computer.kind).serverHomeMount === "always") return true;
+  return (
     computer.state === "stopped" &&
     !computer.providerRef &&
-    serverOwnsTeamHome(deps.sandbox, computer.kind)
-  ) {
-    return home;
-  }
-  return undefined;
+    serverOwnsTeamHome(sandbox, computer.kind)
+  );
 }
 
 /**
