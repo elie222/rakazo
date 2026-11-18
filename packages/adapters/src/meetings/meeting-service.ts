@@ -71,6 +71,7 @@ export class MeetingService {
       jobs: JobPublisher;
       events: ThreadEvents;
       spaceIds?: ReadonlySet<string>;
+      buildJoin?: (input: MeetingJoinRequest) => Promise<MeetingJoinRequest> | MeetingJoinRequest;
     },
   ) {
     this.providerId = deps.provider?.describe().id;
@@ -438,7 +439,8 @@ export class MeetingService {
     });
     if (!count) return;
     try {
-      const observation = await provider.join(input, signal);
+      const request = this.deps.buildJoin ? await this.deps.buildJoin(input) : input;
+      const observation = await provider.join(request, signal);
       await this.observe(row.id, observation);
       // The bot record can be deleted while a vendor request is in flight.
       if (!(await prisma.meetingSession.count({ where: { id: row.id } }))) {
@@ -553,7 +555,8 @@ export class MeetingService {
       });
       return;
     }
-    const turns = await provider.downloadTranscript(artifact.id, signal);
+    const bot = await prisma.bot.findUnique({ where: { id: row.botId }, select: { name: true } });
+    const turns = await provider.downloadTranscript(artifact.id, signal, { selfName: bot?.name });
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
