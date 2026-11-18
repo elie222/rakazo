@@ -1144,18 +1144,29 @@ describe("the computer path stored when a file arrives", () => {
     expect(transaction).toHaveBeenCalledTimes(3);
   });
 
-  it("gives up after 20 taken paths without naming one, and removes the stored file", async () => {
-    const { deps, create, remove } = setup();
-    create.mockRejectedValue(pathClash());
-    const failure = await inbound(
+  it("stores the file with no stored path after 20 taken paths, so it keeps its id path", async () => {
+    const { deps, create, remove, paths } = setup();
+    for (let taken = 0; taken < 20; taken += 1) create.mockRejectedValueOnce(pathClash());
+    const stored = await inbound(
       { ...deps, attachmentNaming: readable },
       "video.mp4",
       "video/mp4",
       "Noa",
-    ).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(Error);
-    expect((failure as Error).message).not.toMatch(/video|Noa|attachments/);
-    expect(create).toHaveBeenCalledTimes(20);
+    );
+    expect(create).toHaveBeenCalledTimes(21);
+    expect(paths()[19]).toBe("attachments/2026/11/2026-11-18_1649_Noa_video-20.mp4");
+    expect(paths()[20]).toBeNull();
+    expect(stored.computerPath).toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("removes the stored file when creating the row fails for another reason", async () => {
+    const { deps, create, remove } = setup();
+    create.mockRejectedValue(new Error("database down"));
+    await expect(
+      inbound({ ...deps, attachmentNaming: readable }, "video.mp4", "video/mp4", "Noa"),
+    ).rejects.toThrow("database down");
+    expect(create).toHaveBeenCalledOnce();
     expect(remove).toHaveBeenCalledWith("blob-1", expect.anything());
   });
 });

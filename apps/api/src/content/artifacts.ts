@@ -212,7 +212,10 @@ export async function storeInboundAttachment(
 
 type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;
 
-/** Paths tried for one file before giving up: each clash takes the next counter. */
+/**
+ * Readable paths tried for one file: each clash takes the next counter. After the last, the file
+ * is stored with no path, so it keeps its id path instead of being dropped.
+ */
 const COMPUTER_PATH_ATTEMPTS = 20;
 const COMPUTER_PATH_INDEX = "artifacts_space_computer_path_key";
 
@@ -253,7 +256,7 @@ async function storeOwnedArtifact(
   const timeZone =
     naming.names === "readable" ? await userTimeZone(deps.prisma, actor.userId) : undefined;
   const arrival = (attempt: number): { computerPath: string | null; createdAt?: Date } => {
-    if (timeZone === undefined) return { computerPath: null };
+    if (timeZone === undefined || attempt > COMPUTER_PATH_ATTEMPTS) return { computerPath: null };
     const at = new Date();
     const computerPath = attachmentPath({
       at,
@@ -317,7 +320,8 @@ async function storeOwnedArtifact(
       return insert(tries);
     },
     {
-      attempts: COMPUTER_PATH_ATTEMPTS,
+      // The last attempt stores no path, which cannot clash.
+      attempts: COMPUTER_PATH_ATTEMPTS + 1,
       delayMs: 0,
       retryable: (error) => error instanceof ComputerPathTakenError,
     },
