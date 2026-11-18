@@ -422,9 +422,15 @@ export function planLiveConnectionSync(
       if (connectIdSet.has(row.id)) return false;
       // Revoking it would cancel a sign-in the person is in the middle of.
       if (stillAuthorizing(row, now)) return false;
-      // Keep only in-flight additional-account pendings; clear abandoned errors
-      // so live sync does not keep re-listing forever after a failed attempt.
-      if (row.status === "pending" && previouslyConnected.has(composioSlugKey(row.provider))) {
+      // Its sign-in finished; the page that started it stores the account when it next asks.
+      if (row.providerRef && liveRefSet?.has(row.providerRef)) return false;
+      // Keep an additional-account pending whose age is unknown; one past the authorization
+      // window was abandoned, and so is an error, which would otherwise be re-listed forever.
+      if (
+        row.status === "pending" &&
+        row.updatedAt === undefined &&
+        previouslyConnected.has(composioSlugKey(row.provider))
+      ) {
         return false;
       }
       return true;

@@ -38,6 +38,7 @@ async function reconcileConnections(
         provider: true,
         displayName: true,
         status: true,
+        updatedAt: true,
         providerRef: true,
       },
       // Latest attempt first: the one to connect when the provider cannot say whose account is live.

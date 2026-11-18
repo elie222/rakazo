@@ -132,7 +132,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     }
 
     await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "revoked" },
+      // The earlier attempt's sign-in page may still be open, so it is not revoked yet.
+      { id: first.id, status: "pending" },
       { id: duplicate.id, status: "connected" },
     ]);
     await expect(statuses([otherProvider.id, otherUser.id, otherWorkspace.id])).resolves.toEqual([
@@ -143,7 +144,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
     await rpc(app, ownerCookie, "connections/catalog");
     await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "revoked" },
+      // The earlier attempt's sign-in page may still be open, so it is not revoked yet.
+      { id: first.id, status: "pending" },
       { id: duplicate.id, status: "connected" },
     ]);
   });
