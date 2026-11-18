@@ -90,6 +90,8 @@ describe("review facts", () => {
       readContent: "Total due: $1,250.50",
     });
     expect(plain?.details).toEqual([{ kind: "amount", value: "1250.5", source: "read" }]);
+    // An id under a money key is not an amount.
+    expect(reviewFacts({ ...base, args: { charge: "ch_fake_1182" } })).toBeUndefined();
     expect(
       reviewFacts({ ...base, args: { amount_cents: 1999 }, ownerWords: "up to $19.99" })?.details,
     ).toEqual([{ kind: "amount", value: "19.99", source: "owner" }]);

@@ -56,6 +56,8 @@ const MONEY_KEY =
   /(^|_|-)(amount|price|total|cost|budget|fee|charge|tip|payment|unit_amount|max_amount|limit)s?($|_|-)|amount|price/i;
 const MINOR_UNITS_KEY = /cents|minor/i;
 const MICROS_KEY = /micros/i;
+/** A written amount such as "$1,250.50" or "40 EUR", not an id like "ch_1182" under a money key. */
+const MONEY_TEXT = /^\s*[$€£¥]?\s*\d[\d,]*(?:\.\d+)?\s*(?:[a-z]{3})?\s*$/i;
 const MINOR_UNITS_DESCRIPTION =
   /smallest currency unit|minor (currency )?unit|in cents\b|\bcents\b/i;
 
@@ -176,7 +178,7 @@ export function reviewFacts(input: {
       const raw =
         typeof value === "number"
           ? value
-          : typeof value === "string"
+          : typeof value === "string" && MONEY_TEXT.test(value)
             ? numbersIn(value)[0]
             : undefined;
       if (raw === undefined) continue;
