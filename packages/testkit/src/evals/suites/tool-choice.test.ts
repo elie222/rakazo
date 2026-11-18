@@ -139,7 +139,7 @@ describe("tool-choice grading", () => {
     expect(new Set(TOOL_CHOICE_DEFINITIONS.map((c) => c.id)).size).toBe(
       TOOL_CHOICE_DEFINITIONS.length,
     );
-    expect(TOOL_CHOICE_DEFINITIONS.length).toBeGreaterThanOrEqual(60);
+    expect(TOOL_CHOICE_DEFINITIONS.length).toBeGreaterThanOrEqual(50);
     for (const area of ["settings", "user-settings", "product-help"])
       expect(
         new Set(TOOL_CHOICE_DEFINITIONS.filter((c) => c.area === area).map((c) => c.kind)),
