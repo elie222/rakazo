@@ -201,7 +201,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("menuitem", { name: "Change bot", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("menuitem", { name: "Chief", exact: true })).toBeDisabled();
+  await expect(page.getByRole("menuitem", { name: "Lead", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-connected-menu");
   // The first Escape closes only the bot list, the second the menu.
   await page.keyboard.press("Escape");
