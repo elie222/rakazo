@@ -611,6 +611,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           secrets,
           events,
           billing,
+          meetings,
         },
         userId,
       );
@@ -1039,7 +1040,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             devices: deviceSessions,
             events,
             afterDeparture: (actor, departure) =>
-              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+              afterSpaceDeparture({ prisma, sandbox, jobs, events, meetings }, actor, departure),
           },
           change,
         ).catch((error) => {

@@ -24,9 +24,7 @@ import { errorText } from "../lib/api/user-error";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native/native";
 import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
-import { rpcQuery } from "../lib/query/query";
 import { createQueuedSave } from "../lib/query/queued-save";
-import { useScreenQuery } from "../lib/query/screen-query";
 import { useBotRoutines } from "../lib/routines/routine-store";
 
 export default function BotProfile() {
@@ -37,7 +35,6 @@ export default function BotProfile() {
   const tokens = useMobileTokens();
   const stacked = useStackedSettings();
   const { botId = "", name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const me = useScreenQuery(rpcQuery("me"), { enabled: Boolean(botId) });
   const [bot, setBot] = useState<MobileBot | null>(null);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const name = displayName(bot?.name ?? nameParam, t`Bot`);
@@ -145,7 +142,7 @@ export default function BotProfile() {
         />
       </View>
       <SettingsGroup>
-        {me.data?.meetingsEnabled ? (
+        {bot?.meetingsEnabled ? (
           <SettingsRow
             key="meetings"
             accessibilityRole="button"

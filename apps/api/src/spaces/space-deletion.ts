@@ -33,6 +33,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { rehomeItemsLeaving } from "./name-claims.js";
+import type { afterSpaceDeparture } from "./space-departure.js";
 
 /** Bound for one bot or sandbox teardown. Providers may ignore the abort signal, so without a
  * deadline a hung destroy would keep the lease renewed forever and block recovery. */
@@ -52,6 +53,8 @@ export type SpaceDeletionDeps = {
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
+  meetings?: Parameters<typeof destroyBot>[0]["meetings"] &
+    Parameters<typeof afterSpaceDeparture>[0]["meetings"];
   /** Removes deleted page links' tokens from a remote secret store. */
   secrets?: Pick<SecretStore, "delete">;
 };
