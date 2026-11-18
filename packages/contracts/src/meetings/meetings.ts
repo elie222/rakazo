@@ -56,6 +56,7 @@ export const meetingsRpc = {
     transcript: oc.input(session).output(transcript),
     shareTranscript: oc.input(session).output(z.void()),
     deleteTranscript: oc.input(session).output(z.void()),
+    /** @deprecated Compatibility for released mobile clients. Ask in the bot's chat on current clients. */
     ask: oc
       .input(session.extend({ question: z.string().trim().min(1).max(4000) }))
       .output(z.object({ answer: z.string() })),

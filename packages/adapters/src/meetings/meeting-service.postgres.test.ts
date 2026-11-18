@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MeetingEmulator } from "../providers/meeting/emulator/meeting-emulator.js";
 import { GraphileJobPublisher } from "../runs/wakeups/wakeup.js";
 import { createArtifactStore } from "../storage/artifact-store-factory.js";
-import { readChatMeeting, recentChatMeetings } from "./meeting-chat.js";
+import { listChatTranscripts, readChatMeeting, recentChatMeetings } from "./meeting-chat.js";
 import { MeetingService } from "./meeting-service.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
@@ -84,6 +84,11 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
       await runAsTenant(teammate, async () => {
         const recents = await recentChatMeetings(prisma, { ...teammate, botId });
         expect(recents).toMatchObject([{ id: sessionId, status: "ready" }]);
+        const catalog = await listChatTranscripts(prisma, { ...teammate, botId });
+        expect(catalog.meetings).toMatchObject([{ meeting_id: sessionId }]);
+        await expect(
+          listChatTranscripts(prisma, { ...teammate, botId }, catalog.meetings[0]),
+        ).resolves.toEqual({ meetings: [], next_before: null });
         const result = await readChatMeeting(prisma, { ...teammate, botId }, sessionId, 0);
         const artifact = await prisma.artifact.findUniqueOrThrow({
           where: { meetingSessionId: sessionId },
@@ -99,6 +104,10 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
         ).rejects.toMatchObject({ kind: "NOT_FOUND" });
       });
       await runAsTenant(outsider, async () => {
+        await expect(listChatTranscripts(prisma, { ...outsider, botId })).resolves.toEqual({
+          meetings: [],
+          next_before: null,
+        });
         await expect(
           prisma.meetingSession.findUnique({ where: { id: sessionId } }),
         ).resolves.toBeNull();

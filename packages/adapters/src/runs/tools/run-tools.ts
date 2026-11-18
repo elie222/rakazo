@@ -5,7 +5,11 @@ import {
   isTerminatingReplyResult,
 } from "../../approvals/approval-effect.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
-import { isMeetingChat, readChatMeeting } from "../../meetings/meeting-chat.js";
+import {
+  isMeetingChat,
+  listChatTranscripts,
+  readChatMeeting,
+} from "../../meetings/meeting-chat.js";
 import {
   meetingTranscriptArgs,
   READ_MEETING_TRANSCRIPT,
@@ -60,7 +64,9 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
       if (!input.success || !isMeetingChat(ctx.run, ctx.thread)) {
         return call.finish({ error: "A meeting in this bot’s chat is required." });
       }
-      const { meeting_id, offset } = input.data;
+      const { meeting_id, offset, before } = input.data;
+      if (!meeting_id)
+        return call.finish(await listChatTranscripts(ctx.deps.prisma, ctx.run, before));
       const transcript = await readChatMeeting(ctx.deps.prisma, ctx.run, meeting_id, offset);
       return call.finish(transcript ?? { error: "The meeting transcript is unavailable." });
     },

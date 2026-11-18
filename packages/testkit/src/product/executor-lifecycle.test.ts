@@ -57,23 +57,33 @@ describeIntegration("run executor lifecycle", () => {
   });
 
   it("gives a regular chat turn meeting context and lets it read the transcript", async () => {
-    const seeded = await seedRun("meeting-follow-up", "What happened in our last meeting?");
-    const closedAt = new Date();
+    const seeded = await seedRun("meeting-follow-up", "What happened in the meeting before these?");
+    const closedAt = new Date(Date.now() - 60_000);
+    const identity = {
+      spaceId: seeded.me.spaceId,
+      userId: seeded.me.userId,
+      botId: seeded.bot.id,
+      provider: "emulator",
+      platform: "google_meet",
+      shareTranscript: true,
+      expiresAt: new Date(),
+    };
     const meeting = await db.meetingSession.create({
       data: {
-        spaceId: seeded.me.spaceId,
-        userId: seeded.me.userId,
-        botId: seeded.bot.id,
-        provider: "emulator",
-        platform: "google_meet",
+        ...identity,
         status: "ready",
-        shareTranscript: true,
         transcript: JSON.stringify([
           { speaker: "Sam", startMs: 0, text: "The deadline is Friday." },
         ]),
         closedAt,
-        expiresAt: closedAt,
       },
+    });
+    await db.meetingSession.createMany({
+      data: Array.from({ length: 5 }, (_, index) => ({
+        ...identity,
+        status: "processing",
+        closedAt: new Date(closedAt.getTime() + (index + 1) * 1_000),
+      })),
     });
     const originalRun = handles.runtime.run.bind(handles.runtime);
     const read = vi.fn();

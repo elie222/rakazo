@@ -2,6 +2,18 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { meetingTranscriptText, readMeetingTurns } from "./meeting-transcript.js";
 
 type MeetingChat = { spaceId: string; botId: string };
+type EarlierMeetingCursor = { ended_at: string; meeting_id: string };
+const meetingOrder = [
+  { closedAt: "desc" },
+  { id: "desc" },
+] satisfies Prisma.MeetingSessionOrderByWithRelationInput[];
+const meetingSummary = {
+  id: true,
+  platform: true,
+  closedAt: true,
+  status: true,
+  sharedArtifact: { select: { name: true } },
+} satisfies Prisma.MeetingSessionSelect;
 type MeetingChatThread = {
   botId: string | null;
   groupId: string | null;
@@ -31,18 +43,57 @@ export async function recentChatMeetings(
   prisma: Pick<PrismaClient, "meetingSession">,
   chat: MeetingChat,
 ) {
-  return prisma.meetingSession.findMany({
+  const latest = await prisma.meetingSession.findMany({
     where: completedMeetings(chat),
-    select: {
-      id: true,
-      platform: true,
-      closedAt: true,
-      status: true,
-      sharedArtifact: { select: { name: true } },
-    },
-    orderBy: [{ closedAt: "desc" }, { id: "desc" }],
+    select: meetingSummary,
+    orderBy: meetingOrder,
     take: 5,
   });
+  if (latest.length < 5 || latest.some(({ status }) => status === "ready")) return latest;
+  const olderReady = await prisma.meetingSession.findFirst({
+    where: {
+      ...completedMeetings(chat),
+      status: "ready",
+      id: { notIn: latest.map(({ id }) => id) },
+    },
+    select: meetingSummary,
+    orderBy: meetingOrder,
+  });
+  return olderReady ? [...latest, olderReady] : latest;
+}
+
+export async function listChatTranscripts(
+  prisma: Pick<PrismaClient, "meetingSession">,
+  chat: MeetingChat,
+  before?: EarlierMeetingCursor,
+) {
+  const endedAt = before && new Date(before.ended_at);
+  const records = await prisma.meetingSession.findMany({
+    where: {
+      ...completedMeetings(chat),
+      status: "ready",
+      ...(before &&
+        endedAt && {
+          OR: [{ closedAt: { lt: endedAt } }, { closedAt: endedAt, id: { lt: before.meeting_id } }],
+        }),
+    },
+    select: { id: true, platform: true, closedAt: true },
+    orderBy: meetingOrder,
+    take: 11,
+  });
+  const meetings = records.slice(0, 10).map(({ id, platform, closedAt }) => ({
+    meeting_id: id,
+    platform,
+    ended_at: closedAt!.toISOString(),
+  }));
+  const last = meetings.at(-1);
+  return {
+    meetings,
+    next_before:
+      records.length > meetings.length && last
+        ? { ended_at: last.ended_at, meeting_id: last.meeting_id }
+        : null,
+  };
 }
 
 export async function readChatMeeting(
