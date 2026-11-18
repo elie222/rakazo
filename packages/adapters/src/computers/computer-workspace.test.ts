@@ -14,14 +14,20 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
-import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import type {
+  CommandRequest,
+  ComputerRef,
+  SandboxProvider,
+  WorkspaceExportLimits,
+} from "@rakazo/adapter-kit";
+import { SandboxDamagedError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
+import { workspaceSaveLimits } from "../storage/workspace-save-policy.js";
 import {
   checkpointAndStopComputer,
   checkpointComputerWorkspace,
@@ -81,6 +87,49 @@ describe("provider-neutral computer workspace", () => {
 
   it("limits saves to 5 GiB and one million files", () => {
     expect(WORKSPACE_SAVE_LIMITS).toEqual({ maxBytes: 5 * 1024 ** 3, maxFiles: 1_000_000 });
+  });
+
+  it("reads the byte limit from WORKSPACE_SAVE_MAX_GB and keeps the file limit", () => {
+    expect(workspaceSaveLimits({})).toEqual(WORKSPACE_SAVE_LIMITS);
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "  " })).toEqual(WORKSPACE_SAVE_LIMITS);
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "20" })).toEqual({
+      maxBytes: 20 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: " 0.5 " }).maxBytes).toBe(1024 ** 3 / 2);
+  });
+
+  it.each(["0", "0.0", "-5", "abc", "5GB", "1e3", "NaN", "Infinity", "9007199254740991"])(
+    "rejects the save limit %s, naming the setting",
+    (value) => {
+      expect(() => workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: value })).toThrow(
+        "WORKSPACE_SAVE_MAX_GB",
+      );
+    },
+  );
+
+  it("saves with the limits its home store was configured with", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-configured-"));
+    roots.push(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "configured", homePath: "/ignored" },
+      context,
+    );
+    for (const name of ["a.txt", "b.txt"]) {
+      await provider.writeFile(computer, { path: name, content: Buffer.from("ok") }, context);
+    }
+    const exported = vi.spyOn(provider, "exportWorkspace");
+    const home = new LocalAgentHomeStore(root, { maxBytes: 20 * 1024 ** 3, maxFiles: 1 });
+    await expect(
+      checkpointComputerWorkspace(home, provider, "configured", computer, context),
+    ).rejects.toEqual(new WorkspaceTooLargeError("files"));
+    const call = exported.mock.calls[0] as unknown as unknown[];
+    const limits = call[2] as WorkspaceExportLimits;
+    expect(limits.maxFiles).toBe(1);
+    // The disk can lower the byte limit, but never raise it past the configured one.
+    expect(limits.maxBytes).toBeGreaterThan(0);
+    expect(limits.maxBytes).toBeLessThanOrEqual(20 * 1024 ** 3);
   });
 
   it("skips dependencies and caches before counting a remote export", async () => {
