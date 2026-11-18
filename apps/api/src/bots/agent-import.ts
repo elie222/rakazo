@@ -36,6 +36,7 @@ import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   agentImportLeftoverMessages,
   combineImportedInstructions,
+  looksLikeCredential,
   messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
@@ -314,11 +315,19 @@ async function buildPlan(
 
   // Shown with the names its skills are saved under, as the chat will show it; the write
   // renames the text as read, under the creation lock.
-  const leftoverInputs = new Map(
-    [...plan.leftovers, ...appLeftovers].map((item) => [item.id, item]),
-  );
+  // A leftover has no box to tick, so one that looks like it holds a key is never handed to
+  // the chat: it is listed as not imported instead.
+  const handable = plan.leftovers.filter((item) => !item.containsKey);
+  for (const item of plan.leftovers) {
+    if (!item.containsKey) continue;
+    skipped.push({
+      path: `routines: ${looksLikeCredential(item.title) ? "Routine" : item.title}`,
+      reason: "unsupported",
+    });
+  }
+  const leftoverInputs = new Map([...handable, ...appLeftovers].map((item) => [item.id, item]));
   const leftovers = [
-    ...plan.leftovers.map((item) => ({
+    ...handable.map((item) => ({
       ...item,
       content: renameRoutineSkillMentions(item.content, previewSkillNames),
     })),

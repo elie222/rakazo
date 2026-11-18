@@ -104,9 +104,8 @@ export function useAgentImportSource() {
       const flagged = [
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
-        // Key-looking text reaches a bot only when the user ticks it; a leftover has no box,
-        // so one that looks like it holds a key is never handed over.
-        ...[...found.instructions, ...found.memory, ...found.skills, ...found.leftovers].filter(
+        // Key-looking text reaches a bot only when the user ticks it.
+        ...[...found.instructions, ...found.memory, ...found.skills].filter(
           (item) => item.containsKey,
         ),
       ].map((item) => item.id);
