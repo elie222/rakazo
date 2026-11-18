@@ -3180,7 +3180,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       items: {
         call: {
           title: "שיחות ופגישות",
-          body: "הבוט יכול להתקשר אליכם באפליקציה ולהצטרף ל-Zoom או ל-Google Meet כדי לתמלל את הפגישה.",
+          body: "הבוט יכול להתקשר אליך באפליקציה ולהצטרף לפגישות ב-Zoom או ב-Google Meet כדי לתמלל אותן.",
         },
         apps: {
           title: "עובד באפליקציות שלך",
