@@ -1,15 +1,17 @@
 import { z } from "zod";
 
 export const OutgoingDraftValues = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("email"),
-    to: z.email().max(254),
-    subject: z
-      .string()
-      .max(998)
-      .regex(/^[^\r\n]*$/),
-    body: z.string().max(16_000),
-  }),
+  z
+    .strictObject({
+      kind: z.literal("email"),
+      to: z.email().max(254),
+      subject: z
+        .string()
+        .max(998)
+        .regex(/^[^\r\n]*$/),
+      body: z.string().max(16_000),
+    })
+    .refine(({ subject, body }) => subject.trim().length > 0 || body.trim().length > 0),
   z.strictObject({
     kind: z.literal("message"),
     to: z.string().regex(/^(?:[CDGU][A-Z0-9]{1,31}|#[a-z0-9_-]{1,80})$/),
@@ -40,6 +42,29 @@ export const OutgoingDraft = z.object({
     .optional(),
 });
 export type OutgoingDraft = z.infer<typeof OutgoingDraft>;
+
+/** Only a committed card replaces local edits with the server's reviewed values. */
+export function outgoingDraftPresentation(
+  card: { status?: "pending" | "answered"; answer?: string; expired?: true },
+  stored: OutgoingDraftValues,
+  edited: OutgoingDraftValues,
+  canAnswer: boolean,
+  submitted?: string,
+) {
+  const resolved = card.status === "answered" ? card.answer : undefined;
+  const decision = resolved ?? submitted;
+  const status = card.expired
+    ? "expired"
+    : decision === "deny"
+      ? "discarded"
+      : decision
+        ? "approved"
+        : canAnswer
+          ? "pending"
+          : "inactive";
+  const shown = card.status === "answered" ? stored : edited;
+  return { status, shown, isEmail: shown.kind === "email" };
+}
 
 export function outgoingDraftAnswer(values: OutgoingDraftValues): string {
   return JSON.stringify({ outgoingDraft: values });

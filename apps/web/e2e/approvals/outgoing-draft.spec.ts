@@ -14,6 +14,9 @@ test("an outgoing email can be reviewed and edited before sending", async ({ pag
   await draft.getByRole("textbox", { name: "To" }).fill("invalid");
   await expect(draft.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await draft.getByRole("textbox", { name: "To" }).fill("taylor@example.test");
+  await draft.getByRole("textbox", { name: "Subject" }).fill("");
+  await draft.getByRole("textbox", { name: "Message" }).fill("");
+  await expect(draft.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await draft.getByRole("textbox", { name: "Message" }).fill("Could you review this on Thursday?");
   await expect(draft.getByRole("textbox", { name: "To" })).toHaveValue("taylor@example.test");
   await expect(draft.getByRole("textbox", { name: "Message" })).toHaveValue(

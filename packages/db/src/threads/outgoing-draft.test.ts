@@ -104,6 +104,9 @@ describe("editOutgoingDraft", () => {
     const effect = { id: "effect", request: args };
     expect(editOutgoingDraft(effect, draft, "allow")).toBeUndefined();
     expect(
+      editOutgoingDraft(effect, draft, outgoingDraftAnswer({ ...values, subject: "", body: "" })),
+    ).toBeUndefined();
+    expect(
       editOutgoingDraft(effect, draft, outgoingDraftAnswer({ ...values, to: "invalid" })),
     ).toBeUndefined();
     expect(

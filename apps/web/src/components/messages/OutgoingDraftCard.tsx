@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
-import { OutgoingDraftValues, outgoingDraftAnswer } from "@rakazo/contracts";
+import {
+  OutgoingDraftValues,
+  outgoingDraftAnswer,
+  outgoingDraftPresentation,
+} from "@rakazo/contracts";
 import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Mail, MessageSquare } from "lucide-react";
 import { useId, useState } from "react";
@@ -33,12 +37,14 @@ export function OutgoingDraftCard({
         answer: input,
       }),
   });
-  const resolved = block.status === "answered" ? block.answer : undefined;
-  const submitted = !answer.pending && !answer.error ? answer.input : undefined;
-  const open = canAnswer && Boolean(message.runId) && !resolved && !submitted;
-  const shown = resolved ? draft.values : values;
-  const wasDiscarded = (resolved ?? submitted) === "deny";
-  const isEmail = shown.kind === "email";
+  const { status, shown, isEmail } = outgoingDraftPresentation(
+    block,
+    draft.values,
+    values,
+    canAnswer && Boolean(message.runId),
+    !answer.pending && !answer.error ? answer.input : undefined,
+  );
+  const open = status === "pending";
   const toLabel = t`To`;
   const Icon = isEmail ? Mail : MessageSquare;
   const inlineField = "rounded-sm border-transparent px-0 py-0 shadow-none dark:bg-transparent";
@@ -131,11 +137,11 @@ export function OutgoingDraftCard({
           </>
         ) : (
           <div className="text-body-sm text-muted-foreground">
-            {block.expired
+            {status === "expired"
               ? t`Expired`
-              : wasDiscarded
+              : status === "discarded"
                 ? t`Discarded`
-                : resolved || submitted
+                : status === "approved"
                   ? t`Approved`
                   : t`No longer active`}
           </div>

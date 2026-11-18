@@ -1,6 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { OutgoingDraftValues, outgoingDraftAnswer } from "@rakazo/contracts";
+import {
+  OutgoingDraftValues,
+  outgoingDraftAnswer,
+  outgoingDraftPresentation,
+} from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
@@ -34,12 +38,14 @@ export function OutgoingDraftCard({
     save: (input: { runId: string; answer: string }, send) =>
       send("threads/answer", { ...target, messageId, ...input }),
   });
-  const resolved = block.status === "answered" ? block.answer : undefined;
-  const submitted = !answer.pending && !answer.error ? answer.input?.answer : undefined;
-  const open = canAnswer && runId && !readOnly && !resolved && !submitted;
-  const shown = resolved ? draft.values : values;
-  const wasDiscarded = (resolved ?? submitted) === "deny";
-  const isEmail = shown.kind === "email";
+  const { status, shown, isEmail } = outgoingDraftPresentation(
+    block,
+    draft.values,
+    values,
+    canAnswer && Boolean(runId) && !readOnly,
+    !answer.pending && !answer.error ? answer.input?.answer : undefined,
+  );
+  const open = status === "pending";
   const toLabel = t`To`;
   const caption = [typeScale.caption, { color: tokens.mutedForeground }];
   const body = [typeScale.body, { color: tokens.foreground }];
@@ -109,7 +115,7 @@ export function OutgoingDraftCard({
       <View
         style={[styles.footer, { backgroundColor: native.fill, borderTopColor: tokens.border }]}
       >
-        {open ? (
+        {open && runId ? (
           <>
             <NativeActionButton
               label={t`Discard`}
@@ -126,11 +132,11 @@ export function OutgoingDraftCard({
           </>
         ) : (
           <Text style={caption}>
-            {block.expired
+            {status === "expired"
               ? t`Expired`
-              : wasDiscarded
+              : status === "discarded"
                 ? t`Discarded`
-                : resolved || submitted
+                : status === "approved"
                   ? t`Approved`
                   : t`No longer active`}
           </Text>
