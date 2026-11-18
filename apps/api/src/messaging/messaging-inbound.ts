@@ -152,26 +152,26 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   };
   return Object.assign(handle, {
     /**
-     * For a shutdown: nothing more is posted here. Every message still settling has its backup
-     * job made due just past a short grace, so the job settles it soon even if the process is
-     * killed meanwhile. Downloads still running get that grace to finish, then every such job is
-     * due now, and finds the files stored meanwhile; a message that comes in after is its job's
-     * from the start.
+     * The start of a shutdown, before anything waits: nothing more is posted here, and every
+     * message still settling has its backup job made due just past a short grace, so the job
+     * settles it soon even if the process is killed before `handOffPending`. Downloads get that
+     * grace, counted from now; a message that comes in after is its job's from the start.
+     */
+    prepareHandOff: async (): Promise<void> => {
+      await beginShutdown(deps, intake).recorded;
+    },
+    /**
+     * The end of a shutdown: once the downloads still running have finished or the grace is
+     * over, every message still settling has its job due now, and the job finds the files stored
+     * meanwhile.
      */
     handOffPending: async (): Promise<void> => {
-      intake.closing = true;
-      // In each sender's order, so their jobs come due in the order the messages came.
-      const shutdown: Shutdown = {
-        arrivals: [...intake.pending.values()].flat(),
-        dueBy: Date.now() + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS,
-        last: new Map(),
-      };
-      intake.handingOff = shutdown;
-      await Promise.all(shutdown.arrivals.map((arrival) => dueByShutdown(deps, shutdown, arrival)));
+      const shutdown = beginShutdown(deps, intake);
+      await shutdown.recorded;
       const graceOver = new AbortController();
       await Promise.race([
         Promise.allSettled(shutdown.arrivals.map((arrival) => arrival.media)),
-        abortableDelay(SHUTDOWN_DOWNLOAD_GRACE_MS, graceOver.signal),
+        abortableDelay(Math.max(0, shutdown.graceEnds - Date.now()), graceOver.signal),
       ]);
       graceOver.abort();
       intake.handingOff = undefined;
@@ -179,6 +179,26 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
       for (const arrival of shutdown.arrivals) await handOffToJob(deps, intake, arrival);
     },
   });
+}
+
+/** A shutdown, started once: its messages, in each sender's order, have their jobs due soon. */
+function beginShutdown(deps: MessagingInboundDeps, intake: DirectIntake): Shutdown {
+  if (intake.shutdown) return intake.shutdown;
+  intake.closing = true;
+  const now = Date.now();
+  const shutdown: Shutdown = {
+    arrivals: [...intake.pending.values()].flat(),
+    graceEnds: now + SHUTDOWN_DOWNLOAD_GRACE_MS,
+    dueBy: now + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS,
+    last: new Map(),
+    recorded: Promise.resolve(),
+  };
+  intake.shutdown = shutdown;
+  intake.handingOff = shutdown;
+  shutdown.recorded = Promise.all(
+    shutdown.arrivals.map((arrival) => dueByShutdown(deps, shutdown, arrival)),
+  ).then(() => undefined);
+  return shutdown;
 }
 
 /** The direct messages this process is still settling. */
@@ -198,6 +218,8 @@ type DirectIntake = {
   pending: Map<string, Arrival[]>;
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
+  /** The shutdown, once it started. */
+  shutdown?: Shutdown;
   /** During a shutdown's grace, the messages it hands off once the grace is over. */
   handingOff?: Shutdown;
 };
@@ -205,7 +227,11 @@ type DirectIntake = {
 /** A shutdown's hand-off: its messages, and when their jobs are due at the latest meanwhile. */
 type Shutdown = {
   arrivals: Arrival[];
+  /** When the downloads still running stop being waited for. */
+  graceEnds: number;
   dueBy: number;
+  /** The first writes making the jobs due by `dueBy`. */
+  recorded: Promise<void>;
   /** When each sender's last job is due meanwhile, so the next comes after it. */
   last: Map<string, number>;
 };
@@ -420,8 +446,9 @@ async function prepareDirectEvent(
       intake.settling.delete(message);
       const shutdown = intake.handingOff;
       if (!shutdown) await handOffToJob(deps, intake, arrival);
-      else if (!shutdown.arrivals.includes(arrival)) {
-        shutdown.arrivals.push(arrival);
+      else {
+        // It may have been waiting for its job when the shutdown started.
+        if (!shutdown.arrivals.includes(arrival)) shutdown.arrivals.push(arrival);
         await dueByShutdown(deps, shutdown, arrival);
       }
       return null;

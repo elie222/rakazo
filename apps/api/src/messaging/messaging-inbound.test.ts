@@ -1391,10 +1391,9 @@ describe("createMessagingInboundHandler DM routing", () => {
       const soon = before + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
       const dueNow = () => handedOff(deps).filter((job) => job.availableAt!.getTime() < soon);
 
-      const stopping = handler.handOffPending();
-      await flush();
-      // Before the grace, each job is due just past it, as it was otherwise, so a process killed
-      // meanwhile still leaves the messages settling soon, in order.
+      // The shutdown starts: each job is due just past the grace at once, without waiting on the
+      // download, so a process killed before the hand-off still leaves them settling soon, in order.
+      await handler.prepareHandOff();
       const recorded = deps.enqueueIn.mock.calls.map(([, job]) => job);
       expect(handedOff(deps)).toEqual(
         recorded.map((job, index) => ({ ...job, availableAt: new Date(soon + index) })),
@@ -1408,6 +1407,10 @@ describe("createMessagingInboundHandler DM routing", () => {
       });
       expect(dueNow()).toEqual([]);
 
+      const stopping = handler.handOffPending();
+      await flush();
+      // The download may still finish within the grace: nothing is due now yet.
+      expect(dueNow()).toEqual([]);
       download.resolve();
       await stopping;
       expect(dueNow().map((job) => job.replaceKey)).toEqual([
@@ -1442,9 +1445,12 @@ describe("createMessagingInboundHandler DM routing", () => {
       await handler(photoEvent);
       await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
 
-      const stopping = handler.handOffPending();
       const soon = Date.now() + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
-      await vi.advanceTimersByTimeAsync(SHUTDOWN_DOWNLOAD_GRACE_MS - 1);
+      await handler.prepareHandOff();
+      // The rest of the shutdown runs a while later; the grace counts from its start.
+      await vi.advanceTimersByTimeAsync(2_000);
+      const stopping = handler.handOffPending();
+      await vi.advanceTimersByTimeAsync(SHUTDOWN_DOWNLOAD_GRACE_MS - 2_000 - 1);
       // Only the job made due just past the grace, should the process be killed now.
       expect(handedOff(deps).map((job) => job.availableAt)).toEqual([new Date(soon)]);
       await vi.advanceTimersByTimeAsync(1);

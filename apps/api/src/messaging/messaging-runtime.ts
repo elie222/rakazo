@@ -178,16 +178,20 @@ export async function startMessagingRuntime({
     }
   })();
   const stopReceiving = async () => {
+    // First, while the process is surely still up: the backup jobs of direct messages still
+    // settling are due soon, should it be killed before `stop` hands them over.
+    const handOffPrepared = inbound.prepareHandOff();
     messagingStopped = true;
     clearMessagingRetryDelay?.();
     await messagingInitTask.catch(() => undefined);
     await messaging.stopReceiving?.();
+    await handOffPrepared;
   };
   return {
     stopReceiving,
     stop: async () => {
       await stopReceiving();
-      // Downloads still running here get a short grace; then their backup jobs take over.
+      // Downloads still running here get what is left of the grace; then their jobs take over.
       await inbound.handOffPending();
       receipts.stop();
       await messaging.shutdown?.();

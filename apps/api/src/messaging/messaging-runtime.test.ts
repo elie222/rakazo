@@ -1,8 +1,61 @@
 import { deferred } from "@rakazo/core/test-async";
+import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { DOWNLOAD_BUDGET_FILES } from "./intake/limits.js";
-import { createInboundAttachmentStores } from "./messaging-runtime.js";
+import { createInboundAttachmentStores, startMessagingRuntime } from "./messaging-runtime.js";
+
+const directMessages = vi.hoisted(() => ({
+  prepareHandOff: vi.fn(async () => undefined),
+  handOffPending: vi.fn(async () => undefined),
+}));
+
+vi.mock("./messaging-inbound.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  createMessagingInboundHandler: () =>
+    Object.assign(
+      vi.fn(async () => undefined),
+      directMessages,
+    ),
+}));
+
+describe("startMessagingRuntime", () => {
+  it("makes pending settle jobs due soon once receiving stops, before the rest of the stop", async () => {
+    const messaging = {
+      onInbound: vi.fn(),
+      stopReceiving: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      platforms: () => [],
+      acknowledge: vi.fn(),
+      handleWebhook: vi.fn(),
+    };
+    const runtime = await startMessagingRuntime({
+      app: new Hono(),
+      prisma: {} as never,
+      events: {} as never,
+      jobs: {} as never,
+      sandbox: {} as never,
+      secrets: {} as never,
+      artifacts: {} as never,
+      env: { maxUploadSizeBytes: 10, messagingOpenSignup: false } as never,
+      messaging: messaging as never,
+      messagingInstallations: undefined,
+      delivery: {} as never,
+      teamChat: {} as never,
+    });
+
+    // The app stops receiving early in its shutdown, then drains connections and runs.
+    await runtime.stopReceiving();
+    expect(directMessages.prepareHandOff).toHaveBeenCalled();
+    expect(directMessages.handOffPending).not.toHaveBeenCalled();
+
+    await runtime.stop();
+    expect(directMessages.handOffPending).toHaveBeenCalledOnce();
+    expect(directMessages.prepareHandOff.mock.invocationCallOrder[0]).toBeLessThan(
+      directMessages.handOffPending.mock.invocationCallOrder[0]!,
+    );
+  });
+});
 
 describe("createInboundAttachmentStores", () => {
   it("keeps team-chat files out of the direct-message download budget", async () => {
