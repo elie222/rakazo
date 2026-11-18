@@ -1,10 +1,10 @@
-import { SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import {
   cancelResponseBody,
   deadlineSignal,
   ResponseTooLargeError,
   readResponseWithin,
 } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { BoatApiError } from "./boat-errors.js";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
 
@@ -15,6 +15,11 @@ type SnapshotClient = Pick<
 
 /** A slow snapshot lookup should give way to the normal live read. */
 const STOPPED_READ_TIMEOUT_MS = 5_000;
+
+function fallBackToLiveRead(reason: string, status?: number) {
+  getLogger().info("computer.stopped_file_fallback", { provider: "boat", reason, status });
+  return undefined;
+}
 
 export async function readBoatStoppedFile(
   client: SnapshotClient,
@@ -39,7 +44,7 @@ export async function readBoatStoppedFile(
       stop.endedAt < stoppedAt ||
       (savedAt && savedAt > snapshotCompletedAt)
     )
-      return undefined;
+      return fallBackToLiveRead("unverified_stop");
 
     // A forced stop can retain an older snapshot. Verify the save was checked during this
     // stop, allowing Boat to reuse an unchanged snapshot when its disk check found no writes.
@@ -58,12 +63,12 @@ export async function readBoatStoppedFile(
       snapshot.origin !== "captured" ||
       snapshot.completedAt?.getTime() !== snapshotCompletedAt.getTime()
     )
-      return undefined;
+      return fallBackToLiveRead("unverified_snapshot");
 
     const { raw } = await client.getSnapshotFileRaw({ snapshotId: snapshot.id, path }, { signal });
     if (raw.headers.get("x-snapshot-entry-kind") !== "file") {
       cancelResponseBody(raw);
-      return undefined;
+      return fallBackToLiveRead("not_a_file");
     }
     return await readResponseWithin(raw, {
       maxBytes,
@@ -73,15 +78,10 @@ export async function readBoatStoppedFile(
   } catch (error) {
     callerSignal.throwIfAborted();
     // Missing paths, links and snapshots with no file index are handled by the live reader.
-    if (
-      signal.aborted ||
-      error instanceof ResponseTooLargeError ||
-      (error instanceof BoatApiError && [403, 404, 409].includes(error.response.status))
-    )
-      return undefined;
-    if (error instanceof BoatApiError && error.response.status >= 500) {
-      throw new SandboxUnresponsiveError("Boat snapshot read failed", { cause: error });
-    }
+    if (signal.aborted) return fallBackToLiveRead("deadline");
+    if (error instanceof ResponseTooLargeError) return fallBackToLiveRead("file_too_large");
+    if (error instanceof BoatApiError && [403, 404, 409].includes(error.response.status))
+      return fallBackToLiveRead("snapshot_request_refused", error.response.status);
     throw error;
   }
 }
