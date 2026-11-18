@@ -4,12 +4,7 @@ import {
   BotEmailNameSchema,
   BotEmailRecipientSchema,
 } from "@rakazo/contracts";
-import {
-  attachmentComputerPath,
-  attachmentComputerPathFor,
-  matchesSearchQuery,
-  redactSecrets,
-} from "@rakazo/core";
+import { attachmentComputerPathFor, matchesSearchQuery, redactSecrets } from "@rakazo/core";
 import {
   claimBotEmailName,
   contentEncryptionOf,
@@ -140,13 +135,9 @@ async function readEmail(ctx: RunContext, call: ToolCall) {
         ...(files.length
           ? {
               files: files.map((file) =>
-                file.artifactId && file.mimeType
-                  ? {
-                      name: file.name,
-                      path:
-                        storedPaths.get(file.artifactId) ??
-                        attachmentComputerPath(file.artifactId, file.mimeType),
-                    }
+                // No row means the file was never kept or has since been deleted.
+                file.artifactId && file.mimeType && storedPaths.has(file.artifactId)
+                  ? { name: file.name, path: storedPaths.get(file.artifactId) }
                   : { name: file.name, unavailable: true },
               ),
             }

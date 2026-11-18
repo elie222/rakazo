@@ -13,6 +13,7 @@ import {
   attachWorkspaceFileToThread,
   createEarlierFileQueue,
   listCurrentTurnFiles,
+  listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
@@ -972,5 +973,74 @@ describe("attachments at their stored path", () => {
     ]);
     queue.add(taken);
     expect(queue.take().map((file) => file.artifactId)).toEqual(["b"]);
+  });
+});
+
+describe("files whose original was deleted", () => {
+  const context = {
+    operationId: "run",
+    traceId: "run",
+    spaceId: "space",
+    userId: "user",
+    botId: "bot",
+    signal: new AbortController().signal,
+  };
+  const kept = {
+    kind: "file" as const,
+    artifactId: "kept",
+    name: "kept.txt",
+    mimeType: "text/plain",
+    size: 3,
+  };
+  const gone = {
+    kind: "file" as const,
+    artifactId: "gone",
+    name: "gone.txt",
+    mimeType: "text/plain",
+    size: 3,
+  };
+  const prisma = {
+    artifact: {
+      findMany: vi.fn().mockResolvedValue([{ ...kept, id: "kept", storageKey: "stored" }]),
+    },
+  } as unknown as PrismaClient;
+
+  it("lists an earlier file with no row as no longer available, and the rest as before", async () => {
+    const files = await listRecentThreadFiles(
+      { prisma },
+      [{ id: "m", role: "user" }],
+      [{ id: "m", blocks: [gone, kept] }],
+      { context, maxTurns: 3 },
+    );
+    const instruction = recentThreadFilesInstruction(files);
+    expect(instruction).toContain('"attachments/kept.txt"');
+    expect(instruction).toContain('"gone.txt"');
+    expect(instruction).toContain("no longer available");
+    expect(instruction).not.toContain("attachments/gone");
+  });
+
+  it("copies the files that remain and skips the deleted one without throwing", async () => {
+    const writeFile = vi.fn();
+    const files = await materializeEarlierFiles(
+      {
+        prisma,
+        artifacts: {
+          get: vi.fn().mockResolvedValue(new Uint8Array(3)),
+        } as unknown as ArtifactStore,
+        sandbox: {
+          listFiles: vi.fn().mockRejectedValue(new Error("missing")),
+          writeFile,
+        } as unknown as SandboxProvider,
+      },
+      [gone, kept],
+      {
+        context,
+        computer: async () =>
+          ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+        computerMode: "dedicated",
+      },
+    );
+    expect(files.map((file) => file.artifactId)).toEqual(["kept"]);
+    expect(writeFile).toHaveBeenCalledOnce();
   });
 });

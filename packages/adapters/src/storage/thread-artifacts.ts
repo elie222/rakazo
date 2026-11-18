@@ -177,6 +177,9 @@ function threadFileMetadata(
   };
 }
 
+/** An earlier attachment whose original has since been deleted. */
+export type UnavailableThreadFile = { artifactId: string; name: string; unavailable: true };
+
 /** Resolve current attachments without reading their bytes or waking a computer. */
 export async function listCurrentTurnFiles(
   deps: { prisma: PrismaClient; maxUploadSizeBytes?: number },
@@ -392,15 +395,17 @@ export async function listRecentThreadFiles(
     skipMessageId?: string | null;
     maxTurns: number;
   },
-): Promise<MaterializedThreadFile[]> {
+): Promise<Array<MaterializedThreadFile | UnavailableThreadFile>> {
   const blocks = recentAttachmentBlocks(history, messages, input);
   if (!blocks.length) return [];
   const byId = await attachedArtifacts(deps.prisma, blocks, input.context);
   const limit = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
   return blocks
-    .flatMap((block) => {
+    .flatMap((block): Array<MaterializedThreadFile | UnavailableThreadFile> => {
       const row = byId.get(block.artifactId);
-      if (!row || row.size > limit) return [];
+      // Deleted by the original-file cleanup: say so, so the bot does not look for it.
+      if (!row) return [{ artifactId: block.artifactId, name: block.name, unavailable: true }];
+      if (row.size > limit) return [];
       return [threadFileMetadata(row)];
     })
     .slice(0, ATTACHMENT_MAX_COUNT);
