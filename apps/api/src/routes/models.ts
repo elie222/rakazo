@@ -506,6 +506,9 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+        if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+        }
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the

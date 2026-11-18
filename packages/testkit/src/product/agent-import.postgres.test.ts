@@ -642,6 +642,16 @@ describeIntegration("agent import", () => {
         await db.userModelCredential.count({ where: { userId: user.id, provider: "anthropic" } }),
       ).toBe(0);
 
+      // The account default does not move to a provider the list refuses either.
+      const setDefault = await raw(app, cookie, "models/setDefault", {
+        provider: "anthropic",
+        modelId: "claude-haiku-5-5",
+      });
+      expect(setDefault.status).toBe(400);
+      expect(await setDefault.text()).toContain(
+        "This model provider is not allowed on this server.",
+      );
+
       const preview = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
         files: settingsHome,
       });

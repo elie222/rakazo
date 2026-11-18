@@ -460,6 +460,11 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
   ) => {
+    // Before the submitted endpoint is contacted, not after: a blocked provider is not
+    // probed, and its refusal is not replaced by whatever the probe would have said.
+    if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
+      throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+    }
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
     let expectedSecret: ModelCredentialInput["expectedSecret"];

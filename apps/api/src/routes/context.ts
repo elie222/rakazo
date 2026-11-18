@@ -25,6 +25,8 @@ import {
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
   modelCreditOfferings,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
@@ -216,6 +218,7 @@ export function createRouterContext(deps: RouterDeps) {
     ];
     for (const offering of approved) {
       if (
+        !modelProviderAllowed(modelProviderAllowlist(), offering.provider) ||
         !fundedProviders.has(offering.provider) ||
         merged.some(
           (entry) => entry.provider === offering.provider && entry.id === offering.modelId,

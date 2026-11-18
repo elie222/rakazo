@@ -1,6 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
-import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
+import {
+  findConnectedModelCredential,
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+  validateConnectedModelChoice,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
 import { modelRoleTarget, runAsSystem } from "@rakazo/db";
@@ -142,6 +148,9 @@ export async function assertRoutineModel(
   codexCatalog: CodexLiveCatalog,
 ) {
   if (!model.modelProvider || !model.modelId) return;
+  if (!modelProviderAllowed(modelProviderAllowlist(), model.modelProvider)) {
+    throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+  }
   const message = await validateConnectedModelChoice(
     deps.prisma,
     deps.secrets,
