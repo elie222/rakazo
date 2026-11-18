@@ -41,7 +41,7 @@ async function reconcileConnections(
         updatedAt: true,
         providerRef: true,
       },
-      // Latest attempt first: the one to connect when the provider cannot say whose account is live.
+      // Breaks a tie between attempts begun at the same moment in favour of the later row.
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     })
   ).filter((row: { provider: string }) =>
