@@ -93,17 +93,13 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "ask_user",
     description:
-      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough. Put the content the user is deciding about, such as a draft email, in `detail`; pass detail_markdown true when that content is Markdown (bold, lists, links), and leave it out when its characters must show exactly as written, such as code, commands, paths or names.",
+      "Ask one multiple-choice question. Put drafts or context in detail; set detail_markdown for Markdown, omit for literal text.",
     inputSchema: {
       type: "object",
       properties: {
         question: { type: "string", maxLength: 240 },
         detail: { type: "string", maxLength: 4_000 },
-        detail_markdown: {
-          type: "boolean",
-          description:
-            "Render detail as Markdown. Leave it out for content whose characters must show exactly as written.",
-        },
+        detail_markdown: { type: "boolean" },
         options: {
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 80 },
