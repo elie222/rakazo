@@ -256,15 +256,60 @@ room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
 Files sent in direct messages from chat apps download in the background, up to
 `MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
 
-Set `MESSAGING_SAVE_RECEIVED_FILES=true` and restart the API and worker to also copy each of
-those files into the receiving bot's computer: `shared/received/YYYY/MM/` on a team computer,
-`received/YYYY/MM/` on a bot's own computer, named by date, time, sender and file name, in the
-bot owner's time zone. The bot's message gets a `[saved to <path>]` line for each copy. A copy
-goes into a running computer, or into the saved home of a stopped one that boots from it (a
-Docker computer always does); otherwise the file still reaches the bot, without a copy.
+The bot can also keep a copy of each one in its computer; see
+[received chat-app files](#received-chat-app-files).
 
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
 Web, desktop, and mobile use the advertised count; older clients and clients connected
 to older servers keep the default of four. Chat bridges retain their existing safe
 platform limits, and model image budgets still apply.
+
+## Received chat-app files
+
+`MESSAGING_SAVE_RECEIVED_FILES=true` copies each file a bot receives in a direct message from a
+chat app into the bot's computer, besides attaching it to the message as usual. It is off by
+default. Set it in `.env` for both the API and the worker, then restart them: the API makes the
+copies and the worker cleans them up.
+
+On a team computer the copies go under `shared/received/`, and on a private computer under
+`received/` at the root of its home, in a folder for each year and month:
+
+```text
+shared/received/<YYYY>/<MM>/<YYYY-MM-DD>_<HHMM>_<sender>_<name>.<ext>
+```
+
+The date and time are when the message arrived, in the time zone of the account the chat
+address belongs to, or in the server's `TZ` when that account has none set. Sender and file
+names lose characters a path can't hold and are shortened. A name already taken gets `-2`,
+`-3` and so on, so a copy never replaces a file. The bot's message gets a `[saved to <path>]`
+line for each copy, so the bot knows where to find it.
+
+Which computers get a copy:
+
+- A running computer of any kind, written straight into it.
+- A Docker computer, running or not: it works in the server's copy of its home.
+- A stopped computer whose home the server holds and restores on its next start, written into
+  that stored home. This covers remote computers whose stored home only the server writes,
+  except Kubernetes computers set up to mount the server's home directory.
+
+Other computers get no copy: one starting or going to sleep, a stopped one whose provider keeps
+its machine and disk, a stopped remote one whose stored home it writes itself, a stopped one on
+a person's own device, and a bot with no computer. The file still reaches the bot, without the
+line.
+
+Once a day the worker deletes copies that arrived more than 31 days ago, going by the date in
+their name rather than the file's own time, then the month and year folders that leaves empty.
+It only deletes files named like a copy, inside the dated folders under `received/` or
+`shared/received/`; anything else there stays. It cleans the same homes that get a copy while
+stopped: copies on a running remote computer go once it is stopped and its home is back with
+the server, and copies on a computer that gets none while stopped are never cleaned up.
+
+Limits:
+
+- A message settled by its backup job, because receiving it here failed or the API restarted
+  first, reaches the bot without a copy.
+- One copy at a time is made on a computer, across all API processes, and the cleanup takes the
+  same turn. Each copy has 30 seconds, waiting included; one not made by then is skipped.
+- A message handed to a message routine still gets its copies, but the routine is not told
+  where they are.
