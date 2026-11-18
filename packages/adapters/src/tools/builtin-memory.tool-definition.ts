@@ -192,6 +192,11 @@ export const memoryTools: ConnectorTool[] = [
           description: "Attachment cursor returned as nextAttachmentOffset.",
         },
         limit: { type: "integer", minimum: 1, maximum: 5 },
+        toolDetailsRunId: {
+          type: "string",
+          description:
+            "One linked run of this page whose kept tool calls come back too: what each was sent, how long it took, and any error. Only in a run the person started.",
+        },
       },
       required: ["messageId"],
     },

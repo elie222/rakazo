@@ -9,8 +9,9 @@ import {
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { toolStepCount } from "../../lib/chat/tool-activity-view";
+import { RunToolCallDetails } from "./RunToolCallDetails";
 
 type ToolStep = Extract<ThreadMessage["blocks"][number], { kind: "steps" }>["steps"][number];
 
@@ -78,19 +79,27 @@ export function ToolActivityDisclosure({
   live,
   stepCount,
   durationMs,
+  runId,
   children,
 }: {
   live: boolean;
   stepCount: number;
   durationMs?: number;
+  /** The run behind this card, whose kept call records explain what failed; read once opened. */
+  runId?: string;
   children: ReactNode;
 }) {
+  // A folded card reads nothing: the explanation is asked for once someone opens the run.
+  const [opened, setOpened] = useState(live);
   const duration = formatCompactDuration(durationMs);
   const toolCount = stepCount;
   return (
     <Collapsible
       key={live ? "working" : "actions"}
       defaultOpen={live}
+      onOpenChange={(open: boolean) => {
+        if (open) setOpened(true);
+      }}
       data-testid="tool-activity"
       data-live={live || undefined}
       className="group"
@@ -115,7 +124,10 @@ export function ToolActivityDisclosure({
         </span>
       </CollapsibleTrigger>
       <CollapsibleContent hiddenUntilFound>
-        <div className="ms-[7px] mt-0.5 border-s border-border ps-3">{children}</div>
+        <div className="ms-[7px] mt-0.5 border-s border-border ps-3">
+          {children}
+          {runId && opened ? <RunToolCallDetails runId={runId} /> : null}
+        </div>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -129,16 +141,23 @@ export function StandaloneToolActivity({
   steps,
   stepCount,
   durationMs,
+  runId,
 }: {
   live: boolean;
   steps: readonly ToolStep[];
   stepCount: number;
   durationMs?: number;
+  runId?: string;
 }) {
   return (
     <div className="flex justify-start" dir="ltr" data-testid="tool-activity-line">
       <div className="max-w-full min-w-0 ps-1">
-        <ToolActivityDisclosure live={live} stepCount={stepCount} durationMs={durationMs}>
+        <ToolActivityDisclosure
+          live={live}
+          stepCount={stepCount}
+          durationMs={durationMs}
+          runId={runId}
+        >
           <ToolSteps
             steps={steps}
             currentIndex={live ? steps.length - 1 : undefined}
@@ -154,9 +173,11 @@ export function StandaloneToolActivity({
 export function ToolOnlyNarration({
   blocks,
   live,
+  runId,
 }: {
   blocks: readonly ThreadMessage["blocks"][number][];
   live: boolean;
+  runId?: string;
 }) {
   return (
     <>
@@ -168,6 +189,7 @@ export function ToolOnlyNarration({
             steps={block.steps}
             stepCount={toolStepCount(block.steps)}
             durationMs={block.durationMs}
+            runId={runId}
           />
         ) : null,
       )}

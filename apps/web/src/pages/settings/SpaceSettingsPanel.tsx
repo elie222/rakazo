@@ -3,6 +3,7 @@ import { Button, Input } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
+import { ToolCallRecordsSetting } from "../../components/spaces/ToolCallRecordsSetting";
 import { useSave } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import type { SettingsSpace } from "../shell/create-delete-dialogs";
@@ -103,6 +104,7 @@ export function SpaceSettingsPanel({
         </SettingsGroup>
       ) : null}
       <SpaceMembersSettings space={space} onLeft={onLeft} />
+      <ToolCallRecordsSetting />
       <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
       {space.canDelete ? (
         <Button

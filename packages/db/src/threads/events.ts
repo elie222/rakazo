@@ -367,6 +367,8 @@ export async function clearThread(
       await tx.artifact.deleteMany({ where: { id: { in: screenshots.map((row) => row.id) } } });
     await tx.message.deleteMany({ where: cleared });
     await tx.event.deleteMany({ where: cleared });
+    // What the cleared runs' tools were sent and read goes with the conversation it explains.
+    await tx.toolCallRecord.deleteMany({ where: cleared });
     await tx.thread.updateMany({
       where: { id: { in: helperThreadIds }, historyCompactionSummary: { not: null } },
       data: { historyCompactionSummary: null, historyCompactionGeneration: { increment: 1 } },

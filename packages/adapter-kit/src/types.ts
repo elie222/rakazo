@@ -262,9 +262,13 @@ export interface AgentToolCompletion {
   name: string;
   executionId: string;
   durationMs: number;
+  /** What the call was sent, for a redacted record of it; never stored as it is. */
+  arguments?: unknown;
   result?: unknown;
   error?: unknown;
   paused?: boolean;
+  /** The result was longer than the limit the model reads its tool results within. */
+  resultShortened?: boolean;
 }
 
 export interface ControlLeaseRef {

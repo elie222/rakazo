@@ -266,7 +266,11 @@ export const MessageView = memo(function MessageView({
         <>
           {messageContext}
           <div className="relative">
-            <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+            <ToolOnlyNarration
+              blocks={visibleNarrationBlocks}
+              live={isLive}
+              runId={message.runId}
+            />
             {hoverActions}
           </div>
         </>
@@ -290,6 +294,7 @@ export const MessageView = memo(function MessageView({
                       live={isLive}
                       stepCount={toolStepCount(block.steps)}
                       durationMs={block.durationMs}
+                      runId={message.runId}
                     >
                       <ToolSteps
                         steps={block.steps}
@@ -356,6 +361,7 @@ export const MessageView = memo(function MessageView({
                 steps={block.steps}
                 stepCount={toolStepCount(block.steps)}
                 durationMs={block.durationMs}
+                runId={message.runId}
               />
             );
           }

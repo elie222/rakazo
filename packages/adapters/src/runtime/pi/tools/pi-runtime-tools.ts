@@ -692,9 +692,13 @@ function toAgentTool(
               name: tool.name,
               executionId,
               durationMs: Math.max(0, Date.now() - startedAt),
+              arguments: args,
               ...(result === undefined ? {} : { result }),
               ...(failure === undefined ? {} : { error: failure }),
               ...(host.pausePending ? { paused: true } : {}),
+              ...(isLongerThanToolResultLimit(result) && !keepToolResultWhole(tool.name, args)
+                ? { resultShortened: true }
+                : {}),
             };
             try {
               void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
@@ -756,6 +760,18 @@ export function serializeToolResult(
   } catch {
     return "ok";
   }
+}
+
+/** Whether a tool's result text is longer than the limit the model reads its results within. */
+function isLongerThanToolResultLimit(result: unknown): boolean {
+  const content = (result as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return false;
+  const length = content.reduce(
+    (total: number, part: { type?: unknown; text?: unknown }) =>
+      part?.type === "text" && typeof part.text === "string" ? total + part.text.length : total,
+    0,
+  );
+  return length > TOOL_RESULT_TEXT_LIMIT;
 }
 
 function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {

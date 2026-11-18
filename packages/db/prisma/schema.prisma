@@ -657,6 +657,9 @@ model Member {
 
 model Space {
   aiDataConsents              AiDataConsent[]
+  /// Keeps a short, redacted record of each tool call, so failures can be explained later. A
+  /// privacy-sensitive deployment turns it off and nothing is kept for this Space.
+  keepToolCallRecords         Boolean                      @default(true)
   id                          String                       @id
   organizationId              String
   organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -720,6 +723,7 @@ model Space {
   agentSkillSpaces            AgentSkillSpace[]
   mcpServerSpaces             McpServerSpace[]
   capabilityInstallSpaces     CapabilityInstallSpace[]
+  toolCallRecords             ToolCallRecord[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -1160,6 +1164,7 @@ model Thread {
   reads                       ThreadRead[]
   messages                    Message[]
   events                      Event[]
+  toolCallRecords             ToolCallRecord[]
   tasks                       Task[]
   runs                        Run[]
   routines                    Routine[]
@@ -1243,6 +1248,41 @@ model Event {
   @@index([spaceId, createdAt])
   @@index([runId, type, seq])
   @@map("events")
+}
+
+/// One tool call's short, redacted trace, so a run that went wrong can be explained afterwards.
+/// Arguments and the result head are redacted with the run's secrets before they are stored and
+/// capped; every read is bounded by its own query. Deleted after TOOL_CALL_RECORD_RETENTION_MS by
+/// the retention sweep, with the thread, and with a cleared chat.
+model ToolCallRecord {
+  id              String   @id @default(cuid())
+  spaceId         String
+  space           Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  threadId        String
+  thread          Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  botId           String
+  runId           String
+  /// The id the run's own agent.tool.* events carry for this call.
+  executionId     String
+  tool            String
+  durationMs      Int
+  /// How the call ended: succeeded, failed, or paused while waiting on the person.
+  outcome         String
+  /// What the call was sent, as JSON, redacted and capped.
+  arguments       String?
+  /// The call's error message, redacted and capped.
+  error           String?
+  /// Bytes of result text the call returned, before the tool-result limit shortened it.
+  resultBytes     Int?
+  /// The result was longer than the limit the model reads its results within.
+  resultShortened Boolean  @default(false)
+  /// The start of the result, redacted and capped, or nothing when the tool returns secrets.
+  resultHead      String?
+  createdAt       DateTime @default(now())
+
+  @@index([runId, createdAt])
+  @@index([createdAt])
+  @@map("tool_call_records")
 }
 
 model Task {

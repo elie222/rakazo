@@ -86,6 +86,13 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  /** What a tool call was sent and briefly kept of what came back, for a later explanation. */
+  ToolCallRecord: {
+    table: "tool_call_records",
+    fields: { arguments: {}, error: {}, resultHead: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "thread",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",

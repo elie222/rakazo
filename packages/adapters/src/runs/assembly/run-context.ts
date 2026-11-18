@@ -267,6 +267,11 @@ export interface RunSource {
   historySearchBeforeSeq: number;
   /** See historyMyChatsAllowed; claimed outside steering still revokes it per call. */
   myChatsAllowed: boolean;
+  /**
+   * Whether this run may read what earlier calls were sent and returned. Only a run the owner
+   * started themselves: every other run answers from the conversation alone.
+   */
+  toolDetailsAllowed: boolean;
   conversationThreadId?: string;
   voiceCall: boolean;
   callEndRun: boolean;
@@ -322,6 +327,8 @@ export interface RunContext {
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];
+  /** Whether this Space keeps a short trace of each tool call, read once when the run starts. */
+  toolCallRecords: boolean;
   source: RunSource;
   computer: RunComputerContext;
   tools: RunTools;

@@ -12,6 +12,7 @@ import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";
+import { historyToolCalls } from "../turn/tool-call-record.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
 /** Cross-chat history requires a surviving direct human request in this app thread. */
@@ -70,9 +71,26 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   } else {
     const parsed = HistoryReadInputSchema.safeParse(given);
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
-    response = await readHistory(deps.prisma, scope, parsed.data);
+    // Tool details are for a run the owner started; every other run reads the conversation alone.
+    const { toolDetailsRunId, ...readInput } = parsed.data;
+    response = await readHistory(deps.prisma, scope, {
+      ...readInput,
+      ...(toolDetailsRunId && ctx.source.toolDetailsAllowed ? { toolDetailsRunId } : {}),
+    });
   }
-  const redacted = redactConnectorPayload(response, ctx.secrets);
+  const redacted = redactConnectorPayload(
+    "runs" in response && Array.isArray(response.runs)
+      ? {
+          ...response,
+          runs: response.runs.map((run) =>
+            "toolCalls" in run && Array.isArray(run.toolCalls)
+              ? { ...run, toolCalls: historyToolCalls(run.toolCalls, ctx.secrets) }
+              : run,
+          ),
+        }
+      : response,
+    ctx.secrets,
+  );
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
     return call.finish({

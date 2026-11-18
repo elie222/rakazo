@@ -4,6 +4,7 @@ import {
   ATTACHMENT_MAX_COUNT,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   HistoryQueriesSchema,
+  TOOL_CALL_RECORDS_IN_HISTORY,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
 import { LISTED_ARTIFACT } from "../artifacts/artifact-versions.js";
@@ -15,6 +16,7 @@ import {
   INDEXED_MESSAGE,
   UNINDEXED_MESSAGE,
 } from "../encryption/content-encryption.js";
+import { runToolCallRecords } from "../runs/tool-call-records.js";
 import { routineReadableSql } from "../threads/messages.js";
 import {
   historyAttachmentBlocks,
@@ -687,6 +689,15 @@ export async function readHistory(
   const outcomes = outcomeRows.slice(0, LINK_PAGE_SIZE);
   const artifacts = artifactRows.slice(0, LINK_PAGE_SIZE);
   const attachments = await messageAttachments(prisma, scope, rows);
+  // Only a run this read already reached can have its details read, and only up to the bound.
+  const toolDetails = input.toolDetailsRunId
+    ? await toolCallDetails(
+        prisma,
+        scope,
+        input.toolDetailsRunId,
+        runs.some((run) => run.id === input.toolDetailsRunId),
+      )
+    : undefined;
   return bounded({
     untrusted: true as const,
     nextRunId: runRows.length > LINK_PAGE_SIZE ? runs.at(-1)!.id : null,
@@ -703,6 +714,7 @@ export async function readHistory(
       ...run,
       outcomes: outcomes.filter((row) => row.runId === run.id).map((row) => reference(row)),
       artifacts: artifacts.filter((artifact) => artifact.runId === run.id),
+      ...(toolDetails && run.id === input.toolDetailsRunId ? { toolCalls: toolDetails } : {}),
     })),
     snapshots: rows.map((row) => {
       const linkedRuns = runs.filter(
@@ -728,4 +740,23 @@ export async function readHistory(
     olderMessageId: rows[0]?.id ?? null,
     newerMessageId: rows.at(-1)?.id ?? null,
   });
+}
+
+/**
+ * One reachable run's kept tool call details, bounded to the few a history read carries. A run this
+ * read did not reach stays unexplained: its id came from the model, not from the history.
+ */
+async function toolCallDetails(
+  prisma: PrismaClient,
+  scope: HistoryScope,
+  runId: string,
+  reachable: boolean,
+) {
+  if (!reachable) return undefined;
+  const calls = await runToolCallRecords(prisma, {
+    spaceId: scope.spaceId,
+    runId,
+    limit: TOOL_CALL_RECORDS_IN_HISTORY,
+  });
+  return calls.length > 0 ? calls : undefined;
 }
