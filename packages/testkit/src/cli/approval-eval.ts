@@ -131,8 +131,9 @@ export async function runApprovalSuite(
     version: 1,
     kind: "approval-calibration-eval",
     startedAt: new Date().toISOString(),
+    // Names the file's content, so two case files of the same size never share a version.
     fixtureVersion: extraCases.length
-      ? `${APPROVAL_FIXTURE_VERSION}+${extraCases.length}-local`
+      ? `${APPROVAL_FIXTURE_VERSION}+${extraCases.length}-local-${createHash("sha256").update(JSON.stringify(extraCases)).digest("hex").slice(0, 12)}`
       : APPROVAL_FIXTURE_VERSION,
     /** Eval-only reviewer inputs and rubric; `current` is what the product sends today. */
     variant: variant.id,
@@ -411,7 +412,11 @@ export async function runApprovalSuite(
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
     return {
       ...approvalRequest(c),
-      args: autoReview.redactToolArgsForReview(c.args, []),
+      // A new site is judged on its URL alone, as the product sends it.
+      args:
+        c.newSite && typeof c.args.url === "string"
+          ? { url: c.args.url }
+          : autoReview.redactToolArgsForReview(c.args, []),
       ...(earlier.length ? { ownerMessages: earlier } : {}),
     };
   };
