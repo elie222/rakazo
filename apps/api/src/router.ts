@@ -37,6 +37,7 @@ import type {
 import type { Auth } from "@rakazo/auth";
 import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { ArrivalCopyDeps } from "./attachments/arrival-copy.js";
 import type { BillingService } from "./billing/billing.js";
 import type { VoiceDeps } from "./calls/voice.js";
 import { accountRoutes } from "./routes/account.js";
@@ -117,6 +118,8 @@ export interface RouterDeps {
   pluginRepoFetcher?: PluginRepoFetcher;
   pluginMarketplaceRead?: PluginTextReader;
   artifacts: ArtifactStore;
+  /** Copies a file sent to one bot into its computer, when that is on. */
+  arrivalCopy?: ArrivalCopyDeps;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
   /** Sends replies to the chat apps people message from; absent without one. */

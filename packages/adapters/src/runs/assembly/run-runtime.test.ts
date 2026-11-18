@@ -38,7 +38,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
-    saveReceivedFiles: source.MESSAGING_SAVE_RECEIVED_FILES === "true",
+    copyAttachmentsOnArrival: source.ATTACHMENT_COPY_ON_ARRIVAL === "true",
   };
 }
 
@@ -69,7 +69,7 @@ describe("runRuntimeEnvFromProcess", () => {
       INBOUND_EMAIL_DOMAIN: " Bots.Example.Test ",
       TEAM_CHAT_JUDGE_PROVIDER: " openrouter ",
       TEAM_CHAT_JUDGE_MODEL: "small-model",
-      MESSAGING_SAVE_RECEIVED_FILES: "true",
+      ATTACHMENT_COPY_ON_ARRIVAL: "true",
     },
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {

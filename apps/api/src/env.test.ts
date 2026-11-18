@@ -119,12 +119,12 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, PI_SESSION_RECORDING: "true" }).piSessionRecording).toBe(true);
   });
 
-  it("keeps copies of received chat-app files only when asked", () => {
-    expect(loadEnv(base).saveReceivedFiles).toBe(false);
-    expect(loadEnv({ ...base, MESSAGING_SAVE_RECEIVED_FILES: "1" }).saveReceivedFiles).toBe(false);
-    expect(loadEnv({ ...base, MESSAGING_SAVE_RECEIVED_FILES: "true" }).saveReceivedFiles).toBe(
-      true,
-    );
+  it("copies incoming attachments into the bot's computer on arrival only when asked", () => {
+    const copies = (value?: string) =>
+      loadEnv({ ...base, ATTACHMENT_COPY_ON_ARRIVAL: value }).copyAttachmentsOnArrival;
+    expect(copies()).toBe(false);
+    expect(copies("1")).toBe(false);
+    expect(copies("true")).toBe(true);
   });
 
   it("keeps explicit emulator settings for pnpm test", () => {

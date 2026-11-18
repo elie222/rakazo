@@ -2,8 +2,11 @@ import type { AdapterContext, AgentHomeStore, SandboxProvider } from "@rakazo/ad
 import type { PrismaClient } from "@rakazo/db";
 import { LeaseHeldError, parseComputerMode, withLease } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  bestEffortWithoutPaths,
+  homeHoldsAttachmentCopies,
+} from "../attachment-copies/copy-attachment.js";
 import { RECEIVED_FILE_MAX_AGE_MS } from "./received-path.js";
-import { bestEffortWithoutPaths, homeHoldsReceivedFiles } from "./save-received-file.js";
 
 /**
  * How often received copies are looked at for pruning. Looking at a home loads it: a home kept
@@ -112,7 +115,7 @@ async function pruneComputer(
     });
   // Read again under the lease: the computer may have started since the page was read.
   const first = await read();
-  if (!first || !homeHoldsReceivedFiles(deps.sandbox, first)) return 0;
+  if (!first || !homeHoldsAttachmentCopies(deps.sandbox, first)) return 0;
   const unchanged = async () => {
     const current = await read();
     return (
@@ -120,7 +123,7 @@ async function pruneComputer(
       current.state === first.state &&
       current.providerRef === first.providerRef &&
       current.updatedAt.getTime() === first.updatedAt.getTime() &&
-      homeHoldsReceivedFiles(deps.sandbox, current)
+      homeHoldsAttachmentCopies(deps.sandbox, current)
     );
   };
   const root = parseComputerMode(computer.scope) === "team" ? "shared/received" : "received";
@@ -140,7 +143,7 @@ async function pruneComputer(
  * The worker's daily pass that deletes received chat-app files a month after they arrived
  * (by the date in their name, never the file's own time), then the month and year folders that
  * leaves empty. Only homes the server holds while nothing runs in them are pruned (see
- * `homeHoldsReceivedFiles`): a running computer, Docker included, and one on a provider's own
+ * `homeHoldsAttachmentCopies`): a running computer, Docker included, and one on a provider's own
  * disk are left alone. Anything not named like a received file stays. Off unless the setting
  * is on.
  */
@@ -180,7 +183,7 @@ export function createReceivedFilesPruner(deps: {
         },
       });
       for (const computer of computers) {
-        if (!homeHoldsReceivedFiles(deps.sandbox, computer)) continue;
+        if (!homeHoldsAttachmentCopies(deps.sandbox, computer)) continue;
         const context: AdapterContext = {
           operationId: `received-files-prune:${computer.id}`,
           traceId: `received-files-prune:${computer.id}`,
@@ -191,10 +194,10 @@ export function createReceivedFilesPruner(deps: {
         removed +=
           (await bestEffortWithoutPaths(
             `prune received files of computer ${computer.id}`,
-            // A save holds the same lease, so a prune never runs beside one; the next pass retries.
+            // A copy holds the same lease, so a prune never runs beside one; the next pass retries.
             withLease(
               deps.prisma,
-              `received-files:${computer.id}`,
+              `attachment-copies:${computer.id}`,
               { ttlMs: PRUNE_LEASE_MS, signal: context.signal },
               (lease) => pruneComputer(deps, computer, cutoff, context, lease.signal),
             ).catch((error: unknown) => {

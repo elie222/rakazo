@@ -9,6 +9,7 @@ import type {
 import {
   apnsVoipConfig,
   attachmentNamingFromEnv,
+  copyAttachmentsOnArrivalFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
@@ -16,7 +17,6 @@ import {
   resolveDeploymentModel,
   resolveSandboxProvider,
   sandboxProviderOptionsFromEnv,
-  saveReceivedFilesFromEnv,
   secretStoreOptionsFromEnv,
   workspaceSaveLimits,
 } from "@rakazo/adapters";
@@ -150,8 +150,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   slackClientSecret?: string;
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
-  /** MESSAGING_SAVE_RECEIVED_FILES=true copies chat-app files into the bot's computer. */
-  saveReceivedFiles: boolean;
+  /** ATTACHMENT_COPY_ON_ARRIVAL=true copies incoming attachments into the bot's computer. */
+  copyAttachmentsOnArrival: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
   teamChatBotId: string | undefined;
   /** Optional model override for ambient engagement judging. */
@@ -343,7 +343,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
-    saveReceivedFiles: saveReceivedFilesFromEnv(source),
+    copyAttachmentsOnArrival: copyAttachmentsOnArrivalFromEnv(source),
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
     teamChatJudgeModel: optional(source.TEAM_CHAT_JUDGE_MODEL),

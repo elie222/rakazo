@@ -4,7 +4,14 @@ import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 
-type InboundArtifact = { id: string; name: string; mimeType: string; size: number };
+type InboundArtifact = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  /** The file's path in the bot's computer, when it was given a readable name. */
+  computerPath?: string | null;
+};
 
 /**
  * Why a file never reached the bot, in plain words: refused for its size or type, tried and

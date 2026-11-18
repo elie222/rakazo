@@ -1,5 +1,4 @@
 import type {
-  AgentHomeStore,
   ArtifactStore,
   JobPublisher,
   JobQueueOrder,
@@ -14,15 +13,12 @@ import type {
   MessagingInstallations,
   TeamChat,
 } from "@rakazo/adapters";
-import {
-  applyMessagingOutboundStatus,
-  createMessagingTeamChatHistory,
-  saveReceivedFile,
-} from "@rakazo/adapters";
+import { applyMessagingOutboundStatus, createMessagingTeamChatHistory } from "@rakazo/adapters";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
+import type { ArrivalCopyDeps } from "../attachments/arrival-copy.js";
 import { transcribeInboundVoice } from "../calls/voice.js";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import type { AppEnv } from "../env.js";
@@ -47,9 +43,9 @@ export async function startMessagingRuntime({
   events,
   jobs,
   sandbox,
-  home,
   secrets,
   artifacts,
+  arrivalCopy,
   env,
   messaging,
   messagingInstallations,
@@ -61,9 +57,9 @@ export async function startMessagingRuntime({
   events: ThreadEvents;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueOrder;
   sandbox: SandboxProvider;
-  home: AgentHomeStore;
   secrets: SecretStore;
   artifacts: ArtifactStore;
+  arrivalCopy: ArrivalCopyDeps;
   env: AppEnv;
   messaging: MessagingSurface;
   messagingInstallations: MessagingInstallations | undefined;
@@ -90,12 +86,7 @@ export async function startMessagingRuntime({
     openSignup: env.messagingOpenSignup,
     acknowledge: receipts.acknowledge,
     storeAttachment: stores.direct,
-    ...(env.saveReceivedFiles
-      ? {
-          saveReceivedFile: ({ timeZone, ...file }, context) =>
-            saveReceivedFile({ prisma, home, sandbox, timeZone }, file, context),
-        }
-      : {}),
+    arrivalCopy,
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
       transcribeInboundVoice(
         {

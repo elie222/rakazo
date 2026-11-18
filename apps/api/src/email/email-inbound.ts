@@ -16,6 +16,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
+import type { ArrivalCopyDeps, ArrivalFile } from "../attachments/arrival-copy.js";
+import { copyOnArrival } from "../attachments/arrival-copy.js";
 import { cancelBody, readBoundedBytes } from "../http/http-body.js";
 import {
   formatRoutineEmailPrompt,
@@ -40,7 +42,16 @@ export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
     standalone: boolean;
     /** The sender's display name, else their address; it names the file's copy. */
     sender?: string;
-  }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
+  }) => Promise<{
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    /** The file's path in the bot's computer, when it was given a readable name. */
+    computerPath?: string | null;
+  }>;
+  /** Copies each kept file into the bot's computer, when that is on. */
+  arrivalCopy?: ArrivalCopyDeps;
   /** Parses and authenticates the raw message; tests pass a fixed one. */
   readEmail?: (raw: Uint8Array) => Promise<InboundEmail>;
 };
@@ -346,6 +357,7 @@ async function storeAttachments(
   const keyHash = createHash("sha256").update(email.key).digest("base64url");
   const sender = email.from?.name.trim() || email.from?.address;
   const files: InboxFile[] = [];
+  const arrived: ArrivalFile[] = [];
   let kept = 0;
   // Retain the original index for storage nonces while giving explicit files first use of slots.
   const ordered = Array.from(email.attachments.entries()).sort(
@@ -374,6 +386,7 @@ async function storeAttachments(
         sender,
       });
       kept += 1;
+      arrived.push({ computerPath: stored.computerPath ?? null, bytes: file.bytes });
       files.push({
         artifactId: stored.id,
         name: stored.name,
@@ -390,6 +403,14 @@ async function storeAttachments(
       });
       files.push({ name });
     }
+  }
+  // In the computer of the bot the mail is for before the bot is told of it.
+  if (deps.arrivalCopy) {
+    await copyOnArrival(
+      deps.arrivalCopy,
+      { botId: bot.id, spaceId: bot.spaceId, userId: bot.userId },
+      arrived,
+    );
   }
   return files;
 }

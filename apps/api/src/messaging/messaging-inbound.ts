@@ -50,6 +50,8 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import type { ArrivalCopyDeps } from "../attachments/arrival-copy.js";
+import { copyOnArrival } from "../attachments/arrival-copy.js";
 import {
   cancelThreadRuns,
   finishThreadStop,
@@ -66,8 +68,6 @@ import {
   SHUTDOWN_DOWNLOAD_GRACE_MS,
   SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
-import type { SaveReceivedFile } from "./intake/received-copy.js";
-import { saveReceivedCopy } from "./intake/received-copy.js";
 import type { SenderQueue } from "./intake/sender-queue.js";
 import { createSenderQueue } from "./intake/sender-queue.js";
 import type { SettlePayload } from "./intake/settle-job.js";
@@ -98,11 +98,8 @@ export interface MessagingInboundDeps {
   openSignup: boolean;
   acknowledge?: MessagingReceipts["acknowledge"];
   storeAttachment?: InboundAttachmentStore;
-  /**
-   * Copies each file a direct message brings into the bot's computer; set only when
-   * MESSAGING_SAVE_RECEIVED_FILES is on.
-   */
-  saveReceivedFile?: SaveReceivedFile;
+  /** Copies each file a direct message brings into the bot's computer, when that is on. */
+  arrivalCopy?: ArrivalCopyDeps;
   /**
    * Transcribes inbound audio with the bot owner's voice provider. On null or
    * a throw only the file reference is delivered. `signal` aborts when the
@@ -149,7 +146,6 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
     handedOff: new Map(),
     pending: new Map(),
     closing: false,
-    saves: createSenderQueue(),
   };
   const handle = async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
@@ -227,8 +223,6 @@ type DirectIntake = {
   pending: Map<string, Arrival[]>;
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
-  /** One computer's received files are copied into it one at a time, so none replaces another. */
-  saves: SenderQueue;
   /** The shutdown, once it started. */
   shutdown?: Shutdown;
   /** During a shutdown's grace, the messages it hands off once the grace is over. */
@@ -513,9 +507,7 @@ async function prepareDirectEvent(
     }
     // The files download from now on, whatever is ahead of the message in its sender's queue;
     // only handing the message to the bot waits its turn there.
-    const media = settledMedia(
-      storeInboundMedia(deps, ids, event, deadline, { saves: intake.saves, receivedAt }),
-    );
+    const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
     arrival.media = media;
     return {
       inline: false,
@@ -741,10 +733,10 @@ function writeJob<T>(
   return result;
 }
 
-/** A message's stored files, the lines of those copied into the computer and of those that did not arrive. */
+/** A message's stored files, and the lines of those that did not arrive. */
 type StoredMedia = Awaited<ReturnType<typeof storeInboundMedia>>;
 
-const NO_MEDIA: StoredMedia = { artifacts: [], saved: [], unavailable: [] };
+const NO_MEDIA: StoredMedia = { artifacts: [], unavailable: [] };
 
 /** How a message's downloads ended, kept until its turn in the queue comes to post it. */
 type MediaOutcome = { stored: StoredMedia } | { error: unknown };
@@ -778,7 +770,7 @@ async function deliverDirectMessage(
     }))
   )
     return stored.unavailable;
-  const body = [text, ...stored.saved, ...stored.unavailable].filter(Boolean).join("\n");
+  const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
     threadId: ids.threadId,
@@ -845,10 +837,8 @@ async function storeInboundMedia(
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
   downloadDeadline: number,
-  copies: { saves: SenderQueue; receivedAt: number },
 ) {
-  const saved: string[] = [];
-  const saveReceivedFile = deps.saveReceivedFile;
+  const arrivalCopy = deps.arrivalCopy;
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
@@ -862,19 +852,13 @@ async function storeInboundMedia(
       // The sender's display name, else their raw id.
       sender: event.fromLabel?.trim() || event.from,
       reasons: true,
-      ...(saveReceivedFile
+      // Each file is in the computer before the bot is told of it.
+      ...(arrivalCopy
         ? {
-            onStored: async (file: { name: string; mimeType: string }, bytes: Uint8Array) => {
-              const line = await saveReceivedCopy(
-                { prisma: deps.prisma, saveReceivedFile },
-                ids,
-                event,
-                file,
-                bytes,
-                copies,
-              );
-              if (line) saved.push(line);
-            },
+            onStored: (artifact: { computerPath?: string | null }, bytes: Uint8Array) =>
+              copyOnArrival(arrivalCopy, ids, [
+                { computerPath: artifact.computerPath ?? null, bytes },
+              ]),
           }
         : {}),
     },
@@ -887,7 +871,7 @@ async function storeInboundMedia(
   for (const { artifact, bytes } of stored) {
     artifacts.push(await withVoiceTranscript(deps, ids, artifact, bytes, transcribeDeadline));
   }
-  return { artifacts, saved, unavailable };
+  return { artifacts, unavailable };
 }
 
 /**

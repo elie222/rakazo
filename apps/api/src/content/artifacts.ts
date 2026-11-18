@@ -74,7 +74,9 @@ export async function createOwnedArtifact(
     deps.attachmentNaming?.names === "readable"
       ? await uploaderName(deps.prisma, actor.userId)
       : undefined;
-  return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes, sender });
+  return createdArtifact(
+    await storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes, sender }),
+  );
 }
 
 /** The uploader's account name, which names their files; none when it is blank. */
@@ -86,10 +88,14 @@ async function uploaderName(prisma: PrismaClient, userId: string): Promise<strin
 /** Pauses after the first and second failed download tries; the last repeats. */
 const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 5_000];
 
-/** A stored inbound attachment plus its downloaded content when it was fresh. */
-export type StoredInboundAttachment = ReturnType<typeof createdArtifact> & {
+/** A stored inbound attachment, with its path in the bot's computer and its fresh content. */
+export type StoredInboundAttachment = ReturnType<typeof inboundArtifact> & {
   bytes?: Uint8Array;
 };
+
+function inboundArtifact(row: Prisma.ArtifactGetPayload<Record<string, never>>) {
+  return { ...createdArtifact(row), computerPath: row.computerPath };
+}
 
 export async function storeInboundAttachment(
   deps: {
@@ -117,7 +123,7 @@ export async function storeInboundAttachment(
   },
 ): Promise<StoredInboundAttachment> {
   const replayed = await findReplayedArtifact(deps.prisma, owner, input);
-  if (replayed) return createdArtifact(replayed);
+  if (replayed) return inboundArtifact(replayed);
   const { attachment } = input;
   const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
   // The backup settle job judges a file it never got by the same type.
@@ -201,7 +207,7 @@ export async function storeInboundAttachment(
     sender: input.sender,
   });
   // The replay return above carries no bytes; callers treat them as optional.
-  return { ...stored, bytes };
+  return { ...inboundArtifact(stored), bytes };
 }
 
 type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;
@@ -320,7 +326,7 @@ async function storeOwnedArtifact(
     throw error;
   });
   if (replay) await deps.artifacts.remove(stored.id, context).catch(() => undefined);
-  return createdArtifact(row);
+  return row;
 }
 
 /** The artifact an earlier upload with this nonce created; a nonce reused for another chat is refused. */
@@ -768,6 +774,7 @@ type SendAttachmentRow = {
   mimeType: string;
   size: number;
   storageKey: string;
+  computerPath: string | null;
 };
 
 function normalizeAttachmentIds(artifactIds: string[] | undefined, maxCount: number) {

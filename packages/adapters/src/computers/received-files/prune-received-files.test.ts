@@ -313,7 +313,7 @@ describe("createReceivedFilesPruner", () => {
     expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
   });
 
-  it("takes the computer's received-files lease, like a save does", async () => {
+  it("takes the computer's attachment-copies lease, like a copy does", async () => {
     const { prune, queryRaw } = await setup([team], { "team-home": [OLD] });
 
     await prune();
@@ -323,7 +323,7 @@ describe("createReceivedFilesPruner", () => {
       values,
     }));
     expect(queries[0]!.sql).toContain("INSERT INTO");
-    expect(queries[0]!.values).toContain("received-files:computer-1");
+    expect(queries[0]!.values).toContain("attachment-copies:computer-1");
     expect(queries.at(-1)!.sql).toContain("DELETE FROM");
   });
 

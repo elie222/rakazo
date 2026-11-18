@@ -145,6 +145,7 @@ import { mountAccountExportRoute } from "./account/account-export.js";
 import { mountAccountImportRoute } from "./account/account-import.js";
 import { settleDirectoryChange } from "./account/account-status.js";
 import { mountAuditExportRoute } from "./account/audit-export.js";
+import { createArrivalCopy } from "./attachments/arrival-copy.js";
 import { createAuthResponseAudit } from "./auth/security-audit.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
@@ -416,6 +417,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
+  const arrivalCopy = createArrivalCopy({
+    prisma,
+    artifacts,
+    home,
+    sandbox,
+    enabled: env.copyAttachmentsOnArrival,
+  });
   const memory = new MarkdownMemoryStore(prisma);
   // This process registers the inbound sink, so it must hold Telegram's getUpdates connection.
   const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true }).filter(
@@ -837,6 +845,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     // The scripted runtime never calls a provider, so neither does its connect.
     modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
+    arrivalCopy,
     email,
     onEmailError,
     dataDir: env.dataDir,
@@ -1167,6 +1176,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       jobs,
       ...env.inboundEmail,
+      arrivalCopy,
       storeAttachment: ({ spaceId, userId, ...input }) =>
         storeInboundAttachment(
           {
@@ -1196,9 +1206,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           events,
           jobs,
           sandbox,
-          home,
           secrets,
           artifacts,
+          arrivalCopy,
           env,
           messaging,
           messagingInstallations,

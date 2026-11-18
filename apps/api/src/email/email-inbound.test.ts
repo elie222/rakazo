@@ -1,9 +1,13 @@
+import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
 import { AttachmentValidationError } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import type { CopyAttachment } from "../attachments/arrival-copy.js";
+import { createSenderQueue } from "../messaging/intake/sender-queue.js";
 import type { EmailInboundDeps } from "./email-inbound.js";
 import { INBOUND_EMAIL_PATH, INBOX_DAILY_LIMIT, mountEmailInboundRoute } from "./email-inbound.js";
 
@@ -52,6 +56,7 @@ function setup(
     routines?: Array<Record<string, unknown>>;
     owner?: { email: string; emailVerified?: boolean; deactivatedAt?: Date | null };
     storeAttachment?: EmailInboundDeps["storeAttachment"];
+    arrivalCopy?: EmailInboundDeps["arrivalCopy"];
     /** Messages the bot saved in the last day. */
     savedToday?: number;
   } = {},
@@ -120,6 +125,7 @@ function setup(
     secret: SECRET,
     readEmail,
     ...(options.storeAttachment ? { storeAttachment: options.storeAttachment } : {}),
+    ...(options.arrivalCopy ? { arrivalCopy: options.arrivalCopy } : {}),
   };
   const app = new Hono();
   mountEmailInboundRoute(app, deps);
@@ -336,6 +342,52 @@ describe("inbound email route", () => {
 
     await post();
     expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
+  });
+
+  it("copies each kept file into the bot's computer before the bot gets the mail", async () => {
+    const paths = ["attachments/2026-11-05_1000_Owner_invoice.pdf", null];
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({
+        id: `artifact-${attachment.name}`,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        computerPath: paths.shift() ?? null,
+      }),
+    );
+    const copy = vi.fn<CopyAttachment>(async () => ({ copied: "x" }));
+    const invoice = new Uint8Array([1, 2, 3]);
+    const { post, sendUserMessage } = setup({
+      storeAttachment,
+      arrivalCopy: {
+        prisma: {
+          bot: { findUnique: vi.fn(async () => ({ computerId: "computer-1" })) },
+        } as unknown as PrismaClient,
+        artifacts: {} as ArtifactStore,
+        enabled: true,
+        copy,
+        queue: createSenderQueue(),
+      },
+      message: email({
+        attachments: [
+          { name: "invoice.pdf", mimeType: "application/pdf", bytes: invoice },
+          { name: "notes.txt", mimeType: "text/plain", bytes: new Uint8Array([4]) },
+        ],
+      }),
+    });
+
+    expect(await (await post()).json()).toMatchObject({ ok: true, runId: "run-1" });
+    expect(copy).toHaveBeenCalledExactlyOnceWith(
+      {
+        bot: { id: "bot-1", computerId: "computer-1" },
+        path: "attachments/2026-11-05_1000_Owner_invoice.pdf",
+        bytes: invoice,
+      },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1", botId: "bot-1" }),
+    );
+    expect(copy.mock.invocationCallOrder[0]).toBeLessThan(
+      sendUserMessage.mock.invocationCallOrder[0]!,
+    );
   });
 
   it.each([false, true])(

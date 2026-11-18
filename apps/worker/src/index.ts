@@ -326,7 +326,7 @@ async function main() {
         prisma,
         home,
         sandbox,
-        enabled: env.saveReceivedFiles,
+        enabled: env.copyAttachmentsOnArrival,
       }),
       reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
     },
