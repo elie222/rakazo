@@ -13,17 +13,17 @@ import {
   USER_COMPUTER_TOOLS,
   userComputerAppName,
 } from "../../computers/host/user-computer-tools.js";
+import {
+  isRunningShellCommand,
+  observeShellCommand,
+  SHELL_STILL_RUNNING_NOTICE,
+} from "../../computers/sandbox/shell-command-stream.js";
 import type {
   HostScreenAction,
   HostScreenActResult,
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
-import {
-  isRunningShellCommand,
-  observeShellCommand,
-  SHELL_STILL_RUNNING_NOTICE,
-} from "../../sandboxes/shell-command-stream.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 

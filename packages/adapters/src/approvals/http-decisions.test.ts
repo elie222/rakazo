@@ -45,6 +45,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       callObserver: { beforeCall, afterCall },
     }).decide(request, context);
     expect(result.answers.decision).toEqual({ type: "choice", choice: "pass", confidence: 0.9 });
+    expect(beforeCall).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: null }));
     expect(fetchMock).toHaveBeenCalledWith(
       provider === "openrouter"
         ? "https://openrouter.ai/api/alpha/decisions"
@@ -72,6 +73,41 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       expect(beforeCall).toHaveBeenCalledWith(
         expect.objectContaining({ maxCostUsd: expect.any(Number) }),
       );
+  });
+  it("keeps unknown provider usage unpriced for customer holds", async () => {
+    const onUsage = vi.fn();
+    const afterCall = vi.fn();
+    const body = await response().json();
+    delete body.usage;
+    const result = await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => Response.json(body),
+      onUsage,
+      callObserver: { beforeCall: () => "reservation", afterCall },
+    }).decide(request, context);
+    expect(result.usage?.costUsd).toBeNull();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null }),
+    );
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ costUsd: null }));
+  });
+  it("reports the observer tariff even when request-ID persistence fails", async () => {
+    const onUsage = vi.fn();
+    const result = await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => response(),
+      onUsage,
+      callObserver: {
+        beforeCall: () => "reservation",
+        onRequestId: async () => {
+          throw new Error("Request identity storage unavailable");
+        },
+        afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
+      },
+    }).decide(request, context);
+    expect(result.usage).toMatchObject({ costUsd: 0.25, costSource: "deployment-tariff" });
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining(result.usage));
   });
   it("rejects unknown answers while retaining provider costs", async () => {
     const onUsage = vi.fn();

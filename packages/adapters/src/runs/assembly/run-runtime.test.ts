@@ -3,7 +3,7 @@ import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { describe, expect, it } from "vitest";
 import { mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
-import { deploymentLabsFromEnv } from "../../shared/labs-env.js";
+import { deploymentLabsFromEnv } from "../labs-env.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
 
 // What the worker read inline before it shared the runtime builder with the API.

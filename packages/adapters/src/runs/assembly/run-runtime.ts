@@ -1,13 +1,19 @@
 import { hostname } from "node:os";
 import type {
   ArtifactStore,
+  BackgroundJobPayloads,
   ConnectorProvider,
   ManagedConnectorProvider,
   MessagingSurface,
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
-import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import {
+  availableChatApps,
+  messagingProviderName,
+  phoneCallSettings,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -20,10 +26,10 @@ import { cliModelRuntime } from "../../cli-models/runtime.js";
 import { reconcileCloudAgents } from "../../cloud-agents/cloud-agent-service.js";
 import { createIdleComputerSweeper } from "../../computers/computer-idle.js";
 import { reconcileComputerUpdates } from "../../computers/computer-update.js";
-import { createConnectorStack } from "../../connectors/connector-registry.js";
-import type { RemoteConnectorDependencies } from "../../connectors/installed-connectors.js";
-import { InstalledConnectorProvider } from "../../connectors/installed-connectors.js";
-import { IntegrationProviderSettings } from "../../connectors/integration-provider-settings.js";
+import { createConnectorStack } from "../../integrations/connector-registry.js";
+import type { RemoteConnectorDependencies } from "../../integrations/installed-connectors.js";
+import { InstalledConnectorProvider } from "../../integrations/installed-connectors.js";
+import { IntegrationProviderSettings } from "../../integrations/integration-provider-settings.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { McpOAuthBroker } from "../../mcp/mcp-oauth.js";
 import { reconcileMediaVideos } from "../../media/media-video-poll.js";
@@ -31,6 +37,7 @@ import { createMessagingContextLoader } from "../../messaging/messaging-context.
 import { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import { TeamChat } from "../../messaging/team-chat/team-chat.js";
 import { ModelTeamChatEngagementJudge } from "../../messaging/team-chat/team-chat-judge.js";
+import { modelCreditUsageLookup } from "../../model-credits/routing.js";
 import { createModelCreditReconciler } from "../../models/credits/model-credit-reconciler.js";
 import {
   deploymentModelUsageLookup,
@@ -53,11 +60,11 @@ import {
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
-import { deploymentLabsFromEnv } from "../../shared/labs-env.js";
 import { createWebProvider } from "../../web/web-provider-factory.js";
 import { auditLogConfig, createAuditLogReconciler } from "../../webhooks/audit-forwarding.js";
 import { createRunExecutor } from "../executor/executor.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { deploymentLabsFromEnv } from "../labs-env.js";
 import { createBackgroundJobHandlers } from "../wakeups/background-job-handlers.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 
@@ -229,9 +236,11 @@ export function createRunRuntime(
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
+    /** Answers the lifecycle-mail job where account mail is configured. */
+    lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
+  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -290,7 +299,16 @@ export function createRunRuntime(
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
-    messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
+    messaging: messaging
+      ? {
+          ...createMessagingContextLoader(deps.prisma),
+          chatApps: () =>
+            availableChatApps(
+              messaging.platforms().map((platform) => platform.provider),
+              Boolean(isMessagingInstallationActive),
+            ).map(messagingProviderName),
+        }
+      : undefined,
     messagingDelivery,
     web: createWebProvider(),
   });
@@ -318,6 +336,7 @@ export function createRunRuntime(
     paymentWallet: deps.paymentWallet,
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    lifecycleEmail,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }
@@ -328,7 +347,13 @@ type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
 export function createRunReconciler(
   deps: Pick<
     ExecutorDeps,
-    "prisma" | "jobs" | "events" | "notifications" | "billingEnabled" | "mediaGeneration"
+    | "prisma"
+    | "jobs"
+    | "events"
+    | "notifications"
+    | "billingEnabled"
+    | "mediaGeneration"
+    | "secretStore"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     userCloudAgents?: ExecutorDeps["userCloudAgents"];
@@ -359,6 +384,7 @@ export function createRunReconciler(
     reconcileModelCredits: createModelCreditReconciler({
       prisma,
       lookup: deploymentModelUsageLookup(),
+      lookupForOffering: (offering) => modelCreditUsageLookup(prisma, deps.secretStore, offering),
     }),
     reconcileStrategicInitiatives: createStrategicInitiativeReconciler({
       prisma,

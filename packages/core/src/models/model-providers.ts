@@ -70,6 +70,9 @@ export function clampCatalogThinkingLevel(
   return null;
 }
 
+/** The subscriptions a person can sign in with instead of pasting an API key, as they know them. */
+export const MODEL_SUBSCRIPTION_NAMES = ["ChatGPT", "Claude"] as const;
+
 export const POPULAR_MODEL_PROVIDER_IDS = [
   "openai-codex",
   "anthropic",
@@ -293,8 +296,14 @@ export function credentialForModel<C extends CredentialModelRef>(
  */
 export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
   credentials: readonly C[],
-  choice: { provider: string; modelId: string; credentialId?: string | null },
+  choice: {
+    provider: string;
+    modelId: string;
+    credentialId?: string | null;
+    creditOfferingId?: string | null;
+  },
 ): C | undefined {
+  if (choice.creditOfferingId) return undefined;
   if (choice.credentialId) return credentials.find((entry) => entry.id === choice.credentialId);
   const provider = credentials.filter(
     (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),

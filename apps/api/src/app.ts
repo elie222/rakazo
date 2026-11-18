@@ -39,6 +39,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -143,7 +144,6 @@ import { mountAccountExportRoute } from "./account/account-export.js";
 import { mountAccountImportRoute } from "./account/account-import.js";
 import { settleDirectoryChange } from "./account/account-status.js";
 import { mountAuditExportRoute } from "./account/audit-export.js";
-import { mountLocalComputerHost } from "./auth/local-settings.js";
 import { createAuthResponseAudit } from "./auth/security-audit.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
@@ -151,11 +151,13 @@ import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
+import { mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { configuredEmailProvider } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
+import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
 import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
@@ -179,7 +181,7 @@ import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
 import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
 import { settleWithTimeout } from "./messaging/team-chat-startup.js";
-import { mountWebhookHttpRoutes } from "./messaging/webhook.js";
+import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter } from "./router.js";
 import {
   DATABASE_RETRY_AFTER_SECONDS,
@@ -192,6 +194,7 @@ import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
 import { createExperiments } from "./telemetry/experiments.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 /**
  * Native clients always send the app scheme, including in Expo Go, so no
@@ -403,7 +406,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets }, (ended) =>
+    recordSignInEnded(analytics, ended),
+  );
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
@@ -436,6 +441,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // the local emulator lives in this process, so the emulator counts only in single-process mode.
+  const lifecycleEmailsEnabled =
+    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -468,6 +477,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
+        scheduleLifecycleEmail: lifecycleEmailsEnabled
+          ? lifecycleEmailScheduler({
+              prisma,
+              jobs,
+              webOrigin: env.webOrigin,
+              origin: env.authUrl,
+              secret: env.authSecret,
+            })
+          : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -678,6 +696,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       onTicketChange: ticketChanges,
       email: botEmail,
+      // Single-process mode answers the job here; otherwise the worker does.
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)
@@ -706,6 +729,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ? createRunReconciler(
         {
           prisma,
+          secretStore: secrets,
           jobs,
           events,
           notifications,

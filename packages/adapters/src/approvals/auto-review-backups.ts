@@ -19,6 +19,7 @@ export async function reviewWithBackups(
       candidate.provider,
       candidate.model,
       candidate.credentialId ?? null,
+      candidate.creditOfferingId ?? null,
     ]);
     if (seen.has(key)) continue;
     seen.add(key);

@@ -39,10 +39,10 @@ import {
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "../../../models/endpoints/openai-compatible-url.js";
 import { declaredVisionModelIds, inputModalities } from "../../../models/model-modalities.js";
-import type { ResolvedAddress, ResolveHostname } from "../../../web/network-address.js";
-import { createAddressCheckedLookup } from "../../../web/network-address.js";
-import { createCheckedProxyDispatcher } from "../../../web/proxy-dispatcher.js";
-import { dispatcherFetch, fetchPairedWithDispatcher } from "../../../web/undici-fetch.js";
+import type { ResolvedAddress, ResolveHostname } from "../../../network/network-address.js";
+import { createAddressCheckedLookup } from "../../../network/network-address.js";
+import { createCheckedProxyDispatcher } from "../../../network/proxy-dispatcher.js";
+import { dispatcherFetch, fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
   MODEL_STREAM_AGENT_TIMEOUTS,

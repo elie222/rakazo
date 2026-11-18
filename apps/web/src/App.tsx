@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
+import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -40,7 +41,7 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
 import { syncCallIdentity } from "./lib/calls/call-session";
-import { desktopBridge } from "./lib/platform/desktop";
+import { analyticsSurface } from "./lib/platform/desktop";
 import { identifyMonitoringUser } from "./lib/platform/monitoring";
 import { markAfterPaint, markOnce } from "./lib/platform/performance";
 import { lazyComponent } from "./lib/platform/preload-recovery";
@@ -145,7 +146,7 @@ function SessionApp() {
     if (lastScreen.current === key) return;
     lastScreen.current = key;
     void Promise.resolve()
-      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
+      .then(() => rpc.analytics.screen({ screen, surface: analyticsSurface() }))
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
@@ -233,7 +234,8 @@ function SessionApp() {
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
-                  user ? (
+                  // A sign-in the mobile app started goes back to the app, signed in here or not.
+                  user || mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ? (
                     <McpOAuthCallbackPage />
                   ) : (
                     <Navigate

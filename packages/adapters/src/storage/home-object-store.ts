@@ -21,7 +21,7 @@ import {
   sealArtifact,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { createObjectStorage } from "./create-object-storage.js";
 import { LocalAgentHomeStore, newRevision } from "./home.js";
 import type { HomeArchiveLimits } from "./home-archive.js";

@@ -36,7 +36,7 @@ import {
 } from "../../approvals/approval-effect.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
-import type { selectRunConnections } from "../../connectors/connection-context.js";
+import type { selectRunConnections } from "../../integrations/connection-context.js";
 import type { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { namedAgentTools } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import type { inferScript } from "../../runtime/scripted-runtime.js";

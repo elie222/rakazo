@@ -19,6 +19,8 @@ export const ConnectionCatalogItemSchema = z.object({
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),
+  /** Also a chat app people can message their bots from on this deployment. */
+  chatApp: z.boolean().optional(),
 });
 export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
@@ -28,7 +30,8 @@ export const IntegrationCatalogSurfaceSchema = z.object({
   source: z.string().nullable(),
   auth: z
     .object({
-      type: z.enum(["none", "bearer", "header"]),
+      /** OAuth is a remote MCP server's own browser sign-in. */
+      type: z.enum(["none", "bearer", "header", "oauth"]),
       headerName: z.string().nullable(),
       note: z.string().nullable(),
     })

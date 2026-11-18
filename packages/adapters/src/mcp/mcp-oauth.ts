@@ -20,9 +20,11 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { McpOAuthClientKind } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   MCP_OAUTH_CLIENT_REQUIRED,
+  MOBILE_MCP_OAUTH_STATE_PREFIX,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -30,14 +32,14 @@ import { ClientError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { sanitizeConnectorError } from "../connectors/connector-safety.js";
-import { isUnreachableHost } from "../connectors/connector-source.js";
+import { sanitizeConnectorError } from "../integrations/connector-safety.js";
+import { isUnreachableHost } from "../integrations/connector-source.js";
+import { advisoryLock } from "../locks/advisory-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../locks/refresh-lock.js";
 import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../shared/refresh-lock.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -881,6 +883,8 @@ type Pending = {
   /** The stored authorization generation this flow began at. */
   generation: number;
   provider: StoredMcpOAuthProvider;
+  /** The bot that gets the server once this sign-in finishes. */
+  botId: string | null;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
 };
@@ -1267,6 +1271,8 @@ export class McpOAuthBroker {
     spaceId: string;
     userId: string;
     redirectUri: string;
+    client?: McpOAuthClientKind;
+    botId?: string;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1300,7 +1306,7 @@ export class McpOAuthBroker {
     if (activeCount >= MAX_PENDING_SESSIONS) {
       throw new McpOAuthRefusedError(TOO_MANY_PENDING);
     }
-    const sessionId = randomUUID();
+    const sessionId = `${input.client === "mobile" ? MOBILE_MCP_OAUTH_STATE_PREFIX : ""}${randomUUID()}`;
     let authorizationUrl: URL | undefined;
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
@@ -1369,6 +1375,7 @@ export class McpOAuthBroker {
         endpoint: target,
         redirectUri: input.redirectUri,
         oauthCiphertext: sessionMaterial.ciphertext,
+        botId: input.botId ?? null,
       },
     });
     const expiry = setTimeout(() => {
@@ -1386,6 +1393,7 @@ export class McpOAuthBroker {
       stdio: !server.endpoint,
       generation: loaded.material.oauthGeneration ?? 0,
       provider,
+      botId: input.botId ?? null,
       createdAt: Date.now(),
       expiry,
     });
@@ -1402,7 +1410,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<{ serverId: string; revision: number }> {
+  }): Promise<{ serverId: string; revision: number; botId: string | null }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new McpOAuthRefusedError(SESSION_INVALID);
@@ -1445,6 +1453,7 @@ export class McpOAuthBroker {
           redirectUri: session.redirectUri,
           state: session.id,
         }),
+        botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,
       };
@@ -1523,7 +1532,7 @@ export class McpOAuthBroker {
         });
       },
     );
-    return { serverId: pending.serverId, revision };
+    return { serverId: pending.serverId, revision, botId: pending.botId };
   }
 
   private async sweepExpiredPending(): Promise<void> {

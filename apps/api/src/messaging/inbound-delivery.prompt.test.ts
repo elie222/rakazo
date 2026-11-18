@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatGithubEventPrompt } from "./github-webhook.js";
+import { formatGithubEventPrompt } from "../webhooks/github-webhook.js";
 import {
   formatMessagingEventPrompt,
   formatRoutineEmailPrompt,

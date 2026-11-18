@@ -937,6 +937,10 @@ describe("provider connection screen", () => {
     );
     const signal = mocks.completeOAuth.mock.lastCall![0] as AbortSignal;
     expect(signal.aborted).toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
     expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });

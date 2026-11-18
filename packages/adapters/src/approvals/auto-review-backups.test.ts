@@ -55,3 +55,20 @@ describe("approval model backups", () => {
     expect(review).not.toHaveBeenCalled();
   });
 });
+
+it("keeps included and explicit credit-funded checkers as distinct fallback choices", async () => {
+  const review = vi
+    .fn()
+    .mockResolvedValueOnce({ decision: "error", model: "included", reason: "unavailable" })
+    .mockResolvedValueOnce({ decision: "pass", model: "member-funded", reason: "within request" });
+  const result = await reviewWithBackups(
+    [
+      { provider: "fixture", model: "checker" },
+      { provider: "fixture", model: "checker", creditOfferingId: "selected-offering" },
+    ],
+    review,
+    new AbortController().signal,
+  );
+  expect(review).toHaveBeenCalledTimes(2);
+  expect(result.decision).toBe("pass");
+});

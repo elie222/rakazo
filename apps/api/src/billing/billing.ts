@@ -42,6 +42,7 @@ import {
   extendByokTrialCheckout,
   hasBillingAccess,
   hasModelAccess,
+  isOwnerRole,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
@@ -58,11 +59,14 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
+import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
+import { MODEL_CONNECTION_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { createExperiments } from "../telemetry/experiments.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { createReferrals } from "./referrals.js";
+import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
 /** An invited organization's first trial. */
@@ -150,6 +154,15 @@ function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
   return null;
 }
 
+/** Whether this sync is the one that records a subscription starting, trial or paid. */
+function subscriptionStarted(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+  // A checkout whose first payment was still pending syncs as incomplete before it starts.
+  return (
+    hasBillingAccess(live.status) &&
+    (live.subscriptionId !== previous.subscriptionId || previous.status === "incomplete")
+  );
+}
+
 /** A subscriber keeps the own-key price they signed up at until the subscription ends. */
 function subscribedByokPrice(account: BillingAccount | null) {
   const status = account?.status ?? null;
@@ -190,6 +203,7 @@ export function createBillingService(deps: {
   analytics?: ProductAnalytics;
   experiments?: ReturnType<typeof createExperiments>;
   partnerProgram?: PartnerProgram;
+  scheduleLifecycleEmail?: ScheduleLifecycleEmail;
 }): BillingService {
   const { prisma, provider } = deps;
   const experiments = deps.experiments ?? createExperiments(undefined);
@@ -266,14 +280,22 @@ export function createBillingService(deps: {
         const added = await syncCreditPurchases(prisma, account.organizationId, () =>
           listCreditPurchases(customerId),
         );
-        await prisma.modelCreditAccount.updateMany({
-          where: {
-            organizationId: account.organizationId,
-            balanceMicros: { gt: 0n },
-            OR: [{ mode: null }, ...(added ? [{ pendingCreditCheckout: true }] : [])],
-          },
-          data: { mode: "credits", pendingCreditCheckout: false },
+        const funded = { organizationId: account.organizationId, balanceMicros: { gt: 0n } };
+        const data = { mode: "credits", pendingCreditCheckout: false };
+        const first = await prisma.modelCreditAccount.updateMany({
+          where: { ...funded, mode: null },
+          data,
         });
+        if (added)
+          await prisma.modelCreditAccount.updateMany({
+            where: { ...funded, pendingCreditCheckout: true },
+            data,
+          });
+        if (first.count > 0)
+          await bestEffort(
+            "credits connect analytics",
+            reportCreditsConnected(account.organizationId),
+          );
       }
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -298,6 +320,12 @@ export function createBillingService(deps: {
           "error.message": error instanceof Error ? error.message : String(error),
         });
       }
+    if (live && subscriptionStarted(previous, live))
+      // Not in the snapshot's transaction, so a brief queue outage is ridden out here.
+      await bestEffort(
+        "schedule the model connection email",
+        retry(() => remindToConnectModel(previous, live), { attempts: 3 }),
+      );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
@@ -347,38 +375,93 @@ export function createBillingService(deps: {
   }
 
   /**
-   * Reports a new subscription, or the end of its trial, when a sync records it. Concurrent syncs
-   * can both see the change, so each event carries the subscription and a time from its snapshot,
-   * which the analytics provider deduplicates on.
+   * Reports a new subscription, or how its trial ended, when a sync records it. A trial's charge
+   * is collected after the subscription turns active, so the trial ends for reporting once that
+   * charge is paid or the subscription stops being active. Concurrent syncs can both see the
+   * change, so each event carries the subscription and a time from its snapshot, which the
+   * analytics provider deduplicates on.
    */
   async function reportPlanChange(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
     const { analytics } = deps;
     const same = live.subscriptionId === previous.subscriptionId;
-    // A checkout whose first payment was still pending syncs as incomplete before it starts.
-    const started = hasBillingAccess(live.status) && (!same || previous.status === "incomplete");
-    const trialEnded = same && previous.status === "trialing" && live.status !== "trialing";
+    const started = subscriptionStarted(previous, live);
+    const converted = same ? trialOutcome(previous, live) : null;
+    const trialEnded = converted !== null;
     const terms = planTerms(live);
     if (!analytics || !terms || !(started || trialEnded)) return;
     const owner = await ownerUserId(previous.organizationId);
     if (!owner) return;
-    const at = (started ? live.currentPeriodStartsAt : live.trialEndsAt) ?? new Date();
+    // A payment that settles a failed first charge is a second report for the same subscription,
+    // so it gets its own identity instead of being deduplicated against the first.
+    const settled = converted === true && needsBillingPortal(previous.status);
+    const at =
+      (started ? live.currentPeriodStartsAt : settled ? live.paidAt : live.trialEndsAt) ??
+      new Date();
     analytics.capture(
       owner,
       started
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
-        : { name: "trial_ended", ...terms, converted: live.status === "active" },
-      { id: live.subscriptionId, at },
+        : { name: "trial_ended", ...terms, converted: converted === true },
+      { id: settled ? `${live.subscriptionId}:settled` : live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
     );
   }
 
+  /**
+   * An own-key plan runs nothing until its owner connects a model, so a day in they are reminded
+   * if they still have not. Concurrent syncs that both see the start queue the same keyed job.
+   * Without model credits the deployment's own model serves everyone, so nobody is asked.
+   */
+  async function remindToConnectModel(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
+    if (!deps.scheduleLifecycleEmail || !modelCredits) return;
+    if (!live.byokPlan || live.creditAmountCents) return;
+    const userId = await ownerUserId(previous.organizationId);
+    if (!userId) return;
+    // From the plan's own start, so every sync that sees it names the same time. A start
+    // recorded more than a day late still leaves the owner a day.
+    const now = Date.now();
+    const day = MODEL_CONNECTION_EMAIL_DELAY_MS;
+    const fromStart = (live.currentPeriodStartsAt?.getTime() ?? now) + day;
+    const dueAt = new Date(fromStart > now ? fromStart : now + day);
+    await deps.scheduleLifecycleEmail(
+      "model-connection",
+      { organizationId: previous.organizationId, userId },
+      dueAt,
+    );
+  }
+
+  /**
+   * The outcome of choosing credits with none on the account: the purchase that funds it.
+   * Only an owner whose latest try at connecting a first model was that choice is counted,
+   * once. It lands from the payment provider, so no app is named.
+   */
+  async function reportCreditsConnected(organizationId: string) {
+    const { analytics } = deps;
+    if (!analytics) return;
+    const waiting = await prisma.user.findFirst({
+      where: {
+        pendingCreditsConnect: { not: null },
+        members: { some: { organizationId, role: { contains: "owner" } } },
+      },
+      select: { id: true, pendingCreditsConnect: true },
+    });
+    const attempt = waiting?.pendingCreditsConnect;
+    if (!waiting || !attempt) return;
+    const taken = await prisma.user.updateMany({
+      where: { id: waiting.id, pendingCreditsConnect: attempt },
+      data: { pendingCreditsConnect: null },
+    });
+    if (taken.count === 1)
+      analytics.capture(waiting.id, { name: "model_connected", method: "credits", attempt });
+  }
+
   async function ownerUserId(organizationId: string) {
-    const owner = await prisma.member.findFirst({
+    const members = await prisma.member.findMany({
       where: { organizationId, role: { contains: "owner" } },
       orderBy: { createdAt: "asc" },
-      select: { userId: true },
+      select: { userId: true, role: true },
     });
-    return owner?.userId;
+    return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
   async function cancel(organizationId: string) {

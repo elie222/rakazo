@@ -18,7 +18,7 @@ import {
   isUniqueViolation,
   spaceAvailability,
 } from "@rakazo/db";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/availability.js";
+import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
 
 type AgentSkillRow = {
   id: string;

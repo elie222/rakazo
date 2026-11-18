@@ -30,6 +30,19 @@ import {
   privatePageInput,
 } from "../../../browser/page-browser-install.js";
 import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../computers/sandbox/sandbox-command-events.js";
+import {
+  isSandboxGoneError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
@@ -42,16 +55,6 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
-import {
-  deleteUnreferencedMachine,
-  recordUnreferencedMachine,
-} from "../../../sandboxes/sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
-import {
-  abortedCommandEvents,
-  timedOutCommandEvents,
-} from "../../../sandboxes/sandbox-command-events.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { withAbort } from "../../../web/web-ssrf.js";
 import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
