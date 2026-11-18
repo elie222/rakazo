@@ -39,7 +39,7 @@ export function createMeetingMediaBridge(deps: {
   publicOrigin: string;
   /** Revalidate session access without resolving speech connections. */
   loadSession: (sessionId: string) => Promise<MeetingMediaSession | null>;
-  voiceReady: (session: MeetingMediaSession, signal: AbortSignal) => Promise<boolean>;
+  voiceReady: (session: MeetingMediaSession, signal: AbortSignal) => Promise<boolean | "retry">;
   respond: (
     session: ActiveSession,
     audio: Uint8Array,
@@ -105,7 +105,7 @@ export function createMeetingMediaBridge(deps: {
       app.get(`${MEETING_MEDIA_PATH}/session`, async (c) => {
         const session = await authenticate(c.req.raw);
         if (!session) return c.body(null, 401, NO_STORE);
-        const voice = session.voice && (await deps.voiceReady(session, c.req.raw.signal));
+        const voice = session.voice && (await deps.voiceReady(session, c.req.raw.signal)) === true;
         return c.json({ botName: session.botName, voice }, 200, NO_STORE);
       });
       app.post(`${MEETING_MEDIA_PATH}/turn`, async (c) => {
@@ -127,7 +127,9 @@ export function createMeetingMediaBridge(deps: {
           if (!bytes) return c.body(null, 413, NO_STORE);
           if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
           signal.throwIfAborted();
-          if (!(await deps.voiceReady(session, signal))) return c.body(null, 403, NO_STORE);
+          const readiness = await deps.voiceReady(session, signal);
+          if (readiness === "retry") return c.body(null, 204, NO_STORE);
+          if (!readiness) return c.body(null, 403, NO_STORE);
           signal.throwIfAborted();
           const recentSpeech = context.open(c.req.header(CONTEXT_HEADER), session.grant);
           const turn = await deps.respond(

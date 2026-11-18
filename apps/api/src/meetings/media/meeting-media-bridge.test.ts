@@ -145,6 +145,16 @@ describe("meeting media bridge", () => {
     expect(emulator.received).toHaveLength(0);
   });
 
+  it("keeps the same microphone grant usable after a temporary connection failure", async () => {
+    const { emulator, turn } = fixture();
+    emulator.setVoiceAvailable("retry");
+    expect((await turn()).status).toBe(204);
+    expect(emulator.received).toHaveLength(0);
+    emulator.setVoiceAvailable(true);
+    expect((await turn()).status).toBe(200);
+    expect(emulator.received).toHaveLength(1);
+  });
+
   it("treats an interrupted request as a silent result", async () => {
     const { emulator, turn } = fixture();
     const controller = new AbortController();
