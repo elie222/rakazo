@@ -104,6 +104,11 @@ export const ToolChoiceCaseSchema = z
     kind: z.enum(["guard", "control"]),
     purpose: z.string().min(1),
     bot: BotSetupSchema.optional(),
+    /** A group the bot belongs to, with each other member's role; the prompt still comes in its own chat. */
+    group: z
+      .object({ name: z.string().min(1), members: z.record(z.string(), z.string().min(1)) })
+      .strict()
+      .optional(),
     /** Earlier user turns, run for real before the graded prompt. */
     priorTurns: z.array(z.string().min(1)).optional(),
     /** Clear the conversation after the prior turns, so only durable state carries over. */
@@ -143,6 +148,9 @@ export const ToolChoiceCaseSchema = z
     expect: ExpectSchema,
   })
   .strict()
+  .refine(({ group, from }) => !(group && from), {
+    message: "group puts the bot in a group but keeps its own chat; from sends the prompt instead",
+  })
   .refine(
     ({ kind, expect }) =>
       kind === "control" ||
@@ -501,6 +509,16 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
     ...(parsed.teammates ? { teammates: parsed.teammates } : {}),
     ...(parsed.wallet ? { wallet: true as const } : {}),
     ...sourcesCase(parsed.sources),
+    ...(parsed.group
+      ? {
+          group: {
+            name: parsed.group.name,
+            members: Object.keys(parsed.group.members),
+            roles: parsed.group.members,
+            directChat: true as const,
+          },
+        }
+      : {}),
     steps: [
       ...(parsed.priorTurns ?? []).map((ask) => ({ ask })),
       ...(parsed.clearBeforePrompt ? [{ clear: true as const }] : []),

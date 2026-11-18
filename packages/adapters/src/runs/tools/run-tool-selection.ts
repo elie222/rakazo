@@ -122,6 +122,8 @@ export function selectBuiltinToolsForRun(options: {
   fleetManagement?: boolean;
   /** False when the Space has no other bot to message. */
   hasTeammates?: boolean;
+  /** The bot belongs to a group other than the one this run is in. */
+  hasGroups?: boolean;
   /** A follow-up run whose source message the user wrote. */
   followUpFromUser?: boolean;
   /** The person who started this run has their desktop connected (see userComputerOwner). */
@@ -182,6 +184,7 @@ export function selectBuiltinToolsForRun(options: {
       // Alone in its Space a bot has nobody to message. A bot it creates gets its first task
       // from spawn_bot, and its reply starts a run that offers message_bot.
       (options.hasTeammates !== false || tool.name !== "message_bot") &&
+      (options.hasGroups === true || tool.name !== "post_to_group") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||

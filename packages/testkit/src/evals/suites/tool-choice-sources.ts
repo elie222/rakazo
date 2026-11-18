@@ -6,7 +6,8 @@ import { blocksFromText, NotesEmulator } from "../../apps/notes.js";
 import type { EvalCase } from "../cases.js";
 import type { EvalServices } from "../services.js";
 
-/** The account every source belongs to: the synthetic owner the trial signs up as. */
+/** The owner of the connected mail, files and notes accounts. Only the name matches the trial's
+ * sign-up, whose email is random, so cases never rely on the product account having this address. */
 const OWNER = { name: "Eval User", email: "owner@home.example" };
 
 const MailSchema = z
