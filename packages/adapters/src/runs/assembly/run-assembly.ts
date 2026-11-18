@@ -1,6 +1,7 @@
 import { bestEffort } from "@rakazo/logging";
 import { isMeetingChat, recentChatMeetings } from "../../meetings/meeting-chat.js";
 import { recentMeetingContext } from "../../meetings/meeting-chat.prompt.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { mayOpenModelStream, requeueComputerRun } from "../lifecycle/run-lifecycle.js";
 import { takeoverCheckpointOf } from "../turn/takeover-resume.js";
@@ -78,7 +79,10 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     capabilities,
     tools,
     ctx,
-    meetingContext: recentMeetingContext(meetings),
+    meetingContext: recentMeetingContext(
+      meetings,
+      tools.tools.some(({ name }) => name === READ_MEETING_TRANSCRIPT),
+    ),
   });
   if (!(await turnMayStillStart(hold, { connected }))) return;
   const fallbacks = await loadModelFallbacks(hold, { records, model, capabilities });
