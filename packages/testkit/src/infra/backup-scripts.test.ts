@@ -122,10 +122,6 @@ if (args[0] === "inspect") {
   const services = args.slice(args.indexOf("up") + 1).filter((arg) => !arg.startsWith("-"));
   if (services.includes("postgres")) {
     if (process.env.FAIL_POSTGRES_START === "1") process.exit(22);
-    if (process.env.FAIL_POSTGRES_WAIT === "1" && args.includes("--wait")) {
-      console.error("timed out waiting for postgres to become healthy");
-      process.exit(1);
-    }
   } else {
     const state = JSON.parse(fs.readFileSync(process.env.SERVICE_STATE, "utf8"));
     const requested = services.length ? services : Object.keys(state);
@@ -143,13 +139,15 @@ if (args[0] === "inspect") {
     }
     if (process.env.INTERRUPT_STARTUP) process.kill(process.ppid, process.env.INTERRUPT_STARTUP);
   }
+} else if (args.includes("pg_isready")) {
+  if (process.env.FAIL_POSTGRES_WAIT === "1") process.exit(1);
 } else {
   process.exit(92);
 }
 `,
   );
   chmodSync(docker, 0o755);
-  for (const client of ["pg_dump", "psql"]) {
+  for (const client of ["pg_dump", "psql", "pg_isready"]) {
     symlinkSync(docker, path.join(bin, client));
   }
   const tar = path.join(bin, "tar");
@@ -341,8 +339,8 @@ describe("development database configuration", () => {
     expect(restore.status, restore.stderr).toBe(0);
     const clients = f
       .commands()
-      .filter((args) => ["pg_dump", "psql"].some((client) => args.includes(client)));
-    expect(clients).toHaveLength(3);
+      .filter((args) => ["pg_dump", "pg_isready", "psql"].some((client) => args.includes(client)));
+    expect(clients).toHaveLength(4);
     for (const args of clients) {
       expect(args[args.indexOf("-U") + 1]).toBe(user);
       expect(args[args.indexOf("-d") + 1]).toBe(database);
@@ -583,19 +581,27 @@ describe("development restore failures", () => {
 
   it("reports a Postgres health timeout without importing or replacing data", () => {
     const f = restoreFixture();
+    const clock = path.join(f.root, "clock.sh");
+    write(clock, "sleep() { SECONDS=$((SECONDS + 60)); }\n");
     const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+      BASH_ENV: clock,
       FAIL_POSTGRES_WAIT: "1",
     });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("timed out waiting for postgres to become healthy");
+    expect(result.stderr).toContain("Timed out waiting for Postgres after 60 seconds.");
     expect(result.stderr).toContain("docker compose --env-file");
     expect(result.stderr).toContain("logs postgres");
-    expect(f.commands().map((args) => args.slice(args.indexOf("-f") + 2))).toEqual([
+    const commands = f.commands();
+    const composeCommands = commands.filter((args) => args[0] === "compose");
+    expect(composeCommands.map((args) => args.slice(args.indexOf("-f") + 2))).toEqual([
       ["stop", "api", "worker", "supervisor"],
-      ["up", "-d", "--wait", "--wait-timeout", "60", "postgres"],
+      ["up", "-d", "postgres"],
+      expect.arrayContaining(["exec", "-T", "postgres"]),
+      expect.arrayContaining(["exec", "-T", "postgres"]),
       ["stop", "api", "worker", "supervisor"],
     ]);
+    expect(commands.filter((args) => args[0] === "pg_isready")).toHaveLength(2);
     expect(f.serviceStates()).toEqual(stoppedWriters);
     expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
   });

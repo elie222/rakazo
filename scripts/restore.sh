@@ -51,7 +51,19 @@ if [[ -e "$SRC/homes.tgz" || -L "$SRC/homes.tgz" ]]; then
 fi
 STOP_ON_FAILURE=1
 "${compose[@]}" stop api worker supervisor
-"${compose[@]}" up -d --wait --wait-timeout 60 postgres || {
+wait_for_postgres() {
+  "${compose[@]}" up -d postgres || return $?
+  local deadline=$((SECONDS + 60))
+  until "${compose[@]}" exec -T postgres sh -c \
+    'exec pg_isready -q -h 127.0.0.1 -t 1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      echo "Timed out waiting for Postgres after 60 seconds." >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+wait_for_postgres || {
   status=$?
   printf 'Postgres failed to become healthy. Check logs with:' >&2
   printf ' %q' "${compose[@]}" logs postgres >&2
