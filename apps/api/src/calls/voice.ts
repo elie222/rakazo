@@ -501,7 +501,10 @@ export async function persistVoiceCredential(
     const voices = await withVoiceConnection(
       input.provider,
       isModelConnectionVoiceSecret(plaintext),
-      () => provider.listVoices(apiKey, voiceContext(actor, input.signal)),
+      () =>
+        provider.listVoices(apiKey, voiceContext(actor, input.signal), {
+          model: requestedSpeechModel ?? undefined,
+        }),
     );
     voiceId = voices[0]?.id ?? "";
     validVoiceIds = voices.map((voice) => voice.id);

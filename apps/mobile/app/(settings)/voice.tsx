@@ -1,5 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
+import type {
+  VoiceCatalogEntry,
+  VoiceCredential,
+  VoiceInfo,
+  VoiceModelInfo,
+  VoiceStatus,
+} from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -9,7 +15,7 @@ import {
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native/native-action-button";
@@ -54,6 +60,8 @@ const voiceReads = (target: SettingsTarget) => {
 };
 const voicesRead = (target: SettingsTarget, provider: string) =>
   rpcQuery("voice/voices", { provider, scope: target.scope }, targetSpace(target));
+const modelsRead = (target: SettingsTarget, provider: string) =>
+  rpcQuery("voice/models", { provider, scope: target.scope }, targetSpace(target));
 
 function pickProvider(catalog: VoiceCatalogEntry[], status: VoiceStatus, preferred?: string) {
   return (
@@ -94,6 +102,10 @@ export default function VoiceSettings() {
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
   const [status, setStatus] = useState<VoiceStatus | null>(cached?.status ?? null);
   const [voices, setVoices] = useState<VoiceInfo[]>(cached?.voices ?? []);
+  const [modelList, setModelList] = useState<{ provider: string; models: VoiceModelInfo[] }>({
+    provider: "",
+    models: [],
+  });
   const [provider, setProvider] = useState(cached?.provider ?? "");
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState(cached?.credential?.voiceId ?? "");
@@ -360,6 +372,22 @@ export default function VoiceSettings() {
     credentials.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const listsSpeechModels = Boolean(selected?.speechModels && credential);
+  const speechModelChoices = modelList.provider === provider ? modelList.models : [];
+  useEffect(() => {
+    if (!listsSpeechModels || !provider) return;
+    let current = true;
+    fetchFresh(queryClient, modelsRead(target, provider), { reuse: true }).then(
+      (models) => {
+        if (current) setModelList({ provider, models });
+      },
+      // Without the list the field stays a text box.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [listsSpeechModels, provider, target]);
   const keyless = Boolean(selected?.keyless);
   const { keyOptional, linked, canConnect } = voiceConnectionForm({
     entry: selected,
@@ -471,9 +499,9 @@ export default function VoiceSettings() {
     }
   }
 
-  async function saveSpeechModel() {
+  async function saveSpeechModel(value = speechModel) {
     if (!credential || !selected?.speechModel || pending !== null) return;
-    const next = speechModel.trim();
+    const next = value.trim();
     if (next === (credential.speechModel ?? "")) return;
     if (speechModelSave.current === next) return;
     speechModelSave.current = next;
@@ -494,12 +522,31 @@ export default function VoiceSettings() {
       setSpeechModel(saved.speechModel ?? "");
       setCredentials(merge);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
-      void load(selected.id, { keepForm: true, reuse: true }).catch(() => undefined);
+      void load(selected.id, { keepForm: true, reuse: !selected.speechModels }).catch(
+        () => undefined,
+      );
     } catch (err) {
       setError(errorText(err, t`Could not save that speech model`));
+      return;
     } finally {
       speechModelSave.current = null;
       setPending(null);
+    }
+    if (selected.speechModels) await followSpeechModel(selected.id);
+  }
+
+  /** A speech model has its own voices; keep the current one only if the new model has it. */
+  async function followSpeechModel(providerId: string) {
+    try {
+      const listed = await fetchFresh(queryClient, voicesRead(target, providerId), {
+        reuse: false,
+      });
+      if (providerId !== selectedProvider.current) return;
+      setVoices(listed);
+      const first = listed[0];
+      if (first && !listed.some((voice) => voice.id === voiceId)) await chooseVoice(first.id);
+    } catch (err) {
+      if (!isCancelledError(err)) setError(errorText(err, t`Could not load voice settings`));
     }
   }
 
@@ -724,19 +771,44 @@ export default function VoiceSettings() {
             {credential && selected.speechModel ? (
               <>
                 <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
-                <TextInput
-                  accessibilityLabel={t`Speech model`}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={pending === null}
-                  value={speechModel}
-                  onChangeText={edit("speechModel", setSpeechModel)}
-                  onBlur={() => void saveSpeechModel()}
-                  onSubmitEditing={() => void saveSpeechModel()}
-                  placeholder={t`Optional`}
-                  placeholderTextColor={native.tertiaryLabel}
-                  style={styles.input}
-                />
+                {listsSpeechModels && speechModelChoices.length ? (
+                  <View style={styles.group}>
+                    <MenuPicker
+                      label={t`Speech model`}
+                      disabled={pending !== null}
+                      choices={[
+                        { key: "", label: t`Default` },
+                        ...(speechModel &&
+                        !speechModelChoices.some((model) => model.id === speechModel)
+                          ? [{ key: speechModel, label: speechModel }]
+                          : []),
+                        ...speechModelChoices.map((model) => ({
+                          key: model.id,
+                          label: model.label,
+                        })),
+                      ]}
+                      value={speechModel}
+                      onChange={(key) => {
+                        edit("speechModel", setSpeechModel)(key);
+                        void saveSpeechModel(key);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <TextInput
+                    accessibilityLabel={t`Speech model`}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={pending === null}
+                    value={speechModel}
+                    onChangeText={edit("speechModel", setSpeechModel)}
+                    onBlur={() => void saveSpeechModel()}
+                    onSubmitEditing={() => void saveSpeechModel()}
+                    placeholder={t`Optional`}
+                    placeholderTextColor={native.tertiaryLabel}
+                    style={styles.input}
+                  />
+                )}
               </>
             ) : null}
             {voices.length ? (
@@ -749,6 +821,24 @@ export default function VoiceSettings() {
                   onChange={(key) => void chooseVoice(key)}
                 />
               </View>
+            ) : credential && selected.freeformVoice ? (
+              <>
+                <Text style={styles.fieldLabel}>{t`Voice`}</Text>
+                <TextInput
+                  accessibilityLabel={t`Voice`}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={pending === null}
+                  value={voiceId}
+                  onChangeText={edit("voiceId", setVoiceId)}
+                  onBlur={() => {
+                    const next = voiceId.trim();
+                    if (next && next !== credential.voiceId) void chooseVoice(next);
+                  }}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                />
+              </>
             ) : null}
           </>
         ) : null}

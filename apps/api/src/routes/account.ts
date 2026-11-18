@@ -650,7 +650,23 @@ export function accountRoutes(ctx: RouterContext) {
         return withVoiceConnection(row.cred.provider, row.linked, () =>
           provider.listVoices(row.apiKey, voiceContext(context.actor, context.signal), {
             language: input.language,
+            model: row.cred.speechModel || undefined,
           }),
+        );
+      }),
+      models: authed.voice.models.handler(async ({ context, input }) => {
+        const row = await loadVoiceCredential(
+          deps,
+          context.actor,
+          input.provider,
+          input.scope,
+          context.signal,
+        );
+        if (!row) return [];
+        const provider = await voiceProviderFor(deps, row.cred.provider);
+        if (!provider.listModels) return [];
+        return withVoiceConnection(row.cred.provider, row.linked, () =>
+          provider.listModels!(row.apiKey, voiceContext(context.actor, context.signal)),
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>

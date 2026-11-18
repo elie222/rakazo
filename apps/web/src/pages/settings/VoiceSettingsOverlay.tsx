@@ -4,6 +4,7 @@ import type {
   VoiceCatalogEntry,
   VoiceCredential,
   VoiceInfo,
+  VoiceModelInfo,
   VoiceStatus,
 } from "@rakazo/contracts";
 import {
@@ -94,6 +95,11 @@ export function VoiceSettingsOverlay({
     voices: cached?.voices ?? [],
   });
   const voices = voiceList.provider === provider ? voiceList.voices : NO_VOICES;
+  const [modelList, setModelList] = useState<{ provider: string; models: VoiceModelInfo[] }>({
+    provider: "",
+    models: [],
+  });
+  const speechModelSuggestions = modelList.provider === provider ? modelList.models : NO_MODELS;
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState(
     cached?.credential?.voiceId || (cached?.credential ? (cached.voices[0]?.id ?? "") : ""),
@@ -106,6 +112,7 @@ export function VoiceSettingsOverlay({
   const [sttApiKey, setSttApiKey] = useState("");
   // The connection fields as last rendered, read when a connect finishes.
   const connection = useRef({
+    voiceId,
     speechModel,
     baseUrl,
     ttsModel,
@@ -114,7 +121,16 @@ export function VoiceSettingsOverlay({
     apiKey,
     sttApiKey,
   });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, apiKey, sttApiKey };
+  connection.current = {
+    voiceId,
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  };
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
   const [loading, setLoading] = useState(!cached);
@@ -243,6 +259,30 @@ export function VoiceSettingsOverlay({
   );
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const freeformVoice = Boolean(selected?.freeformVoice);
+  const listsSpeechModels = Boolean(selected?.speechModels) && Boolean(credential);
+  const selectedId = selected?.id;
+  useEffect(() => {
+    if (!listsSpeechModels || !selectedId) return;
+    let current = true;
+    queryClient
+      .fetchQuery(
+        queries.voice.models.queryOptions({
+          input: { provider: selectedId, scope },
+          staleTime: 60_000,
+        }),
+      )
+      .then(
+        (models) => {
+          if (current) setModelList({ provider: selectedId, models });
+        },
+        // Without the list the field is still a text box.
+        () => undefined,
+      );
+    return () => {
+      current = false;
+    };
+  }, [listsSpeechModels, selectedId, scope, queryClient, queries]);
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
@@ -392,9 +432,31 @@ export function VoiceSettingsOverlay({
       );
     } catch (err) {
       setError(errorText(err, t`Could not save that speech model`));
+      return;
     } finally {
       speechModelSave.current = null;
       markPending(null);
+    }
+    if (selected.speechModels) await followSpeechModel(selected.id);
+  }
+
+  /** A speech model has its own voices; keep the current one only if the new model has it. */
+  async function followSpeechModel(providerId: string) {
+    try {
+      const listed = await queryClient.fetchQuery(
+        queries.voice.voices.queryOptions({
+          input: { provider: providerId, scope },
+          staleTime: 0,
+        }),
+      );
+      if (providerId !== providerRef.current) return;
+      setVoiceList({ provider: providerId, voices: listed });
+      const first = listed[0];
+      if (first && !listed.some((voice) => voice.id === connection.current.voiceId)) {
+        await chooseVoice(first.id);
+      }
+    } catch (err) {
+      setError(errorText(err, t`Could not load voice settings`));
     }
   }
 
@@ -636,7 +698,7 @@ export function VoiceSettingsOverlay({
                 <FieldLabel htmlFor={voiceSelectId}>
                   <Trans>Voice</Trans>
                 </FieldLabel>
-                {selfHosted ? (
+                {freeformVoice ? (
                   <>
                     <Input
                       id={voiceSelectId}
@@ -695,6 +757,7 @@ export function VoiceSettingsOverlay({
                     spellCheck={false}
                     disabled={busy}
                     placeholder={t`Optional`}
+                    list={listsSpeechModels ? `${speechModelId}-list` : undefined}
                     onChange={(event) => {
                       edited.current.add("speechModel");
                       setSpeechModel(event.target.value);
@@ -706,6 +769,15 @@ export function VoiceSettingsOverlay({
                       event.currentTarget.blur();
                     }}
                   />
+                  {listsSpeechModels ? (
+                    <datalist id={`${speechModelId}-list`}>
+                      {speechModelSuggestions.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </datalist>
+                  ) : null}
                 </Field>
               ) : null}
               <Button
@@ -774,6 +846,7 @@ function selectedProvider(
 }
 
 const NO_VOICES: VoiceInfo[] = [];
+const NO_MODELS: VoiceModelInfo[] = [];
 
 const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
 

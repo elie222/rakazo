@@ -901,6 +901,11 @@ export interface VoiceInfo {
   description?: string;
 }
 
+export interface VoiceModelInfo {
+  id: string;
+  label: string;
+}
+
 /** Provider evidence only; no transcript, audio or credentials. */
 export interface VoiceUsage {
   model: string;

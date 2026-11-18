@@ -1220,10 +1220,17 @@ describe("persistVoiceCredential", () => {
       const saved = await persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" });
 
       expect(verify).toHaveBeenCalledWith("xai-model-key", expect.anything());
-      expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything());
+      expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything(), {});
       expect(put).toHaveBeenCalledWith(adapters.MODEL_CONNECTION_VOICE_SECRET, expect.anything());
       expect(JSON.stringify(put.mock.calls)).not.toContain("xai-model-key");
       expect(saved).toMatchObject({ provider: "xai", hasKey: false, voiceId: "eve" });
+    });
+
+    it("lists the voices of the speech model it is connected with", async () => {
+      const { listVoices } = stubProvider();
+      const input = { provider: "openrouter", plaintext: "or-key-123", speechModel: "a/b" };
+      await persistVoiceCredential(linkedDeps().deps, actor, input);
+      expect(listVoices).toHaveBeenCalledWith("or-key-123", expect.anything(), { model: "a/b" });
     });
 
     it("uses a key the user enters instead of the model connection", async () => {
