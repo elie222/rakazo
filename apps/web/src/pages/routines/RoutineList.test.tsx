@@ -124,3 +124,19 @@ it("offers no switch to restart a one-shot that already ran", async () => {
   const toggle = container.querySelector('[aria-label="Turn Routine 1 on or off"]');
   expect(toggle?.hasAttribute("data-disabled")).toBe(true);
 });
+
+it("says who a routine runs as, and 'you' for the viewer's own", async () => {
+  await render({
+    routines: [
+      { ...routine(1), runsAs: { name: "Dana", isViewer: false } },
+      { ...routine(2), runsAs: { name: "Riley", isViewer: true } },
+      routine(3),
+      { ...routine(4), runsAs: null },
+    ],
+  });
+  expect(
+    [...container.querySelectorAll('[data-testid="routine-runs-as"]')].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(["Runs as Dana", "Runs as you"]);
+});

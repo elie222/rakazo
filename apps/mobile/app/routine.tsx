@@ -225,6 +225,16 @@ function RoutineView({
             )
           }
         />
+        {routine.runsAs ? (
+          <SettingsRow
+            key="runs-as"
+            title={
+              routine.runsAs.isViewer
+                ? t`Runs as you`
+                : t`Runs as ${ph({ name: routine.runsAs.name })}`
+            }
+          />
+        ) : null}
       </SettingsGroup>
       <View style={{ gap: 7 }}>
         <SettingsLabel>{t`Instruction`}</SettingsLabel>
@@ -457,6 +467,12 @@ function RoutineEditor({
       />
       {saveError ? (
         <Text style={{ color: tokens.destructive, fontSize: 15 }}>{saveError}</Text>
+      ) : null}
+      {/* Saving hands another member's routine to the editor. */}
+      {routine?.runsAs && !routine.runsAs.isViewer ? (
+        <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+          {t`Runs as ${ph({ name: routine.runsAs.name })}. Saving makes it run as you.`}
+        </Text>
       ) : null}
       <SettingsGroup>
         <SettingsInputRow

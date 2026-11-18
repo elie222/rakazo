@@ -28,12 +28,13 @@ import {
   createRoutineTestRun,
   firstWatchCheck,
   listRoutinesDto,
-  mapRoutine,
   nextRoutineDate,
   routineNextRunAt,
   routineRowData,
   routineTestRunNonce,
   routineTestTarget,
+  routineView,
+  routineViews,
 } from "../routines/routines.js";
 import type { RouterContext } from "./context.js";
 
@@ -69,9 +70,10 @@ export function routinesRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.routine.findMany({
           where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
         });
+        const views = await routineViews(deps.prisma, actor, rows);
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
+          routines: views.filter((routine) => routine.botId === bot.id),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -100,7 +102,7 @@ export function routinesRoutes(ctx: RouterContext) {
           change: "created",
           name: row.name,
         });
-        return mapRoutine(row);
+        return await routineView(deps.prisma, context.actor, row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
         // Archived bots keep their routines paused, so resolve an active parent before any write.
@@ -345,7 +347,7 @@ export function routinesRoutes(ctx: RouterContext) {
             name: row.name,
           });
         }
-        return mapRoutine(row);
+        return await routineView(deps.prisma, context.actor, row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
         // Any member can change a routine, so any member can delete one.
