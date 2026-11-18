@@ -129,6 +129,7 @@ export function CompatibleModelFields({
           <Trans>Protocol</Trans>
           <OptionSelect<ModelSettingsState["apiProtocol"]>
             id="model-protocol"
+            size="lg"
             className="mt-2 text-foreground"
             value={apiProtocol}
             disabled={busy}
@@ -156,6 +157,7 @@ export function CompatibleModelFields({
         </span>
         {compatibleRows.includes(modelId) ? (
           <OptionSelect
+            size="lg"
             className="mt-2 text-foreground"
             value={modelId}
             onValueChange={(value) => {

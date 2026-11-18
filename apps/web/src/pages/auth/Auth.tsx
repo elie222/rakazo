@@ -33,7 +33,6 @@ import { authErrorText, credentialIssueText } from "../../lib/query/user-error";
 
 type AuthMode = "in" | "up" | "forgot";
 
-// off-scale: 16px below md stops iOS Safari zooming into a focused field.
 const fieldClass = "mt-2";
 const CODE_LENGTH = 6;
 export const submitClass = "mt-3 w-full";
