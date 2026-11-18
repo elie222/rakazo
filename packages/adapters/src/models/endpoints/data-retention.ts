@@ -1,6 +1,15 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { ModelConnectInput } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { modelProviderDefinition } from "../model-provider-registry.js";
+
+/** A request for zero data retention that the chosen provider or checker cannot enforce. */
+export class DataRetentionRefusedError extends ClientError {
+  constructor(message: string) {
+    super("BAD_REQUEST", message, "DATA_RETENTION_UNSUPPORTED");
+    this.name = "DataRetentionRefusedError";
+  }
+}
 
 type RetentionRouting = Record<string, unknown> & { zdr?: boolean };
 
@@ -22,7 +31,7 @@ export function dataRetentionForConnect(
   if (requested !== true) return undefined;
   if (!providerHasDataRetentionControl(input.provider)) {
     if (input.zeroDataRetention === true) {
-      throw new Error("This provider cannot restrict data retention.");
+      throw new DataRetentionRefusedError("This provider cannot restrict data retention.");
     }
     return undefined;
   }

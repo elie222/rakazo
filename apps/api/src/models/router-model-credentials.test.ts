@@ -177,7 +177,10 @@ describe("model credential persistence", () => {
     });
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      json: { message: expect.stringContaining("cannot restrict data retention") },
+      json: {
+        code: "DATA_RETENTION_UNSUPPORTED",
+        message: expect.stringContaining("cannot restrict data retention"),
+      },
     });
     expect(deps.secrets.put).not.toHaveBeenCalled();
   });

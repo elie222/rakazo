@@ -6,6 +6,7 @@ import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
 import { buildModelConnectPlaintext, modelCredentialDto } from "../model-connect.js";
 import { parseModelSecret, serializeModelSecret } from "../model-secret.js";
 import {
+  DataRetentionRefusedError,
   dataRetentionForConnect,
   providerHasDataRetentionControl,
   withDataRetention,
@@ -38,7 +39,7 @@ describe("dataRetentionForConnect", () => {
   it("refuses to turn it on for a provider that cannot enforce it", () => {
     expect(() =>
       dataRetentionForConnect({ provider: "anthropic", zeroDataRetention: true }),
-    ).toThrow("cannot restrict data retention");
+    ).toThrow(DataRetentionRefusedError);
     expect(dataRetentionForConnect({ provider: "anthropic", zeroDataRetention: false })).toBe(
       undefined,
     );

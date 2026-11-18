@@ -359,7 +359,10 @@ it("refuses a decision-model checker on a connection that restricts data retenti
       { memberChecker: true, registerSecrets: vi.fn() },
       { provider: "openrouter", model: "typesafe/jev-1.14" },
     ),
-  ).rejects.toThrow("cannot restrict data retention");
+  ).rejects.toMatchObject({
+    code: "DATA_RETENTION_UNSUPPORTED",
+    message: expect.stringContaining("cannot restrict data retention"),
+  });
 });
 
 it("still builds a decision-model checker when data retention is not restricted", async () => {

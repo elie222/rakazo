@@ -10,6 +10,7 @@ import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
 import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
+import { DataRetentionRefusedError } from "../../models/endpoints/data-retention.js";
 import {
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -117,7 +118,7 @@ export async function autoReviewCheckerProvider(
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
   if (decision && judgeKey?.zeroDataRetention) {
     // The decision endpoint has no way to restrict routing, so it is never used for this connection.
-    throw new Error("Selected checker cannot restrict data retention");
+    throw new DataRetentionRefusedError("Selected checker cannot restrict data retention");
   }
   if (decision)
     return new DecisionAutoReviewProvider({
