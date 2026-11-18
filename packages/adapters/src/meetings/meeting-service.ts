@@ -232,7 +232,10 @@ export class MeetingService {
         data: { transcript: null, status: "ended" },
       });
       if (count && row.recordingId)
-        await this.deps.jobs.enqueueIn(tx, workJob(sessionId, "cleanup"));
+        await this.deps.jobs.enqueueIn(
+          tx,
+          workJob(sessionId, "cleanup", new Date(Date.now() + BACKUP_AFTER)),
+        );
     });
     await this.notify(actor.spaceId);
     if (row.recordingId && row.provider === this.providerId)

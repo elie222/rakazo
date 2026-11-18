@@ -1,22 +1,12 @@
 import { i18n } from "@lingui/core";
+import type { MeetingPlatform, MeetingStatus } from "@rakazo/contracts";
 import { meetingPlatformNames } from "@rakazo/core";
 
-export function meetingPlatformLabel(platform: "zoom" | "google_meet"): string {
+export function meetingPlatformLabel(platform: MeetingPlatform): string {
   return meetingPlatformNames[platform];
 }
 
-export function meetingStatusLabel(
-  status:
-    | "scheduled"
-    | "joining"
-    | "waiting"
-    | "joined"
-    | "leaving"
-    | "processing"
-    | "ready"
-    | "failed"
-    | "ended",
-): string {
+export function meetingStatusLabel(status: MeetingStatus): string {
   switch (status) {
     case "scheduled":
       return i18n._({ id: "Scheduled", message: "Scheduled" });
