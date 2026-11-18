@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { browserMeetingMediaEmulator } from "@rakazo/api/test-meeting-media";
+import { deferred } from "@rakazo/core/test-async";
 import { captureScreenshot } from "../helpers/helpers";
 
 type MeetingAudioProbe = typeof window & {
+  inputFrames: number;
   playbackStarted: number;
   playbackStopped: number;
   speak?: () => void;
@@ -27,12 +29,16 @@ mediaTest(
   async ({ page, media }, testInfo) => {
     await page.addInitScript(() => {
       const probe = window as MeetingAudioProbe;
+      probe.inputFrames = 0;
       probe.playbackStarted = 0;
       probe.playbackStopped = 0;
       window.AudioWorkletNode = class extends AudioWorkletNode {
         constructor(...args: ConstructorParameters<typeof AudioWorkletNode>) {
           super(...args);
           probe.workletReady = true;
+          this.port.addEventListener("message", () => {
+            probe.inputFrames++;
+          });
         }
       };
       const { start, stop } = AudioBufferSourceNode.prototype;
@@ -69,6 +75,9 @@ mediaTest(
     await page.reload();
     await expect(page.getByRole("heading", { name: "Atlas · Rakazo" })).toBeVisible();
     await page.waitForFunction(() => (window as MeetingAudioProbe).workletReady === true);
+    const firstReply = page.waitForResponse(
+      (response) => response.url().endsWith("/turn") && response.status() === 200,
+    );
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await page.waitForFunction(
       () => (window as MeetingAudioProbe).playbackStarted === 1,
@@ -86,8 +95,40 @@ mediaTest(
     );
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await page.waitForFunction(() => (window as MeetingAudioProbe).playbackStopped === 1);
-    await silence;
+    const first = await firstReply;
+    const afterInterruption = await silence;
+    expect(afterInterruption.request().headers()["x-meeting-context"]).toBe(
+      first.headers()["x-meeting-context"],
+    );
     expect(await page.evaluate(() => (window as MeetingAudioProbe).playbackStarted)).toBe(1);
+
+    const reply = deferred<void>();
+    const ready = deferred<void>();
+    media.beforeReply(async () => {
+      ready.resolve();
+      await reply.promise;
+    });
+    const responses = Promise.all([
+      page.waitForResponse(
+        (response) => response.url().endsWith("/turn") && response.status() === 204,
+      ),
+      page.waitForRequest(
+        (request) => request.url().endsWith("/turn") && media.received.length === 3,
+      ),
+    ]);
+    await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
+    await ready.promise;
+    await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
+    try {
+      await page.waitForFunction(() => {
+        const channel = window as MeetingAudioProbe;
+        return channel.workletReady === true && channel.playbackStarted === 1;
+      });
+    } finally {
+      reply.resolve();
+    }
+    await responses;
+    await expect.poll(() => media.received.length).toBe(4);
 
     media.revoke();
     const revoked = page.waitForResponse(
@@ -95,6 +136,6 @@ mediaTest(
     );
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await revoked;
-    expect(media.received).toHaveLength(2);
+    expect(media.received).toHaveLength(4);
   },
 );

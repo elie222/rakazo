@@ -123,7 +123,13 @@ describe("live meeting voice", () => {
 
   it("transcribes a turn, uses meeting-only context and voices an addressed reply", async () => {
     const { run, resolveModel, say } = fixture('{"reply":"The demo is Thursday."}');
-    expect((await say()).status).toBe(200);
+    const response = await say();
+    expect(response.status).toBe(200);
+    const participant = response.headers.get("x-meeting-context");
+    const spoken = response.headers.get("x-meeting-spoken-context");
+    expect(participant).toBeTruthy();
+    expect(spoken).toBeTruthy();
+    expect(spoken).not.toBe(participant);
     expect(resolveModel).toHaveBeenCalledExactlyOnceWith(actorForRun());
     expect(resolveModel.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(transcribeVoice).mock.invocationCallOrder[0]!,
@@ -135,7 +141,7 @@ describe("live meeting voice", () => {
     );
     const [request, context] = run.mock.calls[0]!;
     expect(context).toMatchObject(actorForRun());
-    expect(request).toMatchObject({ tools: [], history: [] });
+    expect(request).toMatchObject({ tools: [], history: [], usageOperationKind: "answer" });
     expect(JSON.parse(request.prompt)).toEqual({
       participantName: "Atlas",
       earlierMeeting: "",

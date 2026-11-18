@@ -62,6 +62,7 @@ const maxTurnFrames = 200;
 const silenceFrames = 8;
 
 let audio, microphone, processor, playback, pending;
+let queued;
 let preRoll = [];
 let utterance = [];
 let voiced = 0;
@@ -69,13 +70,10 @@ let quiet = 0;
 let closed = false;
 let context;
 
-function interrupt() {
-  pending?.abort();
-  pending = undefined;
-  if (playback) {
-    playback.stop();
-    playback = undefined;
-  }
+function interruptPlayback() {
+  const interrupted = playback;
+  playback = undefined;
+  interrupted?.stop();
 }
 
 async function respond(frames) {
@@ -105,20 +103,28 @@ async function respond(frames) {
     if (response.status === 401 || response.status === 403) close();
     if (!response.ok || request.signal.aborted) return;
     context = response.headers.get("X-Meeting-Context") ?? context;
-    if (response.status === 204) return;
+    if (response.status === 204 || queued || utterance.length > 0) return;
+    const spokenContext = response.headers.get("X-Meeting-Spoken-Context");
     const clip = await audio.decodeAudioData(await response.arrayBuffer());
-    if (request.signal.aborted) return;
+    if (request.signal.aborted || queued || utterance.length > 0) return;
 
     const source = audio.createBufferSource();
     source.buffer = clip;
     source.connect(audio.destination);
-    source.onended = () => { if (playback === source) playback = undefined; };
+    source.onended = () => {
+      if (playback !== source) return;
+      playback = undefined;
+      context = spokenContext ?? context;
+    };
     playback = source;
     source.start();
   } catch {
     if (!request.signal.aborted) console.warn("Meeting reply playback failed");
   } finally {
-    if (pending === request) pending = undefined;
+    pending = undefined;
+    const next = queued;
+    queued = undefined;
+    if (next && !closed) void respond(next);
   }
 }
 
@@ -130,7 +136,7 @@ function frame({ data: samples }) {
     if (preRoll.length > preRollLimit) preRoll.shift();
     voiced = speaking ? voiced + 1 : 0;
     if (voiced < 3) return;
-    interrupt();
+    interruptPlayback();
     utterance = preRoll;
     preRoll = [];
     quiet = 0;
@@ -143,12 +149,15 @@ function frame({ data: samples }) {
   const frames = utterance;
   utterance = [];
   voiced = 0;
-  void respond(frames);
+  if (pending) queued ??= frames;
+  else void respond(frames);
 }
 
 function close() {
   closed = true;
-  interrupt();
+  pending?.abort();
+  queued = undefined;
+  interruptPlayback();
   processor?.disconnect();
   processor?.port.close();
   microphone?.getTracks().forEach((track) => track.stop());

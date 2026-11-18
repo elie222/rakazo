@@ -9,7 +9,7 @@ import {
 import { parseModelJson } from "@rakazo/adapters/model-json";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
-import { LeaseHeldError, recordUsage, runAsTenant, withLease } from "@rakazo/db";
+import { LeaseHeldError, LeaseLostError, recordUsage, runAsTenant, withLease } from "@rakazo/db";
 import * as z from "zod";
 import type { VoiceDeps } from "../../calls/voice.js";
 import {
@@ -81,7 +81,8 @@ Participant: ${utterance}`.trimStart();
               });
               return {
                 clip,
-                context: `${context}
+                context,
+                spokenContext: `${context}
 Bot: ${answer}`,
               };
             },
@@ -90,6 +91,7 @@ Bot: ${answer}`,
           // Keep a single in-flight speech turn per meeting across API replicas.
           if (
             error instanceof LeaseHeldError ||
+            (error instanceof LeaseLostError && !error.cause) ||
             error instanceof NoVoiceConfigured ||
             error instanceof VoiceAccountError ||
             error instanceof ModelAccountError ||
@@ -130,7 +132,7 @@ Bot: ${answer}`,
   ) {
     const id = `meeting-voice:${randomUUID()}`;
     const onUsage = async (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => {
-      await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
+      await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "answer" });
     };
     signal.throwIfAborted();
     for await (const event of deps.runtime.run(
@@ -151,7 +153,7 @@ Bot: ${answer}`,
           thinkingLevel: "off",
           maxTokens: Math.min(model.maxTokens ?? 640, 640),
         },
-        usageOperationKind: "setup",
+        usageOperationKind: "answer",
         onUsage,
         allowSilentEmpty: true,
       },
