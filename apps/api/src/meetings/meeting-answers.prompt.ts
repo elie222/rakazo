@@ -14,3 +14,11 @@ export function meetingEvidenceInstructions(maxChars: number) {
     `Return {"evidence":"..."} in at most ${maxChars} characters, or {"evidence":""} if nothing is relevant.`,
   ].join(" ");
 }
+
+export function meetingTranscriptPrompt(encodedQuestion: string, encodedTurns: string) {
+  return `{"question":${encodedQuestion},"transcript":[${encodedTurns}]}`;
+}
+
+export function meetingEvidencePrompt(question: string, evidence: readonly string[]) {
+  return JSON.stringify({ question, evidence });
+}

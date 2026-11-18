@@ -9,6 +9,8 @@ import * as z from "zod";
 import {
   MEETING_ANSWER_INSTRUCTIONS,
   meetingEvidenceInstructions,
+  meetingEvidencePrompt,
+  meetingTranscriptPrompt,
 } from "./meeting-answers.prompt.js";
 
 const MAX_CONTEXT_TOKENS = 40_000;
@@ -74,11 +76,9 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
     const chunks = transcriptChunks(turns, availableTokens);
     const stop = new AbortController();
     const budget = deadlineSignal(45_000, signal ? anySignal([stop.signal, signal]) : stop.signal);
-    const transcriptPrompt = (chunk: string) =>
-      `{"question":${encodedQuestion},"transcript":[${chunk}]}`;
 
     try {
-      let answerPrompt = transcriptPrompt(chunks[0] ?? "");
+      let answerPrompt = meetingTranscriptPrompt(encodedQuestion, chunks[0] ?? "");
       if (chunks.length > 1) {
         // Keep the reduction in one call, leaving room even if the source uses non-Latin scripts.
         const tokensPerExcerpt = Math.floor(availableTokens / chunks.length) - 4;
@@ -87,14 +87,14 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
           chunks.map(async (chunk) => {
             const { evidence } = await run(
               meetingEvidenceInstructions(evidenceChars),
-              transcriptPrompt(chunk),
+              meetingTranscriptPrompt(encodedQuestion, chunk),
               evidenceSchema,
               Math.min(outputTokens, tokensPerExcerpt),
             );
             return limitEvidence(evidence, tokensPerExcerpt);
           }),
         );
-        answerPrompt = JSON.stringify({ question, evidence: notes.filter(Boolean) });
+        answerPrompt = meetingEvidencePrompt(question, notes.filter(Boolean));
       }
       const { answer } = await run(
         MEETING_ANSWER_INSTRUCTIONS,
