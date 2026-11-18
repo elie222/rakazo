@@ -126,7 +126,7 @@ export function NativeInboxList<Item>({
   // change in the room the rows get.
   const room = width - left - right - gutters.left - gutters.right;
   const [measured, setMeasured] = useState<{ row: number; room: number }>();
-  const rowWidth = measured && Math.round(measured.row + room - measured.room);
+  const rowWidth = measured && measured.row + room - measured.room;
   const rowInsets = listRowInsets({
     top: 0,
     leading: gutters.left,
