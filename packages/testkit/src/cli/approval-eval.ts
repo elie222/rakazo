@@ -140,6 +140,8 @@ export async function runApprovalSuite(
     variantsVersion: APPROVAL_VARIANTS_VERSION,
     rubricVersion: null as string | null,
     reviewer: null as null | { protocol: "decisions" | "llm"; provider: string; model: string },
+    /** The connection's settings without its key, so runs on different endpoints never share an identity. */
+    connection: null as Record<string, unknown> | null,
     codeRevision: meta.codeRevision,
     workingDiffHash: meta.workingDiffHash,
     controls: { trials, timeoutMs, concurrency },
@@ -182,7 +184,7 @@ export async function runApprovalSuite(
 
   // Direct source imports keep the adapters barrel, and its database client, out of this suite.
   const autoReview = await import("../../../adapters/src/approvals/auto-review.ts");
-  const { decisionModel, decisionModelProviders, includedDecisionModel } = await import(
+  const { decisionModel, includedDecisionModel } = await import(
     "../../../adapters/src/approvals/decision-models.ts"
   );
   const { APPROVAL_DECISION_RUBRIC_VERSION } = await import(
@@ -250,12 +252,17 @@ export async function runApprovalSuite(
   const protocol =
     (values.protocol as "decisions" | "llm" | undefined) ??
     (catalog || isJev ? "decisions" : "llm");
-  const decisionHosts: readonly string[] = decisionModelProviders();
-  if (protocol === "decisions" && !catalog && !decisionHosts.includes(connection.provider))
+  const { HttpDecisionProvider, isDecisionHost } = await import(
+    "../../../adapters/src/approvals/http-decisions.ts"
+  );
+  const decisionHost = isDecisionHost(connection.provider) ? connection.provider : undefined;
+  if (protocol === "decisions" && !decisionHost && !isJev)
     return notRun("The decision protocol needs a provider that serves decision models");
   if (protocol === "llm" && isJev)
     return notRun("This provider serves decision models only; drop --protocol llm");
   report.reviewer = { protocol, provider: connection.provider, model: connection.modelId };
+  const { apiKey: _key, headers, ...settings } = connection;
+  report.connection = { ...settings, headers: headers ? Object.keys(headers).sort() : undefined };
 
   let pricing: EvalPricing;
   try {
@@ -333,16 +340,13 @@ export async function runApprovalSuite(
         callObserver,
         onUsage: async (usage) => record(usage),
       });
-    } else if (protocol === "decisions") {
-      const { HttpDecisionProvider } = await import(
-        "../../../adapters/src/approvals/http-decisions.ts"
-      );
+    } else if (protocol === "decisions" && decisionHost) {
       const { DecisionAutoReviewProvider } = await import(
         "../../../adapters/src/approvals/decision-auto-review.ts"
       );
       reviewer = new DecisionAutoReviewProvider({
         provider: decisions(
-          new HttpDecisionProvider(connection.provider as "openrouter", {
+          new HttpDecisionProvider(decisionHost, {
             apiKey,
             callObserver,
             onUsage: async (usage) => record(usage),
@@ -456,7 +460,8 @@ export async function runApprovalSuite(
   console.log(
     `agreement ${pct(s.agreementRate)}; false-ask ${pct(s.falseAskRate)}; false-pass ${pct(s.falsePassRate)}; unqualified ${s.unqualified}; reviewer cost ${s.costUsd === null ? "unknown" : `$${s.costUsd.toFixed(6)}`}`,
   );
-  if (store && results.length) {
+  // A stopped run is partial, and would look like a full run of the same setup in the store.
+  if (store && results.length && report.status === "complete") {
     const entry = store.save(storedApprovalRun(report, selected), { label: values.label });
     console.log(`Stored run ${entry.fingerprint} (${entry.path})`);
   }
@@ -476,6 +481,7 @@ function storedApprovalRun(
     variantsVersion: string;
     rubricVersion: string | null;
     reviewer: { protocol: string; provider: string; model: string } | null;
+    connection: Record<string, unknown> | null;
     codeRevision: string | null;
     workingDiffHash: string | null;
     controls: { trials: number };
@@ -486,6 +492,7 @@ function storedApprovalRun(
 ): StoredReport {
   const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   const inputs = {
+    connection: report.connection,
     variant: report.variant,
     variantsVersion: report.variantsVersion,
     rubricVersion: report.rubricVersion,

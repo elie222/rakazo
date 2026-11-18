@@ -10,10 +10,6 @@ export function decisionModel(provider: string, id: string) {
     (model) => model.provider === provider && (model.id === id || model.aliases?.includes(id)),
   );
 }
-/** The providers that serve the decision protocol, whether or not a given model is in the catalog. */
-export function decisionModelProviders(): string[] {
-  return [...new Set(models.map((model) => model.provider))];
-}
 export function decisionModelCatalog(): ModelCatalogEntry[] {
   return models.flatMap((model) => (model.catalog ? [{ ...model.catalog }] : []));
 }
