@@ -14,8 +14,9 @@ export type SkillFiles = Readonly<Record<string, readonly string[]>>;
 
 export type AgentImportParse = Omit<
   AgentImportPlan,
-  "source" | "model" | "mcpServers" | "routines" | "apiKeys"
->;
+  "source" | "model" | "mcpServers" | "routines" | "apiKeys" | "leftovers"
+> &
+  Partial<Pick<AgentImportPlan, "leftovers">>;
 
 const SKILL_CONTENT_MAX_LENGTH = 100_000;
 const SKILL_FILE = /^(?:\.agents\/)?skills\/(?:[^/]+\/){1,4}SKILL\.md$/;

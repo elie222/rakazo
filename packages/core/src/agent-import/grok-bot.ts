@@ -1,7 +1,7 @@
 // Reads the grok-bot-export v1 document a Grok Bot writes about itself. The export prompt,
 // reply repairs and export reading adapt OpenMausBot (Apache-2.0), which adapts Hermes'
 // agent-importers plugin (MIT); see NOTICE. Exports written for either import here.
-import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
+import type { AgentImportLeftover, AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import {
   AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
@@ -19,7 +19,6 @@ import { freeName, memoryItem, renameSkillMd, skillItem } from "./types.js";
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
 export const GROK_BOT_REPLY_MAX_LENGTH = AGENT_IMPORT_MAX_TOTAL_LENGTH;
-export const GROK_BOT_ROUTINES_PATH = "grok-bot-routines.md";
 
 /**
  * Grok Bot has no export button, so each Bot writes its own setup. Model-facing text pasted
@@ -676,25 +675,26 @@ function distinct(lines: readonly string[]): string[] {
   });
 }
 
-/** Each routine with every setting the export gave, so it can be set up by hand. */
-function routinesToSetUp(routines: readonly GrokBotRoutine[]): string {
-  const blocks = routines.map((routine) => {
-    const fields = [
-      ["Trigger", routine.trigger || "unknown"],
-      ["Details", routine.details],
-      ["Schedule", routine.when],
-      ["Cron", routine.cron],
-      ["Time zone", routine.timeZone],
-      ["Skills", routine.skills.join(", ")],
-    ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
-    return `## ${routine.name || "Routine"}\n\n${fields.join("\n")}\n\n${routine.instruction}\n`;
-  });
-  return `# Grok Bot routines to set up again\n\nThese start on an event this server does not receive, or on a schedule that could not be read.\n\n${blocks.join("\n")}`;
+/** A routine with every setting the export gave, for the new bot to set up in its chat. */
+function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLeftover {
+  const fields = [
+    ["Trigger", routine.trigger || "unknown"],
+    ["Details", routine.details],
+    ["Schedule", routine.when],
+    ["Cron", routine.cron],
+    ["Time zone", routine.timeZone],
+    ["Skills", routine.skills.join(", ")],
+  ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
+  return {
+    id: `leftover:routine:${index}`,
+    title: routine.name || "Routine",
+    content: `${fields.join("\n")}\n\n${routine.instruction}\n`,
+  };
 }
 
 /**
  * Imported text is data: nothing here follows it. Routines and apps are added by the server;
- * a routine none of `triggers` can start is kept in a memory note instead.
+ * a routine none of `triggers` can start is left over for the new bot's chat.
  */
 export function parseGrokBot(
   bot: GrokBot,
@@ -709,16 +709,6 @@ export function parseGrokBot(
   const memory: AgentImportMemory[] = [
     ...memoryDocuments("MEMORY", memories),
     ...memoryDocuments("USER", userFacts),
-    ...(toSetUp.length
-      ? [
-          memoryItem(
-            GROK_BOT_ROUTINES_PATH,
-            GROK_BOT_ROUTINES_PATH,
-            GROK_BOT_ROUTINES_PATH,
-            routinesToSetUp(toSetUp),
-          ),
-        ]
-      : []),
   ];
   const skills = grokSkills(bot);
   const instructions = bot.instructions;
@@ -738,6 +728,7 @@ export function parseGrokBot(
         ]
       : [],
     memory,
+    leftovers: toSetUp.map(routineLeftover),
     skills: skills.flatMap(({ item }) => (item ? [item] : [])),
     skipped: skills.flatMap(({ item, path }) =>
       item ? [] : [{ path, reason: "invalid_skill" as const }],

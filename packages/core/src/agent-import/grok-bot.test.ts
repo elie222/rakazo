@@ -231,18 +231,15 @@ describe("a Grok Bot as an import plan", () => {
     expect(parsed.suggestedName).toBe("Bramble");
     expect(parsed.suggestedDescription).toBe("Account manager");
     expect(parsed.instructions.map((item) => item.content)).toEqual([`${bramble.instructions}\n`]);
-    expect(parsed.memory.map((item) => item.path)).toEqual([
-      "MEMORY.md",
-      "USER.md",
-      "grok-bot-routines.md",
-    ]);
+    expect(parsed.memory.map((item) => item.path)).toEqual(["MEMORY.md", "USER.md"]);
     expect(parsed.memory[0]!.content).toBe(
       "- Weekly report goes out on Mondays.\n- The team uses Linear.\n",
     );
-    const events = parsed.memory[2]!.content;
-    expect(events).toContain("Answer each new message in #support within the hour.");
-    expect(events).toContain("- Trigger: slack");
-    expect(events).not.toContain("Run the weekly account review.");
+    // A routine nothing here can start is left for the new bot's chat, never its memory.
+    const leftovers = parsed.leftovers.map((item) => item.content).join("\n");
+    expect(leftovers).toContain("Answer each new message in #support within the hour.");
+    expect(leftovers).toContain("- Trigger: slack");
+    expect(leftovers).not.toContain("Run the weekly account review.");
     expect(parsed.skills.map((item) => [item.name, item.description])).toEqual([
       ["weekly-account-health", "Use for the Monday account review."],
     ]);
@@ -285,12 +282,11 @@ describe("a Grok Bot as an import plan", () => {
     expect(parsed.memory.map((item) => [item.path, item.content])).toEqual([
       ["MEMORY.md", "- Name: Sam\n"],
       ["USER.md", "- Name: Sam\n"],
-      [
-        "grok-bot-routines.md",
-        expect.stringContaining(
-          "- Schedule: every weekday at 9\n- Time zone: Europe/Lisbon\n- Skills: notes\n\nPost the standup.",
-        ),
-      ],
+    ]);
+    expect(parsed.leftovers.map((item) => item.content)).toEqual([
+      expect.stringContaining(
+        "- Schedule: every weekday at 9\n- Time zone: Europe/Lisbon\n- Skills: notes\n\nPost the standup.",
+      ),
     ]);
   });
 

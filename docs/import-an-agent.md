@@ -48,8 +48,8 @@ event routine's prompt starts with its original trigger and details, such as the
 repository, so the bot knows what it was for.
 
 Routines whose schedule could not be read, or whose event this server does not receive, are
-saved in the bot's memory as `grok-bot-routines.md`, with their trigger and full instruction, so
-you can set them up by hand. Connected apps with a remote MCP address become MCP servers you
+listed under **Set up in chat**. The new bot's chat opens with them, with their trigger and full
+instruction, and the bot sets up what it can with you. Nothing is added to its memory for them. Connected apps with a remote MCP address become MCP servers you
 sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
 Bot's computer and sign-ins stay in Grok Bot.
 

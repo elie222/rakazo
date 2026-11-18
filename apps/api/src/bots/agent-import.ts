@@ -13,6 +13,7 @@ import type {
   AgentImportCreateInput,
   AgentImportErrorReason,
   AgentImportFile,
+  AgentImportLeftover,
   AgentImportMemoryDestination,
   AgentImportNeed,
   AgentImportPlan,
@@ -349,7 +350,7 @@ export async function createImportedBot<PreparedKey>(
   actor: Actor,
   input: AgentImportCreateInput,
   signal?: AbortSignal,
-): Promise<Bot> {
+): Promise<{ bot: Bot; handoff: boolean }> {
   const { importKey, ...request } = input;
   const written = await writeImportedBot(
     services,
@@ -361,7 +362,24 @@ export async function createImportedBot<PreparedKey>(
     },
     signal,
   );
-  return written.bot;
+  // A retried create has the same selection, so it asks for the same handoff.
+  return { bot: written.bot, handoff: input.selection.leftovers.length > 0 };
+}
+
+/** The owner's first message to an imported bot whose import left something over. */
+export const IMPORT_HANDOFF_MESSAGE = "Set up what the import left over.";
+
+/** One per bot, so a retried create sends the handoff once. */
+export function importHandoffNonce(botId: string): string {
+  return `import-handoff:${botId}`;
+}
+
+/** Imported text the new bot is asked about; shown in its chat, never followed by the server. */
+function leftoverText(leftovers: AgentImportLeftover[]): string {
+  return [
+    "The import could not set these up:",
+    ...leftovers.map((item) => `## ${item.title}\n\n${item.content.trim()}`),
+  ].join("\n\n");
 }
 
 /** A bot to create from a plan: an import's files or a template build it. */
@@ -430,6 +448,7 @@ export async function writeImportedBot<PreparedKey>(
   const routines = selected(plan.routines, input.selection.routines).map(
     (item) => routineInputs.get(item.id)!,
   );
+  const leftovers = selected(plan.leftovers, input.selection.leftovers ?? []);
   // A key whose provider was connected after the preview is still selected; skip it.
   if (new Set(input.selection.apiKeys).size !== input.selection.apiKeys.length) {
     throw refused("BAD_REQUEST", "selection_mismatch", "The selection does not match the files.");
@@ -679,6 +698,15 @@ export async function writeImportedBot<PreparedKey>(
         blocks: checklist,
       });
       await announceAdded(tx, botId, message, thread.id, checklist);
+    }
+    if (leftovers.length) {
+      const blocks: MessageBlock[] = [{ kind: "text", text: leftoverText(leftovers) }];
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: thread.id,
+        role: "bot",
+        blocks,
+      });
+      await announceAdded(tx, botId, message, thread.id, blocks);
     }
     await tx.agentImport.create({
       data: {

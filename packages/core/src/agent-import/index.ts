@@ -373,6 +373,7 @@ function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportP
       mcpServers: [],
       routines: [],
       apiKeys: [],
+      leftovers: (parsed.leftovers ?? []).map(flag),
     },
     { spaceMemoryPaths: [], skillNames: [] },
   );

@@ -174,6 +174,7 @@ export function AgentImportForm({
             .map((item) => item.id),
           routines: chosen(plan.routines).map((item) => item.id),
           apiKeys: chosen(plan.apiKeys).map((item) => item.id),
+          leftovers: chosen(plan.leftovers).map((item) => item.id),
         },
       });
       onCreated(bot);
