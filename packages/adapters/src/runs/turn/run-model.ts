@@ -480,6 +480,11 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
+  // Before validation, which can probe a stored connection's live catalog: a refused
+  // provider is not contacted, and its refusal is not replaced by a failed probe.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  }
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(

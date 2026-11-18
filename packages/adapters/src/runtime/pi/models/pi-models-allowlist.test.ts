@@ -29,6 +29,16 @@ describe("model provider allowlist in the catalog", () => {
     );
   });
 
+  it("builds the filtered catalog once per distinct list", () => {
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    const first = listPiCatalog();
+    expect(listPiCatalog()).toBe(first);
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter,anthropic";
+    const second = listPiCatalog();
+    expect(second).not.toBe(first);
+    expect(second.some((entry) => entry.provider === "anthropic")).toBe(true);
+  });
+
   it("keeps only the providers the list names", () => {
     process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
     const catalog = listPiCatalog();

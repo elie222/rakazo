@@ -222,13 +222,22 @@ export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();
   const allowlist = modelProviderAllowlist();
   if (allowlist === null) return cachedCatalog;
-  return cachedCatalog.flatMap((entry) => {
+  // Built once per distinct list, not once per call: the catalog filters run per entry.
+  const key = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim() ?? "";
+  if (filteredCatalogKey === key) return filteredCatalogEntries ?? cachedCatalog;
+  const entries = cachedCatalog.flatMap((entry) => {
     if (!modelProviderAllowed(allowlist, entry.provider)) return [];
     return entry.endpointPresets
       ? [{ ...entry, endpointPresets: compatibleEndpointPresetsFor(allowlist) }]
       : [entry];
   });
+  filteredCatalogKey = key;
+  filteredCatalogEntries = entries;
+  return entries;
 }
+
+let filteredCatalogKey: string | undefined;
+let filteredCatalogEntries: PiCatalogEntry[] | undefined;
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
