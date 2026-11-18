@@ -32,7 +32,14 @@ export function createInboxStyles() {
       paddingTop: 8,
       paddingBottom: 10,
     },
+    headerTitle: {
+      flex: 1,
+      minWidth: 0,
+      alignItems: "flex-start",
+      overflow: "hidden",
+    },
     headerActions: {
+      flexShrink: 0,
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
