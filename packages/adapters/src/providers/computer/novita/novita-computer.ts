@@ -11,6 +11,7 @@ export const novitaComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     novitaApiKey: { name: "NOVITA_API_KEY", required: true },

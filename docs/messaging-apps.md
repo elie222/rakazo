@@ -28,6 +28,8 @@ In direct messages, a voice note the chat app delivers as an audio file (Telegra
 is transcribed when a voice provider that supports transcription is connected in **Voice**
 settings; without one, the bot receives the audio file.
 
+Large files may take a moment to reach the bot.
+
 To stop, choose **Unlink**.
 
 ## Microsoft Teams

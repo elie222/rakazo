@@ -14,6 +14,8 @@ function surface() {
         whatsappPhoneNumberId: "123",
         whatsappAppSecret: appSecret,
         whatsappVerifyToken: "fake-verify-token",
+        whatsappApiUrl: undefined,
+        whatsappBotUsername: undefined,
       },
       {},
     ),

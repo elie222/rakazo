@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
+import type { JobPublisher, JobQueueOrder, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
@@ -28,6 +28,7 @@ import {
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
+  createReceivedFilesPruner,
   createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
   createRunReconciler,
@@ -181,7 +182,7 @@ async function main() {
     process.env.RUN_DRAIN_ENABLED === "true" ? RUN_DRAIN_MS : 0,
   );
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
-  const jobs: JobPublisher =
+  const jobs: JobPublisher & JobQueueOrder =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
   secretCleanupJobs = jobs;
   const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs });
@@ -321,6 +322,12 @@ async function main() {
             executor.notifyRoutineRetryAttemptsExhausted(runId),
           ),
       reconcileHomeStorage: homeStorageSweeper(home),
+      reconcileReceivedFiles: createReceivedFilesPruner({
+        prisma,
+        home,
+        sandbox,
+        enabled: env.saveReceivedFiles,
+      }),
       reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
     },
     { messagingDelivery, teamChat },

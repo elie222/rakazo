@@ -5,8 +5,10 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
+  JobQueueOrder,
   JobTransaction,
   JobWorkerHost,
+  QueuedAhead,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
@@ -19,6 +21,14 @@ import { recordConnectionCleanupAttemptsExhausted } from "../../integrations/con
 import { recordHistoryCompactAttemptsExhausted } from "../../runtime/context/history-compaction.js";
 import { RunExecutionHost } from "../lifecycle/run-execution.js";
 import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";
+import type { OrderedJob } from "./named-queue-order.js";
+import {
+  headFollowers,
+  isFollowerPayload,
+  PENDING_UNTIL_SQL,
+  queuedAhead,
+  RELEASE_FOLLOWERS_SQL,
+} from "./named-queue-order.js";
 
 export {
   ABANDONED_LAST_ATTEMPT_ERROR,
@@ -51,7 +61,7 @@ async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boole
 // pool per graphile-worker component: three independent pools per worker process
 // (Prisma + publisher + runner) triples the connection footprint against Postgres'
 // max_connections for no benefit, since they never need isolation from each other.
-export class GraphileJobPublisher implements JobPublisher {
+export class GraphileJobPublisher implements JobPublisher, JobQueueOrder {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
 
@@ -158,6 +168,21 @@ export class GraphileJobPublisher implements JobPublisher {
     await utils.withPgClient(async (client) => {
       await client.query("select graphile_worker.remove_job($1::text)", [key]);
     });
+  }
+
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead> {
+    const utils = await this.getUtils();
+    return utils.withPgClient(async (client) => {
+      const found = await client.query<{ run_at: Date | null; own: boolean }>(PENDING_UNTIL_SQL, [
+        queueName,
+        exceptKey ?? null,
+      ]);
+      return { until: found.rows[0]?.run_at ?? null, own: found.rows[0]?.own ?? false };
+    });
+  }
+
+  async releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string) {
+    await tx.$executeRawUnsafe(RELEASE_FOLLOWERS_SQL, queueName, exceptKey ?? null);
   }
 
   async close(): Promise<void> {
@@ -687,6 +712,9 @@ interface QueuedJob {
   payload: unknown;
   availableAt?: Date;
   replaceKey?: string;
+  queueName?: string;
+  /** Its place in the queue, kept when it is replaced, as Graphile keeps a job's id. */
+  place: number;
   attempts: number;
   maxAttempts: number;
 }
@@ -697,17 +725,21 @@ function toQueuedJob(job: BackgroundJob): QueuedJob {
     payload: wrapJobPayload(job.payload),
     availableAt: job.availableAt,
     replaceKey: job.replaceKey,
+    queueName: job.queueName,
+    place: 0,
     attempts: 0,
     maxAttempts: job.maxAttempts ?? DEFAULT_JOB_MAX_ATTEMPTS,
   };
 }
 
-export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
+export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly scheduled = new Map<ReturnType<typeof setTimeout>, QueuedJob>();
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly active = new Set<Promise<void>>();
+  private readonly running = new Set<QueuedJob>();
+  private places = 0;
   private readonly failures = new Map<BackgroundJob["name"], number>();
   private readonly closingJobs: QueuedJob[] = [];
   private draining: Promise<void> | undefined;
@@ -727,6 +759,8 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     if (job.keepExisting && existing && existing.attempts < existing.maxAttempts) {
       return;
     }
+    if (!existing) this.places += 1;
+    stored.place = existing?.place ?? this.places;
     if (this.closing) {
       this.enqueueWhileClosing(stored);
       return;
@@ -740,6 +774,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
         return;
       }
     }
+    this.schedule(stored);
+  }
+
+  private schedule(stored: QueuedJob): void {
     const delay = stored.availableAt ? Math.max(0, stored.availableAt.getTime() - Date.now()) : 0;
     const timer = setTimeout(() => {
       this.timers.delete(timer);
@@ -780,6 +818,39 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     this.keyed.delete(replaceKey);
     this.timers.delete(timer);
     this.scheduled.delete(timer);
+  }
+
+  /** Like Graphile's: jobs scheduled, waiting out a shutdown or running count; a running one is due now. */
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead> {
+    return queuedAhead(this.ordered(queueName), exceptKey);
+  }
+
+  /** Like Graphile's, though not transactional: the followers move as soon as this is called. */
+  async releaseFollowersIn(_tx: JobTransaction, queueName: string, exceptKey?: string) {
+    const head = headFollowers(this.ordered(queueName), exceptKey);
+    for (const [place, { timer, job, dueAt }] of head.entries()) {
+      if (!timer) continue;
+      clearTimeout(timer);
+      this.timers.delete(timer);
+      this.scheduled.delete(timer);
+      if (job.replaceKey) this.keyed.delete(job.replaceKey);
+      this.schedule({ ...job, availableAt: new Date(Math.min(dueAt, Date.now() + place)) });
+    }
+  }
+
+  /** The queue's unfinished jobs, in the shape the queue-order rules read. */
+  private ordered(queueName: string) {
+    const now = Date.now();
+    const of = (job: QueuedJob, running: boolean, timer?: ReturnType<typeof setTimeout>) => {
+      const follower = isFollowerPayload(unwrapJobPayload(job.payload).payload);
+      const dueAt = running ? now : (job.availableAt?.getTime() ?? now);
+      return { job, timer, key: job.replaceKey, place: job.place, dueAt, running, follower };
+    };
+    return [
+      ...[...this.scheduled].map(([timer, job]) => of(job, false, timer)),
+      ...this.closingJobs.map((job) => of(job, false)),
+      ...[...this.running].map((job) => of(job, true)),
+    ].filter(({ job }) => job.queueName === queueName) satisfies OrderedJob[];
   }
 
   /** Attempts and schedule for a keyed job that is still queued. */
@@ -845,6 +916,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   }
 
   private dispatch(handlers: BackgroundJobHandlers, job: QueuedJob): Promise<void> {
+    this.running.add(job);
     const unpacked = unwrapJobPayload(job.payload);
     const active = runCorrelatedJob({
       name: job.name,
@@ -856,7 +928,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       this.failures.set(job.name, (this.failures.get(job.name) ?? 0) + 1);
     });
     this.active.add(active);
-    void active.finally(() => this.active.delete(active));
+    void active.finally(() => {
+      this.active.delete(active);
+      this.running.delete(job);
+    });
     return active;
   }
 

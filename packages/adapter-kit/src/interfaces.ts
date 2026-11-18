@@ -437,6 +437,34 @@ export interface JobPublisher {
   close(): Promise<void>;
 }
 
+/** A named queue's jobs ahead of one, as `JobQueueOrder.pendingUntil` reads them. */
+export interface QueuedAhead {
+  /** When the last of them is due; null when there are none. */
+  until: Date | null;
+  /** Whether the job keyed `exceptKey` is recorded at all; false without a key. */
+  own: boolean;
+}
+
+/**
+ * Order between the jobs of a named queue beyond running them one at a time, for work that must
+ * not overtake jobs already queued. A job whose payload has `follower: true` is due late only so
+ * it runs after the jobs ahead of it in its queue.
+ */
+export interface JobQueueOrder {
+  /**
+   * When the last unfinished job of a named queue is due; null when the queue has none. With
+   * `exceptKey`, only the jobs queued ahead of that job count, all of them while it is not queued,
+   * and the answer also says whether it is.
+   */
+  pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead>;
+  /**
+   * In the caller's transaction, makes the followers at the head of a named queue due now, a
+   * millisecond apart in their order, up to the first job that is not one or is running. The job
+   * keyed `exceptKey`, the one settling, is left out.
+   */
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void>;
+}
+
 export interface JobWorkerHost {
   start(handlers: BackgroundJobHandlers): Promise<void>;
   stop(): Promise<void>;
@@ -466,11 +494,31 @@ export interface AgentHomeStore {
     options?: { maxBytes?: number },
   ): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
+  /** Creates a new file; rejects with an `EEXIST` error when the path is taken. */
+  writeBinaryFile(
+    botId: string,
+    path: string,
+    content: Uint8Array,
+    context: AdapterContext,
+  ): Promise<void>;
   list(
     botId: string,
     path: string,
     context: AdapterContext,
   ): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
+  /**
+   * Deletes the given files, which must all be under `root` (a folder of the home; others are
+   * refused), skipping links, folders and paths not there, then the folders under `root` this
+   * leaves empty. Stops between files once `options.signal` aborts. Returns how many it deleted;
+   * what was deleted stays deleted.
+   */
+  removeFiles(
+    botId: string,
+    paths: readonly string[],
+    root: string,
+    context: AdapterContext,
+    options?: { signal?: AbortSignal },
+  ): Promise<number>;
 }
 
 /**

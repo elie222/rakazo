@@ -253,8 +253,94 @@ Set it in `.env` and restart the API, worker, and Docker supervisor (when used).
 limit advertised by the server. If a reverse proxy limits request bodies, allow
 room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
 
+Files sent in direct messages from chat apps download in the background, up to
+`MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
+
+The bot can also keep a copy of each one in its computer; see
+[received chat-app files](#received-chat-app-files).
+
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
 Web, desktop, and mobile use the advertised count; older clients and clients connected
 to older servers keep the default of four. Chat bridges retain their existing safe
 platform limits, and model image budgets still apply.
+
+## Received chat-app files
+
+`MESSAGING_SAVE_RECEIVED_FILES=true` copies each file a bot receives in a direct message from a
+chat app into the bot's computer, besides attaching it to the message as usual. It is off by
+default. Set it in `.env` for both the API and the worker, then restart them: the API makes the
+copies and the worker cleans them up.
+
+On a team computer the copies go under `shared/received/`, and on a private computer under
+`received/` at the root of its home, in a folder for each year and month:
+
+```text
+shared/received/<YYYY>/<MM>/<YYYY-MM-DD>_<HHMM>_<sender>_<name>.<ext>
+```
+
+The date and time are when the message arrived, in the time zone of the account the chat
+address belongs to, or UTC when it has none set. Sender and file names lose characters a path
+can't hold, get `_` for each one Windows does not allow in a name, and are shortened. A name
+already taken gets `-2`, `-3` and so on, so a copy never replaces a file. The bot's message gets
+a `[saved to <path>]` line for each copy, so the bot knows where to find it.
+
+The path holds the sender's chat address, such as a phone number. On a team computer the
+copies of every member's direct messages sit in `shared/received/`, where every bot and member
+with access to that computer can open them.
+
+Which computers get a copy:
+
+- A running computer of any kind, Docker included, written straight into it.
+- An asleep Docker computer, written into the server's copy of its home. Its container is
+  stopped while it sleeps, so nothing in it runs until it wakes.
+- A stopped computer with no machine left whose home the server holds, written into that
+  stored home for its next start. This covers Docker computers whose container was removed, and
+  remote computers whose stored home only the server writes, except Kubernetes computers set up
+  to mount the server's home directory.
+
+Other computers get no copy: one starting or going to sleep, an asleep or stopped one whose
+provider keeps its machine and disk, a stopped remote one whose stored home it writes itself, a
+stopped one on a person's own device, and a bot with no computer. The file still reaches the
+bot, without the line.
+
+Once a day the worker deletes copies after about a month (31 days, by the date in their name
+rather than the file's own time), then the month and year folders that leaves empty. It only
+deletes files named like a copy, inside the dated folders under `received/` or
+`shared/received/`; anything else there stays. It cleans the same homes that get a copy while
+not running, and never a running computer: copies on a running computer go once it is asleep
+or stopped and its home is back with the server, and copies on a computer that gets none while
+not running, such as one whose provider keeps its own disk, are never cleaned up. Turning the
+setting off stops the cleanup too, so copies already made stay until removed by hand.
+
+Limits:
+
+- A message settled by its backup job, because receiving it here failed or the API restarted
+  first, reaches the bot without a copy or a line, and so does a message the chat app delivers
+  again after such a restart.
+- One copy at a time is made on a computer, across all API processes, and the cleanup takes the
+  same turn. Each copy has 30 seconds, waiting included; one not made by then is skipped, and
+  the next copy goes ahead. A copy still being written at that point can land later without the
+  line; the cleanup removes it like any other.
+- A message's files are copied between its downloads, so each later file of the message starts
+  downloading a little later, within the same download time limit.
+- A copy into an asleep or stopped computer's stored home, and the cleanup of one, are not
+  held against a start or a save of that computer. If the computer starts from its previous
+  save and then saves again, the copy can be lost although the bot was told its path; the same
+  can happen on a running computer that saves and stops between the check of its state and the
+  write. An asleep Docker computer that wakes between that check and the write has its
+  container running again while the server writes in its home. The cleanup looks at the
+  computer again before every 25 deletions and stops at any change, deletes at most 500 copies
+  in one home per pass, and leaves the rest for the next day.
+- A stopped Docker computer is treated as having no container only once Rakazo removed its
+  container or found it gone. If a container is still there although Rakazo took it for gone,
+  the server can write in or clean a home that container still mounts.
+- With homes kept in object storage, an asleep Docker computer whose last save was skipped
+  because its home was too large still gets the copy in its home, but storing the home fails,
+  so the bot's message has no line for it.
+- With homes kept in object storage, each copy into a computer that is not running downloads
+  its stored home and uploads it again whole. A large home can take longer than the 30
+  seconds, leaving a copy without its line. The daily cleanup downloads every home it looks at,
+  and uploads it again after every 25 deletions.
+- A message handed to a message routine still gets its copies, but the routine is not told
+  where they are.

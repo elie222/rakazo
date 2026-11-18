@@ -109,6 +109,14 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, PI_SESSION_RECORDING: "true" }).piSessionRecording).toBe(true);
   });
 
+  it("keeps copies of received chat-app files only when asked", () => {
+    expect(loadEnv(base).saveReceivedFiles).toBe(false);
+    expect(loadEnv({ ...base, MESSAGING_SAVE_RECEIVED_FILES: "1" }).saveReceivedFiles).toBe(false);
+    expect(loadEnv({ ...base, MESSAGING_SAVE_RECEIVED_FILES: "true" }).saveReceivedFiles).toBe(
+      true,
+    );
+  });
+
   it("keeps explicit emulator settings for pnpm test", () => {
     const env = loadEnv({
       ...base,
