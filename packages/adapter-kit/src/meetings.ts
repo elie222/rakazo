@@ -8,6 +8,8 @@ export interface MeetingJoinRequest {
   botName: string;
   expiresAt: Date;
   mediaUrl?: string;
+  /** The media page can process live speech and reply aloud. Disclose this on joining. */
+  liveVoice?: boolean;
 }
 
 export interface MeetingObservation {

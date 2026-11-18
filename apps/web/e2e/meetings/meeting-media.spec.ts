@@ -72,7 +72,11 @@ mediaTest(
     await expect(page.getByRole("heading", { name: "Atlas · Rakazo" })).toBeVisible();
     await expect(page.getByRole("img", { name: "Rakazo" })).toBeVisible();
 
-    await page.reload();
+    const restored = page.waitForEvent("load");
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })),
+    );
+    await restored;
     await expect(page.getByRole("heading", { name: "Atlas · Rakazo" })).toBeVisible();
     await page.waitForFunction(() => (window as MeetingAudioProbe).workletReady === true);
     const firstReply = page.waitForResponse(

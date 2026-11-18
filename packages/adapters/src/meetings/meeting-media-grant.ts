@@ -6,7 +6,7 @@ export const MEETING_MEDIA_PATH = "/api/meetings/media";
 
 export function meetingMediaSignature(signingSecret: string, value: string) {
   return createHmac("sha256", signingSecret)
-    .update(`meeting-media/v1\0${value}`)
+    .update(`meeting-media/v2\0${value}`)
     .digest("base64url");
 }
 
@@ -14,9 +14,10 @@ export function meetingMediaPageUrl(
   { publicOrigin, signingSecret }: { publicOrigin: string; signingSecret: string },
   sessionId: string,
   expiresAt: Date,
+  voice: boolean,
 ) {
   const url = new URL(MEETING_MEDIA_PATH, publicOrigin);
-  const grant = `${sessionId}.${expiresAt.getTime()}`;
+  const grant = `${sessionId}.${expiresAt.getTime()}.${voice ? "voice" : "camera"}`;
   url.hash = `${grant}.${meetingMediaSignature(signingSecret, grant)}`;
   return url.href;
 }
@@ -29,11 +30,16 @@ export function configuredMeetingMedia(source = process.env) {
     throw new Error("MEETING_PUBLIC_ORIGIN must be a public HTTPS origin");
   }
   const options = { publicOrigin: origin.origin, signingSecret: resolveMeetingSigningKey(source) };
+  const voice = source.MEETING_LIVE_VOICE === "true";
   return {
     ...options,
-    voice: source.MEETING_LIVE_VOICE === "true",
+    voice,
     buildJoin(input: MeetingJoinRequest) {
-      return { ...input, mediaUrl: meetingMediaPageUrl(options, input.sessionId, input.expiresAt) };
+      return {
+        ...input,
+        liveVoice: voice,
+        mediaUrl: meetingMediaPageUrl(options, input.sessionId, input.expiresAt, voice),
+      };
     },
   };
 }

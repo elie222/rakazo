@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { SpeechClip } from "@rakazo/adapter-kit";
 import {
   MEETING_MEDIA_PATH,
@@ -6,7 +5,8 @@ import {
   meetingMediaSignature,
 } from "@rakazo/adapters/meeting-media";
 import type { Actor } from "@rakazo/contracts";
-import { deadlineSignal } from "@rakazo/core";
+import { requestDeadline } from "@rakazo/core";
+import { timingSafeStringEqual } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { readBoundedBytes } from "../../http/http-body.js";
 import { MAX_MEETING_AUDIO_BYTES, meetingAudioWav } from "./meeting-audio.js";
@@ -50,23 +50,30 @@ export function createMeetingMediaBridge(deps: {
   async function authenticate(request: Request) {
     const token = request.headers
       .get("authorization")
-      ?.match(/^Bearer ([\w-]{1,160})\.(\d{1,14})\.([\w-]{43})$/);
+      ?.match(/^Bearer ([\w-]{1,160})\.(\d{1,14})\.(voice|camera)\.([\w-]{43})$/);
     if (!token) return null;
-    const [, sessionId, expiresAt, claimedSignature] = token;
-    if (!sessionId || !expiresAt || !claimedSignature || Number(expiresAt) <= Date.now()) {
+    const [, sessionId, expiresAt, mode, claimedSignature] = token;
+    if (!sessionId || !expiresAt || !mode || Number(expiresAt) <= Date.now()) {
       return null;
     }
-    const expected = meetingMediaSignature(deps.signingSecret, `${sessionId}.${expiresAt}`);
-    if (!timingSafeEqual(Buffer.from(expected), Buffer.from(claimedSignature))) return null;
+    const expected = meetingMediaSignature(deps.signingSecret, `${sessionId}.${expiresAt}.${mode}`);
+    if (!timingSafeStringEqual(claimedSignature, expected)) return null;
     const session = await deps.loadSession(sessionId);
     return session
-      ? { ...session, sessionId, expiresAt: Number(expiresAt), grant: token[0] }
+      ? {
+          ...session,
+          // The grant must match the join that disclosed live voice, regardless of config changes.
+          voice: session.voice && mode === "voice",
+          sessionId,
+          expiresAt: Number(expiresAt),
+          grant: token[0],
+        }
       : null;
   }
 
   return {
-    pageUrl(sessionId: string, expiresAt: Date) {
-      return meetingMediaPageUrl(deps, sessionId, expiresAt);
+    pageUrl(sessionId: string, expiresAt: Date, voice: boolean) {
+      return meetingMediaPageUrl(deps, sessionId, expiresAt, voice);
     },
 
     mount(app: Hono) {
@@ -106,18 +113,19 @@ export function createMeetingMediaBridge(deps: {
         if (!session?.voice) return c.body(null, 401, NO_STORE);
         // A launch can connect its media before the admission event reaches the API.
         if (!session.admitted) return c.body(null, 204, NO_STORE);
-        const signal = deadlineSignal(
-          Math.min(18_000, Math.max(1, session.expiresAt - Date.now())),
-          c.req.raw.signal,
-        );
         if (c.req.header("content-type") !== "application/octet-stream") {
           return c.body(null, 415, NO_STORE);
         }
-        const bytes = await readBoundedBytes(c.req.raw, MAX_MEETING_AUDIO_BYTES);
-        if (!bytes) return c.body(null, 413, NO_STORE);
-        if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
-
+        const deadline = requestDeadline(
+          Math.min(18_000, Math.max(1, session.expiresAt - Date.now())),
+          "Meeting voice turn deadline exceeded",
+          c.req.raw.signal,
+        );
+        const { signal } = deadline;
         try {
+          const bytes = await readBoundedBytes(c.req.raw, MAX_MEETING_AUDIO_BYTES, signal);
+          if (!bytes) return c.body(null, 413, NO_STORE);
+          if (bytes.length < 2 || bytes.length % 2 !== 0) return c.body(null, 400, NO_STORE);
           signal.throwIfAborted();
           if (!(await deps.voiceReady(session, signal))) return c.body(null, 403, NO_STORE);
           signal.throwIfAborted();
@@ -129,6 +137,7 @@ export function createMeetingMediaBridge(deps: {
           );
           signal.throwIfAborted();
           const current = await authenticate(c.req.raw);
+          signal.throwIfAborted();
           if (!current?.admitted || !current.voice) return c.body(null, 401, NO_STORE);
           const headers = turn.context
             ? { ...NO_STORE, [CONTEXT_HEADER]: context.seal(turn.context, session.grant) }
@@ -154,6 +163,8 @@ export function createMeetingMediaBridge(deps: {
             return c.body(null, 204, NO_STORE);
           }
           throw error;
+        } finally {
+          deadline.dispose();
         }
       });
     },

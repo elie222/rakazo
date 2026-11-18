@@ -10,6 +10,7 @@ import {
   TRANSCRIPT_ID,
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
+import { configuredMeetingMedia } from "./meeting-media-grant.js";
 import { parseMeetingUrl } from "./meeting-service.js";
 
 const input: MeetingJoinRequest = {
@@ -132,13 +133,35 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
   expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow("valid Zoom");
 });
 
-it("carries the branded camera and captures the bot's speech for the final transcript", async () => {
+it.each([
+  {
+    voice: false,
+    notice: "Rakazo is capturing audio to create a meeting transcript.",
+  },
+  {
+    voice: true,
+    notice:
+      "Rakazo is capturing audio to create a meeting transcript. It also processes speech in real time with AI services and may reply aloud when addressed by name.",
+  },
+])("discloses whether the branded camera has live voice ($voice)", async ({ voice, notice }) => {
   const emulator = new RecallMeetingEmulator();
-  const mediaUrl = "https://api.example.test/api/meetings/media#grant";
-  await real(emulator).join({ ...input, mediaUrl }, signal);
+  const media = configuredMeetingMedia({
+    MEETING_PUBLIC_ORIGIN: "https://api.example.test",
+    MEETING_SIGNING_KEY: "2a".repeat(32),
+    MEETING_LIVE_VOICE: String(voice),
+  });
+  const join = media?.buildJoin(input);
+  expect(join?.liveVoice).toBe(voice);
+  expect(new URL(join?.mediaUrl ?? "").hash.split(".")[2]).toBe(voice ? "voice" : "camera");
+
+  await real(emulator).join(join!, signal);
   expect(emulator.requests[0]?.body).toMatchObject({
     variant: { google_meet: "web_4_core" },
-    output_media: { camera: { kind: "webpage", config: { url: mediaUrl } } },
-    recording_config: { include_bot_in_recording: { audio: true } },
+    chat: { on_bot_join: { send_to: "everyone", message: notice } },
+    output_media: { camera: { kind: "webpage", config: { url: join?.mediaUrl } } },
   });
+  const body = emulator.requests[0]?.body;
+  if (voice)
+    expect(body).toMatchObject({ recording_config: { include_bot_in_recording: { audio: true } } });
+  else expect(body).not.toHaveProperty("recording_config.include_bot_in_recording");
 });

@@ -1,7 +1,7 @@
 import { MEETING_MEDIA_PATH } from "@rakazo/adapters/meeting-media";
 import { deferred } from "@rakazo/core/test-async";
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_MEETING_AUDIO_BYTES, MEETING_SAMPLE_RATE } from "./meeting-audio.js";
 import {
   createMeetingMediaEmulator,
@@ -49,14 +49,77 @@ describe("meeting media bridge", () => {
 
   it("refuses missing, expired, tampered and differently scoped session grants", async () => {
     const { emulator, app, session, headers } = fixture();
-    const [id, expiry, signature] = headers.authorization.slice(7).split(".");
-    const expired = new URL(emulator.bridge.pageUrl(DEMO_MEDIA_SESSION, new Date(0))).hash.slice(1);
+    const [id, expiry, mode, signature] = headers.authorization.slice(7).split(".");
+    const expired = new URL(
+      emulator.bridge.pageUrl(DEMO_MEDIA_SESSION, new Date(0), true),
+    ).hash.slice(1);
     expect((await session("")).status).toBe(401);
-    expect((await session(`Bearer ${id}.${expiry}.${signature?.slice(0, -1)}!`)).status).toBe(401);
-    expect((await session(`Bearer other-session.${expiry}.${signature}`)).status).toBe(401);
+    expect(
+      (await session(`Bearer ${id}.${expiry}.${mode}.${signature?.slice(0, -1)}!`)).status,
+    ).toBe(401);
+    expect((await session(`Bearer other-session.${expiry}.${mode}.${signature}`)).status).toBe(401);
     expect((await session(`Bearer ${expired}`)).status).toBe(401);
     expect((await app.request(`${MEETING_MEDIA_PATH}/turn`, { method: "POST" })).status).toBe(401);
     expect(emulator.received).toHaveLength(0);
+  });
+
+  it("binds live voice permission to the grant issued for the join", async () => {
+    const { emulator, app, session } = fixture();
+    const pageUrl = emulator.bridge.pageUrl(
+      DEMO_MEDIA_SESSION,
+      new Date(Date.now() + 60_000),
+      false,
+    );
+    const token = new URL(pageUrl).hash.slice(1);
+    expect(await (await session(`Bearer ${token}`)).json()).toEqual({
+      botName: "Atlas",
+      voice: false,
+    });
+    expect((await session(`Bearer ${token.replace(".camera.", ".voice.")}`)).status).toBe(401);
+
+    const response = await app.request(`${MEETING_MEDIA_PATH}/turn`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" },
+      body: new Uint8Array([0, 1]),
+    });
+    expect(response.status).toBe(401);
+    expect(emulator.readinessChecks).toBe(0);
+    expect(emulator.received).toHaveLength(0);
+  });
+
+  it("cancels a stalled authenticated upload at the turn deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { emulator, app, headers } = fixture();
+      const reading = deferred<void>();
+      const cancel = vi.fn();
+      const body = new ReadableStream(
+        {
+          pull() {
+            reading.resolve();
+          },
+          cancel,
+        },
+        { highWaterMark: 0 },
+      );
+      const request = new Request(`https://rakazo.example.test${MEETING_MEDIA_PATH}/turn`, {
+        method: "POST",
+        headers,
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+      const response = app.request(request);
+      await reading.promise;
+      await vi.advanceTimersByTimeAsync(17_999);
+      expect(cancel).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await response).status).toBe(204);
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(emulator.readinessChecks).toBe(0);
+      expect(emulator.received).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("gates voice on admission, bounds capture size, and can return silence", async () => {
