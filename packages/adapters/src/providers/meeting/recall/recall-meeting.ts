@@ -170,6 +170,15 @@ export class RecallMeetingProvider implements MeetingProvider {
     return { id: result.id, ready: result.status?.code === "done" };
   }
 
+  async transcriptReady(transcriptId: string, signal: AbortSignal) {
+    const response = await this.call(`transcript/${id.parse(transcriptId)}/`, signal);
+    if (response.status === 404) {
+      cancelResponseBody(response);
+      return false;
+    }
+    return (await this.read(response, artifact, signal)).status?.code === "done";
+  }
+
   async downloadTranscript(transcriptId: string, signal: AbortSignal): Promise<MeetingTurn[]> {
     const result = await this.read(
       await this.call(`transcript/${id.parse(transcriptId)}/`, signal),

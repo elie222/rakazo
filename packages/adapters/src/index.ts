@@ -210,6 +210,7 @@ export * from "./runs/wakeups/job-reconciler.js";
 export * from "./runs/wakeups/run-wakeup.js";
 export * from "./runs/wakeups/wake-run.js";
 export * from "./runs/wakeups/wakeup.js";
+export { estimateTextTokens } from "./runtime/context/context-selection.js";
 export * from "./runtime/context/scratchpad-context.js";
 export * from "./runtime/pi/models/pi-catalog-availability.js";
 export * from "./runtime/pi/models/pi-codex-catalog.js";

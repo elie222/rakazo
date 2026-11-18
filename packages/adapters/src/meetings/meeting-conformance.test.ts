@@ -1,5 +1,6 @@
 import type { MeetingJoinRequest, MeetingProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { MeetingEmulator } from "../providers/meeting/emulator/meeting-emulator.js";
 import { RecallMeetingProvider } from "../providers/meeting/recall/recall-meeting.js";
 import {
   BOT_ID,
@@ -9,7 +10,6 @@ import {
   TRANSCRIPT_ID,
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
-import { MeetingEmulator } from "./meeting-emulator.js";
 import { parseMeetingUrl } from "./meeting-service.js";
 
 const input: MeetingJoinRequest = {

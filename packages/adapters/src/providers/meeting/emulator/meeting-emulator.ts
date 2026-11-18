@@ -38,6 +38,10 @@ export class MeetingEmulator implements MeetingProvider {
     return { id: `transcript-${recordingId}`, ready: true };
   }
 
+  async transcriptReady() {
+    return true;
+  }
+
   async downloadTranscript() {
     return [
       { speaker: "Alex Rivera", startMs: 0, text: "We agreed to send the launch draft on Friday." },

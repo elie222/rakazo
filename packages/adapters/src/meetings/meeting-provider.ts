@@ -7,7 +7,7 @@ export async function configuredMeetingProvider(
   if (!provider) return;
   if (provider === "emulator") {
     if (source.NODE_ENV === "production") throw new Error("The meeting emulator is for local use");
-    const { MeetingEmulator } = await import("./meeting-emulator.js");
+    const { MeetingEmulator } = await import("../providers/meeting/emulator/meeting-emulator.js");
     return new MeetingEmulator();
   }
   if (provider !== "recall") throw new Error("Unknown meeting provider");
@@ -15,7 +15,7 @@ export async function configuredMeetingProvider(
   const apiKey = source.MEETING_API_KEY?.trim();
   const secret = source.MEETING_WEBHOOK_SECRET?.trim();
   const region = source.MEETING_REGION?.trim();
-  const prefix = source.MEETING_WEBHOOK_SIGNATURE?.trim() ?? "webhook";
+  const prefix = source.MEETING_WEBHOOK_SIGNATURE?.trim() || "webhook";
   if (
     !apiKey ||
     !secret?.startsWith("whsec_") ||
