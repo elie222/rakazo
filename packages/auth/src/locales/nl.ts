@@ -91,4 +91,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Sign in with your {subscriptions} subscription, or paste an API key.":
     "Log in met je abonnement op {subscriptions} of plak een API-sleutel.",
   "Connect a model": "Model verbinden",
+  "Bring your old assistant to Rakazo": "Neem je oude assistent mee naar Rakazo",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "Heb je al een assistent ingesteld in {assistants}? Rakazo kan de instructies, het geheugen, de skills en de routines overnemen als een nieuwe bot, zodat je niet opnieuw begint.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "Het werkt ook met elke andere assistent: stuur één prompt en plak het antwoord.",
+  "Import an agent": "Een agent importeren",
 };
