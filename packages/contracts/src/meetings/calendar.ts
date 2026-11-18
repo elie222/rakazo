@@ -15,7 +15,7 @@ export type MeetingCalendarOAuthError = z.infer<typeof MeetingCalendarOAuthError
 
 const bot = z.object({ botId: z.string().min(1).max(128) });
 const event = bot.extend({ eventId: z.string().min(1).max(256) });
-const upcoming = z.object({
+const MeetingCalendarOccurrenceSchema = z.object({
   id: z.string(),
   title: z.string(),
   startsAt: z.number(),
@@ -27,19 +27,20 @@ const upcoming = z.object({
   quotaReached: z.boolean().optional(),
 });
 
+const MeetingCalendarUpcomingSchema = z.object({
+  available: z.boolean(),
+  connected: z.boolean(),
+  connecting: z.boolean().optional(),
+  disconnecting: z.boolean().optional(),
+  calendarLabel: z.string(),
+  events: z.array(MeetingCalendarOccurrenceSchema),
+});
+export type MeetingCalendarUpcoming = z.infer<typeof MeetingCalendarUpcomingSchema>;
+
 export const meetingCalendarRpc = {
   meetingCalendar: {
     status: oc.input(bot).output(z.object({ available: z.boolean() })),
-    upcoming: oc.input(bot).output(
-      z.object({
-        available: z.boolean(),
-        connected: z.boolean(),
-        connecting: z.boolean().optional(),
-        disconnecting: z.boolean().optional(),
-        calendarLabel: z.string(),
-        events: z.array(upcoming),
-      }),
-    ),
+    upcoming: oc.input(bot).output(MeetingCalendarUpcomingSchema),
     begin: oc
       .input(
         z.discriminatedUnion("client", [

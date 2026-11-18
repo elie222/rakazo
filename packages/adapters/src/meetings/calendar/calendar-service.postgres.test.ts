@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { JobPublisher, MeetingJoinRequest } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
-import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import { createDb, leaveSpace, runAsSystem, runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { RecallCalendarEmulator } from "../../providers/meeting/recall/calendar-emulator.js";
 import { countSpaceMeetingsForDay, countSpaceMeetingsInPastDay } from "../meeting-service.js";
@@ -534,6 +534,36 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       });
       await service.providerChanged(late!);
       expect(emulator.connectedCalendars()).toEqual([]);
+
+      clock = now;
+      const departing = await authorize();
+      await departing.complete();
+      const departureConnection = await runAsTenant(second, () =>
+        prisma.meetingCalendarConnection.findFirstOrThrow({ where: second }),
+      );
+      const departureEvent = (await listing(second)).events[0]!;
+      await runAsTenant(second, () =>
+        service.updateSelection(second, botId, departureEvent.id, "once"),
+      );
+      expect(emulator.scheduled(departureEvent.id)).toBeTruthy();
+      await runAsSystem("seed an owner for the departure fixture", () =>
+        prisma.spaceMember.update({ where: { spaceId_userId: first }, data: { role: "owner" } }),
+      );
+      // Commit the departure without running its normal immediate provider cleanup.
+      await runAsTenant(second, () => leaveSpace(prisma, second));
+      await expect(
+        runAsSystem("inspect the departed calendar", () =>
+          prisma.meetingCalendarConnection.findUnique({ where: { id: departureConnection.id } }),
+        ),
+      ).resolves.toMatchObject({ disconnecting: true });
+      const backup = await pool.query<{ task_identifier: string }>(
+        "SELECT task_identifier FROM graphile_worker.jobs WHERE key = $1",
+        [`meeting-calendar:disconnect:${departureConnection.id}`],
+      );
+      expect(backup.rows).toEqual([{ task_identifier: "meeting.calendar-sync" }]);
+      await service.sync(departureConnection.id);
+      expect(emulator.connectedCalendars()).toEqual([]);
+      expect(emulator.scheduled(departureEvent.id)).toBeUndefined();
     } finally {
       await runAsSystem("clean calendar integration fixture", async () => {
         await prisma.meetingCalendarConnection.deleteMany({ where: { spaceId } });

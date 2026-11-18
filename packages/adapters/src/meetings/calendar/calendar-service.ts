@@ -6,7 +6,7 @@ import type {
   MeetingJoinRequest,
 } from "@rakazo/adapter-kit";
 import { MeetingCalendarScheduleRejected, RetryJobLaterError } from "@rakazo/adapter-kit";
-import type { Actor, RpcOutput } from "@rakazo/contracts";
+import type { Actor, MeetingCalendarUpcoming } from "@rakazo/contracts";
 import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, runAsSystem, withLease } from "@rakazo/db";
@@ -72,7 +72,7 @@ export class MeetingCalendarService {
     return this.options.enabled(spaceId);
   }
 
-  async upcoming(actor: Owner, botId: string): Promise<RpcOutput<"meetingCalendar/upcoming">> {
+  async upcoming(actor: Owner, botId: string): Promise<MeetingCalendarUpcoming> {
     const { provider, prisma } = this.options;
     if (!this.available(actor.spaceId)) {
       return { available: false, connected: false, calendarLabel: "", events: [] };
@@ -90,7 +90,7 @@ export class MeetingCalendarService {
     if (!connection?.externalCalendarId || connection.disconnecting)
       return { ...calendar, events: [] };
 
-    const events: RpcOutput<"meetingCalendar/upcoming">["events"] = [];
+    const events: MeetingCalendarUpcoming["events"] = [];
     const [rules, bookings] = await Promise.all([
       prisma.meetingCalendarRule.findMany({ where: { connectionId: connection.id } }),
       prisma.meetingCalendarBooking.findMany({
@@ -243,13 +243,16 @@ export class MeetingCalendarService {
             data: { disconnecting: true },
             select: { id: true },
           });
-          const pending = rows.map(({ id }) => this.backup(id));
+          const pending = rows.map(({ id }) => ({
+            ...this.backup(id),
+            // This key also identifies the backup written by the member-departure trigger.
+            replaceKey: `meeting-calendar:disconnect:${id}`,
+          }));
           if (pending.length) await jobs.enqueueManyIn(tx, pending);
           return pending;
         }),
     );
-    // Account or Space deletion may cascade these rows. Keep them available
-    // for the durable backup until the provider actually disconnects.
+    // Keep provider handles available until sync confirms the disconnect.
     const outcomes = await Promise.allSettled(backups.map((backup) => this.runNow(backup)));
     for (const outcome of outcomes) {
       if (outcome.status === "rejected") throw outcome.reason;
