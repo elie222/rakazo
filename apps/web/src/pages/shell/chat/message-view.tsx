@@ -28,6 +28,7 @@ import {
   ToolOnlyNarration,
   ToolSteps,
 } from "../../../components/messages/ToolActivityDisclosure";
+import { ToolQuestionCard } from "../../../components/messages/ToolQuestionCard";
 import { PageBlockCard } from "../../../components/pages/PageBlockCard";
 import { SkillDraftCard } from "../../../components/teach/SkillDraftCard";
 import {
@@ -513,6 +514,18 @@ export const MessageView = memo(function MessageView({
             return (
               <div key={i} className="flex justify-start">
                 <McpAppCard block={block} target={artifactTarget} />
+              </div>
+            );
+          }
+          if (block.kind === "tool_question") {
+            return (
+              <div key={i} className="flex justify-start">
+                <ToolQuestionCard
+                  block={block}
+                  messageId={message.id}
+                  target={artifactTarget}
+                  canAnswer={canAnswer}
+                />
               </div>
             );
           }

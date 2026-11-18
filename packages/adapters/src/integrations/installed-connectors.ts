@@ -166,9 +166,12 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     sessionScope?: string;
     sessionPool?: RemoteMcpSessionCache;
     sessionRunId?: string;
+    elicitation: true;
   } {
-    if (!context.runId) return {};
+    // Sources people add (tool gateways among them) may stop a tool to ask the person.
+    if (!context.runId) return { elicitation: true };
     return {
+      elicitation: true,
       sessionScope: `${context.spaceId} ${context.userId} ${context.runId} ${install.id}`,
       sessionPool: this.mcpSessions,
       sessionRunId: context.runId,
@@ -347,6 +350,11 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           signal: context.signal,
           // Sources people add (gateways such as Executor) run tools that take minutes.
           longToolCalls: true,
+          asker: {
+            owner: context.runId ?? context.operationId,
+            source: install.name,
+            ask: context.askPerson,
+          },
           ...this.mcpSessionOptions(context, install),
         };
         const result = await callRemoteMcpTool(
