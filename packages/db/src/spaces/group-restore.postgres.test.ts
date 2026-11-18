@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createRepos } from "../bots/repos.js";
+import { createRepos } from "../bots/bot-repository.js";
 import { ComputerLimitError } from "../computers/computers.js";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";

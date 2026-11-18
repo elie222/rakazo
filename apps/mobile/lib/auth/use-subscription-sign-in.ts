@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type { AnalyticsModelSignInStep, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { RefObject } from "react";
@@ -13,6 +13,7 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../models/model-auth";
+import { analyticsSurface } from "../native/analytics-surface";
 import type { SettingsTarget } from "../query/settings-target";
 
 type SubscriptionSignInOptions = {
@@ -60,15 +61,43 @@ export function useSubscriptionSignIn({
   const [codeCopied, setCodeCopied] = useState(false);
   const codeCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const copyOAuthCode = useCallback((code: string) => {
-    void Clipboard.setStringAsync(code)
-      .then(() => {
-        setCodeCopied(true);
-        if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
-        codeCopiedTimerRef.current = setTimeout(() => setCodeCopied(false), 1600);
-      })
-      .catch(() => undefined);
-  }, []);
+  const reportedStepsRef = useRef(new Set<string>());
+
+  /** Tells the server a step only this app sees, once per sign-in. The caller names the
+   *  sign-in it began with, so a newer one never inherits a step that settles late. */
+  const reportSignInStep = useCallback(
+    (step: AnalyticsModelSignInStep, loginId: string | null) => {
+      const key = `${loginId}:${step}`;
+      if (!loginId || reportedStepsRef.current.has(key)) return;
+      reportedStepsRef.current.add(key);
+      void rpc("analytics/modelSignInStep", { loginId, step }).catch(() => undefined);
+    },
+    [rpc],
+  );
+
+  const openSignInPage = useCallback(
+    async (url: string) => {
+      const loginId = oauthLoginIdRef.current;
+      await Linking.openURL(url);
+      reportSignInStep("page_opened", loginId);
+    },
+    [reportSignInStep],
+  );
+
+  const copyOAuthCode = useCallback(
+    (code: string) => {
+      const loginId = oauthLoginIdRef.current;
+      void Clipboard.setStringAsync(code)
+        .then(() => {
+          reportSignInStep("code_copied", loginId);
+          setCodeCopied(true);
+          if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
+          codeCopiedTimerRef.current = setTimeout(() => setCodeCopied(false), 1600);
+        })
+        .catch(() => undefined);
+    },
+    [reportSignInStep],
+  );
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -124,6 +153,7 @@ export function useSubscriptionSignIn({
           label: selected.providerName ?? selected.provider,
           credentialId: credentialIdRef.current,
           codePage: true,
+          surface: analyticsSurface(),
         },
         { signal: controller.signal },
       );
@@ -131,7 +161,7 @@ export function useSubscriptionSignIn({
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
-      await Linking.openURL(started.verificationUri);
+      await openSignInPage(started.verificationUri);
       waitingForCode = started.mode === "auth-url";
       if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
@@ -200,6 +230,7 @@ export function useSubscriptionSignIn({
     copyOAuthCode,
     cancelOAuth,
     cancelSignIn,
+    openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
   };

@@ -14,6 +14,7 @@ import {
 import type { Prisma } from "@rakazo/db";
 import {
   AnswerTooLongError,
+  answerToolQuestion,
   appendEventInTransaction,
   createExternalConversationRepos,
   createThreadMessageInTransaction,
@@ -25,7 +26,7 @@ import {
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
 import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
 import { answerComputerRequest } from "../computers/computer-control.js";
@@ -619,6 +620,25 @@ export function threadsRoutes(ctx: RouterContext) {
           });
         }
         await wakeRun(deps.jobs, input.runId);
+        return { ok: true as const };
+      }),
+      answerToolQuestion: authed.threads.answerToolQuestion.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const committed = await answerToolQuestion(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          threadId: target.threadId,
+          messageId: input.messageId,
+          userId: context.actor.userId,
+          action: input.action,
+          values: input.values,
+        });
+        // The call waiting on this card hears it through the thread's events, wherever it runs.
+        // The answer is saved: a missed signal only delays it to the waiting call's re-read.
+        if (committed)
+          await bestEffort(
+            "tool question notify",
+            deps.events.notify(committed.threadId, committed.seq),
+          );
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

@@ -2,7 +2,7 @@ import { BotTemplateSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { looksLikeCredential } from "../agent-import/index.js";
 import { matchFeaturedConnectorId } from "../integrations/featured-connectors.js";
-import { presetFromCron } from "../primitives/cron.js";
+import { presetFromCron } from "../routines/schedule.js";
 import { extractRoutineSkillMentions } from "../skills/agent-skill.js";
 import { BOT_TEMPLATES, findBotTemplate } from "./bot-templates.js";
 

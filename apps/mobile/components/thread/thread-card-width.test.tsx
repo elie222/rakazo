@@ -135,7 +135,7 @@ vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../cards/ComputerCard", () => ({ ComputerCard: () => null }));
-vi.mock("../pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../../lib/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("./mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../media/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (

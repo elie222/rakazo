@@ -1,8 +1,9 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import * as modelRoles from "../../models/model-roles.js";
+import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
-import { mainRole, withModelRoles } from "../../testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
@@ -617,3 +618,117 @@ describe("team chat engagement judge", () => {
     },
   );
 });
+
+it.each(["personal-main", "legacy-main", "missing-personal-pin", "withdrawn-credit-pin"])(
+  "keeps team judging funded without replacing an explicit choice (%s)",
+  async (mode) => {
+    const personal = mode === "personal-main";
+    const credential = {
+      id: "personal",
+      userId: "user",
+      provider: "openrouter",
+      secretId: "personal-secret",
+      label: "Personal",
+      defaultModel: "personal-model",
+      thinkingLevel: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    const member = vi.spyOn(modelRoles, "resolveMemberMainModel").mockResolvedValue({
+      provider: personal ? "openrouter" : "anthropic",
+      modelId: personal ? "personal-model" : "unfunded-model",
+      credential: personal ? credential : null,
+      ...(mode === "missing-personal-pin"
+        ? { credentialId: "removed" }
+        : mode === "withdrawn-credit-pin"
+          ? { creditOfferingId: "withdrawn" }
+          : {}),
+    });
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "openrouter",
+            modelId: "approved-model",
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    const run = vi.fn(async function* (_request: AgentRunRequest) {
+      yield { type: "done", text: '{"act":true}' };
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: {
+        user: { findUnique: async () => null },
+        deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
+        userModelPreference: { findFirst: async () => null },
+        userModelCredential: {
+          findFirst: async ({ where }: { where: { provider: string } }) =>
+            personal && where.provider === "openrouter" ? credential : null,
+          findUnique: async () => ({
+            id: "operator",
+            provider: "openrouter",
+            userId: "operator-owner",
+            secretId: "operator-secret",
+          }),
+        },
+        secret: {
+          findFirst: async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            ciphertext: where.id,
+          }),
+        },
+        space: {
+          findFirst: async () => ({ organization: { modelCredits: { mode: "credits" } } }),
+          findUnique: async () => ({ organizationId: "org" }),
+        },
+        member: { findUnique: async () => ({ role: "owner" }) },
+        billingAccount: { findUnique: async () => null },
+        modelCreditAccount: { upsert: async () => ({ mode: "credits" }) },
+      } as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async (ciphertext: string) =>
+          ciphertext === "personal-secret" ? "fake-personal-key" : "fake-operator-key",
+      } as never,
+      deploymentProvider: "openrouter",
+      deploymentModel: "approved-model",
+      deploymentModelKey: "fake-operator-key",
+    });
+    try {
+      const result = await judge.decide({
+        bot: {
+          id: "bot",
+          spaceId: "space",
+          userId: "user",
+          name: "Fixture",
+          modelProvider: "anthropic",
+          modelId: "unfunded-model",
+        },
+        channelId: "channel",
+        rules: "",
+        messages: [],
+      });
+      if (mode.endsWith("pin")) {
+        expect(result).toEqual({ act: false });
+        expect(run).not.toHaveBeenCalled();
+      } else {
+        expect(result).toEqual({ act: true });
+        expect(run).toHaveBeenCalledOnce();
+        expect(run.mock.calls[0]?.[0].model).toMatchObject({
+          provider: "openrouter",
+          id: personal ? "personal-model" : "approved-model",
+          apiKey: personal ? "fake-personal-key" : "fake-operator-key",
+        });
+      }
+    } finally {
+      member.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  },
+);

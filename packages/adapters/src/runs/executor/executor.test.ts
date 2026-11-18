@@ -14,6 +14,7 @@ import {
   cloudflareModelConfigMessage,
 } from "../../models/endpoints/cloudflare-ai-gateway.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../models/endpoints/openai-compatible-url.js";
+import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { serializeModelSecret } from "../../models/model-secret.js";
 import {
   UnavailableModelForAuthError,
@@ -26,7 +27,6 @@ import {
 } from "../../models/model-vision.js";
 import { RetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import { modelsForRequest, resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
-import { mainRole, withModelRoles } from "../../testing/model-roles.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import {
   desktopGuardShellInstruction,
@@ -1277,7 +1277,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     status: "queued",
     trigger,
     routineId: "routine-1",
-    routine: { name: "Daily check" },
+    routine: { name: "Daily check", inChat: true },
     modelProvider: COMPATIBLE_PROVIDER,
     modelId,
     thinkingLevel: null,
@@ -3999,7 +3999,11 @@ description: Prepare standup notes
     expect(append).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "run.started",
-        payload: { trigger: "routine", routineId: "routine-1", routineName: "Daily check" },
+        payload: expect.objectContaining({
+          trigger: "routine",
+          routineId: "routine-1",
+          routineName: "Daily check",
+        }),
       }),
     );
   });

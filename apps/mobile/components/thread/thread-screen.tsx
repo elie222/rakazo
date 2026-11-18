@@ -32,6 +32,7 @@ import { readableGutters } from "../../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useSplitView } from "../../lib/layout/split-view";
 import { useThemedStyles } from "../../lib/native/native";
+import { NewestPageCards } from "../../lib/pages/page-card";
 import { useChatOnScreen } from "../../lib/pages/page-card-detail";
 import { useAppForeground } from "../../lib/platform/app-foreground";
 import { rpcQuery } from "../../lib/query/query";
@@ -76,7 +77,6 @@ import { liveEndRunError } from "../../lib/thread/thread-window";
 import { RunErrorSheet } from "../cards/run-error-sheet";
 import { ThreadComposer } from "../composer/thread-composer";
 import { SelectTextSheet } from "../messages/select-text-sheet";
-import { NewestPageCards } from "../pages/page-card";
 import { FailedSendBubble } from "./failed-send-bubble";
 import { createThreadHeaderStyles } from "./header/thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
@@ -177,13 +177,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
   const needsModel = uploadConfig?.needsModel;
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
-    useThreadBots({
-      botId,
-      groupId,
-      name,
-      activeBotId,
-    });
+  const {
+    mentionBots,
+    mentionBotsRef,
+    mentionGroups,
+    rosterLoaded,
+    refreshMentionBots,
+    refreshMentionRoster,
+  } = useThreadBots({
+    botId,
+    groupId,
+    name,
+    activeBotId,
+  });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -254,7 +260,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       mentionRoutines,
     ],
   );
-  const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
+  const currentBot =
+    botId && rosterLoaded ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
   const inboxBot = useInboxBot(botId);
   const composerModel = useComposerModel(inGroup ? undefined : botId);
@@ -276,9 +283,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const activityLine = liveActivityLine(snap?.messages ?? []);
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
-    () =>
-      !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
-    [inGroup, currentBot?.color, currentBot?.id],
+    () => (!inGroup && titleBot ? chatUserBubbleColors(titleBot.color, titleBot.id) : undefined),
+    [inGroup, titleBot?.color, titleBot?.id],
   );
   const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];

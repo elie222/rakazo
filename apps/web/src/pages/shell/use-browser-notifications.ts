@@ -2,7 +2,6 @@ import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { organizationsChanged } from "../../lib/auth/organizations";
 import { computerUpdates } from "../../lib/computers/computer-updates";
 import {
   browserNotificationTag,
@@ -13,6 +12,7 @@ import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/n
 import { followStream } from "../../lib/query/follow-stream";
 import type { RpcClient } from "../../lib/query/rpc";
 import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
+import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;

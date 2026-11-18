@@ -3,11 +3,11 @@ import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { BoardList } from "../components/board/board-list";
 import { LoadFailure } from "../components/ui/load-failure";
 import { rpc } from "../lib/api/api";
 import { errorText } from "../lib/api/user-error";
 import { boardSections } from "../lib/board/board";
+import { BoardList } from "../lib/board/board-list";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 

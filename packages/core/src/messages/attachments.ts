@@ -303,6 +303,17 @@ function blockHistoryText(block: MessageBlock): string {
     }[block.status];
     return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
   }
+  // Whether the person answered a tool's question, never what was asked or sent: the question
+  // is the server's own text and the answer went to the server.
+  if (block.kind === "tool_question") {
+    const outcome = {
+      pending: "waiting for the user",
+      accepted: "the user answered",
+      declined: "the user declined",
+      expired: "the user did not answer",
+    }[block.status];
+    return `[${block.question.source} asked the user a question during a tool call; ${outcome}]`;
+  }
   if ("text" in block && typeof block.text === "string") return block.text;
   return "";
 }
@@ -313,6 +324,10 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".ogg": "audio/ogg",
   ".m4a": "audio/mp4",
   ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".3gp": "video/3gpp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -339,6 +354,10 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "audio/ogg": ".ogg",
   "audio/mp4": ".m4a",
   "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/3gpp": ".3gp",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
   "image/jpeg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",

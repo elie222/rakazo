@@ -20,7 +20,7 @@ import {
 import { prepareAgentConnectionResponse } from "../../bots/agent-connections.js";
 import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-patch.js";
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
-import { sanitizeConnectorError } from "../../connectors/connector-safety.js";
+import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
 import type { PurchaseApproval } from "../../payments/purchase-gate.js";
 import {
@@ -29,6 +29,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
 import {
@@ -413,6 +414,12 @@ export async function prepareToolRequest(
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
   }
+  // The card shows and the effect stores the events in their short form, so padding can't hide one.
+  if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {
+    const events = canonicalToolEvents(args.on);
+    if ("error" in events) return refusal("schedule_events_invalid", events.error);
+    if (events.on) args = { ...args, on: events.on };
+  }
   // Before the gate, so a routine that cannot be saved shows no approval card. An approved
   // replay goes on to the handler, which checks again.
   if (name === "schedule_create" && nextApprovedTool !== name) {
@@ -590,7 +597,13 @@ export async function prepareToolRequest(
       request.effectRequest = args;
   }
   request.args = args;
-  if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
+  if (
+    name === "respond_agent_connection" ||
+    name === "update_bot" ||
+    name === "schedule_create" ||
+    name === "schedule_update" ||
+    isFleetApprovalTool(name)
+  )
     request.effectRequest = args;
   return undefined;
 }

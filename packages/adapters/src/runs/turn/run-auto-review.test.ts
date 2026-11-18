@@ -135,6 +135,7 @@ it("preserves personal authentication for a legacy hosted deployment checker", a
     "google-vertex",
     "gemini-4-hydrogen",
     expect.any(Function),
+    expect.objectContaining({ operatorFunded: false }),
   );
 });
 
@@ -157,6 +158,30 @@ it("keeps a personal decision connection when hosted auth is unavailable", async
     "openrouter",
     "typesafe/jev-1.14",
     expect.any(Function),
+    expect.objectContaining({ operatorFunded: false }),
+  );
+});
+
+it("keeps an explicitly credit-funded checker separate from the included checker", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+  vi.mocked(findConnectedModelCredential).mockClear();
+  const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
+  await autoReviewCheckerProvider(
+    deps,
+    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    { memberChecker: false, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "typesafe/jev-1.14", creditOfferingId: "member-offering" },
+  );
+  expect(findConnectedModelCredential).not.toHaveBeenCalled();
+  expect(resolveModelKey).toHaveBeenLastCalledWith(
+    deps,
+    "user",
+    "space",
+    null,
+    "openrouter",
+    "typesafe/jev-1.14",
+    expect.any(Function),
+    expect.objectContaining({ operatorFunded: false, creditOfferingId: "member-offering" }),
   );
 });
 

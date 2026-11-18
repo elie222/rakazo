@@ -25,13 +25,13 @@ import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { WindowChrome } from "../../components/WindowChrome";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
-import { useTicketPriorityLabels } from "../../lib/ticket-priority";
-import { useTicketStatusLabels } from "../../lib/ticket-status";
-import { WindowChrome } from "../WindowChrome";
+import { useTicketPriorityLabels } from "./ticket-priority";
+import { useTicketStatusLabels } from "./ticket-status";
 
 export function BoardPage() {
   const { t } = useLingui();

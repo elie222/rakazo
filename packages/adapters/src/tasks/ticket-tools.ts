@@ -6,6 +6,7 @@ import {
   TicketStatusSchema,
   UpdateTicketInput,
 } from "@rakazo/contracts";
+import { sliceWellFormed } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   allocateTicketNumber,
@@ -15,7 +16,6 @@ import {
   toTicketCommentDto,
   toTicketDto,
 } from "@rakazo/db";
-import { sliceWellFormed } from "../shared/utf8.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 
 type TicketToolDeps = {

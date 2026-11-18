@@ -2160,7 +2160,9 @@ describe("a group member the message named nobody for", () => {
   it("streams a real reply live", async () => {
     const result = await turn(true, [text("Here is the plan."), done], true);
     const progress = result.savedEvents.filter((event) => event.type === "thread.progress");
-    expect(JSON.stringify(progress)).toContain("Here is the plan.");
+    expect(progress.map((event) => event.payload.text ?? event.payload.delta ?? "").join("")).toBe(
+      "Here is the plan.",
+    );
   });
 
   it("no longer ends silently once a later message names it", async () => {

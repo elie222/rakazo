@@ -6,10 +6,10 @@ import * as db from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isVoiceProviderFailure } from "../voice/http-errors.js";
 import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
-  isVoiceProviderFailure,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,

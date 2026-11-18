@@ -19,8 +19,8 @@ import {
 import { CircleUserRound } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "../../lib/auth/auth";
-import { switchOrganization, useOrganizations } from "../../lib/auth/organizations";
 import { useQueryUserId } from "../../lib/query/query";
+import { switchOrganization, useOrganizations } from "../../lib/spaces/organizations";
 import {
   DeleteOrganizationDialog,
   removeOrganization,

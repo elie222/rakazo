@@ -1,7 +1,7 @@
 import { ResponseTooLargeError } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
-import type { LocalServiceConnection } from "../../../web/local-service-endpoint.js";
-import { fetchLocalService, parseServiceBaseUrl } from "../../../web/local-service-endpoint.js";
+import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
+import { fetchLocalService, parseServiceBaseUrl } from "../../../network/local-service-endpoint.js";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const SUPERMEMORY_TIMEOUT_MS = 15_000;

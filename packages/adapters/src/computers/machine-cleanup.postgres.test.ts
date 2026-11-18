@@ -20,10 +20,10 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 import { GraphileJobPublisher } from "../runs/wakeups/wakeup.js";
-import { recordUnreferencedMachine } from "../sandboxes/sandbox-cleanup.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { machineCleanupRecords, retryMachineCleanup } from "./machine-cleanup.js";
+import { recordUnreferencedMachine } from "./sandbox/sandbox-cleanup.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;

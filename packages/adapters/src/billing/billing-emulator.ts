@@ -117,6 +117,7 @@ export class BillingEmulator implements BillingProvider {
     const chosen = pickBillingSubscription(this.forCustomer(customerId));
     if (chosen?.status !== "trialing" || chosen.cancelAtPeriodEnd) return;
     chosen.status = "active";
+    chosen.paidAt = new Date(this.now());
     chosen.trialEndsAt = new Date(this.now());
     chosen.currentPeriodStartsAt = new Date(this.now());
     chosen.currentPeriodEndsAt = new Date(
@@ -188,6 +189,7 @@ export class BillingEmulator implements BillingProvider {
       byokTier: checkout.tier ?? "standard",
       cardFingerprint,
       status: trialEndsAt ? "trialing" : "active",
+      ...(trialEndsAt ? {} : { paidAt: new Date(this.now()) }),
       seats: 1,
       trialEndsAt,
       currentPeriodStartsAt: new Date(this.now()),
@@ -247,6 +249,7 @@ export class BillingEmulator implements BillingProvider {
         priceId: "price_credit_emulated",
         cardFingerprint,
         status: "active",
+        paidAt: new Date(this.now()),
         seats: 1,
         creditAmountCents: checkout.amountCents,
         trialEndsAt: null,
@@ -340,6 +343,9 @@ export class BillingEmulator implements BillingProvider {
       priceId: "price_emulated",
       cardFingerprint,
       status: status ?? (trialEnd ? "trialing" : "active"),
+      ...(trialEnd || (status && status !== "active")
+        ? {}
+        : { paidAt: new Date(nowSeconds * 1000) }),
       seats: checkout.seats,
       trialEndsAt: trialEnd === null ? null : new Date(trialEnd * 1000),
       currentPeriodStartsAt: new Date(nowSeconds * 1000),
@@ -355,6 +361,14 @@ export class BillingEmulator implements BillingProvider {
     const newest = this.forCustomer(customerId).sort((a, b) => b.created - a.created)[0];
     if (!newest) throw new Error(`No subscription for ${customerId}`);
     newest.status = status;
+  }
+
+  /** Test helper: the charge for the customer's newest subscription goes through. */
+  pay(customerId: string) {
+    const newest = this.forCustomer(customerId).sort((a, b) => b.created - a.created)[0];
+    if (!newest) throw new Error(`No subscription for ${customerId}`);
+    newest.status = "active";
+    newest.paidAt = new Date(this.now());
   }
 
   /** Test helper: deleting the customer cancels its subscriptions and blocks further calls. */

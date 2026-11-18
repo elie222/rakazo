@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Bot } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 
@@ -32,6 +32,10 @@ describe.skipIf(!hasDb)("COMPUTER_DEFAULT_MODE for new bots", () => {
     app = handles.app;
     prisma = asSystem(handles.prisma);
     stop = handles.stop;
+  });
+
+  beforeEach(() => {
+    delete process.env.COMPUTER_DEFAULT_MODE;
   });
 
   afterEach(() => {

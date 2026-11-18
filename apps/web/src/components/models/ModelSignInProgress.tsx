@@ -13,6 +13,7 @@ export function ModelSignInProgress({
   codeCopied,
   copyOAuthCode,
   cancelOAuthAttempt,
+  onPageOpened,
 }: {
   oauth: ModelOAuthBegin;
   pasteCode: string;
@@ -22,6 +23,8 @@ export function ModelSignInProgress({
   codeCopied: boolean;
   copyOAuthCode: (text: string) => unknown;
   cancelOAuthAttempt: () => void;
+  /** The user opened the provider's sign-in page from a link here. */
+  onPageOpened: () => void;
 }) {
   const { t } = useLingui();
   return (
@@ -33,6 +36,7 @@ export function ModelSignInProgress({
               Sign in at{" "}
               <a
                 href={oauth.verificationUri}
+                onClick={onPageOpened}
                 target="_blank"
                 rel="noreferrer"
                 className="text-foreground underline"
@@ -77,6 +81,7 @@ export function ModelSignInProgress({
                 Open{" "}
                 <a
                   href={oauth.verificationUri}
+                  onClick={onPageOpened}
                   target="_blank"
                   rel="noreferrer"
                   className="text-foreground underline"
@@ -90,6 +95,7 @@ export function ModelSignInProgress({
                 A sign-in tab opened at{" "}
                 <a
                   href={oauth.verificationUri}
+                  onClick={onPageOpened}
                   target="_blank"
                   rel="noreferrer"
                   className="text-foreground underline"

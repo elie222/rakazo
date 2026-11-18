@@ -52,8 +52,8 @@ import {
   formatBillingAmount,
   formatBillingDate,
   formatBillingPrice,
-} from "../../lib/billing";
-import { desktopBridge } from "../../lib/platform/desktop";
+} from "../../lib/billing/billing";
+import { analyticsSurface, desktopBridge } from "../../lib/platform/desktop";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
@@ -1055,7 +1055,10 @@ export function ModelCreditsSettings({
           disabled={pending || !status.creditPurchasesEnabled}
           onClick={() =>
             void action(async () => {
-              await client.billing.selectFunding({ funding: "credits" });
+              await client.billing.selectFunding({
+                funding: "credits",
+                surface: analyticsSurface(),
+              });
               window.location.reload();
             })
           }

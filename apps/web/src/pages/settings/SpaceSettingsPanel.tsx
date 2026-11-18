@@ -5,8 +5,8 @@ import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRo
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
 import { useSave } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
-import type { SettingsSpace } from "../shell/dialogs";
-import { DeleteSpaceDialog } from "../shell/dialogs";
+import type { SettingsSpace } from "../shell/create-delete-dialogs";
+import { DeleteSpaceDialog } from "../shell/create-delete-dialogs";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 
 /**

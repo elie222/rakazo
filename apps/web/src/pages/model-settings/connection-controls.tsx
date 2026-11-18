@@ -20,6 +20,7 @@ export function ConnectionControls({
   codeCopied,
   connectKey,
   copyOAuthCode,
+  reportSignInStep,
   credential,
   gatewayId,
   projectId,
@@ -59,6 +60,7 @@ export function ConnectionControls({
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
+  | "reportSignInStep"
   | "credential"
   | "gatewayId"
   | "projectId"
@@ -112,6 +114,7 @@ export function ConnectionControls({
               codeCopied={codeCopied}
               copyOAuthCode={copyOAuthCode}
               cancelOAuthAttempt={cancelOAuthAttempt}
+              onPageOpened={() => reportSignInStep("page_opened")}
             />
           ) : (
             <Button

@@ -31,7 +31,6 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -51,6 +50,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
+import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
@@ -194,6 +194,7 @@ export default function ModelConnection() {
     copyOAuthCode,
     cancelOAuth,
     cancelSignIn,
+    openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
   } = useSubscriptionSignIn({
@@ -408,9 +409,11 @@ export default function ModelConnection() {
     const { savingWithoutKey, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc("models/connect", connect.input, {
-        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
-      });
+      const saved = await rpc(
+        "models/connect",
+        { ...connect.input, surface: analyticsSurface() },
+        { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
+      );
       adoptSavedCredential(saved);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
@@ -589,7 +592,7 @@ export default function ModelConnection() {
               {oauth.mode === "auth-url" ? (
                 <>
                   <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
-                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
                   </Pressable>
                   <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
@@ -618,7 +621,7 @@ export default function ModelConnection() {
                   <Text style={styles.secondary}>
                     {t`A sign-in page opened — enter this code there:`}
                   </Text>
-                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
                   </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>

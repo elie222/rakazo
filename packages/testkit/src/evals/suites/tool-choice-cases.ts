@@ -382,6 +382,23 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "schedule_create" }] },
   },
   {
+    id: "schedule-webhook",
+    area: "schedules",
+    kind: "guard",
+    purpose: "Start a routine from a webhook instead of a clock.",
+    prompt: "Whenever our CI calls your webhook, summarize what failed and tell me.",
+    expect: { calls: [{ tool: "schedule_create", args: { on: "~webhook" } }] },
+  },
+  {
+    id: "schedule-git-event",
+    area: "schedules",
+    kind: "guard",
+    purpose: "Start a routine from a Git event instead of polling.",
+    prompt:
+      "Each time someone opens a pull request on our GitHub repo acme/api, check that its description says how it was tested and tell me if not. Set it up so GitHub notifies you.",
+    expect: { calls: [{ tool: "schedule_create", args: { on: "~git" } }] },
+  },
+  {
     id: "schedule-list",
     area: "schedules",
     kind: "guard",
@@ -422,6 +439,16 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Create a new bot when asked.",
     prompt: "Create a new bot called Researcher that finds papers on battery chemistry.",
     expect: { calls: [{ tool: "spawn_bot" }] },
+  },
+  {
+    id: "fleet-spawn-setup",
+    area: "fleet",
+    kind: "guard",
+    purpose: "Hand a new bot the setup it needs as its first message.",
+    prompt:
+      "Create a bot called Standup. It should have a skill called daily-digest that summarizes yesterday's merged pull requests in five bullets, and a routine that runs that skill every weekday at 9am.",
+    // Only that the setup is handed over: grading its wording would need a judge rubric.
+    expect: { calls: [{ tool: "spawn_bot", args: { prompt: "*" } }] },
   },
   {
     id: "fleet-list",

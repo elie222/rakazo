@@ -513,6 +513,7 @@ export function VoiceSettingsOverlay({
                       codeCopied={codeCopied}
                       copyOAuthCode={copyOAuthCode}
                       cancelOAuthAttempt={signIn.cancelOAuthAttempt}
+                      onPageOpened={() => signIn.reportSignInStep("page_opened")}
                     />
                   ) : modelSignIn ? (
                     <Button

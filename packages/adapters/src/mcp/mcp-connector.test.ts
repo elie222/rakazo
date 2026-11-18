@@ -10,9 +10,9 @@ import {
 import { deferred, flush } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "../connectors/connector-registry.js";
-import { InstalledConnectorProvider } from "../connectors/installed-connectors.js";
-import { IntegrationProviderSettings } from "../connectors/integration-provider-settings.js";
+import { ConnectorRegistry } from "../integrations/connector-registry.js";
+import { InstalledConnectorProvider } from "../integrations/installed-connectors.js";
+import { IntegrationProviderSettings } from "../integrations/integration-provider-settings.js";
 import { InMemoryRealtimeFanout } from "../notifications/realtime.js";
 import { InfisicalSecretStore } from "../providers/secret-store/infisical/infisical-secret-store.js";
 import { checkRoutineWatch, validateRoutineWatch } from "../routines/routine-watch.js";

@@ -176,7 +176,7 @@ jobs:
               PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
               PLAYWRIGHT_RUN_URL="$RUN_URL" \
               PLAYWRIGHT_SHA="$SHA" \
-                pnpm exec tsx packages/testkit/src/cli/build-playwright-pr-screenshot-comment.ts \
+                pnpm exec tsx packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts \
                   "$review_path" \
                   "$changed_paths_file"
             )"
