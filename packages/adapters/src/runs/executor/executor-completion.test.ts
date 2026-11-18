@@ -10,6 +10,7 @@ import {
   messagesModeReplyGuidance,
   REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
+  replyGuidanceForOfferedTools,
   runAllowsSilentEmpty,
   runPromotesMidTurnNarration,
   runReplyGuidance,
@@ -631,6 +632,28 @@ describe("runReplyMode", () => {
     expect(runReplyGuidance("user", "messages")).toBe(messagesModeReplyGuidance());
     expect(messagesModeReplyGuidance()).toContain("private and never shown");
     expect(messagesModeReplyGuidance()).toContain("message_user");
+  });
+});
+
+describe("final reply guidance", () => {
+  const endsTurn = "final reply ends your turn";
+
+  it("tells a model that a person is waiting on, in either mode, that its reply ends the run", () => {
+    for (const mode of ["chat", "messages"] as const)
+      expect(runReplyGuidance("user", mode)).toContain(endsTurn);
+  });
+
+  it("keeps that guidance when message_user is not offered", () => {
+    const guidance = replyGuidanceForOfferedTools(
+      runReplyGuidance("user", "chat"),
+      new Set(["message_user"]),
+    );
+    expect(guidance).toContain(endsTurn);
+  });
+
+  it("leaves silent runs to their own guidance", () => {
+    for (const trigger of ["routine", "reaction", "tickets"])
+      expect(runReplyGuidance(trigger)).not.toContain(endsTurn);
   });
 });
 
