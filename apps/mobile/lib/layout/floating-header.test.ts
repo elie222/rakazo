@@ -1,13 +1,9 @@
 import { expect, it, vi } from "vitest";
+import { sideStatusColumn } from "./floating-header";
 
-vi.mock("expo-router/react-navigation", async () => {
-  const { createContext } = await import("react");
-  return { HeaderHeightContext: createContext<number | undefined>(undefined) };
-});
+vi.mock("expo-router/react-navigation", () => ({ HeaderHeightContext: undefined }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({}) }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => true }));
-
-const { sideStatusColumn } = await import("./floating-header");
 
 it.each([
   // The iPhone Duo's outer display: the status bar down the right side.
