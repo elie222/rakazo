@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 import { startWorkerHealth } from "./health.js";
@@ -260,6 +261,7 @@ async function main() {
       events,
       provider: meetingProvider,
       spaceIds: configuredMeetingSpaces(meetingProvider),
+      buildJoin: configuredMeetingMedia()?.buildJoin,
     });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,

@@ -30,7 +30,11 @@ export interface MeetingProvider {
     recordingId: string,
     signal: AbortSignal,
   ): Promise<{ id: string; ready: boolean }>;
-  downloadTranscript(transcriptId: string, signal: AbortSignal): Promise<MeetingTurn[]>;
+  downloadTranscript(
+    transcriptId: string,
+    signal: AbortSignal,
+    options?: { selfName?: string },
+  ): Promise<MeetingTurn[]>;
   deleteRecording(recordingId: string, signal: AbortSignal): Promise<void>;
   verifyWebhook(body: string, headers: Headers): MeetingObservation | "ignored" | "invalid";
 }

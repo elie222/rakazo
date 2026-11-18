@@ -131,3 +131,14 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
   );
   expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow("valid Zoom");
 });
+
+it("carries the branded camera and captures the bot's speech for the final transcript", async () => {
+  const emulator = new RecallMeetingEmulator();
+  const mediaUrl = "https://api.example.test/api/meetings/media#grant";
+  await real(emulator).join({ ...input, mediaUrl }, signal);
+  expect(emulator.requests[0]?.body).toMatchObject({
+    variant: { google_meet: "web_4_core" },
+    output_media: { camera: { kind: "webpage", config: { url: mediaUrl } } },
+    recording_config: { include_bot_in_recording: { audio: true } },
+  });
+});

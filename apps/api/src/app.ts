@@ -89,6 +89,7 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
   buildTrustedOrigins,
@@ -684,12 +685,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
   const meetingProvider = await configuredMeetingProvider();
+  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
   const meetings = new MeetingService({
     prisma,
     jobs,
     events,
     provider: meetingProvider,
     spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
+    buildJoin: meetingMediaConfig?.buildJoin,
   });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
@@ -808,11 +811,27 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
 
+  // Meeting requests use a runtime with no persistent session recording.
+  const meetingRuntime = new PiAgentRuntime();
+  const meetingMedia =
+    meetingMediaConfig &&
+    meetingProvider &&
+    (await import("./meetings/media/app-meeting-media.js")).appMeetingMedia({
+      prisma,
+      secrets,
+      env,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      config: meetingMediaConfig,
+      providerId: meetingProvider.describe().id,
+      enabled: (spaceId) => meetings.enabled(spaceId),
+    });
+
   const router = createRouter({
     meetings,
     meetingAnswers: createMeetingAnswers({
       prisma,
-      runtime: new PiAgentRuntime(),
+      runtime: meetingRuntime,
       resolveModel: executor.resolveModel,
       offline: meetingProvider?.describe().capabilities.offline === true,
     }),
@@ -1181,6 +1200,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     sessionActor,
   );
   if (meetingProvider) mountMeetingWebhook(app, meetings);
+  meetingMedia?.mount(app);
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {

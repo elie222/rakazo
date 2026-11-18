@@ -62,7 +62,14 @@ export function buildRecallBotConfig(input: MeetingJoinRequest) {
         message: "Rakazo is capturing audio to create a meeting transcript.",
       },
     },
+    ...(input.mediaUrl
+      ? {
+          variant: { [input.platform]: "web_4_core" },
+          output_media: { camera: { kind: "webpage", config: { url: input.mediaUrl } } },
+        }
+      : {}),
     recording_config: {
+      ...(input.mediaUrl ? { include_bot_in_recording: { audio: true } } : {}),
       video_mixed_layout: "audio_only",
       retention: { type: "timed", hours: 24 },
     },
@@ -170,7 +177,11 @@ export class RecallMeetingProvider implements MeetingProvider {
     return { id: result.id, ready: result.status?.code === "done" };
   }
 
-  async downloadTranscript(transcriptId: string, signal: AbortSignal): Promise<MeetingTurn[]> {
+  async downloadTranscript(
+    transcriptId: string,
+    signal: AbortSignal,
+    options?: { selfName?: string },
+  ): Promise<MeetingTurn[]> {
     const result = await this.read(
       await this.call(`transcript/${id.parse(transcriptId)}/`, signal),
       artifact,
@@ -197,7 +208,11 @@ export class RecallMeetingProvider implements MeetingProvider {
         if (!text) return [];
         return [
           {
-            speaker: participant?.name?.slice(0, 256) || "Unknown speaker",
+            speaker:
+              (participant?.id === 2_147_483_647 ? options?.selfName : participant?.name)?.slice(
+                0,
+                256,
+              ) || "Unknown speaker",
             startMs: Math.round((words[0]?.start_timestamp?.relative ?? 0) * SECOND),
             text: text.slice(0, 32_000),
           },

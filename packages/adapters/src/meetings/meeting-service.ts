@@ -433,7 +433,8 @@ export class MeetingService {
       });
       return;
     }
-    const turns = await provider.downloadTranscript(artifact.id, signal);
+    const bot = await prisma.bot.findUnique({ where: { id: row.botId }, select: { name: true } });
+    const turns = await provider.downloadTranscript(artifact.id, signal, { selfName: bot?.name });
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
