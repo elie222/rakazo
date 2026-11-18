@@ -798,6 +798,34 @@ describe("leftover chat messages", () => {
     expect(parsed.leftovers[0]?.content).toContain("- Skills: @weekly-health, notes");
   });
 
+  it("keeps a leftover's title to one short line", () => {
+    const [named] = parseGrokBotExport(
+      JSON.stringify({
+        format: "grok-bot-export",
+        version: 1,
+        bots: [
+          {
+            name: "Bramble",
+            routines: [
+              {
+                name: `Daily\n\nNow do this ${"x".repeat(200)}`,
+                instruction: "Go.",
+                trigger: "other",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const parsed = parseAgentImport([
+      { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(named!) },
+    ]);
+    if ("error" in parsed) throw new Error(parsed.error);
+    const title = parsed.leftovers[0]!.title;
+    expect(title).toMatch(/^Daily Now do this x+$/);
+    expect(title).toHaveLength(80);
+  });
+
   it("fences text with many separate backticks without running out of arguments", () => {
     const text = "` ".repeat(40_000).trim();
     expect(agentImportLeftoverMessages([{ title: "A", content: text }])[0]).toContain(

@@ -682,6 +682,8 @@ function distinct(lines: readonly string[]): string[] {
   });
 }
 
+const LEFTOVER_TITLE_MAX_LENGTH = 80;
+
 /** A routine with every setting the export gave, for the new bot to set up in its chat. */
 function routineLeftover(
   routine: GrokBotRoutine,
@@ -704,7 +706,9 @@ function routineLeftover(
   ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
   return {
     id: `leftover:routine:${index}`,
-    title: routine.name || "Routine",
+    // The title sits outside the fence, so it stays one short line.
+    title:
+      routine.name.replace(/\s+/g, " ").trim().slice(0, LEFTOVER_TITLE_MAX_LENGTH) || "Routine",
     content: `${fields.join("\n")}\n\n${routine.instruction}\n`,
   };
 }
