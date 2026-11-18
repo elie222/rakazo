@@ -245,9 +245,11 @@ export class RecallCalendarEmulator {
         const events = this.calendars.get(url.searchParams.get("calendar_id") ?? "");
         if (!events) return new Response(null, { status: 404 });
         const start = url.searchParams.get("start_time__gte");
+        const end = url.searchParams.get("start_time__lte");
         const live = events.filter(
           (event) =>
             (!start || event.start_time >= start) &&
+            (!end || event.start_time <= end) &&
             (url.searchParams.get("is_deleted") !== "false" || !event.is_deleted),
         );
         const pageSize = 2;

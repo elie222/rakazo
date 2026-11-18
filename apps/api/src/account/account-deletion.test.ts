@@ -35,6 +35,7 @@ describe("deleteOrganization lease", () => {
     artifact: { findMany: vi.fn(async () => []) },
     bot: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
+    meetingCalendarConnection: { findFirst: vi.fn(async () => null) },
     space: { count: vi.fn(async () => spacesLeft) },
     // The lease table: every take, renewal, release and fence check finds the row.
     $queryRaw: vi.fn(async () => [{ fence: 1 }]),

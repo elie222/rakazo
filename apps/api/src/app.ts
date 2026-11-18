@@ -32,8 +32,7 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
-  configuredMeetingCalendar,
-  configuredMeetingProvider,
+  configuredMeetingProviders,
   configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
@@ -691,7 +690,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const meetingProvider = await configuredMeetingProvider();
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
   const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
   const meetings = new MeetingService({
     prisma,
@@ -701,7 +701,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
     buildJoin: meetingMediaConfig?.buildJoin,
   });
-  const calendarProvider = await configuredMeetingCalendar(meetingProvider);
   const meetingCalendar =
     calendarProvider &&
     new MeetingCalendarService({

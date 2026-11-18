@@ -5,6 +5,7 @@ import {
   DESKTOP_MEETING_CALENDAR_DENIED,
   DESKTOP_MEETING_CALENDAR_FAILED,
   DESKTOP_MEETING_CALENDAR_LAUNCH_PATH,
+  DESKTOP_MEETING_CALENDAR_UNAVAILABLE,
   MEETING_CALENDAR_CALLBACK_PATH,
   MOBILE_MEETING_CALENDAR_CALLBACK_URL,
 } from "@rakazo/contracts";
@@ -111,9 +112,11 @@ export function mountMeetingCalendarHttp(
       const result =
         error === "access_denied"
           ? DESKTOP_MEETING_CALENDAR_DENIED
-          : error
-            ? DESKTOP_MEETING_CALENDAR_FAILED
-            : code!;
+          : error && CALENDAR_OAUTH_UNAVAILABLE_ERRORS.includes(error)
+            ? DESKTOP_MEETING_CALENDAR_UNAVAILABLE
+            : error
+              ? DESKTOP_MEETING_CALENDAR_FAILED
+              : code!;
       target.searchParams.set("code", result);
       return c.redirect(target.href, 303);
     }

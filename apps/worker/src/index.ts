@@ -16,8 +16,7 @@ import {
   CodexCatalogCache,
   configuredBotEmailProvider,
   configuredEmailProvider,
-  configuredMeetingCalendar,
-  configuredMeetingProvider,
+  configuredMeetingProviders,
   configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
@@ -255,7 +254,8 @@ async function main() {
   const lifecycleEmail = accountEmail
     ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
     : undefined;
-  const meetingProvider = await configuredMeetingProvider();
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
   const meetingMedia = meetingProvider && configuredMeetingMedia();
   const meetings =
     meetingProvider &&
@@ -267,7 +267,6 @@ async function main() {
       spaceIds: configuredMeetingSpaces(meetingProvider),
       buildJoin: meetingMedia?.buildJoin,
     });
-  const calendarProvider = await configuredMeetingCalendar(meetingProvider);
   const meetingCalendar =
     calendarProvider &&
     meetings &&

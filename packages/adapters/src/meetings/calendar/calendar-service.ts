@@ -25,6 +25,7 @@ const CONNECT_RETRY_MS = 30_000;
 const SYNC_MS = 60_000;
 const CLEANUP_MARGIN_MS = 5_000;
 const ADMISSION_RECHECK_MS = 2 * 60_000;
+const CALENDAR_LOOKAHEAD_MS = 14 * 24 * 60 * 60_000;
 const CALENDAR_REFRESH_MS = 6 * 60 * 60_000;
 
 type Owner = Pick<Actor, "spaceId" | "userId">;
@@ -96,7 +97,7 @@ export class MeetingCalendarService {
     const scheduled = new Set(bookings.map((booking) => booking.eventId));
     for await (const event of provider.listEvents(
       connection.externalCalendarId,
-      { upcoming: this.now() },
+      this.upcomingWindow(),
       deadlineSignal(15_000),
     )) {
       const link = this.eligibleLink(event);
@@ -316,7 +317,7 @@ export class MeetingCalendarService {
           let retryCancellation: unknown;
           for await (const event of provider.listEvents(
             calendarId,
-            { upcoming: this.now() },
+            this.upcomingWindow(),
             lease.signal,
           ))
             events.push(event);
@@ -761,11 +762,18 @@ export class MeetingCalendarService {
     });
   }
 
+  private upcomingWindow() {
+    const upcoming = this.now();
+    return { upcoming, startsThrough: new Date(upcoming.getTime() + CALENDAR_LOOKAHEAD_MS) };
+  }
+
   private eligibleLink(event: MeetingCalendarEvent) {
+    const { upcoming, startsThrough } = this.upcomingWindow();
     if (
       event.cancelled ||
       event.declined ||
-      event.startsAt <= this.now() ||
+      event.startsAt <= upcoming ||
+      event.startsAt > startsThrough ||
       event.endsAt <= event.startsAt ||
       !event.meetingUrl
     )

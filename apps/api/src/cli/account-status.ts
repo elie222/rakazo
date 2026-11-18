@@ -1,8 +1,7 @@
 // `docker compose exec api node dist/cli/account-status.js deactivate|reactivate <email>`:
 // turns an account off or back on, as the identity provider would over SCIM.
 import {
-  configuredMeetingCalendar,
-  configuredMeetingProvider,
+  configuredMeetingProviders,
   contentKeyProviderFromEnv,
   GraphileJobPublisher,
   MeetingCalendarService,
@@ -61,9 +60,7 @@ try {
   } else {
     const active = action === "reactivate";
     const events = createThreadEvents(prisma, realtime);
-    const provider = active
-      ? undefined
-      : await configuredMeetingCalendar(await configuredMeetingProvider());
+    const provider = active ? undefined : (await configuredMeetingProviders()).calendar;
     const meetingCalendar =
       provider &&
       new MeetingCalendarService({

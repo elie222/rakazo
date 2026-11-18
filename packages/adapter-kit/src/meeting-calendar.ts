@@ -57,7 +57,7 @@ export interface MeetingCalendarProvider {
   disconnect(calendarId: string, signal: AbortSignal): Promise<void>;
   listEvents(
     calendarId: string,
-    filter: { since?: Date; upcoming?: Date },
+    filter: { since?: Date; upcoming?: Date; startsThrough?: Date },
     signal: AbortSignal,
   ): AsyncIterable<MeetingCalendarEvent>;
   getEvent(eventId: string, signal: AbortSignal): Promise<MeetingCalendarEvent | null>;

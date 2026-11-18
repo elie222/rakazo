@@ -14,6 +14,7 @@ import {
   toComputerRef,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { HeldLease, PrismaClient } from "@rakazo/db";
 import {
   assertLeaseHeld,
@@ -27,6 +28,7 @@ import {
   recordComputerRunEnd,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
+  runAsSystem,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
   withLease,
@@ -55,10 +57,26 @@ export type SpaceDeletionDeps = {
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
   meetings?: Parameters<typeof destroyBot>[0]["meetings"] &
     Parameters<typeof afterSpaceDeparture>[0]["meetings"];
-  meetingCalendar?: Pick<MeetingCalendarService, "disconnectSpace" | "disconnectOwner">;
+  meetingCalendar?: Pick<
+    MeetingCalendarService,
+    "disconnectSpace" | "disconnectOwner" | "disconnectUser"
+  >;
   /** Removes deleted page links' tokens from a remote secret store. */
   secrets?: Pick<SecretStore, "delete">;
 };
+
+/** Keep the connection ID available for teardown even when its provider is disabled or switched. */
+export async function requireDisconnectedMeetingCalendars(
+  prisma: PrismaClient,
+  scope: { spaceId: string } | { userId: string },
+) {
+  const remaining = await runAsSystem("check meeting calendar teardown before deletion", () =>
+    prisma.meetingCalendarConnection.findFirst({ where: scope, select: { id: true } }),
+  );
+  if (remaining) {
+    throw new ClientError("SERVICE_UNAVAILABLE", "Disconnect meeting calendars before deleting.");
+  }
+}
 
 /**
  * The owner-only rules live in the db layer. One attempt at a time holds the Space's lease, and
@@ -131,6 +149,7 @@ export async function deleteSpaceWithContent(
       const calendar = deps.meetingCalendar;
       await teardown(() => calendar.disconnectSpace(spaceId), "Space calendar teardown timed out");
     }
+    await requireDisconnectedMeetingCalendars(deps.prisma, { spaceId });
     for (const bot of await listClaimedSpaceBots(deps.prisma, claimedInput)) {
       try {
         await teardown(

@@ -5,6 +5,7 @@ import { MeetingPlatformSchema } from "./meetings.js";
 export const MEETING_CALENDAR_CALLBACK_PATH = "/api/meetings/calendar/oauth/callback";
 export const DESKTOP_MEETING_CALENDAR_LAUNCH_PATH = "/api/meetings/calendar/oauth/desktop";
 export const DESKTOP_MEETING_CALENDAR_DENIED = "rakazo-calendar-denied";
+export const DESKTOP_MEETING_CALENDAR_UNAVAILABLE = "rakazo-calendar-unavailable";
 export const DESKTOP_MEETING_CALENDAR_FAILED = "rakazo-calendar-failed";
 export const CALENDAR_OAUTH_UNAVAILABLE_ERRORS = ["temporarily_unavailable", "server_error"];
 export const MOBILE_MEETING_CALENDAR_CALLBACK_URL = "rakazo://meeting-calendar-oauth";

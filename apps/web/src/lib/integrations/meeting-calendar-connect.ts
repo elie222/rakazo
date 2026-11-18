@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import {
   DESKTOP_MEETING_CALENDAR_DENIED,
   DESKTOP_MEETING_CALENDAR_FAILED,
+  DESKTOP_MEETING_CALENDAR_UNAVAILABLE,
 } from "@rakazo/contracts";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import { desktopBridge } from "../platform/desktop";
@@ -34,6 +35,9 @@ export async function connectMeetingCalendar(rpc: RpcClient, botId: string, sign
       oauth.open(started.authorizationUrl),
       withAbort(returned, deadline),
     ]);
+    if (code === DESKTOP_MEETING_CALENDAR_UNAVAILABLE) {
+      throw new Error(t`Calendar sign-in is temporarily unavailable.`);
+    }
     if (code === DESKTOP_MEETING_CALENDAR_FAILED) {
       throw new Error(t`Calendar sign-in did not complete.`);
     }

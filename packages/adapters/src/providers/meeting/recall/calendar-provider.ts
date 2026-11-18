@@ -271,7 +271,7 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
 
   async *listEvents(
     calendarId: string,
-    filter: { since?: Date; upcoming?: Date },
+    filter: { since?: Date; upcoming?: Date; startsThrough?: Date },
     signal: AbortSignal,
   ) {
     const url = new URL("/api/v2/calendar-events/", this.options.baseUrl);
@@ -280,6 +280,9 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
     if (filter.upcoming) {
       url.searchParams.set("start_time__gte", filter.upcoming.toISOString());
       url.searchParams.set("is_deleted", "false");
+    }
+    if (filter.startsThrough) {
+      url.searchParams.set("start_time__lte", filter.startsThrough.toISOString());
     }
     let next: URL | null = url;
     const seen = new Set<string>();
@@ -308,13 +311,13 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
 
   async getEvent(eventId: string, signal: AbortSignal): Promise<MeetingCalendarEvent | null> {
     const response = await this.request(this.eventPath(eventId), signal, { allowMissing: true });
-    return response.status === 404
-      ? null
-      : toEvent(
-          eventSchema.parse(
-            await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal),
-          ),
-        );
+    if (response.status === 404) {
+      cancelResponseBody(response);
+      return null;
+    }
+    return toEvent(
+      eventSchema.parse(await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal)),
+    );
   }
 
   async schedule(

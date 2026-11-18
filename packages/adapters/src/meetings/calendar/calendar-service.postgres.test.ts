@@ -155,6 +155,18 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await service.sync(owner.id);
       expect(emulator.scheduled(lastReview.id)).toBeTruthy();
       expect(emulator.scheduled(lastReview.id)).not.toBe(old);
+      const laterDate = now.getTime() + 15 * 24 * 60 * 60_000;
+      emulator.revision(lastReview.id, {
+        start_time: new Date(laterDate).toISOString(),
+        end_time: new Date(laterDate + 30 * 60_000).toISOString(),
+      });
+      await service.sync(owner.id);
+      expect(emulator.scheduled(lastReview.id)).toBeUndefined();
+      expect((await listing(first)).events.some(({ id }) => id === lastReview.id)).toBe(false);
+      clock = new Date(now.getTime() + 2 * 24 * 60 * 60_000);
+      await service.sync(owner.id);
+      expect(emulator.scheduled(lastReview.id)).toBeTruthy();
+      clock = now;
       emulator.revision(lastReview.id, { is_deleted: true });
       await service.sync(owner.id);
       expect(emulator.scheduled(lastReview.id)).toBeUndefined();
