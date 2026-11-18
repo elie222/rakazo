@@ -13,6 +13,8 @@ export const MAX_SUPERMEMORY_RESPONSE_BYTES = 1024 * 1024;
 /** How many recalled memories a search asks for, and the most that are ever injected into a run. */
 export const MAX_RECALLED_MEMORIES = 5;
 
+const MIN_RECALL_SIMILARITY = 0.6;
+
 /** Supermemory rejects memory content longer than this. */
 export const MAX_MEMORY_CONTENT_CHARS = 10_000;
 
@@ -31,6 +33,10 @@ export type SupermemoryProbeResponse = { ok: true } | { ok: false; error: string
 
 export interface SupermemoryConnectionConfig extends LocalServiceConnection {
   apiKey: string;
+}
+
+function namespacePath(containerTag: string, suffix = ""): string {
+  return `/ns/${encodeURIComponent(containerTag)}${suffix}`;
 }
 
 function requestUrl(baseUrl: string, path: string): string {
@@ -88,7 +94,7 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
       memory?: unknown;
       chunk?: unknown;
       similarity?: unknown;
-      updatedAt?: unknown;
+      system?: { updatedAt?: unknown } | null;
     };
     const text =
       typeof row.memory === "string" ? row.memory : typeof row.chunk === "string" ? row.chunk : "";
@@ -97,7 +103,7 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
     parsed.push({
       memory,
       similarity: typeof row.similarity === "number" ? row.similarity : 0,
-      ...(typeof row.updatedAt === "string" ? { updatedAt: row.updatedAt } : {}),
+      ...(typeof row.system?.updatedAt === "string" ? { updatedAt: row.system.updatedAt } : {}),
     });
   }
   return parsed;
@@ -112,18 +118,22 @@ export async function searchSupermemory(
 ): Promise<SupermemorySearchResponse> {
   try {
     const requestAbort = requestSignal(signal);
-    const response = await fetchSupermemory(config, requestUrl(config.baseUrl, "/v4/search"), {
-      method: "POST",
-      headers: authHeaders(config),
-      body: JSON.stringify({
-        q: query,
-        containerTag,
-        searchMode: "memories",
-        limit: boundedRecallLimit(limit),
-      }),
-      redirect: "error",
-      signal: requestAbort,
-    });
+    const response = await fetchSupermemory(
+      config,
+      requestUrl(config.baseUrl, namespacePath(containerTag, "/search")),
+      {
+        method: "POST",
+        headers: authHeaders(config),
+        body: JSON.stringify({
+          query,
+          searchMode: "memories",
+          threshold: MIN_RECALL_SIMILARITY,
+          limit: boundedRecallLimit(limit),
+        }),
+        redirect: "error",
+        signal: requestAbort,
+      },
+    );
     if (!response.ok) {
       await releaseUnreadBody(response);
       return { ok: false, error: `Supermemory search failed: ${response.status}` };
@@ -213,7 +223,7 @@ export async function deleteSupermemoryContainer(
   try {
     const response = await fetchSupermemory(
       config,
-      requestUrl(config.baseUrl, `/v3/container-tags/${encodeURIComponent(containerTag)}`),
+      requestUrl(config.baseUrl, namespacePath(containerTag)),
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -244,13 +254,17 @@ export async function saveSupermemoryMemory(
     return { ok: false, error: "Supermemory save skipped: memory content is empty." };
   }
   try {
-    const response = await fetchSupermemory(config, requestUrl(config.baseUrl, "/v4/memories"), {
-      method: "POST",
-      headers: authHeaders(config),
-      body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
-      redirect: "error",
-      signal: requestSignal(signal),
-    });
+    const response = await fetchSupermemory(
+      config,
+      requestUrl(config.baseUrl, namespacePath(containerTag, "/document")),
+      {
+        method: "POST",
+        headers: authHeaders(config),
+        body: JSON.stringify({ content: memory, dreaming: "instant" }),
+        redirect: "error",
+        signal: requestSignal(signal),
+      },
+    );
     try {
       if (!response.ok) {
         return { ok: false, error: `Supermemory save failed: ${response.status}` };
@@ -294,16 +308,14 @@ export async function probeSupermemory(
   config: SupermemoryConnectionConfig,
 ): Promise<SupermemoryProbeResponse> {
   try {
-    const response = await fetchSupermemory(
-      config,
-      requestUrl(config.baseUrl, "/v3/container-tags/list"),
-      {
-        method: "GET",
-        headers: authHeaders(config),
-        redirect: "error",
-        signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
-      },
-    );
+    const url = new URL(requestUrl(config.baseUrl, "/namespaces"));
+    url.searchParams.set("limit", "1");
+    const response = await fetchSupermemory(config, url.href, {
+      method: "GET",
+      headers: authHeaders(config),
+      redirect: "error",
+      signal: AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS),
+    });
     try {
       if (!response.ok) {
         return { ok: false, error: `Supermemory rejected the connection: ${response.status}` };
