@@ -53,7 +53,13 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
-import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
+import {
+  recordSignInStep,
+  signInDurationMs,
+  signInFlow,
+  signInRecorder,
+  startModelConnect,
+} from "../models/model-connect-analytics.js";
 import {
   modelConnectionErrorMessage,
   modelConnectionTarget,
@@ -103,8 +109,7 @@ export function modelsRoutes(ctx: RouterContext) {
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
       try {
-        // Read before the save: it only counts a member's first connection.
-        const record = await firstModelConnectAnalytics(deps, actor, "oauth");
+        const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
@@ -132,7 +137,11 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
-        record(login.provider, { name: "model_connected" });
+        record(login.provider, {
+          name: "model_connected",
+          ...(login.mode ? { flow: signInFlow(login.mode) } : {}),
+          ...(login.startedAt ? { durationMs: signInDurationMs(login.startedAt) } : {}),
+        });
         return saved;
       } catch (error) {
         // The member is told why a save was refused; anything else is reported generically.
@@ -303,8 +312,13 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const record = await firstModelConnectAnalytics(deps, context.actor, "api_key");
-        record(input.provider, { name: "model_connect_started" });
+        const { record } = await startModelConnect(
+          deps,
+          context.actor,
+          "api_key",
+          input.provider,
+          input.surface,
+        );
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -401,8 +415,14 @@ export function modelsRoutes(ctx: RouterContext) {
           input.provider,
           input.credentialId,
         );
-        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
-        record(input.provider, { name: "model_connect_started" });
+        const { record, measure } = await startModelConnect(
+          deps,
+          context.actor,
+          "oauth",
+          input.provider,
+          input.surface,
+        );
+        const startedAt = new Date();
         return deps.oauthLogins
           .begin({
             userId: context.actor.userId,
@@ -415,8 +435,23 @@ export function modelsRoutes(ctx: RouterContext) {
             settingsScope: input.scope,
             label: input.label,
             codePage: input.codePage,
+            measure,
             signal: context.signal,
             persist: saveSignIn(context.actor),
+          })
+          .then((started) => {
+            recordSignInStep(
+              deps.analytics,
+              {
+                userId: context.actor.userId,
+                provider: input.provider,
+                mode: started.mode,
+                startedAt,
+                measure,
+              },
+              "code_issued",
+            );
+            return started;
           })
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
@@ -445,7 +480,7 @@ export function modelsRoutes(ctx: RouterContext) {
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           return { status: "error" as const, error: result.error };
         }
@@ -458,7 +493,7 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }

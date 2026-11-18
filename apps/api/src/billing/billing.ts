@@ -296,14 +296,22 @@ export function createBillingService(deps: {
         const added = await syncCreditPurchases(prisma, account.organizationId, () =>
           listCreditPurchases(customerId),
         );
-        await prisma.modelCreditAccount.updateMany({
-          where: {
-            organizationId: account.organizationId,
-            balanceMicros: { gt: 0n },
-            OR: [{ mode: null }, ...(added ? [{ pendingCreditCheckout: true }] : [])],
-          },
-          data: { mode: "credits", pendingCreditCheckout: false },
+        const funded = { organizationId: account.organizationId, balanceMicros: { gt: 0n } };
+        const data = { mode: "credits", pendingCreditCheckout: false };
+        const first = await prisma.modelCreditAccount.updateMany({
+          where: { ...funded, mode: null },
+          data,
         });
+        if (added)
+          await prisma.modelCreditAccount.updateMany({
+            where: { ...funded, pendingCreditCheckout: true },
+            data,
+          });
+        if (first.count > 0)
+          await bestEffort(
+            "credits connect analytics",
+            reportCreditsConnected(account.organizationId),
+          );
       }
     }
     const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -436,6 +444,31 @@ export function createBillingService(deps: {
       { organizationId: previous.organizationId, userId },
       dueAt,
     );
+  }
+
+  /**
+   * The outcome of choosing credits with none on the account: the purchase that funds it.
+   * Only an owner whose latest try at connecting a first model was that choice is counted,
+   * once. It lands from the payment provider, so no app is named.
+   */
+  async function reportCreditsConnected(organizationId: string) {
+    const { analytics } = deps;
+    if (!analytics) return;
+    const waiting = await prisma.user.findFirst({
+      where: {
+        pendingCreditsConnect: { not: null },
+        members: { some: { organizationId, role: { contains: "owner" } } },
+      },
+      select: { id: true, pendingCreditsConnect: true },
+    });
+    const attempt = waiting?.pendingCreditsConnect;
+    if (!waiting || !attempt) return;
+    const taken = await prisma.user.updateMany({
+      where: { id: waiting.id, pendingCreditsConnect: attempt },
+      data: { pendingCreditsConnect: null },
+    });
+    if (taken.count === 1)
+      analytics.capture(waiting.id, { name: "model_connected", method: "credits", attempt });
   }
 
   async function ownerUserId(organizationId: string) {

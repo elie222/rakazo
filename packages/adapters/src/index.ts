@@ -216,6 +216,11 @@ export * from "./runtime/pi/models/pi-live-catalog.js";
 export * from "./runtime/pi/models/pi-live-model.js";
 export * from "./runtime/pi/models/pi-models.js";
 export * from "./runtime/pi/models/pi-oauth.js";
+export type {
+  PiOAuthEnded,
+  PiOAuthMeasure,
+  PiOAuthPending,
+} from "./runtime/pi/models/pi-oauth-ended.js";
 export * from "./runtime/pi/models/pi-openai-compatible-provider.js";
 export * from "./runtime/pi/pi-runtime.js";
 export { TOOL_RESULT_TEXT_LIMIT } from "./runtime/pi/pi-runtime-limits.js";

@@ -255,7 +255,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await page.reload();
   const existingCredits = await openUserSettings(page, "billing");
   await page.route("**/rpc/billing/selectFunding", async (route) => {
-    expect(route.request().postDataJSON().json).toEqual({ funding: "credits" });
+    expect(route.request().postDataJSON().json).toEqual({ funding: "credits", surface: "web" });
     status = { ...status, funding: "credits" };
     await route.fulfill({ json: { json: { ok: true } } });
   });

@@ -111,4 +111,23 @@ dbTests("plan choice funnel", () => {
     // A returning subscriber is not part of the layout comparison.
     expect((await service.status(actor)).planLayout).toBeUndefined();
   });
+
+  it("reports credits as connected when the purchase that funds them lands, once", async () => {
+    await prisma.modelCreditAccount.update({ where: { organizationId }, data: { mode: null } });
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    const before = events.length;
+    await service.purchaseCredits(actor, { amountCents: 2000, monthly: false });
+    provider.completeCreditCheckout(customer);
+    // A purchase by someone whose latest try was not a credits choice is not that try's outcome.
+    await service.sync(customer);
+    expect(events.slice(before).map((event) => event.name)).not.toContain("model_connected");
+
+    await prisma.modelCreditAccount.update({ where: { organizationId }, data: { mode: null } });
+    await prisma.user.update({ where: { id: userId }, data: { pendingCreditsConnect: 2 } });
+    await service.sync(customer);
+    await service.sync(customer);
+    expect(events.slice(before).filter((event) => event.name === "model_connected")).toEqual([
+      { name: "model_connected", method: "credits", attempt: 2 },
+    ]);
+  });
 });
