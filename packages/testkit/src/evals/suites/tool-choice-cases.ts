@@ -2,7 +2,6 @@ import type { ToolChoiceCase } from "./tool-choice.js";
 import { toolChoiceEvalCase } from "./tool-choice.js";
 
 /** Synthetic prompts only. Production-derived cases belong in a local --cases-file. */
-const PRODUCT_HELP = { anyOf: [{ tool: "skill_read", args: { name: "~rakazo" } }] };
 
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
   // Bot settings the user asks for.
@@ -223,9 +222,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     id: "help-computer",
     area: "product-help",
     kind: "guard",
-    purpose: "Look up how to give a bot a computer.",
+    purpose: "Explain how to give a bot a computer.",
     prompt: "How do I let you use my computer?",
-    expect: PRODUCT_HELP,
+    expect: {
+      replyMeans:
+        "Explains that the person turns on letting bots use this computer in the Rakazo desktop app on that computer. Invents no other setup step or screen.",
+    },
   },
   {
     id: "help-general-knowledge",

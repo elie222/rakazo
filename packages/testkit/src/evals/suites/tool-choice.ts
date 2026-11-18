@@ -3,7 +3,7 @@ import type { Criterion, EvalCase, Evidence } from "../cases.js";
 import { readCasesFile } from "../cases.js";
 import type { JudgeInput } from "../judge.js";
 
-export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v3";
+export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v4";
 export const TOOL_CHOICE_JUDGE_VERSION = "tool-choice-meaning-v2";
 
 /** Settings the bot writes in its own words; the judge grades them, never a substring. */
@@ -154,6 +154,17 @@ const stateCriteria = (
     pass: matches(value, actual[key]),
   }));
 
+/** What the person was told on the final turn: the reply, plus any question asked through ask_user. */
+function replyText(evidence: Evidence): string {
+  const asked = evidence.toolCalls
+    .filter((call) => call.step === evidence.finalStep && call.name === "ask_user")
+    .map((call) => {
+      const { question, options } = (call.args ?? {}) as { question?: unknown; options?: unknown };
+      return [question, ...(Array.isArray(options) ? options : [])].filter(Boolean).join("\n");
+    });
+  return [evidence.text, ...asked].filter((part) => part.trim()).join("\n\n");
+}
+
 /** Grades only the final turn; prior turns are setup. */
 export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): Criterion[] {
   const calls = evidence.toolCalls.filter((call) => call.step === evidence.finalStep);
@@ -191,7 +202,7 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
       id: `at most ${max} ${tool}`,
       pass: names.filter((name) => name === tool).length <= max,
     });
-  if (expect.replyMeans) criteria.push({ id: "replied", pass: evidence.text.trim() !== "" });
+  if (expect.replyMeans) criteria.push({ id: "replied", pass: replyText(evidence) !== "" });
   criteria.push(...stateCriteria("bot", expect.bot, evidence.settings.bot));
   criteria.push(...stateCriteria("user", expect.user, evidence.settings.user));
   if (expect.settingsUnchanged)
@@ -344,7 +355,7 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
               parsed.prompt,
               means,
               e.settings.bot,
-              replyMeans ? { text: e.text, expected: replyMeans } : undefined,
+              replyMeans ? { text: replyText(e), expected: replyMeans } : undefined,
             ),
         }
       : {}),
