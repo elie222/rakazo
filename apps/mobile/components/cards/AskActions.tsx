@@ -158,7 +158,11 @@ export function AskActions({
               key={action.id}
               accessibilityRole="button"
               accessibilityLabel={label}
-              accessibilityState={{ disabled: inactive, selected: chosen }}
+              accessibilityState={{
+                disabled: inactive,
+                // Options carry a selection state only once the question has an answer.
+                ...(selectedAnswer === undefined ? {} : { selected: chosen }),
+              }}
               accessibilityActions={accessibilityActions}
               onAccessibilityAction={onAccessibilityAction}
               disabled={inactive}

@@ -769,6 +769,6 @@ it("only marks question options selected after an answer exists", async () => {
       [...container.querySelectorAll("button")].map((button) =>
         button.getAttribute("data-selected"),
       ),
-    ).toEqual(selectedAnswer ? ["true", "false"] : ["false", "false"]);
+    ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);
   }
 });
