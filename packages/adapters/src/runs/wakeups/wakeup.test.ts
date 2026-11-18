@@ -113,23 +113,36 @@ describe("InMemoryJobQueue", () => {
         { provider: "chat", handle, identityId, text: "", attachments: [] },
         dueAt,
       );
-    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toBeNull();
+    const none = { until: null, own: false };
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(none);
 
     const later = new Date(Date.now() + 60_000);
-    await queue.enqueue(settle("message-1", "identity-1", new Date(Date.now() + 1_000)));
+    const first = settle("message-1", "identity-1", new Date(Date.now() + 1_000));
+    await queue.enqueue(first);
     await queue.enqueue(settle("message-2", "identity-1", later));
     await queue.enqueue(settle("message-3", "identity-2", new Date(Date.now() + 120_000)));
-    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(later);
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: later,
+      own: false,
+    });
+    // With a job's key, the answer also says whether that job is queued.
+    expect(await queue.pendingUntil("messaging.inbound:identity-1", first.replaceKey)).toEqual({
+      until: null,
+      own: true,
+    });
 
     // A running job is still unfinished, and due now.
     await queue.cancel(settle("message-2", "identity-1", later).replaceKey!);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(target["messaging.inbound_settle"]).toHaveBeenCalledOnce();
-    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(new Date(Date.now()));
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: new Date(Date.now()),
+      own: false,
+    });
 
     running.resolve();
     await queue.awaitIdle();
-    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toBeNull();
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(none);
     await queue.close();
   });
 

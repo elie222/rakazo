@@ -641,7 +641,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
-  it("says when the last unfinished job of a named queue is due", async () => {
+  it("says when the last unfinished job of a named queue is due, a replaced one in its place", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const suffix = `${process.pid}-${Date.now()}`;
     const queueName = `contract:pending-until:${suffix}`;
@@ -657,32 +657,50 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     const later = new Date(Date.now() + 2 * 60 * 60 * 1000);
     const elsewhere = new Date(Date.now() + 3 * 60 * 60 * 1000);
     const keys = [`${queueName}:soon`, `${queueName}:later`, `${queueName}-other:other`];
+    const none = { until: null, own: false };
     try {
-      expect(await publisher.pendingUntil(queueName)).toBeNull();
+      expect(await publisher.pendingUntil(queueName)).toEqual(none);
       await publisher.enqueue(job("soon", soon));
       await publisher.enqueue(job("later", later));
       await publisher.enqueue(job("other", elsewhere, `${queueName}-other`));
-      expect(await publisher.pendingUntil(queueName)).toEqual(later);
-      // With a job's key, only the jobs queued ahead of it count, as for its redelivery.
-      expect(await publisher.pendingUntil(queueName, keys[1])).toEqual(soon);
-      expect(await publisher.pendingUntil(queueName, keys[0])).toBeNull();
+      expect(await publisher.pendingUntil(queueName)).toEqual({ until: later, own: false });
+      // With a job's key, only the jobs queued ahead of it count, as for its redelivery, and the
+      // answer says whether it is queued itself.
+      expect(await publisher.pendingUntil(queueName, keys[1])).toEqual({ until: soon, own: true });
+      expect(await publisher.pendingUntil(queueName, keys[0])).toEqual({ until: null, own: true });
+      expect(await publisher.pendingUntil(queueName, `${queueName}:missing`)).toEqual({
+        until: later,
+        own: false,
+      });
+      // A job written again under its key, in a transaction or not, keeps its id and so its place:
+      // due after the job recorded behind it, it still counts as ahead of that one.
+      const tx = {
+        $executeRawUnsafe: (query: string, ...values: unknown[]) => testPool().query(query, values),
+      };
+      const idOf = "select id from graphile_worker._private_jobs where key = $1";
+      const first = (await testPool().query(idOf, [keys[0]])).rows[0];
+      const late = new Date(later.getTime() + 60_000);
+      await publisher.enqueueIn(tx, job("soon", late));
+      expect(await publisher.pendingUntil(queueName, keys[1])).toEqual({ until: late, own: true });
+      await publisher.enqueue(job("soon", soon));
+      expect((await testPool().query(idOf, [keys[0]])).rows[0]).toEqual(first);
 
       // A job that used up its tries is finished, though its row stays.
       await testPool().query(
         "update graphile_worker._private_jobs set attempts = max_attempts where key = $1",
         [keys[1]],
       );
-      expect(await publisher.pendingUntil(queueName)).toEqual(soon);
+      expect(await publisher.pendingUntil(queueName)).toEqual({ until: soon, own: false });
       // One on its last try while a worker holds it is not.
       await testPool().query(
         "update graphile_worker._private_jobs set attempts = max_attempts, locked_at = now(), locked_by = 'contract' where key = $1",
         [keys[1]],
       );
-      expect(await publisher.pendingUntil(queueName)).toEqual(later);
+      expect(await publisher.pendingUntil(queueName)).toEqual({ until: later, own: false });
 
       await publisher.cancel(keys[0]!);
       await testPool().query("delete from graphile_worker._private_jobs where key = $1", [keys[1]]);
-      expect(await publisher.pendingUntil(queueName)).toBeNull();
+      expect(await publisher.pendingUntil(queueName)).toEqual(none);
     } finally {
       await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
         keys,

@@ -71,7 +71,7 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
       enqueueIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
-      pendingUntil: vi.fn(async () => null),
+      pendingUntil: vi.fn(async () => ({ until: null, own: false })),
       releaseFollowersIn: vi.fn(async () => undefined),
     };
     const recorder = new MessagingDelivery({
@@ -269,7 +269,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     enqueueIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
-    pendingUntil: vi.fn(async () => null),
+    pendingUntil: vi.fn(async () => ({ until: null, own: false })),
     releaseFollowersIn: vi.fn(async () => undefined),
   };
 
@@ -481,7 +481,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     enqueueIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
-    pendingUntil: vi.fn(async () => null),
+    pendingUntil: vi.fn(async () => ({ until: null, own: false })),
     releaseFollowersIn: vi.fn(async () => undefined),
   };
 
@@ -1059,6 +1059,86 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
         [keys[1]],
       );
       expect(rows[0]!.payload.payload?.follower).toBeUndefined();
+    } finally {
+      download.resolve();
+      await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await holdQueue(false);
+      await publisher.close();
+    }
+  });
+
+  it("does not make a message still downloading in a shutdown due when the job ahead settles", async () => {
+    const publisher = new GraphileJobPublisher(db.pool);
+    const jobs = queueWithoutRuns(publisher);
+    const ahead = `in-${randomUUID()}`;
+    const behind = `in-${randomUUID()}`;
+    const keys = [
+      messagingInboundSettleJobKey("test", ahead),
+      messagingInboundSettleJobKey("test", behind),
+    ];
+    const download = deferred();
+    // Another instance's message, due after this shutdown's grace and before this one's backup.
+    const queuedAt = new Date(Date.now() + 10 * 60_000);
+    try {
+      await publisher.enqueue(
+        messagingInboundSettleJob(
+          { provider: "test", handle: ahead, identityId: identity.id, text: "", attachments: [] },
+          queuedAt,
+        ),
+      );
+      await holdQueue(true);
+      const inbound = createMessagingInboundHandler({
+        prisma: db.prisma,
+        events: createThreadEvents(db.prisma),
+        jobs,
+        delivery: { recordIn: vi.fn(), send: vi.fn(async () => undefined) },
+        sandbox: {} as never,
+        provision: vi.fn(),
+        openSignup: false,
+        storeAttachment: async () => {
+          await download.promise;
+          throw new Error("not kept in this test");
+        },
+      });
+      const address = (
+        await system.messagingIdentity.findUniqueOrThrow({ where: { id: identity.id } })
+      ).address;
+      await runAsSystem("test inbound", () =>
+        inbound({
+          type: "message",
+          provider: "test",
+          handle: behind,
+          threadId: `test:${address}`,
+          isDirect: true,
+          from: address,
+          fromLabel: null,
+          channelName: null,
+          participants: [],
+          content: "",
+          mediaUrl: null,
+          attachments: [
+            { name: "clip.mov", mimeType: "video/quicktime", fetch: async () => new Uint8Array() },
+          ],
+        }),
+      );
+      await inbound.prepareHandOff();
+      expect((await jobRow(keys[1]!))!.run_at.getTime()).toBe(queuedAt.getTime() + 1);
+
+      // The other instance settles its message during the grace, releasing what waits for it.
+      await db.prisma.$transaction(async (tx) => {
+        await publisher.cancelIn(tx, keys[0]!);
+        await publisher.releaseFollowersIn(tx, `messaging.inbound:${identity.id}`, keys[0]);
+      });
+      // Its file may still arrive within the grace, so it is not due yet.
+      expect((await jobRow(keys[1]!))!.run_at.getTime()).toBe(queuedAt.getTime() + 1);
+
+      // The hand-off at the end of the grace finds nothing ahead: due now.
+      const before = Date.now();
+      download.resolve();
+      await inbound.handOffPending();
+      const due = (await jobRow(keys[1]!))!.run_at.getTime();
+      expect(due).toBeGreaterThanOrEqual(before - 1_000);
+      expect(due).toBeLessThanOrEqual(Date.now());
     } finally {
       download.resolve();
       await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);

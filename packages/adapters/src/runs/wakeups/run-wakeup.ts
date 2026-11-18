@@ -6,6 +6,7 @@ import type {
   JobQueueOrder,
   JobTransaction,
   JobWorkerHost,
+  QueuedAhead,
   RealtimeFanout,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
@@ -211,7 +212,7 @@ export class RunJobPublisher implements JobPublisher, JobQueueOrder {
     if (!key.startsWith("run:")) await this.background.cancel(key);
   }
 
-  pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
+  pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead> {
     return this.background.pendingUntil(queueName, exceptKey);
   }
 

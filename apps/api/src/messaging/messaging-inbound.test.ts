@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { BackgroundJob } from "@rakazo/adapter-kit";
+import type { BackgroundJob, QueuedAhead } from "@rakazo/adapter-kit";
 import {
   MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
   MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
@@ -14,6 +14,7 @@ import {
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { decryptText, SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
+import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import {
@@ -30,6 +31,11 @@ import {
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
+
+/** The sender's jobs ahead of a message, due until `until`; `own` when it has a job itself. */
+function ahead(until: Date | null, own = false): QueuedAhead {
+  return { until, own };
+}
 
 function createDeps(
   overrides: {
@@ -70,7 +76,7 @@ function createDeps(
   const cancelIn = vi.fn(async (_tx: unknown, _key: string) => undefined);
   // The job queue holds none of the sender's backup jobs unless a test says it does.
   const pendingUntil = vi.fn(
-    async (_queueName: string, _exceptKey?: string): Promise<Date | null> => null,
+    async (_queueName: string, _exceptKey?: string): Promise<QueuedAhead> => ahead(null),
   );
   const releaseFollowersIn = vi.fn(
     async (_tx: unknown, _queueName: string, _exceptKey?: string) => undefined,
@@ -466,8 +472,11 @@ function queueOf(deps: ReturnType<typeof createDeps>) {
     }
     const order = [...due.keys()];
     const place = exceptKey ? order.indexOf(exceptKey) : -1;
-    const ahead = place === -1 ? order : order.slice(0, place);
-    return ahead.length > 0 ? new Date(Math.max(...ahead.map((key) => due.get(key)!))) : null;
+    const before = place === -1 ? order : order.slice(0, place);
+    return ahead(
+      before.length > 0 ? new Date(Math.max(...before.map((key) => due.get(key)!))) : null,
+      place !== -1,
+    );
   };
 }
 
@@ -1505,7 +1514,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     const deps = createDeps();
     // An earlier message's job: its process stopped, or it is downloading on another instance.
     const queued = new Date(Date.now() + 60 * 60_000);
-    deps.pendingUntil.mockResolvedValue(queued);
+    deps.pendingUntil.mockResolvedValue(ahead(queued));
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "and make it short" });
 
@@ -1548,7 +1557,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     });
     const deps = createDeps({ storeAttachment });
     // On arrival the queue holds an earlier message's job; it settles while this one downloads.
-    deps.pendingUntil.mockResolvedValueOnce(new Date(Date.now() + 60 * 60_000));
+    deps.pendingUntil.mockResolvedValueOnce(ahead(new Date(Date.now() + 60 * 60_000)));
     await createMessagingInboundHandler(deps)(photoEvent);
     const before = Date.now();
     download.resolve();
@@ -1565,25 +1574,29 @@ describe("createMessagingInboundHandler DM routing", () => {
     const deps = createDeps({ storeAttachment });
     // Due before this message's own backup would be, after the shutdown's grace.
     const queued = new Date(Date.now() + 10 * 60_000);
-    deps.pendingUntil.mockResolvedValueOnce(queued);
+    deps.pendingUntil.mockResolvedValueOnce(ahead(queued));
     const handler = createMessagingInboundHandler(deps);
     await handler(photoEvent);
     await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
 
     await handler.prepareHandOff();
     // Not made due just past the grace, which would put it ahead of the job it follows: kept
-    // right behind that job, as a follower its release still makes due.
+    // right behind that job. Not a follower while its file may still be downloading, so that
+    // job settling meanwhile cannot make it due; no release is written with it.
     expect(handedOff(deps)).toEqual([
       expect.objectContaining({
         replaceKey: settleKey("handle-1"),
         availableAt: new Date(queued.getTime() + 1),
-        payload: expect.objectContaining({ follower: true }),
       }),
     ]);
+    expect(handedOff(deps)[0]!.payload).not.toHaveProperty("follower");
+    expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
   });
 
   it("ends a redelivered message's own leftover job once it is delivered at once", async () => {
     const deps = createDeps();
+    // An earlier delivery of it left its job.
+    deps.pendingUntil.mockResolvedValue(ahead(null, true));
     await createMessagingInboundHandler(deps)(dmEvent);
     expect(deps.sendUserMessage).toHaveBeenCalledOnce();
     // Its job, if an earlier delivery left one, no longer holds the sender's next messages back.
@@ -1599,11 +1612,21 @@ describe("createMessagingInboundHandler DM routing", () => {
     );
   });
 
+  it("cancels nothing for a plain text delivered at once that has no job of its own", async () => {
+    const deps = createDeps();
+    await createMessagingInboundHandler(deps)(dmEvent);
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+    expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
+  });
+
   it("does not hold a redelivered message back behind its own backup job", async () => {
     const deps = createDeps();
     // The first delivery's job is the only one in the sender's queue.
     deps.pendingUntil.mockImplementation(async (_queue, exceptKey) =>
-      exceptKey === settleKey("handle-1") ? null : new Date(Date.now() + 60 * 60_000),
+      exceptKey === settleKey("handle-1")
+        ? ahead(null, true)
+        : ahead(new Date(Date.now() + 60 * 60_000)),
     );
     await createMessagingInboundHandler(deps)(dmEvent);
     expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
@@ -1621,7 +1644,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     const deps = createDeps({ storeAttachment });
     const queued = new Date(Date.now() - 1_000);
     const queue = queueOf(deps);
-    deps.pendingUntil.mockResolvedValueOnce(queued).mockImplementation(queue);
+    deps.pendingUntil.mockResolvedValueOnce(ahead(queued)).mockImplementation(queue);
     const handle = createMessagingInboundHandler(deps);
     await handle(photoEvent);
     await handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
@@ -1642,7 +1665,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.cancelIn).not.toHaveBeenCalled();
 
     // Once the queue holds nothing of theirs, plain text is delivered at once again.
-    deps.pendingUntil.mockResolvedValue(null);
+    deps.pendingUntil.mockResolvedValue(ahead(null));
     await flush();
     await handle({ ...dmEvent, handle: "handle-3" });
     expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
@@ -1695,12 +1718,90 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledOnce();
 
     // Once the sender has nothing pending here or in the queue, plain text is delivered at once.
-    deps.pendingUntil.mockResolvedValue(null);
+    deps.pendingUntil.mockResolvedValue(ahead(null));
     await flush();
     await handle({ ...dmEvent, handle: "handle-3" });
     expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ clientNonce: "messaging:sendblue:handle-3" }),
     );
+  });
+
+  /**
+   * A file message, then a text from the same sender, whose job would be recorded first were the
+   * records not taken in turn: the file's lookups are held until the text has had every chance.
+   */
+  async function fileThenTextRecordingFirst(deps: ReturnType<typeof createDeps>) {
+    const lookup = deferred();
+    const find = deps.prisma.messagingIdentity.findUnique as unknown as Mock<
+      (args: unknown) => Promise<unknown>
+    >;
+    const original = find.getMockImplementation()!;
+    find.mockImplementationOnce(async (args) => {
+      await lookup.promise;
+      return original(args);
+    });
+    deps.pendingUntil.mockImplementation(queueOf(deps));
+    const handle = createMessagingInboundHandler(deps);
+    const answered = Promise.all([
+      handle(photoEvent),
+      handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" }),
+    ]);
+    await flush();
+    lookup.resolve();
+    await answered;
+    return handle;
+  }
+
+  /** When the message's job is due as last written. */
+  const lastDue = (deps: ReturnType<typeof createDeps>, handle: string) =>
+    handedOff(deps)
+      .findLast((job) => job.replaceKey === settleKey(handle))
+      ?.availableAt?.getTime();
+
+  /** The job queue places the jobs as they were first recorded, which is as they arrived. */
+  const expectRecordedInArrivalOrder = (deps: ReturnType<typeof createDeps>) =>
+    expect(deps.enqueueIn.mock.calls.slice(0, 2).map(([, job]) => job.replaceKey)).toEqual([
+      settleKey("handle-1"),
+      settleKey("handle-2"),
+    ]);
+
+  it("keeps a sender's order after a failure when a later message's lookups finish first", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    deps.sendUserMessage.mockRejectedValueOnce(new Error("database unavailable"));
+    await fileThenTextRecordingFirst(deps);
+
+    await vi.waitFor(() => expect(lastDue(deps, "handle-2")).toBeDefined());
+    // The file is due now and the text right after it, so the job queue posts the file first.
+    expect(lastDue(deps, "handle-1")).toBeLessThanOrEqual(Date.now());
+    expect(lastDue(deps, "handle-2")).toBeGreaterThan(lastDue(deps, "handle-1")!);
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expectRecordedInArrivalOrder(deps);
+  });
+
+  it("keeps a sender's order through a shutdown when a later message's lookups finish first", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const handler = await fileThenTextRecordingFirst(deps);
+
+    await handler.prepareHandOff();
+    const stopping = handler.handOffPending();
+    download.resolve();
+    await stopping;
+    // The file is due now and the text right after it, so the job queue posts the file first.
+    expect(lastDue(deps, "handle-1")).toBeLessThanOrEqual(Date.now());
+    expect(lastDue(deps, "handle-2")).toBeGreaterThan(lastDue(deps, "handle-1")!);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expectRecordedInArrivalOrder(deps);
   });
 
   it("still ignores a truly empty DM", async () => {

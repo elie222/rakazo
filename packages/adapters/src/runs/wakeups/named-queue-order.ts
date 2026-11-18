@@ -1,3 +1,5 @@
+import type { QueuedAhead } from "@rakazo/adapter-kit";
+
 /**
  * Graphile's side of `JobQueueOrder`. A job counts while it is queued, in backoff or running; one
  * that used up its attempts is finished, though Graphile keeps its row until the dead-job pruner
@@ -12,12 +14,14 @@ const UNFINISHED_IN_QUEUE = `
 /**
  * When the last unfinished job of queue $1 queued ahead of the one keyed $2 is due: all of them
  * while that one is not queued. A job keeps its id when replaced, so its place is when it was
- * first recorded.
+ * first recorded. `own` says whether the one keyed $2 is recorded at all, read in the same query.
  */
-export const PENDING_UNTIL_SQL = `select max(jobs.run_at) as run_at ${UNFINISHED_IN_QUEUE}
-    and jobs.id < coalesce(
-      (select own.id from graphile_worker._private_jobs as own where own.key = $2::text),
-      9223372036854775807)`;
+export const PENDING_UNTIL_SQL = `
+  with own as (select id from graphile_worker._private_jobs where key = $2::text)
+  select
+    (select max(jobs.run_at) ${UNFINISHED_IN_QUEUE}
+      and jobs.id < coalesce((select id from own), 9223372036854775807)) as run_at,
+    exists (select 1 from own) as own`;
 
 /**
  * Makes the followers at the head of queue $1 due now, a millisecond apart, up to the first job
@@ -59,12 +63,13 @@ export type OrderedJob = {
 };
 
 /** `PENDING_UNTIL_SQL` over jobs held in memory. */
-export function lastDueAhead(jobs: OrderedJob[], exceptKey?: string): number | undefined {
+export function queuedAhead(jobs: OrderedJob[], exceptKey?: string): QueuedAhead {
   const own = exceptKey ? jobs.find((job) => job.key === exceptKey) : undefined;
   const ahead = jobs.filter(
     (job) => (!exceptKey || job.key !== exceptKey) && (!own || job.place < own.place),
   );
-  return ahead.length > 0 ? Math.max(...ahead.map((job) => job.dueAt)) : undefined;
+  const until = ahead.length > 0 ? new Date(Math.max(...ahead.map((job) => job.dueAt))) : null;
+  return { until, own: own !== undefined };
 }
 
 /**

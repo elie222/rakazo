@@ -51,7 +51,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
       enqueueIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
-      pendingUntil: vi.fn(async () => null),
+      pendingUntil: vi.fn(async () => ({ until: null, own: false })),
       releaseFollowersIn: vi.fn(async () => undefined),
     };
     const recorder = new MessagingDelivery({

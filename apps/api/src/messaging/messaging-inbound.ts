@@ -233,11 +233,8 @@ type Shutdown = {
   dueBy: number;
   /** The first writes making the jobs due by `dueBy`. */
   recorded: Promise<void>;
-  /**
-   * When each sender's last job is due meanwhile, so the next comes after it, and whether that
-   * time only waits for jobs ahead of it.
-   */
-  last: Map<string, { at: number; follower: boolean }>;
+  /** When each sender's last job is due meanwhile, so the next comes after it. */
+  last: Map<string, number>;
 };
 
 /**
@@ -253,6 +250,15 @@ type Arrival = {
   media?: Promise<MediaOutcome>;
   /** The writes of its job so far, which go one at a time. */
   writes: Promise<void>;
+  /**
+   * Over once the sender's earlier arrivals here recorded their backup jobs or will record none,
+   * so the jobs keep the order the messages arrived in.
+   */
+  recordTurn: Promise<void>;
+  /** Ends its own turn: its job is recorded, or it records none. */
+  endRecordTurn: () => void;
+  /** Over once its own turn and every turn before it are. */
+  recorded: Promise<void>;
 };
 
 /** A message's backup job as last written, and when it is due. */
@@ -286,11 +292,13 @@ async function handleDirectEvent(
   const behind = intake.senders.busy(sender);
   // Nothing of theirs is pending here; the job queue is asked about its own once they are known.
   if (!behind) intake.handedOff.delete(sender);
-  const arrival: Arrival = { sender, quiet: false, writes: Promise.resolve() };
   const pending = intake.pending.get(sender) ?? [];
+  const arrival = arrivalAfter(sender, pending.at(-1));
   pending.push(arrival);
   intake.pending.set(sender, pending);
   const prepared = prepareDirectEvent(deps, intake, event, behind, arrival);
+  // However its preparation ends, the sender's next message may record its job then.
+  void Promise.allSettled([prepared]).then(arrival.endRecordTurn);
   const settled = intake.senders.run(sender, async () => {
     try {
       // A failed preparation is the webhook's failure, and the provider delivers it again.
@@ -305,6 +313,23 @@ async function handleDirectEvent(
   });
   const settle = await prepared;
   if (settle?.inline) await settled;
+}
+
+/** A direct message just arrived, whose job is recorded after that of the one before it here. */
+function arrivalAfter(sender: string, previous: Arrival | undefined): Arrival {
+  let endRecordTurn = () => {};
+  const ownTurn = new Promise<void>((resolve) => {
+    endRecordTurn = resolve;
+  });
+  const recordTurn = previous?.recorded ?? Promise.resolve();
+  return {
+    sender,
+    quiet: false,
+    writes: Promise.resolve(),
+    recordTurn,
+    endRecordTurn,
+    recorded: recordTurn.then(() => ownTurn),
+  };
 }
 
 /**
@@ -408,15 +433,24 @@ async function prepareDirectEvent(
   const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
   // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
   // restart, or on another instance: this one follows them there rather than overtaking them.
-  if (existing && !behind) await followQueuedJobs(deps, intake, arrival.sender, existing.id, event);
+  const ownJob =
+    existing && !behind
+      ? await followQueuedJobs(deps, intake, arrival.sender, existing.id, event)
+      : false;
   if (attachments.length === 0 && !behind && !intake.handedOff.has(arrival.sender)) {
     return {
       inline: true,
       run: async () => {
         await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, arrival);
         // A redelivery of a message that once went to its backup job: that job has nothing left
-        // to do, and must not hold the sender's next messages back.
-        if (existing) await endOwnJob(deps, existing.id, event);
+        // to do, and must not hold the sender's next messages back. The message is posted
+        // already, so a failure here must not fail its webhook; the job then runs as recorded.
+        if (existing && ownJob) {
+          await bestEffort(
+            "end a redelivered inbound message's own backup job",
+            endOwnJob(deps, existing.id, event),
+          );
+        }
       },
     };
   }
@@ -444,7 +478,14 @@ async function prepareDirectEvent(
       ...(arrival.quiet ? { quiet: true } : {}),
     };
     const dueAt = settleJobDueAt(receivedAt);
-    await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, dueAt));
+    // After the jobs of the sender's earlier messages here, though this one's lookups may finish
+    // first: the job queue places a job by when it was first recorded.
+    await arrival.recordTurn;
+    try {
+      await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, dueAt));
+    } finally {
+      arrival.endRecordTurn();
+    }
     arrival.job = { payload, dueAt: dueAt.getTime() };
     // A stop may have quieted it while its job was being recorded.
     await recordQuiet(deps, arrival);
@@ -533,7 +574,8 @@ async function settleDirectMessage(
 
 /**
  * The sender's backup jobs still settling earlier messages, wherever those arrived: their next
- * messages go after them, until the sender has nothing pending here.
+ * messages go after them, until the sender has nothing pending here. Returns whether the message
+ * has a job of its own, left from an earlier delivery of it.
  */
 async function followQueuedJobs(
   deps: MessagingInboundDeps,
@@ -541,14 +583,16 @@ async function followQueuedJobs(
   sender: string,
   identityId: string,
   event: MessagingInboundMessage,
-): Promise<void> {
+): Promise<boolean> {
   // A redelivery of this very message does not wait on its own job.
-  const until = await deps.jobs.pendingUntil(
+  const { until, own } = await deps.jobs.pendingUntil(
     messagingInboundSettleQueue(identityId),
     messagingInboundSettleJobKey(event.provider, event.handle),
   );
-  if (!until) return;
-  intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
+  if (until) {
+    intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
+  }
+  return own;
 }
 
 /** The message's own job, left from an earlier delivery of it, ends; its followers are due. */
@@ -586,7 +630,8 @@ function handOffToJob(
       ),
     );
     // Without an answer, it keeps to what this process last knew of the queue.
-    const after = ahead === undefined ? intake.handedOff.get(arrival.sender) : ahead?.getTime();
+    const after =
+      ahead === undefined ? intake.handedOff.get(arrival.sender) : ahead.until?.getTime();
     const now = Date.now();
     const dueAt = Math.max(now, after === undefined ? 0 : after + 1);
     intake.handedOff.set(
@@ -630,7 +675,8 @@ async function writeSettleJob(
  * During a shutdown's grace: the message's job is due by the end of it, after the sender's jobs
  * before it, so a process killed meanwhile still leaves it settling soon. A job due sooner, or
  * waiting for the jobs ahead of it, keeps its time. One that follows jobs queued elsewhere stays
- * behind them, marked a follower so they make it due as they settle.
+ * behind them, though unmarked: its files may still be downloading, so the jobs it follows must
+ * not make it due as they settle. The hand-off at the end of the grace marks it.
  */
 function dueByShutdown(
   deps: MessagingInboundDeps,
@@ -640,28 +686,20 @@ function dueByShutdown(
 ): Promise<void> {
   const job = arrival.job;
   if (!job) return Promise.resolve();
-  const queued = intake.handedOff.get(arrival.sender);
-  const after =
-    shutdown.last.get(arrival.sender) ??
-    (queued === undefined ? undefined : { at: queued, follower: true });
-  const dueAt = Math.max(shutdown.dueBy, after ? after.at + 1 : 0);
+  const after = shutdown.last.get(arrival.sender) ?? intake.handedOff.get(arrival.sender);
+  const dueAt = Math.max(shutdown.dueBy, after === undefined ? 0 : after + 1);
   if (job.dueAt <= dueAt || job.payload.follower) {
-    shutdown.last.set(arrival.sender, {
-      at: Math.max(after?.at ?? job.dueAt, job.dueAt),
-      follower: job.payload.follower === true || after?.follower === true,
-    });
+    shutdown.last.set(arrival.sender, Math.max(after ?? job.dueAt, job.dueAt));
     return Promise.resolve();
   }
-  const follower = after?.follower === true && dueAt > shutdown.dueBy;
-  shutdown.last.set(arrival.sender, { at: dueAt, follower });
+  shutdown.last.set(arrival.sender, dueAt);
   job.dueAt = dueAt;
   return writeJob(arrival, async (current) => {
-    const payload: SettlePayload = follower
-      ? { ...current.payload, follower: true }
-      : current.payload;
+    // No follower, so no release goes with it either.
+    const { follower: _was, ...payload } = current.payload;
     await bestEffort(
       "make an inbound message's backup job due soon",
-      writeSettleJob(deps, payload, current.dueAt),
+      settleJobAt(deps.jobs, payload, new Date(current.dueAt)),
     );
     current.payload = payload;
   }).then(() => undefined);

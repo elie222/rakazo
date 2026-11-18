@@ -8,6 +8,7 @@ import type {
   JobQueueOrder,
   JobTransaction,
   JobWorkerHost,
+  QueuedAhead,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
@@ -24,8 +25,8 @@ import type { OrderedJob } from "./named-queue-order.js";
 import {
   headFollowers,
   isFollowerPayload,
-  lastDueAhead,
   PENDING_UNTIL_SQL,
+  queuedAhead,
   RELEASE_FOLLOWERS_SQL,
 } from "./named-queue-order.js";
 
@@ -169,14 +170,14 @@ export class GraphileJobPublisher implements JobPublisher, JobQueueOrder {
     });
   }
 
-  async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead> {
     const utils = await this.getUtils();
     return utils.withPgClient(async (client) => {
-      const found = await client.query<{ run_at: Date | null }>(PENDING_UNTIL_SQL, [
+      const found = await client.query<{ run_at: Date | null; own: boolean }>(PENDING_UNTIL_SQL, [
         queueName,
         exceptKey ?? null,
       ]);
-      return found.rows[0]?.run_at ?? null;
+      return { until: found.rows[0]?.run_at ?? null, own: found.rows[0]?.own ?? false };
     });
   }
 
@@ -820,9 +821,8 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
   }
 
   /** Like Graphile's: jobs scheduled, waiting out a shutdown or running count; a running one is due now. */
-  async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
-    const due = lastDueAhead(this.ordered(queueName), exceptKey);
-    return due === undefined ? null : new Date(due);
+  async pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead> {
+    return queuedAhead(this.ordered(queueName), exceptKey);
   }
 
   /** Like Graphile's, though not transactional: the followers move as soon as this is called. */
