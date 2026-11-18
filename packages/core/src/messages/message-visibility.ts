@@ -1,11 +1,13 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageReaction } from "./message-reactions.js";
+import { needsTimeSeparator } from "./time-separators.js";
 
 type PresentableMessage = {
   id: string;
   runId?: string;
   role?: string;
   replyToMessageId?: string | null;
+  createdAt?: string | Date;
   blocks: readonly MessageBlock[];
 };
 
@@ -209,7 +211,8 @@ function sameRoutineEvent(a: MessageBlock, b: MessageBlock | undefined): boolean
 
 /**
  * Back-to-back routine rows read as one group: the first row carries every block, and the others
- * are dropped and resolve to it for jumps. A repeat of the line just above reads once.
+ * are dropped and resolve to it for jumps. A repeat of the line just above reads once. A row that
+ * would need its own time separator starts a new group, so it keeps its own time.
  */
 function groupRoutineRows<T extends PresentableMessage>(
   messages: T[],
@@ -218,11 +221,15 @@ function groupRoutineRows<T extends PresentableMessage>(
   if (!messages.some(isRoutineRow)) return messages;
   const out: T[] = [];
   let head: T | undefined;
+  let lastAt: string | Date | undefined;
   for (const message of messages) {
+    const separate =
+      message.createdAt !== undefined && needsTimeSeparator(message.createdAt, lastAt);
+    lastAt = message.createdAt;
     if (!isRoutineRow(message)) {
       head = undefined;
       out.push(message);
-    } else if (head) {
+    } else if (head && !separate) {
       const last = head.blocks.at(-1);
       const repeat = message.blocks.filter((block) => !sameRoutineEvent(block, last));
       head = { ...head, blocks: [...head.blocks, ...repeat] };

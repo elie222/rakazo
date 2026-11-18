@@ -38,6 +38,25 @@ describe("routine rows in the transcript", () => {
     expect(folded.mergedInto.get("r3")).toBe("r1");
   });
 
+  it("starts a new group where a time separator would, so a later change keeps its own time", () => {
+    const at = (id: string, createdAt: string) => ({
+      ...row(id, "One", "updated"),
+      createdAt: `2026-03-10T${createdAt}`,
+    });
+    const folded = foldPeerReplies([
+      at("r1", "12:00:00Z"),
+      { ...row("r2", "Two"), createdAt: "2026-03-10T12:02:00Z" },
+      at("r3", "12:40:00Z"),
+      { ...row("r4", "Three"), createdAt: "2026-03-10T12:41:00Z" },
+      { ...row("r5", "Four"), createdAt: "2026-03-12T12:41:00Z" },
+    ]);
+    expect(folded.messages.map((m) => m.id)).toEqual(["r1", "r3", "r5"]);
+    expect(names(folded.messages[0]!)).toEqual(["updated One", "created Two"]);
+    expect(names(folded.messages[1]!)).toEqual(["updated One", "created Three"]);
+    expect(folded.mergedInto.get("r4")).toBe("r3");
+    expect(folded.mergedInto.has("r3")).toBe(false);
+  });
+
   it("does not group across a message, and leaves the input untouched", () => {
     const input = [row("r1", "One"), text("a"), row("r2", "Two")];
     const folded = foldPeerReplies(input);
