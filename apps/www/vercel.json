@@ -1,5 +1,5 @@
 {
-  "installCommand": "corepack pnpm install",
+  "installCommand": "sh scripts/clone-marketing.sh && corepack pnpm install",
   "redirects": [
     {
       "source": "/",
@@ -31,6 +31,11 @@
     {
       "source": "/github",
       "destination": "https://github.com/elie222/rakazo",
+      "permanent": false
+    },
+    {
+      "source": "/affiliates",
+      "destination": "https://partners.dub.co/inboxzero/rakazo",
       "permanent": false
     },
     {

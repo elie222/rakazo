@@ -3,9 +3,9 @@ import type { SettingsScope } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
-import { useSpaceQueries } from "../../lib/query";
-import { formatRelativeTime } from "../../lib/relative-time";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { useSpaceQueries } from "../../lib/query/query";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import { siteHost } from "./kinds";
 
 function useVaultItemUses(scope: SettingsScope, name: string) {

@@ -1,8 +1,8 @@
 import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { buildSkillMd } from "../agent-skill.js";
-import type { AgentImportParse } from "./shared.js";
-import { freeName, memoryItem, skillItem } from "./shared.js";
+import { buildSkillMd } from "../skills/agent-skill.js";
+import type { AgentImportParse } from "./types.js";
+import { freeName, memoryItem, skillItem } from "./types.js";
 
 /**
  * Model-facing text pasted into another product, so it stays in English. Keep its section

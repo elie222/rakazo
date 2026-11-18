@@ -1,4 +1,5 @@
 import { getEventListeners } from "node:events";
+import { IDLE_TIMEOUT_MS } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HEARTBEAT, HEARTBEAT_MS, withHeartbeats } from "./shared.js";
@@ -8,6 +9,10 @@ afterEach(() => {
 });
 
 describe("withHeartbeats", () => {
+  it("beats often enough that a client's idle timeout survives a missed beat", () => {
+    expect(2 * HEARTBEAT_MS).toBeLessThan(IDLE_TIMEOUT_MS);
+  });
+
   it("keeps the in-flight read across heartbeats so events stay in order", async () => {
     vi.useFakeTimers();
     const release = deferred();

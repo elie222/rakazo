@@ -1,3 +1,4 @@
+import { LifecycleEmailKind } from "@rakazo/contracts";
 import { z } from "zod";
 import type {
   BackgroundJob,
@@ -23,6 +24,7 @@ const payloadSchemas = {
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "run.forget-secrets": z.object({ runId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   // The member whose turn asked for it, who pays; older jobs name only the thread.
   "history.compact": z.object({
@@ -70,6 +72,7 @@ const payloadSchemas = {
       "purchase_card",
       "purchase_token",
       "payment_wallet",
+      "store_write",
     ]),
     recordId: z.string().min(1),
     ref: z.string().min(1),
@@ -99,6 +102,17 @@ const payloadSchemas = {
     userId: z.string().min(1),
     ticketId: z.string().min(1),
     tokenDigest: z.string().min(1),
+  }),
+  "email.lifecycle": z.object({
+    kind: LifecycleEmailKind,
+    organizationId: z.string().min(1),
+    userId: z.string().min(1),
+    message: z.object({
+      subject: z.string().min(1),
+      text: z.string().min(1),
+      html: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    }),
   }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
@@ -215,6 +229,16 @@ export function skillTeachingExpireJob(skillId: string, availableAt: Date): Back
     payload: { skillId },
     availableAt,
     replaceKey: skillTeachingExpireJobKey(skillId),
+  };
+}
+
+/** Keyed to the run, so each new pause moves the one pending cleanup. */
+export function runForgetSecretsJob(runId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "run.forget-secrets",
+    payload: { runId },
+    availableAt,
+    replaceKey: `run.forget-secrets:${runId}`,
   };
 }
 
@@ -437,5 +461,27 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
     payload: { jobId },
     replaceKey: `media.poll:${jobId}`,
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+/** A few tries ride out a database or queue blip; a send that was claimed is never repeated. */
+const LIFECYCLE_EMAIL_MAX_ATTEMPTS = 5;
+
+/**
+ * One lifecycle mail for one owner of one organization, due at `availableAt`. Keyed by kind,
+ * person and organization, so scheduling it again moves the one job, and a person's mails share
+ * a queue, so two that are due together run one after the other.
+ */
+export function lifecycleEmailJob(
+  payload: BackgroundJobPayloads["email.lifecycle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "email.lifecycle",
+    payload,
+    availableAt,
+    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}:${payload.organizationId}`,
+    queueName: `email.lifecycle:${payload.userId}`,
+    maxAttempts: LIFECYCLE_EMAIL_MAX_ATTEMPTS,
   };
 }

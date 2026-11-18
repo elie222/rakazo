@@ -150,9 +150,9 @@ Reproduce the ordinary offline checks with:
 
 ```sh
 pnpm exec vitest run \
-  packages/testkit/src/history-context.test.ts \
-  packages/adapters/src/context-selection.test.ts \
-  packages/adapters/src/runtime-context.test.ts
+  packages/testkit/src/history/history-context.test.ts \
+  packages/adapters/src/runtime/context/context-selection.test.ts \
+  packages/adapters/src/runtime/context/runtime-context.test.ts
 ```
 
 For database checks, use a disposable migrated synthetic database and run the

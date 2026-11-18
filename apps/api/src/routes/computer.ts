@@ -61,8 +61,8 @@ import {
   takeComputerControl,
   waitingTakeoverRun,
   withViewOnly,
-} from "../computer-control.js";
-import { scrollPoint } from "../computer-input.js";
+} from "../computers/computer-control.js";
+import { scrollPoint } from "../computers/computer-input.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -683,7 +683,7 @@ export function computerRoutes(ctx: RouterContext) {
             return clearGoneSandbox(deps, computer, error);
           });
         if (!session?.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
+        if (!input.preview) scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(session.url, !holder);
         return {
           url: addScreenProxyCapability(

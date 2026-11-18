@@ -1,7 +1,7 @@
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./rpc", () => {
+vi.mock("./query/rpc", () => {
   // Query keys walk the client's procedure paths; these tests never call through it.
   const client = (): unknown => new Proxy(() => undefined, { get: () => client() });
   return {
@@ -11,9 +11,9 @@ vi.mock("./rpc", () => {
     rpcForSpace: client,
   };
 });
-vi.mock("./performance", () => ({ markOnce: vi.fn() }));
+vi.mock("./platform/performance", () => ({ markOnce: vi.fn() }));
 
-import { rpc, selectedSpaceId } from "./rpc";
+import { rpc, selectedSpaceId } from "./query/rpc";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -119,7 +119,7 @@ describe("revisiting a space", () => {
     vi.mocked(rpc.bootstrap)
       .mockReset()
       .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
-    const { queryClient, spaceSeedKey } = await import("./query");
+    const { queryClient, spaceSeedKey } = await import("./query/query");
     const { peekBootstrapSeed, primeSpaceBootstrap } = await import("./bootstrap");
     // Left while showing bot-b1; the switch back targets bot-b2.
     const left = { me: { spaceId: "space-b" }, thread: { botId: "bot-b1" } } as Awaited<

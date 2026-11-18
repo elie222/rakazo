@@ -10,7 +10,7 @@ import {
   DARWIN_WINDOW_CONTROLS_WIDTH_PX,
   desktopBridge,
   windowChromeKind,
-} from "../../lib/desktop";
+} from "../../lib/platform/desktop";
 import { DownloadPdfButton } from "./DownloadPdfButton";
 import { PageFrame } from "./PageFrame";
 import { PageLoading, PageNotice } from "./PageNotice";

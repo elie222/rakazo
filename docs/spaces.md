@@ -21,8 +21,9 @@ Nothing crosses between spaces unless you allow it:
 - [Saved credentials](./bot-secrets.md), when the space keeps its own.
 - Skills a bot saves.
 
-Bots only talk to bots in the same space, unless you turn on **Allow cross-space bot communication**
-in a bot's settings.
+A bot messages your other bots only inside its own space. **Allow cross-space bot communication**
+in a bot's settings only affects bots linked to [chat apps](./messaging-apps.md); see
+[Bots asking other bots](./groups.md#bots-asking-other-bots).
 
 ## What follows you everywhere
 
@@ -41,6 +42,12 @@ Whoever opens the link sees what sharing means and chooses **Join**. They join t
 shows up in their space list next to their own spaces, and your other spaces stay private. They
 don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
 they do in the space, but never names their own vault items.
+
+Sharing is per space, not per bot: you can't share one bot and keep the others private. To give
+someone just one bot, create a [new space](#create-a-space), set the bot up there, and invite only
+them. The bot can't message your other bots, and they can't message it (with the chat-app exception
+described [above](#what-stays-inside-a-space)). **Duplicate** makes its copy in the same space, so
+set the new bot up again there.
 
 ### What everyone shares
 
