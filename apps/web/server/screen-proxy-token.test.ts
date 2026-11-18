@@ -6,7 +6,9 @@ import type { ScreenCapabilityScope } from "@rakazo/core/node/screen-capability"
 import {
   addScreenProxyCapability,
   openScreenCapability,
+  SCREEN_TARGET_ENDPOINT,
 } from "@rakazo/core/node/screen-capability";
+import { deferred } from "@rakazo/core/test-async";
 import type { Logger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Middleware, WebServerHost, WebServerSettings } from "./preview-middleware.js";
@@ -20,13 +22,17 @@ import { attachNovncProxy } from "./preview-middleware.js";
  */
 const secret = "fake-screen-proxy-token-secret-0123456789";
 const viewToken = "fake-team-computer-view-token";
-const scope: ScreenCapabilityScope = {
-  botId: "bot",
-  computerId: "computer",
-  botGeneration: 0,
-  computerGeneration: 0,
-  controlLeaseId: null,
-};
+type Policy = "view" | "control";
+
+function screenScope(policy: Policy): ScreenCapabilityScope {
+  return {
+    botId: "bot",
+    computerId: "computer",
+    botGeneration: 0,
+    computerGeneration: 0,
+    controlLeaseId: policy === "control" ? "fake-control-lease" : null,
+  };
+}
 
 const logger: Logger = {
   level: "error",
@@ -50,9 +56,8 @@ function providerScreen(requests: string[], upgrades: string[]) {
   server.on("upgrade", (req, socket) => {
     const url = new URL(req.url ?? "/", "http://screen.invalid");
     upgrades.push(`${url.pathname}${url.search}`);
-    const mapping = url.searchParams.get("token") === viewToken;
     socket.end(
-      mapping
+      url.searchParams.get("token") === viewToken
         ? "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
         : "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n",
     );
@@ -60,14 +65,26 @@ function providerScreen(requests: string[], upgrades: string[]) {
   return server;
 }
 
-/** The API's own answer for a screen path: the decrypted target, or a refusal. */
+/**
+ * The API's own answer for a screen path: it decrypts the capability and hands back its target. What
+ * the real endpoint adds beyond this — the bot and computer still exist at the sealed generation, the
+ * control lease still holds — is covered by its own tests in `apps/api/src/computers`.
+ */
 function screenAuthority() {
   return createHttpServer(async (req, res) => {
+    if (
+      req.method !== "POST" ||
+      req.url !== SCREEN_TARGET_ENDPOINT ||
+      req.headers.authorization !== `Bearer ${secret}`
+    ) {
+      res.writeHead(403).end();
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const { path } = JSON.parse(Buffer.concat(chunks).toString()) as { path: string };
     const capability = openScreenCapability(path, secret);
-    if (!capability || req.headers.authorization !== `Bearer ${secret}`) {
+    if (!capability) {
       res.writeHead(403).end();
       return;
     }
@@ -83,52 +100,38 @@ async function listen(server: Server) {
 
 async function close(server: Server) {
   server.closeAllConnections();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  await new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
-/**
- * A request with the path exactly as the page sends it. Stock noVNC's socket path starts with "//",
- * which a browser sends verbatim and the proxy collapses; `new URL` would read it as another host.
- */
-function rawRequest(origin: string, path: string) {
+/** The head of a response, with the path exactly as the page sends it. */
+function request(origin: string, path: string, upgrade: boolean) {
   const { hostname, port } = new URL(origin);
-  return httpRequest({ hostname, port, path, method: "GET" });
-}
-
-function httpRequest(
-  options: { hostname: string; port: string; path: string; method: string },
-  headers: Record<string, string> = {},
-) {
-  return new Promise<{ status: number; body: string }>((resolve, reject) => {
-    const request = httpRequestFn({ ...options, headers }, (response) => {
-      const chunks: Buffer[] = [];
-      response.on("data", (chunk: Buffer) => chunks.push(chunk));
-      response.on("end", () =>
-        resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString() }),
-      );
-    });
-    request.on("error", reject);
-    request.end();
+  const answer = deferred<string>();
+  const client = upgrade
+    ? undefined
+    : httpRequestFn({ hostname, port, path, method: "GET" }, (response) => {
+        answer.resolve(`${response.statusCode ?? 0}`);
+        response.resume();
+      });
+  if (client) {
+    client.on("error", (error) => answer.reject(error));
+    client.end();
+    return answer.promise;
+  }
+  // Stock noVNC's socket path starts with "//", which a browser sends verbatim and the proxy
+  // collapses; a URL built from it would read the second slash as another host.
+  const socket = connect(Number(port), hostname);
+  let head = "";
+  socket.on("data", (chunk: Buffer) => {
+    head += chunk.toString("latin1");
+    if (head.includes("\r\n")) answer.resolve(head.split("\r\n")[0]!);
   });
-}
-
-function send(origin: string, path: string) {
-  const url = new URL(origin);
-  const client = connect(Number(url.port), url.hostname);
-  const answer = new Promise<string>((resolve) => {
-    let head = "";
-    client.on("data", (chunk: Buffer) => {
-      head += chunk.toString("latin1");
-      if (head.includes("\r\n")) resolve(head.split("\r\n")[0]!);
-    });
-    client.on("error", () => resolve("client error"));
-    client.end(
-      `GET ${path} HTTP/1.1\r\nHost: ${url.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
-    );
-  });
-  return answer.finally(() => client.destroy());
+  socket.on("error", (error) => answer.reject(error));
+  socket.on("close", () => answer.resolve(head.split("\r\n")[0] ?? ""));
+  socket.end(
+    `GET ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
+  );
+  return answer.promise;
 }
 
 const servers: Server[] = [];
@@ -137,15 +140,15 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => close(server)));
 });
 
-/**
- * The proxy the app serves, with its own authority and a provider screen behind it.
- */
+/** The proxy the app serves, with its own authority and a provider screen behind it. */
 async function startProxy() {
   const requests: string[] = [];
   const upgrades: string[] = [];
   const screen = providerScreen(requests, upgrades);
+  servers.push(screen);
   const screenOrigin = await listen(screen);
   const authority = screenAuthority();
+  servers.push(authority);
   const authorityOrigin = await listen(authority);
   const chain: Middleware[] = [];
   const proxy = createHttpServer((req, res) => {
@@ -153,6 +156,7 @@ async function startProxy() {
     const next = () => chain[index++]?.(req, res, next) ?? res.writeHead(404).end();
     next();
   });
+  servers.push(proxy);
   const host: WebServerHost = {
     middlewares: { use: (handler) => chain.push(handler) },
     httpServer: proxy,
@@ -170,7 +174,6 @@ async function startProxy() {
   };
   attachNovncProxy(host, settings);
   const origin = await listen(proxy);
-  servers.push(screen, authority, proxy);
   return { origin, screenOrigin, requests, upgrades };
 }
 
@@ -178,13 +181,30 @@ async function startProxy() {
  * The provider URL the API seals. A team computer's supervisor hands over `embed.html` with the
  * token inside noVNC's `path` setting; other providers hand over `/vnc.html` and the adapter adds it.
  */
-function providerUrl(screenOrigin: string, page: "embed.html" | "vnc.html") {
+function providerUrl(screenOrigin: string, page: "embed.html" | "vnc.html", policy: Policy) {
   const url = new URL(`${screenOrigin}/${page}`);
   url.searchParams.set("autoconnect", "true");
   url.searchParams.set("resize", "scale");
   url.searchParams.set("path", `websockify?token=${encodeURIComponent(viewToken)}`);
-  url.searchParams.set("view_only", "true");
+  url.searchParams.set("view_only", policy === "control" ? "false" : "true");
   return url.toString();
+}
+
+function screenPage(
+  origin: string,
+  screenOrigin: string,
+  page: "embed.html" | "vnc.html",
+  policy: Policy,
+) {
+  return new URL(
+    addScreenProxyCapability(
+      providerUrl(screenOrigin, page, policy),
+      secret,
+      origin,
+      screenScope(policy),
+      undefined,
+    ),
+  );
 }
 
 /** How the shipped embed page builds its socket: the capability prefix plus noVNC's `path`. */
@@ -198,53 +218,38 @@ function novncSocketPath(page: URL) {
   return `/${page.searchParams.get("path")}`;
 }
 
-describe("screen proxy token carriage", () => {
-  it.each(["embed.html", "vnc.html"] as const)(
-    "forwards the sealed websockify token for a %s screen",
-    async (shape) => {
-      const { origin, screenOrigin, requests, upgrades } = await startProxy();
-      const page = new URL(
-        addScreenProxyCapability(
-          providerUrl(screenOrigin, shape),
-          secret,
-          origin,
-          scope,
-          undefined,
-        ),
-      );
+const shapes = ["embed.html", "vnc.html"] as const;
+const policies = ["view", "control"] as const;
 
-      const response = await fetch(page);
-      expect(response.status).toBe(200);
-      expect(await response.text()).toContain("Fake screen");
+describe("screen proxy token carriage", () => {
+  it.each(shapes.flatMap((shape) => policies.map((policy) => [shape, policy] as const)))(
+    "forwards the sealed websockify token for a %s %s screen",
+    async (shape, policy) => {
+      const { origin, screenOrigin, requests, upgrades } = await startProxy();
+      const page = screenPage(origin, screenOrigin, shape, policy);
+
+      const loaded = await request(origin, `${page.pathname}${page.search}`, false);
+      expect(loaded).toBe("200");
 
       // A plain request on the socket path is forwarded with the token too, not only the upgrade.
       const socketPath = shape === "embed.html" ? embedSocketPath(page) : novncSocketPath(page);
-      const plain = await rawRequest(origin, socketPath);
-      expect(plain.status).toBe(200);
+      expect(await request(origin, socketPath, false)).toBe("200");
       expect(requests.at(-1)).toBe(`/websockify?token=${viewToken}`);
 
       // websockify's TokenFile answers 404 to a socket without the token it was given.
-      expect(await send(origin, socketPath)).toBe("HTTP/1.1 101 Switching Protocols");
+      expect(await request(origin, socketPath, true)).toBe("HTTP/1.1 101 Switching Protocols");
       expect(upgrades.at(-1)).toBe(`/websockify?token=${viewToken}`);
+      if (policy === "control") expect(page.pathname).toContain("/novnc/session/control/");
     },
   );
 
-  it.each(["embed.html", "vnc.html"] as const)(
+  it.each(shapes)(
     "keeps the token out of everything the browser holds for a %s screen",
     async (shape) => {
       const { origin, screenOrigin } = await startProxy();
-      const page = new URL(
-        addScreenProxyCapability(
-          providerUrl(screenOrigin, shape),
-          secret,
-          origin,
-          scope,
-          undefined,
-        ),
-      );
+      const page = screenPage(origin, screenOrigin, shape, "view");
       // Whichever socket path the page builds, the token stays inside the capability it names.
-      const held = [page.toString(), embedSocketPath(page), novncSocketPath(page)];
-      for (const value of held) {
+      for (const value of [page.toString(), embedSocketPath(page), novncSocketPath(page)]) {
         expect(value).not.toContain(viewToken);
         expect(value).not.toContain("token");
       }
@@ -253,4 +258,15 @@ describe("screen proxy token carriage", () => {
       }
     },
   );
+
+  it("refuses a socket naming a capability the authority will not open", async () => {
+    const { origin, screenOrigin } = await startProxy();
+    const page = screenPage(origin, screenOrigin, "embed.html", "view");
+    // One changed character in the sealed token is enough for the authority to refuse.
+    const socketPath = embedSocketPath(page).replace(
+      /\.(.)/,
+      (_, first: string) => `.${first === "a" ? "b" : "a"}`,
+    );
+    expect(await request(origin, socketPath, true)).not.toContain("101");
+  });
 });
