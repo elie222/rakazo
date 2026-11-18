@@ -1,4 +1,4 @@
-import type { MenuAction } from "@expo/ui/community/menu";
+import type { MenuAction, MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
@@ -6,8 +6,8 @@ import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { MessagingChannelMembership, MessagingStatus } from "@rakazo/contracts";
 import { createMessagingLinkGuard, messagingChatApps, messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSymbol } from "../../components/native/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
@@ -29,7 +29,6 @@ export default function MessagingSettings() {
   const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
-  const colorScheme = useResolvedAppearance();
   const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const linkGuard = useMemo(() => createMessagingLinkGuard(linkScope, session), [session]);
   const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
@@ -309,42 +308,24 @@ export default function MessagingSettings() {
   ) => {
     const disabled = busy || issuingLink;
     return (
-      <View pointerEvents={disabled ? "none" : "auto"} style={disabled && styles.disabled}>
-        <MenuView
-          colorScheme={colorScheme}
-          actions={[
-            ...actions,
-            {
-              id: "remove-section",
-              title: "",
-              displayInline: true,
-              subactions: [
-                { id: "remove", title: remove.title, attributes: { destructive: true } },
-              ],
-            },
-          ]}
-          onPressAction={({ nativeEvent }) => {
-            if (disabled) return;
-            if (nativeEvent.event === "remove") act(remove.run);
-            else onAction(nativeEvent.event);
-          }}
-        >
-          <View
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={optionsLabel(provider)}
-            accessibilityState={{ disabled }}
-            style={styles.menuButton}
-          >
-            <NativeSymbol
-              ios="ellipsis"
-              android="ellipsis-horizontal"
-              size={20}
-              color={mobileTokens().mutedForeground}
-            />
-          </View>
-        </MenuView>
-      </View>
+      <RowOptions
+        label={optionsLabel(provider)}
+        disabled={disabled}
+        actions={[
+          ...actions,
+          {
+            id: "remove-section",
+            title: "",
+            displayInline: true,
+            subactions: [{ id: "remove", title: remove.title, attributes: { destructive: true } }],
+          },
+        ]}
+        onAction={(id) => {
+          if (disabled) return;
+          if (id === "remove") act(remove.run);
+          else onAction(id);
+        }}
+      />
     );
   };
   /**
@@ -545,6 +526,59 @@ export default function MessagingSettings() {
     </ScrollView>
   );
 }
+/** A connected row's one control: an ellipsis opening a native menu of its actions. */
+function RowOptions({
+  label,
+  actions,
+  disabled,
+  onAction,
+}: {
+  label: string;
+  actions: MenuAction[];
+  disabled: boolean;
+  onAction: (id: string) => void;
+}) {
+  const menu = useRef<MenuComponentRef>(null);
+  const colorScheme = useResolvedAppearance();
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View pointerEvents={disabled ? "none" : "auto"} style={disabled && styles.disabled}>
+      <MenuView
+        ref={menu}
+        colorScheme={colorScheme}
+        actions={actions}
+        onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
+      >
+        <View
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ disabled }}
+          // TalkBack's activation does not reach the menu host; open it directly.
+          accessibilityActions={
+            Platform.OS === "android" && !disabled ? [{ name: "activate" }] : undefined
+          }
+          onAccessibilityAction={
+            Platform.OS === "android"
+              ? ({ nativeEvent }) => {
+                  if (!disabled && nativeEvent.actionName === "activate") menu.current?.show();
+                }
+              : undefined
+          }
+          style={styles.menuButton}
+        >
+          <NativeSymbol
+            ios="ellipsis"
+            android="ellipsis-horizontal"
+            size={20}
+            color={mobileTokens().mutedForeground}
+          />
+        </View>
+      </MenuView>
+    </View>
+  );
+}
+
 function createStyles() {
   return StyleSheet.create({
     content: { padding: 16, gap: 16 },

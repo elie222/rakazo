@@ -148,6 +148,7 @@ vi.mock("../../components/ui/menu-picker", () => {
 vi.mock("react-native", () => {
   const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    Platform: { OS: "ios" },
     View,
     ScrollView: View,
     Text: View,
