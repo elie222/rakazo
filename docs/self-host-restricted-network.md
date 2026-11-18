@@ -69,6 +69,27 @@ egress and warns instead of downloading it. An explicit `SANDBOX_COMPUTER_EGRESS
 remains unchanged. See [restricted computer egress](./self-host-docker-computers.md#restricted-computer-egress)
 for host requirements.
 
+Restricted egress also needs the supervisor's attestation probe image, which the supervisor
+builds on first use — a build that pulls a Debian base image and packages, so it cannot run
+offline. Preload it like the other images: on a connected machine that has this repository at
+the same revision as the supervisor you deploy, build it under its content-hash tag, save it,
+and load it on the offline host. The exact tag is printed by
+`pnpm --filter @rakazo/sandbox-supervisor exec tsx src/print-attest-tag.ts`, or computed from
+the Dockerfile's hash:
+
+```bash
+# On the offline host, find its architecture: docker info --format '{{.Architecture}}'
+docker build --platform linux/THAT-ARCHITECTURE --tag "rakazo/egress-attest:$(sha256sum infra/sandboxes/egress-attest/Dockerfile | cut -d' ' -f1 | cut -c1-16)" infra/sandboxes/egress-attest
+docker save rakazo/egress-attest --output egress-attest.tar
+```
+
+Build for the offline Docker host's architecture (`amd64`, `arm64`, …), not the building
+machine's: a wrong-architecture image makes every attestation probe exit non-zero. On macOS, replace
+`sha256sum` with `shasum -a 256`. On the offline host: `docker load --input egress-attest.tar`.
+The tag must match the hash of the Dockerfile shipped with the supervisor you deploy; if it
+does not, the supervisor reports the exact image name it expects in its log when the build
+fails.
+
 ## Container images
 
 After `--prepare-only`, set image overrides in `.env`. For mirrored Postgres or busybox, use

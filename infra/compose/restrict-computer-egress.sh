@@ -86,8 +86,9 @@ EOF
 # no longer open connections to the host.
 #
 # INPUT is listed first so it is inserted last (rules go in by a reverse pass).
-# The supervisor's start-up probe detects the INPUT drop, so its presence must
-# mean the DOCKER-USER destination drops of the same run are already in place.
+# The supervisor verifies the live rules directly: its attestation probe reads
+# the chains from the host network namespace and requires this exact rule set
+# as a prefix, so a partially removed ruleset fails closed.
 egress_rules_v4() {
   local cidr
   printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"

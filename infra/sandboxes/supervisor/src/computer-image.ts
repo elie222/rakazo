@@ -104,7 +104,9 @@ async function produce(
  * not as a stream error, and docker-modem's followProgress throws from its data handler on a line
  * that is not JSON, so this reader skips those instead.
  */
-async function followProgress(start: (abortSignal: AbortSignal) => Promise<NodeJS.ReadableStream>) {
+export async function followProgress(
+  start: (abortSignal: AbortSignal) => Promise<NodeJS.ReadableStream>,
+) {
   const controller = new AbortController();
   const stalled = new Error(
     `Docker sent no progress for ${IMAGE_PROGRESS_IDLE_MS / 60_000} minutes`,
