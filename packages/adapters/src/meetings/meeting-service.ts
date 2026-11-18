@@ -102,11 +102,11 @@ export class MeetingService {
     return Boolean(this.deps.provider) && (this.deps.spaceIds?.has(spaceId) ?? true);
   }
 
-  async visible(actor: Actor) {
+  async visible(actor: Actor, botId?: string) {
     if (this.enabled(actor.spaceId)) return true;
     return Boolean(
       await this.deps.prisma.meetingSession.findFirst({
-        where: { spaceId: actor.spaceId, userId: actor.userId, status: "ready" },
+        where: { spaceId: actor.spaceId, userId: actor.userId, botId, status: "ready" },
         select: { id: true },
       }),
     );
@@ -289,7 +289,37 @@ export class MeetingService {
     });
     if (!row) return;
     const actions = await this.observe(row.id, observation);
+    if (!row.closedAt && !(await this.member(row))) {
+      await this.stopForDepartedMember(row);
+    }
     for (const action of actions) void this.attempt(row.id, action);
+  }
+
+  async stopForDepartedMember(owner: Pick<Actor, "spaceId" | "userId">) {
+    if (!this.providerId) return;
+    const { prisma, jobs } = this.deps;
+    const ids = await runAsSystem("stop meetings for a departed Space member", () =>
+      prisma.$transaction(async (tx) => {
+        const rows = await tx.meetingSession.updateManyAndReturn({
+          where: {
+            spaceId: owner.spaceId,
+            userId: owner.userId,
+            provider: this.providerId,
+            closedAt: null,
+            status: { in: ["joining", "waiting", "joined", "leaving"] },
+          },
+          data: { status: "leaving" },
+          select: { id: true },
+        });
+        await jobs.enqueueManyIn(
+          tx,
+          rows.map(({ id }) => workJob(id, "leave", new Date(Date.now() + BACKUP_AFTER))),
+        );
+        return rows.map(({ id }) => id);
+      }),
+    );
+    if (ids.length) await this.notify(owner.spaceId);
+    for (const id of ids) void this.attempt(id, "leave");
   }
 
   async recordBotRetirements(
@@ -420,7 +450,9 @@ export class MeetingService {
       expiresAt: row.expiresAt,
     };
     const { count } = await prisma.meetingSession.updateMany({
-      where: { id: row.id, requestedAt: null, externalId: null, status: "joining" },
+      // The per-session lease owns dispatch. Save when the create was sent so recovery knows
+      // a missing response could already have created a participant.
+      where: { id: row.id, externalId: null, status: "joining" },
       data: { requestedAt: new Date() },
     });
     if (!count) return;
@@ -648,8 +680,12 @@ export class MeetingService {
   }
 
   private async member(row: Pick<Session, "spaceId" | "userId">) {
-    return this.deps.prisma.spaceMember.findUnique({
-      where: { spaceId_userId: { spaceId: row.spaceId, userId: row.userId } },
+    return this.deps.prisma.spaceMember.findFirst({
+      where: {
+        spaceId: row.spaceId,
+        userId: row.userId,
+        member: { user: { deactivatedAt: null } },
+      },
       select: { id: true },
     });
   }

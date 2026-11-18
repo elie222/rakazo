@@ -78,7 +78,7 @@ describe("meeting answers", () => {
       botId: "meeting-bot",
       history: [],
       tools: [],
-      usageOperationKind: "setup",
+      usageOperationKind: "answer",
     });
     expect(context).toMatchObject({
       botId: "meeting-bot",

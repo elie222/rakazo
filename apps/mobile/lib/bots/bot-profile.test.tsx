@@ -138,7 +138,6 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ fontScale: 1, width: 390 }),
     ActivityIndicator: () => createElement("progress"),
     Alert: { alert },
-    AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
     BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
     RefreshControl: ({ onRefresh }: { onRefresh: () => void }) =>
       createElement("button", { type: "button", onClick: onRefresh }, "Refresh files"),
@@ -365,7 +364,6 @@ function profileRpc(
   } = {},
 ) {
   rpc.mockImplementation((procedure: string, input: never) => {
-    if (procedure === "me") return Promise.resolve({});
     if (procedure === "bots/get") return bot();
     if (procedure === "routines/list") return routines();
     if (procedure === "bots/update") return update();

@@ -115,7 +115,7 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
         await recordUsage(deps.prisma, event, {
           ...scope,
           operationId: id,
-          operationKind: "setup",
+          operationKind: "answer",
         });
       };
       for await (const event of deps.runtime.run(
@@ -129,7 +129,7 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
           history: [],
           tools: [],
           allowSilentEmpty: true,
-          usageOperationKind: "setup",
+          usageOperationKind: "answer",
           onUsage,
         },
         { ...scope, operationId: id, traceId: id, signal: budget },
