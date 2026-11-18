@@ -6,6 +6,7 @@ import type { DraftNote } from "@rakazo/core";
 import {
   addDraftNote,
   draftNoteAt,
+  draftNotesWithPending,
   draftRevisionText,
   draftSegments,
   newClientId,
@@ -32,8 +33,6 @@ import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
 import { NativeActionButton } from "../native/native-action-button";
 
 const COPIED_MS = 2000;
-/** Stands in for the note of a passage still being noted. */
-const PENDING = "pending";
 
 type DraftTarget = { botId: string } | { groupId: string };
 
@@ -186,15 +185,14 @@ function DraftSheet({
     },
   });
 
-  const pending =
-    selection && selection.start !== selection.end
-      ? addDraftNote(block.body, notes, { ...selection, note: PENDING })
-      : null;
-  const openIndex =
-    selection && selection.start === selection.end ? draftNoteAt(notes, selection.start) : -1;
-  const openNote = notes[openIndex];
-  const shown = pending ?? notes;
-  const pendingIndex = selection ? shown.findIndex((note) => note.end > selection.start) : -1;
+  const caret = selection !== null && selection.start === selection.end;
+  const { shown, pending: pendingIndex } = draftNotesWithPending(
+    block.body,
+    notes,
+    caret ? null : selection,
+  );
+  const pending = pendingIndex >= 0;
+  const openNote = caret ? notes[draftNoteAt(notes, selection.start)] : undefined;
 
   const clearSelection = () => {
     setNoting(false);
@@ -246,10 +244,18 @@ function DraftSheet({
             // Any edit (paste, hardware keyboard, dictation) remounts the field with the draft:
             // notes are offsets into the draft, so the text shown must never diverge from it.
             onChangeText={() => setRevision((value) => value + 1)}
+            // Tapping the draft again is what puts a passage being noted down.
+            onFocus={() => setNoting(false)}
             onSelectionChange={(event) => {
               const next = event.nativeEvent.selection;
-              if (noting && next.start === next.end) return;
+              if (next.start === next.end) {
+                if (!noting) setSelection(next);
+                return;
+              }
               setSelection(next);
+              // Held from the selection itself, not from the note field's focus: the field takes
+              // focus a moment later, and a caret the draft reports meanwhile must not drop it.
+              setNoting(draftNotesWithPending(block.body, notes, next).pending >= 0);
             }}
             style={[styles.body, { color: tokens.foreground }]}
           >
@@ -280,8 +286,6 @@ function DraftSheet({
                 placeholderTextColor={tokens.mutedForeground}
                 value={noteText}
                 onChangeText={setNoteText}
-                onFocus={() => setNoting(true)}
-                onBlur={() => setNoting(false)}
                 onSubmitEditing={addNote}
                 returnKeyType="done"
                 style={[

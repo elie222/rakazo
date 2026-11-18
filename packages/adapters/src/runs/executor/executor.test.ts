@@ -86,6 +86,22 @@ describe("bot tool permissions", () => {
     });
   });
 
+  it("offers write_draft only to runs whose reply shows in the app", () => {
+    const offered = (trigger: string, messagingChannelRun = false) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun,
+      }).some((tool) => tool.name === "write_draft");
+    expect(offered("user")).toBe(true);
+    // A chat app gets the draft as text, and a revision in place would never reach it.
+    expect(offered("messaging")).toBe(false);
+    expect(offered("user", true)).toBe(false);
+    expect(offered("tickets")).toBe(false);
+  });
+
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
     expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] })).toEqual({
       patch: { name: "Scout" },
@@ -1496,6 +1512,7 @@ describe("userTurnInstructions", () => {
     pageBrowserAllowed,
     workspaceInstruction: "This entire computer workspace is your private home.",
     replyGuidance,
+    draftsOffered: true,
   };
 
   it("places stable guidance before volatile context when every optional context is present", () => {
@@ -1583,6 +1600,24 @@ describe("userTurnInstructions", () => {
     expect(instructions).toContain(
       "Subagent delegation is unavailable in this conversation. Complete the work yourself; do not claim to have delegated it.",
     );
+  });
+
+  it("names write_draft only when the run has it", () => {
+    const instructions = userTurnInstructions({
+      ...base,
+      draftsOffered: false,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+    });
+    expect(instructions.some((line) => line?.includes("write_draft"))).toBe(false);
   });
 
   it("inserts task catalog guidance after the computer line", () => {

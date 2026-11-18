@@ -1,18 +1,19 @@
+import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as RunMessages from "../assembly/run-messages.js";
+import { draftClientNonce, draftTools } from "./run-tools-drafts.js";
 
-const publishMessage = vi.fn();
+const publishMessage = vi.hoisted(() => vi.fn());
 vi.mock("../assembly/run-messages.js", async (importActual) => ({
-  ...(await importActual<typeof import("../assembly/run-messages.js")>()),
+  ...(await importActual<typeof RunMessages>()),
   publishMessage: (...args: unknown[]) => publishMessage(...args),
 }));
 
-const appendEventInTransaction = vi.fn(async () => ({ seq: 7 }));
+const appendEventInTransaction = vi.hoisted(() => vi.fn(async () => ({ seq: 7 })));
 vi.mock("@rakazo/db", async (importActual) => ({
-  ...(await importActual<typeof import("@rakazo/db")>()),
+  ...(await importActual<typeof Db>()),
   appendEventInTransaction: (...args: unknown[]) => appendEventInTransaction(...(args as [])),
 }));
-
-const { draftClientNonce, draftTools } = await import("./run-tools-drafts.js");
 
 const run = { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "t-1", botId: "bot-1" };
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { addDraftNote, draftNoteAt, draftRevisionText, draftSegments } from "./draft-notes.js";
+import {
+  addDraftNote,
+  draftNoteAt,
+  draftNotesWithPending,
+  draftRevisionText,
+  draftSegments,
+} from "./draft-notes.js";
 
 const body = "Hi Marie,\n\nI hope this message finds you well. Would you be open to a call?";
 
@@ -23,6 +29,18 @@ describe("draft notes", () => {
     expect(addDraftNote(body, notes, { start: 20, end: 30, note: "  " })).toBeNull();
     expect(addDraftNote(body, notes, { start: 15, end: 30, note: "x" })).toBeNull();
     expect(addDraftNote(body, notes, { start: 17, end: 30, note: "x" })).toHaveLength(2);
+  });
+
+  it("shows a selection as pending only when it could become a note", () => {
+    const ask = body.indexOf("Would");
+    const notes = addDraftNote(body, [], { start: ask, end: body.length, note: "shorter" })!;
+    const hope = body.indexOf("I hope");
+    const selected = draftNotesWithPending(body, notes, { start: hope, end: hope + 6 });
+    expect(selected.pending).toBe(0);
+    expect(selected.shown[1]).toBe(notes[0]);
+    // A caret, as when a marked passage is tapped, or a range over a note, leaves the notes as is.
+    for (const selection of [null, { start: ask + 2, end: ask + 2 }, { start: ask, end: ask + 5 }])
+      expect(draftNotesWithPending(body, notes, selection)).toEqual({ shown: notes, pending: -1 });
   });
 
   it("splits the body at the notes and finds the note under an offset", () => {

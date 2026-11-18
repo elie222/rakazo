@@ -20,8 +20,9 @@ test("a draft opens to mark the passages to change", async ({ page }, testInfo) 
   await page.goto("/e2e/fixtures/gallery.html?scenario=drafts&theme=light");
   const card = page.getByTestId("draft-card").first();
   await card.getByRole("button", { name: "Open" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("LinkedIn message")).toBeVisible();
+  // The note panel is a popover of its own, so the draft is found by its name.
+  const dialog = page.getByRole("dialog", { name: /LinkedIn message/ });
+  await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Revise" })).toBeDisabled();
   for (const [passage, note] of [
     ["I hope this message finds you well.", "Warmer"],
@@ -41,8 +42,10 @@ test("a draft opens to mark the passages to change", async ({ page }, testInfo) 
         return;
       }
     }, passage);
-    await dialog.getByRole("textbox", { name: "What should change?" }).fill(note);
-    await dialog.getByRole("button", { name: "Add" }).click();
+    const panel = page.getByTestId("draft-note-panel");
+    await panel.getByRole("textbox", { name: "What should change?" }).fill(note);
+    await panel.getByRole("button", { name: "Add" }).click();
+    await expect(panel).toBeHidden();
   }
   await expect(dialog.getByText("2 notes")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Revise" })).toBeEnabled();

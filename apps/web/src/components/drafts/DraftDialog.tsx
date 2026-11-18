@@ -2,8 +2,23 @@ import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DraftBlock } from "@rakazo/contracts";
 import type { DraftNote } from "@rakazo/core";
-import { addDraftNote, draftRevisionText, draftSegments, newClientId } from "@rakazo/core";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Input } from "@rakazo/ui-web";
+import {
+  addDraftNote,
+  draftNotesWithPending,
+  draftRevisionText,
+  draftSegments,
+  newClientId,
+} from "@rakazo/core";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  Input,
+  Popover,
+  PopoverContent,
+} from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
@@ -12,10 +27,6 @@ import { useSave } from "../../lib/query/query";
 import { errorDetails } from "../../lib/query/user-error";
 import { useEventListener } from "../../lib/use-event-listener";
 import { ErrorNotice } from "../ErrorNotice";
-
-const PANEL_WIDTH = 288;
-/** Stands in for the note of a passage still being noted. */
-const PENDING = "pending";
 
 /** The draft's name, and who it is for when the bot said. */
 export function DraftHeading({ block }: { block: DraftBlock }) {
@@ -27,9 +38,7 @@ export function DraftHeading({ block }: { block: DraftBlock }) {
   );
 }
 
-type Panel =
-  | { kind: "new"; start: number; end: number; top: number; left: number }
-  | { kind: "note"; index: number; top: number; left: number };
+type Panel = { kind: "new"; start: number; end: number } | { kind: "note"; index: number };
 
 /** Characters of `root`'s text before the boundary at `node`/`offset`. */
 function textOffset(root: Node, node: Node, offset: number): number {
@@ -37,16 +46,6 @@ function textOffset(root: Node, node: Node, offset: number): number {
   range.selectNodeContents(root);
   range.setEnd(node, offset);
   return range.toString().length;
-}
-
-/** Where a panel sits under `rect`, inside `frame`, centered on it where it fits. */
-function panelPlace(rect: DOMRect, frame: HTMLElement) {
-  const box = frame.getBoundingClientRect();
-  const center = rect.left - box.left + rect.width / 2;
-  return {
-    top: rect.bottom - box.top + 8,
-    left: Math.max(0, Math.min(center - PANEL_WIDTH / 2, box.width - PANEL_WIDTH)),
-  };
 }
 
 /**
@@ -76,7 +75,6 @@ export function DraftDialog({
   const [copied, copy] = useCopyText();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [noteText, setNoteText] = useState("");
-  const frameRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const revise = useSave({
     save: (input: { text: string; clientNonce: string }, rpc) =>
@@ -86,7 +84,6 @@ export function DraftDialog({
         replyToMessageId: messageId,
         clientNonce: input.clientNonce,
       }),
-    closesScreen: true,
     onSaved: async () => {
       onNotesChange([]);
       onOpenChange(false);
@@ -101,33 +98,31 @@ export function DraftDialog({
 
   const readSelection = () => {
     const root = bodyRef.current;
-    const frame = frameRef.current;
     const selection = window.getSelection();
-    if (!root || !frame || !selection?.rangeCount) return;
+    if (!root || !selection?.rangeCount) return;
     const range = selection.getRangeAt(0);
     if (range.collapsed || !root.contains(range.commonAncestorContainer)) return;
     const start = textOffset(root, range.startContainer, range.startOffset);
     const end = textOffset(root, range.endContainer, range.endOffset);
     // Only a passage a note could cover: not blank, and clear of the notes already there.
-    if (!addDraftNote(block.body, notes, { start, end, note: PENDING })) return;
+    if (draftNotesWithPending(block.body, notes, { start, end }).pending < 0) return;
     setNoteText("");
-    setPanel({ kind: "new", start, end, ...panelPlace(range.getBoundingClientRect(), frame) });
+    setPanel({ kind: "new", start, end });
   };
 
   // A selection in the body offers a note; a click on a marked passage shows its note.
   const onBodyGesture = (event: PointerEvent | KeyboardEvent) => {
     if (event instanceof KeyboardEvent && !event.shiftKey) return;
     const root = bodyRef.current;
-    const frame = frameRef.current;
     const target = event.target instanceof Node ? event.target : null;
-    if (!root || !frame || !target || !root.contains(target)) return;
+    if (!root || !target || !root.contains(target)) return;
     if (!window.getSelection()?.isCollapsed) return readSelection();
     const mark = (target instanceof Element ? target : target.parentElement)?.closest<HTMLElement>(
       "mark[data-pin]",
     );
     const index = Number(mark?.dataset.pin) - 1;
     if (!mark || !(index >= 0)) return closePanel();
-    setPanel({ kind: "note", index, ...panelPlace(mark.getBoundingClientRect(), frame) });
+    setPanel({ kind: "note", index });
   };
   useEventListener(open ? document : null, "pointerup", onBodyGesture);
   useEventListener(open ? document : null, "keyup", onBodyGesture);
@@ -141,12 +136,17 @@ export function DraftDialog({
     closePanel();
   };
 
-  const pending =
-    panel?.kind === "new" ? addDraftNote(block.body, notes, { ...panel, note: PENDING }) : null;
-  const shown = pending ?? notes;
-  const pendingIndex =
-    panel?.kind === "new" ? shown.findIndex((note) => note.end > panel.start) : -1;
+  const { shown, pending: pendingIndex } = draftNotesWithPending(
+    block.body,
+    notes,
+    panel?.kind === "new" ? panel : null,
+  );
   const openNote = panel?.kind === "note" ? notes[panel.index] : undefined;
+  // The panel hangs under the passage it is about, found again after every render.
+  const panelAnchor = () =>
+    bodyRef.current?.querySelector(
+      panel?.kind === "note" ? `mark[data-pin="${panel.index + 1}"]` : "mark[data-pending]",
+    ) ?? null;
 
   return (
     <Dialog
@@ -179,7 +179,7 @@ export function DraftDialog({
           </DialogClose>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <div ref={frameRef} className="relative">
+          <div>
             {block.subject ? (
               <p className="mb-4 text-body-lg font-medium" dir="auto">
                 {block.subject}
@@ -199,6 +199,7 @@ export function DraftDialog({
                   <mark
                     key={index}
                     data-pin={number}
+                    data-pending={isPending || undefined}
                     className={
                       isPending
                         ? "rounded-sm bg-accent text-inherit"
@@ -210,13 +211,14 @@ export function DraftDialog({
                 );
               })}
             </div>
-            {panel ? (
-              <div
+            <Popover open={panel !== null} onOpenChange={(next) => !next && closePanel()}>
+              <PopoverContent
                 data-testid="draft-note-panel"
-                style={{ top: panel.top, left: panel.left, width: PANEL_WIDTH }}
-                className="absolute z-10 flex flex-col gap-2 rounded-lg bg-popover p-2.5 text-body text-popover-foreground shadow-md ring-1 ring-foreground/10"
+                anchor={panelAnchor}
+                sideOffset={8}
+                finalFocus={false}
               >
-                {panel.kind === "new" ? (
+                {panel?.kind === "new" ? (
                   <form
                     className="flex items-center gap-2"
                     onSubmit={(event) => {
@@ -225,7 +227,6 @@ export function DraftDialog({
                     }}
                   >
                     <Input
-                      autoFocus
                       aria-label={t`What should change?`}
                       placeholder={t`What should change?`}
                       value={noteText}
@@ -243,7 +244,6 @@ export function DraftDialog({
                     <Button
                       variant="text"
                       size="sm"
-                      autoFocus
                       onClick={() => {
                         onNotesChange(notes.filter((note) => note !== openNote));
                         closePanel();
@@ -253,8 +253,8 @@ export function DraftDialog({
                     </Button>
                   </div>
                 ) : null}
-              </div>
-            ) : null}
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
         <div className="flex items-center gap-3 border-t border-border px-5 py-3">

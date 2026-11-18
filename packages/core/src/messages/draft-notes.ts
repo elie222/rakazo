@@ -25,6 +25,20 @@ export function addDraftNote(
   return [...notes, { start, end, note }].sort((a, b) => a.start - b.start);
 }
 
+/**
+ * The notes to draw while the user picks a passage to note: with `selection` among them when it
+ * could become a note, and its index there; otherwise the notes as they are, and -1.
+ */
+export function draftNotesWithPending(
+  body: string,
+  notes: readonly DraftNote[],
+  selection: { start: number; end: number } | null,
+): { shown: readonly DraftNote[]; pending: number } {
+  const added = selection ? addDraftNote(body, notes, { ...selection, note: "pending" }) : null;
+  if (!added) return { shown: notes, pending: -1 };
+  return { shown: added, pending: added.findIndex((note) => !notes.includes(note)) };
+}
+
 /** The note whose passage holds `offset`, by index, or -1. */
 export function draftNoteAt(notes: readonly DraftNote[], offset: number): number {
   return notes.findIndex((note) => offset >= note.start && offset < note.end);

@@ -180,10 +180,15 @@ export function selectBuiltinToolsForRun(options: {
       (options.hasTeammates !== false || tool.name !== "message_bot") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
+      // A draft card shows only in the app: a chat app gets the draft as plain text, and a
+      // revision rewrites the card in place, which never reaches the chat.
+      (tool.name !== "write_draft" ||
+        (!isBackgroundRunTrigger(options.trigger) &&
+          options.trigger !== "messaging" &&
+          !options.messagingChannelRun)) &&
       (!isBackgroundRunTrigger(options.trigger) ||
         ![
           "message_user",
-          "write_draft",
           "message_bot",
           "handoff_to_bot",
           "message_agent",
@@ -217,7 +222,6 @@ export function selectBuiltinToolsForRun(options: {
             "reflect_memory",
             "task_catalog",
             "board_tickets",
-            "write_draft",
           ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),

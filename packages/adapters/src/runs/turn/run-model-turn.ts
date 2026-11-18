@@ -229,6 +229,7 @@ function modelTurnRequest(
           : disabledBuiltinTools,
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
       followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
+      draftsOffered: strategicBuiltins.some((tool) => tool.name === "write_draft"),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
         trigger: run.trigger,
       }),

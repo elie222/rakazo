@@ -11,6 +11,7 @@ import {
   changeMessageBlocks,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
+  withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
@@ -81,34 +82,40 @@ async function reviseDraft(
   fields: DraftFields & { body: string },
 ) {
   const { deps, run } = ctx;
-  const saved = await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
-    const message = await tx.message.findUnique({
-      where: {
-        threadId_clientNonce: { threadId: run.threadId, clientNonce: draftClientNonce(draftId) },
-      },
-      select: { id: true, blocks: true, botId: true },
-    });
-    if (!message || message.botId !== run.botId) return null;
-    const current = storedMessageBlocks(message).find(
-      (block): block is DraftBlock => block.kind === "draft" && block.draftId === draftId,
-    );
-    if (!current) return null;
-    const next = redactDraft({ ...current, ...fields, version: current.version + 1 }, ctx.secrets);
-    const changed = changeMessageBlocks(message, (block) => (block === current ? next : block));
-    if (!changed) return null;
-    await tx.message.update({ where: { id: message.id }, data: { blocks: changed.stored } });
-    const event = await appendEventInTransaction(tx, {
-      spaceId: run.spaceId,
-      threadId: run.threadId,
-      botId: run.botId,
-      runId: run.id,
-      type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: changed.blocks },
-      lease: runLeaseFor(deps, run.id),
-    });
-    return { version: next.version, seq: event.seq };
-  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  // Like publishMessage: a deadlock or serialization victim commits nothing, so try again.
+  const saved = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+      const message = await tx.message.findUnique({
+        where: {
+          threadId_clientNonce: { threadId: run.threadId, clientNonce: draftClientNonce(draftId) },
+        },
+        select: { id: true, blocks: true, botId: true },
+      });
+      if (!message || message.botId !== run.botId) return null;
+      const current = storedMessageBlocks(message).find(
+        (block): block is DraftBlock => block.kind === "draft" && block.draftId === draftId,
+      );
+      if (!current) return null;
+      const next = redactDraft(
+        { ...current, ...fields, version: current.version + 1 },
+        ctx.secrets,
+      );
+      const changed = changeMessageBlocks(message, (block) => (block === current ? next : block));
+      if (!changed) return null;
+      await tx.message.update({ where: { id: message.id }, data: { blocks: changed.stored } });
+      const event = await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        runId: run.id,
+        type: "thread.message.updated",
+        payload: { messageId: message.id, role: "bot", blocks: changed.blocks },
+        lease: runLeaseFor(deps, run.id),
+      });
+      return { version: next.version, seq: event.seq };
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
   if (!saved) {
     return {
       error: "No draft of yours with that draftId is in this chat. Omit draftId to start one.",
