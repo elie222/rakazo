@@ -13,19 +13,28 @@ import {
  * queue outage is ridden out here and a failure never stops the sync.
  */
 export async function schedulePlanStartEmails(
-  deps: { schedule?: ScheduleLifecycleEmail; modelCredits: boolean },
-  target: { organizationId: string; userId: string | undefined },
+  deps: {
+    schedule?: ScheduleLifecycleEmail;
+    modelCredits: boolean;
+    ownerUserId: (organizationId: string) => Promise<string | undefined>;
+  },
+  organizationId: string,
   live: BillingSubscriptionSnapshot,
 ): Promise<void> {
   const { schedule } = deps;
-  const { organizationId, userId } = target;
-  if (!schedule || !userId) return;
+  if (!schedule) return;
+  // The owner is looked up inside the guarded call: a failed read must not stop the sync either.
   const queue = (kind: Parameters<ScheduleLifecycleEmail>[0], delayMs: number) =>
     bestEffort(
       `schedule the ${kind} email`,
-      retry(() => schedule(kind, { organizationId, userId }, dueAfterStart(live, delayMs)), {
-        attempts: 3,
-      }),
+      retry(
+        async () => {
+          const userId = await deps.ownerUserId(organizationId);
+          if (userId)
+            await schedule(kind, { organizationId, userId }, dueAfterStart(live, delayMs));
+        },
+        { attempts: 3 },
+      ),
     );
   // An own-key plan runs nothing until its owner connects a model, so a day in they are
   // reminded if they still have not. Without model credits the deployment's own model serves

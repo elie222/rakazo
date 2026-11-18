@@ -324,11 +324,8 @@ export function createBillingService(deps: {
       }
     if (live && subscriptionStarted(previous, live))
       await schedulePlanStartEmails(
-        { schedule: deps.scheduleLifecycleEmail, modelCredits },
-        {
-          organizationId: previous.organizationId,
-          userId: await ownerUserId(previous.organizationId),
-        },
+        { schedule: deps.scheduleLifecycleEmail, modelCredits, ownerUserId },
+        previous.organizationId,
         live,
       );
     if (live && hasBillingAccess(live.status))
