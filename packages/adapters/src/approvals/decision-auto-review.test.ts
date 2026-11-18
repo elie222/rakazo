@@ -80,7 +80,7 @@ it("gives the checker the owner's earlier messages, and says what they are", asy
   await provider.review(request, context);
   expect(sent[0]!.state).toMatchObject({ ownerEarlierMessages: ["Draft it to Ana"] });
   expect(sent[0]!.questions.decision!.instructions).toMatch(
-    /owner_earlier_messages are the owner's own earlier messages/,
+    /ownerEarlierMessages are the owner's own earlier messages\b.*userTask is the latest/,
   );
   expect(sent[1]!.state).not.toHaveProperty("ownerEarlierMessages");
   expect(sent[1]!.questions.decision!.instructions).toBe(

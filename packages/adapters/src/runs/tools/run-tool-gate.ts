@@ -847,7 +847,10 @@ async function reviewToolCall(
         ? { url: redactSecrets(fetchUrl, ctx.secrets) }
         : redactToolArgsForReview(args, ctx.secrets);
     const ownerMessages = reviewOwnerMessages(
-      (await ctx.trust.loadEarlierOwnerMessages()).map((text) => redactSecrets(text, ctx.secrets)),
+      // Extra context only: a failed lookup drops it and never fails the review.
+      (
+        (await bestEffort("auto_review.owner_messages", ctx.trust.loadEarlierOwnerMessages())) ?? []
+      ).map((text) => redactSecrets(text, ctx.secrets)),
     );
     const reviewRequest: AutoReviewRequest = {
       toolName: name,

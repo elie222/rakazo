@@ -163,7 +163,7 @@ describe("the owner's earlier messages", () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { threadId: "chat", role: "user", authorUserId: "owner", seq: { lt: 9 } },
-        take: 3,
+        take: 12,
       }),
     );
   });
@@ -195,6 +195,22 @@ describe("the owner's earlier messages", () => {
     });
     expect(await trust.loadEarlierOwnerMessages()).toEqual(["Refund order 1182 for $40"]);
     expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "m9" } }));
+  });
+
+  it("skips messages that hold only files, so they don't crowd out the owner's words", async () => {
+    const file = [{ kind: "file", name: "a.pdf" }];
+    const { trust } = loaders({
+      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner", role: "user" },
+      rows: [
+        { id: "m8", blocks: file },
+        { id: "m7", blocks: blocks("Third") },
+        { id: "m6", blocks: file },
+        { id: "m5", blocks: blocks("Second") },
+        { id: "m4", blocks: blocks("First") },
+        { id: "m3", blocks: blocks("Too old") },
+      ],
+    });
+    expect(await trust.loadEarlierOwnerMessages()).toEqual(["First", "Second", "Third"]);
   });
 
   it("gives no earlier messages when one of them lost entries", async () => {

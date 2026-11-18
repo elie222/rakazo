@@ -215,18 +215,23 @@ export function createRunTrustLoaders(
           seq: { lt: source.seq },
         },
         orderBy: { seq: "desc" },
-        take: REVIEW_OWNER_MESSAGES,
+        // Messages with only files or images hold no words, so look a little further back.
+        take: REVIEW_OWNER_MESSAGES * 4,
         select: { id: true, blocks: true },
       });
-      const read = rows.reverse().map((row) => readMessageBlocks(row));
-      // A message that lost entries may have lost the owner's limits, so the reviewer gets no
-      // earlier messages rather than a partial history that reads as permission.
-      if (read.some((message) => !message.intact)) return [];
-      return read
-        .map(({ blocks }) =>
-          blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n"),
-        )
-        .filter((text) => text.trim());
+      const kept: string[] = [];
+      for (const row of rows) {
+        const read = readMessageBlocks(row);
+        // A message that lost entries may have lost the owner's limits, so the reviewer gets no
+        // earlier messages rather than a partial history that reads as permission.
+        if (!read.intact) return [];
+        const text = read.blocks
+          .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+          .join("\n");
+        if (text.trim()) kept.push(text);
+        if (kept.length === REVIEW_OWNER_MESSAGES) break;
+      }
+      return kept.reverse();
     })();
     return earlierOwnerMessagesPromise;
   };
