@@ -317,15 +317,18 @@ describe("read_email", () => {
   });
 
   it("reads one email whole, a page at a time, and copies its files", async () => {
-    const { call, copyEarlierFiles } = fakeRun([
-      row({
-        text: "a".repeat(10_000),
-        attachments: [
-          { artifactId: "art-1", name: "invoice.pdf", mimeType: "application/pdf", size: 3 },
-          { name: "setup.exe" },
-        ],
-      }),
-    ]);
+    const { call, copyEarlierFiles } = fakeRun(
+      [
+        row({
+          text: "a".repeat(10_000),
+          attachments: [
+            { artifactId: "art-1", name: "invoice.pdf", mimeType: "application/pdf", size: 3 },
+            { name: "setup.exe" },
+          ],
+        }),
+      ],
+      { artifactPaths: { "art-1": null } },
+    );
 
     const first = (await call({ id: "email-1" })).email as Record<string, unknown>;
     const rest = (await call({ id: "email-1", textOffset: first.nextTextOffset })).email as Record<
@@ -373,6 +376,27 @@ describe("read_email", () => {
     expect(email.files).toEqual([
       { name: "invoice.pdf", path: "attachments/2026/11/2026-11-05_1000_Shop_invoice.pdf" },
       { name: "terms.pdf", path: "attachments/art-2.pdf" },
+    ]);
+  });
+
+  it("shows an attachment whose file was deleted as unavailable", async () => {
+    const { call } = fakeRun(
+      [
+        row({
+          attachments: [
+            { artifactId: "art-1", name: "invoice.pdf", mimeType: "application/pdf", size: 3 },
+            { artifactId: "art-2", name: "terms.pdf", mimeType: "application/pdf", size: 3 },
+          ],
+        }),
+      ],
+      { artifactPaths: { "art-1": null } },
+    );
+
+    const email = (await call({ id: "email-1" })).email as Record<string, unknown>;
+
+    expect(email.files).toEqual([
+      { name: "invoice.pdf", path: "attachments/art-1.pdf" },
+      { name: "terms.pdf", unavailable: true },
     ]);
   });
 
