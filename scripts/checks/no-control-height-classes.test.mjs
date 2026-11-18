@@ -30,6 +30,7 @@ const sources = {
     `<Button className="h-9 after:content-['x']" />`,
     'const typed: string = "h-10";',
     "<OptionSelect<Unit> value={unit} className={typed} />",
+    '<InputGroup className="h-9 rounded-xl" />',
     '<ButtonGroup className="h-9" />',
   ].join("\n"),
   "packages/ui-web/src/components/ui/picker.tsx": '<SelectTrigger className="h-10" />\n',
@@ -46,7 +47,7 @@ test("counts heights set by className on a control, across lines and through con
   assert.deepEqual(
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
-      "apps/web/src/pages/Settings.tsx": [1, 2, 7, 11, 13, 14, 16],
+      "apps/web/src/pages/Settings.tsx": [1, 2, 7, 11, 13, 14, 16, 17],
       "packages/ui-web/src/components/ui/picker.tsx": [1],
     },
   );

@@ -1,5 +1,5 @@
 export const message =
-  "Do not set the height of a Button, SelectTrigger, OptionSelect or Input with a className (h-*, min-h-*, size-*). Pick its size prop instead: each size name is the same height on every control (packages/ui-web/src/lib/control-size.ts), so controls placed side by side line up. A control that grows with its content may use h-auto, with a min-h-* floor.";
+  "Do not set the height of a Button, SelectTrigger, OptionSelect, Input or InputGroup with a className (h-*, min-h-*, size-*). Pick its size prop instead: each size name is the same height on every control (packages/ui-web/src/lib/control-size.ts), so controls placed side by side line up. A control that grows with its content may use h-auto, with a min-h-* floor.";
 
 export const include = [
   "apps/web/src/**/*.tsx",
@@ -9,7 +9,7 @@ export const include = [
 
 export const exclude = ["**/*.{test,spec}.*", "**/*.stories.*"];
 
-const OPENING = /<(Button|SelectTrigger|OptionSelect|Input)(?=[\s/><])/g;
+const OPENING = /<(Button|SelectTrigger|OptionSelect|InputGroup|Input)(?=[\s/><])/g;
 const HEIGHT = /^!?(?:h|min-h|size)-/;
 
 /** The end of the JSX opening tag that starts at `from`, skipping braces and strings. */
