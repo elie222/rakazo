@@ -44,7 +44,7 @@ screenshot it took.
 Write a flow under `flows/`, or add steps to an existing one, and list the route
 in that section's `screens` in `catalog.json`. A unit test fails when an app
 route is neither captured nor listed as uncovered in
-`packages/testkit/src/ios-screenshot-catalog.test.ts`, so new screens get added
+`packages/testkit/src/screenshots/ios-screenshot-catalog.test.ts`, so new screens get added
 here too.
 
 Put `waitForAnimationToEnd` before each `takeScreenshot`, so captures never

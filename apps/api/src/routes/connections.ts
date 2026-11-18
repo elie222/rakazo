@@ -1,16 +1,17 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { planLiveConnectionSync } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
   completeConnection,
   connectionContext,
   revokeConnection,
-} from "../connection-flows.js";
-import { connectionCreatedEvent } from "../security-audit.js";
+} from "../integrations/connection-flows.js";
 import type { RouterContext } from "./context.js";
 
 async function reconcileConnections(
@@ -134,7 +135,12 @@ export function connectionsRoutes(ctx: RouterContext) {
             }
           }),
         );
-        return catalogs.flat();
+        const chatApps = deps.messaging?.enabled
+          ? availableChatApps(deps.messaging.providers, Boolean(deps.messagingInstallations))
+          : [];
+        return catalogs
+          .flat()
+          .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item));
       }),
       list: authed.connections.list.handler(async ({ context }) => {
         const rows = await deps.prisma.connection.findMany({

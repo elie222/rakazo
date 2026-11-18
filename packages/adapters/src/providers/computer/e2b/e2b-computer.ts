@@ -1,6 +1,6 @@
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
-import { raw } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
+import { raw } from "../../../computers/computer-provider-descriptor.js";
 
 export const e2bComputer: ComputerProviderDefinition = {
   capabilities: {

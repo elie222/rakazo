@@ -1,6 +1,6 @@
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
 import { createEmulatedSendbluePlatform, SendBlueEmulator } from "./sendblue-emulator.js";
 
 const context: AdapterContext = {
@@ -23,6 +23,25 @@ function createHarness() {
 }
 
 describe("emulated sendblue platform inbound", () => {
+  it.each(["iMessage", "SMS", "RCS"] as const)(
+    "routes a %s direct message with its actual transport",
+    async (service) => {
+      const { emulator, surface, events } = createHarness();
+      const response = await surface.handleWebhook(
+        "sendblue",
+        emulator.buildInboundRequest({
+          fromNumber: "+15551234567",
+          content: "hello",
+          service,
+        }),
+      );
+      expect(response?.status).toBe(200);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ isDirect: true, transport: service });
+      await surface.shutdown();
+    },
+  );
+
   it("normalizes a DM webhook into a direct inbound message", async () => {
     const { emulator, surface, events } = createHarness();
     const response = await surface.handleWebhook(

@@ -1,15 +1,15 @@
 import type { ProviderSettingsField } from "@rakazo/contracts";
-import {
-  classifyLocalServiceSettings,
-  revalidateLocalServiceSettings,
-} from "../../../local-service-endpoint.js";
-import type { MemoryProviderDefinition } from "../../../memory-provider-descriptor.js";
+import type { MemoryProviderDefinition } from "../../../memory/memory-provider-descriptor.js";
 import {
   connectionModeFields,
   MEMORY_SECRET_MIN_LENGTH,
   selfHostedLabel,
   serviceTarget,
-} from "../../../memory-provider-descriptor.js";
+} from "../../../memory/memory-provider-descriptor.js";
+import {
+  classifyLocalServiceSettings,
+  revalidateLocalServiceSettings,
+} from "../../../network/local-service-endpoint.js";
 import {
   createSupermemoryProvider,
   decodeLegacySupermemoryCredentials,
