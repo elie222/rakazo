@@ -12,6 +12,7 @@ import { sitesInText, urlSite } from "@rakazo/core/egress";
 import {
   findAutoReviewPreference,
   listApprovalRules,
+  readMessageBlocks,
   storedBatchActions,
   storedMessageBlocks,
 } from "@rakazo/db";
@@ -75,6 +76,7 @@ export function createRunTrustLoaders(
       trigger: string;
       delegatedFromRunId?: string | null;
       threadId?: string;
+      sourceMessageId?: string | null;
     };
     runId: string;
     botId: string;
@@ -183,20 +185,28 @@ export function createRunTrustLoaders(
   let earlierOwnerMessagesPromise: Promise<string[]> | undefined;
   const loadEarlierOwnerMessages = () => {
     earlierOwnerMessagesPromise ??= (async () => {
+      // A chat-app run's message is not loaded with the run, so it is read here by the same checks.
+      const sourceId =
+        sourceMessage?.id ?? (run.trigger === "messaging" ? run.sourceMessageId : undefined);
       if (
         !run.threadId ||
         !ownerStartedRun ||
         messagingChannelRun ||
-        sourceMessage?.role !== "user" ||
+        !sourceId ||
         run.trigger === BACKGROUND_HELPER_TRIGGER ||
         run.trigger === HELPER_RESULT_TRIGGER
       )
         return [];
       const source = await deps.prisma.message.findUnique({
-        where: { id: sourceMessage.id },
-        select: { seq: true, threadId: true, authorUserId: true },
+        where: { id: sourceId },
+        select: { seq: true, threadId: true, authorUserId: true, role: true },
       });
-      if (source?.threadId !== run.threadId || source.authorUserId !== run.userId) return [];
+      if (
+        source?.role !== "user" ||
+        source.threadId !== run.threadId ||
+        source.authorUserId !== run.userId
+      )
+        return [];
       const rows = await deps.prisma.message.findMany({
         where: {
           threadId: run.threadId,
@@ -208,12 +218,13 @@ export function createRunTrustLoaders(
         take: REVIEW_OWNER_MESSAGES,
         select: { id: true, blocks: true },
       });
-      return rows
-        .reverse()
-        .map((row) =>
-          storedMessageBlocks(row)
-            .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-            .join("\n"),
+      const read = rows.reverse().map((row) => readMessageBlocks(row));
+      // A message that lost entries may have lost the owner's limits, so the reviewer gets no
+      // earlier messages rather than a partial history that reads as permission.
+      if (read.some((message) => !message.intact)) return [];
+      return read
+        .map(({ blocks }) =>
+          blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n"),
         )
         .filter((text) => text.trim());
     })();

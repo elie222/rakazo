@@ -110,7 +110,13 @@ describe("the owner's earlier messages", () => {
     ownerStartedRun?: boolean;
     messagingChannelRun?: boolean;
     trigger?: string;
-    sourceRow?: { seq: number; threadId: string; authorUserId: string | null } | null;
+    sourceRow?: {
+      seq: number;
+      threadId: string;
+      authorUserId: string | null;
+      role: string;
+    } | null;
+    sourceMessageId?: string;
     rows?: Array<{ id: string; blocks: unknown }>;
   }) {
     const findMany = vi.fn(async () => input.rows ?? []);
@@ -123,6 +129,7 @@ describe("the owner's earlier messages", () => {
           spaceId: "space",
           trigger: input.trigger ?? "user",
           threadId: "chat",
+          sourceMessageId: input.sourceMessageId,
         },
         runId: "run",
         botId: "bot",
@@ -136,12 +143,12 @@ describe("the owner's earlier messages", () => {
         connectedPlugins: [],
       },
     );
-    return { trust, findMany };
+    return { trust, findMany, findUnique };
   }
 
   it("reads the owner's own messages before this one, oldest first", async () => {
     const { trust, findMany } = loaders({
-      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner" },
+      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner", role: "user" },
       // Newest first, as the query orders them.
       rows: [
         { id: "m7", blocks: blocks("Refund order 1182 for $40") },
@@ -162,7 +169,7 @@ describe("the owner's earlier messages", () => {
   });
 
   it("reads nothing for a run the owner's own chat message did not start", async () => {
-    const sourceRow = { seq: 9, threadId: "chat", authorUserId: "owner" };
+    const sourceRow = { seq: 9, threadId: "chat", authorUserId: "owner", role: "user" };
     for (const input of [
       { ownerStartedRun: false, sourceRow },
       { messagingChannelRun: true, sourceRow },
@@ -170,10 +177,34 @@ describe("the owner's earlier messages", () => {
       { source: null, sourceRow },
       { sourceRow: { ...sourceRow, authorUserId: "member" } },
       { sourceRow: { ...sourceRow, threadId: "other" } },
+      { sourceRow: { ...sourceRow, role: "bot" } },
     ]) {
       const { trust, findMany } = loaders({ ...input, rows: [{ id: "m1", blocks: blocks("x") }] });
       expect(await trust.loadEarlierOwnerMessages()).toEqual([]);
       expect(findMany).not.toHaveBeenCalled();
     }
+  });
+
+  it("reads them for a run the owner started from their own linked chat app", async () => {
+    const { trust, findUnique } = loaders({
+      trigger: "messaging",
+      source: null,
+      sourceMessageId: "m9",
+      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner", role: "user" },
+      rows: [{ id: "m7", blocks: blocks("Refund order 1182 for $40") }],
+    });
+    expect(await trust.loadEarlierOwnerMessages()).toEqual(["Refund order 1182 for $40"]);
+    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "m9" } }));
+  });
+
+  it("gives no earlier messages when one of them lost entries", async () => {
+    const { trust } = loaders({
+      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner", role: "user" },
+      rows: [
+        { id: "m7", blocks: [{ text: "Only refund up to $40" }] },
+        { id: "m5", blocks: blocks("Refund order 1182") },
+      ],
+    });
+    expect(await trust.loadEarlierOwnerMessages()).toEqual([]);
   });
 });
