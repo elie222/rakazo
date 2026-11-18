@@ -70,6 +70,7 @@ export * from "./locale/device-timezone.js";
 export * from "./locale/text-direction.js";
 export * from "./locale/translate.js";
 export * from "./locale/ui-locale.js";
+export * from "./meetings/meeting-platforms.js";
 export * from "./messages/attachments.js";
 export * from "./messages/draft-notes.js";
 export * from "./messages/events.js";

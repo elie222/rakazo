@@ -92,7 +92,7 @@ import { useSnoozeClock } from "../lib/inbox/use-snooze-clock";
 import { useSpaceActivity } from "../lib/inbox/use-space-activity";
 import { readableGutters } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
-import { useHeaderHeightIfAny } from "../lib/layout/floating-header";
+import { useTopBarInset } from "../lib/layout/floating-header";
 import { useSplitView } from "../lib/layout/split-view";
 import { hapticImpact, hapticSelection } from "../lib/native/haptics";
 import { native, useThemedStyles } from "../lib/native/native";
@@ -448,7 +448,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat and the share picker have no navigation bar of their own.
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
-  const headerHeight = useHeaderHeightIfAny();
+  const topBarInset = useTopBarInset();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
@@ -475,7 +475,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     keys: jumpKeys,
     listRef,
     // The Liquid Glass header floats over the list; the older header sits above it.
-    topInset: nativeHeader ? headerHeight : 0,
+    topInset: nativeHeader ? topBarInset : 0,
     bottomInset: contentBottomInset,
   });
   const router = useRouter();

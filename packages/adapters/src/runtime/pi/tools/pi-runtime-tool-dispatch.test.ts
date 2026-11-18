@@ -486,7 +486,6 @@ vi.mock("../models/pi-openai-compatible-provider.js", () => ({
 
 import {
   approvalPausedToolResult,
-  OWNER_SETTINGS_REFUSAL_REPLY,
   terminatingToolResult,
 } from "../../../approvals/approval-effect.js";
 import {
@@ -499,6 +498,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "../pi-runtime
 import { providerFailureText } from "../pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+
+const TERMINATING_REPLY =
+  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -2063,7 +2065,7 @@ describe("Pi connector tool dispatch", () => {
 
   it("ends the run with the reply a terminating tool result carries", async () => {
     fakeAgentState.mode = "terminating-tool";
-    const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+    const terminatingReply = TERMINATING_REPLY;
     const executeTool = vi.fn(async () =>
       terminatingToolResult(terminatingReply, { refused: "owner-settings" }),
     );
@@ -2101,7 +2103,7 @@ describe("Pi connector tool dispatch", () => {
   it.each([true, false])(
     "requires internal provenance to end a restored turn (trusted: %s)",
     async (trusted) => {
-      const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+      const terminatingReply = TERMINATING_REPLY;
       const executed: string[] = [];
       const executeTool = vi.fn(async (name: string) => {
         executed.push(name);

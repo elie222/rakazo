@@ -190,6 +190,31 @@ const approvals: Scenario = {
   id: "approvals",
   label: "Approvals",
   messages: [
+    bot(
+      [
+        {
+          kind: "ask",
+          text: "Gmail",
+          approvalEffectId: "draft-effect",
+          status: "pending",
+          actions: [
+            { id: "allow", label: "Send" },
+            { id: "deny", label: "Discard" },
+          ],
+          outgoingDraft: {
+            source: "Gmail",
+            keys: { to: "recipient_email", subject: "subject", body: "body" },
+            values: {
+              kind: "email",
+              to: "sam@example.test",
+              subject: "Friday handoff",
+              body: "Hi Sam,\n\nThe report is ready for review. Could you take a look before Friday?\n\nThanks!",
+            },
+          },
+        },
+      ],
+      { runId: "draft-run" },
+    ),
     // A tool's server asking mid-call; its text is the server's, so markdown stays literal.
     bot([
       {

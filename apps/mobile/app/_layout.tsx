@@ -595,6 +595,11 @@ function LayoutContent() {
                         options={glassHeaderOptions(t`Group settings`)}
                       />
                       <Stack.Screen name="bot-profile" options={glassHeaderOptions(t`Profile`)} />
+                      <Stack.Screen name="meetings" options={glassHeaderOptions(t`Meetings`)} />
+                      <Stack.Screen
+                        name="meeting-transcript"
+                        options={glassHeaderOptions(t`Transcript`)}
+                      />
                       <Stack.Screen
                         name="bot-settings"
                         options={glassHeaderOptions(t`Chat settings`)}
