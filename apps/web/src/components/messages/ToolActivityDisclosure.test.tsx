@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const runs = vi.hoisted(() => ({ toolCalls: vi.fn() }));
+vi.mock("../../lib/query/rpc", () => ({
+  rpc: { runs },
+  rpcForSpace: () => ({ runs }),
+  createSpaceRpc: () => ({ runs }),
+  selectedSpaceId: () => null,
+}));
 
 // The macro compiles away in the app build; tests run the source, so expand the
 // plural by hand to assert the singular vs plural English forms.
@@ -50,6 +61,11 @@ function stepsOf(n: number) {
 }
 
 const OPEN_TRIGGER = /aria-expanded="true"/;
+
+afterEach(() => {
+  runs.toolCalls.mockReset();
+  vi.unstubAllGlobals();
+});
 
 function mountCard() {
   const container = document.createElement("div");
@@ -127,6 +143,46 @@ describe("ToolActivityDisclosure", () => {
     card.render(false, 3);
     expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
     card.unmount();
+  });
+
+  it("reads a run's kept calls only once the card is opened", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    runs.toolCalls.mockImplementation(async () => ({
+      calls: [
+        {
+          executionId: "exec-1",
+          tool: "mail_execute",
+          durationMs: 90,
+          outcome: "failed",
+          error: "401 Unauthorized",
+        },
+      ],
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (live: boolean) =>
+      act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <ToolActivityDisclosure live={live} stepCount={1} runId="run-1">
+              <ToolSteps steps={stepsOf(1)} />
+            </ToolActivityDisclosure>
+          </QueryClientProvider>,
+        );
+      });
+
+    await render(false);
+    expect(runs.toolCalls).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click();
+    });
+    await act(flush);
+    expect(runs.toolCalls).toHaveBeenCalledWith({ runId: "run-1" }, expect.anything());
+    expect(container.textContent).toContain("401 Unauthorized");
+
+    act(() => root.unmount());
   });
 
   it("can still be expanded by hand once done", () => {

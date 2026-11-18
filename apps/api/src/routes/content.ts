@@ -21,7 +21,7 @@ import {
   listSpaceArtifacts,
 } from "../content/artifacts.js";
 import { querySpaceSearch } from "../content/search.js";
-import { listSpaceRuns } from "../threads/runs.js";
+import { listSpaceRuns, ownerRunToolCalls } from "../threads/runs.js";
 import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
@@ -539,6 +539,9 @@ export function contentRoutes(ctx: RouterContext) {
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
         runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
+      })),
+      toolCalls: authed.runs.toolCalls.handler(async ({ context, input }) => ({
+        calls: await ownerRunToolCalls(deps.prisma, context.actor, input.runId),
       })),
     },
   };

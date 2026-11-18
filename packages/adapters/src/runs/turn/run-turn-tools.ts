@@ -1,3 +1,4 @@
+import type { AgentToolCompletion } from "@rakazo/adapter-kit";
 import { humanizeToolName, isBackgroundRunTrigger } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "../../approvals/approval-effect.js";
@@ -21,6 +22,7 @@ import {
 } from "../lifecycle/run-progress.js";
 import { applyTool } from "../tools/run-tools.js";
 import type { RuntimeEvent } from "./run-turn.js";
+import { recordToolCall } from "./tool-call-record.js";
 import {
   appendToolCompletionAudit,
   logLoopGuardStop,
@@ -140,27 +142,35 @@ export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">)
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
     toolResults.set(event.executionId, toolResultFingerprint(result));
     const completion = toolCompletionFromResult(
-      { name: event.name, executionId: event.executionId, durationMs: Date.now() - startedAt },
+      {
+        name: event.name,
+        executionId: event.executionId,
+        durationMs: Date.now() - startedAt,
+        arguments: event.args,
+      },
       result,
     );
     const outcome = toolCompletionOutcome(completion);
     if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
     keepToolStepResult(reply, completion, ctx.secrets);
-    await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
+    await Promise.all([
+      appendToolCompletionAudit(deps, audit, completion, ctx.secrets),
+      recordToolCall(deps.prisma, ctx.toolCallRecords, audit, completion, ctx.secrets),
+    ]);
     return isToolPauseResult(result);
   } catch (error) {
     reply.toolOutcomes.set(event.executionId, "failed");
-    await appendToolCompletionAudit(
-      deps,
-      audit,
-      {
-        name: event.name,
-        executionId: event.executionId,
-        durationMs: Date.now() - startedAt,
-        error,
-      },
-      ctx.secrets,
-    );
+    const completion: AgentToolCompletion = {
+      name: event.name,
+      executionId: event.executionId,
+      durationMs: Date.now() - startedAt,
+      arguments: event.args,
+      error,
+    };
+    await Promise.all([
+      appendToolCompletionAudit(deps, audit, completion, ctx.secrets),
+      recordToolCall(deps.prisma, ctx.toolCallRecords, audit, completion, ctx.secrets),
+    ]);
     throw error;
   }
 }

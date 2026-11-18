@@ -692,9 +692,11 @@ function toAgentTool(
               name: tool.name,
               executionId,
               durationMs: Math.max(0, Date.now() - startedAt),
+              arguments: args,
               ...(result === undefined ? {} : { result }),
               ...(failure === undefined ? {} : { error: failure }),
               ...(host.pausePending ? { paused: true } : {}),
+              ...(toolResultShortened(result) ? { resultShortened: true } : {}),
             };
             try {
               void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
@@ -755,6 +757,25 @@ export function serializeToolResult(
       : shortenToolResultText(text, TOOL_RESULT_TEXT_LIMIT, { name, arguments: args });
   } catch {
     return "ok";
+  }
+}
+
+/**
+ * Whether the model read less than the tool returned: the text it got is shorter than the result it
+ * came from. Comparing the two is what the serializer decides on, so a verbatim or whole result,
+ * passed through untouched, never counts as cut, and a cut recorded here matches what was sent.
+ */
+function toolResultShortened(result: unknown): boolean {
+  const content = (result as { content?: Array<{ type?: unknown; text?: unknown }> } | undefined)
+    ?.content;
+  const details = (result as { details?: unknown } | undefined)?.details;
+  if (!Array.isArray(content) || details === undefined) return false;
+  const text = content.find((part) => part?.type === "text")?.text;
+  if (typeof text !== "string") return false;
+  try {
+    return JSON.stringify(details).length > text.length;
+  } catch {
+    return false;
   }
 }
 

@@ -1,7 +1,12 @@
 import { I18nProvider } from "@lingui/react";
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock, ThreadMessage, ToolCallRecord } from "@rakazo/contracts";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import { ToolCallExplanations } from "../../src/components/messages/RunToolCallDetails";
+import {
+  ToolActivityDisclosure,
+  ToolSteps,
+} from "../../src/components/messages/ToolActivityDisclosure";
 import { toolActivityPreference } from "../../src/lib/chat/tool-activity-preference";
 import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
 import { queryClient } from "../../src/lib/query/query";
@@ -11,7 +16,8 @@ import "../../src/styles.css";
 import { FixtureTranscript } from "./thread-fixture";
 
 const params = new URLSearchParams(location.search);
-const view = params.get("view") === "settings" ? "settings" : "thread";
+const requested = params.get("view");
+const view = requested === "settings" || requested === "records" ? requested : "thread";
 const live = params.get("phase") === "live";
 
 const USER_TEXT = "Find a free slot on Tuesday.";
@@ -29,14 +35,16 @@ const STEP_LABELS = [
 
 const NOTE_TEXT = "Anna is free all Tuesday afternoon.";
 
+const stepRows = STEP_LABELS.map((label) => ({
+  label,
+  count: 1,
+  // A finished reply keeps what the bot wrote before a step on that step.
+  ...(!live && label === "Check conflicts" ? { note: NOTE_TEXT } : {}),
+}));
+
 const stepsBlock: MessageBlock = {
   kind: "steps",
-  steps: STEP_LABELS.map((label) => ({
-    label,
-    count: 1,
-    // A finished reply keeps what the bot wrote before a step on that step.
-    ...(!live && label === "Check conflicts" ? { note: NOTE_TEXT } : {}),
-  })),
+  steps: stepRows,
   ...(live ? {} : { durationMs: 12_400 }),
 };
 
@@ -63,6 +71,38 @@ const messages: ThreadMessage[] = [
     createdAt,
   },
 ];
+
+/** What a run kept of two of its calls: one that failed, and one whose result was cut short. */
+const keptCalls: ToolCallRecord[] = [
+  {
+    executionId: "call-1",
+    tool: "Search inbox",
+    durationMs: 1840,
+    outcome: "failed",
+    arguments: '{"query":"from:anna is:unread","limit":20}',
+    error: "Mailbox authorization expired. Reconnect the account to read it.",
+  },
+  {
+    executionId: "call-2",
+    tool: "Read events",
+    durationMs: 240,
+    outcome: "succeeded",
+    arguments: '{"calendar":"Team","days":30}',
+    resultBytes: 184_320,
+    resultShortened: true,
+  },
+];
+
+function RecordsFixture() {
+  return (
+    <main className="mx-auto max-w-2xl p-6">
+      <ToolActivityDisclosure live={false} stepCount={8} durationMs={12_400}>
+        <ToolSteps steps={stepRows} />
+        <ToolCallExplanations calls={keptCalls} />
+      </ToolActivityDisclosure>
+    </main>
+  );
+}
 
 function ThreadFixture() {
   const showToolActivity = toolActivityPreference.use();
@@ -97,7 +137,13 @@ void bootstrapI18n("en").then(() => {
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider i18n={i18n}>
-        {view === "settings" ? <SettingsFixture /> : <ThreadFixture />}
+        {view === "settings" ? (
+          <SettingsFixture />
+        ) : view === "records" ? (
+          <RecordsFixture />
+        ) : (
+          <ThreadFixture />
+        )}
       </I18nProvider>
     </QueryClientProvider>,
   );

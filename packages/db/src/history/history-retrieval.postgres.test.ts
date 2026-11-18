@@ -42,6 +42,10 @@ postgres("history retrieval (PostgreSQL)", () => {
         "replyToMessageId" text, "createdAt" timestamptz, blocks jsonb);
       CREATE TEMP TABLE steering_messages ("messageId" text, "botId" text, "runId" text,
         UNIQUE ("messageId", "botId"));
+      CREATE TEMP TABLE tool_call_records (id text PRIMARY KEY, "spaceId" text, "threadId" text,
+        "botId" text, "runId" text, "executionId" text, tool text, "durationMs" integer, outcome text,
+        arguments text, error text, "resultBytes" integer, "resultShortened" boolean,
+        "resultHead" text, "createdAt" timestamptz);
       CREATE TEMP TABLE runs (id text PRIMARY KEY, "spaceId" text, "userId" text, "threadId" text, "botId" text,
         "sourceMessageId" text, status text, "createdAt" timestamptz, "completedAt" timestamptz);
       CREATE TEMP TABLE artifacts (id text PRIMARY KEY, "spaceId" text, "userId" text, "botId" text, "groupId" text,

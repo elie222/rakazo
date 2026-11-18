@@ -7,7 +7,7 @@ import {
   redactSecrets,
   renderBotDirectory,
 } from "@rakazo/core";
-import { mayBeChannelMessage } from "@rakazo/db";
+import { mayBeChannelMessage, spaceKeepsToolCallRecords } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
@@ -170,6 +170,8 @@ export async function createRunContext(
     runId,
   };
 
+  // Read once here rather than per call: every call of this run keeps a trace, or none does.
+  const keepsToolCallRecords = await spaceKeepsToolCallRecords(deps.prisma, run.spaceId);
   const ctx: RunContext = {
     deps,
     providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
@@ -186,6 +188,7 @@ export async function createRunContext(
     runtimeAbortController: new AbortController(),
     fleetRun,
     secrets: runSecrets,
+    toolCallRecords: keepsToolCallRecords,
     source: {
       ownerStartedRun,
       messagingChannelRun: nonOwnerChatRun,
@@ -202,6 +205,7 @@ export async function createRunContext(
               (sourceMessage && mayBeChannelMessage(sourceMessage)),
           ),
       ),
+      toolDetailsAllowed: ownerStartedRun && !nonOwnerChatRun,
       voiceCall,
       callEndRun,
       callClientNonce: callClientNonceForRun,

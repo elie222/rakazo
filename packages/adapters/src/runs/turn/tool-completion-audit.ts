@@ -23,7 +23,7 @@ function isAuditableToolResult(value: unknown): value is {
 }
 
 export function toolCompletionFromResult(
-  base: Pick<AgentToolCompletion, "name" | "executionId" | "durationMs">,
+  base: Pick<AgentToolCompletion, "name" | "executionId" | "durationMs" | "arguments">,
   result: unknown,
 ): AgentToolCompletion {
   const paused = isToolPauseResult(result);

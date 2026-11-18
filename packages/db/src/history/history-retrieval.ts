@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
+import type { HistoryReadInput, HistorySearchInput, ToolCallRecord } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_COUNT,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   HistoryQueriesSchema,
+  TOOL_CALL_HISTORY_TEXT_MAX_CHARS,
+  TOOL_CALL_RECORDS_IN_HISTORY,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
 import { LISTED_ARTIFACT } from "../artifacts/artifact-versions.js";
@@ -15,6 +17,7 @@ import {
   INDEXED_MESSAGE,
   UNINDEXED_MESSAGE,
 } from "../encryption/content-encryption.js";
+import { runToolCallRecords } from "../runs/tool-call-records.js";
 import { routineReadableSql } from "../threads/messages.js";
 import {
   historyAttachmentBlocks,
@@ -33,6 +36,8 @@ export interface HistoryScope {
   channelId?: string;
   /** Executor-only grant: direct human app runs, never external or background runs. */
   allowMyChats?: boolean;
+  /** Who is reading: only their own runs can be explained, never another member's. */
+  toolDetailsUserId?: string;
   /** Run start: my_chats excludes later messages so offset pages stay stable. */
   searchAt?: Date;
   /** Server-captured history boundary. Search excludes the active request and later messages. */
@@ -640,6 +645,7 @@ export async function readHistory(
     },
     select: {
       id: true,
+      userId: true,
       sourceMessageId: true,
       status: true,
       createdAt: true,
@@ -687,6 +693,13 @@ export async function readHistory(
   const outcomes = outcomeRows.slice(0, LINK_PAGE_SIZE);
   const artifacts = artifactRows.slice(0, LINK_PAGE_SIZE);
   const attachments = await messageAttachments(prisma, scope, rows);
+  // A linked run brings what its own calls were sent and returned, but only to its own reader:
+  // a shared page also holds runs other members started.
+  const linkedRun = runs.find((run) => run.id === input.linkedRunId);
+  const toolDetails =
+    input.linkedRunId && linkedRun?.userId === scope.toolDetailsUserId
+      ? await toolCallDetails(prisma, scope, input.linkedRunId)
+      : undefined;
   return bounded({
     untrusted: true as const,
     nextRunId: runRows.length > LINK_PAGE_SIZE ? runs.at(-1)!.id : null,
@@ -703,6 +716,7 @@ export async function readHistory(
       ...run,
       outcomes: outcomes.filter((row) => row.runId === run.id).map((row) => reference(row)),
       artifacts: artifacts.filter((artifact) => artifact.runId === run.id),
+      ...(toolDetails && run.id === input.linkedRunId ? { toolCalls: toolDetails } : {}),
     })),
     snapshots: rows.map((row) => {
       const linkedRuns = runs.filter(
@@ -728,4 +742,30 @@ export async function readHistory(
     olderMessageId: rows[0]?.id ?? null,
     newerMessageId: rows.at(-1)?.id ?? null,
   });
+}
+
+/**
+ * One reachable run's kept tool call details, bounded to the few a history read carries and capped
+ * again so four calls cannot crowd out the conversation the page exists for.
+ */
+async function toolCallDetails(prisma: PrismaClient, scope: HistoryScope, runId: string) {
+  const calls = await runToolCallRecords(prisma, {
+    spaceId: scope.spaceId,
+    runId,
+    limit: TOOL_CALL_RECORDS_IN_HISTORY,
+  });
+  // The page's own budget decides what fits; these are the most four calls may add to it.
+  return calls.length > 0 ? calls.map(boundedToolCall) : undefined;
+}
+
+/** The little of each field a history page carries, so its own 10 KB never has to give way. */
+function boundedToolCall(call: ToolCallRecord): ToolCallRecord {
+  const cut = (text: string | undefined) =>
+    text === undefined ? undefined : text.slice(0, TOOL_CALL_HISTORY_TEXT_MAX_CHARS);
+  return {
+    ...call,
+    ...(call.arguments === undefined ? {} : { arguments: cut(call.arguments) }),
+    ...(call.error === undefined ? {} : { error: cut(call.error) }),
+    ...(call.resultHead === undefined ? {} : { resultHead: cut(call.resultHead) }),
+  };
 }

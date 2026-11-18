@@ -56,6 +56,7 @@ export * from "./runs/expire-stuck-run.js";
 export * from "./runs/run-secrets.js";
 export * from "./runs/run-timing.js";
 export * from "./runs/run-turn-checkpoint.js";
+export * from "./runs/tool-call-records.js";
 export * from "./spaces/availability.js";
 export * from "./spaces/cross-space-communication.js";
 export * from "./spaces/external-conversations.js";

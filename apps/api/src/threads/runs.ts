@@ -1,4 +1,4 @@
-import type { Actor, RunActivityRow } from "@rakazo/contracts";
+import type { Actor, RunActivityRow, ToolCallRecord } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -10,7 +10,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { Prisma, runToolCallRecords } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -136,4 +136,18 @@ async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Pro
     ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC
     LIMIT ${RECENT_LIMIT}`;
   return rows.map((row) => row.id);
+}
+
+/** A run's tool call traces as its owner reads them in the run view; nobody else's run. */
+export async function ownerRunToolCalls(
+  prisma: PrismaClient,
+  actor: Actor,
+  runId: string,
+): Promise<ToolCallRecord[]> {
+  const run = await prisma.run.findFirst({
+    where: { id: runId, spaceId: actor.spaceId, userId: actor.userId },
+    select: { id: true },
+  });
+  if (!run) return [];
+  return runToolCallRecords(prisma, { spaceId: actor.spaceId, runId, explainedOnly: true });
 }

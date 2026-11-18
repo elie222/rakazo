@@ -134,3 +134,22 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
   );
   await captureScreenshot(page, testInfo, "on-again-done");
 });
+
+test("says why a run's tool calls went the way they did", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${fixture}?view=records`);
+
+  const card = page.getByTestId("tool-activity");
+  await expect(card.locator("button[aria-expanded]")).toHaveAttribute("aria-expanded", "false");
+  await card.locator("button[aria-expanded]").click();
+
+  const details = page.getByTestId("tool-call-explanations");
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("Search inbox");
+  await expect(details).toContainText("Failed");
+  await expect(details).toContainText("Mailbox authorization expired");
+  await expect(details).toContainText("Result shortened");
+  await expect(details).toContainText("180 KB");
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 1440);
+  await captureScreenshot(page, testInfo, "tool-call-details");
+});

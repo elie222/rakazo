@@ -119,6 +119,11 @@ export const spacesRpc = {
   /** Which account settings the bound Space overrides for the member. */
   spaceSettings: {
     overrides: oc.output(z.array(SpaceSettingSchema)),
+    /** Whether this Space keeps a short, redacted trace of each tool call, and who may change it. */
+    keepToolCallRecords: oc.output(z.object({ keeps: z.boolean(), canManage: z.boolean() })),
+    setKeepToolCallRecords: oc
+      .input(z.object({ keeps: z.boolean() }))
+      .output(z.object({ keeps: z.boolean() })),
     /** Customizing copies the account's settings into the Space; ending it drops the copy. */
     setOverride: oc
       .input(z.object({ setting: SpaceSettingSchema, enabled: z.boolean() }))

@@ -25,6 +25,7 @@ import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection
 import { applyTool } from "../tools/run-tools.js";
 import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
+import { recordToolCall } from "./tool-call-record.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultFingerprint } from "./tool-loop.js";
 import { keepToolStepResult } from "./tool-step-calls.js";
@@ -332,17 +333,16 @@ function modelTurnRequest(
       const outcome = toolCompletionOutcome(completion);
       if (outcome) state.reply.toolOutcomes.set(completion.executionId, outcome);
       keepToolStepResult(state.reply, completion, runSecrets);
-      const audited = appendToolCompletionAudit(
-        deps,
-        {
-          spaceId: run.spaceId,
-          threadId: thread.id,
-          botId: bot.id,
-          runId,
-        },
-        completion,
-        runSecrets,
-      );
+      const auditTarget = {
+        spaceId: run.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        runId,
+      };
+      const audited = Promise.all([
+        appendToolCompletionAudit(deps, auditTarget, completion, runSecrets),
+        recordToolCall(deps.prisma, ctx.toolCallRecords, auditTarget, completion, runSecrets),
+      ]).then(() => undefined);
       state.toolResults.set(
         completion.executionId,
         toolResultFingerprint(completion.result, completion.error),

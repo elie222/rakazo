@@ -72,8 +72,13 @@ export function keptToolArguments(args: unknown, secrets: string[]): ToolStepCal
   );
 }
 
-/** Tools whose results carry secret values or their names are not kept. */
+/** Tools whose results carry secret values or their names are not kept, here or in a trace. */
 const SECRET_TOOL = /secret/i;
+
+/** Whether a tool's result may hold a secret value, so neither its text nor a head of it is kept. */
+export function secretCarryingTool(name: string): boolean {
+  return SECRET_TOOL.test(name);
+}
 
 /** What the model read back from a call (or its error), redacted and bounded to `max`. */
 export function keptToolResult(

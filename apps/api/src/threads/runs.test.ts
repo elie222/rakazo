@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { activityNotificationsEnabled, activityPreview } from "./runs.js";
+import { describe, expect, it, vi } from "vitest";
+import { activityNotificationsEnabled, activityPreview, ownerRunToolCalls } from "./runs.js";
 
 describe("run activity copy", () => {
   it.each([
@@ -140,5 +140,36 @@ it("hides opaque sender names in Activity previews", () => {
   ).toEqual({
     promptSnippet: "Update from Another agent: Ready",
     agentMessage: { fromBotName: "", kind: "update", text: "Ready" },
+  });
+});
+
+describe("a run's kept tool calls", () => {
+  const actor = (userId: string) => ({ userId, spaceId: "space-1" });
+
+  function prismaFor(startsRun: boolean) {
+    const findCalls = vi.fn(async () => []);
+    const findRun = vi.fn(async () => (startsRun ? { id: "run-1" } : null));
+    return {
+      findCalls,
+      findRun,
+      prisma: { run: { findFirst: findRun }, toolCallRecord: { findMany: findCalls } },
+    };
+  }
+
+  it("reads them for the person whose run it is", async () => {
+    const { findCalls, findRun, prisma } = prismaFor(true);
+    await ownerRunToolCalls(prisma as never, actor("me") as never, "run-1");
+    expect(findRun).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "run-1", spaceId: "space-1", userId: "me" } }),
+    );
+    expect(findCalls).toHaveBeenCalled();
+  });
+
+  it("reads nothing for someone else's run", async () => {
+    const { findCalls, prisma } = prismaFor(false);
+    expect(
+      await ownerRunToolCalls(prisma as never, actor("someone-else") as never, "run-1"),
+    ).toEqual([]);
+    expect(findCalls).not.toHaveBeenCalled();
   });
 });

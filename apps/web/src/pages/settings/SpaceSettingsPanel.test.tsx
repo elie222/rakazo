@@ -49,6 +49,9 @@ vi.mock("./SpaceSettingOverrides", () => ({
 vi.mock("../../components/spaces/SpaceMembersSettings", () => ({
   SpaceMembersSettings: () => <div data-testid="space-members-settings" />,
 }));
+vi.mock("../../components/spaces/ToolCallRecordsSetting", () => ({
+  ToolCallRecordsSetting: () => <div data-testid="tool-call-records-setting" />,
+}));
 
 const client = vi.hoisted(() => ({ spaces: {} }));
 vi.mock("../../lib/query/rpc", () => ({

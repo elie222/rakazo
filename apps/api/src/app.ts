@@ -195,6 +195,7 @@ import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
 import { createExperiments } from "./telemetry/experiments.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { toolCallRecordRetentionSweep } from "./threads/tool-call-records-retention.js";
 import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 /**
@@ -778,6 +779,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         )
       : undefined;
 
+  const stopToolCallRecordRetention = startHourlySweep(
+    toolCallRecordRetentionSweep({ prisma }),
+    (error) => getLogger().error("tool call record retention failed", error),
+  );
+
   const stopOrganizationDeletions = startHourlySweep(
     finishStalledOrganizationDeletions({
       prisma,
@@ -1262,6 +1268,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await oauthLogins.abortAll();
         await stopReferralEmails?.();
         await stopHomeRetention?.();
+        await stopToolCallRecordRetention();
         await stopOrganizationDeletions();
         await reconciler?.stop();
         await oauthTokenUpgrade;

@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { spaceInvitationEmail } from "@rakazo/auth";
 import type { Actor, SpaceNavigation } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
@@ -24,7 +25,9 @@ import {
   runAsTenant,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceNotFoundError,
+  setSpaceKeepsToolCallRecords,
   setSpaceSettingOverride,
+  spaceKeepsToolCallRecords,
   spaceSettingOverrides,
 } from "@rakazo/db";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
@@ -56,6 +59,29 @@ async function asMemberOf<T>(
   return runAsTenant({ spaceId, userId: actor.userId }, fn);
 }
 
+/**
+ * Who decides what a Space keeps: the person who created it, or an owner or admin of the
+ * organization it belongs to. This is a privacy setting for everyone in the Space, so the answer
+ * is the same for reading it back as for changing it.
+ */
+async function managesToolCallRecords(prisma: PrismaClient, actor: Actor): Promise<boolean> {
+  const space = await prisma.space.findUnique({
+    where: { id: actor.spaceId },
+    select: { createdByUserId: true, organizationId: true },
+  });
+  if (!space) throw new SpaceNotFoundError();
+  if (space.createdByUserId === actor.userId) return true;
+  const manager = await prisma.member.findFirst({
+    where: {
+      organizationId: space.organizationId,
+      userId: actor.userId,
+      role: { in: ["owner", "admin"] },
+    },
+    select: { id: true },
+  });
+  return manager !== null;
+}
+
 export function spacesRoutes(ctx: RouterContext) {
   const { deps, repos, groupRepos, authed } = ctx;
   return {
@@ -65,6 +91,21 @@ export function spacesRoutes(ctx: RouterContext) {
       ),
       setOverride: authed.spaceSettings.setOverride.handler(({ context, input }) =>
         setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled),
+      ),
+      keepToolCallRecords: authed.spaceSettings.keepToolCallRecords.handler(
+        async ({ context }) => ({
+          keeps: await spaceKeepsToolCallRecords(deps.prisma, context.actor.spaceId),
+          canManage: await managesToolCallRecords(deps.prisma, context.actor),
+        }),
+      ),
+      setKeepToolCallRecords: authed.spaceSettings.setKeepToolCallRecords.handler(
+        async ({ context, input }) => {
+          if (!(await managesToolCallRecords(deps.prisma, context.actor))) {
+            throw new ClientError("FORBIDDEN", "Only a Space owner can change this.");
+          }
+          await setSpaceKeepsToolCallRecords(deps.prisma, context.actor.spaceId, input.keeps);
+          return { keeps: input.keeps };
+        },
       ),
     },
     spaces: {

@@ -168,7 +168,7 @@ export const memoryTools: ConnectorTool[] = [
         },
         linkedRunId: {
           type: "string",
-          description: "Inspect a run linked to this authorized message page.",
+          description: "Inspect a run linked to this authorized message page, with its tool calls.",
         },
         runAfterId: { type: "string", description: "Run cursor returned as nextRunId." },
         artifactAfterId: {

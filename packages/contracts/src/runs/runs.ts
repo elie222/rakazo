@@ -152,3 +152,45 @@ export const RunSchema = z.object({
   createdAt: z.string(),
 });
 export type Run = z.infer<typeof RunSchema>;
+
+/**
+ * How long a tool call's record is kept. The retention sweep only deletes what is past it, so the
+ * sweep can run rarely and a missed run costs nothing but a later deletion.
+ */
+export const TOOL_CALL_RECORD_RETENTION_MS = 14 * 24 * 60 * 60_000;
+/** The most of one call's arguments kept, as JSON. */
+export const TOOL_CALL_ARGUMENTS_MAX_CHARS = 2_000;
+/** The most of one call's error message kept. */
+export const TOOL_CALL_ERROR_MAX_CHARS = 1_000;
+/** The most of a call's result kept, as a head to recognize it by. */
+export const TOOL_CALL_RESULT_HEAD_MAX_CHARS = 500;
+/** The most records one read returns, so a read is bounded by its own query. */
+export const TOOL_CALL_RECORDS_MAX = 12;
+/** The most records one history read hands a bot, and the most of each field it carries. */
+export const TOOL_CALL_RECORDS_IN_HISTORY = 4;
+export const TOOL_CALL_HISTORY_TEXT_MAX_CHARS = 200;
+
+export const ToolCallOutcome = z.enum(["succeeded", "failed", "paused"]);
+export type ToolCallOutcome = z.infer<typeof ToolCallOutcome>;
+
+/**
+ * One tool call as it can be explained later: what it was sent, how it ended, and what came back,
+ * all redacted with the run's secrets and capped before they were stored. Untrusted data.
+ */
+export const ToolCallRecordSchema = z.object({
+  executionId: z.string(),
+  tool: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  outcome: ToolCallOutcome,
+  arguments: z.string().optional(),
+  error: z.string().optional(),
+  resultBytes: z.number().int().nonnegative().optional(),
+  resultShortened: z.boolean().optional(),
+  resultHead: z.string().optional(),
+});
+export type ToolCallRecord = z.infer<typeof ToolCallRecordSchema>;
+
+export const ToolCallsOutputSchema = z.object({
+  calls: z.array(ToolCallRecordSchema),
+});
+export type ToolCallsOutput = z.infer<typeof ToolCallsOutputSchema>;
