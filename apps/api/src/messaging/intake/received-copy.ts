@@ -1,9 +1,8 @@
 import type { AdapterContext, MessagingInboundMessage } from "@rakazo/adapter-kit";
 import type { ReceivedFile, SaveReceivedFileResult } from "@rakazo/adapters";
-import { savedFileLine, userTimeZone } from "@rakazo/adapters";
+import { bestEffortWithoutPaths, savedFileLine, userTimeZone } from "@rakazo/adapters";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { PrismaClient, ProvisionedMessagingIdentity } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
 import { RECEIVED_FILE_SAVE_TIMEOUT_MS } from "./limits.js";
 import type { SenderQueue } from "./sender-queue.js";
 
@@ -63,7 +62,7 @@ export async function saveReceivedCopy(
       return withAbort(save(received, context), signal);
     });
   };
-  const result = await bestEffort(
+  const result = await bestEffortWithoutPaths(
     "copy a received file into the bot's computer",
     withAbort(copy(), signal),
   );

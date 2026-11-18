@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { LocalAgentHomeStore } from "../../storage/home.js";
 import { createReceivedFilesPruner } from "./prune-received-files.js";
@@ -178,6 +179,28 @@ describe("createReceivedFilesPruner", () => {
       expect.anything(),
       { signal: expect.any(AbortSignal) },
     );
+  });
+
+  it("logs a failed prune by its code, never by the path of the file", async () => {
+    const sink = createTestSink();
+    const previous = getLogger();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    onTestFinished(() => installLogger(previous));
+    const { prune, home } = await setup([team], { "team-home": [OLD] });
+    const where = path.join(home.pathFor("team-home"), OLD);
+    vi.spyOn(home, "removeFiles").mockRejectedValue(
+      Object.assign(new Error(`EACCES: permission denied, unlink '${where}'`), {
+        code: "EACCES",
+        path: where,
+      }),
+    );
+
+    await prune();
+
+    const logged = JSON.stringify(sink.events);
+    expect(logged).toContain("EACCES");
+    expect(logged).not.toContain("alice");
+    expect(logged).not.toContain("team-home");
   });
 
   it("does not run again within a day, then runs once it has passed", async () => {

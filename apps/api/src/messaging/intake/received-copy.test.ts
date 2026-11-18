@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { SaveReceivedFile } from "./received-copy.js";
 import { saveReceivedCopy } from "./received-copy.js";
@@ -65,5 +66,35 @@ describe("saveReceivedCopy", () => {
     await expect(hung).resolves.toBeUndefined();
     await expect(next).resolves.toBe("[saved to shared/received/2026/11/next.jpg]");
     expect(saveReceivedFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs a failed copy by its code, never by the path that names the sender and the file", async () => {
+    const sink = createTestSink();
+    const previous = getLogger();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    onTestFinished(() => installLogger(previous));
+    const where =
+      "/data/homes/team-home/shared/received/2026/11/2026-11-17_1912_+15551111111_photo.jpg";
+    const failure = Object.assign(new Error(`ENOSPC: no space left on device, open '${where}'`), {
+      code: "ENOSPC",
+      path: where,
+    });
+    const saveReceivedFile = vi.fn<SaveReceivedFile>(async () => {
+      throw failure;
+    });
+
+    await expect(
+      saveReceivedCopy({ prisma: fakePrisma(), saveReceivedFile }, ids, event, file, bytes, {
+        saves: createSenderQueue(),
+        receivedAt: Date.now(),
+      }),
+    ).resolves.toBeUndefined();
+
+    const logged = JSON.stringify(sink.events);
+    expect(sink.events).toHaveLength(1);
+    expect(logged).toContain("ENOSPC");
+    expect(logged).not.toContain("+15551111111");
+    expect(logged).not.toContain("photo.jpg");
+    expect(logged).not.toContain("/data/homes");
   });
 });

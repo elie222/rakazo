@@ -1,9 +1,9 @@
 import type { AdapterContext, AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { LeaseHeldError, parseComputerMode, withLease } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { RECEIVED_FILE_MAX_AGE_MS } from "./received-path.js";
-import { homeHoldsReceivedFiles } from "./save-received-file.js";
+import { bestEffortWithoutPaths, homeHoldsReceivedFiles } from "./save-received-file.js";
 
 /**
  * How often received copies are looked at for pruning. Looking at a home loads it: a home kept
@@ -151,7 +151,7 @@ export function createReceivedFilesPruner(deps: {
           signal: new AbortController().signal,
         };
         removed +=
-          (await bestEffort(
+          (await bestEffortWithoutPaths(
             `prune received files of computer ${computer.id}`,
             // A save holds the same lease, so a prune never runs beside one; the next pass retries.
             withLease(

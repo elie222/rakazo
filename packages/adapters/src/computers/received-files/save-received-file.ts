@@ -3,6 +3,7 @@ import type { AdapterContext, AgentHomeStore, SandboxProvider } from "@rakazo/ad
 import { retry, sanitizeMessagingLabel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { LeaseHeldError, parseComputerMode, withLease } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { serverOwnsTeamHome } from "../computer-workspace.js";
 import { sandboxKindCapabilities } from "../sandbox/sandbox-kind-capabilities.js";
 import {
@@ -38,6 +39,38 @@ type ComputerRow = {
   providerRef: string | null;
   state: string;
 };
+
+/**
+ * `bestEffort` for work on received files, logging only the failure's code or kind. A file
+ * error's message and fields name the full path, which holds the sender's address, such as a
+ * phone number, and the file's name.
+ */
+export function bestEffortWithoutPaths<T>(
+  label: string,
+  attempt: Promise<T>,
+): Promise<T | undefined> {
+  return bestEffort(
+    label,
+    attempt.catch((error: unknown) => {
+      throw pathFreeError(error);
+    }),
+  );
+}
+
+function pathFreeError(error: unknown): Error {
+  const code = (error as { code?: unknown } | null)?.code;
+  const reason =
+    typeof code === "string" && /^[A-Z][A-Z0-9_]*$/.test(code)
+      ? code
+      : error instanceof Error
+        ? error.name
+        : "unknown";
+  const failure = new Error(`received file work failed: ${reason}`);
+  // A cancellation stays one, so it is still not logged as a failure.
+  failure.name =
+    error instanceof Error && error.name === "AbortError" ? "AbortError" : "ReceivedFileError";
+  return failure;
+}
 
 /** Where a copy can go now: the running computer itself, or the stored home it boots from. */
 type Target = {
