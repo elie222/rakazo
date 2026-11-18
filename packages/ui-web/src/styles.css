@@ -280,30 +280,30 @@
 @keyframes rakazo-mascot-float {
   0%,
   100% {
-    transform: translateY(2px) scaleX(1.02);
+    transform: translateY(calc(2 * var(--rakazo-mascot-unit))) scaleX(1.02);
   }
   50% {
-    transform: translateY(-3px) scaleX(0.98);
+    transform: translateY(calc(-3 * var(--rakazo-mascot-unit))) scaleX(0.98);
   }
 }
 
 @keyframes rakazo-mascot-stretch {
   0%,
   100% {
-    transform: translateY(2px) scale(1.04, 0.96);
+    transform: translateY(calc(2 * var(--rakazo-mascot-unit))) scale(1.04, 0.96);
   }
   50% {
-    transform: translateY(-3px) scale(0.96, 1.05);
+    transform: translateY(calc(-3 * var(--rakazo-mascot-unit))) scale(0.96, 1.05);
   }
 }
 
 @keyframes rakazo-mascot-sway {
   0%,
   100% {
-    transform: rotate(-3deg) translateX(-1px);
+    transform: rotate(-3deg) translateX(calc(-1 * var(--rakazo-mascot-unit)));
   }
   50% {
-    transform: rotate(3deg) translateX(1px);
+    transform: rotate(3deg) translateX(var(--rakazo-mascot-unit));
   }
 }
 

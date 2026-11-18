@@ -255,6 +255,7 @@ function MascotAvatar({
   }, [ref, visible]);
   const duration = `${4.8 + (seed % 24) / 10}s`;
   const eyeOrigin = `${(eyes.leftCx + eyes.rightCx) / 2}px ${eyes.cy}px`;
+  const unit = viewBoxWidth(viewBox) / viewBoxWidth(ORGANIC_AVATAR_VIEWBOX);
 
   return (
     <svg
@@ -267,11 +268,14 @@ function MascotAvatar({
       data-shape-family={seed % 10}
       data-eye-pattern={seed % 4}
       // Inline size so a parent's icon sizing (Button sizes bare SVGs) cannot shrink it.
-      style={{
-        width: size,
-        height: size,
-        flex: "none",
-      }}
+      style={
+        {
+          width: size,
+          height: size,
+          flex: "none",
+          "--rakazo-mascot-unit": `${unit}px`,
+        } as CSSProperties
+      }
     >
       {(["idle", "working"] as const).map((mode) => (
         <path
@@ -284,8 +288,8 @@ function MascotAvatar({
               "--rakazo-mascot-path": `path("${body}")`,
               filter:
                 mode === "working"
-                  ? `drop-shadow(0 0 ${Math.round(size * 0.16)}px ${color})`
-                  : "drop-shadow(0 2px 3px rgba(0,0,0,.34))",
+                  ? `drop-shadow(0 0 ${Math.round(size * 0.16 * unit)}px ${color})`
+                  : "drop-shadow(0 calc(2 * var(--rakazo-mascot-unit)) calc(3 * var(--rakazo-mascot-unit)) rgba(0,0,0,.34))",
             } as CSSProperties
           }
         >
@@ -313,6 +317,10 @@ function MascotAvatar({
       </g>
     </svg>
   );
+}
+
+function viewBoxWidth(viewBox: string): number {
+  return Number(viewBox.split(" ")[2]);
 }
 
 function BarEyes({ eyes }: { eyes: AvatarEyes }) {
