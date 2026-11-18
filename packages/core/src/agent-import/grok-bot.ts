@@ -7,6 +7,7 @@ import {
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import JSON5 from "json5";
 import { messagingProviderNamed } from "../messaging/messaging-providers.js";
@@ -692,9 +693,14 @@ function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLef
   };
 }
 
-/** A leftover is posted in a chat message, so one longer than a file may be is left out. */
+/**
+ * A leftover is posted whole in one chat message, inside a fence longer than its longest run of
+ * backticks and beside a heading and two short lines; one that cannot fit is left out.
+ */
 function fitsChatMessage(item: AgentImportLeftover): boolean {
-  return item.title.length + item.content.length <= AGENT_IMPORT_MAX_FILE_LENGTH / 2;
+  const fence = Math.max(2, ...(item.content.match(/`+/g) ?? []).map((run) => run.length)) + 1;
+  const around = 2 * fence + 200;
+  return item.title.length + item.content.length + around <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
 }
 
 /**

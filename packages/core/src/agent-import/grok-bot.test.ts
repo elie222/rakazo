@@ -290,6 +290,22 @@ describe("a Grok Bot as an import plan", () => {
     ]);
   });
 
+  it("leaves over a routine that fits one chat message, and lists a longer one as not imported", () => {
+    const routine = (name: string, length: number) => ({
+      name,
+      instruction: "x".repeat(length),
+      trigger: "other",
+      cron: "",
+      when: "",
+      timeZone: "",
+      skills: [],
+      details: "",
+    });
+    const parsed = plan({ ...bot!, routines: [routine("Fits", 90_000), routine("Long", 100_000)] });
+    expect(parsed.leftovers.map((item) => item.title)).toEqual(["Fits"]);
+    expect(parsed.skipped).toContainEqual({ path: "routines: Long", reason: "unsupported" });
+  });
+
   it("keeps a skill's own metadata and an entry's own lines", () => {
     const parsed = plan({
       ...bot!,
