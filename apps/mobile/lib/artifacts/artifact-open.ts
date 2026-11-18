@@ -4,12 +4,12 @@ import * as Sharing from "expo-sharing";
 import { Image } from "react-native";
 import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "../api/api";
+import { currentSessionGeneration, loadSessionToken } from "../api/session";
+import type { ImageSize } from "../messages/inline-image";
+import { createKeyedPromiseCache } from "../messages/inline-image";
 import { artifactCacheSession } from "./artifact-cache-session";
 import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
 import { ARTIFACT_DOWNLOAD_TIMEOUT_MS } from "./artifacts";
-import type { ImageSize } from "../messages/inline-image";
-import { createKeyedPromiseCache } from "../messages/inline-image";
-import { currentSessionGeneration, loadSessionToken } from "../api/session";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
 
