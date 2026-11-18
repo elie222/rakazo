@@ -4,12 +4,12 @@ Moving from OpenClaw, Hermes Agent, Grok Bot or another assistant such as ChatGP
 can turn it into a new bot, with its instructions, memory and skills, next to the bots you already
 have.
 
-Open **Settings → General** and choose **Import an agent**. Import is available in the web app
-and the desktop app.
+Open **Settings → General** and choose **Import an agent**, then pick where the agent comes from.
+Import is available in the web app and the desktop app.
 
 ## From OpenClaw or Hermes
 
-Choose either:
+Pick **OpenClaw** or **Hermes**, then choose either:
 
 - **Choose folder**: the agent's home folder, such as `~/.openclaw` or `~/.hermes`.
 - **Choose backup**: a `.zip` or `.tar.gz` backup of that folder.
@@ -21,7 +21,7 @@ The folder or backup is read on your device. Only the files the import uses are 
 
 Grok Bot has no export button, so each Bot writes down its own setup:
 
-1. Under **Grok Bot**, choose **Copy prompt** and send it to the Bot in Grok Bot. It asks the Bot to
+1. Pick **Grok Bot**, choose **Copy prompt** and send it to the Bot in Grok Bot. It asks the Bot to
    write its instructions, memory, skills, routines and connected apps as a `grok-bot-export` JSON
    file, without changing anything or including passwords or keys.
 2. Paste the Bot's whole reply and choose **Continue**, or choose **Choose file** for the file it
@@ -58,13 +58,15 @@ Bot's computer and sign-ins stay in Grok Bot.
 
 For ChatGPT, Claude, Gemini or any other assistant:
 
-1. Choose **Copy prompt** and send the prompt to your old assistant. It asks it to write down its
+1. Pick **Another assistant**, choose **Copy prompt** and send the prompt to your old assistant. It asks it to write down its
    name, instructions, what it remembers about you, and the procedures it follows.
 2. Paste its reply and choose **Continue**, or choose **Choose file** if it gave you a `.md` file.
 
 ## Choose what comes along
 
-Before anything is created, you see every item the import found and tick what to keep:
+Before anything is created, you name the bot and see what the import found, one row per kind of
+item. Open a row to read its items and tick what to keep; a row that still has something to
+decide starts open:
 
 | Item                                         | Becomes                                                                  |
 | -------------------------------------------- | ------------------------------------------------------------------------ |

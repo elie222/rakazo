@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot, MemoryDocument, Routine } from "@rakazo/contracts";
 import {
@@ -98,6 +98,16 @@ async function openImport(page: Page) {
   return panel;
 }
 
+/** Opens a row of the preview; a row with nothing left to tick starts closed. */
+async function expandRow(preview: Locator, testId: string) {
+  const trigger = preview.getByTestId(testId).getByRole("heading").first().getByRole("button");
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+}
+
+function origin(panel: Locator, name: string) {
+  return panel.getByTestId("agent-import-choose").getByRole("button", { name, exact: true });
+}
+
 test("imports an OpenClaw folder and another assistant's document as new bots", async ({
   page,
   context,
@@ -109,40 +119,39 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await page.waitForURL(/\/app\/[^/]+$/);
 
   const importPanel = await openImport(page);
-  await importPanel.getByRole("button", { name: "Back", exact: true }).click();
+  await importPanel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(importPanel).toHaveCount(0);
 
   const panel = await openImport(page);
-  const choose = panel.getByTestId("agent-import-choose");
-  await expect(choose.getByRole("heading")).toHaveText([
-    "OpenClaw or Hermes",
-    "Grok Bot",
-    "Another assistant",
-  ]);
-  await expect(choose.getByRole("button")).toHaveText([
-    "Choose folder",
-    "Choose backup",
-    "Copy prompt",
-    "Continue",
-    "Choose file",
-    "Copy prompt",
-    "Continue",
-    "Choose file",
-  ]);
+  // One step at a time: only where the agent comes from, with no Back on the first step.
+  await expect(panel.getByRole("button")).toHaveCount(5);
+  for (const name of ["OpenClaw", "Hermes", "Grok Bot", "Another assistant"]) {
+    await expect(origin(panel, name)).toBeVisible();
+  }
   await captureScreenshot(page, testInfo, "agent-import-choose");
 
-  const another = choose.getByTestId("agent-import-another");
+  await origin(panel, "Another assistant").click();
+  const another = panel.getByTestId("agent-import-another");
+  await expect(another.getByRole("button")).toHaveText(["Copy prompt", "Continue", "Choose file"]);
+  await captureScreenshot(page, testInfo, "agent-import-prompt");
   await another.getByRole("textbox", { name: "Paste the reply" }).fill("Just chatting.");
   await another.getByRole("button", { name: "Continue" }).click();
   await expect(panel.getByRole("alert")).toHaveText("No OpenClaw, Hermes or agent document found.");
   await captureScreenshot(page, testInfo, "agent-import-error");
+  await panel.getByRole("button", { name: "Back", exact: true }).click();
+  await origin(panel, "OpenClaw").click();
+  await expect(panel.getByTestId("agent-import-files").getByRole("button")).toHaveText([
+    "Choose folder",
+    "Choose backup",
+  ]);
+  await captureScreenshot(page, testInfo, "agent-import-files");
 
   const home = testInfo.outputPath("openclaw-home");
   writeFolder(home, homeFiles);
   const homeRequest = page.waitForRequest((request) =>
     request.url().includes("/rpc/bots/importPreview"),
   );
-  await choose.getByTestId("agent-import-folder").setInputFiles(home);
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
   const homeBody = (await homeRequest).postData() ?? "";
   const sent = (JSON.parse(homeBody) as { json: { files: { path: string }[] } }).json;
   expect(sent.files.map((file) => file.path).sort()).toEqual([
@@ -160,6 +169,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     ["agent-import-memory", ["MEMORY.md"]],
     ["agent-import-skills", ["cleanup", "inbox-triage"]],
   ] as const) {
+    await expandRow(homePreview, section);
     const boxes = homePreview.getByTestId(section).getByRole("checkbox");
     await expect(boxes).toHaveCount(names.length);
     for (const [index, name] of names.entries()) {
@@ -191,6 +201,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     homePreview.getByTestId("agent-import-instructions").getByTestId("agent-import-content"),
   ).toHaveText("Home soul.");
   const model = homePreview.getByTestId("agent-import-model");
+  await expandRow(homePreview, "agent-import-model");
   const modelBox = model.getByRole("checkbox", {
     name: "deepseek/deepseek-flash",
   });
@@ -242,7 +253,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   const workspace = testInfo.outputPath("workspace");
   writeFolder(workspace, workspaceFiles);
-  await choose.getByTestId("agent-import-folder").setInputFiles(workspace);
+  await panel.getByTestId("agent-import-folder").setInputFiles(workspace);
   const preview = panel.getByTestId("agent-import-preview");
   await expect(preview).toBeVisible();
   await expect(panel.getByRole("alert")).toHaveCount(0);
@@ -257,6 +268,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     ["agent-import-memory", ["MEMORY.md", "USER.md"], true],
     ["agent-import-skills", ["weekly-review"], false],
   ] as const) {
+    await expandRow(preview, section);
     const boxes = preview.getByTestId(section).getByRole("checkbox");
     await expect(boxes).toHaveCount(names.length);
     for (const [index, name] of names.entries()) {
@@ -272,9 +284,6 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   ]);
   // IDENTITY.md names and describes the bot; it is not part of its instructions.
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
-  await expect(preview.getByRole("textbox", { name: "Description" })).toHaveValue(
-    "calm and practical",
-  );
   await captureScreenshot(page, testInfo, "agent-import-preview");
 
   const memorySection = preview.getByTestId("agent-import-memory");
@@ -291,7 +300,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(preview.getByRole("checkbox", { name: "USER.md", exact: true })).not.toBeChecked();
   await clickAndWaitForRpc(
     page,
-    preview.getByRole("button", { name: "Create", exact: true }),
+    panel.getByRole("button", { name: "Create", exact: true }),
     "bots/importCreate",
   );
   await page.waitForURL(/\/app\/[^/]+$/);
@@ -313,6 +322,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const second = await openImport(page);
+  await origin(second, "Another assistant").click();
   const secondAnother = second.getByTestId("agent-import-another");
   await secondAnother.getByRole("button", { name: "Copy prompt" }).click();
   await expect(secondAnother.getByRole("button", { name: "Copied" })).toBeVisible();
@@ -320,6 +330,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await secondAnother.getByRole("textbox", { name: "Paste the reply" }).fill(document);
   await secondAnother.getByRole("button", { name: "Continue" }).click();
   const documentPreview = second.getByTestId("agent-import-preview");
+  await expandRow(documentPreview, "agent-import-memory");
   await expect(
     documentPreview.getByTestId("agent-import-memory").getByRole("checkbox"),
   ).toHaveCount(2);
@@ -329,7 +340,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(documentPreview.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   await clickAndWaitForRpc(
     page,
-    documentPreview.getByRole("button", { name: "Create", exact: true }),
+    second.getByRole("button", { name: "Create", exact: true }),
     "bots/importCreate",
   );
   await page.waitForURL((url) => !url.pathname.endsWith(pebbleId));
@@ -390,6 +401,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   await page.waitForURL(/\/app\/[^/]+$/);
 
   const panel = await openImport(page);
+  await origin(panel, "Grok Bot").click();
   const grok = panel.getByTestId("agent-import-grok");
   await grok
     .getByRole("textbox", { name: "Paste the reply" })
@@ -405,6 +417,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
 
   const preview = panel.getByTestId("agent-import-preview");
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Bramble");
+  await expandRow(preview, "agent-import-memory");
   await expect(preview.getByTestId("agent-import-memory").getByRole("checkbox")).toHaveCount(2);
   const skill = preview.getByRole("checkbox", { name: "weekly-account-health" });
   const routine = preview.getByRole("checkbox", { name: "Monday review" });
@@ -414,6 +427,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   await expect(routine).not.toBeChecked();
   await expect(webhookRoutine).not.toBeChecked();
   // This server has no Slack, so that routine is left for the bot to set up in chat.
+  await expandRow(preview, "agent-import-leftovers");
   await expect(
     preview.getByTestId("agent-import-leftovers").getByRole("checkbox", { name: "Support pings" }),
   ).toBeChecked();
@@ -432,7 +446,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   await emailRoutine.click();
   await clickAndWaitForRpc(
     page,
-    preview.getByRole("button", { name: "Create", exact: true }),
+    panel.getByRole("button", { name: "Create", exact: true }),
     "bots/importCreate",
   );
   await expect(page.getByPlaceholder("Message Bramble")).toBeVisible();
