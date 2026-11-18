@@ -468,19 +468,25 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           return;
         }
         if (source.action === "sign-in" && user.id) {
-          const collision = await ctx.context.internalAdapter.findUserByEmail(email);
-          if (collision && collision.user.id !== user.id) return { error: "account_not_linked" };
           const stored = await ctx.context.internalAdapter.findUserById(user.id);
+          // The same mailbox keeps its stored spelling, which an account made before
+          // addresses were canonical may share with another account.
+          const sameMailbox = Boolean(stored && canonicalEmail(stored.email) === email);
+          if (!sameMailbox) {
+            const collision = await ctx.context.internalAdapter.findUserByEmail(email);
+            if (collision && collision.user.id !== user.id) return { error: "account_not_linked" };
+          }
           const credential = await ctx.context.internalAdapter.findCredentialAccount(user.id);
-          if (credential?.password && stored && canonicalEmail(stored.email) !== email)
-            return { error: "email_does_not_match" };
+          if (credential?.password && !sameMailbox) return { error: "email_does_not_match" };
           // A previous verified claim must not mask a later false/missing claim, and an
           // unverified claim must not move the account onto an address nobody proved.
           await ctx.context.internalAdapter.updateUser(
             user.id,
-            verified || (stored && canonicalEmail(stored.email) === email)
-              ? { email, emailVerified: verified }
-              : { emailVerified: false },
+            sameMailbox
+              ? { emailVerified: verified }
+              : verified
+                ? { email, emailVerified: verified }
+                : { emailVerified: false },
           );
         }
       },
