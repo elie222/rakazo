@@ -4,7 +4,7 @@ import { estimateTextTokens, listPiCatalog } from "@rakazo/adapters";
 import type { Actor, MeetingTurn } from "@rakazo/contracts";
 import { anySignal, ClientError, deadlineSignal, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage } from "@rakazo/db";
+import { memberHasModelAccess, recordUsage } from "@rakazo/db";
 import * as z from "zod";
 import {
   MEETING_ANSWER_INSTRUCTIONS,
@@ -27,6 +27,7 @@ interface MeetingAnswerDeps {
   runtime: AgentRuntime;
   resolveModel: (scope: MeetingModelScope) => Promise<AgentRunRequest["model"]>;
   offline: boolean;
+  billingEnabled?: boolean;
 }
 
 export function createMeetingAnswers(deps: MeetingAnswerDeps) {
@@ -40,6 +41,9 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
     signal?.throwIfAborted();
     if (deps.offline) return "The launch draft is due Friday. Sam will check the final copy.";
     const scope = { userId: actor.userId, spaceId: actor.spaceId, botId };
+    if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, scope))) {
+      throw new ClientError("FORBIDDEN", "An active plan is required to use this bot’s model.");
+    }
     const model = await resolveMeetingModel(deps, scope);
     const catalog = listPiCatalog().find(
       (entry) => entry.provider === model.provider && entry.id === model.id,

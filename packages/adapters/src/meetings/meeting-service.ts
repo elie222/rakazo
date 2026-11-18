@@ -8,9 +8,9 @@ import type {
   MeetingProvider,
 } from "@rakazo/adapter-kit";
 import { MeetingJoinRejected } from "@rakazo/adapter-kit";
-import type { Actor, MeetingPlatform } from "@rakazo/contracts";
+import type { Actor } from "@rakazo/contracts";
 import { MeetingPlatformSchema, MeetingStatusSchema, MeetingTurnSchema } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, meetingTargetFromUrl } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   JsonColumnMismatchError,
@@ -41,31 +41,10 @@ const errors = {
   join: "The bot couldn’t join the meeting.",
 };
 
-export function parseMeetingUrl(input: string): {
-  platform: MeetingPlatform;
-  url: string;
-  key: string;
-} {
-  const url = URL.parse(input.trim());
-  const badUrl = () => new ClientError("BAD_REQUEST", "Enter a valid Zoom or Google Meet link.");
-  if (url?.protocol !== "https:" || url.username || url.password || url.port) throw badUrl();
-  if (
-    url.hostname === "meet.google.com" &&
-    /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}\/?$/i.test(url.pathname)
-  ) {
-    const key = url.pathname.toLowerCase().replace(/\/$/, "");
-    return { platform: "google_meet", url: `https://meet.google.com${key}`, key };
-  }
-  if (url.hostname === "zoom.us" || url.hostname.endsWith(".zoom.us")) {
-    const number = /^\/(?:j|wc\/join)\/(\d{9,11})\/?$/.exec(url.pathname)?.[1];
-    if (number) {
-      const password = url.searchParams.get("pwd");
-      const join = new URL(`https://${url.hostname}/j/${number}`);
-      if (password) join.searchParams.set("pwd", password);
-      return { platform: "zoom", url: join.href, key: number };
-    }
-  }
-  throw badUrl();
+export function parseMeetingUrl(input: string) {
+  const meeting = meetingTargetFromUrl(input);
+  if (!meeting) throw new ClientError("BAD_REQUEST", "Enter a valid Zoom or Google Meet link.");
+  return meeting;
 }
 
 function workJob(sessionId: string, action: JobAction, availableAt = new Date()): Job {
@@ -574,7 +553,12 @@ export class MeetingService {
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
-        data: { status: "ready", transcript: JSON.stringify(turns), transcriptId: artifact.id },
+        data: {
+          status: "ready",
+          transcript: JSON.stringify(turns),
+          transcriptId: artifact.id,
+          error: null,
+        },
       });
       if (count) {
         const cleanup = workJob(row.id, "cleanup", new Date(Date.now() + BACKUP_AFTER));
@@ -716,7 +700,8 @@ function nextObservation(
     if (event.status === "ended" && row.recordingId) status = "processing";
     if (event.recordingId) actions.push("transcript");
   } else if (event.status === "failed") {
-    if (!closedAt) actions.push("leave");
+    if (event.error === "join" || event.error === "admission") closedAt ??= event.occurredAt;
+    else if (!closedAt) actions.push("leave");
   } else {
     if (row.status === "failed" && !row.externalId && row.requestedAt) {
       return { data: { closedAt: null }, actions: ["leave"] };

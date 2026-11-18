@@ -1,7 +1,8 @@
 import { i18n } from "@lingui/core";
+import { meetingPlatformNames } from "@rakazo/core";
 
 export function meetingPlatformLabel(platform: "zoom" | "google_meet"): string {
-  return platform === "zoom" ? "Zoom" : "Google Meet";
+  return meetingPlatformNames[platform];
 }
 
 export function meetingStatusLabel(

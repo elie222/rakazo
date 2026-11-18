@@ -816,6 +816,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runtime: new PiAgentRuntime(),
       resolveModel: executor.resolveModel,
       offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
     }),
     speechSummary:
       env.voiceSummaryMinChars === undefined
