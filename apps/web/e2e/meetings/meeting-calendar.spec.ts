@@ -42,12 +42,19 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   const events = page.getByRole("listitem").filter({ hasText: "Design review" });
   const first = events.first();
   const second = events.last();
+  const sharingNotice = page.getByText(
+    "Choosing a join option shares transcripts with this Space.",
+  );
+  await expect(sharingNotice).toHaveCount(0);
   await first.getByRole("button", { name: /^Design review,/ }).click();
+  await expect(sharingNotice).toBeVisible();
+  await captureScreenshot(page, testInfo, "meeting-calendar-sharing-notice");
   await page.getByRole("menuitem", { name: "Join this series" }).click();
   await expect(first.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
   await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
 
   await first.getByRole("button", { name: /^Design review,/ }).click();
+  await expect(sharingNotice).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Skip this meeting" }).click();
   await expect(first.getByRole("button", { name: /^Design review,/ })).toHaveText("Skipped");
   await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");

@@ -65,7 +65,14 @@ export const meetingCalendarRpc = {
         }),
       )
       .output(z.void()),
-    select: oc.input(event.extend({ scope: z.enum(["once", "series"]) })).output(z.void()),
+    select: oc
+      .input(
+        event.extend({
+          scope: z.enum(["once", "series"]),
+          shareTranscript: z.boolean().optional(),
+        }),
+      )
+      .output(z.void()),
     skip: oc.input(event).output(z.void()),
     removeSeries: oc.input(event).output(z.void()),
     disconnect: oc.input(z.object({})).output(z.void()),

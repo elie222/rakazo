@@ -57,6 +57,7 @@ export async function createRunContext(
     capabilities: RunCapabilities;
     tools: SelectedRunTools;
     computerInstructions: ComputerInstructions;
+    meetingChat: boolean;
   },
 ) {
   const { web, mediaGeneration, paidServices, browser } = services;
@@ -187,6 +188,7 @@ export async function createRunContext(
     secrets: runSecrets,
     source: {
       ownerStartedRun,
+      meetingChat: parts.meetingChat,
       messagingChannelRun: nonOwnerChatRun,
       channelId,
       historySearchBeforeSeq,
@@ -264,6 +266,7 @@ export async function buildTurnPrompt(
     capabilities: RunCapabilities;
     tools: SelectedRunTools;
     ctx: RunContext;
+    meetingContext?: string;
   },
 ) {
   const { deps, run, current, executionStartedAt, firstLateSince, secrets: runSecrets } = hold;
@@ -369,6 +372,7 @@ export async function buildTurnPrompt(
     : undefined;
   const prompt = [
     replyContext,
+    parts.meetingContext,
     routineNote,
     run.trigger === "reaction" && replyContext ? undefined : basePrompt,
     takeoverResume?.promptNote,
