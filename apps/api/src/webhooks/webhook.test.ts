@@ -208,14 +208,24 @@ describe("GitHub webhook signatures", () => {
   it("accepts an HMAC over the exact raw request body", () => {
     const raw = '{"ref":"refs/heads/main"}';
     const signature = `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`;
+    expect(hasValidGithubSignature(signature, SECRET, Buffer.from(raw))).toBe(true);
+    expect(hasValidGithubSignature(signature, SECRET, Buffer.from(`${raw}\n`))).toBe(false);
+  });
+
+  it("verifies the bytes even when they are not valid UTF-8", () => {
+    // GitHub signs the octets it sent; decoding first would replace this byte with U+FFFD.
+    const raw = Uint8Array.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]);
+    const signature = `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`;
     expect(hasValidGithubSignature(signature, SECRET, raw)).toBe(true);
-    expect(hasValidGithubSignature(signature, SECRET, `${raw}\n`)).toBe(false);
+    expect(
+      hasValidGithubSignature(signature, SECRET, Buffer.from(new TextDecoder().decode(raw))),
+    ).toBe(false);
   });
 
   it.each([undefined, "sha1=abc", "sha256=not-hex", `sha256=${"a".repeat(63)}`])(
     "rejects malformed signatures without throwing: %s",
     (signature) => {
-      expect(hasValidGithubSignature(signature, SECRET, "{}")).toBe(false);
+      expect(hasValidGithubSignature(signature, SECRET, Buffer.from("{}"))).toBe(false);
     },
   );
 });
@@ -797,7 +807,9 @@ describe("GitHub event HTTP route", () => {
       await githubRequest(raw, SECRET, "delivery-abc"),
     );
     expect(res.status).toBe(200);
-    const digest = createHash("sha256").update(raw).digest("base64url");
+    // The delivery is keyed on the bytes GitHub signed, and the nonce hashes that key once more.
+    const bodyDigest = createHash("sha256").update(raw).digest("hex");
+    const digest = createHash("sha256").update(bodyDigest).digest("base64url");
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         botId: "bot-1",
@@ -960,6 +972,33 @@ describe("webhook secret decryption", () => {
     ).toBe(200);
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps signed deliveries apart when their bytes differ but decode alike", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
+    });
+    const app = mount(deps);
+    // Both decode to {"a":"\uFFFD"}, so a key taken from the text would collapse them.
+    const body = (byte: number) =>
+      new Uint8Array([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, byte, 0x22, 0x7d]);
+    const post = (bytes: Uint8Array<ArrayBuffer>) =>
+      app.request("/api/v1/bots/bot-1/github", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": "push",
+          "x-hub-signature-256": `sha256=${createHmac("sha256", SECRET).update(bytes).digest("hex")}`,
+        },
+        body: bytes,
+      });
+
+    expect((await post(body(0xfe))).status).toBe(200);
+    expect((await post(body(0xff))).status).toBe(200);
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    const nonces = deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce);
+    expect(nonces[0]).toBeDefined();
+    expect(nonces[1]).not.toBe(nonces[0]);
   });
 
   it("shares one decrypt between concurrent requests for a cold secret", async () => {
