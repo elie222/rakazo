@@ -23,7 +23,7 @@ import {
 import { hasDeploymentVoiceConsent } from "../../voice/deployment-consent.js";
 import type { MeetingMediaSession } from "./meeting-media-bridge.js";
 import { createMeetingMediaBridge } from "./meeting-media-bridge.js";
-import { meetingReplyInstructions } from "./meeting-reply.prompt.js";
+import { meetingReplyPrompt } from "./meeting-reply.prompt.js";
 
 type ModelScope = Pick<Actor, "userId" | "spaceId"> & { botId: string };
 type ReplyModel = AgentRunRequest["model"];
@@ -146,8 +146,7 @@ Bot: ${answer}`,
         botId: scope.botId,
         runId: id,
         threadId: id,
-        instructions: meetingReplyInstructions(),
-        prompt: JSON.stringify({
+        ...meetingReplyPrompt({
           participantName: session.botName,
           earlierMeeting: session.recentSpeech,
           latestUtterance: utterance,
