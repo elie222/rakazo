@@ -18,7 +18,7 @@ import {
 } from "./config.js";
 import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
-import type { GrokBot } from "./grok-bot.js";
+import type { GrokBot, RoutineTriggersAvailable } from "./grok-bot.js";
 import { parseGrokBot, readGrokBotExportJson } from "./grok-bot.js";
 import {
   BUNDLED_MANIFEST,
@@ -34,8 +34,8 @@ import {
   OPENCLAW_RUNTIME_FILES,
   parseOpenClaw,
 } from "./openclaw.js";
-import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
+import type { AgentImportParse, SkillFiles } from "./types.js";
+import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./types.js";
 
 export {
   AGENT_IMPORT_ARCHIVE_LIMITS,
@@ -58,20 +58,26 @@ export {
 } from "./config.js";
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
-export type { GrokBot, GrokBotExportErrorCode } from "./grok-bot.js";
+export type {
+  GrokBot,
+  GrokBotExportErrorCode,
+  GrokRoutineTrigger,
+  RoutineTriggersAvailable,
+} from "./grok-bot.js";
 export {
   GROK_BOT_EXPORT_PROMPT,
   GROK_BOT_REPLY_MAX_LENGTH,
   GrokBotExportError,
   grokBotExportJson,
-  grokRoutineCron,
+  grokRoutineTrigger,
   grokSkillNames,
+  NO_OPTIONAL_ROUTINE_TRIGGERS,
   parseGrokBotExport,
   readGrokBotExportJson,
 } from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
-export type { AgentImportReader, SkillFiles } from "./shared.js";
-export { renameSkillMd } from "./shared.js";
+export type { AgentImportReader, SkillFiles } from "./types.js";
+export { renameSkillMd } from "./types.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
@@ -295,11 +301,12 @@ export function agentImportUpload(
 
 /**
  * Imported text is data: nothing here follows it. Settings (model, MCP servers, scheduled
- * jobs, API keys) are added by the server.
+ * jobs, API keys) are added by the server, which also says which routine triggers it receives.
  */
 export function parseAgentImport(
   files: AgentImportFile[],
   skillFiles: SkillFiles = {},
+  routineTriggers?: RoutineTriggersAvailable,
 ): AgentImportPlan | { error: string } {
   const only = files.length === 1 ? files[0] : undefined;
   if (only?.path === GROK_BOT_EXPORT_PATH) {
@@ -312,7 +319,7 @@ export function parseAgentImport(
     // The client sends only the Bot the user picked.
     const [bot] = bots;
     if (!bot || bots.length !== 1) return { error: AGENT_IMPORT_NOT_FOUND };
-    const parsed = parseGrokBot(bot);
+    const parsed = parseGrokBot(bot, routineTriggers);
     if (
       !parsed.instructions.length &&
       !parsed.memory.length &&

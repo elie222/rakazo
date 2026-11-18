@@ -12,7 +12,7 @@ const include = [
   "apps/desktop/src/**/*.test.ts",
   "apps/web/src/**/*.test.{ts,tsx}",
   "apps/web/server/**/*.test.ts",
-  "apps/mobile/lib/**/*.test.{ts,tsx}",
+  "apps/mobile/{lib,components}/**/*.test.{ts,tsx}",
   "apps/mobile/plugins/**/*.test.js",
   "apps/api/src/**/*.test.ts",
   "apps/worker/src/**/*.test.ts",

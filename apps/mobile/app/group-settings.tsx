@@ -4,19 +4,22 @@ import { useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useContext, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
-import { BotMemberPicker } from "../components/bot-member-picker";
-import { glassHeaderOptions } from "../components/glass-title";
-import { NativeActionButton } from "../components/native-action-button";
-import { selectedSpaceId } from "../lib/api";
-import { notifyArchivedChatsChanged, onArchivedChatsChanged } from "../lib/archived-chats";
-import { alertGroupNotDeleted, confirmDeleteGroup, deleteGroup } from "../lib/bot-lifecycle";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import type { MobileBot, MobileGroup } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
-import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
-import type { SettingsTarget } from "../lib/settings-target";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { BotMemberPicker } from "../components/bots/bot-member-picker";
+import { glassHeaderOptions } from "../components/native/glass-title";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { selectedSpaceId } from "../lib/api/api";
+import type { MobileBot, MobileGroup } from "../lib/api/mobile-types";
+import { errorText } from "../lib/api/user-error";
+import { alertGroupNotDeleted, confirmDeleteGroup, deleteGroup } from "../lib/bots/bot-lifecycle";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import {
+  notifyArchivedChatsChanged,
+  onArchivedChatsChanged,
+} from "../lib/inbox/archived/archived-chats";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useMobileTokens } from "../lib/native/native";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
+import type { SettingsTarget } from "../lib/query/settings-target";
 
 export default function GroupSettingsScreen() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);

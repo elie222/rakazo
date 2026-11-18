@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import {
   archiveBot,
@@ -22,6 +21,7 @@ import {
   SpaceVaultNotInUseError,
   stopCancelledGroupRuns,
   storeBotSecret,
+  storeBotWebhookKey,
   toComputerRef,
   VaultFullError,
   VaultItemRefusedError,
@@ -62,19 +62,27 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { AgentImportServices } from "../agent-import.js";
-import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
-import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
-import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
-import { loadBotForRemoval } from "../bot-removal.js";
-import { changedBotSettings } from "../bot-setting-analytics.js";
-import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
-import { botIntroPrompt } from "../hidden-turns.prompt.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { managedAppCatalog } from "../onboarding.js";
+import { managedAppCatalog } from "../account/onboarding.js";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
+import type { AgentImportServices } from "../bots/agent-import.js";
+import {
+  agentImportSetupState,
+  createImportedBot,
+  previewAgentImport,
+} from "../bots/agent-import.js";
+import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/agent-secrets.js";
+import { loadBotForRemoval } from "../bots/bot-removal.js";
+import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
+import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
+import {
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "../email/bot-email-address.js";
 import type { RouterDeps } from "../router.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
-import { loadMessagePage } from "../thread-message-pages.js";
+import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
+import { loadMessagePage } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
@@ -656,40 +664,19 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         // Webhook runs act as the bot's creator, so only the creator can issue its secret.
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
-        const plaintext = randomBytes(32).toString("base64url");
-        const stored = await deps.secrets.put(plaintext, {
-          operationId: "bots.rotateWebhookSecret",
-          traceId: "bots.rotateWebhookSecret",
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-          signal: context.signal ?? new AbortController().signal,
-        });
-        await deps.prisma.$transaction(async (tx) => {
-          const previousSecretId = bot.webhookSecretId;
-          await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: context.actor.userId,
-              spaceId: context.actor.spaceId,
-              kind: "webhook",
-              ciphertext: stored.ciphertext,
-            },
-          });
-          await tx.bot.update({
-            where: { id: bot.id },
-            data: { webhookSecretId: stored.id },
-          });
-          if (previousSecretId) {
-            await tx.secret.deleteMany({
-              where: {
-                id: previousSecretId,
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                kind: "webhook",
-              },
-            });
-          }
-        });
+        const plaintext = await storeBotWebhookKey(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          bot,
+          {
+            operationId: "bots.rotateWebhookSecret",
+            traceId: "bots.rotateWebhookSecret",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          { replace: true },
+        );
+        if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
           path: `/api/v1/bots/${bot.id}/webhook`,

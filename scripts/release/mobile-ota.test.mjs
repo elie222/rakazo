@@ -14,11 +14,11 @@ test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
   const files = [
     "apps/mobile/app/(tabs)/index.tsx",
     "apps/mobile/components/deep/nested/Card.tsx",
-    "apps/mobile/lib/query.ts",
+    "apps/mobile/lib/query/query.ts",
     "apps/mobile/index.ts",
     "packages/chat-ui/src/theme.css",
     "packages/ui-tokens/src/tokens.ts",
-    "packages/contracts/src/rpc.ts",
+    "packages/contracts/src/rpc/app-contract.ts",
     "packages/core/src/time.ts",
     "packages/logging/src/index.ts",
   ];
@@ -27,7 +27,7 @@ test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
 
 test("files that never ship are ignored", () => {
   const files = [
-    "apps/mobile/lib/query.test.ts",
+    "apps/mobile/lib/query/query.test.ts",
     "apps/mobile/components/Card.test.tsx",
     "packages/core/src/time.test.js",
     "packages/contracts/src/env.d.ts",
@@ -53,7 +53,7 @@ test("anything else that changed blocks the update", () => {
     "packages/logging/src/style.css",
     "pnpm-lock.yaml (mobile dependency tree)",
   ];
-  assert.deepEqual(otaEligibility(["apps/mobile/lib/query.ts", ...blocked]), {
+  assert.deepEqual(otaEligibility(["apps/mobile/lib/query/query.ts", ...blocked]), {
     publish: false,
     blocked,
   });
@@ -94,7 +94,9 @@ test("the command line writes the step summary and the publish output", (t) => {
   const output = path.join(dir, "output");
   writeFileSync(summary, "earlier\n");
   writeFileSync(output, "");
-  execFileSync("node", [script, BASE, summary, output], { input: "apps/mobile/lib/query.ts\n" });
+  execFileSync("node", [script, BASE, summary, output], {
+    input: "apps/mobile/lib/query/query.ts\n",
+  });
   assert.equal(readFileSync(output, "utf8"), "publish=true\n");
   assert.match(readFileSync(summary, "utf8"), /^earlier\n### Mobile OTA eligible\n/);
 });

@@ -14,8 +14,8 @@ const sources = {
   "apps/web/src/pages/Settings.tsx":
     'import { NativeSelect } from "@rakazo/ui-web";\n<NativeSelect value={value} />\n',
   "packages/ui-web/src/components/ui/picker.tsx": "return <select\n  value={value}>\n<select>\n",
-  "apps/web/src/pages/Board.tsx": "<OptionSelect value={value} options={options} />\n",
-  "apps/web/src/pages/Board.test.tsx": "const stub = () => <select />;\n",
+  "apps/web/src/pages/space/Board.tsx": "<OptionSelect value={value} options={options} />\n",
+  "apps/web/src/pages/space/Board.test.tsx": "const stub = () => <select />;\n",
   "packages/page-kit/src/kit/controls.tsx": "return <select value={value} />;\n",
 };
 for (const [file, text] of Object.entries(sources)) {

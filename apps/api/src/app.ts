@@ -39,6 +39,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -57,6 +58,7 @@ import {
   installedMessaging,
   isMessagingSurfaceEnabled,
   machineCleanupRecords,
+  messagingAddresses,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -134,41 +136,52 @@ import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
-import { mountAccountExportRoute } from "./account-export.js";
-import { mountAccountImportRoute } from "./account-import.js";
-import { settleDirectoryChange } from "./account-status.js";
-import { mountAppAssociation, nativePasskeys } from "./app-association.js";
-import { storeInboundAttachment } from "./artifacts.js";
-import { mountAuditExportRoute } from "./audit-export.js";
-import { createBillingService } from "./billing.js";
-import { mountBillingRoutes } from "./billing-webhook.js";
-import { clientBuildMiddleware, readDeployedWebBuild } from "./client-build.js";
+import {
+  deleteAccountContent,
+  finishStalledOrganizationDeletions,
+} from "./account/account-deletion.js";
+import { mountAccountExportRoute } from "./account/account-export.js";
+import { mountAccountImportRoute } from "./account/account-import.js";
+import { settleDirectoryChange } from "./account/account-status.js";
+import { mountAuditExportRoute } from "./account/audit-export.js";
+import { createAuthResponseAudit } from "./auth/security-audit.js";
+import { endUserDeviceSession, mountUserDeviceRoutes } from "./auth/user-devices.js";
+import { createBillingService } from "./billing/billing.js";
+import { mountBillingRoutes } from "./billing/billing-webhook.js";
+import { createSpeechSummarizer } from "./calls/speech-summary.js";
+import { mountVoiceHttpRoutes } from "./calls/voice.js";
+import { homeRetentionSweep } from "./computers/home-retention.js";
+import { mountLocalComputerHost } from "./computers/local-settings.js";
+import { mountScreenTarget } from "./computers/screen-proxy.js";
+import { storeInboundAttachment } from "./content/artifacts.js";
+import { mountSharedPages } from "./content/shared-pages.js";
+import { configuredEmailProvider } from "./email/email.js";
+import { mountEmailInboundRoute } from "./email/email-inbound.js";
+import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
+import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
+import { sendReferralEmails } from "./email/referral-email.js";
+import type { AppEnv } from "./env.js";
+import { loadEnv, withEnvOverrides } from "./env.js";
+import { mountAppAssociation, nativePasskeys } from "./http/app-association.js";
+import { clientBuildMiddleware, readDeployedWebBuild } from "./http/client-build.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
   defaultTrustedProxies,
   requestClientIp,
   withClientIp,
-} from "./client-ip.js";
-import { cspReportRoutes } from "./csp-report.js";
-import { configuredEmailProvider } from "./email.js";
-import { mountEmailInboundRoute } from "./email-inbound.js";
-import type { AppEnv } from "./env.js";
-import { loadEnv, withEnvOverrides } from "./env.js";
-import { createExperiments } from "./experiments.js";
-import { healthRoutes } from "./health.js";
-import { homeRetentionSweep } from "./home-retention.js";
-import { startHourlySweep } from "./hourly-sweep.js";
-import { trackInFlightRequests } from "./in-flight-requests.js";
-import { mountLocalComputerHost } from "./local-settings.js";
-import { marketingEmailRoutes, sendWelcomeEmail } from "./marketing-email.js";
-import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
-import { startMessagingRuntime } from "./messaging-runtime.js";
-import { monitoringRoutes } from "./monitoring.js";
-import { pluginSubmissionRoutes } from "./plugin-submissions.js";
-import { sendReferralEmails } from "./referral-email.js";
-import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
+} from "./http/client-ip.js";
+import { healthRoutes } from "./http/health.js";
+import { startHourlySweep } from "./http/hourly-sweep.js";
+import { trackInFlightRequests } from "./http/in-flight-requests.js";
+import { mountApiRequestBodyLimits, rpcBodyLimit } from "./http/request-body-limit.js";
+import { mountScriptAssets } from "./http/script-assets.js";
+import { SYSTEM_CONTEXT_PATHS } from "./http/system-context-routes.js";
+import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
+import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
+import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
+import { settleWithTimeout } from "./messaging/team-chat-startup.js";
+import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter } from "./router.js";
 import {
   DATABASE_RETRY_AFTER_SECONDS,
@@ -177,17 +190,11 @@ import {
   handleRpcError,
   requestHitDatabaseOutage,
 } from "./rpc-errors.js";
-import { mountScreenTarget } from "./screen-proxy.js";
-import { mountScriptAssets } from "./script-assets.js";
-import { createAuthResponseAudit } from "./security-audit.js";
-import { mountSharedPages } from "./shared-pages.js";
-import { afterSpaceDeparture } from "./space-departure.js";
-import { createSpeechSummarizer } from "./speech-summary.js";
-import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
-import { settleWithTimeout } from "./team-chat-startup.js";
-import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
-import { mountVoiceHttpRoutes } from "./voice.js";
-import { mountWebhookHttpRoutes } from "./webhook.js";
+import { afterSpaceDeparture } from "./spaces/space-departure.js";
+import { cspReportRoutes } from "./telemetry/csp-report.js";
+import { createExperiments } from "./telemetry/experiments.js";
+import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 /**
  * Native clients always send the app scheme, including in Expo Go, so no
@@ -399,7 +406,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets }, (ended) =>
+    recordSignInEnded(analytics, ended),
+  );
   const home = createAgentHomeStore(env.dataDir, prisma);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
@@ -432,6 +441,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // the local emulator lives in this process, so the emulator counts only in single-process mode.
+  const lifecycleEmailsEnabled =
+    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -464,6 +477,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
+        scheduleLifecycleEmail: lifecycleEmailsEnabled
+          ? lifecycleEmailScheduler({
+              prisma,
+              jobs,
+              webOrigin: env.webOrigin,
+              origin: env.authUrl,
+              secret: env.authSecret,
+            })
+          : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -674,6 +696,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       onTicketChange: ticketChanges,
       email: botEmail,
+      // Single-process mode answers the job here; otherwise the worker does.
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)
@@ -702,6 +729,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ? createRunReconciler(
         {
           prisma,
+          secretStore: secrets,
           jobs,
           events,
           notifications,
@@ -813,16 +841,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
-      addresses: Object.fromEntries(
-        (messaging?.platforms() ?? []).flatMap((platform) =>
-          platform.address ? [[platform.provider, platform.address]] : [],
-        ),
-      ),
+      get addresses() {
+        return messagingAddresses(messaging?.platforms() ?? []);
+      },
+      resolveAddresses: messaging?.resolveAddresses?.bind(messaging),
       openSignup: env.messagingOpenSignup,
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
       deploymentLabs: env.deploymentLabs,
+      deploymentVoice: env.deploymentVoice,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       navLinks: env.navLinks,

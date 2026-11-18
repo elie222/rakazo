@@ -7,9 +7,9 @@ import {
   TimeoutError,
 } from "novita-sandbox";
 import { describe, expect, it, vi } from "vitest";
-import { sandboxIdleMs } from "../../../computer-idle.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
-import { assertSandboxWorkspaceContract } from "../../../sandbox-test-support.js";
+import { sandboxIdleMs } from "../../../computers/computer-idle.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
+import { assertSandboxWorkspaceContract } from "../../../computers/sandbox/sandbox-test-support.js";
 import { NovitaSandboxProvider } from "./novita-sandbox.js";
 import { emulatedNovita, fakeNovita } from "./novita-sandbox.test-support.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";

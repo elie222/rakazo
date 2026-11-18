@@ -15,11 +15,11 @@ import {
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Globe, MoreHorizontal, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
-import { pageMutationOptions } from "../../lib/page-actions";
-import { useOpenPage } from "../../lib/pages";
-import { useSpaceQueries } from "../../lib/query";
-import { formatRelativeTime } from "../../lib/relative-time";
-import { DeleteItemDialog } from "../../pages/shell/dialogs";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { pageMutationOptions } from "../../lib/pages/page-actions";
+import { useOpenPage } from "../../lib/pages/pages";
+import { useSpaceQueries } from "../../lib/query/query";
+import { DeleteItemDialog } from "../../pages/shell/create-delete-dialogs";
 
 /** Enough to fill the panel; Show more brings the next batch. */
 const PAGE_SIZE = 20;

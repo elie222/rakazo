@@ -7,6 +7,7 @@ import {
   loadUserIncomingCalls,
   PushSessionEndedError,
   settleCallRequest,
+  validateCreditOfferingChoice,
 } from "@rakazo/adapters";
 import type {
   ActionApprovalRule,
@@ -47,16 +48,15 @@ import {
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
-import { requireAdmin } from "../admins.js";
-import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
-import type { BillingService } from "../billing.js";
-import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
-import type { RouterDeps } from "../router.js";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
+import { requireAdmin } from "../auth/admins.js";
+import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
+  effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   persistVoiceCredential,
@@ -69,7 +69,13 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
-} from "../voice.js";
+} from "../calls/voice.js";
+import {
+  recordCreditsChoice,
+  recordSignInStep,
+  startModelConnect,
+} from "../models/model-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
@@ -110,23 +116,33 @@ export function accountRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      modelSignInStep: authed.analytics.modelSignInStep.handler(async ({ context, input }) => {
+        const signIn = await bestEffort(
+          "model sign-in step",
+          deps.oauthLogins.pendingSignIn(input.loginId, context.actor),
+        );
+        if (signIn) recordSignInStep(deps.analytics, signIn, input.step);
+        return { ok: true as const };
+      }),
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     billing: {
       selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
-        if (input.funding === "credits") {
-          const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
-          record(undefined, { name: "model_connect_started" });
-        }
-        return billing.selectFunding(
+        const started =
+          input.funding === "credits"
+            ? await startModelConnect(deps, context.actor, "credits", undefined, input.surface)
+            : undefined;
+        const selected = await billing.selectFunding(
           context.actor,
           input.funding,
           input.client,
           input.interval,
           input.tier,
         );
+        if (started) await recordCreditsChoice(deps, context.actor, started);
+        return selected;
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
@@ -548,8 +564,7 @@ export function accountRoutes(ctx: RouterContext) {
         accountVoiceCatalog(deps, context.actor),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
-        return toVoiceStatus(cred);
+        return effectiveVoiceStatus(deps, context.actor, input?.scope);
       }),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
@@ -668,7 +683,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
       deps.prisma,
       actor,
       "approval",
-      { env: process.env },
+      { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true },
       scope === "account" ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
@@ -683,7 +698,12 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),
     ...role.backups,
   ];
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({
+    env: process.env,
+    checker: deploymentChecker
+      ? { provider: deploymentChecker.provider, model: deploymentChecker.modelId }
+      : undefined,
+  });
   if (memberChoices.length === 0) {
     // The deployment's checker runs on its own configuration or on the member's key for it.
     const requiredUserProvider =
@@ -707,6 +727,22 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
   );
   const checkerAvailable =
     connections.some(Boolean) ||
+    (
+      await Promise.all(
+        memberChoices.map((choice) =>
+          choice.creditOfferingId
+            ? validateCreditOfferingChoice(
+                deps.prisma,
+                deps.secrets,
+                actor,
+                choice.provider,
+                choice.modelId,
+                choice.creditOfferingId,
+              )
+            : false,
+        ),
+      )
+    ).some(Boolean) ||
     (deploymentChecker !== null && environmentAvailable) ||
     (
       await Promise.all(

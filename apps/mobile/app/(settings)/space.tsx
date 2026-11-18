@@ -6,17 +6,20 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
-import { LoadFailure } from "../../components/load-failure";
-import { NativeSwitch } from "../../components/native-switch";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { useApprovalSettings } from "../../lib/approval-settings";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeSwitch } from "../../components/native/native-switch";
+import {
+  ApprovalModeRow,
+  ApprovalRulesRow,
+} from "../../components/settings/approval-settings-rows";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { settingsTarget } from "../../lib/query/settings-target";
+import { useApprovalSettings } from "../../lib/settings/approval-settings";
 
 /**
  * A Space follows the account's models, voice, approvals and vault until one is customized for it.

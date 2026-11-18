@@ -1,4 +1,4 @@
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
 
 export const boatComputer: ComputerProviderDefinition = {
   capabilities: {
