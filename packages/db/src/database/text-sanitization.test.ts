@@ -30,6 +30,31 @@ describe("sanitizeWriteArgs", () => {
     expect(args.data.prompt).toBe("hi\0there 😀");
   });
 
+  it("drops directional controls from written text", () => {
+    const out = sanitizeWriteArgs("create", {
+      data: {
+        name: "\u202EAlice\u202C",
+        text: "mixed\u200F direction",
+        blocks: [{ kind: "channel_message", fromLabel: "\u202EBob\u202C", text: "hi\u200F" }],
+        note: "fine",
+      },
+    }) as {
+      data: {
+        name: string;
+        text: string;
+        blocks: Array<{ fromLabel: string; text: string }>;
+        note: string;
+      };
+    };
+    // A name draws as another name with a control in it, so the controls go.
+    expect(out.data.name).toBe("Alice");
+    expect(out.data.blocks[0]?.fromLabel).toBe("Bob");
+    // Message content keeps what the person wrote, marks included.
+    expect(out.data.text).toBe("mixed\u200F direction");
+    expect(out.data.blocks[0]?.text).toBe("hi\u200F");
+    expect(out.data.note).toBe("fine");
+  });
+
   it("covers both sides of an upsert and returns clean args unchanged", () => {
     const upsert = sanitizeWriteArgs("upsert", {
       where: { id: "1" },

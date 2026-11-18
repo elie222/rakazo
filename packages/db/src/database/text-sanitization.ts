@@ -1,4 +1,4 @@
-import { sanitizeJsonValue, sanitizeUtf16ForJson } from "@rakazo/core";
+import { sanitizeJsonValue, sanitizeUtf16ForJson, stripDirectionalControls } from "@rakazo/core";
 import type { PrismaClient } from "../generated/prisma/client.js";
 
 const WRITE_OPERATIONS = new Set([
@@ -12,6 +12,23 @@ const WRITE_OPERATIONS = new Set([
 ]);
 const WRITE_KEYS = ["data", "create", "update"] as const;
 
+/**
+ * The fields whose value names something a person reads: a bot, a space, a member, a page, or the
+ * sender label on a chat-app message. A directional control in one of these makes the name draw as
+ * another name, so it is dropped from them. Message text and every other value keep their
+ * characters: mixed-direction writing uses the marks legitimately, and the stored text must still
+ * be what the person wrote.
+ */
+const NAME_KEYS = new Set([
+  "name",
+  "displayname",
+  "label",
+  "fromlabel",
+  "channelname",
+  "sendername",
+  "title",
+]);
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
@@ -19,10 +36,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Copy-on-change: untouched values keep their identity. Dates, bytes, and decimals pass through. */
-function sanitizeValue(value: unknown): unknown {
-  if (typeof value === "string") return sanitizeUtf16ForJson(value);
+function sanitizeValue(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    const repaired = sanitizeUtf16ForJson(value);
+    return key !== undefined && NAME_KEYS.has(key.toLowerCase())
+      ? stripDirectionalControls(repaired)
+      : repaired;
+  }
   if (Array.isArray(value)) {
-    const items = value.map(sanitizeValue);
+    const items = value.map((item) => sanitizeValue(item));
     return items.some((item, index) => item !== value[index]) ? items : value;
   }
   if (!isPlainObject(value)) return value;
@@ -36,7 +58,7 @@ function sanitizeEntries(value: Record<string, unknown>, keys: readonly string[]
   let out: Record<string, unknown> | undefined;
   for (const key of keys) {
     if (!(key in value)) continue;
-    const next = sanitizeValue(value[key]);
+    const next = sanitizeValue(value[key], key);
     if (next === value[key]) continue;
     out ??= { ...value };
     out[key] = next;
