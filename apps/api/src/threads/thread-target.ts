@@ -12,13 +12,13 @@ import {
   MessageBlock as MessageBlockSchema,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
-import type { ClientError } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
   isQuestionAskBlock,
+  MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
   messageBypassesTakeoverWait,
@@ -509,7 +509,7 @@ export async function sendThreadMessage(
     fromPage?: true;
     clientNonce?: string;
     /** No model to start a turn: the send may only stop active work. */
-    modelError?: ClientError;
+    noModel?: boolean;
   },
   releaseTakeover?: (runId: string) => Promise<void>,
   /** Runs saved with the message, after the thread lock and before the message is routed. */
@@ -682,8 +682,8 @@ export async function sendThreadMessage(
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
         const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
-        if (input.modelError && !stopping) {
-          throw input.modelError;
+        if (input.noModel && !stopping) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
         const targetedRunId = targetedQuestionRun(activeRuns);
@@ -962,8 +962,8 @@ export async function sendThreadMessage(
         )(tx);
         return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
       }
-      if (input.modelError) {
-        throw input.modelError;
+      if (input.noModel) {
+        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
       }
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>

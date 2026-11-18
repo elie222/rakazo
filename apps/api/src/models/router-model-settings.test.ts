@@ -3,7 +3,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { listPiCatalog } from "@rakazo/adapters";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { MAX_MODEL_SETTINGS_PER_CONNECTION, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
-import { HOSTED_MODEL_CREDITS_REQUIRED_ERROR } from "@rakazo/core";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -159,7 +159,7 @@ describe("model setup gate", () => {
     });
   });
 
-  it("keeps an unfunded deployment model out of Settings and explains why chat is blocked", async () => {
+  it("keeps an unfunded deployment model out of Settings and offers to connect one from chat", async () => {
     const { actor, handler } = modelGateDeps({
       agentRuntime: "pi",
       deploymentModelConfigured: true,
@@ -172,7 +172,7 @@ describe("model setup gate", () => {
     const send = await call(handler, actor, "threads/send", { botId: "bot-1", text: "hello" });
     expect(send.status).toBe(400);
     await expect(send.json()).resolves.toMatchObject({
-      json: { message: HOSTED_MODEL_CREDITS_REQUIRED_ERROR },
+      json: { message: MODEL_REQUIRED_SEND_ERROR },
     });
   });
 

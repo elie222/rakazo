@@ -8,7 +8,6 @@ import {
   ClientError,
   callClientNonce,
   expandSkillReferencesInPrompt,
-  HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -123,16 +122,11 @@ export function threadsRoutes(ctx: RouterContext) {
     // A bot with its own runnable model needs no main model, and stopping work needs none.
     const replied =
       target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
-    const modelError =
+    const noModel =
       setup.needsModel &&
-      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)))
-        ? new ClientError(
-            "BAD_REQUEST",
-            setup.fundingRequired ? HOSTED_MODEL_CREDITS_REQUIRED_ERROR : MODEL_REQUIRED_SEND_ERROR,
-          )
-        : undefined;
-    if (modelError && !isStopMessage(input)) {
-      throw modelError;
+      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
+    if (noModel && !isStopMessage(input)) {
+      throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
       await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
@@ -158,7 +152,7 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       actor,
       target,
-      { ...input, modelError },
+      { ...input, noModel },
       takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {

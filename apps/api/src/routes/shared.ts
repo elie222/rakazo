@@ -114,11 +114,11 @@ function computerHostFor(
 export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
   const funding = deps.billing ? await deps.billing.status(actor) : null;
   const creditsAvailable = modelCreditsUsd(funding) !== null;
-  const fundingRequired = Boolean(funding?.creditPurchasesEnabled) && !creditsAvailable;
   return {
     creditsAvailable,
-    fundingRequired: Boolean(deps.env.deploymentModelConfigured) && fundingRequired,
-    hasDeployment: Boolean(deps.env.deploymentModelConfigured) && !fundingRequired,
+    hasDeployment:
+      Boolean(deps.env.deploymentModelConfigured) &&
+      (!funding?.creditPurchasesEnabled || creditsAvailable),
   };
 }
 

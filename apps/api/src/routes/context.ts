@@ -41,7 +41,6 @@ import type {
   ModelCatalogEntry,
   ModelRole,
   ModelRoleChoice,
-  ModelRoleSettings,
   ModelRoleView,
 } from "@rakazo/contracts";
 import {
@@ -291,21 +290,19 @@ export function createRouterContext(deps: RouterDeps) {
   };
 
   // Shown where a member chose no model, so the list names what actually runs.
-  const withDeploymentDefault = async (
+  const deploymentDefault = async (
     actor: Actor,
     role: ModelRole,
-    settings: ModelRoleSettings,
-  ): Promise<ModelRoleView> => {
+  ): Promise<ModelRoleChoice | null> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return { ...settings, deploymentPrimary: null };
+      if (!deps.env.deploymentModelConfigured) return null;
       const { hasDeployment } = await deploymentModelAccess(deps, actor);
-      const deploymentPrimary = hasDeployment
+      return hasDeployment
         ? deploymentModelRole(role, {
             settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
             deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
           }).primary
         : null;
-      return { ...settings, deploymentPrimary };
     }
     let deploymentPrimary = deploymentModelRole(role, {
       includedApproval: deps.billing?.modelCreditsEnabled === true,
@@ -330,11 +327,11 @@ export function createRouterContext(deps: RouterDeps) {
       } catch (error) {
         if (!(error instanceof SecretStoreUnavailableError)) throw error;
         await bestEffort("read approval model default", Promise.reject(error));
-        // This view is advisory; a temporary outage must not fail an already committed save.
+        // Approval availability is advisory, so a temporary outage can omit the default.
         deploymentPrimary = null;
       }
     }
-    return { ...settings, deploymentPrimary };
+    return deploymentPrimary;
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
@@ -644,7 +641,7 @@ export function createRouterContext(deps: RouterDeps) {
     agentImportServices,
     chatCatalog,
     withServingConnections,
-    withDeploymentDefault,
+    deploymentDefault,
     withImageInput,
     modelRoleCatalog,
     validateRoleChoices,

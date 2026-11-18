@@ -34,6 +34,20 @@ describe("model catalog offered to pickers", () => {
 });
 
 describe("model backup settings API", () => {
+  it("leaves the saved main model intact if the billing read fails", async () => {
+    const { call, deps, roles } = setup();
+    const primary = { provider: availableModel.provider, modelId: availableModel.id };
+    expect((await call("models/setRole", { role: "main", primary })).response.status).toBe(200);
+    deps.env.deploymentModelConfigured = true;
+    deps.billing = {
+      status: vi.fn().mockRejectedValue(new Error("Fixture billing read failed")),
+    } as unknown as NonNullable<typeof deps.billing>;
+
+    const refused = await call("models/setRole", { role: "main", primary: null });
+    expect(refused.response.status).toBe(500);
+    expect(roles()).toEqual([expect.objectContaining({ ...primary, position: 0 })]);
+  });
+
   it("rejects a compatible catalog placeholder outside the enabled list", async () => {
     const { call, userModelRoleChoice } = setup({
       compatible: { enabledModelIds: ["enabled"], defaultModel: "enabled" },
