@@ -82,7 +82,8 @@ export function useThreadBots({
       const saved = await loadSavedInbox();
       if (!saved || mentionBotsAppliedGeneration.current !== 0) return;
       if (!isCurrent() || targetBotId !== activeBotId.current) return;
-      setMentionBots((current) => (current.length ? current : saved.bots));
+      // Nothing from this chat has applied yet, so the saved inbox replaces the cached roster.
+      setMentionBots(saved.bots);
       setRosterLoaded(true);
     }
   }, [botId, groupId, router]);

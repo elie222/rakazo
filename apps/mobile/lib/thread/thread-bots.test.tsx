@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "../api/api";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
+import { loadSavedInbox } from "../inbox/saved-chats";
 import { queryClient } from "../query/query";
 import { useThreadBots } from "./thread-bots";
 
@@ -106,6 +107,21 @@ describe("thread roster refresh", () => {
     });
 
     expect(queryClient.getQueryData(["bots/list"])).toEqual([{ id: "bot-1", name: "Newest" }]);
+  });
+
+  it("uses the saved inbox offline even when a cached roster seeded the chat", async () => {
+    queryClient.setQueryData(["bots/list"], [{ id: "bot-1", name: "Cached" }] as MobileBot[]);
+    const saved = [
+      { id: "bot-1", name: "Cached" },
+      { id: "bot-2", name: "New" },
+    ] as MobileBot[];
+    vi.mocked(loadSavedInbox).mockResolvedValueOnce({ bots: saved } as never);
+    vi.mocked(rpc).mockRejectedValue(new Error("offline"));
+    await act(async () => root.render(createElement(Thread, { botId: "bot-2" })));
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    expect(state.mentionBots).toEqual(saved);
   });
 
   it("refreshes the group title and mention roster when returning from settings", async () => {
