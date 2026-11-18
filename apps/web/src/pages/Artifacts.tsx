@@ -920,7 +920,7 @@ function PreviewPane({
 
   return (
     <section
-      aria-label={state.status === "ready" ? state.artifact.name : t`Loading…`}
+      aria-label={state.status === "ready" ? state.artifact.name : t`Preview`}
       onKeyDown={(event) =>
         selectFilePreviewContents(
           event,
