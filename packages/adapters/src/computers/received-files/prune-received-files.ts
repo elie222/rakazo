@@ -103,7 +103,7 @@ async function pruneComputer(
 }
 
 /**
- * The worker's hourly pass that deletes received chat-app files a month after they arrived
+ * The worker's daily pass that deletes received chat-app files a month after they arrived
  * (by the date in their name, never the file's own time), then the month and year folders that
  * leaves empty. Only homes the server holds are pruned: a computer running on a provider's
  * own disk is left alone. Anything not named like a received file stays. Off unless the
