@@ -375,6 +375,15 @@ describe("tool-choice grading", () => {
     const fromPeer = toolChoiceEvalCase({ ...base, from: { peer }, expect: {} });
     expect(fromPeer.peer).toEqual(peer);
     expect(fromPeer.steps.at(-1)).toEqual({ fromPeer: "Do it." });
+    const judged = toolChoiceEvalCase({
+      ...base,
+      from: { peer },
+      expect: { replyMustNot: "Archiving a bot." },
+    });
+    expect(judged.judge!(evidence({ text: "No." })).evidence).toMatchObject({
+      request: "Do it.",
+      sender: "Sales, another of the user's bots",
+    });
     const routine = toolChoiceEvalCase({
       ...base,
       from: { routine: "Daily digest" },
