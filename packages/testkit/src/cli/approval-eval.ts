@@ -119,7 +119,10 @@ export async function runApprovalSuite(
     throw new Error("Concurrency must be an integer from 1 to 16");
   if (values.protocol && values.protocol !== "decisions" && values.protocol !== "llm")
     throw new Error("Protocol must be decisions or llm");
-  const categories = new Map(selected.map((c) => [c.id, c.category ?? "built-in"]));
+  const fromFile = new Set(extraCases.map((c) => c.id));
+  const categories = new Map(
+    selected.map((c) => [c.id, c.category ?? (fromFile.has(c.id) ? "file" : "built-in")]),
+  );
   const byId = new Map(selected.map((c) => [c.id, c]));
   const caseForRun = (runId: string) => {
     const match = /^(.*)-(\d+)$/.exec(runId.replace(/:auto-review$/, ""));
@@ -258,8 +261,10 @@ export async function runApprovalSuite(
   const decisionHost = isDecisionHost(connection.provider) ? connection.provider : undefined;
   if (protocol === "decisions" && !decisionHost && !isJev)
     return notRun("The decision protocol needs a provider that serves decision models");
-  if (protocol === "llm" && isJev)
-    return notRun("This provider serves decision models only; drop --protocol llm");
+  if (protocol === "llm" && (isJev || catalog))
+    return notRun(
+      "This is a decision model; it cannot run as a plain model, so drop --protocol llm",
+    );
   report.reviewer = { protocol, provider: connection.provider, model: connection.modelId };
   // Endpoints and account ids can carry credentials or name private hosts: only a short hash of
   // each reaches the report, enough to tell two setups apart.
