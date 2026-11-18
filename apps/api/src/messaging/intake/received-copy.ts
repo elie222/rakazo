@@ -16,6 +16,9 @@ export type SaveReceivedFile = (
 /**
  * Copies one received file into the bot's computer and returns the line that says where, or
  * nothing when it was not copied. A copy that fails or takes too long never holds up the message.
+ * A save that ends after its deadline can still leave its copy, which the bot is not told about;
+ * the folder's lease and a write that never replaces a file keep it from taking another's name,
+ * and the cleanup removes it like any other copy.
  */
 export async function saveReceivedCopy(
   deps: { prisma: PrismaClient; saveReceivedFile: SaveReceivedFile },
@@ -52,10 +55,11 @@ export async function saveReceivedCopy(
       signal,
     };
     // Bots on one team computer share its received folder. The save also holds the folder
-    // against other processes; this only keeps this process's saves from waiting on that.
+    // against other processes; this only keeps this process's saves from waiting on that. The
+    // queue stops waiting on a save at its deadline, so one that hangs never holds up the next.
     return saves.run(computerId ?? `bot:${ids.botId}`, async () => {
       signal.throwIfAborted();
-      return save(received, context);
+      return withAbort(save(received, context), signal);
     });
   };
   const result = await bestEffort(

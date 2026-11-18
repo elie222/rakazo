@@ -315,6 +315,8 @@ Limits:
 - A message settled by its backup job, because receiving it here failed or the API restarted
   first, reaches the bot without a copy.
 - One copy at a time is made on a computer, across all API processes, and the cleanup takes the
-  same turn. Each copy has 30 seconds, waiting included; one not made by then is skipped.
+  same turn. Each copy has 30 seconds, waiting included; one not made by then is skipped, and
+  the next copy goes ahead. A copy still being written at that point can land later without the
+  line; the cleanup removes it like any other.
 - A message handed to a message routine still gets its copies, but the routine is not told
   where they are.
