@@ -57,12 +57,11 @@ describe("approval variants", () => {
     expect(() => parseApprovalVariant("scope+lean-ask")).toThrow(/one rubric/);
   });
 
-  it("shows only the parts a variant names, newest history and steps last", () => {
+  it("shows only the parts a variant names, newest steps last", () => {
     expect(variantContext(planted, parseApprovalVariant("current"))).toEqual({});
     expect(variantContext(planted, parseApprovalVariant("outside+history+steps+risk"))).toEqual({
       runStartedBy: "chat",
       outsideContentInRun: true,
-      earlierOwnerMessages: ["two", "three", "Draft a reply to Dana."],
       earlierSteps: [
         { tool: "GMAIL_FETCH_EMAILS", summary: "Dana's email.", fromOutsideText: true },
         { tool: "GMAIL_CREATE_DRAFT", summary: "Drafted a reply." },
