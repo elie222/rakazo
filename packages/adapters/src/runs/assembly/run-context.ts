@@ -211,6 +211,11 @@ export interface RunState {
    */
   tainted: boolean;
   /**
+   * The newest outside text this attempt read (tool results and others' messages), capped. Auto
+   * Review's facts check a call's recipients, sites and amounts against it.
+   */
+  readContent: string;
+  /**
    * The instructions this attempt's model works from: the attempt-start snapshot its prompt
    * was built with, restored from the turn checkpoint on resume, and advanced only after a
    * successful own-instruction write in this attempt. Own instruction writes guard on it, so
@@ -427,9 +432,22 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
-/** Fresh outside input applies the existing action protections for this run. */
-export async function markReadOutsideContent(ctx: RunContext) {
+const MAX_READ_CONTENT_CHARS = 200_000;
+
+/**
+ * Fresh outside input applies the existing action protections for this run, and its text is kept
+ * so Auto Review can tell which values in a later call only it supplied.
+ */
+export async function markReadOutsideContent(ctx: RunContext, content?: unknown) {
   ctx.state.tainted = true;
+  if (content === undefined || content === null) return;
+  let text: string;
+  try {
+    text = typeof content === "string" ? content : (JSON.stringify(content) ?? "");
+  } catch {
+    return;
+  }
+  ctx.state.readContent = `${ctx.state.readContent}\n${text}`.slice(-MAX_READ_CONTENT_CHARS);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */

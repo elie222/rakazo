@@ -1685,6 +1685,33 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
+   * result or anyone else's message. Redacted and capped by the caller.
+   */
+  ownerMessages?: string[];
+  /** What the server worked out about this call from the run, so the reviewer need not guess. */
+  facts?: AutoReviewFacts;
+}
+
+/**
+ * Where a value in the call came from: the owner's own words (`owner`), only a person the owner
+ * named whose address was looked up (`owner_named`), only content the run read (`read`), or
+ * neither (`neither`, such as a value the bot chose).
+ */
+export type AutoReviewValueSource = "owner" | "owner_named" | "read" | "neither";
+export interface AutoReviewDetail {
+  kind: "recipient" | "site" | "amount";
+  /** As the reviewer should read it: an amount in display units, such as "40.00 usd". */
+  value: string;
+  source: AutoReviewValueSource;
+}
+export interface AutoReviewFacts {
+  /** Text the owner did not write (a page, email, file, app data or another person) entered the run. */
+  outsideContent: boolean;
+  details: AutoReviewDetail[];
+  /** A model the call sets: whether the model catalog lists it and whether the owner named it. */
+  model?: { id: string; known: boolean; namedByOwner: boolean };
 }
 
 export interface AutoReviewResult {
