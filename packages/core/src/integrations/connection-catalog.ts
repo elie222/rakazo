@@ -113,6 +113,7 @@ export async function waitForConnection<Row extends { status: string }>(
 }
 
 const PROMPT_SIGN_IN_ATTEMPTS = 60;
+const RETURN_READ_ATTEMPTS = 3;
 
 /**
  * Waits for a sign-in without calling a slow one failed. It polls for the time most take; after
@@ -142,15 +143,27 @@ export async function waitForSignIn<Row extends { status: string }>(
       resolve(result);
     };
     const onAbort = () => settle({ status: "aborted" });
-    const stop = options.whenBack(() => {
-      void waitForConnection(connectionId, complete, {
+    let reading = false;
+    const read = () => {
+      if (reading) return;
+      reading = true;
+      // A few tries, so one failed request does not lose a sign-in that just finished.
+      waitForConnection(connectionId, complete, {
         signal: options.signal,
-        attempts: 1,
-      }).then((result) => {
-        if (result.status !== "pending") settle(result);
-      });
-    });
+        attempts: RETURN_READ_ATTEMPTS,
+      }).then(
+        (result) => {
+          reading = false;
+          if (result.status !== "pending") settle(result);
+        },
+        // Only an abort rejects, and the abort listener settles that.
+        () => {},
+      );
+    };
+    const stop = options.whenBack(read);
     options.signal.addEventListener("abort", onAbort, { once: true });
+    // The person may have come back while the last timed read was still in flight.
+    read();
   });
 }
 

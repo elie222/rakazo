@@ -224,6 +224,34 @@ describe("waitForSignIn", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("does not lose a finished sign-in to one failed read on return", async () => {
+    let back = () => {};
+    let returned = false;
+    const complete = vi.fn(async () => {
+      if (!returned) return account("slow", "pending");
+      if (complete.mock.calls.length % 2 === 0) throw new Error("Unavailable");
+      return account("slow", "connected");
+    });
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("slow", complete, {
+        signal: new AbortController().signal,
+        onSlow: () => {},
+        whenBack: (read) => {
+          back = read;
+          return () => {};
+        },
+      });
+      await vi.runAllTimersAsync();
+      returned = true;
+      back();
+      await vi.runAllTimersAsync();
+      expect(await result).toEqual({ status: "connected", row: account("slow", "connected") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops watching a slow sign-in once a newer attempt takes its place", async () => {
     const controller = new AbortController();
     const stop = vi.fn();
