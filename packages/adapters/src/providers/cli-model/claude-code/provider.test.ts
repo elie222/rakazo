@@ -626,6 +626,17 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       expect(hello.tools?.some((tool) => tool.name === expected)).toBe(false);
     },
   );
+  it("never renames an unoffered call onto an offered tool", async () => {
+    fakeClaude("unoffered-tool");
+    const decoy = {
+      name: "feedback_not_offered",
+      description: "A tool whose name an unoffered call must not take.",
+      parameters: { type: "object", properties: {} },
+    };
+    const { message } = await run({ ...hello, tools: [...tools, decoy] });
+    const calls = message.content.filter((part) => part.type === "toolCall");
+    expect(calls.map((call) => call.name)).toEqual(["feedback_not_offered2"]);
+  });
 
   it("redacts secrets from the CLI's error output", async () => {
     fakeClaude("crash");
