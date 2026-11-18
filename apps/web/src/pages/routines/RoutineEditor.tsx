@@ -11,6 +11,7 @@ import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import { routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
+import { RoutineTakeoverNote } from "./routine-editor/access-note";
 import { AddTriggerMenu } from "./routine-editor/add-trigger-menu";
 import { RoutineModelSettings } from "./routine-editor/model-settings";
 import {
@@ -116,6 +117,8 @@ export function RoutineEditor({
           <X />
         </Button>
       </div>
+
+      <RoutineTakeoverNote routine={editing} />
 
       <div className="mb-5 flex items-center justify-between gap-3">
         <label
