@@ -48,6 +48,12 @@ describe("hostMatchesProxyConnectPatterns", () => {
     expect(hostMatchesProxyConnectPatterns("a.b.cdn.example.org", patterns)).toBe(true);
   });
 
+  it("matches a listed internationalized host by its punycode form", () => {
+    const idn = parseProxyConnectHostPatterns("münich.example.com");
+    expect(hostMatchesProxyConnectPatterns("xn--mnich-kva.example.com", idn)).toBe(true);
+    expect(hostMatchesProxyConnectPatterns("münich.example.com", idn)).toBe(false);
+  });
+
   it("does not match the apex of a wildcard or an unlisted host", () => {
     expect(hostMatchesProxyConnectPatterns("cdn.example.org", patterns)).toBe(false);
     expect(hostMatchesProxyConnectPatterns("other.example.com", patterns)).toBe(false);

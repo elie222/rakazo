@@ -1,3 +1,4 @@
+import { domainToASCII } from "node:url";
 import { ipVersion } from "@rakazo/contracts";
 import { isPublicSuffix } from "@rakazo/core/egress";
 
@@ -10,10 +11,30 @@ export type ProxyConnectHostPattern = { wildcard: boolean; hostname: string };
 
 const ENV_NAME = "RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS";
 
+const ENTRY = /^[a-z0-9\u0080-\uffff.-]+$/;
+const LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
+
+/**
+ * The ASCII form a request host carries. `domainToASCII` lowercases, converts an internationalized
+ * name to punycode and drops what follows a slash, so the entry is checked for characters a host
+ * cannot hold before it runs, and every label again after.
+ */
+function asciiHostname(value: string): string | undefined {
+  if (!ENTRY.test(value)) return undefined;
+  const ascii = domainToASCII(value);
+  if (!ascii || ascii.length > 253) return undefined;
+  return ascii.split(".").every((label) => LABEL.test(label)) ? ascii : undefined;
+}
+
 /**
  * Parse the operator's list. An empty or unset value lists nothing. A bare `*` and a pattern that
  * is only a public suffix (`*.com`, `*.co.uk`) are refused: either one would drop the address pin
  * for names the operator did not choose.
+ *
+ * Every entry ends up in the ASCII form a request host carries, so an internationalized name the
+ * operator writes matches the punycode hostname a fetch is dispatched with. An entry that cannot
+ * be a hostname (`example.com:443`, a URL, a path) is refused rather than accepted and silently
+ * never matched.
  */
 export function parseProxyConnectHostPatterns(
   value: string | undefined,
@@ -27,8 +48,8 @@ export function parseProxyConnectHostPatterns(
       throw new Error(`${ENV_NAME} rejects "*": list the hosts to tunnel by name`);
     }
     const wildcard = entry.startsWith("*.");
-    const hostname = wildcard ? entry.slice(2) : entry;
-    if (!hostname || hostname.includes("*") || hostname.startsWith(".") || ipVersion(hostname)) {
+    const hostname = asciiHostname((wildcard ? entry.slice(2) : entry).replace(/\.$/, ""));
+    if (!hostname || ipVersion(hostname)) {
       throw new Error(`${ENV_NAME} has an invalid host pattern "${raw.trim()}"`);
     }
     if (isPublicSuffix(hostname)) {
