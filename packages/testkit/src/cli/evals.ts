@@ -178,7 +178,7 @@ async function main() {
   > = {
     product: {
       cases: EVAL_CASES,
-      fixtureVersion: "product-v3",
+      fixtureVersion: "product-v4",
       judge: { version: PRODUCT_JUDGE_VERSION, calibration: PRODUCT_JUDGE_CALIBRATION },
     },
     subagents: {
@@ -867,6 +867,7 @@ async function main() {
                 wakeupDriver: "memory",
                 composio,
                 messaging,
+                web: composio.web,
                 ...(wakesRoutines(scenario) ? witnesses : {}),
                 messagingOpenSignup: false,
                 defaultProvider: connection.provider,

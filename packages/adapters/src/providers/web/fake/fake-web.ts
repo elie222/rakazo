@@ -17,6 +17,8 @@ export class FakeWebProvider implements WebProvider {
     text: "Hello from fake web",
     truncated: false,
   };
+  /** Text served for these exact URLs instead of `fetchResult`. */
+  pages: Record<string, string> = {};
   lastSearch?: WebSearchRequest;
   lastFetch?: WebFetchRequest;
   searchError?: Error;
@@ -47,15 +49,17 @@ export class FakeWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, _context: AdapterContext): Promise<WebFetchResult> {
     this.lastFetch = request;
     if (this.fetchError) throw this.fetchError;
+    const page = this.pages[request.url];
+    const result = page === undefined ? this.fetchResult : { ...this.fetchResult, text: page };
     const offset = clampOffset(request.offset);
-    const rest = this.fetchResult.text.slice(offset);
+    const rest = result.text.slice(offset);
     const maxChars = request.maxChars ?? rest.length;
     const window = pageWindow(rest, maxChars, offset);
     return {
-      ...this.fetchResult,
-      url: request.url || this.fetchResult.url,
+      ...result,
+      url: request.url || result.url,
       text: window.text,
-      truncated: window.truncated || this.fetchResult.truncated,
+      truncated: window.truncated || result.truncated,
     };
   }
 }
