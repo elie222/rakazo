@@ -165,11 +165,16 @@ export function AgentImportPlanReview({
     title: ReactNode,
     entries: readonly { id: string; off?: boolean }[],
     body: ReactNode,
+    needsChange = false,
   ) => {
     const picked = entries.filter((entry) => !entry.off && !unchecked.has(entry.id)).length;
     const total = entries.length;
     return (
-      <Collapsible className={sectionClass} data-testid={testId} defaultOpen={picked < total}>
+      <Collapsible
+        className={sectionClass}
+        data-testid={testId}
+        defaultOpen={picked < total || needsChange}
+      >
         <div className="flex items-center gap-3">
           <h3 className={`min-w-0 flex-1 ${headingClass}`}>
             <CollapsibleTrigger className={triggerClass}>
@@ -231,6 +236,7 @@ export function AgentImportPlanReview({
                   );
                 })}
               </ul>,
+              tooLong,
             )
           : null}
         {tooLong ? (
