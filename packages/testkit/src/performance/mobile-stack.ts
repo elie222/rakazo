@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { asSystem, createDb } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { startPostgres } from "../cli/postgres.js";
 import { startIosScreenshotBackend } from "../screenshots/ios-screenshot-backend.js";
 import { ensurePlan, ensureUser, rpc } from "../screenshots/ios-screenshot-seed.js";
@@ -32,31 +33,33 @@ process.once("SIGINT", () => interrupted.abort());
 process.once("SIGTERM", () => interrupted.abort());
 
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "rakazo-mobile-perf-"));
-const stops: Array<() => Promise<unknown>> = [() => rm(dataDir, { recursive: true, force: true })];
+const stops: Array<[label: string, stop: () => Promise<unknown>]> = [
+  ["remove the data directory", () => rm(dataDir, { recursive: true, force: true })],
+];
 try {
   // Always its own container: a CI_POSTGRES_URL server can be shared with other runs.
   delete process.env.CI_POSTGRES_URL;
   const postgres = await startPostgres(interrupted.signal);
-  stops.push(() => postgres.stop());
+  stops.push(["stop Postgres", () => postgres.stop()]);
   if (!interrupted.signal.aborted) await serve(postgres.getConnectionUri());
 } catch (error) {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  for (const stop of stops.reverse()) await stop().catch((error: unknown) => console.error(error));
+  for (const [label, stop] of stops.reverse()) await bestEffort(label, stop());
   process.exit();
 }
 
 async function serve(serverUrl: string) {
   const backend = await startIosScreenshotBackend({ root, serverUrl, port: apiPort, dataDir });
-  stops.push(() => backend.stop());
+  stops.push(["stop the API", () => backend.stop()]);
   if (interrupted.signal.aborted) return;
   await seed(backend);
 
   let appUrl = backend.apiUrl;
   if (delayMs > 0) {
     const proxy = await startDelayProxy({ target: backend.apiUrl, port: proxyPort, delayMs });
-    stops.push(() => proxy.close());
+    stops.push(["stop the delay proxy", () => proxy.close()]);
     appUrl = proxy.url;
   }
   if (interrupted.signal.aborted) return;
