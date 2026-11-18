@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CONVERSATION_START,
+  historyImageSeenNote,
+  historyImageSeenStamp,
   imageNotKeptNote,
   REPLAYED_SCREENSHOT_LEAD,
   replyTargetNote,
@@ -27,6 +29,15 @@ describe("history replay notes", () => {
     );
     expect(imageNotKeptNote("Done.", "")).toMatchInlineSnapshot(
       `"[Done. You looked at this image then; it is not kept.]"`,
+    );
+    expect(historyImageSeenStamp("2026-11-19T02:31:00.000Z")).toBe("2026-11-19 02:31");
+    expect(historyImageSeenStamp("not a date")).toBeUndefined();
+    expect(historyImageSeenStamp(undefined)).toBeUndefined();
+    expect(historyImageSeenNote("2026-11-19 02:31")).toMatchInlineSnapshot(
+      `"[2026-11-19 02:31, image from an earlier message; already seen]"`,
+    );
+    expect(historyImageSeenNote()).toMatchInlineSnapshot(
+      `"[image from an earlier message; already seen]"`,
     );
     expect(REPLAYED_SCREENSHOT_LEAD).toMatchInlineSnapshot(`"[the screenshot you took:]"`);
     expect(toolNotAvailableNote("shell")).toMatchInlineSnapshot(`

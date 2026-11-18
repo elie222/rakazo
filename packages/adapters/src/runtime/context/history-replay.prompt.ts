@@ -14,6 +14,21 @@ export function imageNotKeptNote(ended: string, quote: string): string {
     : `[${ended} You looked at this image then; it is not kept.]`;
 }
 
+/** UTC `YYYY-MM-DD HH:mm` for a history timestamp, when the date is valid. */
+export function historyImageSeenStamp(createdAt: string | undefined): string | undefined {
+  const created = createdAt ? Date.parse(createdAt) : Number.NaN;
+  if (Number.isNaN(created)) return undefined;
+  const iso = new Date(created).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
+/** Marks a user-message image that is being sent again from an earlier turn. */
+export function historyImageSeenNote(stamp?: string): string {
+  return stamp
+    ? `[${stamp}, image from an earlier message; already seen]`
+    : `[image from an earlier message; already seen]`;
+}
+
 /** Leads the most recent replayed screenshot, which is sent again. */
 export const REPLAYED_SCREENSHOT_LEAD = "[the screenshot you took:]";
 
