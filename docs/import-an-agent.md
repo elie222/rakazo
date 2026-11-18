@@ -49,7 +49,8 @@ repository, so the bot knows what it was for.
 
 Routines whose schedule could not be read, or whose event this server does not receive, are
 listed under **Set up in chat**. The new bot's chat opens with them, with their trigger and full
-instruction, and the bot sets up what it can with you. Nothing is added to its memory for them. Connected apps with a remote MCP address become MCP servers you
+instruction. Tell the bot which ones to set up; nothing runs until you do, and nothing is added
+to its memory for them. Connected apps with a remote MCP address become MCP servers you
 sign in to again; **Not imported** lists the other apps to connect again. Chats, files on the
 Bot's computer and sign-ins stay in Grok Bot.
 

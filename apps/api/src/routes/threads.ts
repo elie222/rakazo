@@ -100,9 +100,19 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
-/** Sends a person's message to a bot or group, with the checks every send makes. */
-export function threadSender({ deps, codexCatalog }: Pick<RouterContext, "deps" | "codexCatalog">) {
-  return async (
+export function threadsRoutes(ctx: RouterContext) {
+  const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
+  /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
+  const reactedBotId = async (target: ThreadTarget, messageId: string) =>
+    target.kind === "bot"
+      ? target.botId
+      : ((
+          await deps.prisma.message.findFirst({
+            where: { id: messageId, threadId: target.threadId },
+            select: { botId: true },
+          })
+        )?.botId ?? target.memberBotIds[0]!);
+  const send = async (
     actor: Actor,
     input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
@@ -152,21 +162,6 @@ export function threadSender({ deps, codexCatalog }: Pick<RouterContext, "deps" 
       throw error;
     });
   };
-}
-
-export function threadsRoutes(ctx: RouterContext) {
-  const { deps, authed, callsEnabled, repos, agentSkills } = ctx;
-  /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
-  const reactedBotId = async (target: ThreadTarget, messageId: string) =>
-    target.kind === "bot"
-      ? target.botId
-      : ((
-          await deps.prisma.message.findFirst({
-            where: { id: messageId, threadId: target.threadId },
-            select: { botId: true },
-          })
-        )?.botId ?? target.memberBotIds[0]!);
-  const send = threadSender(ctx);
   return {
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {

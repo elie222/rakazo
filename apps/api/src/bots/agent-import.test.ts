@@ -129,7 +129,7 @@ describe("after the import commits", () => {
     });
     await expect(
       createImportedBot(services({ announceRoutine, afterModelKey }), actor, input),
-    ).resolves.toEqual({ bot, handoff: false });
+    ).resolves.toBe(bot);
     expect(announceRoutine).toHaveBeenCalledTimes(1);
     expect(afterModelKey).toHaveBeenCalledWith("openrouter");
   });
@@ -139,7 +139,7 @@ describe("after the import commits", () => {
     const writeModelKey = vi.fn(async () => null);
     await expect(
       createImportedBot(services({ afterModelKey, writeModelKey }), actor, input),
-    ).resolves.toEqual({ bot, handoff: false });
+    ).resolves.toBe(bot);
     expect(writeModelKey).toHaveBeenCalledTimes(1);
     expect(afterModelKey).not.toHaveBeenCalled();
   });
@@ -195,7 +195,7 @@ describe("a Grok Bot's event routines", () => {
 
     const rows: unknown[] = [];
     const posted: string[] = [];
-    const created = await createImportedBot(
+    await createImportedBot(
       services({
         routineTriggers,
         routineRowData: (_actor, routine) => {
@@ -233,8 +233,7 @@ describe("a Grok Bot's event routines", () => {
         },
       }),
     );
-    // The leftover is posted in the new bot's chat, and the create asks for the handoff turn.
-    expect(created.handoff).toBe(true);
+    // The leftover is posted in the new bot's chat; no turn starts until the owner writes.
     expect(posted.filter((message) => message.includes("## Elsewhere"))).toHaveLength(1);
     expect(rows).toMatchObject([
       { name: "Hooks", active: false, crons: [], webhookEnabled: true },

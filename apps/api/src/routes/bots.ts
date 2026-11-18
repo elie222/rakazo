@@ -61,15 +61,13 @@ import {
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { managedAppCatalog } from "../account/onboarding.js";
 import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import type { AgentImportServices } from "../bots/agent-import.js";
 import {
   agentImportSetupState,
   createImportedBot,
-  IMPORT_HANDOFF_MESSAGE,
-  importHandoffNonce,
   previewAgentImport,
 } from "../bots/agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/agent-secrets.js";
@@ -87,7 +85,6 @@ import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import { loadMessagePage } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
-import { threadSender } from "./threads.js";
 
 function vaultScope(actor: Actor, vault?: SettingsScope) {
   return { userId: actor.userId, spaceId: actor.spaceId, vault };
@@ -335,22 +332,6 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   if (run) await wakeRun(deps.jobs, run.id);
 }
 
-/**
- * The leftovers are already in the bot's chat; this sends the owner's message that starts the
- * bot on them. With no model yet they wait there until the owner writes.
- */
-async function startImportHandoff(ctx: RouterContext, actor: Actor, bot: Bot): Promise<void> {
-  // In the scripted test/eval runtime an automatic run would compete with the harness's next
-  // queued response.
-  if (ctx.deps.env.agentRuntime === "scripted") return;
-  if ((await modelSetup(ctx.deps, actor)).needsModel) return;
-  await threadSender(ctx)(actor, {
-    botId: bot.id,
-    text: IMPORT_HANDOFF_MESSAGE,
-    clientNonce: importHandoffNonce(bot.id),
-  });
-}
-
 export function botsRoutes(ctx: RouterContext) {
   const { deps, repos, botModelValidation, removeBot, agentImportServices, groupRepos, authed } =
     ctx;
@@ -377,20 +358,10 @@ export function botsRoutes(ctx: RouterContext) {
       importPreview: authed.bots.importPreview.handler(async ({ context, input }) =>
         previewAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
-      // An imported bot starts inert (no intro run, paused routines, unapproved servers) unless
-      // the import left something over: then its first turn sets that up with the owner.
-      importCreate: authed.bots.importCreate.handler(async ({ context, input }) => {
-        const { bot, handoff } = await createImportedBot(
-          agentImportServices,
-          context.actor,
-          input,
-          context.signal,
-        );
-        if (handoff) {
-          await bestEffort("imported bot handoff", startImportHandoff(ctx, context.actor, bot));
-        }
-        return bot;
-      }),
+      // An imported bot starts inert: no intro run, paused routines, unapproved servers.
+      importCreate: authed.bots.importCreate.handler(async ({ context, input }) =>
+        createImportedBot(agentImportServices, context.actor, input, context.signal),
+      ),
       importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),

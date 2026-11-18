@@ -350,7 +350,7 @@ export async function createImportedBot<PreparedKey>(
   actor: Actor,
   input: AgentImportCreateInput,
   signal?: AbortSignal,
-): Promise<{ bot: Bot; handoff: boolean }> {
+): Promise<Bot> {
   const { importKey, ...request } = input;
   const written = await writeImportedBot(
     services,
@@ -362,23 +362,18 @@ export async function createImportedBot<PreparedKey>(
     },
     signal,
   );
-  // A retried create has the same selection, so it asks for the same handoff.
-  return { bot: written.bot, handoff: input.selection.leftovers.length > 0 };
+  return written.bot;
 }
 
-/** The owner's first message to an imported bot whose import left something over. */
-export const IMPORT_HANDOFF_MESSAGE = "Set up what the import left over.";
-
-/** One per bot, so a retried create sends the handoff once. */
-export function importHandoffNonce(botId: string): string {
-  return `import-handoff:${botId}`;
-}
-
-/** Imported text the new bot is asked about; shown in its chat, never followed by the server. */
+/**
+ * Imported text shown in the new bot's chat. Nothing runs on it until the owner writes: an
+ * automatic turn would let an export's text act with the owner's access unasked.
+ */
 function leftoverText(leftovers: AgentImportLeftover[]): string {
   return [
     "The import could not set these up:",
     ...leftovers.map((item) => `## ${item.title}\n\n${item.content.trim()}`),
+    "Tell me which ones to set up.",
   ].join("\n\n");
 }
 
