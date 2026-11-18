@@ -4,17 +4,59 @@ import type {
   TextContent,
   ThinkingContent,
 } from "@earendil-works/pi-ai";
-import { createStreamingRedactor, redactedRanges, redactSecrets } from "@rakazo/core";
+import { createStreamingRedactor, redactSecrets, sanitizeUtf16ForJson } from "@rakazo/core";
+
+type ContentEnd = Extract<AssistantMessageEvent, { type: "text_end" | "thinking_end" }>;
+type ContentDelta = Extract<AssistantMessageEvent, { type: "text_delta" | "thinking_delta" }>;
+
+function indexedRedactor(secrets: string[]) {
+  let length = 0;
+  const spans: { index: number; end: number }[] = [];
+  let writes = new Map<number, string>();
+  const redactor = createStreamingRedactor(secrets, (chunks, offset) => {
+    for (const chunk of chunks) {
+      let at = chunk.start;
+      let rest = chunk.text;
+      for (const span of spans) {
+        if (at >= span.end) continue;
+        // A replacement belongs to the block where the protected value starts.
+        const size = chunk.replacement ? rest.length : span.end - at;
+        writes.set(span.index, (writes.get(span.index) ?? "") + rest.slice(0, size));
+        rest = rest.slice(size);
+        if (!rest) break;
+        at = span.end;
+      }
+    }
+    while (spans[0] && spans[0].end <= offset) spans.shift();
+  });
+  return {
+    push(index: number, delta: string) {
+      if (!delta) return;
+      length += delta.length;
+      const last = spans.at(-1);
+      if (last?.index === index) last.end = length;
+      else spans.push({ index, end: length });
+      redactor.push(delta);
+    },
+    finish: redactor.finish,
+    holds: (index: number) => spans.some((span) => span.index === index),
+    takeWrites() {
+      const output = writes;
+      writes = new Map();
+      return output;
+    },
+  };
+}
 
 export function modelCredentialRedaction(apiKey: string) {
   const secrets = [apiKey];
   const redact = (value: string) => redactSecrets(value, secrets);
-  const textStream = createStreamingRedactor(secrets);
-  const thinkingStream = createStreamingRedactor(secrets);
+  // A key may span multiple blocks of the same kind, so both share one matching stream.
+  const streams = { text: indexedRedactor(secrets), thinking: indexedRedactor(secrets) };
   const toolStreams = new Map<number, ReturnType<typeof createStreamingRedactor>>();
   const previews = new Map<number, string>();
-  let lastTextIndex: number | undefined;
-  let emittedText = "";
+  const received = new Map<number, { kind: "text" | "thinking"; text: string }>();
+  const ends = new Map<number, ContentEnd["type"]>();
 
   function redactValue<T>(value: T): T {
     if (typeof value === "string") return redact(value) as T;
@@ -27,44 +69,39 @@ export function modelCredentialRedaction(apiKey: string) {
   }
 
   // Pi concatenates each kind of text block. A match can cross a block boundary.
-  function redactBlocks(blocks: (TextContent | ThinkingContent)[]) {
-    const values = blocks.map((block) => (block.type === "text" ? block.text : block.thinking));
-    const ranges = redactedRanges(values.join(""), secrets);
-    let offset = 0;
-    let rangeIndex = 0;
-    for (let index = 0; index < blocks.length; index += 1) {
-      const value = values[index]!;
-      const blockEnd = offset + value.length;
-      let text = "";
-      let from = offset;
-      while (ranges[rangeIndex] && ranges[rangeIndex]![0] < blockEnd) {
-        const [start, end] = ranges[rangeIndex]!;
-        if (start >= offset) text += value.slice(from - offset, start - offset) + "[redacted]";
-        from = Math.max(from, end);
-        if (end > blockEnd) break;
-        rangeIndex += 1;
-      }
-      text += value.slice(from - offset);
-      const block = blocks[index]!;
+  function redactBlocks(blocks: (TextContent | ThinkingContent)[], redactPartial: boolean) {
+    const stream = indexedRedactor(secrets);
+    for (const [index, block] of blocks.entries()) {
+      stream.push(index, block.type === "text" ? block.text : block.thinking);
+    }
+    stream.finish(redactPartial);
+    const writes = stream.takeWrites();
+    for (const [index, block] of blocks.entries()) {
+      const text = writes.get(index) ?? "";
       // A modified signed block can no longer be used with its original signature.
-      if (text !== value) {
-        if (block.type === "thinking") {
-          block.thinking = text;
-          delete block.thinkingSignature;
-        } else {
-          block.text = text;
-          delete block.textSignature;
-        }
+      if (block.type === "thinking" && text !== block.thinking) {
+        block.thinking = text;
+        delete block.thinkingSignature;
       }
-      offset = blockEnd;
+      if (block.type === "text" && text !== block.text) {
+        block.text = text;
+        delete block.textSignature;
+      }
     }
   }
 
   const message = (raw: AssistantMessage): AssistantMessage => {
     const { content, ...rest } = raw;
     const parts = content.map((part) => ({ ...part }));
-    redactBlocks(parts.filter((part) => part.type === "text"));
-    redactBlocks(parts.filter((part) => part.type === "thinking"));
+    const redactPartial = raw.stopReason === "error" || raw.stopReason === "aborted";
+    redactBlocks(
+      parts.filter((part) => part.type === "text"),
+      redactPartial,
+    );
+    redactBlocks(
+      parts.filter((part) => part.type === "thinking"),
+      redactPartial,
+    );
     return { ...redactValue(rest), content: redactValue(parts) };
   };
 
@@ -82,62 +119,119 @@ export function modelCredentialRedaction(apiKey: string) {
     };
   };
 
-  const event = (raw: AssistantMessageEvent): AssistantMessageEvent => {
-    if (raw.type === "done") return { ...raw, message: message(raw.message) };
-    if (raw.type === "error") return { ...raw, error: message(raw.error) };
-    if (raw.type === "text_delta" || raw.type === "thinking_delta") {
-      const stream = raw.type === "text_delta" ? textStream : thinkingStream;
-      const delta = stream.push(raw.delta);
-      if (raw.type === "text_delta") {
-        lastTextIndex = raw.contentIndex;
-        emittedText += delta;
-      }
-      previews.set(raw.contentIndex, (previews.get(raw.contentIndex) ?? "") + delta);
-      return { ...raw, delta, partial: partial(raw.partial) };
-    }
-    if (raw.type === "text_end" || raw.type === "thinking_end") {
-      // Keep the tail buffered across content blocks. The terminal message supplies it.
-      return {
-        ...raw,
-        content: previews.get(raw.contentIndex) ?? "",
-        partial: partial(raw.partial),
-      };
-    }
-    if (raw.type === "toolcall_delta") {
-      let stream = toolStreams.get(raw.contentIndex);
-      if (!stream) {
-        stream = createStreamingRedactor(secrets);
-        toolStreams.set(raw.contentIndex, stream);
-      }
-      return { ...raw, delta: stream.push(raw.delta), partial: partial(raw.partial) };
-    }
-    if (raw.type === "toolcall_end")
-      return { ...raw, toolCall: redactValue(raw.toolCall), partial: partial(raw.partial) };
-    return { ...raw, partial: partial(raw.partial) };
-  };
-
-  function trailingDelta(safeEvent: AssistantMessageEvent): AssistantMessageEvent | undefined {
-    if (safeEvent.type === "toolcall_end") {
-      const { contentIndex, partial } = safeEvent;
-      const delta = toolStreams.get(contentIndex)?.finish();
-      toolStreams.delete(contentIndex);
-      if (delta) return { type: "toolcall_delta", contentIndex, delta, partial };
-      return;
-    }
-    if (safeEvent.type !== "done" || lastTextIndex === undefined) return;
-    const safeMessage = safeEvent.message;
-    const text = safeMessage.content
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .join("");
-    if (!text.startsWith(emittedText) || text === emittedText) return;
-    // Keep tool narration complete after buffering across content blocks.
-    return {
-      type: "text_delta",
-      contentIndex: lastTextIndex,
-      delta: text.slice(emittedText.length),
-      partial: safeMessage,
-    };
+  function recordDelta(kind: "text" | "thinking", index: number, delta: string) {
+    const text = (received.get(index)?.text ?? "") + delta;
+    received.set(index, { kind, text });
+    streams[kind].push(index, delta);
   }
 
-  return { event, trailingDelta, message, redact };
+  function completeBlock(index: number, kind: "text" | "thinking", full: string) {
+    const current = received.get(index)?.text ?? "";
+    if (full.startsWith(current)) recordDelta(kind, index, full.slice(current.length));
+  }
+
+  // Release an end frame only after the last safe delta for that block can be emitted.
+  function drain(
+    kind: "text" | "thinking",
+    snapshot: AssistantMessage,
+  ): (ContentDelta | ContentEnd)[] {
+    const stream = streams[kind];
+    const writes = stream.takeWrites();
+    const indices = [...new Set([...ends.keys(), ...writes.keys()])].sort((a, b) => a - b);
+    const output: (ContentDelta | ContentEnd)[] = [];
+    for (const contentIndex of indices) {
+      if (received.get(contentIndex)?.kind !== kind) continue;
+      const delta = sanitizeUtf16ForJson(writes.get(contentIndex) ?? "");
+      if (delta) {
+        previews.set(contentIndex, (previews.get(contentIndex) ?? "") + delta);
+        const event: ContentDelta = {
+          type: kind === "text" ? "text_delta" : "thinking_delta",
+          contentIndex,
+          delta,
+          partial: partial(snapshot),
+        };
+        output.push(event);
+      }
+      const end = ends.get(contentIndex);
+      if (end && !stream.holds(contentIndex)) {
+        ends.delete(contentIndex);
+        output.push({
+          type: end,
+          contentIndex,
+          content: previews.get(contentIndex) ?? "",
+          partial: partial(snapshot),
+        });
+      }
+    }
+    return output;
+  }
+
+  function finish(snapshot: AssistantMessage, redactPartial: boolean): AssistantMessageEvent[] {
+    streams.text.finish(redactPartial);
+    streams.thinking.finish(redactPartial);
+    return [...drain("thinking", snapshot), ...drain("text", snapshot)].sort(
+      (a, b) => a.contentIndex - b.contentIndex,
+    );
+  }
+
+  const events = (
+    raw: AssistantMessageEvent,
+    previous?: AssistantMessage,
+  ): AssistantMessageEvent[] => {
+    switch (raw.type) {
+      case "done":
+      case "error": {
+        const terminal = raw.type === "done" ? raw.message : raw.error;
+        for (const [index, { kind }] of received) {
+          const part = terminal.content[index];
+          if (part?.type !== kind) continue;
+          completeBlock(index, kind, part.type === "text" ? part.text : part.thinking);
+        }
+        return [
+          ...finish(
+            terminal.content.length || !previous ? terminal : previous,
+            raw.type === "error",
+          ),
+          raw.type === "done"
+            ? { ...raw, message: message(terminal) }
+            : { ...raw, error: message(terminal) },
+        ];
+      }
+      case "text_delta":
+      case "thinking_delta": {
+        const kind = raw.type === "text_delta" ? "text" : "thinking";
+        recordDelta(kind, raw.contentIndex, raw.delta);
+        return drain(kind, raw.partial);
+      }
+      case "text_end":
+      case "thinking_end": {
+        const kind = raw.type === "text_end" ? "text" : "thinking";
+        completeBlock(raw.contentIndex, kind, raw.content);
+        ends.set(raw.contentIndex, raw.type);
+        return drain(kind, raw.partial);
+      }
+      case "toolcall_delta": {
+        let stream = toolStreams.get(raw.contentIndex);
+        if (!stream) {
+          stream = createStreamingRedactor(secrets);
+          toolStreams.set(raw.contentIndex, stream);
+        }
+        return [{ ...raw, delta: stream.push(raw.delta), partial: partial(raw.partial) }];
+      }
+      case "toolcall_end": {
+        const { contentIndex } = raw;
+        const delta = toolStreams.get(contentIndex)?.finish();
+        toolStreams.delete(contentIndex);
+        const safePartial = partial(raw.partial);
+        const end = { ...raw, toolCall: redactValue(raw.toolCall), partial: safePartial };
+        return delta
+          ? [{ type: "toolcall_delta", contentIndex, delta, partial: safePartial }, end]
+          : [end];
+      }
+      default:
+        return [{ ...raw, partial: partial(raw.partial) }];
+    }
+  };
+
+  return { events, finish, message, partial, redact };
 }

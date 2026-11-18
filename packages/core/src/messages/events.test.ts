@@ -1036,6 +1036,28 @@ describe("createStreamingRedactor", () => {
     expect(output).not.toContain("fake-secret-123");
   });
 
+  it("reports source offsets for safe chunks across UTF-16 and redaction boundaries", () => {
+    const observed: { start: number; text: string; replacement: boolean }[] = [];
+    const key = "fixture-key";
+    const redactor = createStreamingRedactor([key], (chunks) => observed.push(...chunks));
+    for (const chunk of ["x\uD83D", "\uDE00fixture-", "key end"]) redactor.push(chunk);
+    redactor.finish();
+    expect(observed.filter((chunk) => chunk.text)).toEqual([
+      { start: 0, text: "x", replacement: false },
+      { start: 1, text: "😀", replacement: false },
+      { start: 3, text: "[redacted]", replacement: true },
+      { start: 14, text: " end", replacement: false },
+    ]);
+  });
+
+  it("can redact a trailing credential prefix on a failed stream", () => {
+    const chars = "before fixture-";
+    const failed = createStreamingRedactor(["fixture-key"]);
+    expect(failed.push(chars) + failed.finish(true)).toBe("before [redacted]");
+    const complete = createStreamingRedactor(["fixture-key"]);
+    expect(complete.push(chars) + complete.finish()).toBe(chars);
+  });
+
   it("hides overlapping values whole, however the text is split", () => {
     const secrets = ["pre-hun", "hunter123xyz", "123"];
     const text = "x=pre-hunter123xyz; y=123; z=hunter123xyz";

@@ -574,7 +574,9 @@ export function observedPiStream(
           // Read the upstream status and error before log-safe redaction and usage settlement.
           if (event.type === "error" && event.reason === "error")
             reportDeploymentRejection(event.error);
-          const safeEvent = redaction?.event(event) ?? event;
+          const safeEvents = redaction?.events(event, received) ?? [event];
+          const safeEvent = safeEvents.at(-1);
+          if (!safeEvent) continue;
           safePartial =
             safeEvent.type === "done"
               ? safeEvent.message
@@ -621,9 +623,7 @@ export function observedPiStream(
             }
           }
           if (safeEvent.type === "error") hooks?.onProviderError?.(safeEvent.error);
-          const tail = redaction?.trailingDelta(safeEvent);
-          if (tail) stream.push(tail);
-          stream.push(safeEvent);
+          for (const output of safeEvents) stream.push(output);
         }
         const final = safeTerminal ?? (await upstream.result());
         stream.end(safeTerminal ?? redaction?.message(final) ?? final);
@@ -659,6 +659,10 @@ export function observedPiStream(
             terminalError = accountingError;
           }
         }
+        const tail = redaction && partialMessage ? redaction.finish(partialMessage, true) : [];
+        if (tail.length && redaction && partialMessage)
+          safePartial = redaction.partial(partialMessage);
+        for (const output of tail) stream.push(output);
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.
         const message = {
           role: "assistant" as const,
