@@ -543,14 +543,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
-                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-up${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign up</Trans>
                       </Link>
                     </>
                   ) : mode === "up" ? (
                     <>
                       <Trans>Already have an account?</Trans>{" "}
-                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-in${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign in</Trans>
                       </Link>
                     </>

@@ -23,7 +23,7 @@ import {
 } from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
-import { EvalServices } from "./services.js";
+import { EvalServices, evalWeb } from "./services.js";
 import { TOOL_CHOICE_CASES } from "./suites/tool-choice-cases.js";
 
 const context: AdapterContext = {
@@ -77,6 +77,21 @@ const graded = (scenario: EvalCase, e: Evidence, judge?: EvalJudge) =>
 const judgeDown: EvalJudge = async () => {
   throw new Error("judge down");
 };
+
+describe("eval web", () => {
+  it("serves this checkout's docs at the docs URLs the Rakazo skill links", async () => {
+    const web = evalWeb();
+    const page = await web.fetch(
+      { url: "https://rakazo.com/docs/account.md" },
+      {} as AdapterContext,
+    );
+    expect(page.text).toContain("Settings → Billing");
+    const home = await web.fetch({ url: "https://rakazo.com/docs.md" }, {} as AdapterContext);
+    expect(home.text).not.toBe(web.fetchResult.text);
+    const other = await web.fetch({ url: "https://example.test/x" }, {} as AdapterContext);
+    expect(other.text).toBe(web.fetchResult.text);
+  });
+});
 
 describe("stateful eval services", () => {
   it("rejects unknown records without advancing state", async () => {

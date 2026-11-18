@@ -14,6 +14,7 @@ import type {
   RealtimeFanout,
   SandboxProvider,
   TransactionalEmailProvider,
+  WebProvider,
 } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
@@ -31,6 +32,8 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredMeetingProvider,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -39,6 +42,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -56,6 +60,7 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingService,
   machineCleanupRecords,
   messagingAddresses,
   messagingPlatformsFromEnv,
@@ -84,6 +89,7 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
   buildTrustedOrigins,
@@ -143,7 +149,6 @@ import { mountAccountExportRoute } from "./account/account-export.js";
 import { mountAccountImportRoute } from "./account/account-import.js";
 import { settleDirectoryChange } from "./account/account-status.js";
 import { mountAuditExportRoute } from "./account/audit-export.js";
-import { mountLocalComputerHost } from "./auth/local-settings.js";
 import { createAuthResponseAudit } from "./auth/security-audit.js";
 import { endUserDeviceSession, mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
@@ -151,11 +156,13 @@ import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
+import { mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { configuredEmailProvider } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
+import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
 import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
@@ -177,9 +184,11 @@ import { mountScriptAssets } from "./http/script-assets.js";
 import { SYSTEM_CONTEXT_PATHS } from "./http/system-context-routes.js";
 import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
 import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
+import { createMeetingAnswers } from "./meetings/meeting-answers.js";
+import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
 import { settleWithTimeout } from "./messaging/team-chat-startup.js";
-import { mountWebhookHttpRoutes } from "./messaging/webhook.js";
+import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter } from "./router.js";
 import {
   DATABASE_RETRY_AFTER_SECONDS,
@@ -192,6 +201,7 @@ import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
 import { createExperiments } from "./telemetry/experiments.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 /**
  * Native clients always send the app scheme, including in Expo Go, so no
@@ -264,6 +274,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   userDevices?: UserDeviceGateway;
   /** Test-only present moment the agent is told. */
   now?: () => Date;
+  /** Test-only web search and fetch. */
+  web?: WebProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -286,6 +298,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    web,
     now,
     ...envOverrides
   } = overrides;
@@ -403,8 +416,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets }, (ended) =>
+    recordSignInEnded(analytics, ended),
+  );
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
@@ -436,6 +451,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // the local emulator lives in this process, so the emulator counts only in single-process mode.
+  const lifecycleEmailsEnabled =
+    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -468,6 +487,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
+        scheduleLifecycleEmail: lifecycleEmailsEnabled
+          ? lifecycleEmailScheduler({
+              prisma,
+              jobs,
+              webOrigin: env.webOrigin,
+              origin: env.authUrl,
+              secret: env.authSecret,
+            })
+          : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -584,6 +612,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           secrets,
           events,
           billing,
+          meetings,
         },
         userId,
       );
@@ -656,12 +685,23 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  const meetingProvider = await configuredMeetingProvider();
+  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
+  const meetings = new MeetingService({
+    prisma,
+    jobs,
+    events,
+    provider: meetingProvider,
+    spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
+    buildJoin: meetingMediaConfig?.buildJoin,
+  });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
+      meetingWork: meetingProvider && meetings.work.bind(meetings),
       contextStrategy,
       prisma,
       runtime: baseRuntime,
@@ -678,6 +718,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       onTicketChange: ticketChanges,
       email: botEmail,
+      // Single-process mode answers the job here; otherwise the worker does.
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)
@@ -692,6 +737,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
+      web,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
@@ -706,6 +752,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ? createRunReconciler(
         {
           prisma,
+          secretStore: secrets,
           jobs,
           events,
           notifications,
@@ -765,7 +812,32 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
 
+  // Meeting requests use a runtime with no persistent session recording.
+  const meetingRuntime = new PiAgentRuntime();
+  const meetingMedia =
+    meetingMediaConfig &&
+    meetingProvider &&
+    (await import("./meetings/media/app-meeting-media.js")).appMeetingMedia({
+      prisma,
+      secrets,
+      env,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      config: meetingMediaConfig,
+      billingEnabled: modelCreditsEnabled,
+      providerId: meetingProvider.describe().id,
+      enabled: (spaceId) => meetings.enabled(spaceId),
+    });
+
   const router = createRouter({
+    meetings,
+    meetingAnswers: createMeetingAnswers({
+      prisma,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
+    }),
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined
@@ -989,7 +1061,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             devices: deviceSessions,
             events,
             afterDeparture: (actor, departure) =>
-              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+              afterSpaceDeparture({ prisma, sandbox, jobs, events, meetings }, actor, departure),
           },
           change,
         ).catch((error) => {
@@ -1130,6 +1202,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     sessionActor,
   );
+  if (meetingProvider) mountMeetingWebhook(app, meetings);
+  meetingMedia?.mount(app);
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {

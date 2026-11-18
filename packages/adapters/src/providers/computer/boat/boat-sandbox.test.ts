@@ -5,6 +5,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
@@ -21,14 +22,14 @@ import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
 import { computerSnapshotName } from "../../../computers/computer-base-snapshot.js";
-import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
-import { PREPARE_LINUX_DESKTOP } from "../../../computers/screens/linux-desktop.js";
-import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandboxes/sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
+import { PREPARE_LINUX_DESKTOP } from "../../../computers/screens/linux-desktop.js";
 import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
 import {
@@ -76,6 +77,69 @@ async function boat() {
   const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
   return { api, provider, computer };
 }
+
+describe("stopped workspace files", () => {
+  it("reads the stopped disk without starting the sandbox", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+
+    expect(
+      await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).toEqual(bytes);
+    expect(
+      await provider.readStoppedFile(computer, "missing.txt", context, { maxBytes: 100 }),
+    ).toBeUndefined();
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 4 }),
+    ).rejects.toBeInstanceOf(SandboxFileTooLargeError);
+    expect(resume).not.toHaveBeenCalled();
+    expect(api.state(computer.id)).toBe("archived");
+  });
+
+  it("falls back for an incomplete snapshot or a rejected snapshot request", async () => {
+    const getLatest = vi.spyOn(FakeBoatApi.prototype, "getLatestSandboxSnapshot");
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    await provider.stop(computer, context);
+    const latest = await api.getLatestSandboxSnapshot({ sandboxId: computer.id });
+    Object.assign(latest.snapshot!, { status: "failed" });
+    getLatest.mockResolvedValueOnce(latest);
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
+
+    download.mockRejectedValueOnce(boatError(422, "unprocessable", "Snapshot cannot be read"));
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).toHaveBeenCalledOnce();
+  });
+
+  it("ignores earlier snapshots after a forced stop or a newer Rakazo checkpoint", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+    vi.setSystemTime(Date.now() + 1);
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, {
+        maxBytes: 100,
+        savedAt: new Date(),
+      }),
+    ).resolves.toBeUndefined();
+    await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
+  });
+});
 
 /** The script of every command the adapter sent, without the timeout wrapper. */
 function scripts(command: { mock: { calls: [unknown, ...unknown[]][] } }): string[] {

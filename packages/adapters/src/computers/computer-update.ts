@@ -13,13 +13,13 @@ import { ACTIVE_RUN_STATUSES, computerUsingRuns } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { draftRecordingsOfLeaseInTransaction, spaceTakesWork } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { announceUnsavedHome, scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   ComputerSpaceDeletingError,
   replaceComputer,
 } from "./computer-lifecycle.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import { endTeachingWithLease, revokeScreenControl } from "./screens/computer-control.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
@@ -64,7 +64,7 @@ export async function queueComputerUpdate(
   botId: string,
   action: "update" | "recover" = "update",
 ) {
-  const busy = (reason: string, details: Record<string, unknown> = {}) => {
+  const busy = (reason: string, details: Record<string, unknown> = {}, message?: string) => {
     getLogger().warn("computer.maintenance_refused", {
       "computer.id": computerId,
       "bot.id": botId,
@@ -72,7 +72,7 @@ export async function queueComputerUpdate(
       reason,
       ...details,
     });
-    return new ComputerBusyError();
+    return new ComputerBusyError(message);
   };
   const prepared = await deps.prisma.$transaction(async (tx) => {
     // Mode switches lock this same row before marking a bot as switching.
@@ -88,6 +88,13 @@ export async function queueComputerUpdate(
     };
     if (action === "update" && !sandboxKindCapabilities(computer.kind).inPlaceUpdate)
       throw new Error("Computer update is not available on this device");
+    if (action === "recover" && computer.state === "suspending") {
+      throw busy(
+        "suspending",
+        observed,
+        "The computer is still shutting down. Try again after it stops.",
+      );
+    }
     const idleTakeover = computer.controlHolder === "user" && computer.controlBotId === botId;
     // Holder "none" plus a lease means a provider revoke failed and control may remain.
     if (computer.controlLeaseId && !idleTakeover) throw busy("screen_control", observed);

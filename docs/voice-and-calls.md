@@ -52,3 +52,7 @@ missed call shows **Call back** in the chat.
 The bot's profile also offers a voice provider, voice, and sample. **Device voice** remains a
 separate, local-only choice for this phone; choosing it keeps ordinary speech on-device.
 On Android, a call keeps going with the screen off.
+
+## Join a meeting
+
+Open **Meetings** in a bot chat to send the bot to a Zoom or Google Meet call and get a speaker-labeled transcript. See [Meeting bots](./self-host-meetings.md) for server setup.

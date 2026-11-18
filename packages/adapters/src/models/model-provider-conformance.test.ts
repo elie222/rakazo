@@ -1,7 +1,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { CLAUDE_CODE_PROVIDER_ID } from "../cli-models/claude-code/provider-id.js";
+import { CLAUDE_CODE_PROVIDER_ID } from "../providers/cli-model/claude-code/provider-id.js";
 import {
   catalogModelServesAgents,
   isRecommendedCatalogModel,

@@ -26,6 +26,7 @@ type StoredChoice = {
   modelId: string;
   thinkingLevel: string | null;
   credentialId: string | null;
+  creditOfferingId?: string | null;
 };
 type RoleOwner = { userId: string; spaceId?: string };
 /** The columns both copies share; the Space's rows are also keyed by its id. */
@@ -45,6 +46,7 @@ const storedChoice = {
   modelId: true,
   thinkingLevel: true,
   credentialId: true,
+  creditOfferingId: true,
 } as const;
 
 function roleChoice(row: StoredChoice): ModelRoleChoice {
@@ -53,6 +55,7 @@ function roleChoice(row: StoredChoice): ModelRoleChoice {
     provider: row.provider,
     modelId: row.modelId,
     ...(thinkingLevel.success ? { thinkingLevel: thinkingLevel.data } : {}),
+    ...(row.creditOfferingId ? { creditOfferingId: row.creditOfferingId } : {}),
     ...(row.credentialId ? { credentialId: row.credentialId } : {}),
   };
 }
@@ -188,10 +191,15 @@ export async function writeModelRole(
     return owners.length === 1 ? owners[0]!.credentialId : undefined;
   };
   const withThinking = (choice: ModelRoleChoice): ModelRoleChoice => {
-    const credentialId =
-      choice.credentialId !== undefined ? choice.credentialId : savedConnection(choice);
+    const credentialId = choice.creditOfferingId
+      ? undefined
+      : choice.credentialId !== undefined
+        ? choice.credentialId
+        : savedConnection(choice);
+    const creditOfferingId = choice.creditOfferingId;
     return {
       ...choice,
+      ...(creditOfferingId ? { creditOfferingId } : {}),
       provider: canonicalPiProviderId(choice.provider),
       ...(credentialId ? { credentialId } : {}),
       thinkingLevel:
@@ -221,6 +229,7 @@ export async function writeModelRole(
       modelId: row.modelId,
       thinkingLevel: row.thinkingLevel ?? null,
       credentialId: row.credentialId ?? null,
+      creditOfferingId: row.creditOfferingId ?? null,
     })),
   });
   return getModelRole(tx, target, role);

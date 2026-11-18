@@ -4,18 +4,39 @@ import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   autoReviewTimeoutMs,
   isAutoReviewCheckerConfigured,
+  resolveAutoReviewChecker,
   resolveAutoReviewProviderKind,
 } from "../../approvals/auto-review.js";
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
+import { CheckerConnectionUnavailableError } from "../../approvals/auto-review-failures.js";
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
-import { operatorReviewObserver } from "../../decisions/operator-review-usage.js";
+import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
 import {
   findConnectedModelCredential,
   hasHostedModelCredits,
 } from "../../models/model-selection.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
+
+/**
+ * The deployment's operator-funded reviewer, when hosted credits include one. It needs no
+ * connection or credits of the member's, so it can still decide when their own choice cannot.
+ */
+export async function includedAutoReviewChecker(
+  deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
+): Promise<AutoReviewChecker | null> {
+  if (!(await modelCreditBillingEnabled(deps))) return null;
+  const checker = resolveAutoReviewChecker(process.env, true);
+  if (
+    !checker ||
+    !decisionModel(checker.provider, checker.model) ||
+    !isAutoReviewCheckerConfigured({ checker })
+  )
+    return null;
+  return { ...checker, included: true };
+}
+
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
@@ -30,7 +51,7 @@ export async function autoReviewCheckerProvider(
   const { runId, spaceId, userId, botId, threadId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
-  const deploymentChoice = !memberChecker && !checker.credentialId;
+  const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
   const kind =
     memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
       ? "llm"
@@ -47,7 +68,7 @@ export async function autoReviewCheckerProvider(
     Boolean(decisionModel(checker.provider, checker.model)) &&
     isAutoReviewCheckerConfigured({ checker });
   const reviewCredential =
-    included || kind === "jev" || kind === "scripted"
+    checker.creditOfferingId || included || kind === "jev" || kind === "scripted"
       ? null
       : await findConnectedModelCredential(
           deps.prisma,
@@ -89,9 +110,10 @@ export async function autoReviewCheckerProvider(
   if (
     (memberChecker || checker.credentialId) &&
     !reviewCredential &&
+    !checker.creditOfferingId &&
     !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
   ) {
-    throw new Error("Selected checker connection is unavailable");
+    throw new CheckerConnectionUnavailableError();
   }
   const decision = decisionModel(checker.provider, checker.model);
   const deploymentKey =
@@ -100,13 +122,18 @@ export async function autoReviewCheckerProvider(
   const judgeKey = deploymentKey
     ? null
     : await resolveModelKey(
-        operatorFunded ? { ...deps, billingEnabled: false } : deps,
+        deps,
         userId,
         spaceId,
         reviewCredential,
         checker.provider,
         checker.model,
         registerSecrets,
+        {
+          creditOfferingId: checker.creditOfferingId,
+          requireStoredSecret: Boolean(checker.credentialId),
+          operatorFunded,
+        },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
   if (decision)
@@ -119,7 +146,7 @@ export async function autoReviewCheckerProvider(
       providerId: checker.provider,
       model: checker.model,
     });
-  if (!judgeKey) throw new Error("Selected checker connection is unavailable");
+  if (!judgeKey) throw new CheckerConnectionUnavailableError();
   return createAutoReviewProvider("llm", {
     llm: {
       onUsage,

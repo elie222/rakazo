@@ -6,8 +6,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
 const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
-vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models }) }));
+const analytics = vi.hoisted(() => ({ modelSignInStep: vi.fn() }));
+vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models, analytics }) }));
 vi.mock("../platform/desktop", () => ({
+  analyticsSurface: () => "web",
   desktopBridge: () => undefined,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
@@ -38,6 +40,7 @@ beforeEach(() => {
     expiresInSeconds: 300,
   });
   models.cancelOAuth.mockResolvedValue(undefined);
+  analytics.modelSignInStep.mockResolvedValue({ ok: true });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -73,6 +76,10 @@ it("reports an opened tab without treating noopener's null result as a block", a
   expect(latest.popupBlocked).toBe(false);
   expect(navigate).toHaveBeenCalledOnce();
   expect(onError).not.toHaveBeenCalled();
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web" });
+  expect(analytics.modelSignInStep.mock.calls).toEqual([
+    [{ loginId: "login", step: "page_opened" }],
+  ]);
 });
 
 it("reports a blocked tab and keeps the manual sign-in details", async () => {
@@ -83,4 +90,16 @@ it("reports a blocked tab and keeps the manual sign-in details", async () => {
   expect(latest.popupBlocked).toBe(true);
   expect(latest.oauth?.verificationUri).toBe(verificationUri);
   expect(onError).not.toHaveBeenCalled();
+  expect(analytics.modelSignInStep).not.toHaveBeenCalled();
+
+  // The person opens the link and copies the code themselves; each is told once.
+  act(() => {
+    latest.reportSignInStep("page_opened");
+    latest.reportSignInStep("code_copied");
+    latest.reportSignInStep("code_copied");
+  });
+  expect(analytics.modelSignInStep.mock.calls).toEqual([
+    [{ loginId: "login", step: "page_opened" }],
+    [{ loginId: "login", step: "code_copied" }],
+  ]);
 });

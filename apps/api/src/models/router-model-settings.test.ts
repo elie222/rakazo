@@ -1,8 +1,9 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { listPiCatalog } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { MAX_MODEL_SETTINGS_PER_CONNECTION, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -18,6 +19,8 @@ describe("model setup gate", () => {
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
+    savedDeploymentModel?: boolean;
+    funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
       user: {
@@ -42,12 +45,15 @@ describe("model setup gate", () => {
           .mockResolvedValue(
             options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
-              : null,
+              : options.savedDeploymentModel
+                ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
+                : null,
           ),
       },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      billing: options.funding && { status: vi.fn().mockResolvedValue(options.funding) },
       env: {
         agentRuntime: options.agentRuntime,
         maxUploadSizeBytes: options.maxUploadSizeBytes,
@@ -68,7 +74,7 @@ describe("model setup gate", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { actor, handler: new RPCHandler(createRouter(deps)) };
+    return { actor, handler: appHandler(deps) };
   }
 
   async function call(handler: RouterHandler, actor: Actor, path: string, body: unknown) {
@@ -152,6 +158,43 @@ describe("model setup gate", () => {
       json: expect.objectContaining({ needsModel: false }),
     });
   });
+
+  it("keeps an unfunded deployment model out of Settings and offers to connect one from chat", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
+    });
+    const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+    expect(role.status).toBe(200);
+    await expect(role.json()).resolves.toMatchObject({ json: { deploymentPrimary: null } });
+
+    const send = await call(handler, actor, "threads/send", { botId: "bot-1", text: "hello" });
+    expect(send.status).toBe(400);
+    await expect(send.json()).resolves.toMatchObject({
+      json: { message: MODEL_REQUIRED_SEND_ERROR },
+    });
+  });
+
+  it.each([false, true])(
+    "shows a saved deployment model only while the deployment can run it (%s)",
+    async (deploymentModelConfigured) => {
+      const { actor, handler } = modelGateDeps({
+        agentRuntime: "pi",
+        deploymentModelConfigured,
+        savedDeploymentModel: true,
+      });
+      const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+      expect(role.status).toBe(200);
+      await expect(role.json()).resolves.toMatchObject({
+        json: {
+          deploymentPrimary: deploymentModelConfigured
+            ? { provider: "openrouter", modelId: "saved-model" }
+            : null,
+        },
+      });
+    },
+  );
 
   it("names the provider the deployment default runs on with host credentials", async () => {
     const hostCredentials = modelGateDeps({

@@ -14,6 +14,7 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
+  RetryJobLaterError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -21,6 +22,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { expireApprovalCard } from "../../approvals/approval-expiry.js";
 import { expireTaughtSkillTeaching } from "../../bots/teaching-session.js";
 import { settleCallRequest } from "../../calls/call-request.js";
 import type {
@@ -39,8 +41,8 @@ import {
   expireComputerControl,
   scheduleComputerControlExpiry,
 } from "../../computers/screens/computer-control.js";
-import { retryConnectionCleanup } from "../../connectors/connection-cleanup.js";
-import type { ConnectorRegistry } from "../../connectors/connector-registry.js";
+import { retryConnectionCleanup } from "../../integrations/connection-cleanup.js";
+import type { ConnectorRegistry } from "../../integrations/connector-registry.js";
 import { pollMediaVideo } from "../../media/media-video-poll.js";
 import {
   abandonRetainedConversation,
@@ -115,6 +117,9 @@ export function createBackgroundJobHandlers(deps: {
   notifications?: ExpoPushProvider;
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
+  /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
+  meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
+  lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
   const delivery = deps.messagingDelivery;
   const cleanupDeps = { prisma: deps.prisma, secrets: deps.secretStore };
@@ -259,6 +264,9 @@ export function createBackgroundJobHandlers(deps: {
     "run.forget-secrets": asOwner(run, async ({ runId }) => {
       await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
+    "approval.expire": asOwner(run, async (payload) => {
+      await expireApprovalCard(deps, payload);
+    }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
     }),
@@ -274,6 +282,10 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
     }),
+    "meeting.work": async (payload) => {
+      if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
+      await deps.meetingWork(payload);
+    },
     "purchase.poll": asOwner(purchase, async (payload) => {
       await pollPurchase(
         {
@@ -291,6 +303,10 @@ export function createBackgroundJobHandlers(deps: {
     // A receipt belongs to a device's push token, not to a Space.
     "push.receipt": async (payload) => {
       await runAsSystem("check a push receipt", () => deps.notifications?.checkReceipt(payload));
+    },
+    // The mail belongs to an account, not to a Space.
+    "email.lifecycle": async (payload) => {
+      await runAsSystem("send a lifecycle email", async () => deps.lifecycleEmail?.(payload));
     },
     "history.compact": asOwner(thread, async (payload) => {
       // Retrieval policies use stored context without paid message-count compaction.

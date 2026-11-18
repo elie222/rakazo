@@ -7,9 +7,9 @@ import { createStreamingRedactor, redactSecrets } from "@rakazo/core";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { redactAgentCommandResult } from "../computers/sandbox/agent-environment.js";
 import { DesktopSandboxProvider } from "../providers/computer/desktop/desktop-sandbox.js";
 import { computerTools } from "../runs/tools/run-tools-computer.js";
-import { redactAgentCommandResult } from "../sandboxes/agent-environment.js";
 import {
   forgetBotSecret,
   listBotSecrets,

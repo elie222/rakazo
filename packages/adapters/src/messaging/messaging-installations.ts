@@ -9,6 +9,7 @@ import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, isUniqueViolation, runAsSystem } from "@rakazo/db";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import {
   cleanUpUnsavedSecret,
@@ -16,7 +17,6 @@ import {
   recordSecretCleanup,
   savedSecretIn,
 } from "../secrets/secret-cleanup.js";
-import { credentialDigest } from "../shared/credential-digest.js";
 import { installationSenderAddress } from "./installed-messaging-surface.js";
 
 /** OAuth state is short-lived, single-use and tied to a user, space and bot. */

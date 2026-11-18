@@ -16,6 +16,20 @@ test("gallery keeps a paginated call closed and its follow-up visible", async ({
   await captureScreenshot(page, testInfo, "paginated-call-marker");
 });
 
+test("gallery shows a tool's question as plain text with its form", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=approvals&theme=light");
+  const [open, declined] = await page.getByTestId("tool-question-card").all();
+  await expect(open!.getByText("Run **send_email** to sam@example.test?")).toBeVisible();
+  await expect(open!.getByRole("checkbox", { name: "Approve this call" })).toBeVisible();
+  await expect(open!.getByRole("textbox", { name: "Reason" })).toBeVisible();
+  await expect(open!.getByText("This call")).toBeVisible();
+  await expect(open!.getByRole("button", { name: "Accept" })).toBeEnabled();
+  await expect(open!.getByRole("button", { name: "Decline" })).toBeEnabled();
+  await expect(declined!.getByText("Declined", { exact: true })).toBeVisible();
+  await open!.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "tool-question-card");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

@@ -3,6 +3,7 @@ import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
   effectiveMemoryScope,
+  expireRunToolQuestions,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   readMessageBlocks,
@@ -16,12 +17,13 @@ import {
   isLostPinnedModel,
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
 } from "../../computers/computer-model-settings.js";
+import { formatAgentEnvironmentInstruction } from "../../computers/sandbox/agent-environment.prompt.js";
 import {
   connectedContext,
-  loadLivePluginSlugs,
+  loadLivePlugins,
   persistLivePluginConnections,
   selectRunConnections,
-} from "../../connectors/connection-context.js";
+} from "../../integrations/connection-context.js";
 import { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { resolveMemberMainModel } from "../../models/model-roles.js";
 import { findConnectedModelCredential, runModelChoice } from "../../models/model-selection.js";
@@ -32,7 +34,6 @@ import {
 } from "../../providers/integration/composio/composio-connector.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
-import { formatAgentEnvironmentInstruction } from "../../sandboxes/agent-environment.prompt.js";
 import {
   loadCommandVariables,
   loadLoginPasswordRedactions,
@@ -231,6 +232,7 @@ export async function loadRunRecords(
         providerRef: true,
         displayName: true,
         status: true,
+        updatedAt: true,
       },
     }),
     pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
@@ -360,11 +362,12 @@ export async function connectRun(
   );
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
-    const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+    const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);
     if (listing.ok) {
       liveSlugs = listing.slugs;
-      await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(
-        () => undefined,
+      await bestEffort(
+        "save live plugin connections",
+        persistLivePluginConnections(deps.prisma, run, composioRows, listing),
       );
     }
   }
@@ -398,10 +401,20 @@ export async function connectRun(
     runId,
     payload: {
       trigger: run.trigger,
+      // Whose cards a viewer may answer while the run runs, before the next snapshot.
+      userId: run.userId,
       routineId: run.routineId,
       ...(run.routine ? { routineName: run.routine.name } : {}),
     },
   });
+
+  // A question a tool asked in an earlier attempt lost its call with that attempt's process.
+  await bestEffort(
+    "tool questions",
+    expireRunToolQuestions(deps.prisma, { id: runId, spaceId: run.spaceId }, (threadId, seq) =>
+      deps.events.notify(threadId, seq),
+    ),
+  );
 
   const discoveredPromise = deps.connector
     ? deps.connector.discoverTools(context)

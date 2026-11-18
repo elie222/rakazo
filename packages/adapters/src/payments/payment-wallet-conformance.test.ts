@@ -7,7 +7,7 @@ import type {
 import { PaymentWalletDisconnected, PaymentWalletRequestRejected } from "@rakazo/adapter-kit";
 import { Challenge, Credential } from "mppx";
 import { describe, expect, it, vi } from "vitest";
-import { LinkWalletProvider } from "./link-wallet.js";
+import { LinkWalletProvider } from "../providers/payment-wallet/link/link-wallet.js";
 import { EmulatorPaymentWalletProvider } from "./payment-wallet-emulator.js";
 
 const ctx: AdapterContext = {

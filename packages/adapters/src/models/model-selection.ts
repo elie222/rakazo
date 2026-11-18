@@ -17,6 +17,8 @@ import {
   modelCredentialProviderFilter,
   organizationForMember,
 } from "@rakazo/db";
+import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
+import { availableModelCreditOfferings } from "../model-credits/routing.js";
 import type { ModelCredentialAuthKind } from "../runtime/pi/models/pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -161,8 +163,17 @@ export class UnavailableModelForAuthError extends Error {
   }
 }
 
+/** A saved model connection's secret was removed after it was chosen. */
+export class ModelConnectionGoneError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelConnectionGoneError";
+  }
+}
+
 export type SpaceCatalogAuth = {
   managedProvider?: string;
+  managedProviders?: string[];
   byProvider: Partial<Record<string, ModelCredentialAuthKind>>;
   /** Model-specific kinds. `"disconnected"` blocks the provider fallback. */
   byModel: Partial<
@@ -185,7 +196,8 @@ export function runsOnHostedCredits(
   entry: { provider: string; id: string },
 ): boolean {
   return (
-    entry.provider === auth.managedProvider &&
+    (entry.provider === auth.managedProvider ||
+      auth.managedProviders?.includes(entry.provider) === true) &&
     !auth.secretIdByModel[entry.provider]?.[entry.id] &&
     !auth.secretIdByProvider[entry.provider]
   );
@@ -211,7 +223,19 @@ export async function modelCredentialAuthKindsForSpace(
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
-  const hosted = hostedProvider && (await hasHostedModelCredits(prisma, scope, hostedProvider));
+  const providers =
+    modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
+    (hostedProvider ? [hostedProvider] : []);
+  const managedProviders = hostedProvider
+    ? (
+        await Promise.all(
+          [...new Set(providers)].map(async (provider) =>
+            (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
+          ),
+        )
+      ).filter((provider): provider is string => provider !== null)
+    : [];
+  const hosted = hostedProvider && managedProviders.includes(hostedProvider);
   const [credentials, preferences] = await Promise.all([
     prisma.userModelCredential.findMany({
       where: { userId: scope.userId },
@@ -265,8 +289,7 @@ export async function modelCredentialAuthKindsForSpace(
     ),
   ];
   for (const entry of slots) {
-    if (!connectedProviders.has(entry.provider) || (hosted && entry.provider === hostedProvider))
-      continue;
+    if (!connectedProviders.has(entry.provider)) continue;
     const choice = chooseModelCredential({
       provider: entry.provider,
       modelId: entry.id,
@@ -291,13 +314,14 @@ export async function modelCredentialAuthKindsForSpace(
   }
   const empty: SpaceCatalogAuth = {
     managedProvider: hosted ? hostedProvider : undefined,
+    ...(modelCreditOfferings() ? { managedProviders } : {}),
     byProvider: {},
     byModel: {},
     secretIdByProvider: {},
     secretIdByModel: {},
     modelSettingsBySecretId: {},
   };
-  if (hosted && hostedProvider) empty.byProvider[hostedProvider] = "api_key";
+  for (const provider of managedProviders) empty.byProvider[provider] = "api_key";
   if (selections.length === 0) return empty;
 
   const secrets = await prisma.secret.findMany({
@@ -770,13 +794,17 @@ export async function validateBotModelChange(
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
     const hosted =
-      deps.hostedProvider === provider &&
-      (await hasHostedModelCredits(deps.prisma, scope, provider));
+      Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted
       ? null
       : await findConnectedModelCredential(deps.prisma, deps.secretStore, scope, provider, model);
     if (!credential) {
-      if (hosted && isCatalogModelChoice(provider, model)) {
+      if (
+        hosted &&
+        (modelCreditOfferings()
+          ? approvedModelCreditOffering(provider, model)
+          : isCatalogModelChoice(provider, model))
+      ) {
         if (!creditsCanPriceModel({ provider, id: model }))
           return { ok: false, error: MODEL_UNPRICED_FOR_CREDITS_ERROR };
         const allowed = listPiCatalog().find(
@@ -944,11 +972,14 @@ export async function validateConnectedModelChoice(
   modelId: string,
   resolution: ConnectedModelResolution = {},
 ) {
-  if (
-    resolution.hostedProvider === provider &&
-    (await hasHostedModelCredits(prisma, actor, provider))
-  ) {
-    return isCatalogModelChoice(provider, modelId) ? undefined : "Unknown model for that provider";
+  if (resolution.hostedProvider && (await hasHostedModelCredits(prisma, actor, provider))) {
+    return (
+      modelCreditOfferings()
+        ? approvedModelCreditOffering(provider, modelId)
+        : isCatalogModelChoice(provider, modelId)
+    )
+      ? undefined
+      : "Unknown model for that provider";
   }
   const credential = await findConnectedModelCredential(
     prisma,
@@ -1112,9 +1143,16 @@ export async function hasHostedModelCredits(
   prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
   provider: string,
+  allowPersonal = false,
 ): Promise<boolean> {
   const deployment = resolveDeploymentModel();
-  if (!deployment.configured || deployment.provider !== provider) return false;
+  if (
+    !deployment.configured ||
+    (modelCreditOfferings()
+      ? !modelCreditOfferings()!.offerings.some((entry) => entry.provider === provider)
+      : deployment.provider !== provider)
+  )
+    return false;
   const space = await prisma.space.findFirst({
     where: {
       id: scope.spaceId,
@@ -1135,8 +1173,26 @@ export async function hasHostedModelCredits(
         })
       : null;
   if (credits?.mode !== "credits" && (!credits || credits.balanceMicros <= 0n)) return false;
+  if (allowPersonal) return true;
   return !(await prisma.userModelCredential.findFirst({
     where: { userId: scope.userId, provider: modelCredentialProviderFilter(provider) },
     select: { id: true },
   }));
+}
+
+/** A saved credit route must still name the exact approved offering, even if BYOK exists. */
+export async function validateCreditOfferingChoice(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  scope: { userId: string; spaceId: string },
+  provider: string,
+  modelId: string,
+  offeringId: string,
+  reads?: CatalogReads,
+) {
+  return (
+    approvedModelCreditOffering(provider, modelId)?.id === offeringId &&
+    (await hasHostedModelCredits(prisma, scope, provider, true)) &&
+    (await availableModelCreditOfferings(prisma, secrets, { offeringId, reads })).length > 0
+  );
 }

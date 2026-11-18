@@ -9,6 +9,7 @@ import {
   withConnectionName,
 } from "./model-backups.js";
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./model-connections.js";
+import { ModelRoleSettingsSchema } from "./model-roles.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -400,4 +401,46 @@ describe("withConnectionName", () => {
   it("stays fast on a long name full of brackets", () => {
     expectLinearTime(() => withConnectionName("M", `a (${"a (".repeat(100_000)}`));
   });
+});
+
+it("offers credit and personal funding for the same model as separate connection rows", () => {
+  const entry = {
+    provider: "provider-example",
+    id: "model-example",
+    label: "Example",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  const options = connectedBackupOptions(
+    [entry],
+    [
+      {
+        id: "personal-example",
+        provider: entry.provider,
+        label: "Personal",
+        hasKey: true,
+        isDefault: true,
+      },
+    ],
+  );
+  expect(options).toHaveLength(2);
+  expect(options).toContainEqual(
+    expect.objectContaining({
+      creditOfferingId: "offering-example",
+      connectionName: "Rakazo credits",
+    }),
+  );
+  expect(options).toContainEqual(expect.objectContaining({ credentialId: "personal-example" }));
+  expect(new Set(options.map(modelRoleChoiceKey)).size).toBe(2);
+});
+
+it("accepts distinct unpinned and credit-funded backups but rejects duplicate funding", () => {
+  const choice = { provider: "provider-example", modelId: "model-example" };
+  const credit = { ...choice, creditOfferingId: "offering-example" };
+  expect(
+    ModelRoleSettingsSchema.safeParse({ primary: null, backups: [choice, credit] }).success,
+  ).toBe(true);
+  expect(
+    ModelRoleSettingsSchema.safeParse({ primary: null, backups: [credit, credit] }).success,
+  ).toBe(false);
 });

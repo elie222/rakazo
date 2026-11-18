@@ -6,6 +6,7 @@ import { resetI18nForTests } from "../i18n/i18n";
 import type { SavedChatsScope } from "./saved-chats";
 import {
   clearSavedChats,
+  currentSavedChatsScope,
   loadSavedInbox,
   readSavedInbox,
   readSavedThread,
@@ -243,6 +244,20 @@ it("deletes the old cache format, including other scopes, before restoring saved
   expect(state.files.size).toBe(0);
   writeSavedThread(scope, "bot:bot-a", thread(1));
   expect([...state.files.keys()][0]).toContain("saved-chats-v2");
+});
+
+it("knows a Space's scope once read, while the session and selection still match", async () => {
+  state.verified = verified;
+  state.selection = "space-c";
+  expect(currentSavedChatsScope()).toBeNull();
+  const read = await savedChatsScope();
+
+  expect(currentSavedChatsScope()).toEqual(read);
+  state.selection = "space-d";
+  expect(currentSavedChatsScope()).toBeNull();
+  state.selection = "space-c";
+  state.current = false;
+  expect(currentSavedChatsScope()).toBeNull();
 });
 
 it("never reads what an earlier session of the same account left behind", async () => {

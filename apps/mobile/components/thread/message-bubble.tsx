@@ -46,6 +46,8 @@ import { ComputerCard } from "../cards/ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
+import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
+import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { AudioAttachment } from "../media/audio-attachment";
 import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
@@ -122,11 +124,6 @@ function MessageBubbleWithMentions({
         props.bots.find((bot) => bot.id === id)?.color ??
         props.members?.find((member) => member.botId === id)?.color
       }
-      avatarSetOf={(id) =>
-        props.bots.find((bot) => bot.id === id)?.avatarSet ??
-        props.members?.find((member) => member.botId === id)?.avatarSet
-      }
-      tokens={mobileTokens()}
       onOpenBot={props.onOpenBot}
     >
       <MessageBubbleBody
@@ -145,7 +142,12 @@ function MessageBubbleWithMentions({
 
 /** Blocks drawn as their own card between the message's text pieces. */
 function isOwnCardBlock(block: MessageBlock): boolean {
-  return isSpecialMessageBlock(block) || block.kind === "page" || block.kind === "app";
+  return (
+    isSpecialMessageBlock(block) ||
+    block.kind === "page" ||
+    block.kind === "app" ||
+    block.kind === "tool_question"
+  );
 }
 
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
@@ -165,6 +167,16 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     const first = blocks[0]!;
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "tool_question")
+      return (
+        <ToolQuestionCard
+          key={`question-${index}`}
+          block={first}
+          messageId={message.id}
+          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
+          canAnswer={props.canAnswer}
+        />
+      );
     if (first.kind === "app")
       return (
         <McpAppCard
@@ -429,12 +441,20 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
             borderRadius: 18,
-            backgroundColor: tokens.card,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
+            backgroundColor: askBlock.outgoingDraft ? undefined : tokens.card,
+            paddingHorizontal: askBlock.outgoingDraft ? 0 : 16,
+            paddingVertical: askBlock.outgoingDraft ? 0 : 14,
           }}
         >
-          {isUndoableChange(askBlock) ? (
+          {askBlock.outgoingDraft ? (
+            <OutgoingDraftCard
+              block={askBlock}
+              messageId={message.id}
+              runId={message.runId}
+              target={artifactTarget}
+              canAnswer={canAnswer}
+            />
+          ) : isUndoableChange(askBlock) ? (
             <ChangeUndo block={askBlock} />
           ) : (
             <>
@@ -497,15 +517,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     fontWeight: fontWeight.medium,
                   }}
                 >
-                  {askBlock.instructionUpdate
-                    ? askBlock.answer === "deny"
-                      ? t`Dismissed`
-                      : t`Allowed once`
-                    : formatApprovalAnswer(
-                        askBlock.answer,
-                        askBlock.actions,
-                        isApprovalAskBlock(askBlock),
-                      )}
+                  {askBlock.expired
+                    ? t`Expired`
+                    : askBlock.instructionUpdate
+                      ? askBlock.answer === "deny"
+                        ? t`Dismissed`
+                        : t`Allowed once`
+                      : formatApprovalAnswer(
+                          askBlock.answer,
+                          askBlock.actions,
+                          isApprovalAskBlock(askBlock),
+                        )}
                 </Text>
               ) : question && canAnswer ? null : canAnswer && onAnswer ? (
                 <AskActions

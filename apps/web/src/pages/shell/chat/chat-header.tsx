@@ -1,13 +1,15 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { Gift, Menu, Phone } from "lucide-react";
-import { useState } from "react";
+import { Gift, Menu, Phone, Video } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
+
+const MeetingsDialog = lazy(() => import("../meetings/meetings-dialog"));
 
 /** The floating header over the transcript: navigation, the chat's name, call and invite. */
 export function ChatHeader({
@@ -16,6 +18,7 @@ export function ChatHeader({
   activeGroup,
   activeSnapshot,
   phoneCallsEnabled,
+  meetingsEnabled,
   voiceReady,
   inCall,
   panelOpen,
@@ -28,6 +31,7 @@ export function ChatHeader({
   activeGroup: Group | undefined;
   activeSnapshot: ThreadSnapshot | null;
   phoneCallsEnabled: boolean;
+  meetingsEnabled?: boolean;
   /** The last known bot readiness; Call confirms its current status before starting. */
   voiceReady: boolean;
   inCall: boolean;
@@ -97,6 +101,9 @@ export function ChatHeader({
             </Button>
           </IconTooltip>
         ) : null}
+        {meetingsEnabled && !inGroup && active ? (
+          <MeetingsControl key={active.id} botId={active.id} />
+        ) : null}
         {referral && !inGroup && active ? (
           <IconTooltip label={t`Invite a friend`}>
             <Button
@@ -115,5 +122,30 @@ export function ChatHeader({
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
       ) : null}
     </div>
+  );
+}
+
+function MeetingsControl({ botId }: { botId: string }) {
+  const { t } = useLingui();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <IconTooltip label={t`Meetings`}>
+        <Button
+          variant="floating"
+          size="icon-lg"
+          aria-label={t`Meetings`}
+          onClick={() => setOpen(true)}
+          className="app-no-drag"
+        >
+          <Video strokeWidth={1.6} className="size-[17px]" />
+        </Button>
+      </IconTooltip>
+      {open ? (
+        <Suspense>
+          <MeetingsDialog botId={botId} onClose={() => setOpen(false)} />
+        </Suspense>
+      ) : null}
+    </>
   );
 }

@@ -22,6 +22,7 @@ model AiDataConsent {
 }
 
 model User {
+  meetingSessions MeetingSession[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
   id                          String                       @id
@@ -52,6 +53,10 @@ model User {
   /// Labs features this person turned on, by contracts' LabFeature id. Unknown ids are ignored.
   labs                        String[]                     @default([])
   marketingEmailOptOutAt      DateTime?
+  /// How many times this person began connecting a first model; numbers each try for measurement.
+  modelConnectStarts          Int                          @default(0)
+  /// The number of a try that chose credits and waits for the purchase that funds them.
+  pendingCreditsConnect       Int?
   /// When an organization this person owns first subscribed; uses up every trial kind.
   billingTrialUsedAt          DateTime?
   /// When an organization this person owns was given free own-key days; uses up only that
@@ -510,7 +515,7 @@ model BillingAccount {
   cancellationReason  String?
   cancellationComment String?
   subscribedAt        DateTime?
-  /// When a subscription was first seen active, so a trial that never paid is not a paid plan.
+  /// When a subscription payment first went through, so a trial that never paid is not a paid plan.
   paidAt              DateTime?
   syncedAt            DateTime?
   createdAt           DateTime     @default(now())
@@ -652,6 +657,7 @@ model Member {
 }
 
 model Space {
+  meetingSessions MeetingSession[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -987,6 +993,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
   spaceId           String
@@ -2199,6 +2206,8 @@ model McpOAuthSession {
   endpoint        String
   redirectUri     String
   oauthCiphertext String
+  /// The bot that gets the server once this sign-in finishes.
+  botId           String?
   createdAt       DateTime  @default(now())
 
   @@index([spaceId, userId, createdAt])
@@ -2223,6 +2232,9 @@ model ModelOAuthSession {
   result         Json?
   /// The process waiting on the provider renews this; a lapsed lease means it is gone.
   leaseExpiresAt DateTime?
+  /// Set while the sign-in is measured: the app it began in and which try it is.
+  surface        String?
+  connectNumber  Int?
   createdAt      DateTime  @default(now())
 
   @@index([userId, provider])
@@ -2702,6 +2714,7 @@ model SpaceModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  creditOfferingId String?
   credentialId  String?
   credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
@@ -2733,6 +2746,7 @@ model UserModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  creditOfferingId String?
   credentialId  String?
   credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
@@ -2910,4 +2924,36 @@ model SpeechCost {
   @@index([spaceId, createdAt], map: "speech_costs_space")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
+}
+
+/// A bot's attendance and transcript import, scoped to the member who requested it.
+model MeetingSession {
+  id           String    @id @default(cuid())
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  platform     String
+  status       String
+  meetingUrl   String?   @db.Text
+  activeKey    String?   @unique
+  externalId   String?
+  recordingId  String?
+  transcriptId String?
+  transcript   String?   @db.Text
+  error        String?
+  requestedAt  DateTime?
+  receivedAt   DateTime?
+  closedAt     DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([spaceId, userId, botId, createdAt])
+  @@index([spaceId, createdAt])
+  @@index([userId])
+  @@unique([provider, externalId])
+  @@map("meeting_sessions")
 }

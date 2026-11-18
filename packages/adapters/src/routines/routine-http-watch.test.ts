@@ -1,7 +1,7 @@
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "../computers/computer-lifecycle.js";
-import { egressRefused } from "../web/network-address.js";
+import { egressRefused } from "../network/network-address.js";
 import type { RoutineWatchDeps, RoutineWatchTarget } from "./routine-watch.js";
 import {
   checkRoutineWatch,

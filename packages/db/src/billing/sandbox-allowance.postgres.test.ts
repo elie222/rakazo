@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
-import { sandboxRunHours } from "./sandbox-allowance.js";
+import { sandboxRunHours, sandboxRunHoursByComputer } from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -81,5 +81,15 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       boat: 3,
       e2b: 4,
     });
+    const byComputer = await runAsTenant({ spaceId: spaceId, userId: "user" }, () =>
+      sandboxRunHoursByComputer(db, organizationId, since, now),
+    );
+    expect(byComputer).toEqual(
+      expect.arrayContaining([
+        { computerId: `a-${suffix}`, kind: "boat", hours: 3 },
+        { computerId: `b-${suffix}`, kind: "e2b", hours: 4 },
+      ]),
+    );
+    expect(byComputer).toHaveLength(2);
   });
 });

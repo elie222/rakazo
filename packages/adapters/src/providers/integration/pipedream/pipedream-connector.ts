@@ -8,21 +8,21 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { ResponseTooLargeError } from "@rakazo/core";
+import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
 import {
   resolveAccountToolCall,
   scopeConnectorTools,
-} from "../../../connectors/connector-accounts.js";
-import { collectPages, filterCatalog } from "../../../connectors/connector-catalog.js";
+} from "../../../integrations/connector-accounts.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../../../connectors/connector-safety.js";
+} from "../../../integrations/connector-safety.js";
 import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
 import { callRemoteMcpTool, listRemoteMcpTools } from "../../../mcp/remote-mcp.js";
-import { isVitestRuntime } from "../../../shared/test-runtime.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,

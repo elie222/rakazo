@@ -92,7 +92,6 @@ it.each([true, false])(
           removeSpace={async () => undefined}
           leftSpace={async () => undefined}
           refreshSpaces={async () => undefined}
-          openAgentImport={() => undefined}
           alive={{ current: true }}
           user={undefined}
           refetchSession={async () => undefined}

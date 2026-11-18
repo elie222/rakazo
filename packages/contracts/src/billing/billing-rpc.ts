@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { AnalyticsSurface } from "../account/analytics.js";
 import { Id } from "../ids.js";
 import { AccessGrantInputSchema, AccessGrantSchema } from "./access-grants.js";
 import {
@@ -29,6 +30,19 @@ export const billingRpc = {
     status: oc
       .input(z.object({ referralCode: z.string().min(1).max(64).optional() }).optional())
       .output(BillingStatusSchema),
+    computerUsage: oc.output(
+      z.object({
+        computers: z.array(
+          z.object({
+            id: z.string(),
+            scope: z.enum(["team", "dedicated"]),
+            botName: z.string().nullable(),
+            hours: z.number().nonnegative(),
+          }),
+        ),
+        otherHours: z.number().nonnegative(),
+      }),
+    ),
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc
@@ -36,6 +50,7 @@ export const billingRpc = {
         z.object({
           funding: z.enum(["byok", "credits"]),
           client: BillingClientSchema,
+          surface: AnalyticsSurface.optional(),
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
           /** The own-key plan's tier; Standard when omitted. */

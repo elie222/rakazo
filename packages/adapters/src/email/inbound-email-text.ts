@@ -1,5 +1,5 @@
+import { sliceWellFormed } from "@rakazo/core";
 import { htmlTextWithOmissions } from "../providers/web/keyless-http/keyless-http-web.js";
-import { sliceWellFormed } from "../shared/utf8.js";
 
 export const INBOUND_EMAIL_TEXT_MAX_CHARS = 20_000;
 const MAX_BODY_SCAN_CHARS = INBOUND_EMAIL_TEXT_MAX_CHARS * 10;

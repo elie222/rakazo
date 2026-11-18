@@ -1,8 +1,9 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
+  chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
@@ -24,7 +25,9 @@ import {
 } from "../../computers/computer-lifecycle.js";
 import { resolveComputerRunModel } from "../../computers/computer-model-settings.js";
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
+import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
+import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { selectConfiguredModel } from "../../models/model-roles.js";
 import {
@@ -37,7 +40,6 @@ import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
-import { sandboxKindCapabilities } from "../../sandboxes/sandbox-kind-capabilities.js";
 import {
   createEarlierFileQueue,
   listCurrentTurnFiles,
@@ -122,7 +124,10 @@ export async function startTurnModel(
     run.modelPinned &&
     !(
       (await modelCreditBillingEnabled(deps)) &&
-      modelChoice.modelProvider === runDeployment?.provider
+      (modelChoice.modelProvider === runDeployment?.provider ||
+        (modelChoice.modelProvider &&
+          modelChoice.modelId &&
+          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
     )
       ? pinnedModelCredentialError(modelChoice, overrideCredential)
       : undefined;
@@ -132,6 +137,7 @@ export async function startTurnModel(
         id: pinnedComputerModels.main.id,
         thinkingLevel: pinnedComputerModels.main.thinkingLevel,
         credential: null,
+        connectionId: pinnedComputerModels.main.connectionId,
       }
     : selectConfiguredModel({
         override: modelChoice,
@@ -192,6 +198,7 @@ export async function startTurnModel(
       provider: selectedProvider,
       id: selectedModelId,
       credential: selected.credential,
+      connectionId: selected.connectionId,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,
@@ -445,9 +452,19 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
+  // Only a turn in the app can carry a request to connect one.
+  const chatApps =
+    ["user", "follow_up"].includes(conversationRun.trigger) &&
+    !messagingChannelRun &&
+    !nonOwnerChatRun
+      ? [...new Set(deps.messaging?.chatApps?.() ?? [])]
+      : [];
   const messagingContext =
     [
       hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+      chatApps.length > 0
+        ? chatAppConnectNote(chatApps, !bot.disabledBuiltinTools?.includes("connect_app"))
+        : null,
       messagingChannelRun
         ? messagingChannelPrivacyBlock()
         : nonOwnerChatRun
@@ -516,6 +533,7 @@ export async function resolveRunCapabilities(
   const ownerStartedRun = isOwnerStartedRun(
     conversationRun.trigger,
     (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+    nonOwnerChatRun,
   );
   // A hang-up run has no source message: its own nonce carries the call it closes.
   const callEndRun = run.trigger === "call_end";
@@ -672,12 +690,33 @@ export async function selectRunTools(
         orderBy: { createdAt: "asc" },
         take: BOT_DIRECTORY_LIMIT,
       });
+  // Another group the bot belongs to, which post_to_group can post into.
+  const otherGroups = await deps.prisma.chatGroup.findMany({
+    where: {
+      spaceId: run.spaceId,
+      archivedAt: null,
+      thread: { isNot: null },
+      members: { some: { botId: bot.id } },
+      ...(conversationThread.groupId ? { id: { not: conversationThread.groupId } } : {}),
+    },
+    select: { id: true },
+    take: 1,
+  });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
-      // A call rings the bot's own person, whose chat it is; other members of a shared
-      // Space reach it by message for now.
-      phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
+      // A call rings the bot's own person in its own app chat, and only once they set up a voice
+      // provider; other members of a shared Space reach it by message for now.
+      phoneCallsEnabled:
+        deps.phoneCallsEnabled &&
+        run.userId === bot.userId &&
+        !conversationThread.externalConversationId &&
+        Boolean(
+          await deps.prisma.userVoiceCredential.findFirst({
+            where: { userId: run.userId },
+            select: { id: true },
+          }),
+        ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
       graphicalToolsAllowed,
       pageBrowserAllowed,
@@ -700,6 +739,7 @@ export async function selectRunTools(
         : bot.disabledBuiltinTools,
       fleetManagement: bot.fleetManagement,
       hasTeammates: teammates.length > 0,
+      hasGroups: otherGroups.length > 0,
       followUpFromUser: sourceMessage?.role === "user",
       userComputer: userComputerShell,
       userComputerScreen,
@@ -879,14 +919,14 @@ export async function loadModelFallbacks(
       !backups.unavailable.has(candidate) &&
       (candidate.provider !== runModelProvider ||
         candidate.modelId !== runModelId ||
-        (candidate.credentialId !== undefined &&
-          candidate.credentialId !== mainRunModel.connectionId)),
+        (modelRoleConnectionId(candidate) !== undefined &&
+          modelRoleConnectionId(candidate) !== mainRunModel.connectionId)),
   );
   const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
     JSON.stringify([provider, modelId, credentialId ?? null]);
   const fallbackModelKeys = new Set(
     fallbackModels.map((candidate) =>
-      fallbackKey(candidate.provider, candidate.modelId, candidate.credentialId),
+      fallbackKey(candidate.provider, candidate.modelId, modelRoleConnectionId(candidate)),
     ),
   );
   const fallbackModelIds = new Set(

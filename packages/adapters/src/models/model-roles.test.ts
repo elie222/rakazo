@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DeploymentModelDefaults, MemberMainModel } from "./model-roles.js";
 import {
   deploymentModelRole,
@@ -345,4 +345,106 @@ describe("model roles", () => {
     expect(resolved).toMatchObject({ provider: "openai-compatible", modelId: "model-b" });
     expect(resolved?.credential?.id).toBe("b");
   });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+it("falls back from an unapproved bot override even on an approved provider", () => {
+  vi.stubEnv(
+    "MODEL_CREDIT_OFFERINGS",
+    JSON.stringify({
+      defaultOfferingId: "approved",
+      offerings: [
+        {
+          id: "approved",
+          connectionId: "operator",
+          provider: "bot-provider",
+          modelId: "approved-model",
+          price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    }),
+  );
+  expect(
+    selectConfiguredModel({ ...defaults, override: bot, hostedProvider: "bot-provider" }),
+  ).toMatchObject({ provider: main.provider, id: main.modelId, credential: main.credential });
+  expect(
+    selectConfiguredModel({
+      ...defaults,
+      override: { ...bot, modelId: "approved-model" },
+      hostedProvider: "bot-provider",
+    }),
+  ).toMatchObject({ provider: "bot-provider", id: "approved-model", credential: null });
+});
+
+it.each([undefined, "personal", "credits"])(
+  "falls back only for an unpinned legacy main choice (pin=%s)",
+  (pin) => {
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "deployment-provider",
+            modelId: "deployment-model",
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    const selected = selectConfiguredModel({
+      ...defaults,
+      main: {
+        ...main,
+        credential: null,
+        ...(pin === "personal"
+          ? { credentialId: "removed-personal" }
+          : pin === "credits"
+            ? { creditOfferingId: "withdrawn-offering" }
+            : {}),
+      },
+      hostedProvider: "deployment-provider",
+      defaults: { settings: null, deployment: deploymentDefaults.deployment },
+    });
+    expect(selected).toMatchObject(
+      pin
+        ? { provider: main.provider, id: main.modelId }
+        : { provider: "deployment-provider", id: "deployment-model" },
+    );
+    if (pin)
+      expect(selected.connectionId).toBe(
+        pin === "personal" ? "removed-personal" : "credits:withdrawn-offering",
+      );
+  },
+);
+
+it("uses the approved default when owner settings name an unapproved model", () => {
+  const entry = {
+    id: "default-offering",
+    connectionId: "operator-connection",
+    provider: "approved-provider",
+    modelId: "approved-model",
+    price: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+  };
+  const env = {
+    MODEL_CREDIT_OFFERINGS: JSON.stringify({ defaultOfferingId: entry.id, offerings: [entry] }),
+  };
+  expect(deploymentModelRole("main", { ...deploymentDefaults, env }).primary).toEqual({
+    provider: entry.provider,
+    modelId: entry.modelId,
+  });
+  expect(
+    deploymentModelRole("main", {
+      ...deploymentDefaults,
+      env: { MODEL_CREDIT_OFFERINGS: JSON.stringify({ defaultOfferingId: null, offerings: [] }) },
+    }).primary,
+  ).toBeNull();
+  expect(
+    deploymentModelRole("main", {
+      settings: { defaultModelProvider: entry.provider, defaultModelId: entry.modelId },
+      env,
+    }).primary,
+  ).toEqual({ provider: entry.provider, modelId: entry.modelId });
 });

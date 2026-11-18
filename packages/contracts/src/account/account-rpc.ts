@@ -6,14 +6,20 @@ import { LabFeatureSchema } from "../labs.js";
 import { botId } from "../rpc/inputs.js";
 import { ExportManifestSchema } from "./account-export.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
-import { AnalyticsScreenInput } from "./analytics.js";
+import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
 import { AppLocaleSchema, AvatarStyleSchema, TimeZoneSchema } from "./preferences.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 
 export const accountRpc = {
-  analytics: { screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })) },
+  analytics: {
+    screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })),
+    /** A step of a subscription sign-in only the app can see. */
+    modelSignInStep: oc
+      .input(AnalyticsModelSignInStepInput)
+      .output(z.object({ ok: z.literal(true) })),
+  },
   aiConsent: {
     status: oc.input(AiConsentQuerySchema).output(AiConsentStatusSchema),
     allow: oc

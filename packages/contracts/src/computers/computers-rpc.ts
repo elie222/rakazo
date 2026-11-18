@@ -82,7 +82,10 @@ export const computersRpc = {
     commands: oc
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
-    screenUrl: oc.input(botId).output(ComputerScreenSchema),
+    /** A `preview` read only watches, so it leaves the computer's sleep schedule alone. */
+    screenUrl: oc
+      .input(botId.extend({ preview: z.boolean().optional() }))
+      .output(ComputerScreenSchema),
     /** A still of the screen as an image data URL, or null when the computer is not running. */
     preview: oc
       .input(

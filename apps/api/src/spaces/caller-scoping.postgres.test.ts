@@ -13,11 +13,11 @@ import {
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { queueMcpConnectedRun } from "../integrations/mcp-approval.js";
-import type { WebhookDeps } from "../messaging/webhook.js";
-import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "../messaging/webhook.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { assertThreadImageInput } from "../threads/thread-image-admission.js";
+import type { WebhookDeps } from "../webhooks/webhook.js";
+import { mountWebhookHttpRoutes, WEBHOOK_SECRET_KIND } from "../webhooks/webhook.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
