@@ -347,6 +347,22 @@ it.each(["text/markdown", "text/plain"])(
   },
 );
 
+it("offers the source to copy by hand when the browser refuses", async () => {
+  const source = "# Notes";
+  mocks.fetch.mockResolvedValue(new TextEncoder().encode(source));
+  mocks.writeText.mockRejectedValue(new Error("denied"));
+  Object.defineProperty(document, "execCommand", { configurable: true, value: () => false });
+  const dialog = await openFilePreview("text/markdown");
+  await act(async () =>
+    dialog.querySelector<HTMLButtonElement>('button[aria-label="Copy notes.md"]')!.click(),
+  );
+  await vi.waitFor(() =>
+    expect(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Copy notes.md"]')?.value,
+    ).toBe(source),
+  );
+});
+
 it.each(["text/html", "application/pdf", "video/mp4"])(
   "does not offer copy for %s",
   async (mimeType) => {

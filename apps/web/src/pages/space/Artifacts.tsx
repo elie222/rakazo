@@ -9,6 +9,7 @@ import {
   BotAvatar,
   Button,
   buttonVariants,
+  CopyTextFallback,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -882,7 +883,7 @@ function PreviewPane({
   onToggleMaximize: () => void;
 }) {
   const { t } = useLingui();
-  const [copied, copy] = useCopyText();
+  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const queries = useSpaceQueries();
   const versionsQuery = useQuery(
     queries.artifacts.listVersions.queryOptions({
@@ -969,6 +970,12 @@ function PreviewPane({
                 </Button>
               </IconTooltip>
             ) : null}
+            <CopyTextFallback
+              open={copyFailed}
+              onOpenChange={resetCopy}
+              text={copyFailedText}
+              label={t`Copy ${state.artifact.name}`}
+            />
             <Button
               variant="outline"
               size="sm"

@@ -4,7 +4,15 @@ import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { fileSizeParts } from "@rakazo/core";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
+import {
+  Button,
+  CopyTextFallback,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  Spinner,
+} from "@rakazo/ui-web";
 import { Check, Code2, Copy, Download, FileText, Play, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -164,7 +172,7 @@ function FilePreview({
     | { status: "ready"; bytes: Uint8Array; text?: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
-  const [copied, copy] = useCopyText();
+  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const targetBotId = "botId" in target ? target.botId : undefined;
   const targetGroupId = "groupId" in target ? target.groupId : undefined;
 
@@ -220,6 +228,12 @@ function FilePreview({
             </Button>
           </IconTooltip>
         ) : null}
+        <CopyTextFallback
+          open={copyFailed}
+          onOpenChange={resetCopy}
+          text={copyFailedText}
+          label={t`Copy ${name}`}
+        />
         <IconTooltip label={t`Download ${name}`}>
           <Button
             variant="ghost"

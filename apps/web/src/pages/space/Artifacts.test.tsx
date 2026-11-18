@@ -56,6 +56,7 @@ vi.mock("@rakazo/ui-web", () => {
     AlertDialogHeader: Container,
     AlertDialogTitle: Container,
     BotAvatar: () => <span />,
+    CopyTextFallback: () => null,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     buttonVariants: () => "",
