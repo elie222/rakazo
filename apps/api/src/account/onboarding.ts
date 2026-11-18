@@ -11,6 +11,7 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { requireBotThread } from "../bots/bot-thread.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 
@@ -274,16 +275,20 @@ export async function chooseFocus(
 
   if (option.id === FOCUS_IMPORT_OPTION_ID) {
     // Where to find it again, for someone who closes the import or is on a client without it.
-    await post(
-      deps,
-      target,
-      [
-        {
-          kind: "text",
-          text: "You can bring it over any time from Settings → General → Import an agent.",
-        },
-      ],
-      false,
+    // The choice is already saved, so a note that cannot be posted must not fail it.
+    await bestEffort(
+      "import note in the first chat",
+      post(
+        deps,
+        target,
+        [
+          {
+            kind: "text",
+            text: "You can bring it over any time from Settings → General → Import an agent.",
+          },
+        ],
+        false,
+      ),
     );
     return;
   }
