@@ -3,7 +3,7 @@ import type { Criterion, EvalCase, Evidence } from "../cases.js";
 import type { ToolChoiceExpect } from "./tool-choice.js";
 import { gradeToolChoice } from "./tool-choice.js";
 
-export const BOT_FILES_FIXTURE_VERSION = "bot-files-v6";
+export const BOT_FILES_FIXTURE_VERSION = "bot-files-v7";
 
 /**
  * A line of the site's code. A message that names the code can summarize it; one carrying this

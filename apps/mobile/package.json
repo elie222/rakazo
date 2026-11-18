@@ -19,6 +19,11 @@
       }
     }
   },
+  "enriched-markdown": {
+    "enableCodeHighlight": false,
+    "enableMath": false,
+    "enableVideo": false
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -73,6 +78,7 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": "0.88.1",
+    "react-native-enriched-markdown": "1.2.0",
     "react-native-gesture-handler": "3.3.0",
     "react-native-keyboard-controller": "1.22.7",
     "react-native-passkeys": "0.4.2",
