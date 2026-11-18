@@ -242,6 +242,16 @@ describe("LocalAgentHomeStore path containment", () => {
     ).rejects.toThrow(/escapes/i);
   });
 
+  it("never writes a binary file over one already there", async () => {
+    const { store, home } = await fixture();
+    await writeFile(path.join(home, "clip.mov"), "first");
+
+    await expect(
+      store.writeBinaryFile("bot-1", "clip.mov", new Uint8Array([2]), context),
+    ).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(path.join(home, "clip.mov"), "utf8")).toBe("first");
+  });
+
   it("does not create directories through an external symlink", async () => {
     const { root, store, home } = await fixture();
     const outside = path.join(root, "outside-dir");

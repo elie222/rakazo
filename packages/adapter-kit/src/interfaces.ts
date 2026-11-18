@@ -494,6 +494,7 @@ export interface AgentHomeStore {
     options?: { maxBytes?: number },
   ): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
+  /** Creates a new file; rejects with an `EEXIST` error when the path is taken. */
   writeBinaryFile(
     botId: string,
     path: string,

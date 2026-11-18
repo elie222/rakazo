@@ -1,8 +1,8 @@
 import path from "node:path";
 import type { AdapterContext, AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
-import { sanitizeMessagingLabel } from "@rakazo/core";
+import { retry, sanitizeMessagingLabel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { parseComputerMode } from "@rakazo/db";
+import { LeaseHeldError, parseComputerMode, withLease } from "@rakazo/db";
 import { serverOwnsTeamHome } from "../computer-workspace.js";
 import { sandboxKindCapabilities } from "../sandbox/sandbox-kind-capabilities.js";
 import {
@@ -95,14 +95,26 @@ async function pathsIn(target: Target, directory: string): Promise<Set<string>> 
   }
 }
 
+/** How long a save holds its computer's received folder before another process may take it. */
+const RECEIVED_FOLDER_LEASE_MS = 60_000;
+/** How often a save waiting on another process's save on the same computer looks again. */
+const RECEIVED_FOLDER_RETRY_MS = 250;
+/** Names a save tries when the stored home turns out to hold each one already. */
+const MAX_NAME_TRIES = 20;
+
+function isFileExists(error: unknown): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === "EEXIST";
+}
+
 /**
  * Copies a received file into the bot's computer under `received/` (`shared/received/` on a
  * team computer), never over a file already there. A computer neither running nor booting
- * from a home the server holds is skipped.
+ * from a home the server holds is skipped. One save at a time picks a name on a computer, in
+ * every process, so two bots or two API instances never pick the same one.
  */
 export async function saveReceivedFile(
   deps: {
-    prisma: Pick<PrismaClient, "computer">;
+    prisma: PrismaClient;
     home: AgentHomeStore;
     sandbox: SandboxProvider;
     timeZone: string;
@@ -110,9 +122,10 @@ export async function saveReceivedFile(
   input: ReceivedFile,
   context: AdapterContext,
 ): Promise<SaveReceivedFileResult> {
-  if (!input.bot.computerId) return { skipped: "no_computer" };
+  const computerId = input.bot.computerId;
+  if (!computerId) return { skipped: "no_computer" };
   const computer = await deps.prisma.computer.findUnique({
-    where: { id: input.bot.computerId },
+    where: { id: computerId },
     select: { scope: true, homeKey: true, kind: true, providerRef: true, state: true },
   });
   if (!computer) return { skipped: "no_computer" };
@@ -128,14 +141,40 @@ export async function saveReceivedFile(
     mimeType: input.mimeType,
     computerMode: mode,
   };
-  const folder = path.posix.dirname(receivedFilePath({ ...naming, taken: () => false }));
-  const taken = await pathsIn(target, folder);
-  const relative = receivedFilePath({ ...naming, taken: (candidate) => taken.has(candidate) });
-  const stored = normalizeWorkspacePath(resolveBotWorkspacePath(mode, input.bot.id, relative));
   const root = mode === "team" ? "shared/received/" : "received/";
-  if (stored !== relative || !stored.startsWith(root)) {
-    throw new Error("received file path left the received folder");
-  }
-  await target.write(stored, input.bytes);
-  return { saved: stored };
+  const folder = path.posix.dirname(receivedFilePath({ ...naming, taken: () => false }));
+  const save = async () => {
+    const taken = await pathsIn(target, folder);
+    for (let tries = 1; ; tries += 1) {
+      const relative = receivedFilePath({ ...naming, taken: (candidate) => taken.has(candidate) });
+      const stored = normalizeWorkspacePath(resolveBotWorkspacePath(mode, input.bot.id, relative));
+      if (stored !== relative || !stored.startsWith(root)) {
+        throw new Error("received file path left the received folder");
+      }
+      try {
+        await target.write(stored, input.bytes);
+        return stored;
+      } catch (error) {
+        // The stored home never replaces a file: one written since the listing takes the next name.
+        if (!isFileExists(error) || tries >= MAX_NAME_TRIES) throw error;
+        taken.add(stored);
+      }
+    }
+  };
+  const saved = await retry(
+    () =>
+      withLease(
+        deps.prisma,
+        `received-files:${computerId}`,
+        { ttlMs: RECEIVED_FOLDER_LEASE_MS, signal: context.signal },
+        save,
+      ),
+    {
+      attempts: Number.POSITIVE_INFINITY,
+      retryable: (error) => error instanceof LeaseHeldError,
+      delayMs: RECEIVED_FOLDER_RETRY_MS,
+      signal: context.signal,
+    },
+  );
+  return { saved };
 }

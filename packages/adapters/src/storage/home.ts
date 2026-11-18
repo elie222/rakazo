@@ -214,31 +214,44 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     content: string,
     _context: AdapterContext,
   ): Promise<void> {
-    await this.writeContent(botId, filePath, content);
+    await this.writeContent(botId, filePath, content, { create: false });
   }
 
+  /** Creates the file; rejects with `EEXIST` when the path is taken, never replacing it. */
   async writeBinaryFile(
     botId: string,
     filePath: string,
     content: Uint8Array,
     _context: AdapterContext,
   ): Promise<void> {
-    await this.writeContent(botId, filePath, content);
+    await this.writeContent(botId, filePath, content, { create: true });
   }
 
-  private async writeContent(botId: string, filePath: string, content: string | Uint8Array) {
+  private async writeContent(
+    botId: string,
+    filePath: string,
+    content: string | Uint8Array,
+    { create }: { create: boolean },
+  ) {
     await this.withBotWrite(botId, async () => {
       await this.recoverInterruptedCommit(botId);
       const full = await containedWritePath(this.botDir(botId), filePath);
       const handle = await open(
         full,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          (create ? constants.O_EXCL : constants.O_TRUNC) |
+          constants.O_NOFOLLOW,
         0o666,
       );
+      let written = false;
       try {
         await handle.writeFile(content);
+        written = true;
       } finally {
         await handle.close();
+        // A file this call created holds only part of its content.
+        if (create && !written) await rm(full, { force: true });
       }
     });
   }

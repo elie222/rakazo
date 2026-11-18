@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type {
   AdapterContext,
   AgentHomeStore,
@@ -5,7 +8,8 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { LocalAgentHomeStore } from "../../storage/home.js";
 import { saveReceivedFile } from "./save-received-file.js";
 
 const context: AdapterContext = {
@@ -38,6 +42,16 @@ type ComputerRow = {
   state: string;
 };
 
+/** A database whose only computer is `row` and whose leases are always free. */
+function fakeLeasePrisma(row: ComputerRow | null) {
+  return {
+    computer: { findUnique: vi.fn(async () => row) },
+    $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
+      query.join("").includes("INSERT INTO") ? [{ fence: 1n }] : [{}],
+    ),
+  } as unknown as PrismaClient;
+}
+
 function setup(
   computer: Partial<ComputerRow> | null,
   options: {
@@ -54,9 +68,7 @@ function setup(
     state: "stopped",
     ...computer,
   };
-  const prisma = {
-    computer: { findUnique: vi.fn(async () => row) },
-  } as unknown as PrismaClient;
+  const prisma = fakeLeasePrisma(row);
   const homeList = vi.fn(async (_homeKey: string, directory: string) =>
     (options.homeFiles ?? [])
       .filter((file) => file.startsWith(`${directory}/`))
@@ -238,6 +250,61 @@ describe("saveReceivedFile", () => {
 
     await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({ saved: TEAM_PATH });
     expect(writeFile).toHaveBeenCalledOnce();
+  });
+
+  it("gives two bots on one team computer different names for the same file", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-received-"));
+    onTestFinished(() => rm(root, { recursive: true, force: true }));
+    const home = new LocalAgentHomeStore(root);
+    const prisma = fakeLeasePrisma({
+      scope: "team",
+      homeKey: "team-home",
+      kind: "docker",
+      providerRef: null,
+      state: "stopped",
+    });
+    const deps = { prisma, home, sandbox: {} as SandboxProvider, timeZone: "Asia/Jerusalem" };
+    const first = new Uint8Array([1]);
+    const second = new Uint8Array([2]);
+
+    const saved = await Promise.all([
+      saveReceivedFile(deps, { ...input, bytes: first }, context),
+      saveReceivedFile(
+        deps,
+        { ...input, bot: { id: "bot-2", computerId: "computer-1" }, bytes: second },
+        { ...context, botId: "bot-2" },
+      ),
+    ]);
+
+    const paths = saved.map((result) => ("saved" in result ? result.saved : ""));
+    expect(new Set(paths)).toEqual(new Set([TEAM_PATH, TEAM_PATH.replace(".mov", "-2.mov")]));
+    const contents = await Promise.all(
+      paths.map((saved) => readFile(path.join(home.pathFor("team-home"), saved))),
+    );
+    expect(contents).toEqual([Buffer.from(first), Buffer.from(second)]);
+  });
+
+  it("holds the computer's received folder while it picks a name and writes", async () => {
+    const { deps, homeList, writeBinaryFile } = setup({ kind: "docker" });
+
+    await saveReceivedFile(deps, input, context);
+
+    const queryRaw = vi.mocked(deps.prisma.$queryRaw).mock;
+    const queries = queryRaw.calls.map(([query, ...values]) => ({
+      sql: (query as TemplateStringsArray).join("?"),
+      values,
+    }));
+    expect(queries[0]!.sql).toContain("INSERT INTO");
+    expect(queries[0]!.values).toContain("received-files:computer-1");
+    expect(queries.at(-1)!.sql).toContain("DELETE FROM");
+    const taken = queryRaw.invocationCallOrder[0]!;
+    const released = queryRaw.invocationCallOrder.at(-1)!;
+    for (const order of [homeList, writeBinaryFile].map(
+      (call) => call.mock.invocationCallOrder[0]!,
+    )) {
+      expect(order).toBeGreaterThan(taken);
+      expect(order).toBeLessThan(released);
+    }
   });
 
   it("writes nothing when a folder that is there cannot be read", async () => {

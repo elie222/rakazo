@@ -239,7 +239,7 @@ type DirectIntake = {
   pending: Map<string, Arrival[]>;
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
-  /** One bot's received files are copied into its computer one at a time, so none replaces another. */
+  /** One computer's received files are copied into it one at a time, so none replaces another. */
   saves: SenderQueue;
   /** The shutdown, once it started. */
   shutdown?: Shutdown;
@@ -907,36 +907,40 @@ async function saveReceivedCopy(
   const save = deps.saveReceivedFile;
   if (!save) return undefined;
   const signal = deadlineSignal(RECEIVED_FILE_SAVE_TIMEOUT_MS);
-  const copy = saves.run(ids.botId, async () => {
-    signal.throwIfAborted();
+  const copy = async () => {
     const [bot, owner] = await Promise.all([
       deps.prisma.bot.findUnique({ where: { id: ids.botId }, select: { computerId: true } }),
       deps.prisma.user.findUnique({ where: { id: ids.userId }, select: { timezone: true } }),
     ]);
+    const computerId = bot?.computerId ?? null;
     const operationId = `messaging-received-file:${event.provider}:${event.handle}`;
-    return save(
-      {
-        bot: { id: ids.botId, computerId: bot?.computerId ?? null },
-        sender: event.from,
-        name: file.name,
-        mimeType: file.mimeType,
-        bytes,
-        at: new Date(receivedAt),
-        timeZone: owner?.timezone ?? localTimezone(),
-      },
-      {
-        operationId,
-        traceId: operationId,
-        spaceId: ids.spaceId,
-        userId: ids.userId,
-        botId: ids.botId,
-        signal,
-      },
-    );
-  });
+    const received = {
+      bot: { id: ids.botId, computerId },
+      sender: event.from,
+      name: file.name,
+      mimeType: file.mimeType,
+      bytes,
+      at: new Date(receivedAt),
+      timeZone: owner?.timezone ?? localTimezone(),
+    };
+    const context: AdapterContext = {
+      operationId,
+      traceId: operationId,
+      spaceId: ids.spaceId,
+      userId: ids.userId,
+      botId: ids.botId,
+      signal,
+    };
+    // Bots on one team computer share its received folder. The save also holds the folder
+    // against other processes; this only keeps this process's saves from waiting on that.
+    return saves.run(computerId ?? `bot:${ids.botId}`, async () => {
+      signal.throwIfAborted();
+      return save(received, context);
+    });
+  };
   const result = await bestEffort(
     "copy a received file into the bot's computer",
-    withAbort(copy, signal),
+    withAbort(copy(), signal),
   );
   return result && "saved" in result ? savedFileLine(result.saved) : undefined;
 }
