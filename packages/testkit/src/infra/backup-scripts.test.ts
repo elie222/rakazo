@@ -507,8 +507,10 @@ describe("development backup failures", () => {
       mkdirSync(path.join(f.checkout, "data"));
       const entry = path.join(f.checkout, "backups", occupied);
       write(entry, "keep");
+      chmodSync(path.dirname(entry), 0o750);
       expect(f.run("scripts/backup.sh", ["example"]).status).not.toBe(0);
       expect(readFileSync(entry, "utf8")).toBe("keep");
+      expect(statSync(path.dirname(entry)).mode & 0o777).toBe(0o750);
       expect(f.commands()).toEqual([]);
     },
   );

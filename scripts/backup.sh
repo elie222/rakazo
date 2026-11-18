@@ -50,7 +50,6 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 if [[ -e "$OUT" ]]; then
   [[ -d "$OUT" ]] || { echo "backup destination must be a directory" >&2; exit 1; }
-  chmod 700 "$OUT"
   shopt -s dotglob nullglob
   for entry in "$OUT"/*; do
     case "$entry" in
@@ -63,9 +62,14 @@ for artifact in "$OUT/rakazo.sql" "$OUT/homes.tgz"; do
   [[ ! -L "$artifact" ]] || { echo "backup artifact must not be a symlink" >&2; exit 1; }
   if [[ -e "$artifact" ]]; then
     [[ -f "$artifact" ]] || { echo "backup artifact is not a file" >&2; exit 1; }
-    chmod 600 "$artifact"
   fi
 done
+if [[ -d "$OUT" ]]; then
+  chmod 700 "$OUT"
+  for artifact in "$OUT"/{rakazo.sql,homes.tgz}; do
+    if [[ -f "$artifact" ]]; then chmod 600 "$artifact"; fi
+  done
+fi
 mkdir "$STAGE/new"
 "${compose[@]}" exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$STAGE/new/rakazo.sql"
 if [[ "$SKIP_HOMES" == "1" ]]; then
