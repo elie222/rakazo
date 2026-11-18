@@ -676,6 +676,22 @@ describe("run tool selection", () => {
     expect(names({ hasTeammates: false, fleetManagement: true })).not.toContain("message_bot");
   });
 
+  it("offers post_to_group only to a bot with a group, routines included", () => {
+    const names = (trigger: string, hasGroups?: boolean) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        hasGroups,
+      }).map((tool) => tool.name);
+    expect(names("user")).not.toContain("post_to_group");
+    expect(names("user", false)).not.toContain("post_to_group");
+    expect(names("user", true)).toContain("post_to_group");
+    expect(names("routine", true)).toContain("post_to_group");
+  });
+
   it("keeps schedule tools in group chats and offers creation to routines", () => {
     expect(toolNames("user", "group-1")).toEqual(
       expect.arrayContaining(["schedule_create", "schedule_list", "schedule_cancel"]),

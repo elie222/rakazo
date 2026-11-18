@@ -114,8 +114,9 @@ export async function runTrial(
   let cookie = "";
   let botId = "";
   let peer: { id: string; name: string } | undefined;
-  // A group case talks to the subject inside a group thread; every other case uses its direct chat.
   let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
+  // A group case talks to the subject inside the group thread unless it asks for the direct chat.
+  let chatGroup: typeof group;
   let seededThreadId: string | undefined;
   const seededPaths: Record<string, string> = {};
   const runIds: string[] = [];
@@ -302,10 +303,11 @@ export async function runTrial(
           memberIds.set(name, member.id);
         }
         const created = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
-          name: "Launch desk",
+          name: scenario.group.name ?? "Launch desk",
           botIds: [botId, ...memberIds.values()],
         });
         group = { ...created, memberIds };
+        if (!scenario.group.directChat) chatGroup = group;
       }
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
@@ -358,8 +360,8 @@ export async function runTrial(
       return id;
     };
     if (scenario.history) {
-      const thread = group
-        ? { id: group.threadId }
+      const thread = chatGroup
+        ? { id: chatGroup.threadId }
         : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
       // Attachments go through the product's upload path so their bytes are stored as uploads are.
@@ -620,16 +622,16 @@ export async function runTrial(
           app,
           cookie,
           "threads/send",
-          group
+          chatGroup
             ? {
-                groupId: group.id,
+                groupId: chatGroup.id,
                 text: step.ask,
                 ...(step.unaddressed ? {} : { mentions: [{ kind: "bot", id: botId }] }),
               }
             : { botId, text: step.ask },
         );
         runId = sent.runId;
-        if (step.unaddressed && group)
+        if (step.unaddressed && chatGroup)
           ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
             where: { id: runId },
             select: { sourceMessageId: true },
@@ -864,7 +866,7 @@ export async function runTrial(
           runId?: string | null;
           blocks: ClarificationBlock[];
         }>;
-      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      }>(app, cookie, "threads/get", chatGroup ? { groupId: chatGroup.id } : { botId });
       approvalPending =
         terminal.status === "waiting_input" &&
         snap.messages.some((m) =>
@@ -1046,7 +1048,7 @@ export async function runTrial(
       });
       const snapshot = await rpc<{
         messages: Array<{ runId?: string | null; blocks: MessageBlock[] }>;
-      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      }>(app, cookie, "threads/get", chatGroup ? { groupId: chatGroup.id } : { botId });
       delegation = {
         helpers: await Promise.all(
           helpers.map(async (helper) => ({
