@@ -61,6 +61,10 @@ export default function BillingScreen() {
   const statusRead = formRead(rpcQuery("billing/status", undefined, space));
   const statusQuery = useScreenQuery(statusRead);
   const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const [showComputerUsage, setShowComputerUsage] = useState(false);
+  const computerUsage = useScreenQuery(rpcQuery("billing/computerUsage", undefined, space), {
+    enabled: showComputerUsage && status?.canManage === true && status.computerHoursLeft != null,
+  });
   useEffect(() => {
     if (!status) return;
     rememberReferral(space ?? null, status.referral);
@@ -91,6 +95,18 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = change.run;
   if (!status) return null;
+  const formatHours = new Intl.NumberFormat(dateLocaleForUi(), {
+    style: "unit",
+    unit: "hour",
+    maximumFractionDigits: 1,
+  });
+  const showUsage = status.canManage && showComputerUsage;
+  const usage = computerUsage.data;
+  const usageMessage = computerUsage.isError
+    ? t`Could not load computer hours`
+    : usage
+      ? t`No computer hours used yet`
+      : t`Loading…`;
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -251,6 +267,33 @@ export default function BillingScreen() {
           <SettingsRow title={t`Computer hours left`} value={String(status.computerHoursLeft)} />
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
+          ) : null}
+          {status.canManage ? (
+            <SettingsRow
+              title={t`Hours by computer`}
+              chevron={showComputerUsage ? "down" : "right"}
+              accessibilityState={{ expanded: showComputerUsage }}
+              onPress={() => setShowComputerUsage((open) => !open)}
+            />
+          ) : null}
+          {showUsage
+            ? usage?.computers.map((computer) => (
+                <SettingsRow
+                  key={computer.id}
+                  title={
+                    computer.scope === "team"
+                      ? t`Team Computer`
+                      : (computer.botName ?? t`Private Computer`)
+                  }
+                  value={formatHours.format(computer.hours)}
+                />
+              ))
+            : null}
+          {showUsage && usage && usage.otherHours > 0 ? (
+            <SettingsRow title={t`Other computers`} value={formatHours.format(usage.otherHours)} />
+          ) : null}
+          {showUsage && (!usage || (usage.computers.length === 0 && usage.otherHours === 0)) ? (
+            <SettingsRow title={usageMessage} />
           ) : null}
           {endTrial ? (
             <SettingsRow
