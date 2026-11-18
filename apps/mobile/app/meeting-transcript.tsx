@@ -99,7 +99,7 @@ export default function MeetingTranscriptScreen() {
               onPress={() => sharing.run()}
             />
           </SettingsGroup>
-        ) : null
+        ) : undefined
       }
     />
   );
