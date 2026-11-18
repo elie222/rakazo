@@ -214,33 +214,13 @@ export function spaceCanRunCatalogModel(
  * preference, then the newest account credential. An unreadable selected secret stays
  * disconnected instead of falling through to an older key.
  */
-/**
- * The same credential map, narrowed to the providers a deployment allowlist still offers, so
- * a catalog read never starts for a provider the list refuses.
- */
-export function permittedCatalogAuth(auth: SpaceCatalogAuth): SpaceCatalogAuth {
-  const allowlist = modelProviderAllowlist();
-  if (allowlist === null) return auth;
-  const allowed = (provider: string) => modelProviderAllowed(allowlist, provider);
-  const keep = <T>(source: Partial<Record<string, T>>) =>
-    Object.fromEntries(Object.entries(source).filter(([provider]) => allowed(provider)));
-  return {
-    ...auth,
-    ...(auth.managedProvider ? { managedProvider: auth.managedProvider } : {}),
-    ...(auth.managedProviders ? { managedProviders: auth.managedProviders.filter(allowed) } : {}),
-    byProvider: keep(auth.byProvider),
-    byModel: keep(auth.byModel),
-    secretIdByProvider: keep(auth.secretIdByProvider),
-    secretIdByModel: keep(auth.secretIdByModel),
-  };
-}
-
 export async function modelCredentialAuthKindsForSpace(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
+  const allowlist = modelProviderAllowlist();
   const providers =
     modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
     (hostedProvider ? [hostedProvider] : []);
@@ -251,10 +231,13 @@ export async function modelCredentialAuthKindsForSpace(
             (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
           ),
         )
-      ).filter((provider): provider is string => provider !== null)
+      ).filter(
+        (provider): provider is string =>
+          provider !== null && modelProviderAllowed(allowlist, provider),
+      )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, preferences] = await Promise.all([
+  const [allCredentials, allPreferences] = await Promise.all([
     prisma.userModelCredential.findMany({
       where: { userId: scope.userId },
       select: {
@@ -283,6 +266,16 @@ export async function modelCredentialAuthKindsForSpace(
       },
     }),
   ]);
+  // A refused provider is not read at all, so its secret is never loaded and an unavailable
+  // store cannot fail the catalog for the providers this deployment still offers.
+  const credentials =
+    allowlist === null
+      ? allCredentials
+      : allCredentials.filter((row) => modelProviderAllowed(allowlist, row.provider));
+  const preferences =
+    allowlist === null
+      ? allPreferences
+      : allPreferences.filter((row) => modelProviderAllowed(allowlist, row.credential.provider));
   const connectedProviders = new Set([
     ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
     ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   carriedBotModelPin,
+  carriedRoutineModelPin,
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "./model-provider-allowlist.js";
@@ -74,5 +75,30 @@ describe("a bot pin a copy or a restored record carries", () => {
         carriedBotModelPin({ modelProvider: null, modelId: null, thinkingLevel: "low" }),
       ).toEqual({ thinkingLevel: "low" });
     }
+  });
+});
+
+describe("a routine pin a restored record carries", () => {
+  it("keeps the level with the model, since a routine refuses a level without one", () => {
+    delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    expect(
+      carriedRoutineModelPin({
+        modelProvider: "anthropic",
+        modelId: "claude-haiku-5-5",
+        thinkingLevel: "high",
+      }),
+    ).toEqual({ modelProvider: "anthropic", modelId: "claude-haiku-5-5", thinkingLevel: "high" });
+  });
+
+  it("drops the level along with a refused pin, and with no pin at all", () => {
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    expect(
+      carriedRoutineModelPin({
+        modelProvider: "anthropic",
+        modelId: "claude-haiku-5-5",
+        thinkingLevel: "high",
+      }),
+    ).toEqual({});
+    expect(carriedRoutineModelPin({ modelProvider: null, thinkingLevel: "high" })).toEqual({});
   });
 });

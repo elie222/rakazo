@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   carriedBotModelPin,
+  carriedRoutineModelPin,
   normalizeWorkspacePath,
   resolveBotWorkspacePath,
 } from "@rakazo/adapters";
@@ -789,7 +790,7 @@ class AccountImporter implements ArchiveSink {
             // What a watch read is not the owner's words, so it never runs as a turn in the chat.
             inChat: record.inChat && !record.watch,
             messageProvider: record.messageProvider,
-            ...carriedBotModelPin(record),
+            ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),
             createdAt: new Date(record.createdAt),
           },

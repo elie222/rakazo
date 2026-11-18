@@ -44,6 +44,24 @@ export function carriedBotModelPin(source: {
   return { ...pin, thinkingLevel: source.thinkingLevel };
 }
 
+/**
+ * The model pin a restored routine carries. A routine's thinking level belongs to its pinned
+ * model, so it goes when the pin does: the routine routes refuse a level with no model.
+ */
+export function carriedRoutineModelPin(source: {
+  modelProvider?: string | null;
+  modelId?: string | null;
+  thinkingLevel?: string | null;
+}) {
+  if (!source.modelProvider) return {};
+  if (!modelProviderAllowed(modelProviderAllowlist(), source.modelProvider)) return {};
+  return {
+    modelProvider: source.modelProvider,
+    modelId: source.modelId,
+    thinkingLevel: source.thinkingLevel,
+  };
+}
+
 /** One refusal shared by every allowlist gate, so one setting reads as one rule. */
 export const MODEL_PROVIDER_NOT_ALLOWED_ERROR =
   "This model provider is not allowed on this server.";
