@@ -322,6 +322,9 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
+          if (!modelProviderAllowed(modelProviderAllowlist(), OPENAI_COMPATIBLE_PROVIDER_ID)) {
+            throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+          }
           let apiKey = input.apiKey;
           let headers = input.headers;
           if (!apiKey?.trim() || headers === undefined) {
@@ -387,6 +390,9 @@ export function modelsRoutes(ctx: RouterContext) {
         },
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+        if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+        }
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },

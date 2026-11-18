@@ -79,6 +79,63 @@ describe("team chat engagement judge", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("does not engage on a member model the deployment allowlist leaves out", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    try {
+      const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        userModelPreference: {
+          findFirst: vi.fn(async () => ({
+            credential: {
+              id: "credential-fixture",
+              provider: "google-vertex",
+              secretId: "secret-fixture",
+            },
+            modelId: "gemini-4-hydrogen",
+          })),
+        },
+      };
+      withModelRoles(prisma, [
+        mainRole(
+          { spaceId: "space-fixture", userId: "user-fixture" },
+          "google-vertex",
+          "gemini-4-hydrogen",
+        ),
+      ]);
+      const run = vi.fn(async function* () {
+        yield { type: "done", text: "the judge must not run a disallowed provider" };
+      });
+      const judge = new ModelTeamChatEngagementJudge({
+        prisma: prisma as never,
+        runtime: { run } as never,
+        secrets: { load: async () => "" } as never,
+        deploymentProvider: "google-vertex",
+        deploymentModel: "gemini-4-hydrogen",
+      });
+      await expect(
+        judge.decide({
+          bot: {
+            id: "bot-fixture",
+            spaceId: "space-fixture",
+            userId: "user-fixture",
+            name: "Fixture",
+            modelProvider: null,
+            modelId: null,
+          },
+          channelId: "channel-fixture",
+          rules: "",
+          messages: [],
+        }),
+      ).resolves.toEqual({ act: false });
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
   it("renders untrusted messages without treating them as instructions", () => {
     const prompt = renderTeamChatEngagementPrompt({
       botName: "Arthur",

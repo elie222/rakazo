@@ -2,7 +2,9 @@ import { canonicalPiProviderId } from "@rakazo/contracts";
 
 /**
  * Catalog provider ids a deployment lets its users connect, read from the environment the
- * API and worker share. Unset or blank means every provider, exactly the behavior without it.
+ * API and worker share. Entries are folded and canonicalized like stored provider ids, so
+ * a name the registry renamed still matches. Unset or blank means every provider, exactly
+ * the behavior without it.
  */
 export function modelProviderAllowlist(): ReadonlySet<string> | null {
   const raw = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim();
@@ -10,7 +12,7 @@ export function modelProviderAllowlist(): ReadonlySet<string> | null {
   const ids = new Set(
     raw
       .split(",")
-      .map((id) => id.trim())
+      .map((id) => canonicalPiProviderId(id.trim().toLowerCase()))
       .filter((id) => id !== ""),
   );
   return ids.size > 0 ? ids : null;

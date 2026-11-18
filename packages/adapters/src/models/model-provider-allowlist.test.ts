@@ -30,4 +30,11 @@ describe("model provider allowlist", () => {
     expect(modelProviderAllowed(modelProviderAllowlist(), "azure-openai-responses")).toBe(true);
     expect(modelProviderAllowed(modelProviderAllowlist(), "anthropic")).toBe(false);
   });
+
+  it("folds and canonicalizes entries, so a renamed or capitalized id still matches", () => {
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "OpenRouter , azure-openai-responses";
+    expect(modelProviderAllowed(modelProviderAllowlist(), "openrouter")).toBe(true);
+    expect(modelProviderAllowed(modelProviderAllowlist(), "azure")).toBe(true);
+    expect(modelProviderAllowed(modelProviderAllowlist(), "anthropic")).toBe(false);
+  });
 });

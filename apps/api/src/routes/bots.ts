@@ -13,6 +13,8 @@ import {
   LoginAlreadySavedError,
   listVaultItems,
   listVaultItemUses,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   newVaultItemName,
   normalizeSecretDestination,
   pageUrlOrigin,
@@ -332,6 +334,24 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   if (run) await wakeRun(deps.jobs, run.id);
 }
 
+/**
+ * A model pin a copy or a restored record may be born with: one the deployment allowlist
+ * still offers, or none, so the copy follows the account's main model instead.
+ */
+function allowedBotModelPin(source: {
+  modelProvider?: string | null;
+  modelId?: string | null;
+  thinkingLevel?: string | null;
+}) {
+  if (!source.modelProvider) return {};
+  if (!modelProviderAllowed(modelProviderAllowlist(), source.modelProvider)) return {};
+  return {
+    modelProvider: source.modelProvider,
+    modelId: source.modelId,
+    thinkingLevel: source.thinkingLevel,
+  };
+}
+
 export function botsRoutes(ctx: RouterContext) {
   const { deps, repos, botModelValidation, removeBot, agentImportServices, groupRepos, authed } =
     ctx;
@@ -390,9 +410,7 @@ export function botsRoutes(ctx: RouterContext) {
           avatarSet: resolveBotAvatarSet(source.avatarSet),
           avatarSetPinned: source.avatarSetPinned,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
-          modelProvider: source.modelProvider,
-          modelId: source.modelId,
-          thinkingLevel: source.thinkingLevel,
+          ...allowedBotModelPin(source),
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
         });

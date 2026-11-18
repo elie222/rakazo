@@ -17,6 +17,10 @@ import {
   retireToReconnectMarker,
 } from "../../models/model-credential-refresh.js";
 import { outermostJsonObject } from "../../models/model-json.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
 import { secretValuesToRedact } from "../../models/model-secret.js";
 import {
@@ -239,6 +243,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
     const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
+    // The allowlist governs user-chosen models; the deployment's own fallback stays
+    // operator configuration, like the deployment key.
+    if ((useOverride || main) && !modelProviderAllowed(modelProviderAllowlist(), provider))
+      return null;
 
     const hosted =
       settings?.modelCreditsEnabled &&
