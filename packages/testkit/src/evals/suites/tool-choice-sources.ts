@@ -112,7 +112,7 @@ function sourceApps(sources: Sources, now: Date): AppEmulator[] {
               name: file.name,
               kind,
               owner: file.owner ?? OWNER.email,
-              access: file.owner ? "reader" : "owner",
+              access: file.owner && file.owner !== OWNER.email ? "reader" : "owner",
               modified: at(age(files.length, index)),
               ...(kind === "spreadsheet"
                 ? { sheets: [{ name: "Sheet1", rows: file.rows ?? [] }] }

@@ -280,6 +280,24 @@ export async function runTrial(
         });
         peer = { id: created.id, name: scenario.peer.name };
       }
+      // Other bots in the space that the subject can see and manage; none runs a model.
+      for (const teammate of scenario.teammates ?? []) {
+        const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
+          ...teammate,
+          title: "",
+          instructions: "",
+          notifyOnFinish: false,
+        });
+        await discardBotIntroRun(trial, cookie, created.id);
+      }
+      if (scenario.wallet) {
+        // The offline wallet emulator connects on its first status check after the poll interval.
+        await rpc(app, cookie, "paymentWallet/connect", {});
+        await poll(async () => {
+          const status = await rpc<{ status: string }>(app, cookie, "paymentWallet/status", {});
+          return status.status === "connected" ? true : undefined;
+        }, deadline);
+      }
       if (scenario.group) {
         // Without roles, members only author seeded history and never run a model.
         const { roles } = scenario.group;
@@ -343,7 +361,7 @@ export async function runTrial(
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
-        name: "Release watch",
+        name: scenario.routine.name ?? "Release watch",
         prompt: scenario.routine.prompt,
         crons: ["0 9 * * *"],
         timezone: "UTC",

@@ -881,6 +881,8 @@ async function main() {
                 // The operator runs evals against the model server they chose, often on loopback.
                 mcpAllowPrivateEndpoint: true,
                 emailEmulator: true,
+                // Purchase tools appear only for a case that connects a wallet.
+                paymentWalletProvider: "emulator",
                 pipedreamClientId: undefined,
                 pipedreamClientSecret: undefined,
                 pipedreamProjectId: undefined,

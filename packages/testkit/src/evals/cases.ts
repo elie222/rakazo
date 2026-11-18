@@ -141,7 +141,11 @@ export type EvalCase = {
    * trial's clock and served over streamable HTTP on loopback.
    */
   apps?: (now: Date) => AppEmulator[];
-  routine?: { prompt: string };
+  routine?: { prompt: string; name?: string };
+  /** Other bots of the owner, present in the space before the first step; they never run. */
+  teammates?: Array<{ name: string; description: string }>;
+  /** The owner has connected the offline wallet emulator, so purchase tools are offered. */
+  wallet?: true;
   /**
    * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
    * unless `ownComputer` gives it one of its own. In a fromPeer step, `{peerHome}` is replaced by

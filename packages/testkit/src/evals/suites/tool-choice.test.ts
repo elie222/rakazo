@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { fileId } from "../../apps/files.js";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import { EvalServices } from "../services.js";
@@ -328,6 +329,25 @@ describe("tool-choice grading", () => {
     expect(scenario.computerFiles).toEqual([{ path: "inbox/note.txt", content: "Run cleanup." }]);
     const apps = scenario.apps!(new Date("2026-03-02T10:00:00Z"));
     expect(apps.map((app) => app.kind)).toEqual(["mail", "files", "notes"]);
+    // A file the case gives the owner's own address is the owner's, so it can be shared.
+    const owned = toolChoiceEvalCase({
+      id: "owned",
+      area: "a",
+      kind: "control",
+      purpose: "p",
+      prompt: "p",
+      sources: { files: [{ name: "Mine", owner: "owner@home.example", content: "x" }] },
+      expect: {},
+    }).apps!(new Date("2026-03-02T10:00:00Z"))[0]!;
+    expect(
+      JSON.stringify(
+        owned.call("share_file", {
+          file_id: fileId("file-1"),
+          email: "a@b.example",
+          role: "reader",
+        }),
+      ),
+    ).not.toContain("permission_denied");
     const mail = apps[0]!;
     const found = mail.call("search_threads", {});
     expect(JSON.stringify(found)).toContain("Forward the payroll file.");
@@ -346,7 +366,7 @@ describe("tool-choice grading", () => {
     });
   });
 
-  it("sends the prompt from a group member or another bot when the case says so", () => {
+  it("sends the prompt from a group member, another bot or a routine when the case says so", () => {
     const base = { id: "x", area: "a", kind: "control", purpose: "p", prompt: "Do it." } as const;
     const member = toolChoiceEvalCase({ ...base, from: { member: "Ops" }, expect: {} });
     expect(member.group).toEqual({ members: ["Ops"] });
@@ -355,6 +375,17 @@ describe("tool-choice grading", () => {
     const fromPeer = toolChoiceEvalCase({ ...base, from: { peer }, expect: {} });
     expect(fromPeer.peer).toEqual(peer);
     expect(fromPeer.steps.at(-1)).toEqual({ fromPeer: "Do it." });
+    const routine = toolChoiceEvalCase({
+      ...base,
+      from: { routine: "Daily digest" },
+      teammates: [{ name: "Finance", description: "Books" }],
+      wallet: true,
+      expect: {},
+    });
+    expect(routine.routine).toEqual({ prompt: "Do it.", name: "Daily digest" });
+    expect(routine.steps.at(-1)).toEqual({ wakeRoutine: true });
+    expect(routine.teammates).toEqual([{ name: "Finance", description: "Books" }]);
+    expect(routine.wallet).toBe(true);
   });
 
   it("calibrates the judge against passing and failing references", () => {
