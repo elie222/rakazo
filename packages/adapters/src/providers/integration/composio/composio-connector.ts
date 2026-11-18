@@ -408,6 +408,12 @@ export function planLiveConnectionSync(
     connectIds.push(reusable.id);
     connectedProviders.add(slug);
   }
+  // A further attempt whose own sign-in finished is another account of an app that is
+  // already connected, left unfinished only because its page stopped asking.
+  for (const row of rows) {
+    if (row.status !== "pending" || connectIds.includes(row.id)) continue;
+    if (row.providerRef && liveRefSet?.has(row.providerRef)) connectIds.push(row.id);
+  }
   const connectIdSet = new Set(connectIds);
   // Providers that already have a connected row before this sync. Extra pending
   // rows for those providers are additional-account attempts, not abandoned
@@ -422,8 +428,6 @@ export function planLiveConnectionSync(
       if (connectIdSet.has(row.id)) return false;
       // Revoking it would cancel a sign-in the person is in the middle of.
       if (stillAuthorizing(row, now)) return false;
-      // Its sign-in finished; the page that started it stores the account when it next asks.
-      if (row.providerRef && liveRefSet?.has(row.providerRef)) return false;
       // Keep an additional-account pending whose age is unknown; one past the authorization
       // window was abandoned, and so is an error, which would otherwise be re-listed forever.
       if (

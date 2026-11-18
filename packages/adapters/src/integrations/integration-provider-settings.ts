@@ -7,6 +7,7 @@ import type {
 import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
@@ -143,9 +144,12 @@ export class IntegrationProviderSettings {
 
   /**
    * Connected app slugs from the provider whose app ids match plugin slugs, with the refs of
-   * the signed-in accounts when the provider lists them.
+   * the signed-in accounts when the provider lists them. `refsFailed` says that listing was
+   * tried and failed, so rows must not be matched to accounts this time.
    */
-  async listConnectedPlugins(userId: string): Promise<{ slugs: string[]; refs?: string[] }> {
+  async listConnectedPlugins(
+    userId: string,
+  ): Promise<{ slugs: string[]; refs?: string[]; refsFailed?: boolean }> {
     const provider = await this.resolve(PLUGIN_SLUG_PROVIDER);
     if (!provider) return { slugs: [] };
     const context = {
@@ -155,12 +159,16 @@ export class IntegrationProviderSettings {
       traceId: "connections.sync",
       signal: AbortSignal.timeout(15_000),
     };
+    let refsFailed = false;
     const [slugs, refs] = await Promise.all([
       provider.listConnectedExternalIds(context),
-      // A failed listing fails the sync, so a later one matches the rows instead of guessing.
-      provider.listConnectedRefs?.(context),
+      provider.listConnectedRefs?.(context).catch((error: unknown) => {
+        getLogger().warn("signed-in accounts could not be listed", { error });
+        refsFailed = true;
+        return undefined;
+      }),
     ]);
-    return { slugs, refs };
+    return { slugs, refs, refsFailed };
   }
 
   providers(): ManagedConnectorProvider[] {

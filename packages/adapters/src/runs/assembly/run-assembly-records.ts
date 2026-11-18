@@ -365,8 +365,9 @@ export async function connectRun(
     const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);
     if (listing.ok) {
       liveSlugs = listing.slugs;
-      await persistLivePluginConnections(deps.prisma, run, composioRows, listing).catch(
-        () => undefined,
+      await bestEffort(
+        "save live plugin connections",
+        persistLivePluginConnections(deps.prisma, run, composioRows, listing),
       );
     }
   }

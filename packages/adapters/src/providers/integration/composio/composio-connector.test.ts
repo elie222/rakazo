@@ -1557,8 +1557,8 @@ describe("composio tool mapping", () => {
     expect(planLiveConnectionSync(rows, ["gmail"], now).connectIds).toEqual(["retry"]);
     // The live account belongs to neither attempt, so neither row may claim it.
     expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_other"]).connectIds).toEqual([]);
-    // An attempt past the authorization window is cleared even beside a connected account,
-    // unless its own sign-in finished.
+    // Beside a connected account, an attempt past the authorization window is cleared, and
+    // one whose own sign-in finished is connected as another account.
     const beside = [{ ...attempt("done", "ca_live", 60), status: "connected" }];
     expect(
       planLiveConnectionSync([...beside, attempt("stale", "ca_expired", 30)], ["gmail"], now, [
@@ -1569,8 +1569,8 @@ describe("composio tool mapping", () => {
       planLiveConnectionSync([...beside, attempt("second", "ca_second", 30)], ["gmail"], now, [
         "ca_live",
         "ca_second",
-      ]).revokeIds,
-    ).toEqual([]);
+      ]),
+    ).toEqual({ connectIds: ["second"], revokeIds: [] });
     // A row saved before its sign-in answered holds no account and is still recovered.
     expect(
       planLiveConnectionSync([attempt("first", null, 30)], ["gmail"], now, ["ca_other"]).connectIds,

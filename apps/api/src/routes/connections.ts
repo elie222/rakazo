@@ -47,12 +47,17 @@ async function reconcileConnections(
   ).filter((row: { provider: string }) =>
     connectedProviderKeys.has(row.provider.trim().toLowerCase()),
   );
-  // Asked only when a sign-in is waiting to be matched to the account it created. A failed
-  // listing fails this pass, so the next one matches the rows instead of this one guessing.
-  const liveRefs = rows.some((row) => row.status === "pending")
-    ? await listConnectedRefs()
-    : undefined;
-  const sync = planLiveConnectionSync(rows, connectedProviders, Date.now(), liveRefs);
+  // Asked only when a sign-in is waiting to be matched to the account it created. When the
+  // listing fails, the rows wait for the next pass instead of this one guessing.
+  let sync: ReturnType<typeof planLiveConnectionSync> = { connectIds: [], revokeIds: [] };
+  try {
+    const liveRefs = rows.some((row) => row.status === "pending")
+      ? await listConnectedRefs()
+      : undefined;
+    sync = planLiveConnectionSync(rows, connectedProviders, Date.now(), liveRefs);
+  } catch (error) {
+    getLogger().warn(`${connectorId} signed-in accounts could not be listed`, { error });
+  }
   // One update per row so the credential event goes only to rows this call actually connected.
   const connectedIds: string[] = [];
   const updates = [

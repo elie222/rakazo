@@ -56,7 +56,7 @@ export function connectedContext(
 export async function loadLivePlugins(
   listConnectedPlugins: ExecutorDeps["listConnectedPlugins"],
   userId: string,
-): Promise<{ ok: true; slugs: string[]; refs?: string[] } | { ok: false }> {
+): Promise<{ ok: true; slugs: string[]; refs?: string[]; refsFailed?: boolean } | { ok: false }> {
   if (!listConnectedPlugins) return { ok: false };
   try {
     return { ok: true, ...(await listConnectedPlugins(userId)) };
@@ -69,8 +69,10 @@ export async function persistLivePluginConnections(
   prisma: PrismaClient,
   owner: { userId: string; spaceId: string },
   rows: PluginConnectionRow[],
-  live: { slugs: string[]; refs?: string[] },
+  live: { slugs: string[]; refs?: string[]; refsFailed?: boolean },
 ): Promise<void> {
+  // The rows wait for a pass that can tell whose account is signed in.
+  if (live.refsFailed) return;
   const sync = planLiveConnectionSync(rows, live.slugs, Date.now(), live.refs);
   if (sync.connectIds.length > 0) {
     await prisma.connection.updateMany({
