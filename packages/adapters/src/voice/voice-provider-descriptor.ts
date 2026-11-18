@@ -20,6 +20,11 @@ export interface VoiceConnectionFields {
 export interface VoiceProviderDefinition {
   /** What Settings shows and what the connection form needs; the id is the registry key. */
   catalog: Omit<VoiceCatalogEntry, "id">;
+  /**
+   * Its connection names a server the person runs, so it may reach a private address when the
+   * instance allows private endpoints (`MCP_ALLOW_PRIVATE_ENDPOINT`), like model endpoints.
+   */
+  privateEndpoint?: boolean;
   /** Whether this server can run it at all; without it the id is unknown here. */
   available?(): boolean;
   /** Whether Settings offers it, beyond being available. */

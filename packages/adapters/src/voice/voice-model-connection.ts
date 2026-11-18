@@ -1,14 +1,19 @@
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { SecretStore, VoiceProvider } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential } from "@rakazo/db";
+import { findDefaultVoiceCredential, findModelCredential } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import {
   resolveStoredModelAuth,
   withModelCredentialLock,
 } from "../models/model-credential-refresh.js";
 import { isRetiredModelCredentialError } from "../runtime/pi/models/pi-oauth.js";
 import type { SecretCleanupDeps } from "../secrets/secret-cleanup.js";
-import { voiceCatalogEntry } from "./voice-factory.js";
+import {
+  createVoiceProvider,
+  voiceCatalogEntry,
+  voiceProviderMayUsePrivateEndpoint,
+} from "./voice-factory.js";
 
 /**
  * A voice connection's secret when it authenticates with the account's model connection to the
@@ -72,4 +77,79 @@ export async function resolveVoiceKey(
       throw error;
     }
   });
+}
+
+export type DefaultVoiceDeps = {
+  prisma: PrismaClient;
+  secretStore: VoiceKeyDeps["secretStore"];
+  /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
+  mcpAllowPrivateEndpoint?: boolean;
+};
+
+/** Keep refresh failures and linked-connection refusals safe for display. */
+export async function withVoiceConnection<T>(
+  provider: string,
+  linked: boolean,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!linked) throw error;
+    const name = voiceCatalogEntry(provider)?.name ?? provider;
+    if (error instanceof VoiceAccountError) {
+      if (error.code === "VOICE_KEY_REJECTED") {
+        throw new VoiceAccountError(
+          error.code,
+          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
+        );
+      }
+      throw error;
+    }
+    getLogger().warn("voice could not use the model connection", {
+      provider,
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+    throw new VoiceAccountError(
+      undefined,
+      `Couldn't use the ${name} connection from Models. Try again.`,
+    );
+  }
+}
+
+/**
+ * The person's default voice connection where they are, its adapter, the bearer it sends and
+ * whether that bearer comes from their Models connection. Null when they have none.
+ */
+export async function loadDefaultVoice(
+  deps: DefaultVoiceDeps,
+  scope: { userId: string; spaceId: string },
+  signal?: AbortSignal,
+): Promise<{
+  credential: NonNullable<Awaited<ReturnType<typeof findDefaultVoiceCredential>>>;
+  provider: VoiceProvider;
+  apiKey: string;
+  linked: boolean;
+} | null> {
+  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
+  const secret =
+    credential &&
+    (await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+    }));
+  if (!credential || !secret) return null;
+  const provider = createVoiceProvider(credential.provider, {
+    allowPrivateEndpoint: voiceProviderMayUsePrivateEndpoint(
+      credential.provider,
+      deps.mcpAllowPrivateEndpoint,
+    ),
+  });
+  const plaintext = await deps.secretStore.load(secret.ciphertext, secret.id);
+  const linked =
+    isModelConnectionVoiceSecret(plaintext) &&
+    Boolean(voiceCatalogEntry(credential.provider)?.modelConnection);
+  const apiKey = await withVoiceConnection(credential.provider, linked, () =>
+    resolveVoiceKey(deps, scope, credential.provider, plaintext, signal),
+  );
+  return { credential, provider, apiKey, linked };
 }
