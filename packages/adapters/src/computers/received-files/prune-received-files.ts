@@ -86,20 +86,54 @@ async function expiredFiles(
   return expired;
 }
 
-/** Deletes the expired files under `root` and the month and year folders that empties. */
+/** Files a prune deletes between two looks at the computer's state. */
+const PRUNE_BATCH_FILES = 25;
+/** Files a prune deletes in one home per pass; the rest wait for the next pass. */
+const PRUNE_MAX_FILES = 500;
+
+/**
+ * Deletes the expired files under `root` and the month and year folders that empties, while the
+ * computer stays as it was first read. A start does not take this lease, so before each batch
+ * the computer is read again, and any change in its state stops the deletion: a computer that
+ * wakes runs a bot that could swap a folder for a link. The cap keeps a home full of planted
+ * names from holding the loop open.
+ */
 async function pruneComputer(
-  home: AgentHomeStore,
-  computer: { homeKey: string; scope: string },
+  deps: { prisma: PrismaClient; home: AgentHomeStore; sandbox: SandboxProvider },
+  computer: { id: string; homeKey: string; scope: string },
   cutoff: number,
   context: AdapterContext,
   signal: AbortSignal,
 ): Promise<number> {
+  const read = () =>
+    deps.prisma.computer.findUnique({
+      where: { id: computer.id },
+      select: { kind: true, providerRef: true, state: true, updatedAt: true },
+    });
+  // Read again under the lease: the computer may have started since the page was read.
+  const first = await read();
+  if (!first || !homeHoldsReceivedFiles(deps.sandbox, first)) return 0;
+  const unchanged = async () => {
+    const current = await read();
+    return (
+      current !== null &&
+      current.state === first.state &&
+      current.providerRef === first.providerRef &&
+      current.updatedAt.getTime() === first.updatedAt.getTime() &&
+      homeHoldsReceivedFiles(deps.sandbox, current)
+    );
+  };
   const root = parseComputerMode(computer.scope) === "team" ? "shared/received" : "received";
   const list = (directory: string) =>
-    home.list(computer.homeKey, directory, context) as Promise<Listing>;
-  const files = await expiredFiles(list, root, cutoff);
-  if (!files.length) return 0;
-  return home.removeFiles(computer.homeKey, files, root, context, { signal });
+    deps.home.list(computer.homeKey, directory, context) as Promise<Listing>;
+  const files = (await expiredFiles(list, root, cutoff)).slice(0, PRUNE_MAX_FILES);
+  let removed = 0;
+  for (let at = 0; at < files.length; at += PRUNE_BATCH_FILES) {
+    if (signal.aborted || !(await unchanged())) break;
+    const batch = files.slice(at, at + PRUNE_BATCH_FILES);
+    removed += await deps.home.removeFiles(computer.homeKey, batch, root, context, { signal });
+  }
+  return removed;
 }
 
 /**
@@ -162,15 +196,7 @@ export function createReceivedFilesPruner(deps: {
               deps.prisma,
               `received-files:${computer.id}`,
               { ttlMs: PRUNE_LEASE_MS, signal: context.signal },
-              async (lease) => {
-                // Read again under the lease: the computer may have started since the page was read.
-                const current = await deps.prisma.computer.findUnique({
-                  where: { id: computer.id },
-                  select: { kind: true, providerRef: true, state: true },
-                });
-                if (!current || !homeHoldsReceivedFiles(deps.sandbox, current)) return 0;
-                return pruneComputer(deps.home, computer, cutoff, context, lease.signal);
-              },
+              (lease) => pruneComputer(deps, computer, cutoff, context, lease.signal),
             ).catch((error: unknown) => {
               if (error instanceof LeaseHeldError) return 0;
               throw error;

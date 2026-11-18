@@ -19,6 +19,7 @@ type ComputerRow = {
   kind: string;
   providerRef: string | null;
   state: string;
+  updatedAt: Date;
 };
 
 const team: ComputerRow = {
@@ -30,6 +31,7 @@ const team: ComputerRow = {
   kind: "docker",
   providerRef: null,
   state: "stopped",
+  updatedAt: new Date("2026-11-01T00:00:00Z"),
 };
 
 async function setup(
@@ -250,6 +252,56 @@ describe("createReceivedFilesPruner", () => {
     await prune();
 
     expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
+  });
+
+  it("stops deleting once the computer wakes partway through", async () => {
+    const files = Array.from(
+      { length: 60 },
+      (_, index) => `shared/received/2026/09/2026-09-28_0900_alice_${index}.pdf`,
+    );
+    const { prune, prisma, names } = await setup([team], { "team-home": files });
+    const woke = { ...team, state: "booting", updatedAt: new Date("2026-11-17T11:59:00Z") };
+    // The first look and the one before the first batch see it stopped, the next one awake.
+    vi.mocked(prisma.computer.findUnique)
+      .mockResolvedValueOnce(team as never)
+      .mockResolvedValueOnce(team as never)
+      .mockResolvedValue(woke as never);
+
+    await prune();
+
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(35);
+  });
+
+  it("stops deleting once the computer was touched, even in the same state", async () => {
+    const files = Array.from(
+      { length: 30 },
+      (_, index) => `shared/received/2026/09/2026-09-28_0900_alice_${index}.pdf`,
+    );
+    const { prune, prisma, names } = await setup([team], { "team-home": files });
+    const touched = { ...team, updatedAt: new Date("2026-11-17T11:59:00Z") };
+    vi.mocked(prisma.computer.findUnique)
+      .mockResolvedValueOnce(team as never)
+      .mockResolvedValueOnce(team as never)
+      .mockResolvedValue(touched as never);
+
+    await prune();
+
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(5);
+  });
+
+  it("deletes at most 500 files in one home per pass and leaves the rest for the next", async () => {
+    const files = Array.from(
+      { length: 510 },
+      (_, index) => `shared/received/2026/09/2026-09-28_0900_alice_${index}.pdf`,
+    );
+    const { prune, names, advance } = await setup([team], { "team-home": files });
+
+    await prune();
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(10);
+
+    advance(25 * 60 * 60_000);
+    await prune();
+    expect(await names("team-home", "shared/received")).toEqual([]);
   });
 
   it("skips a computer that started after the page of computers was read", async () => {

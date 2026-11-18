@@ -300,7 +300,8 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /**
    * Asleep, the computer's machine is stopped, with no process left in it, rather than paused
-   * with its processes frozen until it resumes. Declared only where the provider's stop does so.
+   * with its processes frozen until it resumes. True only where it was verified that the
+   * provider's sleep stops the machine; false means it is not relied on.
    */
   sleepStopsMachine: boolean;
 }

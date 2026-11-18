@@ -324,15 +324,23 @@ Limits:
   line; the cleanup removes it like any other.
 - A message's files are copied between its downloads, so each later file of the message starts
   downloading a little later, within the same download time limit.
-- A copy into an asleep or stopped computer's stored home is not held against a start or a
-  save of that computer. If the computer starts from its previous save and then saves again,
-  the copy can be lost although the bot was told its path; the same can happen on a running
-  computer that saves and stops between the check of its state and the write. An asleep Docker
-  computer that wakes between that check and the write has its container running again while
-  the server writes in its home.
+- A copy into an asleep or stopped computer's stored home, and the cleanup of one, are not
+  held against a start or a save of that computer. If the computer starts from its previous
+  save and then saves again, the copy can be lost although the bot was told its path; the same
+  can happen on a running computer that saves and stops between the check of its state and the
+  write. An asleep Docker computer that wakes between that check and the write has its
+  container running again while the server writes in its home. The cleanup looks at the
+  computer again before every 25 deletions and stops at any change, deletes at most 500 copies
+  in one home per pass, and leaves the rest for the next day.
+- A stopped Docker computer is treated as having no container only once Rakazo removed its
+  container or found it gone. If a container is still there although Rakazo took it for gone,
+  the server can write in or clean a home that container still mounts.
+- With homes kept in object storage, an asleep Docker computer whose last save was skipped
+  because its home was too large still gets the copy in its home, but storing the home fails,
+  so the bot's message has no line for it.
 - With homes kept in object storage, each copy into a computer that is not running downloads
   its stored home and uploads it again whole. A large home can take longer than the 30
-  seconds, leaving a copy without its line, and the daily cleanup downloads every home it
-  looks at.
+  seconds, leaving a copy without its line. The daily cleanup downloads every home it looks at,
+  and uploads it again after every 25 deletions.
 - A message handed to a message routine still gets its copies, but the routine is not told
   where they are.
