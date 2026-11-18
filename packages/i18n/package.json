@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./bot-removal": "./src/bot-removal.ts",
+    "./computer-preview": "./src/computer-preview.ts",
     "./computer-usage": "./src/computer-usage.ts",
     "./meeting": "./src/meeting.ts",
     "./run-error": "./src/run-error.ts",
