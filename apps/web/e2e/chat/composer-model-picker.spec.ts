@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -8,6 +9,52 @@ import {
 } from "../helpers/helpers";
 
 type BotRow = { id: string; name: string; modelProvider: string | null; modelId: string | null };
+
+test("a missing model opens Models in account Settings from chat", async ({ page }, testInfo) => {
+  await signup(page, `composer-connect-${Date.now()}@rakazo.test`, "password12", "Connect Model");
+  await completeOnboarding(page);
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, json: { ...body.json, needsModel: true } } });
+  });
+  await page.route("**/rpc/models/credentials", (route) => route.fulfill({ json: { json: [] } }));
+  await page.route("**/rpc/threads/send", (route) =>
+    route.fulfill({
+      status: 400,
+      json: {
+        json: {
+          defined: false,
+          code: "BAD_REQUEST",
+          status: 400,
+          message: MODEL_REQUIRED_SEND_ERROR,
+        },
+      },
+    }),
+  );
+  await page.route("**/rpc/models/role", (route) =>
+    route.request().postDataJSON().json.role === "main"
+      ? route.fulfill({ json: { json: { primary: null, backups: [], deploymentPrimary: null } } })
+      : route.fallback(),
+  );
+
+  await page.reload();
+  const draft = page.getByRole("combobox", { name: /^Message/ });
+  await draft.fill("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: MODEL_REQUIRED_SEND_ERROR }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings.getByRole("heading", { name: "Models", exact: true })).toBeVisible();
+  const main = settings.getByTestId("model-role-main");
+  const connect = main.getByRole("button", { name: "Connect a model", exact: true });
+  await expect(connect).toBeVisible();
+  await expect(main.getByRole("button", { name: "Add fallback" })).toHaveCount(0);
+  await expect(settings.getByTestId("model-role-approval")).toHaveCount(0);
+  await expect(settings.getByTestId("model-providers")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "composer-connect-model-settings");
+  await connect.click();
+  await expect(page.getByRole("combobox", { name: "Search models" })).toBeVisible();
+});
 
 test("the chat's model can be changed from the message box once turned on", async ({
   page,

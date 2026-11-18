@@ -99,7 +99,7 @@ export function modelsRoutes(ctx: RouterContext) {
     refreshExpiredCredential,
     chatCatalog,
     withServingConnections,
-    withDeploymentDefault,
+    deploymentDefault,
     withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
@@ -235,19 +235,15 @@ export function modelsRoutes(ctx: RouterContext) {
       role: authed.models.role.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        return withImageInput(
-          context.actor,
-          input.role,
-          await withDeploymentDefault(
-            context.actor,
-            input.role,
-            await getModelRole(
-              deps.prisma,
-              await modelRoleTarget(deps.prisma, context.actor, input.scope),
-              input.role,
-            ),
+        const { actor } = context;
+        const { role, scope } = input;
+        const [settings, deploymentPrimary] = await Promise.all([
+          modelRoleTarget(deps.prisma, actor, scope).then((target) =>
+            getModelRole(deps.prisma, target, role),
           ),
-        );
+          deploymentDefault(actor, role),
+        ]);
+        return withImageInput(actor, role, { ...settings, deploymentPrimary });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
@@ -260,21 +256,14 @@ export function modelsRoutes(ctx: RouterContext) {
           [...(primary ? [primary] : []), ...(backups ?? [])],
           reads,
         );
-        return withImageInput(
-          context.actor,
+        const deploymentPrimary = await deploymentDefault(context.actor, role);
+        const settings = await updateModelRole(
+          deps.prisma,
+          { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
           role,
-          await withDeploymentDefault(
-            context.actor,
-            role,
-            await updateModelRole(
-              deps.prisma,
-              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
-              role,
-              { primary, backups },
-            ),
-          ),
-          reads,
+          { primary, backups },
         );
+        return withImageInput(context.actor, role, { ...settings, deploymentPrimary }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
