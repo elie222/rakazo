@@ -356,15 +356,6 @@ afterEach(() => {
   installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
 
-/** The listings a tool asked for: copying an attachment also lists its folder to see if it is there. */
-function toolListings(sandbox: {
-  listFiles: { mock: { calls: unknown[][]; invocationCallOrder: number[] } };
-}) {
-  return sandbox.listFiles.mock.invocationCallOrder.filter(
-    (_order, index) => !String(sandbox.listFiles.mock.calls[index]?.[1]).endsWith("attachments"),
-  );
-}
-
 describe("run computer provisioning", () => {
   it("retries handed-off setup failures with durable attempt accounting and backoff", async () => {
     const onRunStarted = vi.fn();
@@ -467,7 +458,9 @@ describe("run computer provisioning", () => {
       expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
       expect(provisionComputer).toHaveBeenCalledOnce();
       expect(sandbox.writeFile).toHaveBeenCalledOnce();
-      expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(toolListings(sandbox)[0]!);
+      expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(
+        sandbox.listFiles.mock.invocationCallOrder[0]!,
+      );
       expect(sink.events.filter((event) => event.message === "computer.requested")).toEqual([
         expect.objectContaining({ reason: "tool", tool: "list_files" }),
       ]);
@@ -485,7 +478,7 @@ describe("run computer provisioning", () => {
     expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sandbox.writeFile).toHaveBeenCalledOnce();
-    expect(toolListings(sandbox)).toHaveLength(2);
+    expect(sandbox.listFiles).toHaveBeenCalledTimes(2);
   });
 
   it("retries a transient attachment copy before a later tool without reprovisioning", async () => {
@@ -499,7 +492,7 @@ describe("run computer provisioning", () => {
     expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sandbox.writeFile).toHaveBeenCalledTimes(2);
-    expect(toolListings(sandbox)).toHaveLength(1);
+    expect(sandbox.listFiles).toHaveBeenCalledOnce();
   });
 
   it("delivers steering text and inline images without copying onto an already-started computer", async () => {
@@ -532,9 +525,11 @@ describe("run computer provisioning", () => {
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sandbox.writeFile).toHaveBeenCalledOnce();
     expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeGreaterThan(
-      toolListings(sandbox)[0]!,
+      sandbox.listFiles.mock.invocationCallOrder[0]!,
     );
-    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(toolListings(sandbox)[1]!);
+    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(
+      sandbox.listFiles.mock.invocationCallOrder[1]!,
+    );
   });
 
   it("does not boot for a steering attachment without computer tools", async () => {

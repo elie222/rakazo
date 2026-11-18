@@ -256,10 +256,14 @@ async function materializeThreadFiles(
       input.context.botId,
       metadata.path,
     );
-    const exists = await computerHoldsFile(deps.sandbox, await input.computer(), input.context, {
-      workspacePath,
-      size: preserveExisting ? undefined : row.size,
-    });
+    // The arrival copy writes only files with a stored path, so a current-turn file without one
+    // is written as before, with no listing.
+    const exists =
+      (preserveExisting || row.computerPath != null) &&
+      (await computerHoldsFile(deps.sandbox, await input.computer(), input.context, {
+        workspacePath,
+        size: preserveExisting ? undefined : row.size,
+      }));
     if (!exists) {
       const bytes = await deps.artifacts.get(row.storageKey, input.context);
       if (bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {

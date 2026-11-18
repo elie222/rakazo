@@ -891,10 +891,15 @@ describe("attachments at their stored path", () => {
     expect(currentTurnFilesInstruction(files)).toContain(`"${readablePath}"`);
   });
 
-  it("keeps the id path for a row with no stored path", async () => {
-    const { deps, input, writeFile } = setup(null);
+  it("keeps the id path for a row with no stored path and writes it without listing the folder", async () => {
+    // Even a same-size copy at the id path is rewritten, as before stored paths existed.
+    const listFiles = vi
+      .fn()
+      .mockResolvedValue([{ path: "bots/bot-1/attachments/image-1.png", kind: "file", size: 4 }]);
+    const { deps, input, writeFile } = setup(null, { listFiles });
     const files = await materializeCurrentTurnFiles(deps, [block], input);
     expect(files.map((file) => file.path)).toEqual(["attachments/image-1.png"]);
+    expect(listFiles).not.toHaveBeenCalled();
     expect(writeFile).toHaveBeenCalledWith(
       computer,
       expect.objectContaining({ path: "bots/bot-1/attachments/image-1.png" }),
