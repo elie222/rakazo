@@ -305,12 +305,13 @@ async function resolveModelKeyMaterial(
         "The deployment model connection changed. Start a new run.",
       );
     return {
-      resolveApiKey: (register) =>
+      resolveApiKey: (register, signal) =>
         sharedModelRequestCredential(
           deps.prisma,
           deps.secretStore,
           deploymentConnection,
           register ?? registerSecrets,
+          signal,
         ),
       redact: [],
     };

@@ -1,4 +1,5 @@
 import type { SpaceChangeKind } from "@rakazo/contracts";
+import { DEPLOYMENT_MODEL_READS } from "@rakazo/contracts";
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef } from "react";
 import { computerUpdates } from "../computers/computer-updates";
@@ -63,8 +64,12 @@ async function follow(signal: AbortSignal) {
           if (kind === "runs") invalidateWatchChat();
           if (kind === "deploymentModel")
             void queryClient.invalidateQueries({
-              predicate: ({ queryKey }) =>
-                queryKey.includes("me") || queryKey.includes("models/role"),
+              predicate: ({ queryKey: [, , scopeOrProcedure, scopedProcedure] }) => {
+                const procedure = String(scopeOrProcedure).startsWith("space:")
+                  ? scopedProcedure
+                  : scopeOrProcedure;
+                return DEPLOYMENT_MODEL_READS.some((read) => read === procedure);
+              },
             });
           if (kind === "computerUpdates") computerUpdates.signalled();
           else for (const listener of spaceChangeListeners) listener(kind);

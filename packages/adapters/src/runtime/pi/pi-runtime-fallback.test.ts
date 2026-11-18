@@ -70,7 +70,7 @@ vi.mock("./models/pi-openai-compatible-provider.js", () => ({
 import { sharedTokenPacer } from "../../models/endpoints/token-pacer.js";
 import { estimateModelContextTokens } from "../../models/model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
-import { SharedModelExchangeUnavailable } from "../../models/shared-deployment-model.js";
+import { SharedModelCredentialUnavailable } from "../../models/shared-deployment-model.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
@@ -738,11 +738,14 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
-  it("uses a configured backup when the shared OAuth exchange fails", async () => {
+  it.each([
+    new SharedModelCredentialUnavailable(),
+    new SharedModelCredentialUnavailable("The deployment model credential could not be read."),
+  ])("uses a configured backup for an unavailable shared credential: %s", async (unavailable) => {
     const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
     delete input.model.apiKey;
     input.model.resolveApiKey = async () => {
-      throw new SharedModelExchangeUnavailable();
+      throw unavailable;
     };
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),

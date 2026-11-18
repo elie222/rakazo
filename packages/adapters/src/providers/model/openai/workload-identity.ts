@@ -13,6 +13,63 @@ const Token = z.object({
   expires_in: z.number().int().positive(),
 });
 
+const FILE_FAILURES = new Set([
+  "EACCES",
+  "EIO",
+  "EISDIR",
+  "EMFILE",
+  "ENFILE",
+  "ENOENT",
+  "ENOTDIR",
+  "EPERM",
+]);
+const TRANSPORT_CODES = new Set([
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EPIPE",
+  "ERR_SSL_WRONG_VERSION_NUMBER",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ERR_TLS_HANDSHAKE_TIMEOUT",
+  "ETIMEDOUT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function knownFailureCode(error: unknown, allowed: ReadonlySet<string>) {
+  for (
+    let cause = error, depth = 0;
+    cause instanceof Error && depth < 4;
+    cause = cause.cause, depth += 1
+  ) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (code && allowed.has(code)) return code;
+  }
+  return undefined;
+}
+
+function logTransportFailure(phase: "fetch" | "read_response", error: unknown) {
+  const code = knownFailureCode(error, TRANSPORT_CODES);
+  const interrupted = error instanceof TypeError && error.message === "terminated";
+  const redirected =
+    error instanceof Error &&
+    error.cause instanceof Error &&
+    error.cause.message === "unexpected redirect";
+  if (!code && !interrupted && !redirected) return false;
+  getLogger().warn("OpenAI workload identity transport failed", { phase, code });
+  return true;
+}
+
 export async function exchangeWorkloadIdentity(
   value: unknown,
   signal: AbortSignal,
@@ -22,8 +79,11 @@ export async function exchangeWorkloadIdentity(
   if (!binding.success) throw new ClientError("BAD_REQUEST", "Invalid model identity binding");
   const jwt = await readFile(binding.data.tokenFile, { encoding: "utf8", signal })
     .then((value) => value.trim())
-    .catch(() => {
+    .catch((error: unknown) => {
       signal.throwIfAborted();
+      const code = knownFailureCode(error, FILE_FAILURES);
+      if (!code) throw new Error("Unexpected workload identity assertion read failure.");
+      getLogger().warn("OpenAI workload identity assertion read failed", { code });
       throw new ClientError(
         "SERVICE_UNAVAILABLE",
         "Could not read the workload identity assertion.",
@@ -43,8 +103,10 @@ export async function exchangeWorkloadIdentity(
       service_account_id: binding.data.serviceAccountId,
     }),
     signal,
-  }).catch(() => {
+  }).catch((error: unknown) => {
     signal.throwIfAborted();
+    if (!logTransportFailure("fetch", error))
+      throw new Error("Unexpected OpenAI token service request failure.");
     throw new ClientError("SERVICE_UNAVAILABLE", "Could not reach the OpenAI token service.");
   });
   if (!response.ok) {
@@ -61,9 +123,15 @@ export async function exchangeWorkloadIdentity(
       "SERVICE_UNAVAILABLE",
       "The OpenAI token service returned an invalid response.",
     );
-  const payload = await response.json().catch(() => {
+  const payload = await response.json().catch((error: unknown) => {
     signal.throwIfAborted();
-    throw invalidResponse();
+    if (error instanceof SyntaxError) throw invalidResponse();
+    if (!logTransportFailure("read_response", error))
+      throw new Error("Unexpected OpenAI token service response failure.");
+    throw new ClientError(
+      "SERVICE_UNAVAILABLE",
+      "Could not read the OpenAI token service response.",
+    );
   });
   signal.throwIfAborted();
   const token = Token.safeParse(payload);

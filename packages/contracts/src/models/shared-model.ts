@@ -1,4 +1,11 @@
 import * as z from "zod";
+import type { RpcPath } from "../rpc/app-contract.js";
+
+export const DEPLOYMENT_MODEL_READS = [
+  "me",
+  "models/role",
+  "models/sharedDeployment",
+] as const satisfies readonly RpcPath[];
 
 export const SharedModelMethodSchema = z.enum(["api_key", "oauth"]);
 export const SharedModelConnectionSchema = z.object({

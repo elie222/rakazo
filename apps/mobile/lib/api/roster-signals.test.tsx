@@ -4,6 +4,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryClient } from "../query/query";
 import { useLiveStream, useRosterSignals, useSpaceChanges } from "./roster-signals";
 
 const streams = vi.hoisted(
@@ -123,6 +124,22 @@ describe("useRosterSignals", () => {
     expect(watch.invalidateWatchChat).toHaveBeenCalledOnce();
     act(() => streams[0]?.signal());
     expect(watch.invalidateWatchChat).toHaveBeenLastCalledWith("roster");
+  });
+
+  it("invalidates deployment model reads in account and Space caches", () => {
+    const account = ["server:test", "session:1", "me", {}];
+    const role = ["server:test", "session:1", "space:one", "models/role", {}];
+    const unrelated = ["server:test", "session:1", "space:one", "bots/list", {}];
+    for (const key of [account, role, unrelated]) queryClient.setQueryData(key, {});
+    try {
+      act(() => root.render(<Stream />));
+      act(() => streams[0]?.change("deploymentModel"));
+      expect(queryClient.getQueryState(account)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(role)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(unrelated)?.isInvalidated).toBe(false);
+    } finally {
+      queryClient.clear();
+    }
   });
 
   it("reads once when shown, then on every signal and never on a timer", async () => {

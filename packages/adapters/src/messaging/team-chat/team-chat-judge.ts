@@ -224,9 +224,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             modelCreditOfferings() &&
             approvedModelCreditOffering(requestedProvider, requestedModel))),
     );
-    // The member's main model runs on its connection, or on funded deployment credits.
+    const shared = sharedDeploymentModel(settings);
+    // A hosted-credit choice cannot run while the self-hosted shared default is active.
     const main =
       member &&
+      (!member.creditOfferingId || !shared) &&
       (member.creditOfferingId ||
         member.credentialId ||
         member.credential ||
@@ -236,7 +238,6 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
-    const shared = sharedDeploymentModel(settings);
     const fallback = deploymentModelRole("main", {
       settings,
       shared,
@@ -251,8 +252,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
-          resolveApiKey: (register) =>
-            sharedModelRequestCredential(this.deps.prisma, this.deps.secrets, shared, register),
+          resolveApiKey: (register, signal) =>
+            sharedModelRequestCredential(
+              this.deps.prisma,
+              this.deps.secrets,
+              shared,
+              register,
+              signal,
+            ),
         },
       };
 

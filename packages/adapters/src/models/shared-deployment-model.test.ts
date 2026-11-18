@@ -1,11 +1,28 @@
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { exchangeWorkloadIdentity } from "../providers/model/openai/workload-identity.js";
+import { verifyModelServesAgents } from "./model-connect-check.js";
 import { selectConfiguredModel } from "./model-roles.js";
 import {
+  SharedModelCredentialUnavailable,
   sharedDeploymentModel,
   sharedModelProviders,
   sharedModelRequestCredential,
+  testSharedModel,
 } from "./shared-deployment-model.js";
+
+vi.mock("../providers/model/openai/workload-identity.js", () => ({
+  exchangeWorkloadIdentity: vi.fn(),
+}));
+vi.mock("./model-connect-check.js", () => ({ verifyModelServesAgents: vi.fn() }));
+
+afterEach(() => {
+  vi.resetAllMocks();
+  vi.unstubAllEnvs();
+});
 
 const current = {
   sharedModelProvider: "test-provider",
@@ -14,6 +31,28 @@ const current = {
   sharedModelRevision: "current-revision",
   sharedModelCipher: "sealed-key",
 };
+
+function oauthModel(revision: string) {
+  vi.stubEnv(
+    "RAKAZO_MODEL_OAUTH_BINDINGS",
+    JSON.stringify({ fixture: { provider: "openai", config: {} } }),
+  );
+  const row = {
+    ...current,
+    sharedModelProvider: "openai",
+    sharedModelMethod: "oauth",
+    sharedModelRevision: revision,
+  };
+  const findUnique = vi.fn().mockResolvedValue(row);
+  const prisma = { deploymentSettings: { findUnique } } as unknown as Pick<
+    PrismaClient,
+    "deploymentSettings"
+  >;
+  const load = vi.fn(async () => "fixture");
+  const read = (signal?: AbortSignal) =>
+    sharedModelRequestCredential(prisma, { load }, sharedDeploymentModel(row)!, undefined, signal);
+  return { read, findUnique, row, load };
+}
 
 describe("the deployment default", () => {
   it("fills the fallback slot while personal selections keep their precedence", () => {
@@ -61,6 +100,82 @@ describe("the deployment default", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("shares a failed OAuth exchange across concurrent callers and permits a later retry", async () => {
+    const { read, load } = oauthModel("shared-failure");
+    const pending = deferred<{ key: string; expiresAt: number }>();
+    const exchange = vi.mocked(exchangeWorkloadIdentity).mockReturnValueOnce(pending.promise);
+    const first = read();
+    const second = read();
+    const outcome = Promise.allSettled([first, second]);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await flush();
+    pending.reject(new ClientError("SERVICE_UNAVAILABLE", "upstream unavailable"));
+    for (const result of await outcome) {
+      expect(result).toEqual({
+        status: "rejected",
+        reason: expect.any(SharedModelCredentialUnavailable),
+      });
+    }
+    expect(exchange).toHaveBeenCalledTimes(1);
+    exchange.mockResolvedValueOnce({ key: "new-bearer", expiresAt: Date.now() + 60_000 });
+    await expect(read()).resolves.toBe("new-bearer");
+    expect(exchange).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets one caller cancel without interrupting another caller's exchange", async () => {
+    const { read, load } = oauthModel("shared-cancellation");
+    const controller = new AbortController();
+    const pending = deferred<{ key: string; expiresAt: number }>();
+    const exchange = vi.mocked(exchangeWorkloadIdentity).mockReturnValueOnce(pending.promise);
+    const first = expect(read(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    const second = read();
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await flush();
+    controller.abort();
+    await first;
+    expect(exchange.mock.lastCall?.[1].aborted).toBe(false);
+    pending.resolve({ key: "shared-bearer", expiresAt: Date.now() + 60_000 });
+    await expect(second).resolves.toBe("shared-bearer");
+    expect(exchange).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports recoverable unseal failures only while the connection is still active", async () => {
+    const { findUnique, load, read, row } = oauthModel("unseal-failure");
+    const unreadable = new SecretStoreUnavailableError(undefined, "internal diagnostic");
+    load.mockRejectedValueOnce(unreadable).mockRejectedValueOnce(unreadable);
+    await expect(read()).rejects.toEqual(
+      new SharedModelCredentialUnavailable("The deployment model credential could not be read."),
+    );
+    findUnique
+      .mockResolvedValueOnce(row)
+      .mockResolvedValueOnce({ ...row, sharedModelDisabled: true });
+    await expect(read()).rejects.toThrow("deployment model connection changed");
+  });
+
+  it("keeps a revoked connection from falling back when its exchange fails", async () => {
+    const { findUnique, read, row } = oauthModel("revoked-failure");
+    findUnique
+      .mockResolvedValueOnce(row)
+      .mockResolvedValueOnce({ ...row, sharedModelRevision: "new" });
+    vi.mocked(exchangeWorkloadIdentity).mockRejectedValueOnce(
+      new ClientError("SERVICE_UNAVAILABLE", "upstream unavailable"),
+    );
+    await expect(read()).rejects.toThrow("deployment model connection changed");
+  });
+
+  it("reports an unexpected verification defect without leaking its credential", async () => {
+    const bug = new TypeError("fixture defect echoing fixture-key");
+    vi.mocked(verifyModelServesAgents).mockRejectedValueOnce(bug);
+    const error = await testSharedModel({
+      provider: "openai",
+      modelId: "fixture",
+      method: "api_key",
+      apiKey: "fixture-key",
+    }).catch((error: unknown) => error);
+    expect(error).toStrictEqual(new Error("Unexpected deployment model verification failure."));
+    expect(error).not.toHaveProperty("cause");
   });
 
   it("checks the connection revision again after the key has loaded", async () => {

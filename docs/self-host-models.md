@@ -39,15 +39,43 @@ the API and worker, for models that have no stored credential.
 
 ### Shared deployment connection
 
-On a self-hosted server, a verified account listed in `RAKAZO_ADMIN_EMAILS` can set the deployment default on the first model setup screen or in **Settings → Models → Deployment default**. Choose a provider, enter the model ID, and select **Test and save**. The connection applies to runs that use the deployment default. Disconnect it to return to the environment-configured default.
+On a self-hosted server, a verified account listed in `RAKAZO_ADMIN_EMAILS` can set the deployment default in the web or desktop app. Open the first model setup screen or **Settings → Models → Deployment default**, choose a provider, enter the model ID, and select **Test and save**. Members on all clients can use the deployment default. Disconnect it to return to the environment-configured default.
 
-The provider list offers API keys and, for eligible providers, OAuth. The first OAuth option uses an OpenAI Platform project service account via [workload identity federation](https://developers.openai.com/api/docs/guides/workload-identity-federation). An operator configures the trust relationship and makes a short-lived identity assertion available in a rotating, read-only file. Set the same binding on the API and worker:
+The provider list offers API keys and, for eligible providers, OAuth. The first OAuth option uses an OpenAI Platform project service account via [workload identity federation](https://developers.openai.com/api/docs/guides/workload-identity-federation). Configure the trust relationship and arrange for a short-lived OIDC assertion to be written and rotated in a dedicated host directory. Both the API and worker need read access to the assertion and the same binding.
+
+For Docker Compose, add this binding to the deployment's `.env`. The `tokenFile` value is the path **inside** the containers.
 
 ```env
-RAKAZO_MODEL_OAUTH_BINDINGS={"workload":{"provider":"openai","config":{"tokenFile":"/run/secrets/model-identity","identityProviderId":"wip_example","serviceAccountId":"svc_acct_example"}}}
+RAKAZO_MODEL_OAUTH_BINDINGS={"workload":{"provider":"openai","config":{"tokenFile":"/run/secrets/rakazo-model-identity/assertion.jwt","identityProviderId":"wip_example","serviceAccountId":"svc_acct_example"}}}
 ```
 
-Select the `workload` binding in the shared connection form. Keep the assertion file out of agent computers. Rakazo exchanges it for short-lived credentials on demand. If the exchange is unavailable, runs can use their configured backup models. Requests are billed to the provider project. A personal subscription sign-in remains a personal connection.
+Save this opt-in override as `model-oauth.override.yml`. Replace the host path with the directory where `assertion.jwt` is written. The application user must be able to read the file and traverse the directory after every rotation. Mount the directory so both processes see the new file when it is replaced.
+
+```yaml
+services:
+  api:
+    environment:
+      RAKAZO_MODEL_OAUTH_BINDINGS: ${RAKAZO_MODEL_OAUTH_BINDINGS:-}
+    volumes:
+      - /run/rakazo-model-identity:/run/secrets/rakazo-model-identity:ro
+  worker:
+    environment:
+      RAKAZO_MODEL_OAUTH_BINDINGS: ${RAKAZO_MODEL_OAUTH_BINDINGS:-}
+    volumes:
+      - /run/rakazo-model-identity:/run/secrets/rakazo-model-identity:ro
+```
+
+Apply the override after the existing Compose files. For an installation using the published images, run this in the deployment directory.
+
+```sh
+docker compose --env-file .env -f docker-compose.images.yml -f model-oauth.override.yml up -d
+```
+
+Keep the override in the Compose file list when recreating or updating the services. If you use the images updater, set `RAKAZO_COMPOSE_FILE=docker-compose.images.yml:model-oauth.override.yml` in `.env`.
+
+If the API and worker run in a single application service, set the binding and provide the read-only file in that service once. Keep the assertion directory outside the deployment directory, bot workspaces, and any host path shared with agent computers.
+
+Select the `workload` binding in the shared connection form. Rakazo exchanges the assertion for short-lived credentials on demand. If the exchange is unavailable, runs can use their configured backup models. Requests are billed to the provider project. A personal subscription sign-in remains a personal connection.
 
 ## Approvals
 

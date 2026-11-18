@@ -38,6 +38,29 @@ function setup() {
   return { deps, upsert, actor: { userId: "user", spaceId: "space" } as Actor };
 }
 describe("consent grants", () => {
+  it("discloses the shared deployment model when the saved main model requires hosted credits", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    vi.mocked(deps.prisma.userModelRoleChoice.findMany).mockResolvedValue([
+      {
+        position: 0,
+        provider: "anthropic",
+        modelId: "former-model",
+        creditOfferingId: "former-offering",
+        thinkingLevel: null,
+      },
+    ] as never);
+    vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+      sharedModelProvider: "openai",
+      sharedModelId: "gpt-6-luna",
+      sharedModelMethod: "oauth",
+      sharedModelRevision: "fixture",
+      sharedModelCipher: "sealed-binding",
+    } as never);
+    const status = await aiConsentStatus(deps, actor, { uses: ["model"] });
+    expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);
+  });
+
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";

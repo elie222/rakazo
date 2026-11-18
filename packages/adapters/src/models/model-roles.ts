@@ -142,8 +142,10 @@ export function selectConfiguredModel(input: {
   const useMain =
     !useOverride &&
     main !== null &&
-    (Boolean(main.credentialId || main.creditOfferingId) ||
-      runnable(main.provider, main.credential, main.modelId));
+    // A shared connection is self-hosted, so a saved hosted-credit choice cannot run here.
+    (main.creditOfferingId
+      ? !input.defaults.shared
+      : Boolean(main.credentialId) || runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
     ? {

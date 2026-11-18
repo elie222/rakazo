@@ -605,7 +605,10 @@ export interface AgentRunModel {
   connectionId?: string;
   apiKey?: string;
   /** Resolves a deployment-owned credential at each model dispatch. */
-  resolveApiKey?: (registerSecrets?: (values: string[]) => void) => Promise<string>;
+  resolveApiKey?: (
+    registerSecrets?: (values: string[]) => void,
+    signal?: AbortSignal,
+  ) => Promise<string>;
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */

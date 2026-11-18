@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { exchangeWorkloadIdentity } from "./workload-identity.js";
 
+const warn = vi.hoisted(() => vi.fn());
+vi.mock("@rakazo/logging", () => ({ getLogger: () => ({ warn }) }));
 vi.mock("node:fs/promises", () => ({ readFile: vi.fn() }));
+
+beforeEach(() => warn.mockClear());
 
 const binding = {
   tokenFile: "fixture-token",
@@ -29,6 +33,57 @@ describe("workload identity exchange", () => {
       identity_provider_id: "fixture-provider",
       service_account_id: "fixture-account",
     });
+  });
+
+  it("logs only the safe file-read code", async () => {
+    vi.mocked(readFile).mockRejectedValueOnce(
+      Object.assign(new Error("private-path-and-diagnostic"), { code: "ENOENT" }),
+    );
+    const fetcher = vi.fn<typeof fetch>();
+    await expect(
+      exchangeWorkloadIdentity(binding, new AbortController().signal, fetcher),
+    ).rejects.toMatchObject({
+      kind: "SERVICE_UNAVAILABLE",
+      message: "Could not read the workload identity assertion.",
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([
+      ["OpenAI workload identity assertion read failed", { code: "ENOENT" }],
+    ]);
+  });
+
+  it.each(["ECONNRESET", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"])(
+    "logs only the safe transport phase and nested error code %s",
+    async (code) => {
+      vi.mocked(readFile).mockResolvedValue("fixture-assertion");
+      const cause = Object.assign(new Error("private-host-and-diagnostic"), { code });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockRejectedValueOnce(new TypeError("fetch failed", { cause }));
+      await expect(
+        exchangeWorkloadIdentity(binding, new AbortController().signal, fetcher),
+      ).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+        message: "Could not reach the OpenAI token service.",
+      });
+      expect(warn.mock.calls).toEqual([
+        ["OpenAI workload identity transport failed", { phase: "fetch", code }],
+      ]);
+    },
+  );
+
+  it("does not classify an unexpected transport defect as a provider outage", async () => {
+    vi.mocked(readFile).mockResolvedValue("fixture-assertion");
+    const bug = new TypeError("fixture defect echoing fixture-assertion");
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValueOnce(bug);
+    const error = await exchangeWorkloadIdentity(
+      binding,
+      new AbortController().signal,
+      fetcher,
+    ).catch((error: unknown) => error);
+    expect(error).toStrictEqual(new Error("Unexpected OpenAI token service request failure."));
+    expect(error).not.toHaveProperty("cause");
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("reports a token service outage without exposing its response", async () => {
