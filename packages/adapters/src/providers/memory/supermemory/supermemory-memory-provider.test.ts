@@ -4,6 +4,7 @@ import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
 import {
+  createSupermemoryProvider,
   prepareSupermemoryConnection,
   SupermemoryMemoryProvider,
 } from "./supermemory-memory-provider.js";
@@ -173,6 +174,28 @@ describe("SupermemoryMemoryProvider", () => {
 const credentials = { apiKey: "sm_test_key" };
 const privateResolver = async () => [{ address: "172.18.0.4", family: 4 as const }];
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
+
+describe("Supermemory connection identity", () => {
+  const cloud = { mode: "cloud" };
+  const identity = (
+    settings: Record<string, string>,
+    apiKey = "sm_test_key",
+    connectionVersion: string | undefined = "connection-1",
+  ) => createSupermemoryProvider(settings, { apiKey }, connectionVersion).connectionIdentity;
+
+  it("lets a failed purge be retried on the same saved connection", () => {
+    expect(identity(cloud)).toEqual(expect.any(String));
+    expect(identity(cloud)).toBe(identity(cloud, "sm_rotated_key"));
+    expect(createSupermemoryProvider(cloud, { apiKey: "sm_test_key" }).connectionIdentity).toBe(
+      undefined,
+    );
+  });
+
+  it("changes when the connection or its endpoint is replaced", () => {
+    expect(identity(cloud, undefined, "connection-2")).not.toBe(identity(cloud));
+    expect(identity({ mode: "local", baseUrl: "http://localhost:6767" })).not.toBe(identity(cloud));
+  });
+});
 
 describe("Supermemory connection setup", () => {
   function setupFetch(deleteStatus: number) {
