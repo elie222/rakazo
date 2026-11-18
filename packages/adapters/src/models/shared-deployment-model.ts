@@ -13,6 +13,7 @@ import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 import { isPermanentDecryptFailure } from "../secrets/secrets.js";
 import { verifyModelServesAgents } from "./model-connect-check.js";
+import type { ModelProviderDefinition } from "./model-provider-registry.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 
 export const DEPLOYMENT_MODEL_CONNECTION_ID = "default";
@@ -39,11 +40,10 @@ function identityBindings() {
 
 export function sharedModelProviders() {
   const bindings = Object.entries(identityBindings());
-  return Object.keys(modelProviders).flatMap((id) => {
-    const provider = modelProviderDefinition(id);
+  return Object.entries<ModelProviderDefinition>(modelProviders).flatMap(([id, provider]) => {
     const methods: SharedModelConnection["method"][] = [];
-    if (provider?.deployment || provider?.sharedApiKey) methods.push("api_key");
-    const names = provider?.sharedOAuth
+    if (provider.deployment || provider.sharedApiKey) methods.push("api_key");
+    const names = provider.sharedOAuth
       ? bindings.filter(([, binding]) => binding.provider === id).map(([name]) => name)
       : [];
     if (names.length) methods.push("oauth");

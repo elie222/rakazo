@@ -14,6 +14,8 @@ import {
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  SharedModelInputSchema,
+  SharedModelSettingsSchema,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import {
@@ -22,7 +24,6 @@ import {
   ModelRoleUpdateSchema,
   ModelRoleViewSchema,
 } from "./model-roles.js";
-import { SharedModelInputSchema, SharedModelSettingsSchema } from "./shared-model.js";
 import {
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
