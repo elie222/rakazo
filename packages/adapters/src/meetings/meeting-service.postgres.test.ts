@@ -120,7 +120,7 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
         const { meetings } = await service.list(actor, botId);
         const id = meetings[0]!.id;
         await service.leave(actor, id);
-        expect((await service.transcript(actor, id)).shared).toBe(false);
+        expect((await service.transcript(actor, id)).artifactAvailable).toBe(false);
         expect(await recentChatMeetings(prisma, { ...actor, botId })).toEqual([]);
         return id;
       });
@@ -143,6 +143,14 @@ describe.skipIf(!databaseUrl)("meeting transcript recovery in PostgreSQL", () =>
           transcript: expect.stringContaining("Alex Rivera"),
         }),
       );
+      await runAsTenant(teammate, () =>
+        prisma.artifact.delete({ where: { meetingSessionId: privateSession } }),
+      );
+      await runAsTenant(actor, async () => {
+        expect((await service.transcript(actor, privateSession)).artifactAvailable).toBe(false);
+        await service.shareTranscript(actor, privateSession);
+        expect((await service.transcript(actor, privateSession)).artifactAvailable).toBe(true);
+      });
     } finally {
       await jobs.close();
       await pool.end();

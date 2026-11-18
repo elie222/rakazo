@@ -23,8 +23,11 @@ export function meetingRoutes({ authed, deps }: RouterContext) {
         requireMeetings().leave(context.actor, input.id),
       ),
       transcript: authed.meetings.transcript.handler(async ({ input, context }) => {
-        const { turns, shared } = await requireMeetings().transcript(context.actor, input.id);
-        return { turns, shared };
+        const { turns, artifactAvailable } = await requireMeetings().transcript(
+          context.actor,
+          input.id,
+        );
+        return { turns, artifactAvailable };
       }),
       shareTranscript: authed.meetings.shareTranscript.handler(({ input, context }) =>
         requireMeetings().shareTranscript(context.actor, input.id),

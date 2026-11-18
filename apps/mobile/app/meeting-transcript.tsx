@@ -59,7 +59,7 @@ export default function MeetingTranscriptScreen() {
         }
       : null,
   });
-  const error = transcript.error ?? sharing.error ?? removal.error;
+  const error = transcript.error ?? removal.error;
   return (
     <FlatList
       style={[styles.screen, sideInsets]}
@@ -91,14 +91,21 @@ export default function MeetingTranscriptScreen() {
         </View>
       }
       ListFooterComponent={
-        transcript.data?.shared === false ? (
-          <SettingsGroup>
-            <SettingsRow
-              title={t`Share transcript with Space`}
-              disabled={sharing.pending || removal.pending}
-              onPress={() => sharing.run()}
-            />
-          </SettingsGroup>
+        transcript.data?.artifactAvailable === false ? (
+          <View>
+            <SettingsGroup>
+              <SettingsRow
+                title={t`Share transcript with Space`}
+                disabled={sharing.pending || removal.pending}
+                onPress={() => sharing.run()}
+              />
+            </SettingsGroup>
+            {sharing.error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {errorText(sharing.error, t`Could not share transcript`)}
+              </Text>
+            ) : null}
+          </View>
         ) : undefined
       }
     />

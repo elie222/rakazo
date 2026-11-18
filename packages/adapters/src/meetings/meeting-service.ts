@@ -223,7 +223,14 @@ export class MeetingService {
     return {
       botId: row.botId,
       turns: readMeetingTurns(row.id, row.transcript),
-      shared: row.shareTranscript,
+      artifactAvailable:
+        row.shareTranscript &&
+        Boolean(
+          await this.deps.prisma.artifact.findUnique({
+            where: { meetingSessionId: row.id },
+            select: { id: true },
+          }),
+        ),
     };
   }
 
@@ -231,14 +238,18 @@ export class MeetingService {
     const row = await this.session(actor, sessionId, true);
     if (row.status !== "ready" || row.transcript === null)
       throw new ClientError("NOT_FOUND", "The meeting transcript is unavailable.");
-    if (row.shareTranscript) return;
     const artifact = meetingTranscriptArtifact(row, readMeetingTurns(row.id, row.transcript));
     await this.deps.prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
-        where: { id: row.id, shareTranscript: false, status: "ready" },
+        where: { id: row.id, userId: actor.userId, spaceId: actor.spaceId, status: "ready" },
         data: { shareTranscript: true },
       });
-      if (count) await tx.artifact.create({ data: artifact });
+      if (count)
+        await tx.artifact.upsert({
+          where: { meetingSessionId: row.id },
+          create: artifact,
+          update: {},
+        });
     });
     await this.notify(row.spaceId);
   }

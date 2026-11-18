@@ -71,7 +71,7 @@ export function MeetingTranscript({
           </li>
         ))}
       </ol>
-      {transcript.data.shared === false ? (
+      {transcript.data.artifactAvailable === false ? (
         <Button
           type="button"
           variant="outline"

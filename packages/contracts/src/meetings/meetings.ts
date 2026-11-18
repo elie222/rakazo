@@ -39,7 +39,10 @@ const meeting = z.object({
 
 const session = z.object({ id: z.string().min(1).max(128) });
 const bot = z.object({ botId: z.string().min(1).max(128) });
-const transcript = z.object({ turns: z.array(MeetingTurnSchema), shared: z.boolean().optional() });
+const transcript = z.object({
+  turns: z.array(MeetingTurnSchema),
+  artifactAvailable: z.boolean().optional(),
+});
 
 export const meetingsRpc = {
   meetings: {

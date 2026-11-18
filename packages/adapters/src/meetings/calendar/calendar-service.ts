@@ -19,7 +19,12 @@ import {
   parseMeetingUrl,
 } from "../meeting-service.js";
 import { CalendarAuthorization, signCalendarConnectionRef } from "./calendar-authorization.js";
-import { matchCalendarRule, meetingBookingKey } from "./calendar-rules.js";
+import {
+  matchCalendarRule,
+  meetingBookingKey,
+  selectedCalendarRule,
+  syncScheduledTranscriptSharing,
+} from "./calendar-rules.js";
 
 const CONNECT_RECOVERY_MS = 10 * 60_000;
 const CONNECT_RETRY_MS = 30_000;
@@ -376,18 +381,18 @@ export class MeetingCalendarService {
           for (const event of events) {
             const previous = bookings.get(event.id);
             bookings.delete(event.id);
-            const botId =
+            const rule =
               previous || matchCalendarRule(connection.rules, event)?.botId
-                ? await this.selectedBotId(prisma, connectionId, event)
+                ? await selectedCalendarRule(prisma, connectionId, event)
                 : null;
             const link = this.eligibleLink(event, window);
-            const bot = botId
+            const bot = rule?.botId
               ? await prisma.bot.findFirst({
-                  where: { id: botId, spaceId: connection.spaceId, archivedAt: null },
+                  where: { id: rule.botId, spaceId: connection.spaceId, archivedAt: null },
                   select: { id: true, name: true },
                 })
               : null;
-            if (bot && link && event.meetingUrl) {
+            if (rule && bot && link && event.meetingUrl) {
               lease.signal.throwIfAborted();
               // A valid reservation that started during this pass can already be joining.
               if (event.startsAt <= this.now()) continue;
@@ -396,6 +401,7 @@ export class MeetingCalendarService {
               const configDigest = createHmac("sha256", this.options.oauthStateKey)
                 .update(JSON.stringify([link.url, bot.name, event.startsAt.toISOString()]))
                 .digest("base64url");
+              const reservation = { configDigest, expiresAt, key };
               if (previous) {
                 const prior = await prisma.meetingSession.findFirst({
                   where: { id: previous.sessionId },
@@ -409,8 +415,18 @@ export class MeetingCalendarService {
                   prior.activeKey === key &&
                   previous.linked &&
                   previous.configDigest === configDigest
-                )
+                ) {
+                  if (previous.shareTranscript !== rule.shareTranscript)
+                    await this.reserve(
+                      connection,
+                      event,
+                      bot.id,
+                      link.platform,
+                      { ...reservation, linkedSessionId: previous.sessionId },
+                      lease,
+                    );
                   continue;
+                }
                 if (prior.activeKey !== key)
                   await this.removeBooking(connectionId, previous, lease);
               }
@@ -420,7 +436,7 @@ export class MeetingCalendarService {
                 event,
                 bot.id,
                 link.platform,
-                { configDigest, expiresAt, key },
+                reservation,
                 lease,
               );
               if (!sessionId) continue;
@@ -433,7 +449,7 @@ export class MeetingCalendarService {
                 botName: `${bot.name.slice(0, 88)} · Rakazo`,
                 expiresAt,
               });
-              if ((await this.selectedBotId(prisma, connectionId, event)) !== bot.id) {
+              if ((await selectedCalendarRule(prisma, connectionId, event))?.botId !== bot.id) {
                 await this.removeBooking(connectionId, booking, lease);
                 continue;
               }
@@ -471,7 +487,8 @@ export class MeetingCalendarService {
                   });
                 }
                 const selected =
-                  connected && (await this.selectedBotId(tx, connectionId, event)) === bot.id;
+                  connected &&
+                  (await selectedCalendarRule(tx, connectionId, event))?.botId === bot.id;
                 if (!session || session.closedAt || session.status === "leaving" || !selected) {
                   // Keep the provider ID for cleanup when a leave or selection change wins.
                   // Wake the other calendars if the reservation was shared.
@@ -688,10 +705,12 @@ export class MeetingCalendarService {
       configDigest,
       expiresAt,
       key,
+      linkedSessionId,
     }: {
       expiresAt: Date;
       configDigest: string;
       key: string;
+      linkedSessionId?: string;
     },
     lease: HeldLease,
   ) {
@@ -706,7 +725,7 @@ export class MeetingCalendarService {
           await assertLeaseHeld(tx, lease);
           await assertLeaseHeld(tx, admission);
           if (!(await this.lockConnectedCalendar(tx, connection.id))) return null;
-          const rule = await this.selectedRule(tx, connection.id, event);
+          const rule = await selectedCalendarRule(tx, connection.id, event);
           if (rule?.botId !== botId) return null;
           const { shareTranscript } = rule;
           // Reserve the link with the session. Last-unlink cleanup locks the same
@@ -714,6 +733,7 @@ export class MeetingCalendarService {
           const [existing] = await tx.$queryRaw<{ id: string; status: string }[]>`
             SELECT id, status FROM meeting_sessions WHERE "activeKey" = ${key} FOR UPDATE
           `;
+          if (linkedSessionId && existing?.id !== linkedSessionId) return null;
           if (existing?.status === "leaving") {
             await this.recordSkippedEvent(tx, connection.id, eventId, startsAt);
             return null;
@@ -726,6 +746,7 @@ export class MeetingCalendarService {
             return null;
           }
           const id = existing?.id ?? randomUUID();
+          if (existing) await syncScheduledTranscriptSharing(tx, connection, id, shareTranscript);
           if (!existing) {
             await tx.meetingSession.create({
               data: {
@@ -762,37 +783,17 @@ export class MeetingCalendarService {
               configDigest,
               shareTranscript,
             },
-            update: { sessionId: id, startsAt, configDigest, linked: false, shareTranscript },
+            update: {
+              sessionId: id,
+              startsAt,
+              configDigest,
+              linked: Boolean(linkedSessionId),
+              shareTranscript,
+            },
           });
           return id;
         }),
     );
-  }
-
-  private async selectedBotId(
-    db: Pick<Prisma.TransactionClient, "meetingCalendarRule">,
-    connectionId: string,
-    event: MeetingCalendarEvent,
-  ) {
-    return (await this.selectedRule(db, connectionId, event))?.botId ?? null;
-  }
-
-  private async selectedRule(
-    db: Pick<Prisma.TransactionClient, "meetingCalendarRule">,
-    connectionId: string,
-    event: MeetingCalendarEvent,
-  ) {
-    const rules = await db.meetingCalendarRule.findMany({
-      where: {
-        connectionId,
-        OR: [
-          { scope: "event", targetId: event.id },
-          ...(event.seriesId ? [{ scope: "series", targetId: event.seriesId }] : []),
-        ],
-      },
-      select: { scope: true, targetId: true, botId: true, shareTranscript: true },
-    });
-    return matchCalendarRule(rules, event);
   }
 
   private async lockConnectedCalendar(tx: Prisma.TransactionClient, connectionId: string) {
@@ -815,7 +816,7 @@ export class MeetingCalendarService {
       await assertLeaseHeld(tx, lease);
       if (
         (await this.lockConnectedCalendar(tx, connectionId)) &&
-        (await this.selectedBotId(tx, connectionId, event)) === botId
+        (await selectedCalendarRule(tx, connectionId, event))?.botId === botId
       )
         await this.recordSkippedEvent(tx, connectionId, booking.eventId, booking.startsAt);
     });
