@@ -117,3 +117,11 @@ export function attachmentNamingFromEnv(source: NodeJS.ProcessEnv): AttachmentNa
     folders: choice(source, "ATTACHMENT_COPY_FOLDERS", ["none", "month"], "none"),
   };
 }
+
+/**
+ * `ATTACHMENT_COPY_ON_ARRIVAL=true` copies incoming attachments into the bot's computer as they
+ * arrive; off by default. Only the API reads it.
+ */
+export function copyAttachmentsOnArrivalFromEnv(source: NodeJS.ProcessEnv): boolean {
+  return source.ATTACHMENT_COPY_ON_ARRIVAL === "true";
+}

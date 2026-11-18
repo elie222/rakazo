@@ -288,6 +288,7 @@ export {
   ATTACHMENT_NAME_PATTERN,
   attachmentNamingFromEnv,
   attachmentPath,
+  copyAttachmentsOnArrivalFromEnv,
 } from "./storage/attachment-path.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";

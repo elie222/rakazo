@@ -100,13 +100,6 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   workspaceSaveLimits: WorkspaceExportLimits;
   /** Only names a bot's address to it; the API receives the mail. */
   inboundEmailDomain: string | undefined;
-  /** Incoming attachments are copied into their bots' computers as they arrive. */
-  copyAttachmentsOnArrival: boolean;
-}
-
-/** ATTACHMENT_COPY_ON_ARRIVAL=true copies incoming attachments on arrival; off by default. */
-export function copyAttachmentsOnArrivalFromEnv(source: NodeJS.ProcessEnv): boolean {
-  return source.ATTACHMENT_COPY_ON_ARRIVAL === "true";
 }
 
 /** The worker's reading of the run runtime settings, values and defaults as the worker has them. */
@@ -140,7 +133,6 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
-    copyAttachmentsOnArrival: copyAttachmentsOnArrivalFromEnv(source),
   };
 }
 
