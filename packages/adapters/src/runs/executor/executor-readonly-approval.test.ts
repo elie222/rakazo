@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -2188,14 +2189,67 @@ describe("own instructions through update_bot", () => {
     expect(f.instructionState.instructions).toBe("Draft only");
     expect(f.instructionState.instructionHistory).toHaveLength(0);
   });
-  it("asks for a held change on its own", async () => {
+  it("saves other fields at once and holds only the instructions for approval", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { name: "Scout", instructions: first }, executionId: "call-1" }]);
     await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects.at(-1)).toMatchObject({ status: "intended", request: held });
+    expect(f.instructionState.instructions).toBe("Draft only");
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: "Scout" }) }),
+    );
+    f.effects.at(-1)!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe(first);
+    expect(f.results.at(-1)).toEqual({ ok: true, saved: ["name", "instructions"] });
+  });
+  it("asks for the other fields and then the instructions when a rule asks for update_bot", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      trigger: "routine",
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "update_bot" }],
+    });
+    f.setCalls([{ args: { name: "Scout", instructions: first }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]!.request).toEqual({ name: "Scout" });
+    f.effects[0]!.status = "approved";
+    await f.run();
+    expect(f.effects).toHaveLength(2);
+    expect(f.effects[1]).toMatchObject({ status: "intended", request: held });
+    f.effects[1]!.status = "approved";
+    await f.run();
+    expect(f.instructionState.instructions).toBe(first);
+    expect(f.results.at(-1)).toEqual({ ok: true, saved: ["name", "instructions"] });
+  });
+  it("applies other fields and instructions from one call when the owner skips approvals", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([{ args: { name: "Scout", instructions: first }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(first);
     expect(f.results).toEqual([
-      { error: "Change your instructions in their own update_bot call." },
+      expect.objectContaining({ ok: true, name: "Scout", saved: ["name", "instructions"] }),
     ]);
-    expect(f.effects).toEqual([]);
+  });
+  it("says the other fields were saved when the instructions are refused", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+    f.setCalls([
+      {
+        args: { name: "Scout", instructions: "x".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 1) },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      {
+        error: expect.stringMatching(
+          /^Your name changes were saved, but your instructions were not: instructions must be at most/,
+        ),
+      },
+    ]);
   });
   it("ignores a previous text the model sends", async () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
