@@ -1019,7 +1019,10 @@ export interface BackgroundJobPayloads {
     handle: string;
     identityId: string;
     text: string;
-    attachments: { name: string; mimeType: string }[];
+    /** Every file of the message in order, with the size its chat app reported when it did. */
+    attachments: { name: string; mimeType: string; size?: number }[];
+    /** An owner's "stop" came after it: the message joins the chat but starts no turn. */
+    quiet?: boolean;
   };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };

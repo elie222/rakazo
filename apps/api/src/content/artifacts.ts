@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
+import { inboundAttachmentMimeType } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -100,12 +101,8 @@ export async function storeInboundAttachment(
   if (replayed) return createdArtifact(replayed);
   const { attachment } = input;
   const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
-  // Some providers (e.g. WhatsApp voice notes) report a MIME type with
-  // parameters, such as "audio/ogg; codecs=opus". Strip them before
-  // inferring/validating so the base type is matched against the allowlist.
-  const reportedType =
-    attachment.mimeType.split(";")[0]?.trim().toLowerCase() || attachment.mimeType;
-  const mimeType = inferAttachmentMimeType(name, reportedType) ?? reportedType;
+  // The backup settle job judges a file it never got by the same type.
+  const mimeType = inboundAttachmentMimeType(name, attachment.mimeType);
   if (!isAllowedAttachmentMimeType(mimeType)) {
     throw new InboundAttachmentUnavailableError(
       "unsupported type",

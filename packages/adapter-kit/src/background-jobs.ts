@@ -10,6 +10,12 @@ import type {
   UnreferencedMachine,
 } from "./types.js";
 
+/**
+ * Files one direct message's backup settle lists by name, those past the attachment cap
+ * included, so its message and the sender's notice account for each; more are left out.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
+
 const payloadSchemas = {
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
@@ -64,7 +70,16 @@ const payloadSchemas = {
     handle: z.string().min(1),
     identityId: z.string().min(1),
     text: z.string(),
-    attachments: z.array(z.object({ name: z.string(), mimeType: z.string() })),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
+    quiet: z.boolean().optional(),
   }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
@@ -301,6 +316,11 @@ export function messagingInboundSettleJobKey(provider: string, handle: string): 
  */
 export const MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS = 5;
 
+/** The queue one sender's direct-message settles share, so their jobs run one at a time. */
+export function messagingInboundSettleQueue(identityId: string): string {
+  return `messaging.inbound:${identityId}`;
+}
+
 /**
  * Backup for settling one direct message whose files download after its webhook was answered.
  * One sender's jobs share a queue, so after a restart they still settle in the order they came.
@@ -314,7 +334,7 @@ export function messagingInboundSettleJob(
     payload,
     availableAt,
     replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
-    queueName: `messaging.inbound:${payload.identityId}`,
+    queueName: messagingInboundSettleQueue(payload.identityId),
     maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   };
 }

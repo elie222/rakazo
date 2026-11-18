@@ -7,6 +7,7 @@ import {
   historyCompactJob,
   historyCompactJobKey,
   MACHINE_CLEANUP_MAX_ATTEMPTS,
+  MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
   MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   MESSAGING_SEND_MAX_ATTEMPTS,
   machineCleanupJob,
@@ -142,6 +143,40 @@ describe("background job contracts", () => {
     expect(target["messaging.inbound_settle"]).toHaveBeenCalledWith(payload);
     expect(() =>
       parseBackgroundJob("messaging.inbound_settle", { ...payload, identityId: "" }),
+    ).toThrow();
+  });
+
+  it("reads settle payloads with and without the file sizes and quiet flag", () => {
+    const earlier = {
+      provider: "chat",
+      handle: "message:1",
+      identityId: "identity-1",
+      text: "",
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+    };
+    // The previous release queued these; they still parse as they were.
+    expect(parseBackgroundJob("messaging.inbound_settle", earlier).payload).toStrictEqual(earlier);
+    const current = {
+      ...earlier,
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime", size: 42 }],
+      quiet: true,
+    };
+    expect(parseBackgroundJob("messaging.inbound_settle", current).payload).toStrictEqual(current);
+    const file = { name: "photo.jpg", mimeType: "image/jpeg" };
+    expect(() =>
+      parseBackgroundJob("messaging.inbound_settle", {
+        ...earlier,
+        attachments: Array.from(
+          { length: MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS + 1 },
+          () => file,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      parseBackgroundJob("messaging.inbound_settle", {
+        ...earlier,
+        attachments: [{ ...file, size: -1 }],
+      }),
     ).toThrow();
   });
 

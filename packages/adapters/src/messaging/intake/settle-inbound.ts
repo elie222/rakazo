@@ -1,6 +1,13 @@
 import type { BackgroundJobPayloads, JobPublisher } from "@rakazo/adapter-kit";
 import { messagingInboundSettleJobKey } from "@rakazo/adapter-kit";
 import {
+  ARTIFACT_NAME_MAX_LENGTH,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
+  isAllowedAttachmentMimeType,
+} from "@rakazo/contracts";
+import {
+  inferAttachmentMimeType,
   messageBlockForArtifact,
   promptTextForAttachments,
   sanitizeMessagingLabel,
@@ -43,6 +50,31 @@ export function messagingAttachmentClientNonce(
  */
 export function unavailableFileLine(name: string, reason?: string): string {
   return `[file: ${sanitizeMessagingLabel(name)} (unavailable${reason ? `: ${reason}` : ""})]`;
+}
+
+/**
+ * The type an inbound file is kept as: the type its chat app reported, without parameters (a
+ * voice note's "audio/ogg; codecs=opus"), or the one its name implies.
+ */
+export function inboundAttachmentMimeType(name: string, reportedType: string): string {
+  const base = reportedType.split(";")[0]?.trim().toLowerCase() || reportedType;
+  return inferAttachmentMimeType(name, base) ?? base;
+}
+
+/**
+ * Why the store would refuse an inbound file before downloading it, as the direct path does:
+ * a type the bot cannot take, or a reported size over the upload limit.
+ */
+function refusal(
+  attachment: { name: string; mimeType: string; size?: number },
+  maxBytes: number,
+): "unsupported type" | "too large" | undefined {
+  const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  if (!isAllowedAttachmentMimeType(inboundAttachmentMimeType(name, attachment.mimeType))) {
+    return "unsupported type";
+  }
+  if ((attachment.size ?? 0) > maxBytes) return "too large";
+  return undefined;
 }
 
 /**
@@ -111,9 +143,9 @@ async function openSettleText(
 
 /**
  * The backup for a direct message whose files were still downloading when its process stopped:
- * posts the message with the files that were stored, marks every other one as not received,
- * wakes the bot, and tells the sender once. A message that already landed, here or through a
- * message routine, is left as it is.
+ * posts the message with the files that were stored, marks every other one with why it is
+ * missing, wakes the bot unless a stop quieted the message, and tells the sender once. A message
+ * that already landed, here or through a message routine, is left as it is.
  */
 export async function settleInboundMessage(
   deps: {
@@ -121,6 +153,8 @@ export async function settleInboundMessage(
     events: Pick<ThreadEvents, "sendUserMessage">;
     jobs: Pick<JobPublisher, "enqueue">;
     delivery: Pick<MessagingDelivery, "record">;
+    /** The upload limit the direct path refuses larger files by. */
+    maxUploadSizeBytes?: number;
   },
   payload: Payload,
 ): Promise<void> {
@@ -138,9 +172,10 @@ export async function settleInboundMessage(
   if (!thread) return;
   const text = await openSettleText(deps.prisma, identity.spaceId, payload);
 
-  const nonces = payload.attachments.map((_, index) =>
-    messagingAttachmentClientNonce(provider, handle, index),
-  );
+  // Files past the cap were never downloaded, so only those before it can have been stored.
+  const nonces = payload.attachments
+    .slice(0, ATTACHMENT_MAX_COUNT)
+    .map((_, index) => messagingAttachmentClientNonce(provider, handle, index));
   const stored = await deps.prisma.artifact.findMany({
     where: {
       spaceId: identity.spaceId,
@@ -156,9 +191,13 @@ export async function settleInboundMessage(
     const artifact = byNonce.get(nonce);
     return artifact ? [artifact] : [];
   });
-  const missing = payload.attachments.flatMap((attachment, index) =>
-    byNonce.has(nonces[index]!) ? [] : [unavailableFileLine(attachment.name, "not received")],
-  );
+  const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
+  const missing = payload.attachments.flatMap((attachment, index) => {
+    const nonce = nonces[index];
+    if (nonce && byNonce.has(nonce)) return [];
+    const reason = (nonce && refusal(attachment, maxBytes)) || "not received";
+    return [unavailableFileLine(attachment.name, reason)];
+  });
 
   // A message routine that took the message delivered it under its own nonce.
   const routed = await deps.prisma.message.findUnique({
@@ -190,8 +229,10 @@ export async function settleInboundMessage(
         prompt: promptTextForAttachments(body, artifacts),
         trigger: "messaging",
         clientNonce: messagingMessageClientNonce(provider, handle),
+        // A stop sent after it: the message joins the chat and starts no turn.
+        ...(payload.quiet ? { createRun: false } : {}),
       });
-      if (sent.runId) await wakeRun(deps.jobs, sent.runId);
+      if (sent.runId && !payload.quiet) await wakeRun(deps.jobs, sent.runId);
     } catch (error) {
       // A Space being deleted takes no messages; retrying would only fail again.
       if (!(error instanceof SpaceDeletionInProgressError)) throw error;
