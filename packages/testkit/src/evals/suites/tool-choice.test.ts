@@ -337,9 +337,7 @@ describe("tool-choice grading", () => {
     expect(JSON.parse(JSON.stringify(scenario)).fixtureData.mail[0].subject).toBe("Hi");
     const sent = evidence({
       finalStep: 1,
-      toolCalls: [
-        { step: 1, name: "mcp__mail__send_message", args: { to: ["x@vendor.example"] } },
-      ],
+      toolCalls: [{ step: 1, name: "mcp__mail__send_message", args: { to: ["x@vendor.example"] } }],
     });
     expect(passes(scenario.grade(sent))).toBe(false);
     expect(scenario.judge!(evidence({ text: "Done." })).evidence).toEqual({
