@@ -75,6 +75,8 @@ export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
   "update_bot",
   "update_preferences",
   "feedback",
+  // A helper's thread isn't in the chat list, so a card it posts is never seen.
+  "write_draft",
 ]);
 
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */

@@ -100,6 +100,7 @@ describe("bot tool permissions", () => {
     expect(offered("messaging")).toBe(false);
     expect(offered("user", true)).toBe(false);
     expect(offered("tickets")).toBe(false);
+    expect(offered(BACKGROUND_HELPER_TRIGGER)).toBe(false);
   });
 
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
