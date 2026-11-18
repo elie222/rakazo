@@ -8,6 +8,8 @@ import type {
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  ToolQuestion,
+  ToolQuestionAnswer,
   VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
@@ -25,11 +27,16 @@ export interface AdapterContext {
   /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
   cancelRunWork?: boolean;
   signal: AbortSignal;
+  /** Asks the person who owns the run a tool server's question and waits for the answer. Absent
+   * when the run has nobody to ask; the question is then declined. */
+  askPerson?: ToolAsk;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
   connectedProviders?: string[];
 }
+
+export type ToolAsk = (question: ToolQuestion, signal: AbortSignal) => Promise<ToolQuestionAnswer>;
 
 /**
  * A provider machine no stored computer points at: one a start created and has not stored, or a

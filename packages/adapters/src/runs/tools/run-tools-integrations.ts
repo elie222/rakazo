@@ -24,6 +24,7 @@ import {
 } from "../lifecycle/run-progress.js";
 import { modelCreditBillingEnabled } from "../turn/run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { toolAskFor } from "./run-tool-questions.js";
 
 export async function cloudAgentTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
@@ -48,7 +49,7 @@ export async function connectorTool(ctx: RunContext, call: ToolCall) {
     const withApp = Boolean(deps.artifacts) && !isBackgroundRunTrigger(run.trigger);
     for await (const event of deps.connector.execute(
       { ...connectorCall, tool: name, args, executionId: effectKey, withApp },
-      context,
+      { ...context, askPerson: toolAskFor(ctx) },
     )) {
       if (event.type === "app") {
         await showConnectorApp(ctx, call, event.app, result);

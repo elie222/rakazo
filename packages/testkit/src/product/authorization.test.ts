@@ -363,6 +363,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
           answer: "Nope",
         },
       ],
+      [
+        "threads/answerToolQuestion",
+        { botId: "missing-bot", messageId: "missing-message", action: "decline" },
+      ],
       ["threads/markRead", { botId: "missing-bot" }],
       ["threads/markUnread", { botId: "missing-bot" }],
       ["threads/snooze", { botId: "missing-bot", until: null }],
@@ -748,6 +752,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
           messageId: "missing-message",
           answer: "intruder answer",
         },
+      ],
+      [
+        "threads/answerToolQuestion",
+        { botId: ownerBot.id, messageId: "missing-message", action: "decline" },
       ],
       ["threads/markRead", { botId: ownerBot.id }],
       ["threads/markUnread", { botId: ownerBot.id }],
