@@ -389,7 +389,12 @@ export const ModelOAuthBeginSchema = z.discriminatedUnion("mode", [
 export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 
 /** A hosted OpenAI-compatible service offered by name. It always needs a key. */
-export const CompatibleEndpointPresetSchema = z.object({ name: z.string(), baseUrl: z.string() });
+export const CompatibleEndpointPresetSchema = z.object({
+  /** Stable id a deployment allowlist addresses this preset by. */
+  id: z.string().optional(),
+  name: z.string(),
+  baseUrl: z.string(),
+});
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
 export const ModelCatalogEntrySchema = z.object({

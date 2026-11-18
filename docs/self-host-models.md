@@ -168,7 +168,7 @@ own sign-in. Only the deployment model runs on Claude Code; it is not offered as
 
 ## Ollama Cloud
 
-In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset and its host; see [Limiting model providers](#limiting-model-providers).
 
 ## OpenAI-compatible connections
 
@@ -200,6 +200,22 @@ accepts images, enable **Supports images** under **Advanced** when connecting so
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+## Limiting model providers
+
+Set `RAKAZO_MODEL_PROVIDER_ALLOWLIST=provider1,provider2` in the deployment environment for both
+API and worker, then recreate those containers, to limit which model providers users can connect.
+Entries are the model registry's provider ids (for example `openrouter`, `anthropic`, and
+`openai-compatible` for OpenAI-compatible endpoints). The list applies to the model catalog: a
+provider not on it is not offered, a key for it is refused on save and on import, a bot cannot be
+switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
+exactly the behavior without it.
+
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` still allows `ollama.com`, the one built-in public host,
+because the Ollama Cloud preset needs it. To keep OpenAI-compatible endpoints while dropping that
+exemption, list `openai-compatible` and leave the preset's id `ollama-cloud` out: the preset
+disappears and its host is refused like any other public host. List `ollama-cloud` as well to keep
+both.
 
 ## Thinking
 

@@ -8,8 +8,11 @@ import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
   listPiCatalog,
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
   ModelSignInError,
   modelCredentialDto,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
@@ -396,6 +399,9 @@ export function modelsRoutes(ctx: RouterContext) {
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+        }
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(

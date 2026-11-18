@@ -11,7 +11,10 @@ import {
   keptModelSettings,
   listPiCatalog,
   liveCatalogEntry,
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
   modelCredentialDto,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   providerCatalogCache,
@@ -140,6 +143,9 @@ export async function prepareModelCredential(
   codexCatalog: CodexLiveCatalog,
 ) {
   throwIfAborted(input.signal);
+  if (!modelProviderAllowed(modelProviderAllowlist(), input.provider)) {
+    throw new ORPCError("BAD_REQUEST", { message: MODEL_PROVIDER_NOT_ALLOWED_ERROR });
+  }
   const parsedSecret = parseModelSecret(input.plaintext);
   const requestedModelId = usableModelId(input.modelId);
   const resolvedCodexModelId =

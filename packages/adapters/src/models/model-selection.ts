@@ -53,6 +53,11 @@ import {
 } from "./endpoints/openai-compatible-url.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -785,6 +790,9 @@ export async function validateBotModelChange(
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
     const hosted =
       Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted
