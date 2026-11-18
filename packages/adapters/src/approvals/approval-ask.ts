@@ -85,7 +85,12 @@ export function buildApprovalAskBlock(
       actions:
         onceOnly || options.summary.onceOnly
           ? [
-              { id: "allow", label: "Allow once" },
+              // Approving a child bot's instruction replacement applies it at once, so the
+              // button names the action instead of a generic allow.
+              {
+                id: "allow",
+                label: toolName === "set_child_instructions" ? "Apply now" : "Allow once",
+              },
               { id: "deny", label: "Deny" },
             ]
           : [

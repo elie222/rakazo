@@ -19,8 +19,14 @@ export function askActionLabel(
   if (!approval) return action.label;
   if (action.outcome === "created") return t`Create space`;
   if (action.outcome === "cancelled") return t`Cancel`;
+  // "Apply now" is the server's label when approving performs the change itself, as
+  // replacing another bot's instructions.
   if (action.id === "allow")
-    return ALLOW_IN_SPACE.has(action.label) ? t`Allow in this space` : t`Allow once`;
+    return ALLOW_IN_SPACE.has(action.label)
+      ? t`Allow in this space`
+      : action.label === "Apply now"
+        ? t`Apply now`
+        : t`Allow once`;
   if (action.id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (action.id === "deny") return t`Deny`;
   return action.label;
