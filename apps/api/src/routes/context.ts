@@ -174,12 +174,16 @@ export function createRouterContext(deps: RouterDeps) {
     const configured = deps.billing?.modelCreditsEnabled
       ? (modelCreditOfferings()?.offerings ?? [])
       : [];
+    // Narrowed before any offering is read, so an excluded provider's key is never decrypted.
+    const allowlist = modelProviderAllowlist();
     const fundedProviders = new Set(
       (
         await Promise.all(
-          [...new Set(configured.map((entry) => entry.provider))].map(async (provider) =>
-            (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
-          ),
+          [...new Set(configured.map((entry) => entry.provider))]
+            .filter((provider) => modelProviderAllowed(allowlist, provider))
+            .map(async (provider) =>
+              (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
+            ),
         )
       ).filter((provider): provider is string => provider !== null),
     );
