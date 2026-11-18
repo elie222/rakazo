@@ -511,7 +511,6 @@ export function resolveWatchPath(mode: ComputerMode, botId: string, path: string
 
 /** Where a bot's relative paths and commands start. */
 export function watchFolder(mode: ComputerMode, botId: string): string {
-  // Not resolveBotWorkspacePath(mode, botId, "."): a team computer refuses "." as escaping.
   return mode === "team" ? `${WORKSPACE}/${teamBotWorkspaceDirectory(botId)}` : WORKSPACE;
 }
 
