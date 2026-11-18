@@ -104,7 +104,7 @@ import { TOOL_CHOICE_CASES } from "../evals/suites/tool-choice-cases.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
-import { runApprovalSuite } from "./approval-eval.js";
+import { APPROVAL_OPTIONS, runApprovalSuite } from "./approval-eval.js";
 import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
@@ -143,6 +143,7 @@ async function main() {
       /** Adds an existing report file to the store, without running anything. */
       import: { type: "string" },
       label: { type: "string" },
+      ...APPROVAL_OPTIONS,
     },
   });
   const storeDir = values.store ?? process.env.EVAL_RUN_STORE;
@@ -156,18 +157,16 @@ async function main() {
     return;
   }
   if (values.fresh && !store) throw new Error("--fresh only applies with --store");
-  if (values["cases-file"] && values.suite !== "tool-choice" && values.suite !== "recall")
-    throw new Error("--cases-file adds tool-choice or recall cases; use one of those suites");
-  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
-  if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
-  if (values["reply-mode"] && values.suite === "approval")
-    throw new Error("--reply-mode sets the trial's bots; the approval suite has none");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
       workingDiffHash: workingDiffHash(),
       readConnection,
     });
+  if (values["cases-file"] && values.suite !== "tool-choice" && values.suite !== "recall")
+    throw new Error("--cases-file adds tool-choice, recall or approval cases only");
+  const replyMode = ReplyModeSchema.safeParse(values["reply-mode"] ?? "chat");
+  if (!replyMode.success) throw new Error("Unknown reply mode; use chat or messages");
   const suites: Record<
     string,
     {
