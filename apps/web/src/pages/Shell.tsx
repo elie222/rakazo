@@ -677,6 +677,17 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // Not while the shell is leaving: a roster with nothing anywhere is on its way to onboarding,
+  // and a reopened group chat is on its way to that group.
+  const showNewBotPrompt =
+    initialBotsLoaded &&
+    bots.length === 0 &&
+    !activeGroup &&
+    !routeChat?.groupId &&
+    (groups.length > 0 ||
+      archivedBots.length > 0 ||
+      archivedGroups.length > 0 ||
+      spaces.some((space) => space.hasContent));
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1146,7 +1157,7 @@ function SpaceShell() {
               callBot(bot);
             }}
           />
-          {!active && !activeGroup && initialBotsLoaded ? (
+          {showNewBotPrompt ? (
             <div className="grid flex-1 place-items-center">
               <Button onClick={() => dialogs.setCreateBotOpen(true)}>
                 <Plus size={16} aria-hidden="true" />
