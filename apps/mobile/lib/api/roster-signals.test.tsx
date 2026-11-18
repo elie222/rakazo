@@ -16,6 +16,8 @@ const streams = vi.hoisted(
       fail: (error: unknown) => void;
     }>,
 );
+const watch = vi.hoisted(() => ({ invalidateWatchChat: vi.fn() }));
+vi.mock("../notifications/watch-chat", () => watch);
 const computerUpdates = vi.hoisted(() => ({ signalled: vi.fn() }));
 vi.mock("../computers/computer-updates", () => ({ computerUpdates }));
 const organizations = vi.hoisted(() => ({ refreshOrganizationReads: vi.fn() }));
@@ -110,6 +112,15 @@ describe("useRosterSignals", () => {
     container.remove();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("forwards run signals to the paired watch without starting another stream", () => {
+    act(() => root.render(<Stream />));
+    expect(streams).toHaveLength(1);
+    act(() => streams[0]?.change("routines"));
+    expect(watch.invalidateWatchChat).not.toHaveBeenCalled();
+    act(() => streams[0]?.change("runs"));
+    expect(watch.invalidateWatchChat).toHaveBeenCalledOnce();
   });
 
   it("reads once when shown, then on every signal and never on a timer", async () => {

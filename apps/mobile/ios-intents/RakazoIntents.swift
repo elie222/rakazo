@@ -372,7 +372,7 @@ private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
   }
 }
 
-private struct RakazoSession {
+struct RakazoSession {
   private static let transport = URLSession(
     configuration: .ephemeral, delegate: RejectRedirects(), delegateQueue: nil)
 
@@ -552,7 +552,7 @@ private func secureStoreItem(_ key: String) -> String? {
   return nil
 }
 
-private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
+enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
   case signedOut
   case noBot
   case needsYou

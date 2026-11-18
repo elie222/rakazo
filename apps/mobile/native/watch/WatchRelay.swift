@@ -1,0 +1,186 @@
+import Foundation
+import UIKit
+import WatchConnectivity
+
+/// Uses the phone's existing session and server. Credentials never cross WatchConnectivity.
+@MainActor
+final class WatchRelay: NSObject, WCSessionDelegate {
+  static let shared = WatchRelay()
+  private var scope: UUID?
+  private var scopedSession: RakazoSession?
+  private var spaceId: String?
+  private var chats: [WatchChat] = []
+
+  func activate() {
+    guard WCSession.isSupported() else { return }
+    WCSession.default.delegate = self
+    WCSession.default.activate()
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(chatChanged), name: Notification.Name("RakazoWatchChatChanged"),
+      object: nil)
+  }
+
+  @objc private nonisolated func chatChanged() {
+    Task { @MainActor in
+      let session = WCSession.default
+      guard session.activationState == .activated, session.isWatchAppInstalled else { return }
+      do { try session.updateApplicationContext(["chatRevision": UUID().uuidString]) }
+      catch {
+        // The watch re-reads when it becomes active or the phone becomes reachable again.
+      }
+    }
+  }
+
+  nonisolated func session(
+    _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?
+  ) {}
+
+  nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+  nonisolated func sessionDidDeactivate(_ session: WCSession) { session.activate() }
+
+  nonisolated func session(
+    _ session: WCSession, didReceiveMessageData data: Data,
+    replyHandler: @escaping (Data) -> Void
+  ) {
+    Task { @MainActor in
+      var response: WatchReply
+      do {
+        guard data.count <= 32_768 else { throw WatchFailure.rejected }
+        let request = try JSONDecoder().decode(WatchRequest.self, from: data)
+        response = try await handle(request)
+      } catch let error as WatchFailure {
+        response = WatchReply(error: error)
+      } catch MessageBotError.signedOut {
+        response = WatchReply(error: .signIn)
+      } catch MessageBotError.consentRequired {
+        response = WatchReply(error: .consent)
+      } catch {
+        response = WatchReply(error: .unavailable)
+      }
+      do { replyHandler(try JSONEncoder().encode(response)) }
+      catch { replyHandler(Data()) }
+    }
+  }
+
+  private func sameSession(_ first: RakazoSession, _ second: RakazoSession) -> Bool {
+    first.apiBase == second.apiBase && first.token == second.token
+      && first.selectedSpaceId == second.selectedSpaceId && first.headers == second.headers
+  }
+
+  private func currentSession() throws -> RakazoSession {
+    guard UIApplication.shared.isProtectedDataAvailable else { throw WatchFailure.unlockPhone }
+    return try RakazoSession.load()
+  }
+
+  private func verify(_ session: RakazoSession) throws {
+    guard try sameSession(session, currentSession()) else { throw WatchFailure.reload }
+  }
+
+  private func handle(_ request: WatchRequest) async throws -> WatchReply {
+    let session = try currentSession()
+    let userId = try await session.currentUserId()
+    try verify(session)
+
+    if request.action == .chats {
+      let list: WatchSpace = try await session.rpc(
+        "spaces/list", [:], spaceId: session.selectedSpaceId, timeout: 8)
+      try verify(session)
+      if scopedSession.map({ sameSession($0, session) }) != true || spaceId != list.current.id {
+        scope = UUID()
+        scopedSession = session
+        spaceId = list.current.id
+      }
+      let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
+        + list.current.groups.map { (WatchChat.Kind.group, $0) }
+      chats = entries.filter { $0.1.archivedAt == nil }
+        .sorted { $0.1.updatedAt > $1.1.updatedAt }
+        .map { WatchChat(kind: $0.0, id: $0.1.id, name: $0.1.name) }
+      return WatchReply(scope: scope, chats: chats)
+    }
+
+    guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
+      let spaceId, let chat = request.chat, chats.contains(chat)
+    else { throw WatchFailure.reload }
+    let target = [chat.kind.targetKey: chat.id]
+
+    if request.action == .thread {
+      let thread: WatchThread = try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
+      try verify(session)
+      return WatchReply(
+        messages: thread.watchMessages(for: userId),
+        botWorking: thread.activeRuns?.contains {
+          ["queued", "leased", "running"].contains($0.status)
+        } == true)
+    }
+
+    guard let text = request.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !text.isEmpty, text.utf8.count <= 8192, let nonce = request.nonce
+    else { throw WatchFailure.rejected }
+    var input: [String: Any] = target
+    input["clientNonce"] = nonce.uuidString
+
+    switch request.action {
+    case .send:
+      try await session.requireConsent(target, spaceId: spaceId, timeout: 8)
+      try verify(session)
+      input["text"] = text
+      try await write("threads/send", input, session: session, spaceId: spaceId, failure: .sendUnconfirmed)
+    case .answer:
+      // Re-read the live card, so stale or forged commands cannot answer hidden fields,
+      // change standing permissions, or approve a request the Watch could not display in full.
+      let thread: WatchThread = try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
+      guard let message = thread.messages.first(where: { $0.id == request.messageId }),
+        let runId = message.runId, thread.ownsPendingAsk(message, userId: userId),
+        let prompt = message.pendingAsk?.watchPrompt(), prompt == request.prompt, canAnswer(prompt, text)
+      else { throw WatchFailure.rejected }
+      try verify(session)
+      input["runId"] = runId
+      input["messageId"] = message.id
+      input["answer"] = text
+      try await write("threads/answer", input, session: session, spaceId: spaceId, failure: .answerUnconfirmed)
+    case .chats, .thread:
+      throw WatchFailure.rejected
+    }
+    return WatchReply()
+  }
+
+  private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
+    switch prompt.kind {
+    case .phone: false
+    case .approval: answer == "allow" || answer == "deny"
+    case .question: prompt.options.isEmpty || prompt.options.contains { $0.id == answer }
+    }
+  }
+
+  private func write(
+    _ procedure: String, _ input: [String: Any], session: RakazoSession, spaceId: String,
+    failure: WatchFailure
+  ) async throws {
+    do {
+      let _: WatchAcknowledgement = try await session.rpc(procedure, input, spaceId: spaceId, timeout: 8)
+    } catch MessageBotError.signedOut {
+      throw WatchFailure.signIn
+    } catch {
+      // A timeout after commit is ambiguous. The watch keeps the nonce on retry.
+      throw failure
+    }
+  }
+}
+
+private struct WatchAcknowledgement: Decodable {}
+
+private struct WatchSpace: Decodable {
+  struct Current: Decodable {
+    let id: String
+    let bots: [Chat]
+    let groups: [Chat]
+  }
+  struct Chat: Decodable {
+    let id: String
+    let name: String
+    let updatedAt: String
+    let archivedAt: String?
+  }
+  let current: Current
+}
