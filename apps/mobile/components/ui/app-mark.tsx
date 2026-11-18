@@ -1,42 +1,36 @@
-import { Image, StyleSheet, View } from "react-native";
-import appMark from "../../assets/monochrome-icon.png";
+import { Image, StyleSheet } from "react-native";
+import appMark from "../../assets/app-mark.png";
 import { native, useThemedStyles } from "../../lib/native/native";
 
-const MARK = 56;
-// The face of the 1024 px monochrome icon: a 480 px circle inside the silhouette, eyes included.
-const CROP = { x: 272, y: 303, size: 480 };
-const SCALE = MARK / CROP.size;
+const MARK = 60;
 
+/** The app icon as the home screen shows it, for the about footer. */
 export function AppMark() {
   const styles = useThemedStyles(createAppMarkStyles);
   return (
-    <View
+    <Image
       accessible={false}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={styles.circle}
-    >
-      <Image source={appMark} style={styles.image} />
-    </View>
+      source={appMark}
+      style={styles.icon}
+    />
   );
 }
 
 function createAppMarkStyles() {
   return StyleSheet.create({
-    circle: {
+    icon: {
       width: MARK,
       height: MARK,
-      borderRadius: MARK / 2,
+      // The iOS icon mask: about 22% corners on the continuous curve.
+      borderRadius: MARK * 0.225,
+      borderCurve: "continuous",
+      // Keeps the icon's dark edge from melting into a dark page.
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: native.separator,
       overflow: "hidden",
       alignSelf: "center",
-    },
-    image: {
-      position: "absolute",
-      width: 1024 * SCALE,
-      height: 1024 * SCALE,
-      left: -CROP.x * SCALE,
-      top: -CROP.y * SCALE,
-      tintColor: native.label,
     },
   });
 }
