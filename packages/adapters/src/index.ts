@@ -282,6 +282,11 @@ export {
 export * from "./secrets/wrapped-env.js";
 export * from "./storage/artifact-store-factory.js";
 export * from "./storage/artifacts.js";
+export {
+  ATTACHMENT_NAME_PATTERN,
+  attachmentNamingFromEnv,
+  attachmentPath,
+} from "./storage/attachment-path.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
 export * from "./storage/storage-migration.js";
