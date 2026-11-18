@@ -2,6 +2,7 @@ import { once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { connect } from "node:net";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startDelayProxy } from "./delay-proxy.js";
@@ -91,6 +92,24 @@ describe("startDelayProxy", () => {
 
     const stream = await fetch(`${proxy.url}/rpc/notifications/subscribe`);
     await expect(stream.text()).rejects.toThrow();
+    expect(await (await fetch(`${proxy.url}/health`)).text()).toBe("ok");
+  });
+
+  it("keeps serving after a caller drops mid-upload", async () => {
+    const upstream = await startUpstream((request, response) => {
+      request.resume();
+      request.once("end", () => response.end("ok"));
+      request.once("error", () => response.destroy());
+    });
+    const proxy = await startProxy(upstream.url, async () => {});
+
+    const { port } = new URL(proxy.url);
+    const socket = connect(Number(port), "127.0.0.1");
+    await once(socket, "connect");
+    socket.write("POST /rpc/upload HTTP/1.1\r\nhost: proxy\r\ncontent-length: 100\r\n\r\npartial");
+    await vi.waitFor(() => expect(upstream.received).toEqual(["POST /rpc/upload"]));
+    socket.resetAndDestroy();
+
     expect(await (await fetch(`${proxy.url}/health`)).text()).toBe("ok");
   });
 
