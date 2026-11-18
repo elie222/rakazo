@@ -1321,6 +1321,10 @@ function SpaceShell() {
               bot={active}
               computer={computer}
               computerOpen={computerOpen}
+              embeddedScreenUrl={panel === "settings" ? computerControls.embeddedScreenUrl : null}
+              screenFrameKey={computerState.screenFrameKey}
+              heldScreen={computerState.heldScreen}
+              screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
               booting={booting}

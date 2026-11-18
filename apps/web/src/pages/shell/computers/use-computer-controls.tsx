@@ -209,6 +209,16 @@ export function useComputerControls({
     setComputerBotId(active?.id);
   }, [active?.id]);
 
+  // Showing the bot panel reads a running computer's screen; it never wakes one.
+  const panelScreenBotId =
+    panel === "settings" && !computerOpen && computer?.state === "running" && !screenUrl
+      ? computer.botId
+      : undefined;
+  useEffect(() => {
+    if (!panelScreenBotId || activeBotId.current !== panelScreenBotId) return;
+    void refreshComputerScreen(panelScreenBotId).catch(() => undefined);
+  }, [panelScreenBotId]);
+
   useEffect(() => {
     if (!computer?.busyBotName) {
       setComputerError(null);
@@ -445,9 +455,6 @@ export function useComputerControls({
             if (computer?.state === "running") {
               setComputerError(null);
               setComputerErrorFromScreen(false);
-              // The screen is read only while its window is open, so a retry from the panel opens it.
-              setComputerOpen(true);
-              computerVisible.current = true;
               void refreshComputerScreen(computerBot.id);
             } else
               void bootComputer({
