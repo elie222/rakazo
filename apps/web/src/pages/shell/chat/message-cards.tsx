@@ -150,8 +150,10 @@ export function AppConnectCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const readOnReturn = useRef<(() => void) | null>(null);
   const status = block.status === "connected" ? "connected" : localStatus;
   useEffect(() => () => connectionAttempt.current?.abort(), []);
+  useEventListener(window, "focus", () => readOnReturn.current?.());
 
   async function authorize() {
     connectionAttempt.current?.abort();
@@ -171,7 +173,16 @@ export function AppConnectCard({
       const result = await waitForSignIn(
         started.connectionId,
         (input) => rpc.connections.complete(input, { signal: controller.signal }),
-        { signal: controller.signal, onSlow: () => setBusy(false) },
+        {
+          signal: controller.signal,
+          onSlow: () => setBusy(false),
+          whenBack: (read) => {
+            readOnReturn.current = read;
+            return () => {
+              if (readOnReturn.current === read) readOnReturn.current = null;
+            };
+          },
+        },
       );
       if (result.status === "connected") {
         setLocalStatus("connected");

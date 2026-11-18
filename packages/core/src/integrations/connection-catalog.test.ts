@@ -190,37 +190,56 @@ describe("waitForConnection", () => {
 });
 
 describe("waitForSignIn", () => {
-  it("keeps watching a slow sign-in after letting the person start over", async () => {
+  it("reads a slow sign-in again when the person comes back, not on a timer", async () => {
     let finished = false;
     const complete = vi.fn(async () => account("slow", finished ? "connected" : "pending"));
-    const onSlow = vi.fn(() => {
-      finished = true;
-    });
+    const onSlow = vi.fn();
+    const stop = vi.fn();
+    let back = () => {};
     vi.useFakeTimers();
     try {
       const result = waitForSignIn("slow", complete, {
         signal: new AbortController().signal,
         onSlow,
+        whenBack: (read) => {
+          back = read;
+          return stop;
+        },
       });
+      await vi.runAllTimersAsync();
+      expect(onSlow).toHaveBeenCalledTimes(1);
+      const polled = complete.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(complete).toHaveBeenCalledTimes(polled);
+      back();
+      await vi.runAllTimersAsync();
+      expect(stop).not.toHaveBeenCalled();
+      finished = true;
+      back();
       await vi.runAllTimersAsync();
       expect(await result).toEqual({ status: "connected", row: account("slow", "connected") });
     } finally {
       vi.useRealTimers();
     }
-    expect(onSlow).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it("does not offer to start over once a newer attempt took its place", async () => {
-    const onSlow = vi.fn();
-    const result = await waitForSignIn(
-      "old",
-      vi.fn().mockResolvedValue(account("old", "revoked")),
-      {
-        signal: new AbortController().signal,
-        onSlow,
-      },
-    );
-    expect(result).toEqual({ status: "aborted" });
-    expect(onSlow).not.toHaveBeenCalled();
+  it("stops watching a slow sign-in once a newer attempt takes its place", async () => {
+    const controller = new AbortController();
+    const stop = vi.fn();
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("old", vi.fn().mockResolvedValue(account("old", "pending")), {
+        signal: controller.signal,
+        onSlow: () => {},
+        whenBack: () => stop,
+      });
+      await vi.runAllTimersAsync();
+      controller.abort();
+      expect(await result).toEqual({ status: "aborted" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

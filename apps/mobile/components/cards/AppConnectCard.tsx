@@ -5,7 +5,7 @@ import { appConnectedInput, waitForSignIn } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Linking, Text, View } from "react-native";
+import { AppState, Linking, Text, View } from "react-native";
 import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { appConnectPresentation } from "../../lib/cards/app-connect";
@@ -63,7 +63,16 @@ export function AppConnectCard({
       const result = await waitForSignIn(
         started.connectionId,
         (input) => rpc("connections/complete", input, { signal: controller.signal }),
-        { signal: controller.signal, onSlow: () => setBusy(false) },
+        {
+          signal: controller.signal,
+          onSlow: () => setBusy(false),
+          whenBack: (read) => {
+            const subscription = AppState.addEventListener("change", (state) => {
+              if (state === "active") read();
+            });
+            return () => subscription.remove();
+          },
+        },
       );
       if (result.status === "connected") {
         await rpc("onboarding/appConnected", appConnectedInput(botId, threadId, block, messageId));

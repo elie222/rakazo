@@ -91,7 +91,7 @@ export async function connectCatalogItem(
 export async function waitForConnection<Row extends { status: string }>(
   connectionId: string,
   complete: (input: { connectionId: string }) => Promise<Row>,
-  options: { signal: AbortSignal; isCurrent?: () => boolean; attempts: number; pollMs?: number },
+  options: { signal: AbortSignal; isCurrent?: () => boolean; attempts: number },
 ): Promise<{ status: "connected"; row: Row } | { status: "pending" } | { status: "aborted" }> {
   const stopped = () => options.signal.aborted || options.isCurrent?.() === false;
   for (let attempt = 0; attempt < options.attempts; attempt += 1) {
@@ -105,36 +105,52 @@ export async function waitForConnection<Row extends { status: string }>(
     if (stopped()) return { status: "aborted" };
     if (row?.status === "connected") return { status: "connected", row };
     if (row?.status === "revoked") return { status: "aborted" };
-    await abortableDelay(options.pollMs ?? CATALOG_CONNECT_POLL_MS, options.signal);
+    if (attempt + 1 < options.attempts) {
+      await abortableDelay(CATALOG_CONNECT_POLL_MS, options.signal);
+    }
   }
   return stopped() ? { status: "aborted" } : { status: "pending" };
 }
 
 const PROMPT_SIGN_IN_ATTEMPTS = 60;
-const SLOW_SIGN_IN_POLL_MS = 5_000;
-// The rest of the ten minutes a sign-in page stays usable for.
-const SLOW_SIGN_IN_ATTEMPTS = 96;
 
 /**
- * Waits for a sign-in for as long as its page can still finish. Past the time most take,
- * `onSlow` lets the caller offer to start over while this attempt is still watched, so a slow
- * sign-in is not reported as failed while the person is in the middle of it.
+ * Waits for a sign-in without calling a slow one failed. It polls for the time most take; after
+ * that `onSlow` lets the caller offer to start over, and this attempt is read again only when
+ * `whenBack` says the person came back to the app, which is when a finished sign-in shows.
  */
 export async function waitForSignIn<Row extends { status: string }>(
   connectionId: string,
   complete: (input: { connectionId: string }) => Promise<Row>,
-  options: { signal: AbortSignal; onSlow: () => void },
-): Promise<{ status: "connected"; row: Row } | { status: "pending" } | { status: "aborted" }> {
+  options: {
+    signal: AbortSignal;
+    onSlow: () => void;
+    /** Calls `read` each time the app regains focus or the foreground; returns how to stop. */
+    whenBack: (read: () => void) => () => void;
+  },
+): Promise<{ status: "connected"; row: Row } | { status: "aborted" }> {
   const prompt = await waitForConnection(connectionId, complete, {
     signal: options.signal,
     attempts: PROMPT_SIGN_IN_ATTEMPTS,
   });
   if (prompt.status !== "pending") return prompt;
   options.onSlow();
-  return waitForConnection(connectionId, complete, {
-    signal: options.signal,
-    attempts: SLOW_SIGN_IN_ATTEMPTS,
-    pollMs: SLOW_SIGN_IN_POLL_MS,
+  return new Promise((resolve) => {
+    const settle = (result: { status: "connected"; row: Row } | { status: "aborted" }) => {
+      stop();
+      options.signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    const onAbort = () => settle({ status: "aborted" });
+    const stop = options.whenBack(() => {
+      void waitForConnection(connectionId, complete, {
+        signal: options.signal,
+        attempts: 1,
+      }).then((result) => {
+        if (result.status !== "pending") settle(result);
+      });
+    });
+    options.signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
