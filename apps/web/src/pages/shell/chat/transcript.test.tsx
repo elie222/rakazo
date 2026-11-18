@@ -393,3 +393,54 @@ it("does not spend the first frame on rows hidden tool activity would leave blan
     ),
   ).toEqual(shown.map((message) => message.id));
 });
+
+it("follows a reply to the reader's message until its first line reaches the top", () => {
+  const sent = history();
+  render(baseProps(sent));
+  render({ ...baseProps(sent), followRequest: 1 });
+  const transcript = container.querySelector<HTMLElement>('[data-testid="transcript"]');
+  if (!transcript) throw new Error("transcript missing");
+  let contentHeight = 1_000;
+  Object.defineProperty(transcript, "clientHeight", { configurable: true, value: 500 });
+  Object.defineProperty(transcript, "scrollHeight", {
+    configurable: true,
+    get: () => contentHeight,
+  });
+  transcript.scrollTop = 500;
+  transcript.style.scrollPaddingTop = "64px";
+  const rowTops = { m5: 900 };
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const top =
+      this === transcript ? 0 : (rowTops[this.dataset.messageId as keyof typeof rowTops] ?? 0);
+    return { top } as DOMRect;
+  });
+  const scrollTo = vi.mocked(transcript.scrollTo);
+  const reply = textMessage("m5", "bot", "Here are three cabins");
+
+  scrollTo.mockClear();
+  contentHeight = 1_200;
+  render({ ...baseProps([...sent, reply]), followRequest: 1 });
+  // The whole reply fits: keep following to the end.
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_200, behavior: "auto" });
+
+  scrollTo.mockClear();
+  transcript.scrollTop = 700;
+  rowTops.m5 = 200;
+  contentHeight = 2_000;
+  render({
+    ...baseProps([...sent, { ...reply, blocks: [{ kind: "text", text: "Long" }] }]),
+    followRequest: 1,
+  });
+  // Its start would scroll away: hold it under the header (row at 700 + 200, less 64px padding).
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 836, behavior: "auto" });
+
+  scrollTo.mockClear();
+  contentHeight = 2_500;
+  render({
+    ...baseProps([...sent, { ...reply, blocks: [{ kind: "text", text: "Longer" }] }]),
+    followRequest: 1,
+  });
+  expect(scrollTo).not.toHaveBeenCalled();
+});
