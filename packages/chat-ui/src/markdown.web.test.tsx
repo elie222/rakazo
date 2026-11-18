@@ -965,3 +965,25 @@ describe("web markdown parser failure", () => {
     vi.restoreAllMocks();
   });
 });
+
+describe("web markdown prose", () => {
+  it("draws a bot's bold and inline code as markup, not literal stars", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const detail = "Hi Ana,\n\nThe **total** is set. Track `SKU-1`.";
+    await act(async () => {
+      root.render(<ChatMarkdown>{detail}</ChatMarkdown>);
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("total");
+    expect(container.querySelector("code")?.textContent).toBe("SKU-1");
+    expect(container.textContent).not.toContain("**");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.unstubAllGlobals();
+  });
+});

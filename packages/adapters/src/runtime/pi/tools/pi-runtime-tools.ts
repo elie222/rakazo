@@ -408,6 +408,8 @@ function toAgentTool(
           ...(typeof raw.detail === "string" && raw.detail
             ? { detail: redactedAskUserDetail(raw.detail, host.request.secrets) }
             : {}),
+          // Opted in by the bot: only a literal true renders the detail as Markdown.
+          ...(raw.detail_markdown === true ? { detail_markdown: true as const } : {}),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
           // coercing to [] would look like a valid empty list upstream.
           options,
@@ -573,6 +575,7 @@ function toAgentTool(
                   ...(typeof args.detail === "string" && args.detail
                     ? { detail: args.detail }
                     : {}),
+                  ...(args.detail_markdown === true ? { detailMarkdown: true as const } : {}),
                   actions: options.map((label, index) => ({
                     id: `choice-${index + 1}`,
                     label,

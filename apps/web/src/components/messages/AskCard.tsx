@@ -167,6 +167,9 @@ function PromptAskCard({
     !approvalActions && !block.instructionUpdate && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
+  // A question's own detail is prose the bot wrote, so without a format it reads as Markdown like
+  // the question above it; commands, tool arguments and names keep their exact characters.
+  const markdownDetail = Boolean(block.detail) && !block.detailFormat && isQuestionAskBlock(block);
   // Typed replies already have their own message; the question must not repeat them.
   const typedAnswer =
     answered &&
@@ -266,16 +269,25 @@ function PromptAskCard({
       {block.receipt ? (
         <AskReceiptView receipt={block.receipt} />
       ) : block.detail ? (
-        <pre
-          data-testid="ask-detail"
-          className={
-            block.detailFormat === "text"
-              ? "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-body-lg leading-[1.5] text-foreground"
-              : "mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-body-sm leading-[1.6] text-foreground"
-          }
-        >
-          {block.detail}
-        </pre>
+        markdownDetail ? (
+          <div
+            data-testid="ask-detail"
+            className="mt-3 max-h-72 overflow-auto break-words text-body-lg leading-[1.5] text-foreground"
+          >
+            <ChatMarkdown>{block.detail}</ChatMarkdown>
+          </div>
+        ) : (
+          <pre
+            data-testid="ask-detail"
+            className={
+              block.detailFormat === "text"
+                ? "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-body-lg leading-[1.5] text-foreground"
+                : "mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-body-sm leading-[1.6] text-foreground"
+            }
+          >
+            {block.detail}
+          </pre>
+        )
       ) : null}
       {block.instructionUpdate && editing && canAnswer && !answered ? (
         <form

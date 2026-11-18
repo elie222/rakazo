@@ -49,8 +49,9 @@ export async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">
         kind: "ask",
         text: safeText,
         detail: safeDetail,
-        // A runtime ask's detail is prose the bot wrote, never tool arguments.
-        ...(safeDetail ? { detailFormat: "text" as const } : {}),
+        // A runtime ask's detail is prose the bot wrote, never tool arguments. A bot that opted
+        // into Markdown leaves the format unnamed; otherwise text keeps every character as written.
+        ...(safeDetail && !event.detailMarkdown ? { detailFormat: "text" as const } : {}),
         status: "pending",
         actions: safeActions,
       },

@@ -69,6 +69,7 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       question: Type.String({ maxLength: 240 }),
       detail: Type.Optional(Type.String({ maxLength: MAX_APPROVAL_DETAIL_LENGTH })),
+      detail_markdown: Type.Optional(Type.Boolean()),
       options: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), {
         minItems: 2,
         maxItems: 4,

@@ -849,6 +849,8 @@ export type AgentRuntimeEvent =
       executionId?: string;
       text: string;
       detail?: string;
+      /** The detail is Markdown the bot wrote; without it every character shows as written. */
+      detailMarkdown?: true;
       actions?: Array<{ id: string; label: string }>;
     }
   | { type: "takeover"; reason: string; executionId?: string }

@@ -454,24 +454,34 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               {askBlock.receipt ? (
                 <AskReceiptView receipt={askBlock.receipt} />
               ) : askBlock.detail ? (
-                <Text
-                  {...(askBlock.text ? {} : actionProps)}
-                  style={{
-                    color:
-                      askBlock.detailFormat === "text" && !answeredQuestion
-                        ? tokens.foreground
-                        : tokens.mutedForeground,
-                    marginTop: askBlock.text ? 8 : 0,
-                    // Commands and an approval's tool arguments read as code; a bot's own note
-                    // under its question is text.
-                    ...(askBlock.detailFormat === "code" ||
-                    (!askBlock.detailFormat && askBlock.approvalEffectId)
-                      ? { ...typeScale.caption, fontFamily: "Menlo" }
-                      : typeScale.secondary),
-                  }}
-                >
-                  {askBlock.detail}
-                </Text>
+                question && !askBlock.detailFormat ? (
+                  // A question's own detail is the bot's prose: Markdown, like the question above it.
+                  // ChatMarkdown reads MarkdownLongPressContext, so long press still opens the menu.
+                  <View style={{ marginTop: askBlock.text ? 8 : 0 }}>
+                    <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+                      {askBlock.detail}
+                    </ChatMarkdown>
+                  </View>
+                ) : (
+                  <Text
+                    {...(askBlock.text ? {} : actionProps)}
+                    style={{
+                      color:
+                        askBlock.detailFormat === "text" && !answeredQuestion
+                          ? tokens.foreground
+                          : tokens.mutedForeground,
+                      marginTop: askBlock.text ? 8 : 0,
+                      // Commands and an approval's tool arguments read as code; a bot's own note
+                      // under its question is text.
+                      ...(askBlock.detailFormat === "code" ||
+                      (!askBlock.detailFormat && askBlock.approvalEffectId)
+                        ? { ...typeScale.caption, fontFamily: "Menlo" }
+                        : typeScale.secondary),
+                    }}
+                  >
+                    {askBlock.detail}
+                  </Text>
+                )
               ) : null}
               {question && (answered || canAnswer) ? (
                 <AskActions

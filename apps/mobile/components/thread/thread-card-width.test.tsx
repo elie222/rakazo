@@ -554,7 +554,6 @@ describe("thread cards", () => {
   });
 
   it.each([
-    ["an unmarked", undefined, undefined, 15],
     ["a text", "text" as const, undefined, 15],
     ["a code", "code" as const, "Menlo", 14],
     ["an unmarked approval", undefined, "Menlo", 14, "effect-1"],
@@ -574,6 +573,23 @@ describe("thread cards", () => {
       expect(style.fontSize).toBe(fontSize);
     },
   );
+
+  it("draws an unmarked question's detail as Markdown and a named text detail as written", () => {
+    const markdown = "The **total** is set.";
+    const literal = "Use **literal** stars";
+    renderAsk({ detail: markdown }, true);
+    // ChatMarkdown is the only plain block here; the title and actions are Text.
+    expect([...container.querySelectorAll("p")].map((line) => line.textContent)).toContain(
+      markdown,
+    );
+    renderAsk({ detail: literal, detailFormat: "text" }, true);
+    expect([...container.querySelectorAll("p")].map((line) => line.textContent)).not.toContain(
+      literal,
+    );
+    expect([...container.querySelectorAll("span")].map((span) => span.textContent)).toContain(
+      literal,
+    );
+  });
 
   it("bounds the MCP approval card the same way", () => {
     act(() =>

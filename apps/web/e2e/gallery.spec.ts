@@ -16,6 +16,27 @@ test("gallery keeps a paginated call closed and its follow-up visible", async ({
   await captureScreenshot(page, testInfo, "paginated-call-marker");
 });
 
+test("gallery draws a question's Markdown detail and keeps a named text detail literal", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=questions&theme=light");
+  const markdown = page.getByTestId("question-card").filter({ hasText: "Send this draft to Sam?" });
+  const detail = markdown.getByTestId("ask-detail");
+  await expect(detail.locator("strong").first()).toHaveText("Tuesday at 2 pm");
+  await expect(detail).not.toContainText("**");
+  // The card stays a working choice after its detail is drawn as prose.
+  await markdown.getByRole("button", { name: /Send it/ }).click();
+  await expect(markdown.getByRole("button", { name: /Send it/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "gallery-question-markdown-detail");
+
+  const literal = page.getByTestId("question-card").filter({ hasText: "Use this command?" });
+  await expect(literal.getByTestId("ask-detail")).toHaveText("Use **literal** stars.");
+  await captureScreenshot(page, testInfo, "gallery-question-text-detail");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
