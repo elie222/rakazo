@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { showCalendarStatusRetry } from "@rakazo/core";
 import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
 import {
   meetingCalendarActionLabel,
@@ -78,9 +79,7 @@ export function MeetingCalendar({
       }
     },
   });
-  const statusRetry =
-    availability.data?.available === undefined &&
-    (availability.isError || (availability.isFetched && availability.isFetching));
+  const statusRetry = showCalendarStatusRetry(availability);
   if (!available && !statusRetry) return null;
 
   const formatter = new Intl.DateTimeFormat(i18n.locale, {

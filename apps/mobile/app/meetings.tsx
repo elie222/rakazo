@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { canLeaveMeeting } from "@rakazo/contracts";
+import { showCalendarStatusRetry } from "@rakazo/core";
 import { meetingPlatformLabel, meetingStatusLabel, meetingTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -31,10 +32,7 @@ export default function MeetingsScreen() {
   const calendar = useScreenQuery(rpcQuery("meetingCalendar/status", { botId }), {
     enabled: Boolean(botId && list.data?.enabled),
   });
-  const calendarStatusRetry =
-    list.data?.enabled &&
-    calendar.data?.available === undefined &&
-    (calendar.isError || (calendar.isFetched && calendar.isFetching));
+  const calendarStatusRetry = list.data?.enabled && showCalendarStatusRetry(calendar);
   const focused = useIsFocused();
   useSpaceChanges(
     "meetings",
