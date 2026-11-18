@@ -411,22 +411,39 @@ your own backup. Turn a switch on only when you are sure you no longer need old 
 How a file is judged:
 
 - A file and its earlier versions are one family, and the family is deleted as a whole: its
-  versions first, then the file itself. The blob goes before its record, so a failure part way
-  leaves a record that is retried on the next pass, never a record that points to nothing.
+  versions first, then the file itself. Each stored file goes before its record, so a failure
+  part way never leaves a stored file without a record, which nothing would ever clean. It can
+  leave a record whose stored file is gone; the next pass deletes it.
+- A version published while its family is being deleted, by an upload or a bot, stops the
+  deletion: that version, the file itself and the versions not yet deleted stay. A publish that
+  comes as the file itself is being deleted waits for it and starts a new file.
 - A family is judged by its newest version. Its age is when that version was created, so a file
   that is updated stays. If the newest version was made by a run, the family counts as created;
   otherwise it counts as received.
 - A family with any hidden member is never deleted. Hidden files are the screenshots of a step
   and the files of an MCP app, which the product shows in other places.
 
-The worker runs a pass about every `FILES_CLEANUP_INTERVAL_HOURS` and deletes at most 200
-families per pass, oldest first. A backlog is cleared over several passes. The log carries
-counts only. With both switches off, the worker does not look at files at all.
+The first pass runs when the worker starts with a switch on, so turning one on and restarting
+starts the deletion at once. After that the worker runs a pass about every
+`FILES_CLEANUP_INTERVAL_HOURS`. Each pass deletes at most 200 families, oldest first, whatever the
+interval: at the default of one pass a day, that is at most 200 families a day, and a larger
+backlog takes several days to clear. The log carries counts only. With both switches off, the
+worker does not look at files at all.
 
-What people then see: in the web and mobile apps, an old message whose file was deleted still
-shows the file, and opening it fails with "Could not download. Try again." The bot's file list and
-its email tool say the file is no longer available. Copies already in a computer are not touched
-by these two switches; `FILES_CLEANUP_ATTACHMENTS` handles them.
+What people then see, for an old message whose file was deleted:
+
+- In the web app the message still shows the file card, and downloading it fails with "Could not
+  download <name>. Try again." An inline image never loads its preview.
+- In the mobile app the message still shows the file, and opening it shows an alert: "Could not
+  open file", or "Could not open image" for an image.
+- The list of earlier files in the bot's prompt and its email tool say the file is no longer
+  available.
+
+Copies already in a computer are not touched by these two switches. `FILES_CLEANUP_ATTACHMENTS`
+removes a readable-named copy by the date in its name, but a copy named `attachments/<id>.<ext>`
+is dated from its original's record, so once the original is deleted that copy is never removed
+and stays until removed by hand. With `ATTACHMENT_COPY_NAMES=id`, the default, every copy is
+named that way.
 
 ### Limits
 

@@ -1,26 +1,46 @@
 import type { AdapterContext, ArtifactStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
+import { IsolationError, isRecordNotFound, lockArtifactVersionName, Prisma } from "@rakazo/db";
 
-type ArtifactMember = { id: string; storageKey: string };
+type ArtifactMember = {
+  id: string;
+  storageKey: string;
+  createdAt: Date;
+  botId: string | null;
+  groupId: string | null;
+  name: string;
+};
 type Deps = { prisma: PrismaClient; artifacts: ArtifactStore };
 
 /**
  * Deletes the family whose root is `rootId` in `spaceId`: the versions first, then the root,
  * removing each blob before its row and the root only while it has no versions. A row or blob
  * that is already gone counts as done. Says `"gone"` when the root was not there to delete.
+ *
+ * With `onlyOlderThan`, it stops as soon as a member was created at or after that time and says
+ * `"kept"`: a version published while the family was being deleted stays, with the members not
+ * yet deleted. The root goes under the same-name publish lock, so a publish that has not joined
+ * the family by then waits for the deletion and starts a new family.
  */
 export async function deleteArtifactFamilyRows(
   deps: Deps,
-  input: { spaceId: string; rootId: string; context: AdapterContext },
-): Promise<"deleted" | "gone"> {
-  const { spaceId, rootId, context } = input;
+  input: { spaceId: string; rootId: string; context: AdapterContext; onlyOlderThan?: Date },
+): Promise<"deleted" | "gone" | "kept"> {
+  const { spaceId, rootId, context, onlyOlderThan } = input;
   for (;;) {
     const members = await deps.prisma.artifact.findMany({
       where: { spaceId, OR: [{ id: rootId }, { rootArtifactId: rootId }] },
-      select: { id: true, storageKey: true },
+      select: {
+        id: true,
+        storageKey: true,
+        createdAt: true,
+        botId: true,
+        groupId: true,
+        name: true,
+      },
     });
     if (members.length === 0) return "gone";
+    if (onlyOlderThan && members.some((row) => row.createdAt >= onlyOlderThan)) return "kept";
     const child = members.find((row) => row.id !== rootId);
     if (child) {
       await removeArtifactBlob(deps.artifacts, context, child);
@@ -29,7 +49,7 @@ export async function deleteArtifactFamilyRows(
     }
     const root = members.find((row) => row.id === rootId);
     if (!root) throw new IsolationError();
-    const outcome = await deleteArtifactRootIfChildless(deps, context, root);
+    const outcome = await deleteArtifactRootIfChildless(deps, context, { ...root, spaceId });
     if (outcome === "has-child") continue;
     return outcome;
   }
@@ -38,10 +58,19 @@ export async function deleteArtifactFamilyRows(
 async function deleteArtifactRootIfChildless(
   deps: Deps,
   context: AdapterContext,
-  root: ArtifactMember,
+  root: ArtifactMember & { spaceId: string },
 ): Promise<"deleted" | "gone" | "has-child"> {
   let outcome: "deleted" | "gone" | "has-child" = "gone";
   await deps.prisma.$transaction(async (tx) => {
+    // Only a file with a bot can be joined by a same-name publish, which holds this lock.
+    if (root.botId) {
+      await lockArtifactVersionName(tx, {
+        spaceId: root.spaceId,
+        botId: root.botId,
+        groupId: root.groupId,
+        name: root.name,
+      });
+    }
     const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id FROM "artifacts" WHERE id = ${root.id} FOR UPDATE
     `);

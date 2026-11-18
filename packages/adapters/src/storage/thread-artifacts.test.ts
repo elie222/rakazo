@@ -8,7 +8,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { attachmentComputerPathFor } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
   createEarlierFileQueue,
@@ -757,7 +758,7 @@ describe("recent thread files", () => {
     );
     expect(recentThreadFilesInstruction(files)).toBe(
       [
-        "Files attached earlier in this conversation are also on your computer:",
+        "Files attached earlier in this conversation, with their paths on your computer:",
         '- "screenshot.png" (image/png, 3 bytes): "attachments/image-1.png"',
       ].join("\n"),
     );
@@ -816,6 +817,49 @@ describe("files listed by history tools", () => {
       },
     );
     expect(markWorkspaceDirty).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleted files", () => {
+  const block = {
+    kind: "file" as const,
+    artifactId: "deleted",
+    name: "Dana lease.pdf",
+    mimeType: "application/pdf",
+    size: 5,
+  };
+  const deps = () => ({
+    prisma: { artifact: { findMany: vi.fn().mockResolvedValue([]) } } as unknown as PrismaClient,
+    artifacts: { get: vi.fn() } as unknown as ArtifactStore,
+    sandbox: { listFiles: vi.fn(), writeFile: vi.fn() } as unknown as SandboxProvider,
+  });
+  const input = {
+    context: {
+      operationId: "run",
+      traceId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      signal: new AbortController().signal,
+    },
+    computer: async () => ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+    computerMode: "dedicated" as const,
+  };
+
+  it("skips an earlier file whose original is gone, keeping its name out of the log", async () => {
+    const sink = createTestSink();
+    const previous = getLogger();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    onTestFinished(() => installLogger(previous));
+
+    await expect(materializeEarlierFiles(deps(), [block], input)).resolves.toEqual([]);
+    expect(JSON.stringify(sink.events)).not.toContain("Dana lease.pdf");
+  });
+
+  it("still fails a current-turn file whose original is gone", async () => {
+    await expect(materializeCurrentTurnFiles(deps(), [block], input)).rejects.toThrow(
+      "Attached file is unavailable: Dana lease.pdf",
+    );
   });
 });
 

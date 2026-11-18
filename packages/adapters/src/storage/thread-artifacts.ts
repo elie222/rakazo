@@ -263,6 +263,9 @@ async function materializeThreadFiles(
 
   for (const block of fileBlocks) {
     const row = byId.get(block.artifactId);
+    // An earlier file deleted since (say by the original-file cleanup) has nothing to copy, and
+    // is skipped here so its name never reaches the log of a failed copy.
+    if (!row && preserveExisting) continue;
     if (!row) throw new Error(`Attached file is unavailable: ${block.name}`);
     const metadata = threadFileMetadata(row);
     const workspacePath = resolveBotWorkspacePath(

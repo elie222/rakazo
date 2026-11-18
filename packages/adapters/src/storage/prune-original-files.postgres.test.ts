@@ -10,6 +10,7 @@ import {
   HIDDEN_ARTIFACT_MIME_TYPES,
   provisionMessagingIdentity,
   runAsSystem,
+  withResolvedArtifactVersion,
 } from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -31,6 +32,7 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
   let identity: { userId: string; spaceId: string };
+  let botId: string;
   let root: string;
   let store: LocalArtifactStore;
   const address = `original-files-${randomUUID()}@rakazo.test`;
@@ -49,6 +51,11 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
     identity = await runAsSystem("original files fixture", () =>
       provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
+    botId = (
+      await system.bot.create({
+        data: { spaceId: identity.spaceId, userId: identity.userId, name: "Dana", color: "ink" },
+      })
+    ).id;
     root = await mkdtemp(path.join(tmpdir(), "rakazo-original-files-pg-"));
     store = new LocalArtifactStore(root);
   });
@@ -77,6 +84,7 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
     mimeType?: string;
     rootArtifactId?: string;
     version?: number;
+    botId?: string;
   }) {
     const mimeType = input.mimeType ?? "application/pdf";
     const blob = await store.put(
@@ -88,6 +96,7 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
         spaceId: identity.spaceId,
         userId: identity.userId,
         runId: input.runId ?? null,
+        botId: input.botId ?? null,
         name: "report.pdf",
         mimeType,
         size: 3,
@@ -131,7 +140,11 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
       sink.events
         .filter((event) => event.message === "files-cleanup.originals.removed")
         .map((event) => event["files.originals.removed"]);
-    return { sink, removed };
+    const kept = () =>
+      sink.events
+        .filter((event) => event.message === "files-cleanup.originals.kept")
+        .map((event) => event["files.originals.kept"]);
+    return { sink, removed, kept };
   }
 
   it("deletes a 40-day-old received file, its row and its blob, when received is on", async () => {
@@ -319,6 +332,77 @@ describePostgres("createOriginalFilesPruner (PostgreSQL)", () => {
     expect(logged).toContain("EACCES");
     expect(logged).not.toContain(broken.storageKey);
     expect(logged).not.toContain("report.pdf");
+  });
+
+  /** A same-name publish by the bot, as an upload or a run's output makes one. */
+  function publish() {
+    return withResolvedArtifactVersion(
+      system,
+      { spaceId: identity.spaceId, botId, name: "report.pdf" },
+      (tx, version) =>
+        tx.artifact.create({
+          data: {
+            spaceId: identity.spaceId,
+            userId: identity.userId,
+            botId,
+            name: "report.pdf",
+            mimeType: "application/pdf",
+            size: 3,
+            hash: "3",
+            storageKey: `published-${randomUUID()}`,
+            ...version,
+          },
+        }),
+    );
+  }
+
+  it("keeps the root and a version published while the family is being deleted", async () => {
+    const { removed, kept } = captureLogs();
+    const familyRoot = await file({ at: new Date(OLD.getTime() - DAY), botId });
+    const version = await file({ at: OLD, botId, rootArtifactId: familyRoot.id, version: 2 });
+    let published: Awaited<ReturnType<typeof publish>> | undefined;
+    const artifacts = new LocalArtifactStore(root);
+    vi.spyOn(artifacts, "remove").mockImplementation(async (key, ctx) => {
+      // The bot publishes a new version of the file while its old version is going.
+      if (key === version.storageKey) published = await publish();
+      return store.remove(key, ctx);
+    });
+
+    await pruner({ received: true, created: true }, { artifacts })();
+
+    expect(published).toMatchObject({ rootArtifactId: familyRoot.id, version: 3 });
+    expect(await rowExists(familyRoot.id)).toBe(true);
+    expect(await blobExists(familyRoot.storageKey)).toBe(true);
+    expect(await rowExists(published!.id)).toBe(true);
+    expect(await rowExists(version.id)).toBe(false);
+    expect(removed()).toEqual([]);
+    expect(kept()).toEqual([1]);
+  });
+
+  it("makes a same-name publish during the root's deletion wait, then start a new family", async () => {
+    const { removed } = captureLogs();
+    const familyRoot = await file({ at: OLD, botId });
+    let publishing: ReturnType<typeof publish> | undefined;
+    const artifacts = new LocalArtifactStore(root);
+    vi.spyOn(artifacts, "remove").mockImplementation(async (key, ctx) => {
+      if (key === familyRoot.storageKey) {
+        publishing = publish();
+        // The publish queues on the name lock the deletion holds, not on the root's row.
+        await vi.waitFor(async () => {
+          const [waiting] = await system.$queryRaw<Array<{ count: number }>>`
+            SELECT count(*)::int AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+          `;
+          expect(waiting?.count).toBeGreaterThan(0);
+        });
+      }
+      return store.remove(key, ctx);
+    });
+
+    await pruner({ received: true, created: true }, { artifacts })();
+
+    expect(await rowExists(familyRoot.id)).toBe(false);
+    await expect(publishing).resolves.toMatchObject({ rootArtifactId: null, version: 1 });
+    expect(removed()).toEqual([1]);
   });
 
   it("deletes each family under its own Space and the root's bot or id", async () => {

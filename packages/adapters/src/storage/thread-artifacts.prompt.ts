@@ -17,7 +17,7 @@ export function recentThreadFilesInstruction(
 ): string {
   if (!files.length) return "";
   return [
-    "Files attached earlier in this conversation are also on your computer:",
+    "Files attached earlier in this conversation, with their paths on your computer:",
     ...files.map((file) =>
       "unavailable" in file
         ? `- ${JSON.stringify(file.name)}: no longer available`

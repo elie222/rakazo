@@ -53,7 +53,8 @@ function dueFamilies(
 /**
  * The worker's pass that deletes the original files people sent in (`received`) or bots made
  * (`created`) once the newest version of the file is older than the settings say: the whole
- * family, versions first, each blob before its row. Hidden files are kept. At most
+ * family, versions first, each blob before its row. Hidden files are kept, and so is a family
+ * that gets a new version while it is being deleted, from that point on. At most
  * `ORIGINAL_FILES_PER_PASS` families go per pass, and it looks at most once per interval in this
  * process. Off, and querying nothing, unless a switch turns it on.
  */
@@ -72,8 +73,8 @@ export function createOriginalFilesPruner(deps: {
     if (lastRun !== undefined && started - lastRun < intervalMs) return;
     lastRun = started;
     const cutoff = new Date(started - maxAgeMs);
-    const removed = await runAsSystem("prune original files", async () => {
-      let count = 0;
+    const { removed, kept } = await runAsSystem("prune original files", async () => {
+      const count = { removed: 0, kept: 0 };
       for (const family of await dueFamilies(deps.prisma, cutoff, { received, created })) {
         const context: AdapterContext = {
           operationId: `original-files-prune:${family.id}`,
@@ -86,14 +87,24 @@ export function createOriginalFilesPruner(deps: {
         // One family that cannot be deleted (logged by its code) never stops the ones after it.
         const outcome = await bestEffortWithoutPaths(
           "delete an old original file",
-          deleteArtifactFamilyRows(deps, { spaceId: family.spaceId, rootId: family.id, context }),
+          deleteArtifactFamilyRows(deps, {
+            spaceId: family.spaceId,
+            rootId: family.id,
+            context,
+            // A version published since the family was picked keeps it.
+            onlyOlderThan: cutoff,
+          }),
         );
-        if (outcome === "deleted") count += 1;
+        if (outcome === "deleted") count.removed += 1;
+        if (outcome === "kept") count.kept += 1;
       }
       return count;
     });
     if (removed) {
       getLogger().info("files-cleanup.originals.removed", { "files.originals.removed": removed });
+    }
+    if (kept) {
+      getLogger().info("files-cleanup.originals.kept", { "files.originals.kept": kept });
     }
   };
 }
