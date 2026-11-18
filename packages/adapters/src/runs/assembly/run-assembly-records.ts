@@ -20,7 +20,7 @@ import {
 import { formatAgentEnvironmentInstruction } from "../../computers/sandbox/agent-environment.prompt.js";
 import {
   connectedContext,
-  loadLivePluginSlugs,
+  loadLivePlugins,
   persistLivePluginConnections,
   selectRunConnections,
 } from "../../integrations/connection-context.js";
@@ -362,10 +362,10 @@ export async function connectRun(
   );
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
-    const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+    const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);
     if (listing.ok) {
       liveSlugs = listing.slugs;
-      await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(
+      await persistLivePluginConnections(deps.prisma, run, composioRows, listing).catch(
         () => undefined,
       );
     }

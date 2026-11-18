@@ -318,6 +318,11 @@ export interface ManagedConnectorProvider
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
   /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
   needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;
+  /**
+   * Connection refs the provider reports as signed in, which tell a finished sign-in from an
+   * abandoned one. Undefined when the provider cannot say.
+   */
+  listConnectedRefs?(context: AdapterContext): Promise<string[] | undefined>;
   /** Connection refs the provider reports as dead until the user reconnects them. */
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;

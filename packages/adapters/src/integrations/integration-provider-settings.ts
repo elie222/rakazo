@@ -7,6 +7,7 @@ import type {
 import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
 import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
@@ -141,17 +142,26 @@ export class IntegrationProviderSettings {
     this.cache.delete(config.provider);
   }
 
-  /** Connected app slugs from the provider whose app ids match plugin slugs. */
-  async listConnectedPluginSlugs(userId: string): Promise<string[]> {
+  /**
+   * Connected app slugs from the provider whose app ids match plugin slugs, with the refs of
+   * the signed-in accounts when the provider lists them.
+   */
+  async listConnectedPlugins(userId: string): Promise<{ slugs: string[]; refs?: string[] }> {
     const provider = await this.resolve(PLUGIN_SLUG_PROVIDER);
-    if (!provider) return [];
-    return provider.listConnectedExternalIds({
+    if (!provider) return { slugs: [] };
+    const context = {
       userId,
       spaceId: "",
       operationId: "connections.sync",
       traceId: "connections.sync",
       signal: AbortSignal.timeout(15_000),
-    });
+    };
+    const [slugs, refs] = await Promise.all([
+      provider.listConnectedExternalIds(context),
+      // Without the accounts the sync falls back to the latest attempt.
+      bestEffort("list signed-in connection refs", provider.listConnectedRefs?.(context)),
+    ]);
+    return { slugs, refs };
   }
 
   providers(): ManagedConnectorProvider[] {
@@ -232,6 +242,9 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
   }
   async needsReconnect(context: AdapterContext, externalId: string) {
     return (await (await this.resolve())?.needsReconnect?.(context, externalId)) ?? false;
+  }
+  async listConnectedRefs(context: AdapterContext) {
+    return (await this.resolve())?.listConnectedRefs?.(context);
   }
   async listReconnectRefs(context: AdapterContext) {
     return (await (await this.resolve())?.listReconnectRefs?.(context)) ?? [];

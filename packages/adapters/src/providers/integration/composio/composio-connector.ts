@@ -306,6 +306,8 @@ export type PluginConnectionRow = {
   displayName: string;
   /** When the row last changed; for a pending row, when its authorization began. */
   updatedAt?: Date;
+  /** The account its sign-in creates, the app's slug for an app without one, or nothing yet. */
+  providerRef?: string | null;
 };
 
 /**
@@ -361,11 +363,35 @@ export function pickReusableConnection<T extends { id: string; status: string }>
   return rows.find((row) => row.status === "revoked" || row.status === "error");
 }
 
+/**
+ * The row to connect for an app the provider reports signed in. Trying again leaves an earlier
+ * row holding a sign-in nobody finished, so the row is the one whose own account is live, and
+ * the latest attempt when the live accounts are unknown.
+ */
+function signedInRow(
+  rows: PluginConnectionRow[],
+  slug: string,
+  liveRefs: Set<string> | undefined,
+): PluginConnectionRow | undefined {
+  const latestFirst = rows
+    .filter((row) => row.status === "pending" || row.status === "error")
+    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+  if (!liveRefs) return latestFirst[0];
+  const holdsNoAccount = (row: PluginConnectionRow) =>
+    !row.providerRef || composioSlugKey(row.providerRef) === slug;
+  return (
+    latestFirst.find((row) => row.providerRef && liveRefs.has(row.providerRef)) ??
+    latestFirst.find(holdsNoAccount)
+  );
+}
+
 export function planLiveConnectionSync(
   rows: PluginConnectionRow[],
   liveSlugs: string[],
   now = Date.now(),
+  liveRefs?: string[],
 ): { connectIds: string[]; revokeIds: string[] } {
+  const liveRefSet = liveRefs && new Set(liveRefs);
   const live = new Set(liveSlugs.map(composioSlugKey).filter(Boolean));
   const connectIds: string[] = [];
   const connectedProviders = new Set(
@@ -377,7 +403,7 @@ export function planLiveConnectionSync(
     // Recover in-flight pending/error rows only. A revoked sibling stays
     // revoked even when another row (or the upstream listing) is live for
     // the same slug — reviving it would reattach a dead providerRef.
-    const reusable = matches.find((row) => row.status === "pending" || row.status === "error");
+    const reusable = signedInRow(matches, slug, liveRefSet);
     if (!reusable) continue;
     connectIds.push(reusable.id);
     connectedProviders.add(slug);
@@ -626,6 +652,10 @@ export class ComposioConnector implements ComposioProvider {
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
     return this.listConnectedSlugs(context.userId);
+  }
+
+  async listConnectedRefs(context: AdapterContext): Promise<string[]> {
+    return this.accountIds(context.userId, [], ["ACTIVE"], { signal: context.signal });
   }
 
   async listReconnectRefs(context: AdapterContext): Promise<string[]> {

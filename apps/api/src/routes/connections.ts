@@ -4,7 +4,7 @@ import type { Actor } from "@rakazo/contracts";
 import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
@@ -20,6 +20,7 @@ async function reconcileConnections(
   connectorId: string,
   connectedProviders: string[],
   reconnectRefs: string[],
+  listConnectedRefs: () => Promise<string[] | undefined>,
 ): Promise<void> {
   const connectedProviderKeys = new Set(
     connectedProviders.map((provider) => provider.trim().toLowerCase()),
@@ -32,13 +33,24 @@ async function reconcileConnections(
         connectorId,
         status: { in: ["pending", "connected"] },
       },
-      select: { id: true, provider: true, displayName: true, status: true },
+      select: {
+        id: true,
+        provider: true,
+        displayName: true,
+        status: true,
+        updatedAt: true,
+        providerRef: true,
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     })
   ).filter((row: { provider: string }) =>
     connectedProviderKeys.has(row.provider.trim().toLowerCase()),
   );
-  const sync = planLiveConnectionSync(rows, connectedProviders);
+  // Asked only when a sign-in is waiting to be matched to the account it created.
+  const liveRefs = rows.some((row) => row.status === "pending")
+    ? await listConnectedRefs()
+    : undefined;
+  const sync = planLiveConnectionSync(rows, connectedProviders, Date.now(), liveRefs);
   // One update per row so the credential event goes only to rows this call actually connected.
   const connectedIds: string[] = [];
   const updates = [
@@ -122,6 +134,11 @@ export function connectionsRoutes(ctx: RouterContext) {
                   provider.describe().id,
                   nowConnected,
                   reconnectRefs,
+                  () =>
+                    bestEffort(
+                      "list signed-in connection refs",
+                      provider.listConnectedRefs?.(adapterContext),
+                    ),
                 ).catch((error) => {
                   getLogger().error(
                     `${provider.describe().id} connection reconciliation failed`,
