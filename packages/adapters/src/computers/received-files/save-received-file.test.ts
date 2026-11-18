@@ -35,6 +35,7 @@ const input = {
 const TEAM_PATH = "shared/received/2026/11/2026-11-17_1912_972541234567_clip.mov";
 
 type ComputerRow = {
+  spaceId: string;
   scope: string;
   homeKey: string;
   kind: string;
@@ -45,7 +46,13 @@ type ComputerRow = {
 /** A database whose only computer is `row` and whose leases are always free. */
 function fakeLeasePrisma(row: ComputerRow | null) {
   return {
-    computer: { findUnique: vi.fn(async () => row) },
+    computer: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId?: string } }) =>
+        row && where.id === "computer-1" && (where.spaceId ?? row.spaceId) === row.spaceId
+          ? row
+          : null,
+      ),
+    },
     $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
       query.join("").includes("INSERT INTO") ? [{ fence: 1n }] : [{}],
     ),
@@ -61,6 +68,7 @@ function setup(
   } = {},
 ) {
   const row: ComputerRow | null = computer && {
+    spaceId: "space-1",
     scope: "team",
     homeKey: "team-home",
     kind: "docker",
@@ -210,6 +218,16 @@ describe("saveReceivedFile", () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
+  it("skips a computer of another Space than the message's", async () => {
+    const { deps, writeBinaryFile, writeFile } = setup({ spaceId: "space-2" });
+
+    await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({
+      skipped: "no_computer",
+    });
+    expect(writeBinaryFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
   it("saves at the root received folder of a dedicated computer", async () => {
     const { deps, writeBinaryFile } = setup({ scope: "dedicated", kind: "docker" });
 
@@ -287,6 +305,7 @@ describe("saveReceivedFile", () => {
     onTestFinished(() => rm(root, { recursive: true, force: true }));
     const home = new LocalAgentHomeStore(root);
     const prisma = fakeLeasePrisma({
+      spaceId: "space-1",
       scope: "team",
       homeKey: "team-home",
       kind: "docker",
@@ -330,7 +349,7 @@ describe("saveReceivedFile", () => {
     const taken = queryRaw.invocationCallOrder[0]!;
     const released = queryRaw.invocationCallOrder.at(-1)!;
     // The computer is read under the lease too, so its state is the latest before the write.
-    const read = vi.mocked(deps.prisma.computer.findUnique);
+    const read = vi.mocked(deps.prisma.computer.findFirst);
     for (const order of [read, homeList, writeBinaryFile].map(
       (call) => call.mock.invocationCallOrder[0]!,
     )) {

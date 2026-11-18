@@ -168,9 +168,10 @@ export async function saveReceivedFile(
   const computerId = input.bot.computerId;
   if (!computerId) return { skipped: "no_computer" };
   const save = async (): Promise<SaveReceivedFileResult> => {
-    // Read under the folder's lease, so the target follows the latest state of the computer.
-    const computer = await deps.prisma.computer.findUnique({
-      where: { id: computerId },
+    // Read under the folder's lease, so the target follows the latest state of the computer,
+    // and only in the message's Space: a computer of another Space never gets the file.
+    const computer = await deps.prisma.computer.findFirst({
+      where: { id: computerId, spaceId: context.spaceId },
       select: { scope: true, homeKey: true, kind: true, providerRef: true, state: true },
     });
     if (!computer) return { skipped: "no_computer" };
