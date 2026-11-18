@@ -86,6 +86,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
+    ) : chooser ? (
+      <Trans>Welcome to Rakazo</Trans>
     ) : presented && mode === "in" ? (
       <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
@@ -347,7 +349,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   setError(null);
                   navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
                 }}
-                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
+                onPasskey={passkey.supported ? passkey.start : undefined}
               />
               {error ? (
                 <p
@@ -357,23 +359,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
-              <p className="mt-8 text-center text-muted-foreground">
-                {mode === "in" ? (
-                  <>
-                    <Trans>Don’t have an account?</Trans>{" "}
-                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign up</Trans>
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Trans>Already have an account?</Trans>{" "}
-                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign in</Trans>
-                    </Link>
-                  </>
-                )}
-              </p>
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (
@@ -543,14 +528,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
-                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-up${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign up</Trans>
                       </Link>
                     </>
                   ) : mode === "up" ? (
                     <>
                       <Trans>Already have an account?</Trans>{" "}
-                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-in${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign in</Trans>
                       </Link>
                     </>
