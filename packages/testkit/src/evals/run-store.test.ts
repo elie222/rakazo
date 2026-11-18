@@ -157,14 +157,14 @@ describe("run fingerprint", () => {
     const run = new PiAgentRuntime({
       modelFetch: firstRequestFetch(dispatcherFetch, server.model.id, () => {
         refused = true;
-        return false;
+        return budget.refuse();
       }),
       modelCallObserver: {
         beforeCall: (call) => {
           if (refused) throw new Error("Stored trials replace this run");
           return reserve(call);
         },
-        afterCall: (id, usage) => budget.settleUsage(id, usage, true),
+        afterCall: (id, usage) => budget.settleUsage(id, usage),
       },
     }).run({
       botId: "bot",

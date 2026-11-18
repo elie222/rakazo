@@ -785,7 +785,7 @@ async function main() {
           if (plan.kind === "run" || !plan.trials.some((t) => t.trial === planned.trial))
             return true;
           stored.plan = plan;
-          return false;
+          return liveBudget.refuse();
         },
         scenario,
       );
@@ -839,7 +839,7 @@ async function main() {
                       throw new Error("Other model has no configured pricing");
                     return liveBudget.reserveCostBound(maxCostUsd);
                   },
-                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage, !!stored.plan),
+                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
                 },
               });
               const historyDiagnostics: HistoryDiagnostic[] = [];
