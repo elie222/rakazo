@@ -112,6 +112,8 @@ test("moving from another assistant opens the import from the first chat", async
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(
-    page.getByText("You can bring it over any time from Settings → General → Import an agent."),
+    page
+      .getByTestId("transcript")
+      .getByText("You can bring it over any time from Settings → General → Import an agent."),
   ).toBeVisible();
 });
