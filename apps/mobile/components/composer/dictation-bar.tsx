@@ -78,7 +78,7 @@ function DictationLevels({ onLevel }: { onLevel: LevelSource }) {
   useEffect(
     () =>
       onLevel((level) => {
-        setLevels((previous) => [...previous.slice(-(Math.max(slots, 1) - 1)), level]);
+        setLevels((previous) => [...previous, level].slice(-Math.max(slots, 1)));
       }),
     [onLevel, slots],
   );

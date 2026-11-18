@@ -185,6 +185,21 @@ it("runs what waits on a finished dictation after its words land", async () => {
   expect(then).toHaveBeenCalledTimes(1);
 });
 
+it("runs what waits on a dictation finished before the mic opens, and stops the setup", async () => {
+  const consent = deferred<void>();
+  vi.mocked(ensureVoiceConsent).mockReturnValueOnce(consent.promise);
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(ensureVoiceConsent).toHaveBeenCalled());
+  const then = vi.fn();
+  act(() => finish(then));
+  expect(then).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    consent.resolve();
+    await consent.promise;
+  });
+  expect(voice.recordClip).not.toHaveBeenCalled();
+});
+
 it("never runs what waits on a dictation that is cancelled", async () => {
   const pending = deferred<string>();
   voice.transcribeClip.mockReturnValueOnce(pending.promise);

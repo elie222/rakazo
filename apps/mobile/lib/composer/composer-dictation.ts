@@ -289,9 +289,14 @@ export function useComposerDictation({
   function finish(then: () => void) {
     const mine = session.current;
     if (!mine) return;
-    // Before the mic opens, finishing cancels and there is nothing to wait for.
-    if (mine.live) mine.afterWords = then;
-    mine.finish();
+    if (mine.live) {
+      mine.afterWords = then;
+      mine.finish();
+      return;
+    }
+    // Before the mic opens there are no words to wait for: drop the setup and go on.
+    cancel();
+    then();
   }
 
   return { status, toggle, finish, cancel, onLevel };
