@@ -28,6 +28,9 @@ export type UsageMeasurement = {
   totalTokens: number | null;
   costUsd: number | null;
 };
+type MeasuredUsage = Partial<UsageMeasurement> & { costSource?: string | null };
+/** What an adapter reports about whether a call reached the provider. */
+type SendEvidence = { providerRequestId?: string | null; countedTokens?: object | null };
 export type Operation = UsageOperationKind;
 export const OPERATION_KINDS = [
   "answer",
@@ -283,10 +286,18 @@ export class SpendBudget {
     this.reservations.delete(id);
     this.spent += actualUsd ?? reservation.estimate; // Missing usage must not restore potentially incurred spend.
   }
-  settleUsage(
-    id: string,
-    usage: (Partial<UsageMeasurement> & { costSource?: string | null }) | null,
-  ) {
+  /** `refusing` says the eval itself refuses this run's requests, as a stand-in for stored
+   * trials does: a call with nothing showing it reached the provider then costs nothing. */
+  settleUsage(id: string, usage: (MeasuredUsage & SendEvidence) | null, refusing = false) {
+    if (
+      refusing &&
+      (usage === null ||
+        (usage.costUsd == null &&
+          !usage.providerRequestId &&
+          !usage.countedTokens &&
+          ![usage.inputTokens, usage.outputTokens, usage.totalTokens].some(Boolean)))
+    )
+      return this.settle(id, 0);
     const pricing = this.reservations.get(id)?.pricing;
     const priced = usage ? measureCalls([{ id, ...usage }], pricing).costUsd : null;
     // A bounded reservation has no per-token rates; its own bound already covers the write.

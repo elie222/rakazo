@@ -48,6 +48,31 @@ it("reserves concurrent spend and retains estimated spend after failed calls", (
   expect(budget.reservedUsd).toBe(0);
   expect(() => new SpendBudget().reserve(1, 1)).toThrow("pricing");
 });
+it("frees a refused call only when nothing shows it reached the provider", () => {
+  const budget = new SpendBudget(0.005, pricing);
+  budget.settleUsage(
+    budget.reserve(1000, 500),
+    {
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+    },
+    true,
+  );
+  expect(budget.usedUsd).toBe(0);
+  // Sent before the refusal and stopped without a reported charge: it keeps its reservation.
+  budget.settleUsage(
+    budget.reserve(1000, 500),
+    {
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      countedTokens: { inputTokens: 1000, outputTokens: 0 },
+    },
+    true,
+  );
+  expect(budget.usedUsd).toBe(0.004);
+});
 it("reserves another model's call at its own cost bound, never at the eval model's rates", () => {
   const budget = new SpendBudget(5, pricing);
   const id = budget.reserveCostBound(0.36);

@@ -827,7 +827,8 @@ async function main() {
                     cacheWriteRetention,
                     maxCostUsd,
                   }) => {
-                    if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
+                    if (!acceptingCalls || stored.plan)
+                      throw new Error("Eval trial stopped scheduling inference");
                     if (provider === connection.provider && modelId === connection.modelId)
                       return liveBudget.reserve(
                         inputTokensEstimate,
@@ -838,7 +839,7 @@ async function main() {
                       throw new Error("Other model has no configured pricing");
                     return liveBudget.reserveCostBound(maxCostUsd);
                   },
-                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
+                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage, !!stored.plan),
                 },
               });
               const historyDiagnostics: HistoryDiagnostic[] = [];
