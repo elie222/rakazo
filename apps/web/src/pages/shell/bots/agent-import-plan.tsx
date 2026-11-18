@@ -170,6 +170,13 @@ export function AgentImportPlanReview({
     </span>
   );
 
+  // Comes over differently than it was: its row starts open so that is seen before Create.
+  const changed = (entries: readonly { warnings: AgentImportWarning[] }[]) =>
+    entries.some((entry) =>
+      entry.warnings.some(
+        (warning) => warning === "dropped_settings" || warning === "changed_schedule",
+      ),
+    );
   const section = (
     testId: string,
     title: ReactNode,
@@ -399,6 +406,7 @@ export function AgentImportPlanReview({
                   ),
                 )}
               </ul>,
+              changed(plan.mcpServers),
             )
           : null}
         {plan.routines.length
@@ -419,6 +427,7 @@ export function AgentImportPlanReview({
                   ),
                 )}
               </ul>,
+              changed(plan.routines),
             )
           : null}
         {secretsAvailable ? (
