@@ -65,9 +65,7 @@ export async function withResolvedArtifactVersion<T>(
   for (let i = 0; i < MAX_VERSION_ALLOCATION_ATTEMPTS; i++) {
     try {
       return await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(Prisma.sql`
-          SELECT pg_advisory_xact_lock(hashtextextended(${artifactVersionLockKey(params)}, 0))::text AS "lock"
-        `);
+        await lockArtifactVersionName(tx, params);
         const version = await resolveNextArtifactVersion(tx, params);
         return await attempt(tx, version);
       }, options);
@@ -77,6 +75,19 @@ export async function withResolvedArtifactVersion<T>(
     }
   }
   throw lastError;
+}
+
+/**
+ * Holds, until the transaction ends, the lock same-name publishes queue on. A family's deletion
+ * takes it too, so a publish of that name waits for the deletion and starts a new family.
+ */
+export async function lockArtifactVersionName(
+  tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+  params: { spaceId: string; botId: string; groupId?: string | null; name: string },
+): Promise<void> {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${artifactVersionLockKey(params)}, 0))::text AS "lock"
+  `);
 }
 
 // Same identity as the name lookup, so those publishes share one lock.

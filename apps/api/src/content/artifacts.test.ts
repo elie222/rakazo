@@ -290,7 +290,7 @@ describe("deleteArtifactFamily", () => {
         findMany: vi.fn(async () => {
           const page = listings[Math.min(read, listings.length - 1)] ?? [];
           read += 1;
-          return page;
+          return page.map((row) => ({ name: "report.pdf", groupId: null, ...row }));
         }),
         delete: vi.fn(async ({ where }: { where: { id: string } }) => {
           calls.push(`delete:${where.id}`);
