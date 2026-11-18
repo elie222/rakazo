@@ -446,18 +446,19 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
-  // Only a turn in the app can carry a request to connect one, and only where the card is offered.
+  // Only a turn in the app can carry a request to connect one.
   const chatApps =
     ["user", "follow_up"].includes(conversationRun.trigger) &&
     !messagingChannelRun &&
-    !nonOwnerChatRun &&
-    !bot.disabledBuiltinTools?.includes("connect_app")
+    !nonOwnerChatRun
       ? [...new Set(deps.messaging?.chatApps?.() ?? [])]
       : [];
   const messagingContext =
     [
       hasMessagingIdentity ? messagingDmSurfaceNote() : null,
-      chatApps.length > 0 ? chatAppConnectNote(chatApps) : null,
+      chatApps.length > 0
+        ? chatAppConnectNote(chatApps, !bot.disabledBuiltinTools?.includes("connect_app"))
+        : null,
       messagingChannelRun
         ? messagingChannelPrivacyBlock()
         : nonOwnerChatRun

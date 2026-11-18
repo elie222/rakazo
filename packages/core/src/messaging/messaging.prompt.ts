@@ -10,9 +10,15 @@ export function messagingDmSurfaceNote(): string {
 }
 
 /** Keeps "connect <chat app>" from always meaning that app's tools. */
-export function chatAppConnectNote(chatApps: readonly string[]): string {
+export function chatAppConnectNote(
+  chatApps: readonly string[],
+  connectAppOffered: boolean,
+): string {
+  const apps = `People can also message you from ${chatApps.join(", ")}.`;
+  if (!connectAppOffered)
+    return `${apps} They set that up themselves in Settings, under Messaging.`;
   return [
-    `People can also message you from ${chatApps.join(", ")}.`,
+    apps,
     "They set that up themselves in Settings, under Messaging; connect_app does not do it, it only gives you tools to read and act in an app.",
     "When someone asks to connect one of these, or to talk to you from it, tell them which of the two fits what they want, and ask if you cannot tell.",
   ].join(" ");
