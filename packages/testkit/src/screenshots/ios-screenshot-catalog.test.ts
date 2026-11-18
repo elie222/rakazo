@@ -13,6 +13,8 @@ const catalogDir = path.join(mobileDir, "e2e", "ios-screenshots");
 /** Screens the catalog cannot reach yet, and why. Capture one and remove it here. */
 const UNCOVERED: Record<string, string> = {
   "integration-setup": "redirects to Integrations",
+  "meeting-transcript": "the catalog fixtures produce no meeting transcripts",
+  meetings: "the catalog fixtures do not enable a meeting provider",
   "model-settings": "opens only for a model the catalog cannot describe; the fixtures connect none",
   share: "Android only: iOS has no share extension yet",
 };

@@ -1054,6 +1054,18 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.work": {
+    sessionId: string;
+    action:
+      | "join"
+      | "leave"
+      | "expire"
+      | "reconcile"
+      | "transcript"
+      | "transcript-check"
+      | "cleanup";
+    detached?: { provider: string; externalId?: string; recordingId?: string };
+  };
   "purchase.poll": { purchaseId: string };
   /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
   "media.poll": { jobId: string };

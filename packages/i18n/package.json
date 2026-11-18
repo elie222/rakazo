@@ -7,6 +7,7 @@
   "exports": {
     "./bot-removal": "./src/bot-removal.ts",
     "./computer-usage": "./src/computer-usage.ts",
+    "./meeting": "./src/meeting.ts",
     "./run-error": "./src/run-error.ts",
     "./vault": "./src/vault.ts",
     "./locales/*": "./locales/*"
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@lingui/core": "6.12.0",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*"
   },
   "devDependencies": {

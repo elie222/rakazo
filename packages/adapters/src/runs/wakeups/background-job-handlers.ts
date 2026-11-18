@@ -14,6 +14,7 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
+  RetryJobLaterError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -117,6 +118,7 @@ export function createBackgroundJobHandlers(deps: {
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
   /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
+  meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
   lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
   const delivery = deps.messagingDelivery;
@@ -280,6 +282,10 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
     }),
+    "meeting.work": async (payload) => {
+      if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
+      await deps.meetingWork(payload);
+    },
     "purchase.poll": asOwner(purchase, async (payload) => {
       await pollPurchase(
         {
