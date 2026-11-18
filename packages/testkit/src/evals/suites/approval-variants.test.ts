@@ -54,6 +54,7 @@ describe("approval variants", () => {
     expect(parseApprovalVariant("lean-ask+history+outside").id).toBe("outside+history+lean-ask");
     expect(() => parseApprovalVariant("outside+vibes")).toThrow(/vibes/);
     expect(() => parseApprovalVariant("lean-ask+split")).toThrow(/one rubric/);
+    expect(() => parseApprovalVariant("scope+lean-ask")).toThrow(/one rubric/);
   });
 
   it("shows only the parts a variant names, newest history and steps last", () => {
