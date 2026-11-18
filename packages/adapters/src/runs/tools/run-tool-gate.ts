@@ -33,6 +33,7 @@ import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
 import {
@@ -48,6 +49,7 @@ import {
   redactToolArgsForReview,
   resolveAutoReviewChecker,
 } from "../../approvals/auto-review.js";
+import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
@@ -80,7 +82,7 @@ import {
 } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
-import { autoReviewCheckerProvider } from "../turn/run-auto-review.js";
+import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
 import { refusal } from "../turn/tool-refusal.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
@@ -874,7 +876,7 @@ async function reviewToolCall(
       runId,
       signal: context.signal,
     };
-    const checkerProvider = (candidate: AutoReviewChecker) =>
+    const checkerProvider = (candidate: AutoReviewCandidate) =>
       autoReviewCheckerProvider(
         deps,
         {
@@ -886,17 +888,29 @@ async function reviewToolCall(
         },
         {
           injectedReview,
-          memberChecker: memberChecker || candidate !== checker,
+          memberChecker: candidate.role !== "default",
           registerSecrets: (values) => ctx.secrets.push(...values),
         },
         candidate,
       );
+    // The fallback is extra: failing to look it up must not keep the chosen checkers from running.
+    const included = injectedReview
+      ? null
+      : await bestEffort("auto_review.included_checker", includedAutoReviewChecker(deps));
+    const includedIsPrimary =
+      included &&
+      checker &&
+      !memberChecker &&
+      checker.provider === included.provider &&
+      checker.model === included.model &&
+      !checker.credentialId &&
+      !checker.creditOfferingId;
     const judge = await reviewWithBackups(
       [
         ...(checker
-          ? [checker]
+          ? [{ ...checker, role: memberChecker ? ("member" as const) : ("default" as const) }]
           : injectedReview
-            ? [{ provider: "injected", model: "injected" }]
+            ? [{ provider: "injected", model: "injected", role: "default" as const }]
             : []),
         ...(reviewSettings?.backups.map((choice) => ({
           provider: choice.provider,
@@ -904,7 +918,10 @@ async function reviewToolCall(
           thinkingLevel: choice.thinkingLevel,
           credentialId: choice.credentialId,
           creditOfferingId: choice.creditOfferingId,
+          role: "backup" as const,
         })) ?? []),
+        // A member's unusable choice falls back to the deployment's included reviewer.
+        ...(included && !includedIsPrimary ? [{ ...included, role: "default" as const }] : []),
       ],
       async (checker) => {
         const provider = await checkerProvider(checker);
