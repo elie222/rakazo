@@ -329,16 +329,18 @@ function PromptAskCard({
             "cancelled" ? null : (
             <Check aria-hidden className="size-4" />
           )}
-          {block.instructionUpdate
-            ? displayedAnswer === "deny"
-              ? t`Dismissed`
-              : t`Allowed once`
-            : formatAnsweredState(
-                displayedAnswer,
-                Boolean(approvalActions),
-                approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
-                askActions,
-              )}
+          {block.expired
+            ? t`Expired`
+            : block.instructionUpdate
+              ? displayedAnswer === "deny"
+                ? t`Dismissed`
+                : t`Allowed once`
+              : formatAnsweredState(
+                  displayedAnswer,
+                  Boolean(approvalActions),
+                  approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
+                  askActions,
+                )}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-body font-medium text-muted-foreground">

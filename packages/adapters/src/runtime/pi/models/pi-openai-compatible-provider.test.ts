@@ -615,6 +615,48 @@ describe("openai-compatible provider", () => {
     expect(resolveHostname).toHaveBeenCalledWith("models.example.test");
   });
 
+  it("returns validated private DNS addresses for an mDNS .local hostname", async () => {
+    const addresses = [
+      { address: "192.168.1.30", family: 4 },
+      { address: "fd12::30", family: 6 },
+    ];
+    const resolveHostname = vi.fn(async () => addresses);
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("http://printer.local:8080/v1"),
+      resolveHostname,
+      OWNER,
+    );
+    const result = await new Promise<unknown>((resolve, reject) => {
+      lookup("printer.local", { family: 0, all: true }, (error, resolved) =>
+        error ? reject(error) : resolve(resolved),
+      );
+    });
+    expect(result).toEqual(addresses);
+    expect(resolveHostname).toHaveBeenCalledWith("printer.local");
+  });
+
+  it("rejects an mDNS .local hostname that resolves outside the private network", async () => {
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("http://printer.local:8080/v1"),
+      async () => [{ address: "93.184.216.34", family: 4 }],
+      OWNER,
+    );
+    const error = await new Promise<Error | null>((resolve) => {
+      lookup("printer.local", { family: 0, all: false }, (lookupError) => resolve(lookupError));
+    });
+    expect(error).toMatchObject({
+      message: "Local model server hostname resolved outside the private network",
+    });
+  });
+
+  it("rejects mDNS .local hostname lookups without private endpoint permission", () => {
+    const resolveHostname = vi.fn(async () => [{ address: "192.168.1.30", family: 4 }]);
+    expect(() =>
+      createOpenAiCompatibleLookup(new URL("http://printer.local:8080/v1"), resolveHostname),
+    ).toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
+    expect(resolveHostname).not.toHaveBeenCalled();
+  });
+
   it("dispatches trusted private hosts using checked DNS and the original Host header", async () => {
     process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
     let host: string | undefined;

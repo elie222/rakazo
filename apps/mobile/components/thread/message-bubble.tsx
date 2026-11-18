@@ -508,15 +508,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     fontWeight: fontWeight.medium,
                   }}
                 >
-                  {askBlock.instructionUpdate
-                    ? askBlock.answer === "deny"
-                      ? t`Dismissed`
-                      : t`Allowed once`
-                    : formatApprovalAnswer(
-                        askBlock.answer,
-                        askBlock.actions,
-                        isApprovalAskBlock(askBlock),
-                      )}
+                  {askBlock.expired
+                    ? t`Expired`
+                    : askBlock.instructionUpdate
+                      ? askBlock.answer === "deny"
+                        ? t`Dismissed`
+                        : t`Allowed once`
+                      : formatApprovalAnswer(
+                          askBlock.answer,
+                          askBlock.actions,
+                          isApprovalAskBlock(askBlock),
+                        )}
                 </Text>
               ) : question && canAnswer ? null : canAnswer && onAnswer ? (
                 <AskActions

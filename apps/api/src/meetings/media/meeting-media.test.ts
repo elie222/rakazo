@@ -156,6 +156,18 @@ describe("live meeting voice", () => {
     );
   });
 
+  it("voices a shortened reply when the model exceeds the speech limit", async () => {
+    const prefix = "a".repeat(418);
+    const { say } = fixture(JSON.stringify({ reply: `${prefix}🌱 and then more.` }));
+
+    expect((await say()).status).toBe(200);
+    expect(synthesizeVoice).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      actor,
+      expect.objectContaining({ text: `${prefix}…` }),
+    );
+  });
+
   it("keeps an unattended participant turn as context across replicas", async () => {
     vi.mocked(transcribeVoice).mockResolvedValueOnce({ text: "The demo moved to Thursday." });
     const earlier = fixture('{"reply":null}');

@@ -36,6 +36,9 @@ const BotTemplatesDialog = lazyOverlay(() =>
     (module) => module.BotTemplatesDialog,
   ),
 );
+const AgentImportDialog = lazyOverlay(() =>
+  import("./bots/agent-import-dialog").then((module) => module.AgentImportDialog),
+);
 const McpServersOverlay = lazyOverlay(() =>
   import("../integrations/McpServersOverlay").then((module) => module.McpServersOverlay),
 );
@@ -51,7 +54,7 @@ function voiceStatusRefreshTimeout(): Promise<never> {
   });
 }
 
-/** The integrations, skills, bot templates and MCP overlays the URL opens. */
+/** The integrations, skills, bot templates, import and MCP overlays the URL opens. */
 export function AppOverlays({
   overlay,
   setOverlay,
@@ -99,6 +102,15 @@ export function AppOverlays({
           }}
         />
       ) : null}
+      {overlay?.kind === "import" ? (
+        <AgentImportDialog
+          onClose={() => setOverlay(null)}
+          onCreated={(bot) => {
+            setOverlay(null);
+            onOpenBot(bot);
+          }}
+        />
+      ) : null}
       {overlay?.kind === "mcp" ? (
         <McpServersOverlay
           editServerId={overlay.serverId}
@@ -123,7 +135,6 @@ export function SettingsOverlays({
   removeSpace,
   leftSpace,
   refreshSpaces,
-  openAgentImport,
   alive,
   user,
   refetchSession,
@@ -147,7 +158,6 @@ export function SettingsOverlays({
   removeSpace: (spaceId: string) => Promise<void>;
   leftSpace: (spaceId: string, activeSpaceId: string) => Promise<void>;
   refreshSpaces: () => Promise<void>;
-  openAgentImport: () => void;
   alive: RefObject<boolean>;
   user: { name?: string | null; email?: string } | undefined;
   refetchSession: () => Promise<unknown>;
@@ -226,10 +236,7 @@ export function SettingsOverlays({
             }
           }}
           onAccountImported={refreshSpaces}
-          onImportAgent={() => {
-            setOverlay(null);
-            openAgentImport();
-          }}
+          onImportAgent={() => setOverlay({ kind: "import" })}
           memoryConfig={memoryConfig}
           onMemoryConfigChange={(config) => {
             void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);

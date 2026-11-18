@@ -1419,7 +1419,6 @@ function SpaceShell() {
         }}
         routineEditorProps={routineEditorProps}
         openBot={openBot}
-        openCreatedBot={openCreatedBot}
         modelFocusRequest={modelFocusRequest}
         onClearBot={(bot) => dialogs.setClearTarget({ kind: "bot", chat: bot })}
       />
@@ -1458,7 +1457,11 @@ function SpaceShell() {
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
           messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
-          onOpenBot={openCreatedBot}
+          onOpenBot={(bot) => {
+            openCreatedBot(bot);
+            // As after any new bot: the Space's sections and counts come from the server.
+            void refreshBots().catch(() => undefined);
+          }}
         />
       </Suspense>
 
@@ -1475,7 +1478,6 @@ function SpaceShell() {
           removeSpace={removeSpace}
           leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
-          openAgentImport={() => setPanel("import-agent")}
           alive={alive}
           user={session.data?.user}
           refetchSession={() => session.refetch({ query: { disableCookieCache: true } })}

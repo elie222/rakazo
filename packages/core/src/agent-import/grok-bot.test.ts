@@ -835,3 +835,10 @@ describe("leftover chat messages", () => {
     );
   });
 });
+
+it("a leftover title's Markdown is escaped, so an imported name cannot become a link", () => {
+  const [message] = agentImportLeftoverMessages([
+    { title: "[Gmail](https://example.com)", content: "A connected app." },
+  ]);
+  expect(message).toContain("## \\[Gmail\\]\\(https://example.com\\)");
+});

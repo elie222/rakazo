@@ -31,6 +31,7 @@ function handlers(): BackgroundJobHandlers {
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
     "run.forget-secrets": vi.fn(async () => undefined),
+    "approval.expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),

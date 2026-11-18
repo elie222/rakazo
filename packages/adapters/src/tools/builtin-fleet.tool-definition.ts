@@ -439,6 +439,26 @@ export const fleetTools: ConnectorTool[] = [
     },
   },
   {
+    name: "post_to_group",
+    description:
+      "Post a message as yourself in one of your groups. Wakes no member; use handoff_to_bot for that.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group_id: { type: "string", description: "Group id from your groups list." },
+        group_name: { type: "string", description: "Exact group name, if no group_id." },
+        message: { type: "string", description: "Send code, logs and long content as files." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description: "Paths on your computer to attach, never their contents. Zip folders.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "update_preferences",
     description:
       "Read or change the user's own account preferences: timezone and Rakazo marketing emails. Change them only when the user asks. Call with no fields to read the current values. Email, password, sign-in, billing and account deletion are only in the app's settings.",
