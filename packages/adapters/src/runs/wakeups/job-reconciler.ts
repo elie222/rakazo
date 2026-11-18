@@ -131,6 +131,8 @@ export function createJobReconciler(
     reconcileHomeStorage?: () => Promise<void>;
     /** Deletes old copies of attachments from computers whose homes the server holds. */
     reconcileAttachmentCopies?: () => Promise<void>;
+    /** Deletes old original files, whole families, when their cleanup switch is on. */
+    reconcileOriginalFiles?: () => Promise<void>;
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
     /** Gives chat messages whose backup job was lost a new one. */
@@ -180,6 +182,7 @@ export function createJobReconciler(
     deps.reconcileNativeCalendarRetention,
     deps.reconcileHomeStorage,
     deps.reconcileAttachmentCopies,
+    deps.reconcileOriginalFiles,
     deps.reconcileIdleComputers,
     deps.reconcileDeadJobs,
     deps.reconcileChatDelivery,
