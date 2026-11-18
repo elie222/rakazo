@@ -16,6 +16,7 @@ export const kubernetesComputer: ComputerProviderDefinition = {
     serverHomeMount: "optional",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     kubernetesNamespace: { name: "KUBERNETES_SANDBOX_NAMESPACE" },

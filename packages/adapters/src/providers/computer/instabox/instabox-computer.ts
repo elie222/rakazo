@@ -11,6 +11,7 @@ export const instaboxComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: { instaboxApiKey: { name: "INSTABOX_API_KEY", required: true } },
   settings: {

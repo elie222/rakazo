@@ -12,6 +12,7 @@ export const createosComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     createosApiKey: { name: "CREATEOS_SANDBOX_API_KEY", read: raw, required: true },

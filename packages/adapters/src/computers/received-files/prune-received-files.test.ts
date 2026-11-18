@@ -234,6 +234,24 @@ describe("createReceivedFilesPruner", () => {
     expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
   });
 
+  it("prunes an asleep Docker computer, whose container is stopped", async () => {
+    const asleep = { ...team, state: "suspended", providerRef: "ctr-1" };
+    const { prune, names } = await setup([asleep], { "team-home": [OLD] });
+
+    await prune();
+
+    expect(await names("team-home", "shared/received")).toEqual([]);
+  });
+
+  it("skips an asleep remote computer, which resumes on its own disk", async () => {
+    const asleep = { ...team, kind: "e2b", state: "suspended", providerRef: "sbx-1" };
+    const { prune, names } = await setup([asleep], { "team-home": [OLD] });
+
+    await prune();
+
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
+  });
+
   it("skips a computer that started after the page of computers was read", async () => {
     const started = { ...team, state: "booting" };
     const { prune, names } = await setup([team], { "team-home": [OLD] }, [started]);

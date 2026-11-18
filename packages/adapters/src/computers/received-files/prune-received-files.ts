@@ -105,9 +105,10 @@ async function pruneComputer(
 /**
  * The worker's daily pass that deletes received chat-app files a month after they arrived
  * (by the date in their name, never the file's own time), then the month and year folders that
- * leaves empty. Only the homes of stopped computers the server holds are pruned: a running
- * computer, Docker included, and one on a provider's own disk are left alone. Anything not
- * named like a received file stays. Off unless the setting is on.
+ * leaves empty. Only homes the server holds while nothing runs in them are pruned (see
+ * `homeHoldsReceivedFiles`): a running computer, Docker included, and one on a provider's own
+ * disk are left alone. Anything not named like a received file stays. Off unless the setting
+ * is on.
  */
 export function createReceivedFilesPruner(deps: {
   prisma: PrismaClient;
@@ -127,7 +128,10 @@ export function createReceivedFilesPruner(deps: {
     let removed = 0;
     for (let after: string | undefined; ; ) {
       const computers = await deps.prisma.computer.findMany({
-        where: { state: "stopped", providerRef: null, ...(after ? { id: { gt: after } } : {}) },
+        where: {
+          OR: [{ state: "stopped", providerRef: null }, { state: "suspended" }],
+          ...(after ? { id: { gt: after } } : {}),
+        },
         orderBy: { id: "asc" },
         take: COMPUTER_PAGE_SIZE,
         select: {

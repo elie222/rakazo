@@ -100,24 +100,24 @@ function writeTarget(
 }
 
 /**
- * Whether the server may write and delete in this computer's stored home now: the computer is
- * stopped and no machine of it is left, so nothing else has the home open, and its next start
- * begins from it. A computer is marked stopped with no machine only once its machine was
- * deleted or found gone. A Docker computer's container mounts the server's copy of its home and
- * is kept while the computer sleeps; a bot with a shell in it could swap a folder for a link
- * between the server's checks and its write or delete, so a running one is written through the
- * container and one in any other state is left alone. A machine the provider kept resumes with
- * its own disk, and a save or restore under way could replace or miss the file.
+ * Whether the server may write and delete in this computer's stored home now: nothing runs in
+ * a machine that has the home open, and its next start begins from it. A computer is marked
+ * stopped with no machine only once its machine was deleted or found gone. A Docker computer's
+ * container mounts the server's copy of its home and is kept while the computer sleeps; a bot
+ * with a shell in it could swap a folder for a link between the server's checks and its write
+ * or delete. So a running one is written through the container, an asleep one only when its
+ * kind stops the container rather than pausing it, and one starting or stopping is left alone.
+ * A machine the provider kept resumes with its own disk, and a save or restore under way could
+ * replace or miss the file.
  */
 export function homeHoldsReceivedFiles(
   sandbox: SandboxProvider,
   computer: Pick<ComputerRow, "kind" | "state" | "providerRef">,
 ): boolean {
+  const { serverHomeMount, sleepStopsMachine } = sandboxKindCapabilities(computer.kind);
+  if (computer.state === "suspended") return serverHomeMount === "always" && sleepStopsMachine;
   if (computer.state !== "stopped" || computer.providerRef) return false;
-  return (
-    sandboxKindCapabilities(computer.kind).serverHomeMount === "always" ||
-    serverOwnsTeamHome(sandbox, computer.kind)
-  );
+  return serverHomeMount === "always" || serverOwnsTeamHome(sandbox, computer.kind);
 }
 
 /**

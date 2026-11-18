@@ -298,6 +298,11 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /**
+   * Asleep, the computer's machine is stopped, with no process left in it, rather than paused
+   * with its processes frozen until it resumes. Declared only where the provider's stop does so.
+   */
+  sleepStopsMachine: boolean;
 }
 
 export interface SandboxCapabilities {

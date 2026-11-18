@@ -292,28 +292,26 @@ with access to that computer can open them.
 Which computers get a copy:
 
 - A running computer of any kind, Docker included, written straight into it.
+- An asleep Docker computer, written into the server's copy of its home. Its container is
+  stopped while it sleeps, so nothing in it runs until it wakes.
 - A stopped computer with no machine left whose home the server holds, written into that
   stored home for its next start. This covers Docker computers whose container was removed, and
   remote computers whose stored home only the server writes, except Kubernetes computers set up
   to mount the server's home directory.
 
-Other computers get no copy: one starting, going to sleep or asleep, a stopped one whose
+Other computers get no copy: one starting or going to sleep, an asleep or stopped one whose
 provider keeps its machine and disk, a stopped remote one whose stored home it writes itself, a
-stopped one on a person's own device, and a bot with no computer. A Docker computer keeps its
-container while it sleeps, and the container works in the server's copy of its home, so the
-server does not write there until the container is gone. The file still reaches the bot,
-without the line.
+stopped one on a person's own device, and a bot with no computer. The file still reaches the
+bot, without the line.
 
 Once a day the worker deletes copies after about a month (31 days, by the date in their name
 rather than the file's own time), then the month and year folders that leaves empty. It only
 deletes files named like a copy, inside the dated folders under `received/` or
 `shared/received/`; anything else there stays. It cleans the same homes that get a copy while
-stopped, and never a computer that is running or asleep: copies on a running computer go once
-it is stopped and its home is back with the server, and copies on a computer that gets none
-while stopped, such as one whose provider keeps its own disk, are never cleaned up. A Docker
-computer is stopped without a container only after an update, recovery or reset removes it, or
-once it is gone, so one that just sleeps between uses keeps its copies. Turning the setting off
-stops the cleanup too, so copies already made stay until removed by hand.
+not running, and never a running computer: copies on a running computer go once it is asleep
+or stopped and its home is back with the server, and copies on a computer that gets none while
+not running, such as one whose provider keeps its own disk, are never cleaned up. Turning the
+setting off stops the cleanup too, so copies already made stay until removed by hand.
 
 Limits:
 
@@ -326,12 +324,15 @@ Limits:
   line; the cleanup removes it like any other.
 - A message's files are copied between its downloads, so each later file of the message starts
   downloading a little later, within the same download time limit.
-- A copy into a stopped computer's stored home is not held against a start or a save of that
-  computer. If the computer starts from its previous save and then saves again, the copy can be
-  lost although the bot was told its path; the same can happen on a running computer that saves
-  and stops between the check of its state and the write.
-- With homes kept in object storage, each copy into a stopped computer downloads its stored
-  home and uploads it again whole. A large home can take longer than the 30 seconds, leaving a copy without its line, and
-  the daily cleanup downloads every home it looks at.
+- A copy into an asleep or stopped computer's stored home is not held against a start or a
+  save of that computer. If the computer starts from its previous save and then saves again,
+  the copy can be lost although the bot was told its path; the same can happen on a running
+  computer that saves and stops between the check of its state and the write. An asleep Docker
+  computer that wakes between that check and the write has its container running again while
+  the server writes in its home.
+- With homes kept in object storage, each copy into a computer that is not running downloads
+  its stored home and uploads it again whole. A large home can take longer than the 30
+  seconds, leaving a copy without its line, and the daily cleanup downloads every home it
+  looks at.
 - A message handed to a message routine still gets its copies, but the routine is not told
   where they are.

@@ -142,10 +142,35 @@ describe("saveReceivedFile", () => {
   it.each([
     ["starting", { state: "booting", providerRef: null }],
     ["stopping", { state: "suspending", providerRef: "ctr-1" }],
-    ["asleep with its container kept", { state: "suspended", providerRef: "ctr-1" }],
     ["stopped with its container kept", { state: "stopped", providerRef: "ctr-1" }],
   ])("skips a Docker computer %s, whose container may mount its home", async (_label, row) => {
     const { deps, writeBinaryFile, writeFile } = setup({ kind: "docker", ...row });
+
+    await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({
+      skipped: "home_not_reachable",
+    });
+    expect(writeBinaryFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("writes an asleep Docker computer's file into its home, as its container is stopped", async () => {
+    const { deps, writeBinaryFile, writeFile } = setup({
+      kind: "docker",
+      state: "suspended",
+      providerRef: "ctr-1",
+    });
+
+    await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({ saved: TEAM_PATH });
+    expect(writeBinaryFile).toHaveBeenCalledWith("team-home", TEAM_PATH, bytes, context);
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("skips an asleep remote computer, which resumes on its own disk", async () => {
+    const { deps, writeBinaryFile, writeFile } = setup({
+      kind: "e2b",
+      state: "suspended",
+      providerRef: "sbx-1",
+    });
 
     await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({
       skipped: "home_not_reachable",

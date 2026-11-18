@@ -11,6 +11,7 @@ export const desktopComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: true,
+    sleepStopsMachine: false,
   },
   async create(opts) {
     const { assertHostCommandsAllowed, DesktopSandboxProvider } = await import(
