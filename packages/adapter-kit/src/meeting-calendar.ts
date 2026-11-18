@@ -26,6 +26,12 @@ export interface MeetingCalendarConnectionState {
 /** The sign-in failed before a provider calendar could have been created. */
 export class MeetingCalendarConnectRejected extends Error {}
 
+/** Sign-in infrastructure failed before any provider calendar mutation. */
+export class MeetingCalendarConnectUnavailable extends Error {}
+
+/** The provider definitively rejected this event's reservation. */
+export class MeetingCalendarScheduleRejected extends Error {}
+
 export interface MeetingCalendarProvider {
   readonly id: string;
   readonly calendarLabel: string;

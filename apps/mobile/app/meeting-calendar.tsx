@@ -1,7 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RpcOutput } from "@rakazo/contracts";
-import { MOBILE_MEETING_CALENDAR_CALLBACK_URL } from "@rakazo/contracts";
-import { meetingPlatformLabel } from "@rakazo/i18n/meeting";
+import {
+  CALENDAR_OAUTH_UNAVAILABLE_ERRORS,
+  MOBILE_MEETING_CALENDAR_CALLBACK_URL,
+} from "@rakazo/contracts";
+import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
+import {
+  meetingCalendarActionLabel,
+  meetingCalendarActions,
+  meetingCalendarStatusLabel,
+  meetingPlatformLabel,
+} from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Alert, Platform, ScrollView } from "react-native";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../components/settings/settings-group";
@@ -13,9 +22,7 @@ import { useScreenHeader } from "../lib/navigation/screen-header";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
-type Action =
-  | { kind: "connect" | "disconnect" }
-  | { kind: "once" | "series" | "skip" | "removeSeries"; eventId: string };
+type Action = { kind: "connect" | "disconnect" } | { kind: MeetingCalendarAction; eventId: string };
 type UpcomingEvent = RpcOutput<"meetingCalendar/upcoming">["events"][number];
 
 export default function MeetingCalendarScreen() {
@@ -44,9 +51,13 @@ export default function MeetingCalendarScreen() {
           const { searchParams } = new URL(result.url);
           const state = searchParams.get("state");
           const code = searchParams.get("code");
-          if (searchParams.get("error") === "access_denied") return;
-          if (state !== started.state || !code)
-            throw new Error(t`Calendar sign-in did not complete.`);
+          const error = searchParams.get("error");
+          if (state !== started.state) throw new Error(t`Calendar sign-in did not complete.`);
+          if (error === "access_denied") return;
+          if (error && CALENDAR_OAUTH_UNAVAILABLE_ERRORS.includes(error)) {
+            throw new Error(t`Calendar sign-in is temporarily unavailable.`);
+          }
+          if (error || !code) throw new Error(t`Calendar sign-in did not complete.`);
           return send("meetingCalendar/complete", { state, code });
         }
         case "disconnect":
@@ -70,19 +81,11 @@ export default function MeetingCalendarScreen() {
   const format = new Intl.DateTimeFormat(i18n.locale, { dateStyle: "medium", timeStyle: "short" });
 
   function pick(event: UpcomingEvent, title: string) {
-    const actions: Array<{ label: string; kind: "once" | "series" | "skip" | "removeSeries" }> = [
-      { label: t`Join this meeting`, kind: "once" },
-    ];
-    if (event.recurring) actions.push({ label: t`Join this series`, kind: "series" });
-    if (event.selection === "once" || event.selection === "series") {
-      actions.push({ label: t`Skip this meeting`, kind: "skip" });
-    }
-    if (event.selection === "series")
-      actions.push({ label: t`Stop joining this series`, kind: "removeSeries" });
-    // iOS supports any number of choices in its native action sheet. On Android use
-    // a native confirmation for removal to keep each alert within its button limit.
-    const dispatch = (kind: (typeof actions)[number]["kind"]) =>
-      save.run({ kind, eventId: event.id });
+    const actions = meetingCalendarActions(event).map((kind) => ({
+      kind,
+      label: meetingCalendarActionLabel(kind),
+    }));
+    const dispatch = (kind: MeetingCalendarAction) => save.run({ kind, eventId: event.id });
     if (Platform.OS === "ios") {
       showIOSActionSheet(
         {
@@ -95,20 +98,6 @@ export default function MeetingCalendarScreen() {
           if (action) dispatch(action.kind);
         },
       );
-    } else if (event.selection === "series") {
-      Alert.alert(title, undefined, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Skip this meeting`, onPress: () => dispatch("skip") },
-        { text: t`Stop joining this series`, onPress: () => dispatch("removeSeries") },
-      ]);
-    } else if (event.selection === "once") {
-      Alert.alert(title, undefined, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Skip this meeting`, onPress: () => dispatch("skip") },
-        ...(event.recurring
-          ? [{ text: t`Join this series`, onPress: () => dispatch("series") }]
-          : []),
-      ]);
     } else {
       Alert.alert(title, undefined, [
         { text: t`Cancel`, style: "cancel" },
@@ -152,16 +141,7 @@ export default function MeetingCalendarScreen() {
             {data.events.length ? (
               data.events.map((event) => {
                 const title = event.title || t`Untitled meeting`;
-                const value =
-                  event.selection === "another_bot"
-                    ? t`Another bot`
-                    : event.selection === "skipped"
-                      ? t`Skipped`
-                      : event.scheduled
-                        ? t`Scheduled`
-                        : event.selection === "none"
-                          ? undefined
-                          : t`Selected`;
+                const value = meetingCalendarStatusLabel(event);
                 return (
                   <SettingsRow
                     key={event.id}

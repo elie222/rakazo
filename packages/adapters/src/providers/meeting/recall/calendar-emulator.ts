@@ -37,19 +37,27 @@ export class RecallCalendarEmulator {
   private readonly calendars = new Map<string, FakeEvent[]>();
   private readonly connections = new Map<string, CalendarFixture>();
   private nextConnectionReply?: Promise<void>;
+  private nextScheduleReply?: Promise<void>;
   private breakNextConnection = false;
-  private readonly schedules = new Map<string, { botId: string; meetingUrl: string }>();
-  private readonly externalIds = new Map<string, string>();
+  private nextExchangeStatus?: number;
+  private readonly schedules = new Map<
+    string,
+    { botId: string; meetingUrl: string; key: string }
+  >();
   private failNextStatus: number | undefined;
+  private nextDisconnectStatus?: number;
 
   constructor(now = new Date(), providerId = "emulator") {
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const request = new Request(input, init);
       if (new URL(request.url).origin === "https://oauth2.googleapis.com") {
         const code = new URLSearchParams(await request.text()).get("code");
+        const status = this.nextExchangeStatus;
+        this.nextExchangeStatus = undefined;
+        if (status) return new Response(null, { status });
         return code === oauthCode
           ? Response.json({ refresh_token: "offline-refresh" })
-          : new Response(null, { status: 400 });
+          : Response.json({ error: "invalid_grant" }, { status: 400 });
       }
       return this.respond(request, now);
     };
@@ -80,8 +88,16 @@ export class RecallCalendarEmulator {
     this.nextConnectionReply = until;
   }
 
+  failNextOAuthExchange(status: number) {
+    this.nextExchangeStatus = status;
+  }
+
   loseNextConnectionReply() {
     this.breakNextConnection = true;
+  }
+
+  failNextDisconnect(status: number) {
+    this.nextDisconnectStatus = status;
   }
 
   setCalendarStatus(calendarId: string, status: CalendarState) {
@@ -112,6 +128,10 @@ export class RecallCalendarEmulator {
 
   scheduledLink(eventId: string) {
     return this.schedules.get(eventId)?.meetingUrl;
+  }
+
+  holdNextScheduleReply(until: Promise<void>) {
+    this.nextScheduleReply = until;
   }
 
   denyNextSchedule(status: number) {
@@ -209,6 +229,9 @@ export class RecallCalendarEmulator {
       const events = this.calendars.get(id ?? "");
       if (id && connection && events) {
         if (request.method === "DELETE") {
+          const status = this.nextDisconnectStatus;
+          this.nextDisconnectStatus = undefined;
+          if (status) return new Response(null, { status });
           this.calendars.delete(id);
           this.connections.delete(id);
           for (const event of events) this.schedules.delete(event.id);
@@ -257,9 +280,13 @@ export class RecallCalendarEmulator {
             })
             .parse(await request.json());
           const key = body.deduplication_key;
-          const botId = this.externalIds.get(key) ?? randomUUID();
-          this.externalIds.set(key, botId);
-          this.schedules.set(event.id, { botId, meetingUrl: body.bot_config.meeting_url });
+          const existing = [...this.schedules.values()].find((schedule) => schedule.key === key);
+          const botId = existing?.botId ?? randomUUID();
+          this.schedules.set(event.id, { botId, meetingUrl: body.bot_config.meeting_url, key });
+          const until = this.nextScheduleReply;
+          this.nextScheduleReply = undefined;
+          if (until) await until;
+          request.signal.throwIfAborted();
           return Response.json({
             bots: [{ bot_id: botId, start_time: body.bot_config.join_at, deduplication_key: key }],
           });

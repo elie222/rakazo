@@ -11,8 +11,17 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   await signup(page, `calendar-${Date.now()}@rakazo.test`, "password12", "Calendar Tester");
   await completeOnboarding(page);
 
+  const upcomingRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.endsWith("/meetingCalendar/upcoming")) {
+      upcomingRequests.push(request.url());
+    }
+  });
   const openSchedule = async () => {
+    const initial = upcomingRequests.length;
     await page.getByRole("button", { name: "Meetings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Auto-join" })).toBeVisible();
+    expect(upcomingRequests).toHaveLength(initial);
     await page.getByRole("button", { name: "Auto-join" }).click();
   };
   await openSchedule();
@@ -23,22 +32,15 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   const events = page.getByRole("listitem").filter({ hasText: "Design review" });
   const first = events.first();
   const second = events.last();
-  await first.getByRole("button", { name: "Schedule for Design review" }).click();
+  await first.getByRole("button", { name: /^Design review,/ }).click();
   await page.getByRole("menuitem", { name: "Join this series" }).click();
-  await expect(first.getByRole("button", { name: "Schedule for Design review" })).toHaveText(
-    "Scheduled",
-  );
-  await expect(second.getByRole("button", { name: "Schedule for Design review" })).toHaveText(
-    "Scheduled",
-  );
+  await expect(first.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
+  await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
 
-  await first.getByRole("button", { name: "Schedule for Design review" }).click();
+  await first.getByRole("button", { name: /^Design review,/ }).click();
   await page.getByRole("menuitem", { name: "Skip this meeting" }).click();
-  await expect(first.getByRole("button", { name: "Schedule for Design review" })).toHaveText(
-    "Skipped",
-  );
-  await expect(second.getByRole("button", { name: "Schedule for Design review" })).toHaveText(
-    "Scheduled",
-  );
+  await expect(first.getByRole("button", { name: /^Design review,/ })).toHaveText("Skipped");
+  await expect(second.getByRole("button", { name: /^Design review,/ })).toHaveText("Scheduled");
+  await expect(page.getByText("Meeting ended", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "meeting-calendar-series-and-skip");
 });

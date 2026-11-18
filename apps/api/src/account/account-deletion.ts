@@ -351,6 +351,10 @@ async function deleteClaimedSpaces(
 ): Promise<void> {
   const context = (spaceId: string, botId?: string) =>
     adapterContext(input.operationId, input.userId, spaceId, botId, input.signal);
+  input.signal?.throwIfAborted();
+  await settleAll(
+    input.spaceIds.map(async (spaceId) => deps.meetingCalendar?.disconnectSpace(spaceId)),
+  );
   const bots = await deps.prisma.bot.findMany({
     where: input.bots,
     select: {

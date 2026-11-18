@@ -4,7 +4,12 @@ import type {
   MeetingCalendarProvider,
   MeetingJoinRequest,
 } from "@rakazo/adapter-kit";
-import { MeetingCalendarConnectRejected, RetryJobLaterError } from "@rakazo/adapter-kit";
+import {
+  MeetingCalendarConnectRejected,
+  MeetingCalendarConnectUnavailable,
+  MeetingCalendarScheduleRejected,
+  RetryJobLaterError,
+} from "@rakazo/adapter-kit";
 import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 import { buildRecallBotConfig } from "./recall-meeting.js";
@@ -228,16 +233,30 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
         redirect: "error",
         signal,
       });
+      if (response.status === 400) {
+        const refused = z
+          .object({ error: z.string() })
+          .parse(await readBoundedJsonResponse<unknown>(response, 64 * 1024, signal));
+        if (refused.error === "invalid_grant" || refused.error === "access_denied") {
+          throw new MeetingCalendarConnectRejected(
+            "Could not authorize the calendar. Start sign-in again.",
+          );
+        }
+        throw new Error("Calendar OAuth token exchange was rejected by the authorization server.");
+      }
       if (!response.ok) {
         cancelResponseBody(response);
-        throw new Error("Could not redeem calendar authorization.");
+        throw new Error(`Calendar OAuth token exchange returned HTTP ${response.status}.`);
       }
       return z
         .object({ refresh_token: z.string().min(1) })
         .parse(await readBoundedJsonResponse<unknown>(response, 64 * 1024, signal)).refresh_token;
-    } catch {
-      // No token was sent to the meeting provider in this part of the flow.
-      throw new MeetingCalendarConnectRejected("Could not authorize the calendar.");
+    } catch (error) {
+      if (error instanceof MeetingCalendarConnectRejected) throw error;
+      // No provider calendar mutation can have happened during this exchange.
+      throw new MeetingCalendarConnectUnavailable("Calendar OAuth token exchange failed.", {
+        cause: error,
+      });
     }
   }
 
@@ -311,6 +330,7 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
         deduplication_key: scheduleKey,
         bot_config: { ...buildRecallBotConfig(request), join_at: startsAt.toISOString() },
       },
+      calendarScheduling: true,
     });
     const event = scheduledEvent.parse(
       await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal),
@@ -369,6 +389,7 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
       body?: unknown;
       allowMissing?: boolean;
       calendarCreation?: boolean;
+      calendarScheduling?: boolean;
     } = {},
   ) {
     const response = await (this.options.fetch ?? fetch)(new URL(path, this.options.baseUrl), {
@@ -383,8 +404,16 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
     });
     if (!response.ok && !(options.allowMissing && response.status === 404)) {
       cancelResponseBody(response);
-      if (options.calendarCreation && [400, 401, 403, 429].includes(response.status)) {
+      if (options.calendarCreation && response.status === 400) {
         throw new MeetingCalendarConnectRejected("The provider rejected the calendar connection.");
+      }
+      if (options.calendarCreation && [401, 403, 429].includes(response.status)) {
+        throw new MeetingCalendarConnectUnavailable(
+          `Calendar provider returned HTTP ${response.status}.`,
+        );
+      }
+      if (options.calendarScheduling && [400, 404].includes(response.status)) {
+        throw new MeetingCalendarScheduleRejected("The provider rejected the calendar event.");
       }
       if (response.status === 409 || response.status === 429 || response.status === 507) {
         throw new RetryJobLaterError(

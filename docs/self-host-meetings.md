@@ -39,6 +39,8 @@ Enable `MEETING_LIVE_VOICE=true` on the API and worker to let the bot listen and
 
 ## Schedule calendar meetings
 
+On desktop, calendar sign-in opens the system browser and returns to Rakazo. Desktop sign-in requires a public HTTPS web origin.
+
 Set `MEETING_CALENDAR_CLIENT_ID` and `MEETING_CALENDAR_CLIENT_SECRET` on the API and worker to enable calendar scheduling. Both also need the same dedicated `MEETING_SIGNING_KEY` even if the branded camera is disabled. Create a Google OAuth web application for the deployment, enable the Google Calendar API, and register `/api/meetings/calendar/oauth/callback` on the web origin as its redirect URI. Request the read-only calendar-events and email scopes. The meeting provider receives the OAuth refresh token to keep the primary calendar in sync. Rakazo stores the provider's connection ID and your event selections. See the [Google Calendar setup guide](https://docs.recall.ai/docs/calendar-v2-google-calendar).
 
 Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/calendar/webhook` on the public API origin. Use the workspace signing secret. If your workspace uses legacy per-endpoint Svix secrets, set `MEETING_CALENDAR_WEBHOOK_SECRET` to the calendar endpoint's signing secret.

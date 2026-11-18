@@ -2981,6 +2981,7 @@ model MeetingCalendarAuthorization {
   spaceId   String
   userId    String
   expiresAt DateTime
+  sessionId String?
 
   @@unique([spaceId, userId])
   @@map("meeting_calendar_authorizations")

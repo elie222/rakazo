@@ -6,7 +6,7 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { MemoryProviderResolver } from "@rakazo/adapters";
+import type { MeetingCalendarService, MemoryProviderResolver } from "@rakazo/adapters";
 import {
   destroyBot,
   forgetPageShareSecrets,
@@ -55,6 +55,7 @@ export type SpaceDeletionDeps = {
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
   meetings?: Parameters<typeof destroyBot>[0]["meetings"] &
     Parameters<typeof afterSpaceDeparture>[0]["meetings"];
+  meetingCalendar?: Pick<MeetingCalendarService, "disconnectSpace" | "disconnectOwner">;
   /** Removes deleted page links' tokens from a remote secret store. */
   secrets?: Pick<SecretStore, "delete">;
 };
@@ -126,6 +127,10 @@ export async function deleteSpaceWithContent(
       lease.signal.throwIfAborted();
     };
 
+    if (deps.meetingCalendar) {
+      const calendar = deps.meetingCalendar;
+      await teardown(() => calendar.disconnectSpace(spaceId), "Space calendar teardown timed out");
+    }
     for (const bot of await listClaimedSpaceBots(deps.prisma, claimedInput)) {
       try {
         await teardown(

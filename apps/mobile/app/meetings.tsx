@@ -28,7 +28,7 @@ export default function MeetingsScreen() {
   const styles = useThemedStyles(createStyles);
   const read = rpcQuery("meetings/list", { botId });
   const list = useScreenQuery(read, { enabled: Boolean(botId) });
-  const calendar = useScreenQuery(rpcQuery("meetingCalendar/upcoming", { botId }), {
+  const calendar = useScreenQuery(rpcQuery("meetingCalendar/status", { botId }), {
     enabled: Boolean(botId && list.data?.enabled),
   });
   const focused = useIsFocused();

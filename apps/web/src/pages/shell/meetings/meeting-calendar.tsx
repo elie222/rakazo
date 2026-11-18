@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { meetingPlatformLabel } from "@rakazo/i18n/meeting";
+import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
+import {
+  meetingCalendarActionLabel,
+  meetingCalendarActions,
+  meetingCalendarStatusLabel,
+  meetingPlatformLabel,
+} from "@rakazo/i18n/meeting";
 import {
   Button,
   DropdownMenu,
@@ -10,14 +16,14 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, ChevronDown, Ellipsis } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ErrorNotice } from "../../../components/ErrorNotice";
-import { desktopBridge } from "../../../lib/platform/desktop";
+import { connectMeetingCalendar } from "../../../lib/integrations/meeting-calendar-connect";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorDetails } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
 
-type Selection = { eventId: string; action: "once" | "series" | "skip" | "removeSeries" };
+type Selection = { eventId: string; action: MeetingCalendarAction };
 type Action = Selection | { action: "connect" | "disconnect" };
 
 export function MeetingCalendar({ botId }: { botId: string }) {
@@ -25,22 +31,26 @@ export function MeetingCalendar({ botId }: { botId: string }) {
   const [open, setOpen] = useState(false);
   const queries = useSpaceQueries();
   const read = queries.meetingCalendar.upcoming.queryOptions({ input: { botId } });
-  const list = useQuery(read);
-  useEventListener(open ? window : null, "focus", () => {
+  const availability = useQuery(queries.meetingCalendar.status.queryOptions({ input: { botId } }));
+  const available = availability.data?.available ?? false;
+  const list = useQuery({ ...read, enabled: open && available });
+  useEventListener(open && available ? window : null, "focus", () => {
     void list.refetch({ cancelRefetch: false });
   });
+  const connect = useRef<AbortController>(undefined);
+  useEffect(() => () => connect.current?.abort(), []);
   const save = useSave({
     stale: [read.queryKey, queries.meetings.list.queryKey({ input: { botId } })],
     save: async (input: Action, rpc) => {
       switch (input.action) {
         case "connect": {
-          const started = await rpc.meetingCalendar.begin({ botId, client: "web" });
-          if (desktopBridge()) {
-            window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
-          } else {
-            window.location.assign(started.authorizationUrl);
+          const controller = new AbortController();
+          connect.current = controller;
+          try {
+            return await connectMeetingCalendar(rpc, botId, controller.signal);
+          } finally {
+            if (connect.current === controller) connect.current = undefined;
           }
-          return;
         }
         case "disconnect":
           return rpc.meetingCalendar.disconnect({});
@@ -53,7 +63,7 @@ export function MeetingCalendar({ botId }: { botId: string }) {
       }
     },
   });
-  if (!list.data?.available) return null;
+  if (!available) return null;
 
   const formatter = new Intl.DateTimeFormat(i18n.locale, {
     dateStyle: "medium",
@@ -77,7 +87,13 @@ export function MeetingCalendar({ botId }: { botId: string }) {
       {open ? (
         <div className="flex flex-col gap-3 pt-2">
           {error ? <ErrorNotice error={errorDetails(error, t`Could not update calendar`)} /> : null}
-          {list.data.connected ? (
+          {!list.data ? (
+            list.isPending ? (
+              <p role="status">
+                <Trans>Loading calendar…</Trans>
+              </p>
+            ) : null
+          ) : list.data.connected ? (
             <>
               <div className="flex items-center justify-between gap-2">
                 <SectionHeading variant="label">
@@ -102,16 +118,7 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                 <ul className="divide-y divide-border">
                   {list.data.events.map((event) => {
                     const title = event.title || t`Untitled meeting`;
-                    const status =
-                      event.selection === "another_bot"
-                        ? t`Another bot`
-                        : event.selection === "skipped"
-                          ? t`Skipped`
-                          : event.scheduled
-                            ? t`Scheduled`
-                            : event.selection === "none"
-                              ? t`Choose`
-                              : t`Selected`;
+                    const status = meetingCalendarStatusLabel(event) ?? t`Choose`;
                     return (
                       <li key={event.id} className="flex items-center justify-between gap-4 py-2">
                         <div className="min-w-0">
@@ -126,41 +133,21 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                         <DropdownMenu>
                           <DropdownMenuTrigger
                             disabled={save.pending}
-                            aria-label={t`Schedule for ${title}`}
+                            aria-label={t`${title}, ${status}`}
                             render={<Button variant="outline" size="sm" />}
                           >
                             {status}
                             <ChevronDown className="size-3" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-max">
-                            <DropdownMenuItem
-                              onClick={() => save.run({ action: "once", eventId: event.id })}
-                            >
-                              <Trans>Join this meeting</Trans>
-                            </DropdownMenuItem>
-                            {event.recurring ? (
+                            {meetingCalendarActions(event).map((action) => (
                               <DropdownMenuItem
-                                onClick={() => save.run({ action: "series", eventId: event.id })}
+                                key={action}
+                                onClick={() => save.run({ action, eventId: event.id })}
                               >
-                                <Trans>Join this series</Trans>
+                                {meetingCalendarActionLabel(action)}
                               </DropdownMenuItem>
-                            ) : null}
-                            {event.selection === "once" || event.selection === "series" ? (
-                              <DropdownMenuItem
-                                onClick={() => save.run({ action: "skip", eventId: event.id })}
-                              >
-                                <Trans>Skip this meeting</Trans>
-                              </DropdownMenuItem>
-                            ) : null}
-                            {event.selection === "series" ? (
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  save.run({ action: "removeSeries", eventId: event.id })
-                                }
-                              >
-                                <Trans>Stop joining this series</Trans>
-                              </DropdownMenuItem>
-                            ) : null}
+                            ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </li>

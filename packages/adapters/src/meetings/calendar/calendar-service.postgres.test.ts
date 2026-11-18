@@ -72,16 +72,18 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
         });
       });
 
-      const start = await runAsTenant(first, () => service.begin(first, "web"));
+      const start = await runAsTenant(first, () => service.authorization.begin(first, "web"));
       const firstCode = new URL(start.authorizationUrl).searchParams.get("code")!;
       await expect(
-        service.completeFromBrowser(second.userId, start.state, firstCode),
+        service.authorization.completeFromBrowser(second.userId, start.state, firstCode),
       ).rejects.toMatchObject({
         kind: "BAD_REQUEST",
       });
-      await service.completeFromBrowser(first.userId, start.state, firstCode);
-      const startSecond = await runAsTenant(second, () => service.begin(second, "web"));
-      await service.completeFromBrowser(
+      await service.authorization.completeFromBrowser(first.userId, start.state, firstCode);
+      const startSecond = await runAsTenant(second, () =>
+        service.authorization.begin(second, "web"),
+      );
+      await service.authorization.completeFromBrowser(
         second.userId,
         startSecond.state,
         new URL(startSecond.authorizationUrl).searchParams.get("code")!,
@@ -176,10 +178,140 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       expect(emulator.scheduled(secondReview.id)).toBeUndefined();
       expect((await listing(second)).connected).toBe(false);
       const authorize = async () => {
-        const began = await runAsTenant(second, () => service.begin(second, "web"));
+        const began = await runAsTenant(second, () => service.authorization.begin(second, "web"));
         const code = new URL(began.authorizationUrl).searchParams.get("code")!;
-        return { complete: () => service.completeFromBrowser(second.userId, began.state, code) };
+        return {
+          complete: () =>
+            service.authorization.completeFromBrowser(second.userId, began.state, code),
+        };
       };
+      const unavailable = await authorize();
+      emulator.failNextOAuthExchange(503);
+      await expect(unavailable.complete()).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
+      expect((await listing(second)).connecting).toBe(false);
+
+      const sessionId = randomUUID();
+      await runAsSystem("register desktop test session", () =>
+        prisma.session.create({
+          data: {
+            id: sessionId,
+            userId: second.userId,
+            token: randomUUID(),
+            expiresAt: new Date(clock.getTime() + 60 * 60_000),
+          },
+        }),
+      );
+      const desktop = await runAsTenant(second, () =>
+        service.authorization.begin(second, "desktop", {
+          loopbackPort: 52_133,
+          sessionId,
+        }),
+      );
+      const launch = new URL(desktop.authorizationUrl);
+      const loopback = await service.authorization.desktopHandoff(desktop.state);
+      expect(loopback?.href).toBe("http://127.0.0.1:52133/meeting-calendar/callback");
+      expect(launch.searchParams.get("redirect_uri")).toBe(loopback?.href);
+      const providerUrl = await service.authorization.launchDesktop(desktop.state);
+      expect(providerUrl).toBeTruthy();
+      const desktopCode = new URL(providerUrl!).searchParams.get("code")!;
+      await expect(
+        runAsTenant(second, () =>
+          service.authorization.complete(second, desktop.state, desktopCode, "other-session"),
+        ),
+      ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+      await runAsTenant(second, () =>
+        service.authorization.complete(second, desktop.state, desktopCode, sessionId),
+      );
+      expect(await service.authorization.desktopHandoff(desktop.state)).toBeNull();
+
+      const connected = await runAsTenant(second, () =>
+        prisma.meetingCalendarConnection.findFirstOrThrow({ where: second }),
+      );
+      expect(jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "meeting.calendar-sync",
+          replaceKey: expect.stringContaining(`meeting-calendar:refresh:${connected.id}:`),
+        }),
+      );
+      const events = (await listing(second)).events;
+      const review = events[0]!;
+      const lateReview = events.at(-1)!;
+      emulator.denyNextSchedule(400);
+      await runAsTenant(second, () => service.updateSelection(second, botId, review.id, "series"));
+      expect(emulator.scheduled(review.id)).toBeUndefined();
+      expect(emulator.scheduled(lateReview.id)).toBeTruthy();
+      expect((await listing(second)).events.find(({ id }) => id === review.id)?.selection).toBe(
+        "skipped",
+      );
+
+      const race = events.find(({ platform }) => platform === "zoom")!;
+      const delivery = deferred<void>();
+      emulator.holdNextScheduleReply(delivery.promise);
+      const scheduling = runAsTenant(second, () =>
+        service.updateSelection(second, botId, race.id, "once"),
+      );
+      let accepted: string | undefined;
+      let leaving: string | undefined;
+      try {
+        await vi.waitFor(() => expect(emulator.scheduled(race.id)).toBeTruthy());
+        accepted = emulator.scheduled(race.id);
+        const booking = await runAsTenant(second, () =>
+          prisma.meetingCalendarBooking.findFirstOrThrow({
+            where: { eventId: race.id },
+          }),
+        );
+        leaving = booking.sessionId;
+        await runAsTenant(second, () =>
+          prisma.meetingSession.update({
+            where: { id: booking.sessionId },
+            data: { status: "leaving" },
+          }),
+        );
+      } finally {
+        delivery.resolve();
+        await scheduling;
+      }
+      expect(emulator.scheduled(race.id)).toBeUndefined();
+      const leavingSession = await runAsTenant(second, () =>
+        prisma.meetingSession.findFirst({ where: { id: leaving } }),
+      );
+      expect(leavingSession?.externalId).toBe(accepted);
+      expect((await listing(second)).events.find(({ id }) => id === race.id)?.selection).toBe(
+        "skipped",
+      );
+      const pastBooking = await runAsTenant(second, () =>
+        prisma.meetingCalendarBooking.findFirstOrThrow({ where: { eventId: lateReview.id } }),
+      );
+      clock = new Date(lateReview.startsAt + 1);
+      await service.sync(connected.id);
+      const findBooking = () =>
+        runAsTenant(second, () =>
+          prisma.meetingCalendarBooking.findFirst({
+            where: { eventId: lateReview.id },
+          }),
+        );
+      expect(await findBooking()).not.toBeNull();
+      await runAsTenant(second, () =>
+        prisma.meetingSession.update({
+          where: { id: pastBooking.sessionId },
+          data: { status: "ended", closedAt: clock },
+        }),
+      );
+      await service.sync(connected.id);
+      expect(await findBooking()).toBeNull();
+      clock = now;
+
+      emulator.failNextDisconnect(503);
+      await expect(service.disconnectSpace(second.spaceId)).rejects.toThrow();
+      expect(emulator.connectedCalendars()).toEqual([connected.externalCalendarId]);
+      expect(
+        await runAsTenant(second, () =>
+          prisma.meetingCalendarConnection.findFirstOrThrow({ where: second }),
+        ),
+      ).toMatchObject({ disconnecting: true });
+      await service.sync(connected.id);
+      expect(emulator.connectedCalendars()).toEqual([]);
+
       const retry = await authorize();
       emulator.loseNextConnectionReply();
       await expect(retry.complete()).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });

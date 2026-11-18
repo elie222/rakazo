@@ -20,6 +20,7 @@ CREATE TABLE "meeting_calendar_authorizations" (
     "spaceId" TEXT NOT NULL REFERENCES "spaces"("id") ON DELETE CASCADE ON UPDATE CASCADE,
     "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
     "expiresAt" TIMESTAMP(3) NOT NULL,
+    "sessionId" TEXT,
     UNIQUE ("spaceId", "userId")
 );
 
