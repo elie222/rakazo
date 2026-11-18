@@ -7,6 +7,7 @@ export interface MeetingJoinRequest {
   platform: MeetingPlatform;
   botName: string;
   expiresAt: Date;
+  mediaUrl?: string;
 }
 
 export interface MeetingObservation {
