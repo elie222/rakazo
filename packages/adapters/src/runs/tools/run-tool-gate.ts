@@ -830,7 +830,11 @@ async function reviewToolCall(
   try {
     const delegated =
       run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER;
-    const userTask = delegated ? await ctx.trust.loadOwnerWords() : ctx.task.prompt;
+    // A follow-up's task is a fixed "continue" prompt; the owner's latest words are its message.
+    const continuation = run.trigger === "follow_up" || run.trigger === "messaging";
+    const userTask = delegated
+      ? await ctx.trust.loadOwnerWords()
+      : (continuation && (await ctx.trust.loadOwnerWords()).trim()) || ctx.task.prompt;
     // Older helpers and deleted origins cannot establish authorization from their brief.
     if (delegated && !userTask.trim()) return { decision: "ask", reason: undefined };
     const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);

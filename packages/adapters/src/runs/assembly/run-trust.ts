@@ -20,7 +20,10 @@ import {
   boundDirectApprovalDetails,
   catalogApprovalDetails,
 } from "../../approvals/approval-effect.js";
-import { REVIEW_OWNER_MESSAGES } from "../../approvals/review-owner-messages.js";
+import {
+  REVIEW_OWNER_MESSAGES,
+  REVIEW_OWNER_MESSAGES_WINDOW_MS,
+} from "../../approvals/review-owner-messages.js";
 import type { EffectiveModelRole } from "../../models/model-roles.js";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import { routineTaskInstructions } from "../../routines/routine-watch.js";
@@ -199,7 +202,7 @@ export function createRunTrustLoaders(
         return [];
       const source = await deps.prisma.message.findUnique({
         where: { id: sourceId },
-        select: { seq: true, threadId: true, authorUserId: true, role: true },
+        select: { seq: true, threadId: true, authorUserId: true, role: true, createdAt: true },
       });
       if (
         source?.role !== "user" ||
@@ -213,6 +216,9 @@ export function createRunTrustLoaders(
           role: "user",
           authorUserId: run.userId,
           seq: { lt: source.seq },
+          createdAt: {
+            gte: new Date(source.createdAt.getTime() - REVIEW_OWNER_MESSAGES_WINDOW_MS),
+          },
         },
         orderBy: { seq: "desc" },
         // Messages with only files or images hold no words, so look a little further back.

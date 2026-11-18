@@ -39,7 +39,7 @@ still wins. A matching backup does not change the primary checker’s funding so
    Legacy direct decision-provider configuration still works and now records expenses too.
    Do not treat the default confidence threshold as production calibrated.
 3. Before rollout, review the versioned examples in `packages/testkit/src/evals/approval.ts`
-   and the `approval-v3` rubric. With an authorized test key, run the existing CLI explicitly:
+   and the `approval-v4` rubric (its state may include the owner's `ownerEarlierMessages`). With an authorized test key, run the existing CLI explicitly:
 
    ```sh
    pnpm test:evals --suite approval --live --provider openrouter \

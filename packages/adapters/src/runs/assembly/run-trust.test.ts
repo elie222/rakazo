@@ -104,6 +104,7 @@ describe("delegated authorization provenance", () => {
 });
 
 describe("the owner's earlier messages", () => {
+  const SENT = new Date("2026-11-18T12:00:00Z");
   const blocks = (text: string) => [{ kind: "text", text }];
   function loaders(input: {
     source?: { id: string; role: string; blocks: unknown } | null;
@@ -115,12 +116,15 @@ describe("the owner's earlier messages", () => {
       threadId: string;
       authorUserId: string | null;
       role: string;
+      createdAt?: Date;
     } | null;
     sourceMessageId?: string;
     rows?: Array<{ id: string; blocks: unknown }>;
   }) {
     const findMany = vi.fn(async () => input.rows ?? []);
-    const findUnique = vi.fn(async () => input.sourceRow ?? null);
+    const findUnique = vi.fn(async () =>
+      input.sourceRow ? { createdAt: SENT, ...input.sourceRow } : null,
+    );
     const trust = createRunTrustLoaders(
       { prisma: { message: { findMany, findUnique } } } as unknown as ExecutorDeps,
       {
@@ -162,7 +166,14 @@ describe("the owner's earlier messages", () => {
     ]);
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { threadId: "chat", role: "user", authorUserId: "owner", seq: { lt: 9 } },
+        where: {
+          threadId: "chat",
+          role: "user",
+          authorUserId: "owner",
+          seq: { lt: 9 },
+          // Only the same stretch of conversation: two hours before the message.
+          createdAt: { gte: new Date("2026-11-18T10:00:00Z") },
+        },
         take: 12,
       }),
     );
