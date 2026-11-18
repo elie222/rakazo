@@ -36,6 +36,7 @@ function QuestionField({
   disabled: boolean;
   onChange: (value: ToolQuestionDraft[string]) => void;
 }) {
+  const { t } = useLingui();
   const id = useId();
   const description = field.description ? (
     <FieldDescription>{field.description}</FieldDescription>
@@ -62,7 +63,10 @@ function QuestionField({
         <OptionSelect
           id={id}
           value={typeof value === "string" ? value : null}
-          options={field.options}
+          // An optional choice can go back to no answer.
+          options={
+            field.required ? field.options : [{ value: "", label: t`None` }, ...field.options]
+          }
           disabled={disabled}
           required={field.required}
           onValueChange={onChange}

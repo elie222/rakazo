@@ -18,6 +18,9 @@ describe("sealed box", () => {
     parts[2] = Buffer.from("jello").toString("base64url");
     expect(key.open(parts.join("."))).toBeUndefined();
     expect(key.open("not.a.box")).toBeUndefined();
+    const short = sealTo(key.publicKey, "hello").split(".");
+    short[3] = Buffer.from(short[3]!, "base64url").subarray(0, 4).toString("base64url");
+    expect(key.open(short.join("."))).toBeUndefined();
     expect(() => sealTo("short", "x")).toThrow("Not an X25519 public key");
   });
 });

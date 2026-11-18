@@ -10,6 +10,7 @@ import {
 } from "node:crypto";
 
 const INFO = Buffer.from("rakazo sealed box v1");
+const TAG_BYTES = 16;
 /** An X25519 public key as unpadded base64url: 32 bytes. */
 export const SEALED_BOX_PUBLIC_KEY = /^[A-Za-z0-9_-]{43}$/;
 
@@ -48,12 +49,16 @@ export function createSealedBoxKey(): SealedBoxKey {
       if (!ephemeral || !iv || !body || !tag || rest.length > 0) return undefined;
       try {
         const shared = diffieHellman({ privateKey, publicKey: importPublicKey(ephemeral) });
+        const authTag = Buffer.from(tag, "base64url");
+        // Only a full tag: a shortened one would make a forged box far easier to pass.
+        if (authTag.length !== TAG_BYTES) return undefined;
         const decipher = createDecipheriv(
           "aes-256-gcm",
           derive(shared, ephemeral, recipient),
           Buffer.from(iv, "base64url"),
+          { authTagLength: TAG_BYTES },
         );
-        decipher.setAuthTag(Buffer.from(tag, "base64url"));
+        decipher.setAuthTag(authTag);
         return Buffer.concat([
           decipher.update(Buffer.from(body, "base64url")),
           decipher.final(),
