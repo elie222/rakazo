@@ -63,7 +63,8 @@ async function serve(serverUrl: string) {
   console.log(
     [
       "",
-      `EXPO_PUBLIC_API_URL=${appUrl}${delayMs > 0 ? ` (each request held ${delayMs} ms)` : ""}`,
+      `EXPO_PUBLIC_API_URL=${appUrl}`,
+      ...(delayMs > 0 ? [`Each request is held ${delayMs} ms.`] : []),
       `Sign in with ${EMAIL} / ${PASSWORD}`,
       "Ctrl-C stops the stack.",
     ].join("\n"),
