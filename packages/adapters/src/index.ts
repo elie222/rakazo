@@ -293,6 +293,7 @@ export {
 export * from "./storage/delete-artifact-family.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
+export * from "./storage/prune-original-files.js";
 export * from "./storage/storage-migration.js";
 export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";

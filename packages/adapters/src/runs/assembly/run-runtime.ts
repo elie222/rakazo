@@ -373,6 +373,7 @@ export function createRunReconciler(
     | "reconcileRoutineRetryNotices"
     | "reconcileHomeStorage"
     | "reconcileAttachmentCopies"
+    | "reconcileOriginalFiles"
     | "reconcileDeadJobs"
   > = {},
   chat: { messagingDelivery?: MessagingDelivery; teamChat?: TeamChat } = {},
