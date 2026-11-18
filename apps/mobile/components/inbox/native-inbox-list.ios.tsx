@@ -109,6 +109,7 @@ export function NativeInboxList<Item>({
   footer,
   gutters,
   column,
+  width,
   avatarViewport,
   onRefresh,
   signals,
@@ -117,11 +118,15 @@ export function NativeInboxList<Item>({
   const hostRef = useRef(null);
   const floatingHeader = useFloatingHeaderInset() > 0;
   const headerInset = useTopBarInset();
-  const { bottom } = useSafeAreaInsets();
+  const { bottom, left, right } = useSafeAreaInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
-  // the last spacer, which fills its row.
-  const [rowWidth, setRowWidth] = useState<number>();
+  // the last spacer, which fills its row. That spacer reports only while it is on screen, so a
+  // resize after it scrolls away (dragging the split divider) moves the measured width by the
+  // change in the room the rows get.
+  const room = width - left - right - gutters.left - gutters.right;
+  const [measured, setMeasured] = useState<{ row: number; room: number }>();
+  const rowWidth = measured && Math.round(measured.row + room - measured.room);
   const rowInsets = listRowInsets({
     top: 0,
     leading: gutters.left,
@@ -189,8 +194,13 @@ export function NativeInboxList<Item>({
       {spacer(
         "bottom",
         floatingHeader ? bottom + 32 : 32,
-        onGeometryChange(({ width }) => {
-          if (width > 0) setRowWidth((current) => (current === width ? current : width));
+        onGeometryChange((frame) => {
+          if (frame.width > 0)
+            setMeasured((current) =>
+              current?.row === frame.width && current.room === room
+                ? current
+                : { row: frame.width, room },
+            );
         }),
       )}
     </NativeInsetList>
