@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { MEETING_SAMPLE_RATE, meetingAudioWav } from "./meeting-audio.js";
 import type { MeetingMediaSession } from "./meeting-media-bridge.js";
@@ -70,9 +72,16 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
   };
 }
 
-export function browserMeetingMediaEmulator(publicOrigin: string) {
-  const emulator = createMeetingMediaEmulator(publicOrigin);
+export async function browserMeetingMediaEmulator() {
   const app = new Hono();
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("Meeting fixture has no loopback address");
+  }
+  const emulator = createMeetingMediaEmulator(`http://127.0.0.1:${address.port}`);
   emulator.bridge.mount(app);
-  return { ...emulator, fetch: app.request.bind(app) };
+  return { ...emulator, close: () => server.close() };
 }
