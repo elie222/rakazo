@@ -15,6 +15,17 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { bot: { name: "~atlas" } },
   },
   {
+    id: "settings-description",
+    area: "settings",
+    kind: "guard",
+    purpose: "Set its one-line description when asked.",
+    prompt: "Set your description to: Tracks our weekly product metrics.",
+    expect: {
+      bot: { description: "*" },
+      botMeans: { description: "Says the bot tracks the team's weekly product metrics." },
+    },
+  },
+  {
     id: "settings-color",
     area: "settings",
     kind: "guard",
@@ -120,6 +131,14 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     kind: "control",
     purpose: "A complaint about speed is not a request to change model or thinking.",
     prompt: "You're kind of slow today.",
+    expect: { settingsUnchanged: true },
+  },
+  {
+    id: "settings-whats-your-name",
+    area: "settings",
+    kind: "control",
+    purpose: "Asking its name does not rename it.",
+    prompt: "What's your name again?",
     expect: { settingsUnchanged: true },
   },
   {
