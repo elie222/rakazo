@@ -96,6 +96,10 @@ const payloadSchemas = {
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "meeting.work": z.object({
+    sessionId: z.string().min(1),
+    action: z.enum(["join", "leave", "expire", "transcript", "cleanup"]),
+  }),
   "purchase.poll": z.object({ purchaseId: z.string().min(1) }),
   "media.poll": z.object({ jobId: z.string().min(1) }),
   "push.receipt": z.object({

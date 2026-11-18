@@ -19,7 +19,8 @@ interface TableSpec {
     | "memoryDocument"
     | "memoryRevision"
     | "thread"
-    | "botEmailMessage";
+    | "botEmailMessage"
+    | "meetingSession";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -38,6 +39,19 @@ interface ScannedRow {
 }
 
 const TABLES: TableSpec[] = [
+  {
+    model: "MeetingSession",
+    delegate: "meetingSession",
+    columns: ["meetingUrl", "transcript"],
+    json: false,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array("meetingUrl", transcript) AS values, "spaceId", "userId" AS owner
+      FROM meeting_sessions WHERE id > ${cursor} AND ("meetingUrl" IS NOT NULL OR transcript IS NOT NULL)
+      ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE meeting_sessions SET "meetingUrl" = ${row.meetingUrl as string | null},
+        transcript = ${row.transcript as string | null} WHERE id = ${id}`,
+  },
   {
     model: "Message",
     delegate: "message",

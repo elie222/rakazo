@@ -15,6 +15,8 @@ import {
   CodexCatalogCache,
   configuredBotEmailProvider,
   configuredEmailProvider,
+  configuredMeetingProvider,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -42,6 +44,7 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingService,
   machineCleanupRecords,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
@@ -248,8 +251,19 @@ async function main() {
   const lifecycleEmail = accountEmail
     ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
     : undefined;
+  const meetingProvider = await configuredMeetingProvider();
+  const meetings =
+    meetingProvider &&
+    new MeetingService({
+      prisma,
+      jobs,
+      events,
+      provider: meetingProvider,
+      spaceIds: configuredMeetingSpaces(meetingProvider),
+    });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
+    meetingWork: meetings?.work.bind(meetings),
     prisma,
     runtime,
     // Live per-account Codex catalog; never refreshes or writes credentials.

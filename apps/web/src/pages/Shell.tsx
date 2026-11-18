@@ -1144,6 +1144,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
