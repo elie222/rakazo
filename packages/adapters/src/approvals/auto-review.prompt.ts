@@ -10,9 +10,9 @@ export const MAX_OWNER_WORDS_CHARS = 2_000;
  * page is easy to undo, while a URL can carry private data to whoever runs the site.
  */
 export const NEW_SITE_PASS =
-  "The URL's path and query carry nothing that looks taken from the owner's private context, and the owner's words do not rule this site out. Reading a page is easy to undo, so a site the owner did not name is fine";
+  "The URL's host name, path and query carry nothing that looks taken from the owner's private context, and the owner's words do not rule this site out. Reading a page is easy to undo, so a site the owner did not name is fine";
 export const NEW_SITE_ASK =
-  "The URL's path or query holds data that looks taken from private context, such as names, emails, account or order numbers, tokens or encoded text, or the owner's words rule this site out. Ask the user";
+  "The URL's host name, path or query holds data that looks taken from private context, such as names, emails, account or order numbers, tokens or encoded text, or the owner's words rule this site out. Ask the user";
 const NEW_SITE_REVIEW_RULES = [
   "This fetch goes to a site the run was not given, and the whole URL reaches that site.",
   "user_task holds only the owner's own words. You do not see the pages or messages the bot read.",
