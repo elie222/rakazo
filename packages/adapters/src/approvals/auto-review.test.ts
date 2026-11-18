@@ -337,6 +337,14 @@ describe("buildAutoReviewPrompt", () => {
     expect(prompt).toContain(url);
     expect(prompt).toContain("site the run was not given");
     expect(prompt).toContain("only the owner's own words");
+    // A new site is judged on what its URL could carry, not on whether the owner named it.
+    expect(prompt).toContain("a site the owner did not name is fine");
+    expect(prompt).toContain("account or order numbers, tokens or encoded text");
+    // Every part of the URL can carry data: host name, path, query and fragment.
+    expect(prompt).toContain(
+      "Some part of the URL (host name, path, query or fragment) holds data",
+    );
+    expect(prompt).not.toContain("clearly call for this site");
   });
 
   it("labels attacker-controlled user_task as untrusted data", () => {

@@ -420,6 +420,8 @@ export async function gateToolCall(
   }
   let reviewReason: string | undefined;
   let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
+  // Auto Review passing one URL clears that call only; it does not give the run the whole site.
+  let passedByReview = false;
   const needsApprovalEarly = plan === "ask" || plan === "judge";
   // A resumed approval keeps its key even if "Always allow" changed the policy.
   const usesApprovalKey =
@@ -526,6 +528,7 @@ export async function gateToolCall(
     if (!judged) return;
     reviewReason = judged.reason;
     gateDecision = judged.decision;
+    passedByReview = judged.decision === "allow";
   };
 
   if (applied && plan === "judge" && (injectedReview || checker)) {
@@ -541,6 +544,7 @@ export async function gateToolCall(
         reviewReason =
           typeof applied.effect.reviewReason === "string" ? applied.effect.reviewReason : undefined;
         gateDecision = "allow";
+        passedByReview = true;
       } else {
         await runAutoReview();
       }
@@ -642,8 +646,10 @@ export async function gateToolCall(
     if (early !== undefined) return { result: early, replayed: true };
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
-  // URL trusts only that URL, never the rest of its site.
-  if (fetchSite && siteGate === "new") (await ctx.trust.loadTrustedSites()).add(fetchSite);
+  // URL trusts only that URL, never the rest of its site, and a URL Auto Review passed (judged on
+  // what that URL carries) trusts nothing beyond itself: the site's next URL is judged again.
+  if (fetchSite && siteGate === "new" && !passedByReview)
+    (await ctx.trust.loadTrustedSites()).add(fetchSite);
   if (viaConnector) {
     const trusted = await ctx.trust.loadTrustedConnectors();
     for (const trust of connectorTrusts) trusted.add(trust);

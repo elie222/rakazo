@@ -250,11 +250,13 @@ export function createRunTrustLoaders(
           kind: { in: [...SITE_SENDING_TOOLS] },
           status: { in: PASSED_EFFECT_STATUSES },
         },
-        select: { request: true },
+        select: { request: true, reviewDecision: true },
       })
       .then(async (rows) => {
         const sites = sitesInText(await loadOwnerWords());
         for (const row of rows) {
+          // Auto Review passed that one URL on what it carried; the owner never gave the site.
+          if (row.reviewDecision === "pass") continue;
           const url = (row.request as { url?: unknown } | null)?.url;
           const site = typeof url === "string" ? urlSite(url) : undefined;
           if (site) sites.add(site);

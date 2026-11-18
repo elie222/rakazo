@@ -235,3 +235,28 @@ describe("the owner's earlier messages", () => {
     expect(await trust.loadEarlierOwnerMessages()).toEqual([]);
   });
 });
+
+describe("sites a run was given", () => {
+  it("counts sites the owner approved or named, not ones Auto Review passed one URL of", async () => {
+    const findMany = vi.fn(async () => [
+      { request: { url: "https://approved.example.com/a" }, reviewDecision: "ask" },
+      { request: { url: "https://ruled.example.org/b" }, reviewDecision: null },
+      { request: { url: "https://passed.example.net/c" }, reviewDecision: "pass" },
+    ]);
+    const trust = createRunTrustLoaders(
+      { prisma: { externalEffect: { findMany } } } as unknown as ExecutorDeps,
+      {
+        run: { userId: "owner", spaceId: "space", trigger: "routine" },
+        runId: "run",
+        botId: "bot",
+        taskPrompt: "Check https://named.example.com daily",
+        ownerStartedRun: true,
+        messagingChannelRun: false,
+        sourceMessage: null,
+        connectedPlugins: [],
+      },
+    );
+    // Sites compare by registrable domain; the reviewer-passed one is left out.
+    expect([...(await trust.loadTrustedSites())].sort()).toEqual(["example.com", "example.org"]);
+  });
+});
