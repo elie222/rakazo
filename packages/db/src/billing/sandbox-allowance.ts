@@ -6,6 +6,7 @@ import {
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
+import { Prisma } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
 import { hasBillingAccess } from "./billing.js";
 
@@ -181,19 +182,37 @@ export async function sandboxRunHours(
   now = new Date(),
 ): Promise<Array<{ kind: string; hours: number }>> {
   // The allowance is per organization, so it counts the computers of all its Spaces.
-  return runAsSystem(
-    "computer allowance across an organization's Spaces",
-    () => prisma.$queryRaw<Array<{ kind: string; hours: number }>>`
-    SELECT r."kind",
-      SUM(EXTRACT(EPOCH FROM (
+  return runAsSystem("computer allowance across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ kind: string; hours: number }>>(Prisma.sql`
+      SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
+      FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
+      GROUP BY "kind"`),
+  );
+}
+
+export function sandboxRunHoursByComputer(
+  prisma: Pick<PrismaClient, "$queryRaw">,
+  organizationId: string,
+  since: Date,
+  now: Date,
+) {
+  return runAsSystem("computer usage across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>(Prisma.sql`
+      SELECT "computerId", "kind", SUM("seconds")::float8 / 3600 AS "hours"
+      FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
+      GROUP BY "computerId", "kind"`),
+  );
+}
+
+function sandboxRunWindow(organizationId: string, since: Date, now: Date) {
+  return Prisma.sql`
+    SELECT r."computerId", r."kind", EXTRACT(EPOCH FROM (
         LEAST(COALESCE(r."endedAt", ${now}::timestamp(3)), ${now}::timestamp(3))
         - GREATEST(r."startedAt", ${since}::timestamp(3))
-      )))::float8 / 3600 AS "hours"
+      )) AS "seconds"
     FROM "computer_runs" AS r
     JOIN "spaces" AS s ON s."id" = r."spaceId"
     WHERE s."organizationId" = ${organizationId}
       AND r."startedAt" < ${now}::timestamp(3)
-      AND (r."endedAt" IS NULL OR r."endedAt" > ${since}::timestamp(3))
-    GROUP BY r."kind"`,
-  );
+      AND (r."endedAt" IS NULL OR r."endedAt" > ${since}::timestamp(3))`;
 }

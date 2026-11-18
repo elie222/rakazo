@@ -280,6 +280,7 @@ const plan: AgentImportPlan = {
   mcpServers: [],
   routines: [],
   apiKeys: [],
+  leftovers: [],
   skipped: [],
 };
 

@@ -284,7 +284,8 @@ export function createBackgroundJobHandlers(deps: {
       await deps.meetingCalendarSync(payload);
     },
     "meeting.work": async (payload) => {
-      await deps.meetingWork?.(payload);
+      if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
+      await deps.meetingWork(payload);
     },
     "purchase.poll": asOwner(purchase, async (payload) => {
       await pollPurchase(

@@ -4,11 +4,13 @@ import { estimateTextTokens, listPiCatalog } from "@rakazo/adapters";
 import type { Actor, MeetingTurn } from "@rakazo/contracts";
 import { anySignal, ClientError, deadlineSignal, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage } from "@rakazo/db";
+import { memberHasModelAccess, recordUsage } from "@rakazo/db";
 import * as z from "zod";
 import {
   MEETING_ANSWER_INSTRUCTIONS,
   meetingEvidenceInstructions,
+  meetingEvidencePrompt,
+  meetingTranscriptPrompt,
 } from "./meeting-answers.prompt.js";
 
 const MAX_CONTEXT_TOKENS = 40_000;
@@ -27,6 +29,7 @@ interface MeetingAnswerDeps {
   runtime: AgentRuntime;
   resolveModel: (scope: MeetingModelScope) => Promise<AgentRunRequest["model"]>;
   offline: boolean;
+  billingEnabled?: boolean;
 }
 
 export function createMeetingAnswers(deps: MeetingAnswerDeps) {
@@ -40,6 +43,9 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
     signal?.throwIfAborted();
     if (deps.offline) return "The launch draft is due Friday. Sam will check the final copy.";
     const scope = { userId: actor.userId, spaceId: actor.spaceId, botId };
+    if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, scope))) {
+      throw new ClientError("FORBIDDEN", "An active plan is required to use this bot’s model.");
+    }
     const model = await resolveMeetingModel(deps, scope);
     const catalog = listPiCatalog().find(
       (entry) => entry.provider === model.provider && entry.id === model.id,
@@ -70,11 +76,9 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
     const chunks = transcriptChunks(turns, availableTokens);
     const stop = new AbortController();
     const budget = deadlineSignal(45_000, signal ? anySignal([stop.signal, signal]) : stop.signal);
-    const transcriptPrompt = (chunk: string) =>
-      `{"question":${encodedQuestion},"transcript":[${chunk}]}`;
 
     try {
-      let answerPrompt = transcriptPrompt(chunks[0] ?? "");
+      let answerPrompt = meetingTranscriptPrompt(encodedQuestion, chunks[0] ?? "");
       if (chunks.length > 1) {
         // Keep the reduction in one call, leaving room even if the source uses non-Latin scripts.
         const tokensPerExcerpt = Math.floor(availableTokens / chunks.length) - 4;
@@ -83,14 +87,14 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
           chunks.map(async (chunk) => {
             const { evidence } = await run(
               meetingEvidenceInstructions(evidenceChars),
-              transcriptPrompt(chunk),
+              meetingTranscriptPrompt(encodedQuestion, chunk),
               evidenceSchema,
               Math.min(outputTokens, tokensPerExcerpt),
             );
             return limitEvidence(evidence, tokensPerExcerpt);
           }),
         );
-        answerPrompt = JSON.stringify({ question, evidence: notes.filter(Boolean) });
+        answerPrompt = meetingEvidencePrompt(question, notes.filter(Boolean));
       }
       const { answer } = await run(
         MEETING_ANSWER_INSTRUCTIONS,
@@ -115,7 +119,7 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
         await recordUsage(deps.prisma, event, {
           ...scope,
           operationId: id,
-          operationKind: "setup",
+          operationKind: "answer",
         });
       };
       for await (const event of deps.runtime.run(
@@ -129,7 +133,7 @@ export function createMeetingAnswers(deps: MeetingAnswerDeps) {
           history: [],
           tools: [],
           allowSilentEmpty: true,
-          usageOperationKind: "setup",
+          usageOperationKind: "answer",
           onUsage,
         },
         { ...scope, operationId: id, traceId: id, signal: budget },

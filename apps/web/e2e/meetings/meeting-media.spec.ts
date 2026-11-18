@@ -65,6 +65,9 @@ mediaTest(
     await page.goto(media.url());
     await expect(page.getByRole("heading", { name: "Atlas · Rakazo" })).toBeVisible();
     await expect(page.getByRole("img", { name: "Rakazo" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Atlas · Rakazo" })).toBeVisible();
     await page.waitForFunction(() => (window as MeetingAudioProbe).workletReady === true);
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await page.waitForFunction(

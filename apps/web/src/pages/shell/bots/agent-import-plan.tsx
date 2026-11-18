@@ -347,6 +347,24 @@ export function AgentImportPlanReview({
           </ul>
         </section>
       ) : null}
+      {plan.leftovers.length ? (
+        <section className={sectionClass} data-testid="agent-import-leftovers">
+          <h3 className={headingClass}>
+            <Trans>Set up in chat</Trans>
+          </h3>
+          <ul className="mt-2">
+            {plan.leftovers.map((entry, index) => {
+              const position = index + 1;
+              return item(
+                entry.id,
+                safeLabel(entry.title, entry.containsKey, t`Routine ${position}`),
+                entry.content,
+                entry.containsKey ? note(keyNote) : undefined,
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
       {secretsAvailable ? (
         <section className={sectionClass} data-testid="agent-import-keys">
           <Label className="min-h-9 gap-3 font-normal text-body text-foreground">

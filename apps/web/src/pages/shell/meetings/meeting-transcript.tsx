@@ -5,6 +5,7 @@ import { Button, Input } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { BuiCard, Shimmer } from "../../../components/ai/primitives";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { ErrorNotice } from "../../../components/ErrorNotice";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
@@ -80,15 +81,21 @@ export function MeetingTranscript({
           question.submit(ask.run, ask.pending || removal.pending);
         }}
       >
-        {question.exchange ? (
-          <div role="status" className="rounded-lg bg-muted p-3">
+        {ask.pending ? (
+          <p role="status" className="text-body-sm">
+            <Shimmer>
+              <Trans>Asking…</Trans>
+            </Shimmer>
+          </p>
+        ) : question.exchange ? (
+          <BuiCard role="status" className="bg-muted p-3">
             <p className="font-medium" dir="auto">
               {question.exchange.question}
             </p>
             <p className="mt-1 whitespace-pre-wrap break-words" dir="auto">
               {question.exchange.answer}
             </p>
-          </div>
+          </BuiCard>
         ) : null}
         <label htmlFor="meeting-question" className="font-medium">
           <Trans>Ask about this meeting</Trans>
@@ -105,7 +112,7 @@ export function MeetingTranscript({
             }}
           />
           <Button type="submit" disabled={ask.pending || removal.pending || !question.canAsk}>
-            {ask.pending ? <Trans>Asking…</Trans> : <Trans>Ask</Trans>}
+            <Trans>Ask</Trans>
           </Button>
         </div>
         {ask.error ? (

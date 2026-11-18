@@ -1,20 +1,25 @@
 import type { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
-import { runAsSystem } from "@rakazo/db";
+import { memberHasModelAccess, runAsSystem, runAsTenant } from "@rakazo/db";
 import { createMeetingMedia, meetingVoiceReady } from "./meeting-media.js";
 
 type MediaDeps = Parameters<typeof createMeetingMedia>[0];
 
 export function appMeetingMedia(
-  deps: Omit<MediaDeps, "signingSecret" | "publicOrigin" | "loadSession"> & {
+  deps: Omit<MediaDeps, "signingSecret" | "publicOrigin" | "loadSession" | "voiceReady"> & {
     config: NonNullable<ReturnType<typeof configuredMeetingMedia>>;
     providerId: string;
     enabled: (spaceId: string) => boolean;
+    billingEnabled: boolean;
   },
 ) {
   const { prisma, config, providerId, enabled } = deps;
   return createMeetingMedia({
     ...deps,
     ...config,
+    voiceReady: async ({ actor, botId }, signal) =>
+      (!deps.billingEnabled ||
+        (await runAsTenant(actor, () => memberHasModelAccess(prisma, actor)))) &&
+      (await meetingVoiceReady(deps, actor, botId, signal)),
     loadSession: async (id) => {
       const session = await runAsSystem("resolve signed meeting media", async () => {
         const row = await prisma.meetingSession.findFirst({
@@ -55,7 +60,7 @@ export function appMeetingMedia(
         botId: session.botId,
         botName: session.bot.name,
         admitted: session.status === "joined",
-        voice: config.voice && (await meetingVoiceReady(deps, actor)),
+        voice: config.voice,
       };
     },
   });

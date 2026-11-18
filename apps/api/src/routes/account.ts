@@ -157,6 +157,9 @@ export function accountRoutes(ctx: RouterContext) {
         if (input?.referralCode) await billing.claimReferral(context.actor, input.referralCode);
         return billing.status(context.actor);
       }),
+      computerUsage: authed.billing.computerUsage.handler(async ({ context }) =>
+        requireBilling(deps).computerUsage(context.actor),
+      ),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);

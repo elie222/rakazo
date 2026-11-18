@@ -8,9 +8,9 @@ import type {
   MeetingProvider,
 } from "@rakazo/adapter-kit";
 import { MeetingJoinRejected } from "@rakazo/adapter-kit";
-import type { Actor, MeetingPlatform } from "@rakazo/contracts";
+import type { Actor } from "@rakazo/contracts";
 import { MeetingPlatformSchema, MeetingStatusSchema, MeetingTurnSchema } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, meetingTargetFromUrl } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   JsonColumnMismatchError,
@@ -41,31 +41,10 @@ const errors = {
   join: "The bot couldn’t join the meeting.",
 };
 
-export function parseMeetingUrl(input: string): {
-  platform: MeetingPlatform;
-  url: string;
-  key: string;
-} {
-  const url = URL.parse(input.trim());
-  const badUrl = () => new ClientError("BAD_REQUEST", "Enter a valid Zoom or Google Meet link.");
-  if (url?.protocol !== "https:" || url.username || url.password || url.port) throw badUrl();
-  if (
-    url.hostname === "meet.google.com" &&
-    /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}\/?$/i.test(url.pathname)
-  ) {
-    const key = url.pathname.toLowerCase().replace(/\/$/, "");
-    return { platform: "google_meet", url: `https://meet.google.com${key}`, key };
-  }
-  if (url.hostname === "zoom.us" || url.hostname.endsWith(".zoom.us")) {
-    const number = /^\/(?:j|wc\/join)\/(\d{9,11})\/?$/.exec(url.pathname)?.[1];
-    if (number) {
-      const password = url.searchParams.get("pwd");
-      const join = new URL(`https://${url.hostname}/j/${number}`);
-      if (password) join.searchParams.set("pwd", password);
-      return { platform: "zoom", url: join.href, key: number };
-    }
-  }
-  throw badUrl();
+export function parseMeetingUrl(input: string) {
+  const meeting = meetingTargetFromUrl(input);
+  if (!meeting) throw new ClientError("BAD_REQUEST", "Enter a valid Zoom or Google Meet link.");
+  return meeting;
 }
 
 function workJob(sessionId: string, action: JobAction, availableAt = new Date()): Job {
@@ -102,11 +81,11 @@ export class MeetingService {
     return Boolean(this.deps.provider) && (this.deps.spaceIds?.has(spaceId) ?? true);
   }
 
-  async visible(actor: Actor) {
+  async visible(actor: Actor, botId?: string) {
     if (this.enabled(actor.spaceId)) return true;
     return Boolean(
       await this.deps.prisma.meetingSession.findFirst({
-        where: { spaceId: actor.spaceId, userId: actor.userId, status: "ready" },
+        where: { spaceId: actor.spaceId, userId: actor.userId, botId, status: "ready" },
         select: { id: true },
       }),
     );
@@ -290,7 +269,37 @@ export class MeetingService {
     });
     if (!row) return;
     const actions = await this.observe(row.id, observation);
+    if (!row.closedAt && !(await this.member(row))) {
+      await this.stopForDepartedMember(row);
+    }
     for (const action of actions) void this.attempt(row.id, action);
+  }
+
+  async stopForDepartedMember(owner: Pick<Actor, "spaceId" | "userId">) {
+    if (!this.providerId) return;
+    const { prisma, jobs } = this.deps;
+    const ids = await runAsSystem("stop meetings for a departed Space member", () =>
+      prisma.$transaction(async (tx) => {
+        const rows = await tx.meetingSession.updateManyAndReturn({
+          where: {
+            spaceId: owner.spaceId,
+            userId: owner.userId,
+            provider: this.providerId,
+            closedAt: null,
+            status: { in: ["joining", "waiting", "joined", "leaving"] },
+          },
+          data: { status: "leaving" },
+          select: { id: true },
+        });
+        await jobs.enqueueManyIn(
+          tx,
+          rows.map(({ id }) => workJob(id, "leave", new Date(Date.now() + BACKUP_AFTER))),
+        );
+        return rows.map(({ id }) => id);
+      }),
+    );
+    if (ids.length) await this.notify(owner.spaceId);
+    for (const id of ids) void this.attempt(id, "leave");
   }
 
   async recordBotRetirements(
@@ -421,7 +430,9 @@ export class MeetingService {
       expiresAt: row.expiresAt,
     };
     const { count } = await prisma.meetingSession.updateMany({
-      where: { id: row.id, requestedAt: null, externalId: null, status: "joining" },
+      // The per-session lease owns dispatch. Save when the create was sent so recovery knows
+      // a missing response could already have created a participant.
+      where: { id: row.id, externalId: null, status: "joining" },
       data: { requestedAt: new Date() },
     });
     if (!count) return;
@@ -533,11 +544,12 @@ export class MeetingService {
           where: { id: row.id, status: "processing", transcriptId: null },
           data: { transcriptId: artifact.id },
         });
-        if (count || row.transcriptId)
-          await jobs.enqueueIn(tx, {
-            ...workJob(row.id, "transcript-check", new Date(Date.now() + TRANSCRIPT_DEADLINE)),
-            keepExisting: true,
-          });
+        if (count) {
+          await jobs.enqueueIn(
+            tx,
+            workJob(row.id, "transcript-check", new Date(Date.now() + TRANSCRIPT_DEADLINE)),
+          );
+        }
       });
       return;
     }
@@ -546,7 +558,12 @@ export class MeetingService {
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
-        data: { status: "ready", transcript: JSON.stringify(turns), transcriptId: artifact.id },
+        data: {
+          status: "ready",
+          transcript: JSON.stringify(turns),
+          transcriptId: artifact.id,
+          error: null,
+        },
       });
       if (count) {
         const cleanup = workJob(row.id, "cleanup", new Date(Date.now() + BACKUP_AFTER));
@@ -649,8 +666,12 @@ export class MeetingService {
   }
 
   private async member(row: Pick<Session, "spaceId" | "userId">) {
-    return this.deps.prisma.spaceMember.findUnique({
-      where: { spaceId_userId: { spaceId: row.spaceId, userId: row.userId } },
+    return this.deps.prisma.spaceMember.findFirst({
+      where: {
+        spaceId: row.spaceId,
+        userId: row.userId,
+        member: { user: { deactivatedAt: null } },
+      },
       select: { id: true },
     });
   }
@@ -684,7 +705,8 @@ function nextObservation(
     if (event.status === "ended" && row.recordingId) status = "processing";
     if (event.recordingId) actions.push("transcript");
   } else if (event.status === "failed") {
-    if (!closedAt) actions.push("leave");
+    if (event.error === "join" || event.error === "admission") closedAt ??= event.occurredAt;
+    else if (!closedAt) actions.push("leave");
   } else {
     if (row.status === "failed" && !row.externalId && row.requestedAt) {
       return { data: { closedAt: null }, actions: ["leave"] };

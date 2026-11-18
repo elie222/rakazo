@@ -616,6 +616,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           secrets,
           events,
           billing,
+          meetings,
         },
         userId,
       );
@@ -845,6 +846,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runtime: meetingRuntime,
       resolveModel: executor.resolveModel,
       config: meetingMediaConfig,
+      billingEnabled: modelCreditsEnabled,
       providerId: meetingProvider.describe().id,
       enabled: (spaceId) => meetings.enabled(spaceId),
     });
@@ -857,6 +859,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       runtime: meetingRuntime,
       resolveModel: executor.resolveModel,
       offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
     }),
     speechSummary:
       env.voiceSummaryMinChars === undefined
@@ -1081,7 +1084,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             devices: deviceSessions,
             events,
             afterDeparture: (actor, departure) =>
-              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+              afterSpaceDeparture({ prisma, sandbox, jobs, events, meetings }, actor, departure),
           },
           change,
         ).catch((error) => {
