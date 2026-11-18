@@ -525,6 +525,9 @@ struct RakazoSession {
     if status == 401 { throw MessageBotError.signedOut }
     guard (200..<300).contains(status) else {
       let error = try? JSONDecoder().decode(Envelope<ServerError>.self, from: data)
+      if (400..<500).contains(status), status != 408 {
+        throw MessageBotError.rejected(error?.json.message)
+      }
       throw MessageBotError.server(error?.json.message)
     }
     return try JSONDecoder().decode(Envelope<Output>.self, from: data).json
@@ -558,6 +561,7 @@ enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
   case needsYou
   case consentRequired
   case server(String?)
+  case rejected(String?)
 
   var localizedStringResource: LocalizedStringResource {
     switch self {
@@ -565,8 +569,8 @@ enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
     case .noBot: "Open a chat in Rakazo first."
     case .needsYou: "It needs you in Rakazo."
     case .consentRequired: "Review AI data sharing in Account settings before continuing."
-    case .server(let message?): "\(message)"
-    case .server(nil): "Something went wrong. Try again."
+    case .server(let message?), .rejected(let message?): "\(message)"
+    case .server(nil), .rejected(nil): "Something went wrong. Try again."
     }
   }
 }

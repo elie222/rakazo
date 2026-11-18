@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UIKit
 import WatchConnectivity
 
@@ -6,15 +7,17 @@ import WatchConnectivity
 @MainActor
 final class WatchRelay: NSObject, WCSessionDelegate {
   static let shared = WatchRelay()
+  private static let logger = Logger(subsystem: "com.rakazo.app", category: "WatchRelay")
   private var scope: UUID?
   private var identityRevision = UUID()
   private var rosterRevision = UUID()
   private var sessionReady = true
+  private var selectedSpace: String?
   private var scopedSession: RakazoSession?
   private var spaceId: String?
   private var chats: [WatchChat] = []
 
-  private enum Change: String { case chat, roster, sessionUnavailable, sessionReady }
+  private enum Change: String { case chat, roster, space, sessionUnavailable, sessionReady }
 
   func activate() {
     guard WCSession.isSupported() else { return }
@@ -27,25 +30,37 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     ) { [weak self] notification in
       guard let kind = notification.object as? String, let change = Change(rawValue: kind)
       else { return }
-      DispatchQueue.main.async { [weak self] in self?.chatChanged(change) }
+      let selectedSpace = notification.userInfo?["spaceId"] as? String
+      DispatchQueue.main.async { [weak self] in self?.chatChanged(change, selectedSpace: selectedSpace) }
     }
   }
 
-  private func chatChanged(_ change: Change) {
+  private func chatChanged(_ change: Change, selectedSpace: String?) {
     switch change {
-    case .sessionUnavailable, .sessionReady:
-      sessionReady = change == .sessionReady
-      identityRevision = UUID()
-      scope = nil
-      scopedSession = nil
-      spaceId = nil
-      chats = []
+    case .sessionUnavailable:
+      sessionReady = false
+      self.selectedSpace = nil
+      clearScope()
+    case .sessionReady:
+      sessionReady = true
+      clearScope()
+    case .space:
+      self.selectedSpace = selectedSpace
+      clearScope()
     case .roster:
       rosterRevision = UUID()
     case .chat:
       break
     }
     publishRevision()
+  }
+
+  private func clearScope() {
+    identityRevision = UUID()
+    scope = nil
+    scopedSession = nil
+    spaceId = nil
+    chats = []
   }
 
   private func publishRevision() {
@@ -58,7 +73,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         "identityRevision": identityRevision.uuidString,
       ])
     } catch {
-      // The watch re-reads when it becomes active or the phone becomes reachable again.
+      // Only log the error code. The watch re-reads when it reconnects or comes to the foreground.
+      Self.logger.warning("Watch revision delivery failed (code: \((error as NSError).code, privacy: .public))")
     }
   }
 
@@ -104,7 +120,12 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private func currentSession() throws -> RakazoSession {
     guard UIApplication.shared.isProtectedDataAvailable else { throw WatchFailure.unlockPhone }
     guard sessionReady else { throw WatchFailure.signIn }
-    return try RakazoSession.load()
+    let session = try RakazoSession.load()
+    guard let selectedSpace else { return session }
+    // The app announces its selection before the Keychain write completes.
+    return RakazoSession(
+      apiBase: session.apiBase, token: session.token,
+      selectedSpaceId: selectedSpace.isEmpty ? nil : selectedSpace, headers: session.headers)
   }
 
   private func verify(_ session: RakazoSession, revision: UUID) throws {
@@ -198,8 +219,10 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       let _: WatchAcknowledgement = try await session.rpc(procedure, input, spaceId: spaceId, timeout: 8)
     } catch MessageBotError.signedOut {
       throw WatchFailure.signIn
+    } catch MessageBotError.rejected {
+      throw failure == .sendUnconfirmed ? WatchFailure.sendRejected : WatchFailure.rejected
     } catch {
-      // A timeout after commit is ambiguous. The watch keeps the nonce on retry.
+      // A timeout or lost reply after commit is ambiguous. The watch keeps the nonce on retry.
       throw failure
     }
   }

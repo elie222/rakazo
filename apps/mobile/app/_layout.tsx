@@ -46,6 +46,7 @@ import {
   subscribeAiConsentGranted,
   subscribeApiBase,
   subscribeSessionRejected,
+  subscribeSpaceSelection,
 } from "../lib/api/api";
 import { loadApiBase } from "../lib/api/api-server";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/api/client-update";
@@ -297,6 +298,9 @@ function LayoutContent() {
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     let active = true;
+    const unsubscribeSpace = subscribeSpaceSelection(() =>
+      invalidateWatchChat("space", selectedSpaceId() ?? ""),
+    );
     const unsubscribe = subscribeSessionGeneration(() => {
       invalidateWatchChat("sessionUnavailable");
       const generation = currentSessionGeneration();
@@ -311,6 +315,7 @@ function LayoutContent() {
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeSpace();
     };
   }, []);
   const callSession = useSyncExternalStore(

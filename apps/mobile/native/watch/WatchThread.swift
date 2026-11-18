@@ -53,7 +53,9 @@ struct WatchThread: Decodable {
             ids.isSubset(of: ["allow", "deny", "always"])
           else { return handoff }
           prompt = WatchPrompt(
-            kind: .approval, title: title, detail: detail,
+            kind: .approval, title: title.replacingOccurrences(
+              of: #"\\([\\`*_\[\]<>~|])"#, with: "$1", options: .regularExpression),
+            detail: detail,
             options: options.filter { $0.id == "allow" || $0.id == "deny" },
             approvalEffectId: approvalEffectId)
         } else {
@@ -106,7 +108,8 @@ struct WatchThread: Decodable {
       let text = message.watchText
       let ask = ownsPendingAsk(message, userId: userId) ? message.pendingAsk?.watchPrompt() : nil
       let handoff = WatchPrompt(kind: .phone, title: "", detail: nil, options: [])
-      let prompt = ask ?? (message.hasPhoneOnlyCard ? handoff : nil)
+      let ownsRun = activeRuns?.contains { $0.id == message.runId && $0.userId == userId } == true
+      let prompt = ask ?? (ownsRun && message.hasPhoneOnlyCard ? handoff : nil)
       guard !text.isEmpty || prompt != nil else { return nil }
       return WatchMessage(
         id: message.id, fromUser: message.role == "user",

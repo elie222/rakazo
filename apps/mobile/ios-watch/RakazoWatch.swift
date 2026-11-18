@@ -30,21 +30,25 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
   }
 
   nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
-    let reachable = session.isReachable
-    Task { @MainActor in self.reachable = reachable }
+    Task { @MainActor in
+      updateRevisions()
+      reachable = WCSession.default.isReachable
+    }
   }
 
   nonisolated func session(
     _ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]
   ) {
-    guard let revision = applicationContext["chatRevision"] as? String else { return }
-    let identity = applicationContext["identityRevision"] as? String
-    let roster = applicationContext["rosterRevision"] as? String
-    Task { @MainActor in
-      self.identityRevision = identity
-      self.rosterRevision = roster
-      self.chatRevision = revision
-    }
+    Task { @MainActor in updateRevisions() }
+  }
+
+  private func updateRevisions() {
+    let session = WCSession.default
+    guard session.activationState == .activated else { return }
+    let context = session.receivedApplicationContext
+    identityRevision = context["identityRevision"] as? String
+    rosterRevision = context["rosterRevision"] as? String
+    chatRevision = context["chatRevision"] as? String
   }
 
   func request(_ request: WatchRequest) async throws -> WatchReply {
@@ -362,6 +366,7 @@ private extension WatchFailure {
     case .unavailable: "Can’t reach Rakazo on your iPhone. Try again."
     case .reload: "Return to Chats and refresh."
     case .rejected: "This request has changed. Go back and refresh."
+    case .sendRejected: "Couldn’t send this message."
     case .sendUnconfirmed: "Send unconfirmed. Refresh before trying again."
     case .answerUnconfirmed: "Answer unconfirmed. Go back and refresh."
     }

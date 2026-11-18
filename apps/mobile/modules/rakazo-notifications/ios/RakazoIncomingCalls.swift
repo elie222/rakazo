@@ -266,9 +266,10 @@ public class RakazoNotificationsModule: Module {
       if let observer = self.observer { NotificationCenter.default.removeObserver(observer) }
       self.observer = nil
     }
-    Function("invalidateWatchChat") { (kind: String) in
+    Function("invalidateWatchChat") { (kind: String, spaceId: String?) in
       NotificationCenter.default.post(
-        name: Notification.Name("RakazoWatchChatChanged"), object: kind)
+        name: Notification.Name("RakazoWatchChatChanged"), object: kind,
+        userInfo: spaceId.map { ["spaceId": $0] })
     }
     AsyncFunction("configureIncomingSession") { (base: String, headers: [String: String]) in IncomingCalls.shared.configure(base, headers: headers) }.runOnQueue(.main)
     AsyncFunction("incomingState") { () -> [String: Any] in IncomingCalls.shared.state() }.runOnQueue(.main)

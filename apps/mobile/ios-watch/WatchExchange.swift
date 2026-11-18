@@ -32,7 +32,8 @@ struct WatchReply: Codable {
 }
 
 enum WatchFailure: String, Codable, Error {
-  case unlockPhone, signIn, consent, unavailable, reload, rejected, sendUnconfirmed, answerUnconfirmed
+  case unlockPhone, signIn, consent, unavailable, reload, rejected, sendRejected
+  case sendUnconfirmed, answerUnconfirmed
 }
 
 struct WatchMessage: Codable, Identifiable {
