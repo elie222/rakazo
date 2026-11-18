@@ -10,7 +10,7 @@ import {
   listOwnItems,
   rehomeItemsLeaving,
   setAvailability,
-} from "./availability.js";
+} from "./name-claims.js";
 
 // The runtime login, so row-level security applies exactly as it does in a deployment.
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);

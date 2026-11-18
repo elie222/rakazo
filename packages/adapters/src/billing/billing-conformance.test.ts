@@ -5,7 +5,7 @@ import {
   StripeBillingProvider,
   signStripeWebhook,
 } from "../providers/billing/stripe/stripe-billing.js";
-import { StripeEmulator } from "../testing/stripe-emulator.js";
+import { StripeEmulator } from "../providers/billing/stripe/stripe-emulator.js";
 import { BillingEmulator } from "./billing-emulator.js";
 
 const NOW = Date.UTC(2026, 0, 1);

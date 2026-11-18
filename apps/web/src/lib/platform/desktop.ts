@@ -12,6 +12,11 @@ export function desktopBridge(): RakazoDesktop | undefined {
   return typeof window === "undefined" ? undefined : window.rakazoDesktop;
 }
 
+/** Which app this is, as measurement names it. */
+export function analyticsSurface(): "desktop" | "web" {
+  return desktopBridge() ? "desktop" : "web";
+}
+
 /** The compact `code#state` form the manual paste flow already accepts. */
 export function desktopOAuthCode(callback: RakazoDesktopOAuthCallback) {
   return callback.state === undefined ? callback.code : `${callback.code}#${callback.state}`;

@@ -102,6 +102,8 @@ export type TileContext = {
   pluginForApp: Map<string, PluginMarketplaceEntry>;
   onOpenApp: (item: ConnectionCatalogItem) => void;
   onOpenDetail: (item: ConnectionCatalogItem) => void;
+  /** Opens where a chat app is set up; absent where that cannot be reached. */
+  onOpenChatApp?: () => void;
 };
 
 /** An app in the catalog with its Add or Added button; a connected app opens its page. */
@@ -118,7 +120,7 @@ export function CatalogTile({
   tileTestId?: boolean;
   context: TileContext;
 }) {
-  const { connections, pluginForApp, onOpenApp } = context;
+  const { connections, pluginForApp, onOpenApp, onOpenChatApp } = context;
   const connected = connections.itemConnected(item);
   const openable = connected || pluginForApp.has(catalogItemKey(item));
   const tileTestId = tileTestIdOption !== false && connected;
@@ -128,10 +130,10 @@ export function CatalogTile({
       <div className="truncate text-body-lg font-medium text-foreground">{label}</div>
     </div>
   );
-  return (
+  const tile = (
     <div
       data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
-      className={`${ROW_SHELL}${openable ? ` ${ROW_HOVER}` : ""}`}
+      className={`${ROW_SHELL} self-start${openable ? ` ${ROW_HOVER}` : ""}`}
     >
       {openable ? (
         <button type="button" className={ROW_BUTTON} onClick={() => onOpenApp(item)}>
@@ -146,6 +148,33 @@ export function CatalogTile({
       )}
       <CatalogActions item={item} context={context} />
     </div>
+  );
+  // Before connecting is when the two are mixed up; a connected app says it on its page.
+  if (!item.chatApp || connected || !onOpenChatApp) return tile;
+  return (
+    <div className="min-w-0">
+      {tile}
+      <p
+        data-testid="chat-app-hint"
+        className="-mt-1.5 flex flex-wrap gap-x-1.5 ps-14.5 pe-2.5 pb-2 text-body-sm text-muted-foreground"
+      >
+        <Trans>Tools for your bot.</Trans>
+        <ChatAppLink name={label} onOpen={onOpenChatApp} />
+      </p>
+    </div>
+  );
+}
+
+/** Leads from an app's tools to messaging the bot from that app. */
+export function ChatAppLink({ name, onOpen }: { name: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className="rounded-sm text-foreground underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      onClick={onOpen}
+    >
+      <Trans>Chat from {name}</Trans>
+    </button>
   );
 }
 

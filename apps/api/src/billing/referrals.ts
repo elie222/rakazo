@@ -9,6 +9,7 @@ import {
   FREE_MONTH_DAYS,
   hasBillingAccess,
   isUniqueViolation,
+  needsBillingPortal,
   reconcileCreditPurchase,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -151,7 +152,10 @@ export function createReferrals(deps: {
               : // Monthly credit invoices turn what is paid into credits, so a balance buys nothing.
                 modelCredits?.mode === "credits"
                 ? "credits"
-                : billing && hasBillingAccess(billing.status)
+                : // A plan that owes a payment takes it off a later invoice: free days would restore access
+                  // beside the unpaid one.
+                  billing &&
+                    (hasBillingAccess(billing.status) || needsBillingPortal(billing.status))
                   ? "balance"
                   : "free_period",
             cardFingerprint,

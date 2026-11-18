@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import { PrismaPushTokenStore, PushSessionEndedError } from "./push-token-store.js";
 
 const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;

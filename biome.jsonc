@@ -187,7 +187,7 @@
         "packages/logging/src/sentry.ts",
         "packages/logging/src/sentry.test.ts",
         "packages/logging/src/axiom-sink.ts",
-        "packages/testkit/src/cli/ios-screenshot-publish.ts"
+        "packages/testkit/src/screenshots/ios-screenshot-publish.ts"
       ],
       "linter": {
         "rules": {

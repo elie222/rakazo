@@ -179,13 +179,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
   const needsModel = uploadConfig?.needsModel;
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
-    useThreadBots({
-      botId,
-      groupId,
-      name,
-      activeBotId,
-    });
+  const {
+    mentionBots,
+    mentionBotsRef,
+    mentionGroups,
+    rosterLoaded,
+    refreshMentionBots,
+    refreshMentionRoster,
+  } = useThreadBots({
+    botId,
+    groupId,
+    name,
+    activeBotId,
+  });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -257,7 +263,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       mentionRoutines,
     ],
   );
-  const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
+  const currentBot =
+    botId && rosterLoaded ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
   const inboxBot = useInboxBot(botId);
   const composerModel = useComposerModel(inGroup ? undefined : botId);
@@ -279,9 +286,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const activityLine = liveActivityLine(snap?.messages ?? []);
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
-    () =>
-      !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
-    [inGroup, currentBot?.color, currentBot?.id],
+    () => (!inGroup && titleBot ? chatUserBubbleColors(titleBot.color, titleBot.id) : undefined),
+    [inGroup, titleBot?.color, titleBot?.id],
   );
   const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];

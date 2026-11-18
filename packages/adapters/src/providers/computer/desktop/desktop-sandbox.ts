@@ -31,6 +31,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { hostCommandEnvironment } from "../../../computers/sandbox/sandbox-command-environment.js";
+import { abortedCommandEvents } from "../../../computers/sandbox/sandbox-command-events.js";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
@@ -38,8 +40,6 @@ import {
   placeholderObservation,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
-import { hostCommandEnvironment } from "../../../sandboxes/sandbox-command-environment.js";
-import { abortedCommandEvents } from "../../../sandboxes/sandbox-command-events.js";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,

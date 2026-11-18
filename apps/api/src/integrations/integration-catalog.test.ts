@@ -80,6 +80,52 @@ describe("searchIntegrationCatalog", () => {
     ]);
   });
 
+  it("keeps OAuth sign-in apart from tokens", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        results: [
+          {
+            domain: "tracker.example",
+            surfaces: [
+              {
+                kind: "mcp",
+                slug: "tracker-mcp",
+                url: "https://mcp.tracker.example/mcp",
+                auth: { kind: "oauth" },
+              },
+              // Only an MCP server over HTTPS can sign in; the others take a token, as before.
+              {
+                kind: "mcp",
+                slug: "tracker-plain",
+                url: "http://mcp.tracker.example/mcp",
+                auth: { kind: "oauth" },
+              },
+              {
+                kind: "openapi",
+                slug: "tracker-api",
+                url: "https://api.tracker.example/openapi.json",
+                auth: { kind: "oauth2" },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [result] = await searchIntegrationCatalog({
+      baseUrl: "https://mirror.example/",
+      query: "tracker",
+      signal: new AbortController().signal,
+      fetch,
+    });
+
+    expect(result?.surfaces.map((surface) => surface.auth?.type)).toEqual([
+      "oauth",
+      "bearer",
+      "bearer",
+    ]);
+  });
+
   it("does not contact the feed for an empty query", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     await expect(
