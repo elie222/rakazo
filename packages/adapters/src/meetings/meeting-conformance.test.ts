@@ -168,13 +168,18 @@ it("sends a Teams meeting link and its passcode to the provider", async () => {
 });
 
 it("preserves Teams meeting context and rejects look-alike or non-meeting links", () => {
-  const path = "/l/meetup-join/19%3Ameeting_Fake-thread%40thread.v2/0";
+  const path = "/l/meetup-join/19%3Ameeting_Fake%2Bthread%40thread.v2/0";
   const context = "%7B%22Tid%22%3A%22fake-tenant%22%7D";
   const invite = `https://teams.microsoft.com${path}?context=${context}`;
   expect(parseMeetingUrl(`${invite}&ref=invite#ignored`)).toEqual({
     platform: "microsoft_teams",
     url: invite,
-    key: "19:meeting_Fake-thread@thread.v2",
+    key: "19:meeting_Fake+thread@thread.v2",
+  });
+  const rawPlusInvite = invite.replace("%2B", "+");
+  expect(parseMeetingUrl(rawPlusInvite)).toMatchObject({
+    url: rawPlusInvite,
+    key: "19:meeting_Fake+thread@thread.v2",
   });
   expect(() => parseMeetingUrl(`https://teams.microsoft.com.example.test${path}`)).toThrow(
     "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
