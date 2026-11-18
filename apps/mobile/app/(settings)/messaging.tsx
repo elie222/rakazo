@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type { MessagingChannelMembership } from "@rakazo/contracts";
+import type { MessagingChannelMembership, MessagingStatus } from "@rakazo/contracts";
 import {
   createMessagingLinkGuard,
   messagingConnectOptions,
@@ -11,10 +11,9 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { NativeSymbol } from "../../components/native/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
 import { LoadFailure } from "../../components/ui/load-failure";
-import { MenuPicker, MenuPickerMenu } from "../../components/ui/menu-picker";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
 import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api/api";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/api/session";
 import { errorText } from "../../lib/api/user-error";
@@ -31,7 +30,6 @@ export default function MessagingSettings() {
   const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
-  const [selectedBotId, setSelectedBotId] = useState("");
   const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const linkGuard = useMemo(() => createMessagingLinkGuard(linkScope, session), [session]);
   const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
@@ -78,6 +76,8 @@ export default function MessagingSettings() {
     shared?: boolean;
     botId: string;
     provider: string;
+    /** The row whose action issued the code, where it is shown. */
+    row: string;
     knownIdentityBots: Record<string, string>;
   } | null>(null);
   const change = useSave({
@@ -91,6 +91,7 @@ export default function MessagingSettings() {
       input: {
         request: { isCurrent: () => boolean; finish: () => void };
         provider: string;
+        row: string;
         botId: string;
         knownIdentityBots: Record<string, string>;
       },
@@ -102,8 +103,8 @@ export default function MessagingSettings() {
         input.request.finish();
       }
     },
-    onSaved: (issued, { request, provider, botId, knownIdentityBots }) => {
-      if (request.isCurrent()) setLink({ ...issued, botId, provider, knownIdentityBots });
+    onSaved: (issued, { request, provider, row, botId, knownIdentityBots }) => {
+      if (request.isCurrent()) setLink({ ...issued, botId, provider, row, knownIdentityBots });
     },
   });
   const busy = change.pending;
@@ -147,13 +148,6 @@ export default function MessagingSettings() {
     change.run(action);
   }
 
-  // A selection archived elsewhere drops out of the list; fall back to the first bot.
-  const botId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
-  useEffect(() => {
-    if (linkGuard.invalidate(true)) {
-      setLink(null);
-    }
-  }, [botId, linkGuard]);
   useEffect(
     () => () => {
       linkGuard.invalidate();
@@ -185,16 +179,24 @@ export default function MessagingSettings() {
     installations.available,
   );
   const slackInstall = connectOptions.some(({ method }) => method === "install");
-  const connectChoices = connectOptions
+  const linkProviders = connectOptions
     .filter(({ method }) => method === "link")
-    .map(({ provider }) => ({ key: provider, label: messagingProviderName(provider) }));
+    .map(({ provider }) => provider);
   const slackInstallations = installations.installations.filter(
     (installation) => installation.provider === "slack",
+  );
+  const showSlack = slackInstall || slackInstallations.length > 0;
+  const identities = status?.identities ?? [];
+  const identitiesOf = (provider: string) =>
+    identities.filter((identity) => identity.provider === provider);
+  // Linked apps this deployment no longer offers stay listed so they can be unlinked.
+  const otherIdentities = identities.filter(
+    (identity) =>
+      !linkProviders.includes(identity.provider) && !(showSlack && identity.provider === "slack"),
   );
   // A teammate's workspace: DMs link to a bot of the member's own choosing.
   const memberLink =
     Boolean(installations.personalLinkAvailable) && Boolean(status?.providers.includes("slack"));
-  const linkAddress = link ? status?.addresses?.[link.provider] : undefined;
 
   function installSlack() {
     act(async (send) => {
@@ -203,17 +205,18 @@ export default function MessagingSettings() {
     });
   }
 
-  function startLink(provider: string, linkBotId = botId, fromPicker = true) {
-    const request = linkGuard.begin(fromPicker);
+  function startLink(row: string, provider: string, botId: string) {
+    const request = linkGuard.begin();
     if (!request) return;
     change.reset();
     setLink(null);
     issue.run({
       request,
       provider,
-      botId: linkBotId,
+      row,
+      botId,
       knownIdentityBots: Object.fromEntries(
-        status?.identities.map((identity) => [identity.id, identity.botId]) ?? [],
+        identities.map((identity) => [identity.id, identity.botId]),
       ),
     });
   }
@@ -233,15 +236,67 @@ export default function MessagingSettings() {
       onPress={() => act(onPress)}
     />
   );
-  const memberLinkButton = (
-    <NativeActionButton
-      label={t`Link DMs`}
-      prominence="quiet"
-      size="compact"
-      fill={false}
-      variant="text"
-      disabled={busy || issuingLink || !botId}
-      onPress={() => startLink("slack")}
+  const connectLabel = (provider: string) => {
+    const app = messagingProviderName(provider);
+    return t`Connect ${app}`;
+  };
+  /** Issues a code for `provider`, asking which bot first when there are several. */
+  const linkAction = (row: string, provider: string, label: string, accessibilityLabel = label) => {
+    const only = bots.length === 1 ? bots[0] : undefined;
+    const disabled = busy || issuingLink;
+    if (only || bots.length === 0) {
+      return (
+        <NativeActionButton
+          label={label}
+          accessibilityLabel={accessibilityLabel}
+          prominence="quiet"
+          size="compact"
+          fill={false}
+          variant="text"
+          disabled={disabled || !only}
+          onPress={() => only && startLink(row, provider, only.id)}
+        />
+      );
+    }
+    return (
+      <MenuPickerMenu
+        label={t`Bot`}
+        choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
+        value=""
+        disabled={disabled}
+        onChange={(botId) => startLink(row, provider, botId)}
+      >
+        <View accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+          <Text style={[styles.link, disabled && styles.disabled]}>{label}</Text>
+        </View>
+      </MenuPickerMenu>
+    );
+  };
+  /** The code to send, right under the row that asked for it. */
+  const linkCode = (row: string) => {
+    if (!link || link.row !== row || Date.parse(link.expiresAt) <= Date.now()) return null;
+    const address = status?.addresses?.[link.provider];
+    return (
+      <Text key={`code:${row}`} selectable style={styles.code}>
+        {address
+          ? t`Send ${ph({ code: link.code })} to ${ph({ address })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`
+          : t`Send ${ph({ code: link.code })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`}
+        {link.shared
+          ? `\n${t`Everyone in this bot's space can read the chats it gets from ${ph({ app: messagingProviderName(link.provider) })}.`}`
+          : ""}
+      </Text>
+    );
+  };
+  const identityRow = (identity: MessagingStatus["identities"][number]) => (
+    <SettingsRow
+      key={identity.id}
+      title={messagingProviderName(identity.provider)}
+      detail={`${identity.address}, ${identity.botName}`}
+      trailing={textAction(
+        t`Unlink`,
+        (send) => send("messaging/identities/unlink", { identityId: identity.id }),
+        "destructive",
+      )}
     />
   );
   const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
@@ -289,139 +344,99 @@ export default function MessagingSettings() {
           />
         ))}
       </SettingsGroup>
-      {slackInstall || slackInstallations.length ? (
-        <SettingsGroup>
-          {slackInstallations.length === 0 ? (
-            <SettingsRow
-              title={messagingProviderName("slack")}
-              detail={t`Chat with your bot from Slack.`}
-              trailing={
-                <View style={styles.actions}>
-                  {memberLink ? memberLinkButton : null}
+      <SettingsGroup>
+        {slackInstallations.map((installation) => [
+          <SettingsRow
+            key={installation.id}
+            title={messagingProviderName(installation.provider)}
+            detail={[
+              installation.workspaceName,
+              installation.botName ?? botName(installation.botId),
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            trailing={
+              <View style={styles.actions}>
+                {status?.providers.includes(installation.provider) ? (
                   <NativeActionButton
-                    label={t`Connect`}
+                    label={t`Link DMs`}
                     prominence="quiet"
                     size="compact"
                     fill={false}
                     variant="text"
                     disabled={busy || issuingLink}
-                    onPress={installSlack}
+                    onPress={() =>
+                      startLink(
+                        `install:${installation.id}`,
+                        installation.provider,
+                        installation.botId,
+                      )
+                    }
                   />
-                </View>
-              }
-            />
-          ) : (
-            slackInstallations.map((installation) => (
-              <SettingsRow
-                key={installation.id}
-                title={messagingProviderName(installation.provider)}
-                detail={[
-                  installation.workspaceName,
-                  installation.botName ?? botName(installation.botId),
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-                trailing={
-                  <View style={styles.actions}>
-                    {status?.providers.includes(installation.provider) ? (
-                      <NativeActionButton
-                        label={t`Link DMs`}
-                        prominence="quiet"
-                        size="compact"
-                        fill={false}
-                        variant="text"
-                        disabled={busy || issuingLink}
-                        onPress={() => startLink(installation.provider, installation.botId, false)}
-                      />
-                    ) : null}
-                    {textAction(
-                      t`Disconnect`,
-                      (send) => send("messaging/installations/remove", { id: installation.id }),
-                      "destructive",
-                    )}
-                  </View>
-                }
-              />
-            ))
-          )}
-          {memberLink && slackInstallations.length ? (
-            <SettingsRow title={messagingProviderName("slack")} trailing={memberLinkButton} />
-          ) : null}
-          {slackInstall && slackInstallations.length ? (
-            <SettingsRow
-              accessibilityRole="button"
-              disabled={busy || issuingLink}
-              onPress={installSlack}
-              title={t`Add workspace`}
-            />
-          ) : null}
-        </SettingsGroup>
-      ) : null}
-      <SettingsGroup>
-        {status?.identities.map((identity) => (
+                ) : null}
+                {textAction(
+                  t`Disconnect`,
+                  (send) => send("messaging/installations/remove", { id: installation.id }),
+                  "destructive",
+                )}
+              </View>
+            }
+          />,
+          linkCode(`install:${installation.id}`),
+        ])}
+        {showSlack ? identitiesOf("slack").map(identityRow) : null}
+        {slackInstall && slackInstallations.length === 0 ? (
           <SettingsRow
-            key={identity.id}
-            title={messagingProviderName(identity.provider)}
-            detail={`${identity.address}, ${identity.botName}`}
-            trailing={textAction(
-              t`Unlink`,
-              (send) => send("messaging/identities/unlink", { identityId: identity.id }),
-              "destructive",
-            )}
-          />
-        ))}
-      </SettingsGroup>
-      <SettingsGroup>
-        {bots.length > 1 && (connectChoices.length || memberLink) ? (
-          <MenuPicker
-            label={t`Bot`}
-            choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}
-            value={botId}
-            onChange={(id) => {
-              if (linkGuard.invalidate(true)) {
-                setLink(null);
-              }
-              setSelectedBotId(id);
-            }}
+            key="slack"
+            title={messagingProviderName("slack")}
+            trailing={
+              <View style={styles.actions}>
+                {memberLink ? linkAction("member", "slack", t`Link DMs`) : null}
+                <NativeActionButton
+                  label={t`Connect`}
+                  accessibilityLabel={connectLabel("slack")}
+                  prominence="quiet"
+                  size="compact"
+                  fill={false}
+                  variant="text"
+                  disabled={busy || issuingLink}
+                  onPress={installSlack}
+                />
+              </View>
+            }
           />
         ) : null}
-        {botId && connectChoices.length ? (
-          <MenuPickerMenu
-            label={t`Connect a chat app`}
-            choices={connectChoices}
-            value=""
+        {memberLink && slackInstallations.length ? (
+          <SettingsRow
+            key="member"
+            title={messagingProviderName("slack")}
+            trailing={linkAction("member", "slack", t`Link DMs`)}
+          />
+        ) : null}
+        {memberLink ? linkCode("member") : null}
+        {slackInstall && slackInstallations.length ? (
+          <SettingsRow
+            key="add-workspace"
+            accessibilityRole="button"
             disabled={busy || issuingLink}
-            onChange={(provider) => startLink(provider)}
-          >
-            <View>
-              <SettingsRow
-                accessibilityLabel={t`Connect a chat app`}
-                accessibilityRole="button"
-                accessible
-                title={t`Connect a chat app`}
-                trailing={
-                  <NativeSymbol
-                    android="chevron-expand"
-                    color={native.tertiaryLabel}
-                    ios="chevron.up.chevron.down"
-                    size={13}
-                  />
-                }
-              />
-            </View>
-          </MenuPickerMenu>
+            onPress={installSlack}
+            title={t`Add workspace`}
+          />
         ) : null}
+        {linkProviders.map((provider) => {
+          const linked = identitiesOf(provider);
+          if (linked.length) return linked.map(identityRow);
+          return [
+            <SettingsRow
+              key={provider}
+              title={messagingProviderName(provider)}
+              trailing={linkAction(`app:${provider}`, provider, t`Connect`, connectLabel(provider))}
+            />,
+            linkCode(`app:${provider}`),
+          ];
+        })}
+        {otherIdentities.map(identityRow)}
       </SettingsGroup>
-      {link && Date.parse(link.expiresAt) > Date.now() ? (
-        <Text selectable style={styles.code}>
-          {linkAddress
-            ? t`Send ${ph({ code: link.code })} to ${ph({ address: linkAddress })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`
-            : t`Send ${ph({ code: link.code })} from ${ph({ app: messagingProviderName(link.provider) })} within 10 minutes.`}
-          {link.shared
-            ? `\n${t`Everyone in this bot's space can read the chats it gets from ${ph({ app: messagingProviderName(link.provider) })}.`}`
-            : ""}
-        </Text>
-      ) : null}
       <SettingsGroup label={t`Conversations`}>
         {joinedChannels.map((channel) => (
           <SettingsRow
@@ -470,7 +485,9 @@ function createStyles() {
   return StyleSheet.create({
     content: { padding: 16, gap: 16 },
     actions: { flexDirection: "row", alignItems: "center", gap: 8 },
-    code: { color: native.label, padding: 12 },
+    code: { color: native.label, paddingHorizontal: 16, paddingVertical: 12 },
+    link: { color: mobileTokens().link, fontSize: 16, fontWeight: "500" },
+    disabled: { opacity: 0.45 },
     error: { color: mobileTokens().destructive, padding: 12 },
   });
 }

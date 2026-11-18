@@ -13,7 +13,8 @@ describe("messaging provider labels", () => {
     expect(messagingProviderName("sendblue")).toBe("iMessage");
     expect(messagingProviderName("telegram")).toBe("Telegram");
     expect(messagingProviderName("photon")).toBe("iMessage (Photon)");
-    expect(messagingProviderName("teams")).toBe("teams");
+    expect(messagingProviderName("teams")).toBe("Microsoft Teams");
+    expect(messagingProviderName("signal")).toBe("signal");
   });
 
   it("finds a provider a user names by its id or its name", () => {

@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
+import type {
+  MessagingChannelMembership,
+  MessagingInstallationsStatus,
+  MessagingStatus,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   createMessagingLinkGuard,
@@ -12,9 +16,10 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
-  OptionSelect,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,10 +50,18 @@ function Meta({ children }: { children: ReactNode }) {
   return <span className="ml-2 text-label text-muted-foreground/70">{children}</span>;
 }
 
+function AppLabel({ provider, detail }: { provider: string; detail?: string }) {
+  return (
+    <>
+      <p>{providerLabel(provider)}</p>
+      {detail ? <p className="mt-0.5 text-body-sm text-muted-foreground">{detail}</p> : null}
+    </>
+  );
+}
+
 export function MessagingSettingsPanel() {
   const { t } = useLingui();
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
-  const [selectedBotId, setSelectedBotId] = useState("");
   const queryClient = useQueryClient();
   const userId = useQueryUserId();
   const linkGuard = useMemo(
@@ -66,6 +79,8 @@ export function MessagingSettingsPanel() {
     shared?: boolean;
     botId: string;
     provider: string;
+    /** The row whose action issued the code, where it is shown. */
+    row: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,13 +182,6 @@ export function MessagingSettingsPanel() {
   // A failed read shows through the queries' error.
   useEventListener(window, "focus", () => void refresh().catch(() => undefined));
 
-  // A selection archived elsewhere drops out of the list; fall back to the first bot.
-  const linkBotId = bots.find((bot) => bot.id === selectedBotId)?.id ?? bots[0]?.id ?? "";
-  useEffect(() => {
-    if (linkGuard.invalidate(true)) {
-      setLinkRequest(null);
-    }
-  }, [linkBotId, linkGuard]);
   useEffect(
     () => () => {
       linkGuard.invalidate();
@@ -200,9 +208,20 @@ export function MessagingSettingsPanel() {
     installationsQuery.isSuccess && installationStatus.available,
   );
   const slackInstall = connectOptions.some(({ method }) => method === "install");
-  const linkOptions = connectOptions.filter(({ method }) => method === "link");
+  const linkProviders = connectOptions
+    .filter(({ method }) => method === "link")
+    .map(({ provider }) => provider);
   const slackInstallations = installationStatus.installations.filter(
     (installation) => installation.provider === "slack",
+  );
+  const showSlack = slackInstall || slackInstallations.length > 0;
+  const identities = status?.identities ?? [];
+  const identitiesOf = (provider: string) =>
+    identities.filter((identity) => identity.provider === provider);
+  // Linked apps this deployment no longer offers stay listed so they can be unlinked.
+  const otherIdentities = identities.filter(
+    (identity) =>
+      !linkProviders.includes(identity.provider) && !(showSlack && identity.provider === "slack"),
   );
   // A teammate's workspace: DMs link to a bot of the member's own choosing.
   const memberLink =
@@ -220,20 +239,17 @@ export function MessagingSettingsPanel() {
   const hasRequests = invitedChannels.length > 0 || incomingConnections.length > 0;
   const hasConversations =
     joinedChannels.length > 0 || otherConnections.length > 0 || externalConversations.length > 0;
+  const hasChatApps = showSlack || linkProviders.length > 0 || otherIdentities.length > 0;
 
-  const linkCode = linkRequest?.code;
-  const linkApp = linkRequest ? providerLabel(linkRequest.provider) : "";
-  const linkAddress = linkRequest ? status?.addresses?.[linkRequest.provider] : undefined;
-
-  async function startLink(provider: string, botId: string, fromPicker = true) {
-    const request = linkGuard.begin(fromPicker);
+  async function startLink(row: string, provider: string, botId: string) {
+    const request = linkGuard.begin();
     if (!request) return;
     setError(null);
     setLinkRequest(null);
     try {
       const issued = await rpc.messaging.link.start({ botId });
       if (!request.isCurrent()) return;
-      setLinkRequest({ ...issued, botId, provider });
+      setLinkRequest({ ...issued, botId, provider, row });
     } catch {
       if (request.isCurrent()) setError(t`Couldn't update messaging settings`);
     } finally {
@@ -256,35 +272,112 @@ export function MessagingSettingsPanel() {
     });
   }
 
-  const botPicker =
-    bots.length > 1 ? (
-      <OptionSelect
-        aria-label={t`Bot`}
-        value={linkBotId}
-        onValueChange={(botId) => {
-          if (linkGuard.invalidate(true)) {
-            setLinkRequest(null);
-          }
-          setSelectedBotId(botId);
-        }}
-        className="w-fit"
-        options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
-      />
-    ) : null;
+  const connectLabel = (provider: string) => {
+    const app = providerLabel(provider);
+    return t`Connect ${app}`;
+  };
 
-  const memberLinkControls = (
-    <>
-      {botPicker}
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={issuingLink || !linkBotId}
-        onClick={() => startLink("slack", linkBotId)}
-      >
-        <Trans>Link DMs</Trans>
-      </Button>
-    </>
+  /** Issues a code for `provider`, asking which bot first when there are several. */
+  function linkAction(
+    row: string,
+    provider: string,
+    label: ReactNode,
+    variant: "outline" | "ghost",
+    ariaLabel?: string,
+  ) {
+    const only = bots.length === 1 ? bots[0] : undefined;
+    if (only || bots.length === 0) {
+      return (
+        <Button
+          size="sm"
+          variant={variant}
+          aria-label={ariaLabel}
+          disabled={issuingLink || !only}
+          onClick={() => only && void startLink(row, provider, only.id)}
+        >
+          {label}
+        </Button>
+      );
+    }
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={issuingLink}
+          render={<Button size="sm" variant={variant} aria-label={ariaLabel} />}
+        >
+          {label}
+          <ChevronDownIcon data-icon="inline-end" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-44">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>
+              <Trans>Bot</Trans>
+            </DropdownMenuLabel>
+            {bots.map((bot) => (
+              <DropdownMenuItem key={bot.id} onClick={() => void startLink(row, provider, bot.id)}>
+                {bot.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  /** The code to send, under the row that asked for it. */
+  function linkCodeFor(row: string) {
+    if (!linkRequest || linkRequest.row !== row) return null;
+    const code = linkRequest.code;
+    const app = providerLabel(linkRequest.provider);
+    const address = status?.addresses?.[linkRequest.provider];
+    return (
+      <>
+        <p className="mt-2 text-body text-foreground/75" data-testid="messaging-link-code">
+          {address ? (
+            <Trans>
+              Send <span className="font-mono text-foreground">{code}</span> to{" "}
+              <span className="text-foreground">{address}</span> from {app} within 10 minutes.
+            </Trans>
+          ) : (
+            <Trans>
+              Send <span className="font-mono text-foreground">{code}</span> from {app} within 10
+              minutes.
+            </Trans>
+          )}
+        </p>
+        {linkRequest.shared ? (
+          <p className="mt-1 text-body-sm text-muted-foreground">
+            <Trans>Everyone in this bot's space can read the chats it gets from {app}.</Trans>
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  const identityRow = (identity: MessagingStatus["identities"][number]) => (
+    <SettingsRow
+      key={identity.id}
+      label={
+        <AppLabel
+          provider={identity.provider}
+          detail={`${identity.address}, ${identity.botName}`}
+        />
+      }
+      control={
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
+          }
+        >
+          <Trans>Unlink</Trans>
+        </Button>
+      }
+    />
   );
+
+  const memberLinkAction = linkAction("member", "slack", <Trans>Link DMs</Trans>, "ghost");
 
   const respondButtons = (respond: (accept: boolean) => Promise<unknown>) => (
     <>
@@ -334,158 +427,114 @@ export function MessagingSettingsPanel() {
         </section>
       ) : null}
 
-      {/* Saved workspaces stay listed even when a refresh fails. */}
-      {slackInstall || slackInstallations.length ? (
-        <SettingsGroup data-testid="messaging-slack">
-          {slackInstallations.length === 0 ? (
+      {hasChatApps ? (
+        <SettingsGroup data-testid="messaging-chat-apps">
+          {/* Saved workspaces stay listed even when a refresh fails. */}
+          {slackInstallations.map((installation) => (
             <SettingsRow
+              key={installation.id}
               label={
-                <>
-                  <p>{providerLabel("slack")}</p>
-                  <p className="mt-0.5 text-body-sm text-muted-foreground">
-                    <Trans>Chat with your bot from Slack.</Trans>
-                  </p>
-                </>
+                <AppLabel
+                  provider="slack"
+                  detail={[
+                    installation.workspaceName,
+                    installation.botName ?? botName(installation.botId),
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                />
               }
               control={
                 <>
-                  {memberLink ? memberLinkControls : null}
-                  <Button size="sm" variant="outline" onClick={installSlack}>
+                  {status?.providers.includes(installation.provider) ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={issuingLink}
+                      onClick={() =>
+                        void startLink(
+                          `install:${installation.id}`,
+                          installation.provider,
+                          installation.botId,
+                        )
+                      }
+                    >
+                      <Trans>Link DMs</Trans>
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      void act(() => rpc.messaging.installations.remove({ id: installation.id }))
+                    }
+                  >
+                    <Trans>Disconnect</Trans>
+                  </Button>
+                </>
+              }
+            >
+              {linkCodeFor(`install:${installation.id}`)}
+            </SettingsRow>
+          ))}
+          {showSlack ? identitiesOf("slack").map(identityRow) : null}
+          {slackInstall && slackInstallations.length === 0 ? (
+            <SettingsRow
+              label={<AppLabel provider="slack" />}
+              control={
+                <>
+                  {memberLink ? memberLinkAction : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={connectLabel("slack")}
+                    onClick={installSlack}
+                  >
                     <Trans>Connect</Trans>
                   </Button>
                 </>
               }
-            />
-          ) : (
-            slackInstallations.map((installation) => (
-              <SettingsRow
-                key={installation.id}
-                label={
-                  <>
-                    <p>{providerLabel("slack")}</p>
-                    <p className="mt-0.5 text-body-sm text-muted-foreground">
-                      {[
-                        installation.workspaceName,
-                        installation.botName ?? botName(installation.botId),
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </p>
-                  </>
-                }
-                control={
-                  <>
-                    {status?.providers.includes(installation.provider) ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={issuingLink}
-                        onClick={() =>
-                          void startLink(installation.provider, installation.botId, false)
-                        }
-                      >
-                        <Trans>Link DMs</Trans>
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        void act(() => rpc.messaging.installations.remove({ id: installation.id }))
-                      }
-                    >
-                      <Trans>Disconnect</Trans>
-                    </Button>
-                  </>
-                }
-              />
-            ))
-          )}
+            >
+              {linkCodeFor("member")}
+            </SettingsRow>
+          ) : null}
           {memberLink && slackInstallations.length ? (
-            <SettingsRow label={<p>{providerLabel("slack")}</p>} control={memberLinkControls} />
+            <SettingsRow label={<AppLabel provider="slack" />} control={memberLinkAction}>
+              {linkCodeFor("member")}
+            </SettingsRow>
           ) : null}
           {slackInstall && slackInstallations.length ? (
             <button
               type="button"
               onClick={installSlack}
-              className="flex w-full items-center gap-2 rounded-b-xl px-4 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex w-full items-center gap-2 px-4 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <PlusIcon className="size-4" aria-hidden />
               <Trans>Add workspace</Trans>
             </button>
           ) : null}
+          {linkProviders.map((provider) => {
+            const linked = identitiesOf(provider);
+            if (linked.length) return linked.map(identityRow);
+            return (
+              <SettingsRow
+                key={provider}
+                label={<AppLabel provider={provider} />}
+                control={linkAction(
+                  `app:${provider}`,
+                  provider,
+                  <Trans>Connect</Trans>,
+                  "outline",
+                  connectLabel(provider),
+                )}
+              >
+                {linkCodeFor(`app:${provider}`)}
+              </SettingsRow>
+            );
+          })}
+          {otherIdentities.map(identityRow)}
         </SettingsGroup>
       ) : null}
-
-      <section>
-        {status?.identities.length ? (
-          <ul className="mb-4 space-y-3">
-            {status.identities.map((identity) => (
-              <Row
-                key={identity.id}
-                actions={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
-                    }
-                  >
-                    <Trans>Unlink</Trans>
-                  </Button>
-                }
-              >
-                <span className="text-foreground">{providerLabel(identity.provider)}</span>
-                <Meta>
-                  {identity.address}, {identity.botName}
-                </Meta>
-              </Row>
-            ))}
-          </ul>
-        ) : null}
-        {linkOptions.length ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {memberLink ? null : botPicker}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={issuingLink || !linkBotId}
-                render={<Button variant="outline" />}
-              >
-                <Trans>Connect a chat app</Trans>
-                <ChevronDownIcon data-icon="inline-end" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-auto min-w-44">
-                {linkOptions.map(({ provider }) => (
-                  <DropdownMenuItem key={provider} onClick={() => startLink(provider, linkBotId)}>
-                    {providerLabel(provider)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ) : null}
-        {linkCode ? (
-          <p className="mt-3 text-body text-foreground/75" data-testid="messaging-link-code">
-            {linkAddress ? (
-              <Trans>
-                Send <span className="font-mono text-foreground">{linkCode}</span> to{" "}
-                <span className="text-foreground">{linkAddress}</span> from {linkApp} within 10
-                minutes.
-              </Trans>
-            ) : (
-              <Trans>
-                Send <span className="font-mono text-foreground">{linkCode}</span> from {linkApp}{" "}
-                within 10 minutes.
-              </Trans>
-            )}
-          </p>
-        ) : null}
-        {linkCode && linkRequest?.shared ? (
-          <p className="mt-1 text-body-sm text-muted-foreground">
-            <Trans>Everyone in this bot's space can read the chats it gets from {linkApp}.</Trans>
-          </p>
-        ) : null}
-      </section>
 
       {hasConversations ? (
         <section>
