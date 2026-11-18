@@ -1,3 +1,6 @@
+import { bestEffort } from "@rakazo/logging";
+import { isMeetingChat, recentChatMeetings } from "../../meetings/meeting-chat.js";
+import { recentMeetingContext } from "../../meetings/meeting-chat.prompt.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { mayOpenModelStream, requeueComputerRun } from "../lifecycle/run-lifecycle.js";
 import { takeoverCheckpointOf } from "../turn/takeover-resume.js";
@@ -32,12 +35,19 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     model,
     computer,
   });
+  const meetings = isMeetingChat(hold.run, records.thread)
+    ? ((await bestEffort(
+        "load recent meetings for direct chat",
+        recentChatMeetings(hold.deps.prisma, hold.run),
+      )) ?? [])
+    : [];
   const tools = await selectRunTools(services, hold, {
     saved,
     records,
     connected,
     turnContext,
     capabilities,
+    meetingTranscriptsAvailable: meetings.some(({ status }) => status === "ready"),
   });
   const computerInstructions = await loadComputerInstructions(hold, {
     records,
@@ -68,6 +78,7 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     capabilities,
     tools,
     ctx,
+    meetingContext: recentMeetingContext(meetings),
   });
   if (!(await turnMayStillStart(hold, { connected }))) return;
   const fallbacks = await loadModelFallbacks(hold, { records, model, capabilities });

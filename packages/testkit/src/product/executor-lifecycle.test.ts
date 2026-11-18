@@ -18,7 +18,7 @@ import {
   runAsSystem,
   runAsTenant,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "../discard-bot-intro.js";
 import { asSystem } from "../system-db.js";
 
@@ -54,6 +54,66 @@ describeIntegration("run executor lifecycle", () => {
   afterAll(async () => {
     await handles?.stop();
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("gives a regular chat turn meeting context and lets it read the transcript", async () => {
+    const seeded = await seedRun("meeting-follow-up", "What happened in our last meeting?");
+    const closedAt = new Date();
+    const meeting = await db.meetingSession.create({
+      data: {
+        spaceId: seeded.me.spaceId,
+        userId: seeded.me.userId,
+        botId: seeded.bot.id,
+        provider: "emulator",
+        platform: "google_meet",
+        status: "ready",
+        shareTranscript: true,
+        transcript: JSON.stringify([
+          { speaker: "Sam", startMs: 0, text: "The deadline is Friday." },
+        ]),
+        closedAt,
+        expiresAt: closedAt,
+      },
+    });
+    const originalRun = handles.runtime.run.bind(handles.runtime);
+    const read = vi.fn();
+    const runtime = vi
+      .spyOn(handles.runtime, "run")
+      .mockImplementation(async function* (request, context) {
+        if (request.runId !== seeded.run.id) {
+          yield* originalRun(request, context);
+          return;
+        }
+        read(
+          request.prompt,
+          request.tools.map(({ name }) => name),
+        );
+        yield {
+          type: "tool",
+          name: "read_meeting_transcript",
+          args: { meeting_id: meeting.id },
+          executionId: "read-meeting",
+        };
+        yield { type: "done", text: "The deadline is Friday." };
+      });
+    try {
+      await runAsTenant(seeded.me, () =>
+        handles.executor.continueRun(seeded.run.id, "meeting-worker"),
+      );
+      expect(read).toHaveBeenCalledWith(
+        expect.stringContaining(meeting.id),
+        expect.arrayContaining(["read_meeting_transcript"]),
+      );
+      const completion = await db.event.findFirstOrThrow({
+        where: { runId: seeded.run.id, type: "agent.tool.completed" },
+      });
+      expect(completion.payload).toMatchObject({
+        name: "read_meeting_transcript",
+        outcome: "succeeded",
+      });
+    } finally {
+      runtime.mockRestore();
+    }
   });
 
   it("allows only one worker to claim a queued run", async () => {

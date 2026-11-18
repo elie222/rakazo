@@ -1,7 +1,13 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { artifactTypeLabel } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
@@ -21,6 +27,7 @@ import { NativeSegmentedControl } from "../components/native/native-segmented-co
 import { NativeSymbol } from "../components/native/native-symbol";
 import { rpc } from "../lib/api/api";
 import type { MobileBot } from "../lib/api/mobile-types";
+import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
 import type { MobileArtifactSummary } from "../lib/artifacts/artifacts";
@@ -40,6 +47,7 @@ export default function ArtifactsScreen() {
   const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
+  const focused = useIsFocused();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const contentBottomInset = useContentBottomInset();
@@ -158,6 +166,11 @@ export default function ArtifactsScreen() {
       }
       void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
     }, [load]),
+  );
+  useSpaceChanges(
+    "meetings",
+    () => load(activeBotIdRef.current, madeByBotsRef.current, "refresh"),
+    focused,
   );
 
   const loadMore = useCallback(async () => {

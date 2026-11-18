@@ -75,7 +75,12 @@ export function MeetingCalendar({
         case "removeSeries":
           return rpc.meetingCalendar.removeSeries({ botId, eventId: input.eventId });
         default:
-          return rpc.meetingCalendar.select({ botId, eventId: input.eventId, scope: input.action });
+          return rpc.meetingCalendar.select({
+            botId,
+            eventId: input.eventId,
+            scope: input.action,
+            shareTranscript: true,
+          });
       }
     },
   });
@@ -143,6 +148,13 @@ export function MeetingCalendar({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              {list.data.events.length > 0 ? (
+                <p className="text-body-sm text-muted-foreground">
+                  <Trans>
+                    Transcripts from newly scheduled meetings are shared with this Space.
+                  </Trans>
+                </p>
+              ) : null}
               {list.data.events.length ? (
                 <ul className="divide-y divide-border">
                   {list.data.events.map((event) => {

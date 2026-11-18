@@ -78,6 +78,7 @@ export default function MeetingCalendarScreen() {
             botId,
             eventId: action.eventId,
             scope: action.kind,
+            shareTranscript: true,
           });
       }
     },
@@ -146,7 +147,14 @@ export default function MeetingCalendarScreen() {
         </SettingsGroup>
       ) : (
         <>
-          <SettingsGroup label={t`Upcoming meetings`}>
+          <SettingsGroup
+            label={t`Upcoming meetings`}
+            footer={
+              data.events.length
+                ? t`Transcripts from newly scheduled meetings are shared with this Space.`
+                : undefined
+            }
+          >
             {data.events.length ? (
               data.events.map((event) => {
                 const title = event.title || t`Untitled meeting`;

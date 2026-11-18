@@ -39,14 +39,19 @@ const meeting = z.object({
 
 const session = z.object({ id: z.string().min(1).max(128) });
 const bot = z.object({ botId: z.string().min(1).max(128) });
-const transcript = z.object({ turns: z.array(MeetingTurnSchema) });
+const transcript = z.object({ turns: z.array(MeetingTurnSchema), shared: z.boolean().optional() });
 
 export const meetingsRpc = {
   meetings: {
     list: oc.input(bot).output(z.object({ enabled: z.boolean(), meetings: z.array(meeting) })),
-    join: oc.input(bot.extend({ url: z.string().min(1).max(2048) })).output(z.void()),
+    join: oc
+      .input(
+        bot.extend({ url: z.string().min(1).max(2048), shareTranscript: z.boolean().optional() }),
+      )
+      .output(z.void()),
     leave: oc.input(session).output(z.void()),
     transcript: oc.input(session).output(transcript),
+    shareTranscript: oc.input(session).output(z.void()),
     deleteTranscript: oc.input(session).output(z.void()),
     ask: oc
       .input(session.extend({ question: z.string().trim().min(1).max(4000) }))

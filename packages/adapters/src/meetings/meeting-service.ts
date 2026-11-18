@@ -9,19 +9,12 @@ import type {
 } from "@rakazo/adapter-kit";
 import { MeetingJoinRejected } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { MeetingPlatformSchema, MeetingStatusSchema, MeetingTurnSchema } from "@rakazo/contracts";
+import { MeetingPlatformSchema, MeetingStatusSchema } from "@rakazo/contracts";
 import { ClientError, meetingTargetFromUrl } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import {
-  JsonColumnMismatchError,
-  LeaseHeldError,
-  readJsonColumn,
-  reportJsonColumnOnce,
-  runAsSystem,
-  runAsSystemInTransaction,
-  withLease,
-} from "@rakazo/db";
+import { LeaseHeldError, runAsSystem, runAsSystemInTransaction, withLease } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { meetingTranscriptArtifact, readMeetingTurns } from "./meeting-transcript.js";
 
 const MINUTE = 60_000;
 const DAY_MS = 24 * 60 * MINUTE;
@@ -126,7 +119,7 @@ export class MeetingService {
     };
   }
 
-  async join(actor: Actor, botId: string, input: string) {
+  async join(actor: Actor, botId: string, input: string, shareTranscript = false) {
     this.requireEnabled(actor.spaceId);
     const bot = await this.bot(actor, botId);
     const meeting = parseMeetingUrl(input);
@@ -169,6 +162,7 @@ export class MeetingService {
               platform: meeting.platform,
               provider: this.provider().describe().id,
               meetingUrl: meeting.url,
+              shareTranscript,
               status: "joining",
               activeKey,
               expiresAt,
@@ -226,7 +220,27 @@ export class MeetingService {
     if (row.status !== "ready" || row.transcript === null) {
       throw new ClientError("NOT_FOUND", "The meeting transcript is unavailable.");
     }
-    return { botId: row.botId, turns: readMeetingTurns(row.id, row.transcript) };
+    return {
+      botId: row.botId,
+      turns: readMeetingTurns(row.id, row.transcript),
+      shared: row.shareTranscript,
+    };
+  }
+
+  async shareTranscript(actor: Actor, sessionId: string) {
+    const row = await this.session(actor, sessionId, true);
+    if (row.status !== "ready" || row.transcript === null)
+      throw new ClientError("NOT_FOUND", "The meeting transcript is unavailable.");
+    if (row.shareTranscript) return;
+    const artifact = meetingTranscriptArtifact(row, readMeetingTurns(row.id, row.transcript));
+    await this.deps.prisma.$transaction(async (tx) => {
+      const { count } = await tx.meetingSession.updateMany({
+        where: { id: row.id, shareTranscript: false, status: "ready" },
+        data: { shareTranscript: true },
+      });
+      if (count) await tx.artifact.create({ data: artifact });
+    });
+    await this.notify(row.spaceId);
   }
 
   async deleteTranscript(actor: Actor, sessionId: string) {
@@ -237,6 +251,11 @@ export class MeetingService {
         where: { id: sessionId, status: "ready" },
         data: { transcript: null, status: "ended" },
       });
+      if (count) {
+        await tx.artifact.deleteMany({
+          where: { spaceId: row.spaceId, meetingSessionId: row.id },
+        });
+      }
       if (count && row.recordingId)
         await this.deps.jobs.enqueueIn(
           tx,
@@ -573,6 +592,9 @@ export class MeetingService {
         },
       });
       if (count) {
+        if (row.shareTranscript) {
+          await tx.artifact.create({ data: meetingTranscriptArtifact(row, turns) });
+        }
         const cleanup = workJob(row.id, "cleanup", new Date(Date.now() + BACKUP_AFTER));
         cleanup.payload.detached = { provider: row.provider, recordingId: row.recordingId! };
         await jobs.enqueueIn(tx, cleanup);
@@ -737,24 +759,6 @@ function nextObservation(
     },
     actions,
   };
-}
-
-function readMeetingTurns(id: string, transcript: string) {
-  const row = { table: "meeting_sessions", column: "transcript", id };
-  try {
-    let value: unknown;
-    try {
-      value = JSON.parse(transcript);
-    } catch (error) {
-      if (error instanceof SyntaxError) throw new JsonColumnMismatchError(row);
-      throw error;
-    }
-    return readJsonColumn(MeetingTurnSchema.array(), value, row, "reject");
-  } catch (error) {
-    if (!(error instanceof JsonColumnMismatchError)) throw error;
-    reportJsonColumnOnce("Stored meeting transcript is invalid", error.row);
-    throw new ClientError("SERVICE_UNAVAILABLE", "This transcript couldn’t be read.");
-  }
 }
 
 type MeetingQuotaReader = Pick<Prisma.TransactionClient, "meetingSession">;

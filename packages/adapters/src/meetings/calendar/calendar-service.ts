@@ -156,7 +156,13 @@ export class MeetingCalendarService {
     };
   }
 
-  async updateSelection(actor: Owner, botId: string, eventId: string, action: CalendarAction) {
+  async updateSelection(
+    actor: Owner,
+    botId: string,
+    eventId: string,
+    action: CalendarAction,
+    shareTranscript = false,
+  ) {
     this.requireEnabled(actor.spaceId);
     const { prisma, provider } = this.options;
     const connection = await this.connection(actor);
@@ -191,6 +197,7 @@ export class MeetingCalendarService {
       } else {
         const selected = {
           botId: action === "skip" ? null : botId,
+          shareTranscript: action !== "skip" && shareTranscript,
           eventStartsAt: scope === "event" ? event.startsAt : null,
           seriesId: scope === "event" ? event.seriesId : null,
         };
@@ -698,11 +705,10 @@ export class MeetingCalendarService {
         prisma.$transaction(async (tx) => {
           await assertLeaseHeld(tx, lease);
           await assertLeaseHeld(tx, admission);
-          if (
-            !(await this.lockConnectedCalendar(tx, connection.id)) ||
-            (await this.selectedBotId(tx, connection.id, event)) !== botId
-          )
-            return null;
+          if (!(await this.lockConnectedCalendar(tx, connection.id))) return null;
+          const rule = await this.selectedRule(tx, connection.id, event);
+          if (rule?.botId !== botId) return null;
+          const { shareTranscript } = rule;
           // Reserve the link with the session. Last-unlink cleanup locks the same
           // session row and keeps it while another calendar is being attached.
           const [existing] = await tx.$queryRaw<{ id: string; status: string }[]>`
@@ -730,6 +736,7 @@ export class MeetingCalendarService {
                 provider: provider.id,
                 platform,
                 status: "scheduled",
+                shareTranscript,
                 activeKey: key,
                 expiresAt,
                 scheduledFor: startsAt,
@@ -747,8 +754,15 @@ export class MeetingCalendarService {
           }
           await tx.meetingCalendarBooking.upsert({
             where: { connectionId_eventId: { connectionId: connection.id, eventId } },
-            create: { connectionId: connection.id, eventId, sessionId: id, startsAt, configDigest },
-            update: { sessionId: id, startsAt, configDigest, linked: false },
+            create: {
+              connectionId: connection.id,
+              eventId,
+              sessionId: id,
+              startsAt,
+              configDigest,
+              shareTranscript,
+            },
+            update: { sessionId: id, startsAt, configDigest, linked: false, shareTranscript },
           });
           return id;
         }),
@@ -756,6 +770,14 @@ export class MeetingCalendarService {
   }
 
   private async selectedBotId(
+    db: Pick<Prisma.TransactionClient, "meetingCalendarRule">,
+    connectionId: string,
+    event: MeetingCalendarEvent,
+  ) {
+    return (await this.selectedRule(db, connectionId, event))?.botId ?? null;
+  }
+
+  private async selectedRule(
     db: Pick<Prisma.TransactionClient, "meetingCalendarRule">,
     connectionId: string,
     event: MeetingCalendarEvent,
@@ -768,9 +790,9 @@ export class MeetingCalendarService {
           ...(event.seriesId ? [{ scope: "series", targetId: event.seriesId }] : []),
         ],
       },
-      select: { scope: true, targetId: true, botId: true },
+      select: { scope: true, targetId: true, botId: true, shareTranscript: true },
     });
-    return matchCalendarRule(rules, event)?.botId ?? null;
+    return matchCalendarRule(rules, event);
   }
 
   private async lockConnectedCalendar(tx: Prisma.TransactionClient, connectionId: string) {
@@ -843,6 +865,7 @@ export class MeetingCalendarService {
       orderBy: [{ connectionId: "asc" }, { eventId: "asc" }],
       select: {
         linked: true,
+        shareTranscript: true,
         connection: { select: { userId: true, spaceId: true, disconnecting: true } },
       },
     });
@@ -861,20 +884,20 @@ export class MeetingCalendarService {
         ({ linked, connection }) =>
           linked && !connection.disconnecting && connection.spaceId === session.spaceId,
       )
-      .map(({ connection }) => connection.userId);
-    if (bookers.includes(session.userId)) return;
+      .map(({ connection, shareTranscript }) => ({ userId: connection.userId, shareTranscript }));
+    if (bookers.some(({ userId }) => userId === session.userId)) return;
     const members = await tx.spaceMember.findMany({
       where: {
         spaceId: session.spaceId,
-        userId: { in: bookers },
+        userId: { in: bookers.map(({ userId }) => userId) },
         member: { user: { deactivatedAt: null } },
       },
       select: { userId: true },
     });
     const active = new Set(members.map(({ userId }) => userId));
-    const owner = bookers.find((userId) => active.has(userId));
+    const owner = bookers.find(({ userId }) => active.has(userId));
     if (owner) {
-      await tx.meetingSession.update({ where: { id: sessionId }, data: { userId: owner } });
+      await tx.meetingSession.update({ where: { id: sessionId }, data: owner });
     }
   }
 
