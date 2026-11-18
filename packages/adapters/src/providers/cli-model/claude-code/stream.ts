@@ -567,13 +567,17 @@ export function streamClaudeCode(
               });
             } else if (block.type === "tool_use") {
               const name = String(block.name ?? "");
-              if (!offeredToolNames.has(name)) {
-                throw new Error("Claude Code requested a tool that was not offered.");
-              }
+              // A call the request did not offer (the CLI's own MCP resource tools, or a deferred
+              // tool named before find_tool lists it) goes to the agent loop under a name no tool
+              // has, so the loop answers "not found" and the model can recover. The name keeps to
+              // the API's tool-name characters and leaves room for the prefix when it is replayed.
+              const callName = offeredToolNames.has(name)
+                ? name.slice(TOOL_PREFIX.length)
+                : `${(name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name).slice(0, 38)}_not_offered`;
               output.content.push({
                 type: "toolCall",
                 id: String(block.id ?? ""),
-                name: name.slice(TOOL_PREFIX.length),
+                name: callName,
                 arguments: {},
               });
               blocks.set(index, { index: contentIndex, json: "" });
