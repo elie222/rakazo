@@ -54,7 +54,11 @@ describe("tool question forms", () => {
       checkToolQuestionValues(formatted(format), { v }).ok;
     expect([ok("email", "sam@example.test"), ok("email", "sam")]).toEqual([true, false]);
     expect([ok("uri", "https://example.test/a"), ok("uri", "not a url")]).toEqual([true, false]);
-    expect([ok("date", "2026-11-18"), ok("date", "2026-02-30")]).toEqual([true, false]);
+    expect([ok("date", "2026-11-18"), ok("date", "2026-02-30"), ok("date", "2024-99-01")]).toEqual([
+      true,
+      false,
+      false,
+    ]);
     expect([
       ok("date-time", "2026-11-18T09:30:00.000Z"),
       ok("date-time", "2026-11-18T09:30"),

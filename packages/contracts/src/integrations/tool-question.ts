@@ -108,9 +108,12 @@ export function checkToolQuestionValues(
 const FORMATS: Record<"email" | "uri" | "date" | "date-time", (value: string) => boolean> = {
   email: (value) => /^[^\s@]+@[^\s@]+$/.test(value),
   uri: (value) => URL.canParse(value),
-  date: (value) =>
-    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-    new Date(`${value}T00:00:00Z`).toISOString().startsWith(value),
+  date: (value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const time = new Date(`${value}T00:00:00Z`);
+    // An impossible month or day either fails to parse or rolls over to another date.
+    return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(value);
+  },
   "date-time": (value) =>
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i.test(value) &&
     !Number.isNaN(Date.parse(value)),
