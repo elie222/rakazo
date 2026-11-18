@@ -16,3 +16,9 @@ export const DIRECT_MESSAGE_SETTLE_BUDGET_MS = 30 * 60_000;
  * reported size, or the whole limit when none was reported, before it starts.
  */
 export const DOWNLOAD_BUDGET_FILES = 4;
+
+/**
+ * Time a shutdown gives the direct-message downloads still running to finish before their
+ * messages go to their backup jobs, which find what was stored by then.
+ */
+export const SHUTDOWN_DOWNLOAD_GRACE_MS = 20_000;

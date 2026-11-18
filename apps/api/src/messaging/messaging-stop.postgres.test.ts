@@ -51,6 +51,7 @@ describe.skipIf(!enabled)("a linked owner's stop command (PostgreSQL)", () => {
       enqueueIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
+      pendingUntil: vi.fn(async () => null),
     };
     const recorder = new MessagingDelivery({
       prisma,

@@ -1,5 +1,14 @@
-import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
-import { teamChatEngageJobKey } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  JobQueueReader,
+  MessagingInboundMessage,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
+import {
+  MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
+  messagingInboundSettleQueue,
+  teamChatEngageJobKey,
+} from "@rakazo/adapter-kit";
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
 import {
   filesNotReceivedReply,
@@ -14,6 +23,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
 import {
+  abortableDelay,
   displayName,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
@@ -52,17 +62,24 @@ import {
   DIRECT_ATTACHMENT_ATTEMPTS,
   DIRECT_ATTACHMENT_TIMEOUT_MS,
   DIRECT_MESSAGE_SETTLE_BUDGET_MS,
+  SHUTDOWN_DOWNLOAD_GRACE_MS,
 } from "./intake/limits.js";
 import type { SenderQueue } from "./intake/sender-queue.js";
 import { createSenderQueue } from "./intake/sender-queue.js";
 import type { SettlePayload } from "./intake/settle-job.js";
-import { cancelSettleJob, recordSettleJob, settleByJobNow } from "./intake/settle-job.js";
+import {
+  cancelSettleJob,
+  recordSettleJob,
+  settleJobAt,
+  settleJobDueAt,
+} from "./intake/settle-job.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
-  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn">;
+  /** The job queue, also asked whether a sender's backup jobs are still settling earlier messages. */
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueReader;
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
@@ -117,7 +134,7 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   const intake: DirectIntake = {
     senders: createSenderQueue(),
     settling: new Map(),
-    handedOff: new Set(),
+    handedOff: new Map(),
     pending: new Map(),
     closing: false,
   };
@@ -130,16 +147,23 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   };
   return Object.assign(handle, {
     /**
-     * For a shutdown: every message still settling here goes to its backup job now, as does any
-     * that comes in after, instead of waiting out its budget once this process is gone.
+     * For a shutdown: nothing more is posted here. Downloads still running get a short grace to
+     * finish, then every message still settling goes to its backup job, which finds the files
+     * stored meanwhile; one that comes in after is its job's from the start.
      */
     handOffPending: async (): Promise<void> => {
       intake.closing = true;
-      await Promise.all(
-        [...intake.settling.values()].flatMap((payload) =>
-          payload ? [handOffToJob(deps, payload)] : [],
-        ),
-      );
+      // In each sender's order, so their jobs come due in the order the messages came.
+      const arrivals = [...intake.pending.values()].flat();
+      intake.handingOff = arrivals;
+      const graceOver = new AbortController();
+      await Promise.race([
+        Promise.allSettled(arrivals.map((arrival) => arrival.media)),
+        abortableDelay(SHUTDOWN_DOWNLOAD_GRACE_MS, graceOver.signal),
+      ]);
+      graceOver.abort();
+      intake.handingOff = undefined;
+      await Promise.all(arrivals.map((arrival) => handOffToJob(deps, intake, arrival)));
     },
   });
 }
@@ -148,28 +172,40 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
 type DirectIntake = {
   /** One sender's messages reach the bot in the order they arrived here. */
   senders: SenderQueue;
+  /** Messages settling here, so a redelivery meanwhile adds nothing. */
+  settling: Map<string, Arrival>;
   /**
-   * Messages settling here, with their backup job once it is recorded, so a redelivery meanwhile
-   * adds nothing and a shutdown can hand them on.
+   * Senders whose messages go to their backup jobs instead of reaching the bot from here, with
+   * when the last of those jobs is due: one of their messages failed here, or the job queue
+   * still held jobs of theirs when they wrote again. Each next job is due after it, so the
+   * sender's job queue settles them in the order sent, until the sender has nothing pending here.
    */
-  settling: Map<string, SettlePayload | null>;
-  /**
-   * Senders one of whose messages failed here and went to its backup job. Their messages
-   * queued behind it follow it to their own jobs, which the sender's job queue keeps in order,
-   * until the sender has nothing pending here.
-   */
-  handedOff: Set<string>;
+  handedOff: Map<string, number>;
   /** Each sender's messages here, from arrival until their turn in the queue is over. */
   pending: Map<string, Arrival[]>;
   /** Shutting down: the backup jobs settle what is left. */
   closing: boolean;
+  /** During a shutdown's grace, the messages it hands off once the grace is over. */
+  handingOff?: Arrival[];
 };
 
 /**
  * One direct message from its arrival here. An owner's "stop" makes the messages that arrived
  * before it `quiet`: they still reach the chat, but start no turn the stop was meant to prevent.
  */
-type Arrival = { quiet: boolean };
+type Arrival = {
+  sender: string;
+  quiet: boolean;
+  /** Its backup job once recorded, until the message settles here. */
+  job?: SettleJob;
+  /** Its downloads, once they started. */
+  media?: Promise<MediaOutcome>;
+  /** The writes of its job so far, which go one at a time. */
+  writes: Promise<void>;
+};
+
+/** A message's backup job as last written, and when it is due. */
+type SettleJob = { payload: SettlePayload; dueAt: number };
 
 /**
  * What is left of a direct message once its webhook can be answered. `inline` work is part of
@@ -188,7 +224,7 @@ function droppedWhileDeleting(error: unknown): void {
  * Answers a direct message's webhook once the message is safe; its files start downloading then,
  * and it reaches the bot in its sender's order. The sender's place is taken on arrival, before any
  * lookup, so a quick text never overtakes the file message sent before it. Plain text from a
- * sender with nothing pending is still delivered within the webhook.
+ * sender with nothing pending, here or in the job queue, is still delivered within the webhook.
  */
 async function handleDirectEvent(
   deps: MessagingInboundDeps,
@@ -197,12 +233,13 @@ async function handleDirectEvent(
 ): Promise<void> {
   const sender = JSON.stringify([event.provider, event.from]);
   const behind = intake.senders.busy(sender);
+  // Nothing of theirs is pending here; the job queue is asked about its own once they are known.
   if (!behind) intake.handedOff.delete(sender);
-  const arrival: Arrival = { quiet: false };
+  const arrival: Arrival = { sender, quiet: false, writes: Promise.resolve() };
   const pending = intake.pending.get(sender) ?? [];
   pending.push(arrival);
   intake.pending.set(sender, pending);
-  const prepared = prepareDirectEvent(deps, intake, event, sender, behind, arrival);
+  const prepared = prepareDirectEvent(deps, intake, event, behind, arrival);
   const settled = intake.senders.run(sender, async () => {
     try {
       // A failed preparation is the webhook's failure, and the provider delivers it again.
@@ -228,7 +265,6 @@ async function prepareDirectEvent(
   deps: MessagingInboundDeps,
   intake: DirectIntake,
   event: MessagingInboundMessage,
-  sender: string,
   behind: boolean,
   arrival: Arrival,
 ): Promise<DirectSettle | null> {
@@ -273,9 +309,11 @@ async function prepareDirectEvent(
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
         // It acts at once. What the owner sent before it still reaches the chat, but starts
-        // nothing.
-        const pending = intake.pending.get(sender) ?? [];
-        for (const earlier of pending.slice(0, pending.indexOf(arrival))) earlier.quiet = true;
+        // nothing, also when its backup job settles it.
+        const pending = intake.pending.get(arrival.sender) ?? [];
+        const earlier = pending.slice(0, pending.indexOf(arrival));
+        for (const message of earlier) message.quiet = true;
+        await Promise.all(earlier.map((message) => recordQuiet(deps, message)));
         await stopOwnerWork(deps, existing, event);
         return null;
       }
@@ -317,7 +355,10 @@ async function prepareDirectEvent(
 
   const receivedAt = Date.now();
   const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
-  if (attachments.length === 0 && !behind) {
+  // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
+  // restart, or on another instance: this one follows them there rather than overtaking them.
+  if (existing && !behind) await followQueuedJobs(deps, intake, arrival.sender, existing.id);
+  if (attachments.length === 0 && !behind && !intake.handedOff.has(arrival.sender)) {
     return {
       inline: true,
       run: async () => {
@@ -328,40 +369,51 @@ async function prepareDirectEvent(
   const message = JSON.stringify([event.provider, event.handle]);
   // The provider delivered it again while its files are still downloading here.
   if (intake.settling.has(message)) return null;
-  intake.settling.set(message, null);
+  intake.settling.set(message, arrival);
   try {
     const identityId =
       existing?.id ??
       (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
     const job = { provider: event.provider, handle: event.handle, identityId };
-    // The job keeps what the person wrote, sealed, and never the media link that rides along.
-    // Files past the cap never download, so the job has none of them to look for.
+    // The job keeps what the person wrote, sealed, and never the media link that rides along. It
+    // names every file, those past the cap too, so it can say what became of each.
     const payload: SettlePayload = {
       ...job,
       text: await sealSettleText(deps.prisma, ids.spaceId, job, event.content),
       attachments: attachments
-        .slice(0, ATTACHMENT_MAX_COUNT)
-        .map(({ name, mimeType }) => ({ name, mimeType })),
+        .slice(0, MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS)
+        .map(({ name, mimeType, size }) => ({
+          name,
+          mimeType,
+          ...(size !== undefined && Number.isSafeInteger(size) && size >= 0 ? { size } : {}),
+        })),
+      ...(arrival.quiet ? { quiet: true } : {}),
     };
-    await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, receivedAt));
-    intake.settling.set(message, payload);
-    // Arriving during a shutdown, it is its backup job's at once.
+    const dueAt = settleJobDueAt(receivedAt);
+    await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, dueAt));
+    arrival.job = { payload, dueAt: dueAt.getTime() };
+    // A stop may have quieted it while its job was being recorded.
+    await recordQuiet(deps, arrival);
+    // Arriving during a shutdown, it is its backup job's, after the sender's earlier messages.
     if (intake.closing) {
       intake.settling.delete(message);
-      await handOffToJob(deps, payload);
+      if (!intake.handingOff) await handOffToJob(deps, intake, arrival);
+      else if (!intake.handingOff.includes(arrival)) intake.handingOff.push(arrival);
       return null;
     }
     // The files download from now on, whatever is ahead of the message in its sender's queue;
     // only handing the message to the bot waits its turn there.
     const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
+    arrival.media = media;
     return {
       inline: false,
       run: () =>
         (intake.closing
           ? Promise.resolve()
-          : intake.handedOff.has(sender)
-            ? media.then(() => handOffToJob(deps, payload))
-            : settleDirectMessage(deps, intake, ids, event, sender, payload, text, media, arrival)
+          : intake.handedOff.has(arrival.sender)
+            ? // A shutdown meanwhile hands it off itself.
+              media.then(() => (intake.closing ? undefined : handOffToJob(deps, intake, arrival)))
+            : settleDirectMessage(deps, intake, ids, event, arrival, text, media)
         ).finally(() => intake.settling.delete(message)),
     };
   } catch (error) {
@@ -381,44 +433,101 @@ async function settleDirectMessage(
   intake: DirectIntake,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
-  sender: string,
-  payload: SettlePayload,
+  arrival: Arrival,
   text: string,
   media: Promise<MediaOutcome>,
-  arrival: Arrival,
 ): Promise<void> {
   try {
     const outcome = await media;
-    // A shutdown handed the message to its backup job meanwhile.
+    // A shutdown hands the message to its backup job instead.
     if (intake.closing) return;
     if ("error" in outcome) throw outcome.error;
     const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, arrival);
-    const lane = { identityId: payload.identityId };
-    await deps.prisma.$transaction(async (tx) => {
-      if (unavailable.length > 0) {
-        await deps.delivery.recordIn(tx, lane, [
-          filesNotReceivedReply(payload.identityId, event.provider, event.handle),
-        ]);
-      }
-      await cancelSettleJob(deps.jobs, tx, payload);
+    const lane = await writeJob(arrival, async (job) => {
+      const lane = { identityId: job.payload.identityId };
+      await deps.prisma.$transaction(async (tx) => {
+        if (unavailable.length > 0) {
+          await deps.delivery.recordIn(tx, lane, [
+            filesNotReceivedReply(lane.identityId, event.provider, event.handle),
+          ]);
+        }
+        await cancelSettleJob(deps.jobs, tx, job.payload);
+      });
+      arrival.job = undefined;
+      return lane;
     });
-    if (unavailable.length > 0) await deps.delivery.send([lane]);
+    if (lane && unavailable.length > 0) await deps.delivery.send([lane]);
   } catch (error) {
     // The job drops a message for a Space being deleted, as this path would.
     if (!(error instanceof SpaceDeletionInProgressError)) {
       getLogger().error("messaging inbound settle failed; its backup job takes over", error);
     }
-    intake.handedOff.add(sender);
-    await handOffToJob(deps, payload);
+    await handOffToJob(deps, intake, arrival);
   }
 }
 
-/** The message's backup job, already recorded, settles it now instead of this process. */
-function handOffToJob(deps: MessagingInboundDeps, payload: SettlePayload): Promise<void> {
-  return bestEffort(
-    "hand an inbound message to its backup job",
-    settleByJobNow(deps.jobs, payload),
-  ).then(() => undefined);
+/**
+ * The sender's backup jobs still settling earlier messages, wherever those arrived: their next
+ * messages go after them, until the sender has nothing pending here.
+ */
+async function followQueuedJobs(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  sender: string,
+  identityId: string,
+): Promise<void> {
+  const until = await deps.jobs.pendingUntil(messagingInboundSettleQueue(identityId));
+  if (!until) return;
+  intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
+}
+
+/**
+ * The message's backup job, already recorded, settles it instead of this process. It comes due
+ * after the sender's jobs handed off before it, so their job queue keeps the order they were sent
+ * in, and the sender's messages queued behind it follow it there.
+ */
+function handOffToJob(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  arrival: Arrival,
+): Promise<void> {
+  if (!arrival.job) return Promise.resolve();
+  const after = intake.handedOff.get(arrival.sender);
+  const dueAt = Math.max(Date.now(), after === undefined ? 0 : after + 1);
+  intake.handedOff.set(arrival.sender, dueAt);
+  arrival.job.dueAt = dueAt;
+  return writeJob(arrival, async (job) => {
+    const payload = arrival.quiet ? { ...job.payload, quiet: true } : job.payload;
+    await bestEffort(
+      "hand an inbound message to its backup job",
+      settleJobAt(deps.jobs, payload, new Date(job.dueAt)),
+    );
+    job.payload = payload;
+  }).then(() => undefined);
+}
+
+/** A stop quieted the message: its backup job, as due as it was, starts no turn either. */
+function recordQuiet(deps: MessagingInboundDeps, arrival: Arrival): Promise<void> {
+  if (!arrival.quiet || !arrival.job || arrival.job.payload.quiet) return Promise.resolve();
+  return writeJob(arrival, async (job) => {
+    if (job.payload.quiet) return;
+    const payload = { ...job.payload, quiet: true };
+    await settleJobAt(deps.jobs, payload, new Date(job.dueAt));
+    job.payload = payload;
+  }).then(() => undefined);
+}
+
+/**
+ * One message's job writes go one at a time, each with its latest state, so a later one never
+ * loses to an earlier one; none once the message settled here and its job is gone.
+ */
+function writeJob<T>(
+  arrival: Arrival,
+  write: (job: SettleJob) => Promise<T>,
+): Promise<T | undefined> {
+  const result = arrival.writes.then(() => (arrival.job ? write(arrival.job) : undefined));
+  arrival.writes = Promise.allSettled([result]).then(() => undefined);
+  return result;
 }
 
 /** A message's stored files and the lines of those that did not arrive. */
@@ -595,7 +704,9 @@ async function withVoiceTranscript(
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
 export async function wakeMessageRoutines(
-  deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<MessagingInboundDeps, "prisma" | "events"> & {
+    jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn">;
+  },
   target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
   event: MessagingInboundMessage,
   options?: {

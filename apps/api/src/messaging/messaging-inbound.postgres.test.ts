@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
+import { messagingInboundSettleJob, messagingInboundSettleJobKey } from "@rakazo/adapter-kit";
 import {
+  GraphileJobPublisher,
   MessagingDelivery,
   messagingAttachmentClientNonce,
   sealSettleText,
@@ -69,6 +71,7 @@ describe.skipIf(!enabled)("group roster versioning under concurrency (PostgreSQL
       enqueueIn: vi.fn(async () => undefined),
       cancel: vi.fn(async () => undefined),
       cancelIn: vi.fn(async () => undefined),
+      pendingUntil: vi.fn(async () => null),
     };
     const recorder = new MessagingDelivery({
       prisma: unhurried,
@@ -265,6 +268,7 @@ describe.skipIf(!enabled)("connection requests whose send failed (PostgreSQL)", 
     enqueueIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
+    pendingUntil: vi.fn(async () => null),
   };
 
   beforeAll(() => {
@@ -475,6 +479,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     enqueueIn: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
     cancelIn: vi.fn(async () => undefined),
+    pendingUntil: vi.fn(async () => null),
   };
 
   beforeAll(async () => {
@@ -622,5 +627,183 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
         select: { body: true },
       }),
     ).toEqual([{ body: "Some files couldn't be received." }]);
+  });
+
+  it("settle job says why each missing file is missing, those past the cap included", async () => {
+    const delivery = new MessagingDelivery({
+      prisma: db.prisma,
+      messaging: {
+        platforms: () => [],
+        sendToThread: vi.fn(async () => ({ handle: `h-${randomUUID()}` })),
+      } as unknown as MessagingSurface,
+      events: createThreadEvents(db.prisma),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
+    const handle = `in-${randomUUID()}`;
+    const job = { provider: "test", handle, identityId: identity.id };
+    const payload = {
+      ...job,
+      text: await runAsSystem("seal the settle text", () =>
+        sealSettleText(db.prisma, identity.spaceId, job, ""),
+      ),
+      attachments: [
+        { name: "big.mov", mimeType: "video/quicktime", size: 11 },
+        { name: "setup.exe", mimeType: "application/x-msdownload", size: 1 },
+        { name: "clip.mov", mimeType: "video/quicktime" },
+        { name: "photo.jpg", mimeType: "image/jpeg", size: 3 },
+        // Past the cap of four: never downloaded, still listed.
+        { name: "extra.jpg", mimeType: "image/jpeg", size: 3 },
+      ],
+    };
+    await runAsTenant(identity, () =>
+      settleInboundMessage(
+        {
+          prisma: db.prisma,
+          events: createThreadEvents(db.prisma),
+          jobs,
+          delivery,
+          maxUploadSizeBytes: 10,
+        },
+        payload,
+      ),
+    );
+
+    expect(
+      await system.message.findMany({
+        where: { threadId: identity.threadId, clientNonce: `messaging:test:${handle}` },
+        select: { blocks: true },
+      }),
+    ).toEqual([
+      {
+        blocks: [
+          {
+            kind: "text",
+            text: [
+              "[file: big.mov (unavailable: too large)]",
+              "[file: setup.exe (unavailable: unsupported type)]",
+              "[file: clip.mov (unavailable: not received)]",
+              "[file: photo.jpg (unavailable: not received)]",
+              "[file: extra.jpg (unavailable: not received)]",
+            ].join("\n"),
+          },
+        ],
+      },
+    ]);
+    expect(
+      await system.messagingOutbound.findMany({
+        where: { identityId: identity.id, idempotencyKey: `files-not-received:test:${handle}` },
+        select: { body: true },
+      }),
+    ).toEqual([{ body: "Some files couldn't be received." }]);
+  });
+
+  it("settle job posts a message a stop quieted without starting a turn", async () => {
+    const delivery = new MessagingDelivery({
+      prisma: db.prisma,
+      messaging: { platforms: () => [], sendToThread: vi.fn() } as unknown as MessagingSurface,
+      events: createThreadEvents(db.prisma),
+      jobs,
+      artifacts: { get: vi.fn() },
+    });
+    const handle = `in-${randomUUID()}`;
+    const job = { provider: "test", handle, identityId: identity.id };
+    const runsBefore = await system.run.count({ where: { botId: identity.botId } });
+    jobs.enqueue.mockClear();
+    await runAsTenant(identity, () =>
+      settleInboundMessage(
+        { prisma: db.prisma, events: createThreadEvents(db.prisma), jobs, delivery },
+        {
+          ...job,
+          text: "here is the clip",
+          attachments: [],
+          quiet: true,
+        },
+      ),
+    );
+
+    expect(
+      await system.message.findMany({
+        where: { threadId: identity.threadId, clientNonce: `messaging:test:${handle}` },
+        select: { blocks: true, runId: true },
+      }),
+    ).toEqual([{ blocks: [{ kind: "text", text: "here is the clip" }], runId: null }]);
+    expect(await system.run.count({ where: { botId: identity.botId } })).toBe(runsBefore);
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("puts a text behind its sender's message that only a backup job still holds", async () => {
+    const publisher = new GraphileJobPublisher(db.pool);
+    const earlier = `in-${randomUUID()}`;
+    const later = `in-${randomUUID()}`;
+    const keys = [
+      messagingInboundSettleJobKey("test", earlier),
+      messagingInboundSettleJobKey("test", later),
+    ];
+    // The earlier file message's process stopped mid-download: its job is due in an hour.
+    const queuedAt = new Date(Date.now() + 60 * 60_000);
+    const row = async (key: string) =>
+      (
+        await db.pool.query<{ run_at: Date; queue_name: string }>(
+          "select run_at, queue_name from graphile_worker.jobs where key = $1",
+          [key],
+        )
+      ).rows[0];
+    try {
+      await publisher.enqueue(
+        messagingInboundSettleJob(
+          {
+            provider: "test",
+            handle: earlier,
+            identityId: identity.id,
+            text: "",
+            attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+          },
+          queuedAt,
+        ),
+      );
+      const inbound = createMessagingInboundHandler({
+        prisma: db.prisma,
+        events: createThreadEvents(db.prisma),
+        jobs: publisher,
+        delivery: { recordIn: vi.fn(), send: vi.fn(async () => undefined) },
+        sandbox: {} as never,
+        provision: vi.fn(),
+        openSignup: false,
+      });
+      const address = (
+        await system.messagingIdentity.findUniqueOrThrow({ where: { id: identity.id } })
+      ).address;
+      await runAsSystem("test inbound", () =>
+        inbound({
+          type: "message",
+          provider: "test",
+          handle: later,
+          threadId: `test:${address}`,
+          isDirect: true,
+          from: address,
+          fromLabel: null,
+          channelName: null,
+          participants: [],
+          content: "and make it short",
+          mediaUrl: null,
+        }),
+      );
+
+      // Its own job follows the earlier one in the sender's queue, due just after it.
+      await vi.waitFor(async () =>
+        expect((await row(keys[1]!))?.run_at.getTime()).toBe(queuedAt.getTime() + 1),
+      );
+      expect((await row(keys[1]!))?.queue_name).toBe(`messaging.inbound:${identity.id}`);
+      expect((await row(keys[0]!))?.run_at.getTime()).toBe(queuedAt.getTime());
+      expect(
+        await system.message.count({
+          where: { threadId: identity.threadId, clientNonce: `messaging:test:${later}` },
+        }),
+      ).toBe(0);
+    } finally {
+      await db.pool.query("delete from graphile_worker._private_jobs where key = any($1)", [keys]);
+      await publisher.close();
+    }
   });
 });
