@@ -1553,11 +1553,11 @@ function actorScopes(actors: readonly EvalActor[]) {
 async function findScopeBots(
   prisma: EvalApp["prisma"],
   actors: readonly EvalActor[],
-): Promise<Array<{ id: string; userId: string; spaceId: string }>> {
+): Promise<Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>> {
   if (!actors.length) return [];
   return prisma.bot.findMany({
     where: { OR: actorScopes(actors) },
-    select: { id: true, userId: true, spaceId: true },
+    select: { id: true, userId: true, spaceId: true, archivedAt: true },
   });
 }
 
@@ -1580,11 +1580,13 @@ export async function cleanupActors(
   // A parent can finish spawning a child while its abort is settling. Repeat until
   // every bot and run visible after abort was included in the pass.
   for (let pass = 0; pass < 8; pass++) {
-    let bots: Array<{ id: string; userId: string; spaceId: string }> = actors.map((actor) => ({
-      id: actor.botId,
-      userId: actor.userId,
-      spaceId: actor.spaceId,
-    }));
+    let bots: Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }> =
+      actors.map((actor) => ({
+        id: actor.botId,
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        archivedAt: null,
+      }));
     let runsBeforeStop: Array<{ id: string }> = [];
     try {
       await prisma.routine.updateMany({
@@ -1610,6 +1612,8 @@ export async function cleanupActors(
     }
 
     for (const bot of bots) {
+      // Archiving already stopped a bot's work (a case may archive one); its runs are cancelled below.
+      if (bot.archivedAt) continue;
       const actorCookie = cookieForBot(bot, actors);
       if (!actorCookie) {
         failures.push(new Error("No actor session for scoped bot"));
@@ -1647,7 +1651,9 @@ export async function cleanupActors(
       }
     }
 
-    let botsAfter: Array<{ id: string; userId: string; spaceId: string }> | undefined;
+    let botsAfter:
+      | Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>
+      | undefined;
     let runsAfter: Array<{ id: string; status: string }> | undefined;
     let activeRoutineCount: number | undefined;
     try {
