@@ -166,9 +166,9 @@ export const TOOL_CALL_ERROR_MAX_CHARS = 1_000;
 export const TOOL_CALL_RESULT_HEAD_MAX_CHARS = 500;
 /** The most records one read returns, so a read is bounded by its own query. */
 export const TOOL_CALL_RECORDS_MAX = 12;
-/** The most records one history read hands a bot, and the most of each it reads. */
+/** The most records one history read hands a bot, and the most of each field it carries. */
 export const TOOL_CALL_RECORDS_IN_HISTORY = 4;
-export const TOOL_CALL_HISTORY_TEXT_MAX_CHARS = 600;
+export const TOOL_CALL_HISTORY_TEXT_MAX_CHARS = 200;
 
 export const ToolCallOutcome = z.enum(["succeeded", "failed", "paused"]);
 export type ToolCallOutcome = z.infer<typeof ToolCallOutcome>;

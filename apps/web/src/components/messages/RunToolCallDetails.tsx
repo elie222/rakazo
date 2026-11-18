@@ -47,6 +47,9 @@ export function ToolCallExplanations({ calls }: { calls: readonly ToolCallRecord
             {call.error ? (
               <p className="whitespace-pre-wrap break-words text-destructive/90">{call.error}</p>
             ) : null}
+            {call.outcome === "failed" && call.resultHead ? (
+              <p className="line-clamp-3 break-words text-muted-foreground">{call.resultHead}</p>
+            ) : null}
             {call.resultShortened ? (
               <p className="text-muted-foreground">
                 <Trans>Result shortened</Trans>

@@ -48,14 +48,21 @@ export async function createToolCallRecord(
 
 /**
  * One run's newest calls, oldest first, bounded here rather than after: a long run keeps more
- * records than one read should return.
+ * records than one read should return. `explainedOnly` keeps just the calls that need explaining,
+ * so a run that failed once and then worked a dozen times still shows why it failed.
  */
 export async function runToolCallRecords(
   prisma: Pick<PrismaClient, "toolCallRecord">,
-  scope: { spaceId: string; runId: string; limit?: number },
+  scope: { spaceId: string; runId: string; limit?: number; explainedOnly?: boolean },
 ): Promise<ToolCallRecord[]> {
   const rows = await prisma.toolCallRecord.findMany({
-    where: { spaceId: scope.spaceId, runId: scope.runId },
+    where: {
+      spaceId: scope.spaceId,
+      runId: scope.runId,
+      ...(scope.explainedOnly
+        ? { OR: [{ outcome: { not: "succeeded" } }, { resultShortened: true }] }
+        : {}),
+    },
     select: {
       executionId: true,
       tool: true,

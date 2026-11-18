@@ -8,7 +8,7 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createToolCallRecord } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 import { toolResultError } from "./tool-result-error.js";
@@ -63,11 +63,14 @@ export function toolCallTrace(completion: AgentToolCompletion, secrets: string[]
   const failure =
     completion.error === undefined ? toolResultError(completion.result) : completion.error;
   const error = failure === undefined ? undefined : sanitizeConnectorError(failure, secrets);
-  const kept = completion.paused || secretCarryingTool(completion.name);
-  const text = kept ? undefined : resultText(completion);
-  const head =
-    text === undefined ? undefined : bounded(text, TOOL_CALL_RESULT_HEAD_MAX_CHARS, secrets);
+  // A paused or secret-carrying call keeps no text, but how much came back is never itself a secret.
+  const keepsHead = !completion.paused && !secretCarryingTool(completion.name);
+  const text = resultText(completion);
   const bytes = text === undefined ? undefined : Buffer.byteLength(text, "utf8");
+  const head =
+    text === undefined || !keepsHead
+      ? undefined
+      : bounded(text, TOOL_CALL_RESULT_HEAD_MAX_CHARS, secrets);
   return {
     executionId: completion.executionId,
     tool: completion.name,
@@ -79,13 +82,9 @@ export function toolCallTrace(completion: AgentToolCompletion, secrets: string[]
       secrets,
     ),
     ...(error === undefined ? {} : { error: bounded(error, TOOL_CALL_ERROR_MAX_CHARS, secrets) }),
-    ...(head === undefined || bytes === undefined
-      ? {}
-      : {
-          resultBytes: bytes,
-          ...(completion.resultShortened ? { resultShortened: true } : {}),
-          resultHead: head,
-        }),
+    ...(bytes === undefined ? {} : { resultBytes: bytes }),
+    ...(completion.resultShortened ? { resultShortened: true } : {}),
+    ...(head === undefined ? {} : { resultHead: head }),
   };
 }
 
@@ -109,17 +108,13 @@ export async function recordToolCall(
   secrets: string[],
 ): Promise<void> {
   if (!keepsRecords) return;
-  const trace = toolCallTrace(completion, secrets);
-  try {
-    await createToolCallRecord(prisma, { ...target, ...trace });
-  } catch (error) {
-    getLogger().warn("tool call record write failed", {
-      "run.id": target.runId,
-      "space.id": target.spaceId,
-      tool: trace.tool,
-      "error.detail": bounded(String((error as Error)?.message ?? error), 200, secrets),
-    });
-  }
+  // Building the trace is inside the attempt too: a throw there must not replace the call's own error.
+  await bestEffort(
+    `keep the tool call record for ${target.runId}`,
+    (async () => {
+      await createToolCallRecord(prisma, { ...target, ...toolCallTrace(completion, secrets) });
+    })(),
+  );
 }
 
 /**
@@ -146,7 +141,7 @@ export function historyToolCalls(
       ...(call.resultBytes === undefined ? {} : { resultBytes: call.resultBytes }),
       ...(call.resultShortened ? { resultShortened: true } : {}),
       ...(failed && call.resultHead !== undefined
-        ? { resultHead: bounded(call.resultHead, 200, secrets) }
+        ? { resultHead: bounded(call.resultHead, TOOL_CALL_HISTORY_TEXT_MAX_CHARS, secrets) }
         : {}),
     };
   });

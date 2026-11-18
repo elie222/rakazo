@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
+import type { HistoryReadInput, HistorySearchInput, ToolCallRecord } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_COUNT,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   HistoryQueriesSchema,
+  TOOL_CALL_HISTORY_TEXT_MAX_CHARS,
   TOOL_CALL_RECORDS_IN_HISTORY,
 } from "@rakazo/contracts";
 import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
@@ -35,6 +36,8 @@ export interface HistoryScope {
   channelId?: string;
   /** Executor-only grant: direct human app runs, never external or background runs. */
   allowMyChats?: boolean;
+  /** Who is reading: only their own runs can be explained, never another member's. */
+  toolDetailsUserId?: string;
   /** Run start: my_chats excludes later messages so offset pages stay stable. */
   searchAt?: Date;
   /** Server-captured history boundary. Search excludes the active request and later messages. */
@@ -642,6 +645,7 @@ export async function readHistory(
     },
     select: {
       id: true,
+      userId: true,
       sourceMessageId: true,
       status: true,
       createdAt: true,
@@ -689,15 +693,12 @@ export async function readHistory(
   const outcomes = outcomeRows.slice(0, LINK_PAGE_SIZE);
   const artifacts = artifactRows.slice(0, LINK_PAGE_SIZE);
   const attachments = await messageAttachments(prisma, scope, rows);
-  // Only a run this read already reached can have its details read, and only up to the bound.
-  const toolDetails = input.toolDetailsRunId
-    ? await toolCallDetails(
-        prisma,
-        scope,
-        input.toolDetailsRunId,
-        runs.some((run) => run.id === input.toolDetailsRunId),
-      )
-    : undefined;
+  // Only the reader's own run on this page may be explained: a shared page holds other members'.
+  const reachableRun = runs.find((run) => run.id === input.toolDetailsRunId);
+  const toolDetails =
+    input.toolDetailsRunId && reachableRun?.userId === scope.toolDetailsUserId
+      ? await toolCallDetails(prisma, scope, input.toolDetailsRunId)
+      : undefined;
   return bounded({
     untrusted: true as const,
     nextRunId: runRows.length > LINK_PAGE_SIZE ? runs.at(-1)!.id : null,
@@ -743,20 +744,27 @@ export async function readHistory(
 }
 
 /**
- * One reachable run's kept tool call details, bounded to the few a history read carries. A run this
- * read did not reach stays unexplained: its id came from the model, not from the history.
+ * One reachable run's kept tool call details, bounded to the few a history read carries and capped
+ * again so four calls cannot crowd out the conversation the page exists for.
  */
-async function toolCallDetails(
-  prisma: PrismaClient,
-  scope: HistoryScope,
-  runId: string,
-  reachable: boolean,
-) {
-  if (!reachable) return undefined;
+async function toolCallDetails(prisma: PrismaClient, scope: HistoryScope, runId: string) {
   const calls = await runToolCallRecords(prisma, {
     spaceId: scope.spaceId,
     runId,
     limit: TOOL_CALL_RECORDS_IN_HISTORY,
   });
-  return calls.length > 0 ? calls : undefined;
+  // The page's own budget decides what fits; these are the most four calls may add to it.
+  return calls.length > 0 ? calls.map(boundedToolCall) : undefined;
+}
+
+/** The little of each field a history page carries, so its own 10 KB never has to give way. */
+function boundedToolCall(call: ToolCallRecord): ToolCallRecord {
+  const cut = (text: string | undefined) =>
+    text === undefined ? undefined : text.slice(0, TOOL_CALL_HISTORY_TEXT_MAX_CHARS);
+  return {
+    ...call,
+    ...(call.arguments === undefined ? {} : { arguments: cut(call.arguments) }),
+    ...(call.error === undefined ? {} : { error: cut(call.error) }),
+    ...(call.resultHead === undefined ? {} : { resultHead: cut(call.resultHead) }),
+  };
 }

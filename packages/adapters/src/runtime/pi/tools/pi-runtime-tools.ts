@@ -696,9 +696,7 @@ function toAgentTool(
               ...(result === undefined ? {} : { result }),
               ...(failure === undefined ? {} : { error: failure }),
               ...(host.pausePending ? { paused: true } : {}),
-              ...(isLongerThanToolResultLimit(result) && !keepToolResultWhole(tool.name, args)
-                ? { resultShortened: true }
-                : {}),
+              ...(toolResultShortened(result) ? { resultShortened: true } : {}),
             };
             try {
               void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
@@ -762,16 +760,23 @@ export function serializeToolResult(
   }
 }
 
-/** Whether a tool's result text is longer than the limit the model reads its results within. */
-function isLongerThanToolResultLimit(result: unknown): boolean {
-  const content = (result as { content?: unknown } | undefined)?.content;
-  if (!Array.isArray(content)) return false;
-  const length = content.reduce(
-    (total: number, part: { type?: unknown; text?: unknown }) =>
-      part?.type === "text" && typeof part.text === "string" ? total + part.text.length : total,
-    0,
-  );
-  return length > TOOL_RESULT_TEXT_LIMIT;
+/**
+ * Whether the model read less than the tool returned: the text it got is shorter than the result it
+ * came from. Comparing the two is what the serializer decides on, so a verbatim or whole result,
+ * passed through untouched, never counts as cut, and a cut recorded here matches what was sent.
+ */
+function toolResultShortened(result: unknown): boolean {
+  const content = (result as { content?: Array<{ type?: unknown; text?: unknown }> } | undefined)
+    ?.content;
+  const details = (result as { details?: unknown } | undefined)?.details;
+  if (!Array.isArray(content) || details === undefined) return false;
+  const text = content.find((part) => part?.type === "text")?.text;
+  if (typeof text !== "string") return false;
+  try {
+    return JSON.stringify(details).length > text.length;
+  } catch {
+    return false;
+  }
 }
 
 function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {

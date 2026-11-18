@@ -149,5 +149,5 @@ export async function ownerRunToolCalls(
     select: { id: true },
   });
   if (!run) return [];
-  return runToolCallRecords(prisma, { spaceId: actor.spaceId, runId });
+  return runToolCallRecords(prisma, { spaceId: actor.spaceId, runId, explainedOnly: true });
 }

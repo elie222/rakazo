@@ -48,10 +48,14 @@ describe("toolCallTrace", () => {
     expect(trace.resultHead?.length ?? 0).toBeLessThanOrEqual(TOOL_CALL_RESULT_HEAD_MAX_CHARS + 80);
   });
 
-  it("keeps no head of a tool that returns secrets", () => {
-    const trace = toolCallTrace(completion({ name: "vault_secret_read" }), []);
+  it("keeps no head of a tool that returns secrets, but still says how much came back", () => {
+    const trace = toolCallTrace(
+      completion({ name: "vault_secret_read", resultShortened: true }),
+      [],
+    );
     expect(trace.resultHead).toBeUndefined();
-    expect(trace.resultBytes).toBeUndefined();
+    expect(trace.resultBytes).toBe(12);
+    expect(trace.resultShortened).toBe(true);
   });
 
   it("marks a call that paused while waiting on the person", () => {

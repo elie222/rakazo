@@ -183,7 +183,7 @@ describePostgres("tool call records (PostgreSQL)", () => {
     const runId = await runFrom(sourceMessageId);
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-4")));
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-5")));
-    const scope = { spaceId, threadId, botId };
+    const scope = { spaceId, threadId, botId, toolDetailsUserId: userId };
     const calls = async (toolDetailsRunId: string) =>
       (
         await asOwner(() =>
@@ -194,6 +194,47 @@ describePostgres("tool call records (PostgreSQL)", () => {
     expect(await calls(runId)).toHaveLength(1);
     // The model can name any run id; one this page did not reach explains nothing.
     expect(await calls("run-not-on-this-page")).toEqual([]);
+  });
+
+  it("explains a run's own calls only to the person who started it", async () => {
+    const sourceMessageId = await message("what went wrong here");
+    const runId = await runFrom(sourceMessageId);
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-6")));
+    const page = { messageId: sourceMessageId, toolDetailsRunId: runId };
+
+    const mine = await asOwner(() =>
+      readHistory(prisma, { spaceId, threadId, botId, toolDetailsUserId: userId }, page),
+    );
+    expect(mine.runs.some((run) => "toolCalls" in run)).toBe(true);
+
+    // The same page read for another member of the Space explains nothing of this run.
+    const theirs = await asOwner(() =>
+      readHistory(prisma, { spaceId, threadId, botId, toolDetailsUserId: otherUserId }, page),
+    );
+    expect(theirs.runs.some((run) => "toolCalls" in run)).toBe(false);
+  });
+
+  it("keeps the calls that need explaining when later ones worked", async () => {
+    const runId = await runFrom(await message("fail then work"));
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "failed-call")));
+    for (let i = 0; i < 14; i += 1) {
+      await asOwner(() =>
+        createToolCallRecord(prisma, {
+          ...trace(runId, `ok-${i}`),
+          outcome: "succeeded",
+          error: undefined,
+          resultShortened: false,
+          resultHead: undefined,
+        }),
+      );
+    }
+
+    const newest = await asOwner(() => runToolCallRecords(prisma, { spaceId, runId }));
+    expect(newest.some((call) => call.executionId === "failed-call")).toBe(false);
+    const explained = await asOwner(() =>
+      runToolCallRecords(prisma, { spaceId, runId, explainedOnly: true }),
+    );
+    expect(explained.map((call) => call.executionId)).toEqual(["failed-call"]);
   });
 
   it("keeps records for a Space by default and stops when it says so", async () => {

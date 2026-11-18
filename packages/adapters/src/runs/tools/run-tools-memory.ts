@@ -75,7 +75,9 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     const { toolDetailsRunId, ...readInput } = parsed.data;
     response = await readHistory(deps.prisma, scope, {
       ...readInput,
-      ...(toolDetailsRunId && ctx.source.toolDetailsAllowed ? { toolDetailsRunId } : {}),
+      ...(toolDetailsRunId && ctx.source.toolDetailsAllowed
+        ? { toolDetailsRunId, toolDetailsUserId: run.userId }
+        : {}),
     });
   }
   const redacted = redactConnectorPayload(

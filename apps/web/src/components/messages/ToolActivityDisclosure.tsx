@@ -126,7 +126,10 @@ export function ToolActivityDisclosure({
       <CollapsibleContent hiddenUntilFound>
         <div className="ms-[7px] mt-0.5 border-s border-border ps-3">
           {children}
-          {runId && opened ? <RunToolCallDetails runId={runId} /> : null}
+          {/* Keyed by phase so a finished run re-reads: a live card caches an answer from before its calls ended. */}
+          {runId && opened ? (
+            <RunToolCallDetails key={live ? "live" : "done"} runId={runId} />
+          ) : null}
         </div>
       </CollapsibleContent>
     </Collapsible>
