@@ -444,6 +444,8 @@ export interface JobWorkerHost {
 
 export interface AgentHomeStore {
   describe(): AdapterDescriptor<{ revisions: boolean }>;
+  /** The most one computer save copies; unset means the default of 5 GiB and a million files. */
+  readonly saveLimits?: WorkspaceExportLimits;
   checkout(botId: string, dest: string, context: AdapterContext): Promise<string>;
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
