@@ -80,6 +80,8 @@ export async function persistLivePluginConnections(
         id: { in: sync.connectIds },
         userId: owner.userId,
         spaceId: owner.spaceId,
+        // A row revoked since the run read it stays revoked.
+        status: { in: ["pending", "error"] },
       },
       data: { status: "connected" },
     });
@@ -93,6 +95,7 @@ export async function persistLivePluginConnections(
         id: { in: sync.revokeIds },
         userId: owner.userId,
         spaceId: owner.spaceId,
+        status: { in: ["pending", "error"] },
       },
       data: { status: "revoked" },
     });
