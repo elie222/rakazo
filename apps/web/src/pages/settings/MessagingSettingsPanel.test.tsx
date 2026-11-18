@@ -73,8 +73,8 @@ vi.mock("@rakazo/ui-web", () => {
         {children}
       </button>
     ),
-    DropdownMenuItem: ({ children, onClick }: ComponentProps<"button">) => (
-      <button type="button" onClick={onClick}>
+    DropdownMenuItem: ({ children, onClick, disabled }: ComponentProps<"button">) => (
+      <button type="button" disabled={disabled} onClick={onClick}>
         {children}
       </button>
     ),
@@ -632,7 +632,7 @@ it("blocks issuance across remounts until the previous request settles", async (
   expect(container.textContent).toContain("ABCD-2345");
 });
 
-it("moves a linked app to a free bot without unlinking it", async () => {
+it("moves a linked app to another bot with a code instead of unlinking it", async () => {
   messaging.status.mockResolvedValue(statusWith([identity]));
   api.bots.list.mockResolvedValue([
     { id: "bot-1", name: "Chief" },
@@ -640,24 +640,29 @@ it("moves a linked app to a free bot without unlinking it", async () => {
   ]);
   await renderOverlay();
   expect(rowButton("Telegram", "Change bot")).toBeDefined();
-  // Chief already answers Telegram, so only Team is offered.
-  expect(() => rowButton("Telegram", "Chief")).toThrow();
+  // Chief already answers Telegram.
+  expect(rowButton("Telegram", "Chief").disabled).toBe(true);
   await act(async () => rowButton("Telegram", "Team").click());
-  expect(messaging.identities.setBot).toHaveBeenCalledWith({ identityId: "mi-1", botId: "bot-2" });
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
   expect(messaging.identities.unlink).not.toHaveBeenCalled();
-  expect(messaging.link.start).not.toHaveBeenCalled();
+  expect(appRow("Telegram").textContent).toContain("ABCD-2345");
 });
 
-it("offers only bots that are not already linked", async () => {
+it("shows bots already linked elsewhere as unavailable", async () => {
   messaging.status.mockResolvedValue({
     ...statusWith([identity]),
     providers: ["telegram", "whatsapp"],
   });
+  await renderOverlay();
+  // The only bot answers Telegram: Connect still opens the menu, which says why.
+  expect(rowButton("WhatsApp", "Connect").disabled).toBe(false);
+  expect(rowButton("WhatsApp", "Chief").disabled).toBe(true);
   api.bots.list.mockResolvedValue([
     { id: "bot-1", name: "Chief" },
     { id: "bot-2", name: "Team" },
   ]);
-  await renderOverlay();
-  await act(async () => rowButton("WhatsApp", "Connect").click());
+  await act(async () => client.invalidateQueries());
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  await act(async () => rowButton("WhatsApp", "Team").click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
 });

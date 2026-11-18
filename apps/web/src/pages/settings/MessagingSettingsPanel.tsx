@@ -205,15 +205,18 @@ export function MessagingSettingsPanel() {
   const slackInstallations = installationStatus.installations.filter(
     (installation) => installation.provider === "slack",
   );
-  const { slackInstall, showSlack, linkProviders, otherIdentities, freeBots } = messagingChatApps({
+  const { installable, installProviders, linkProviders, otherIdentities } = messagingChatApps({
     providers: (status?.providers ?? []).filter(
       (provider) => provider !== "slack" || installationsQuery.isSuccess,
     ),
     installAvailable: installationsQuery.isSuccess && installationStatus.available,
     installations: slackInstallations,
     identities,
-    bots,
   });
+  const slackInstall = installable.includes("slack");
+  const showSlack = installProviders.includes("slack");
+  // A bot answers one chat app at a time.
+  const linkedBots = new Set(identities.map((identity) => identity.botId));
   const identitiesOf = (provider: string) =>
     identities.filter((identity) => identity.provider === provider);
   // A teammate's workspace: DMs link to a bot of the member's own choosing.
@@ -269,23 +272,31 @@ export function MessagingSettingsPanel() {
     const app = providerLabel(provider);
     return t`Connect ${app}`;
   };
+  const changeBotLabel = (provider: string) => {
+    const app = providerLabel(provider);
+    return t`Change bot for ${app}`;
+  };
 
-  /** Acts on a bot free to take a chat app, asking which one first when there is a choice. */
-  function botAction(
+  /**
+   * Issues a code for `provider`. With a choice of bots it asks which first, showing the
+   * ones already linked elsewhere as unavailable.
+   */
+  function linkAction(
+    row: string,
+    provider: string,
     label: ReactNode,
     variant: "outline" | "ghost",
-    pick: (botId: string) => void,
     { ariaLabel, ask = false }: { ariaLabel?: string; ask?: boolean } = {},
   ) {
-    const only = freeBots.length === 1 && !ask ? freeBots[0] : undefined;
-    if (only || freeBots.length === 0) {
+    const only = bots.length === 1 && !ask && !linkedBots.has(bots[0]!.id) ? bots[0] : undefined;
+    if (only || bots.length === 0) {
       return (
         <Button
           size="sm"
           variant={variant}
           aria-label={ariaLabel}
           disabled={issuingLink || !only}
-          onClick={() => only && pick(only.id)}
+          onClick={() => only && void startLink(row, provider, only.id)}
         >
           {label}
         </Button>
@@ -305,8 +316,12 @@ export function MessagingSettingsPanel() {
             <DropdownMenuLabel>
               <Trans>Bot</Trans>
             </DropdownMenuLabel>
-            {freeBots.map((bot) => (
-              <DropdownMenuItem key={bot.id} onClick={() => pick(bot.id)}>
+            {bots.map((bot) => (
+              <DropdownMenuItem
+                key={bot.id}
+                disabled={linkedBots.has(bot.id)}
+                onClick={() => void startLink(row, provider, bot.id)}
+              >
                 {bot.name}
               </DropdownMenuItem>
             ))}
@@ -315,15 +330,6 @@ export function MessagingSettingsPanel() {
       </DropdownMenu>
     );
   }
-
-  /** Issues a code for `provider` to a bot the person picks. */
-  const linkAction = (
-    row: string,
-    provider: string,
-    label: ReactNode,
-    variant: "outline" | "ghost",
-    ariaLabel?: string,
-  ) => botAction(label, variant, (botId) => void startLink(row, provider, botId), { ariaLabel });
 
   /** The code to send, under the row that asked for it. */
   function linkCodeFor(row: string) {
@@ -355,7 +361,10 @@ export function MessagingSettingsPanel() {
     );
   }
 
-  /** A linked account; `movable` offers moving it, chats and all, to another bot. */
+  /**
+   * A linked account. `movable` offers a code for another bot: sent from this account, it
+   * moves the same link, chats and all.
+   */
   const identityRow = (identity: MessagingStatus["identities"][number], movable = false) => (
     <SettingsRow
       key={identity.id}
@@ -367,15 +376,13 @@ export function MessagingSettingsPanel() {
       }
       control={
         <>
-          {movable && freeBots.length
-            ? botAction(
+          {movable && bots.length > 1
+            ? linkAction(
+                `identity:${identity.id}`,
+                identity.provider,
                 <Trans>Change bot</Trans>,
                 "ghost",
-                (botId) =>
-                  void act(() =>
-                    rpc.messaging.identities.setBot({ identityId: identity.id, botId }),
-                  ),
-                { ask: true },
+                { ariaLabel: changeBotLabel(identity.provider), ask: true },
               )
             : null}
           <Button
@@ -389,7 +396,9 @@ export function MessagingSettingsPanel() {
           </Button>
         </>
       }
-    />
+    >
+      {linkCodeFor(`identity:${identity.id}`)}
+    </SettingsRow>
   );
 
   const memberLinkAction = linkAction("member", "slack", <Trans>Link DMs</Trans>, "ghost");
@@ -540,7 +549,7 @@ export function MessagingSettingsPanel() {
                   provider,
                   <Trans>Connect</Trans>,
                   "outline",
-                  connectLabel(provider),
+                  { ariaLabel: connectLabel(provider) },
                 )}
               >
                 {linkCodeFor(`app:${provider}`)}

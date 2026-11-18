@@ -28,8 +28,9 @@ In direct messages, a voice note the chat app delivers as an audio file (Telegra
 is transcribed when a voice provider that supports transcription is connected in **Voice**
 settings; without one, the bot receives the audio file.
 
-To move the app to another bot, choose **Change bot**; its group chats keep working. To stop,
-choose **Unlink**.
+To move the app to another bot, choose **Change bot** and send the new code from the same
+account; its group chats keep working. A bot answers one chat app at a time. To stop, choose
+**Unlink**.
 
 ## Microsoft Teams
 

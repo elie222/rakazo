@@ -174,13 +174,16 @@ export default function MessagingSettings() {
   const slackInstallations = installations.installations.filter(
     (installation) => installation.provider === "slack",
   );
-  const { slackInstall, showSlack, linkProviders, otherIdentities, freeBots } = messagingChatApps({
+  const { installable, installProviders, linkProviders, otherIdentities } = messagingChatApps({
     providers: status?.enabled ? status.providers : [],
     installAvailable: installations.available,
     installations: slackInstallations,
     identities,
-    bots,
   });
+  const slackInstall = installable.includes("slack");
+  const showSlack = installProviders.includes("slack");
+  // A bot answers one chat app at a time.
+  const linkedBots = new Set(identities.map((identity) => identity.botId));
   const identitiesOf = (provider: string) =>
     identities.filter((identity) => identity.provider === provider);
   // A teammate's workspace: DMs link to a bot of the member's own choosing.
@@ -229,18 +232,28 @@ export default function MessagingSettings() {
     const app = messagingProviderName(provider);
     return t`Connect ${app}`;
   };
-  /** Acts on a bot free to take a chat app, asking which one first when there is a choice. */
-  const botAction = (
+  const changeBotLabel = (provider: string) => {
+    const app = messagingProviderName(provider);
+    return t`Change bot for ${app}`;
+  };
+  /**
+   * Issues a code for `provider`. With a choice of bots it asks which first, showing the
+   * ones already linked elsewhere as unavailable.
+   */
+  const linkAction = (
+    row: string,
+    provider: string,
     label: string,
-    pick: (botId: string) => void,
     {
       accessibilityLabel = label,
       ask = false,
     }: { accessibilityLabel?: string; ask?: boolean } = {},
   ) => {
-    const only = freeBots.length === 1 && !ask ? freeBots[0] : undefined;
+    const first = bots[0];
+    const only =
+      bots.length === 1 && !ask && first && !linkedBots.has(first.id) ? first : undefined;
     const disabled = busy || issuingLink;
-    if (only || freeBots.length === 0) {
+    if (only || bots.length === 0) {
       return (
         <NativeActionButton
           label={label}
@@ -250,17 +263,21 @@ export default function MessagingSettings() {
           fill={false}
           variant="text"
           disabled={disabled || !only}
-          onPress={() => only && pick(only.id)}
+          onPress={() => only && startLink(row, provider, only.id)}
         />
       );
     }
     return (
       <MenuPickerMenu
         label={t`Bot`}
-        choices={freeBots.map((bot) => ({ key: bot.id, label: bot.name }))}
+        choices={bots.map((bot) => ({
+          key: bot.id,
+          label: bot.name,
+          disabled: linkedBots.has(bot.id),
+        }))}
         value=""
         disabled={disabled}
-        onChange={pick}
+        onChange={(botId) => startLink(row, provider, botId)}
       >
         <View accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
           <Text style={[styles.link, disabled && styles.disabled]}>{label}</Text>
@@ -268,9 +285,6 @@ export default function MessagingSettings() {
       </MenuPickerMenu>
     );
   };
-  /** Issues a code for `provider` to a bot the person picks. */
-  const linkAction = (row: string, provider: string, label: string, accessibilityLabel = label) =>
-    botAction(label, (botId) => startLink(row, provider, botId), { accessibilityLabel });
   /** The code to send, right under the row that asked for it. */
   const linkCode = (row: string) => {
     if (!link || link.row !== row || Date.parse(link.expiresAt) <= Date.now()) return null;
@@ -286,23 +300,22 @@ export default function MessagingSettings() {
       </Text>
     );
   };
-  /** A linked account; `movable` offers moving it, chats and all, to another bot. */
-  const identityRow = (identity: MessagingStatus["identities"][number], movable = false) => (
+  /**
+   * A linked account. `movable` offers a code for another bot: sent from this account, it
+   * moves the same link, chats and all.
+   */
+  const identityRow = (identity: MessagingStatus["identities"][number], movable = false) => [
     <SettingsRow
       key={identity.id}
       title={messagingProviderName(identity.provider)}
       detail={`${identity.address}, ${identity.botName}`}
       trailing={
         <View style={styles.actions}>
-          {movable && freeBots.length
-            ? botAction(
-                t`Change bot`,
-                (botId) =>
-                  act((send) =>
-                    send("messaging/identities/setBot", { identityId: identity.id, botId }),
-                  ),
-                { ask: true },
-              )
+          {movable && bots.length > 1
+            ? linkAction(`identity:${identity.id}`, identity.provider, t`Change bot`, {
+                accessibilityLabel: changeBotLabel(identity.provider),
+                ask: true,
+              })
             : null}
           {textAction(
             t`Unlink`,
@@ -311,8 +324,9 @@ export default function MessagingSettings() {
           )}
         </View>
       }
-    />
-  );
+    />,
+    linkCode(`identity:${identity.id}`),
+  ];
   const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
     <View style={styles.actions}>
       {textAction(t`Approve`, (send) => onRespond(true, send), "primary")}
@@ -444,7 +458,9 @@ export default function MessagingSettings() {
             <SettingsRow
               key={provider}
               title={messagingProviderName(provider)}
-              trailing={linkAction(`app:${provider}`, provider, t`Connect`, connectLabel(provider))}
+              trailing={linkAction(`app:${provider}`, provider, t`Connect`, {
+                accessibilityLabel: connectLabel(provider),
+              })}
             />,
             linkCode(`app:${provider}`),
           ];

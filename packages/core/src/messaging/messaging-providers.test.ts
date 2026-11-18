@@ -63,38 +63,26 @@ it("recognizes a catalog app that is also a chat app people can connect here", (
 });
 
 describe("messaging chat apps", () => {
-  const identities = [
-    { provider: "telegram", botId: "bot-1" },
-    { provider: "slack", botId: "bot-2" },
-    { provider: "signal", botId: "bot-3" },
-  ];
-  const bots = [{ id: "bot-1" }, { id: "bot-2" }, { id: "bot-4" }];
-
-  it("lists Slack once, beside its workspaces, even when it also links with a code", () => {
+  it("lists an app with saved workspaces once, beside them, even when it also links with a code", () => {
     const apps = messagingChatApps({
       providers: ["slack", "telegram"],
       installAvailable: false,
       installations: [{ provider: "slack" }],
-      identities,
-      bots,
+      identities: [{ provider: "telegram" }, { provider: "slack" }, { provider: "signal" }],
     });
-    expect(apps).toMatchObject({
-      slackInstall: false,
-      showSlack: true,
-      linkProviders: ["telegram"],
-    });
-    expect(apps.otherIdentities).toEqual([{ provider: "signal", botId: "bot-3" }]);
+    expect(apps.installProviders).toEqual(["slack"]);
+    expect(apps.linkProviders).toEqual(["telegram"]);
+    expect(apps.otherIdentities).toEqual([{ provider: "signal" }]);
   });
 
-  it("offers only bots not already answering a chat app", () => {
+  it("keeps accounts on apps no longer offered", () => {
     const apps = messagingChatApps({
       providers: ["telegram"],
       installAvailable: false,
       installations: [],
-      identities,
-      bots,
+      identities: [{ provider: "slack" }],
     });
-    expect(apps.freeBots).toEqual([{ id: "bot-4" }]);
-    expect(apps.otherIdentities.map(({ provider }) => provider)).toEqual(["slack", "signal"]);
+    expect(apps).toMatchObject({ installProviders: [], linkProviders: ["telegram"] });
+    expect(apps.otherIdentities).toEqual([{ provider: "slack" }]);
   });
 });

@@ -81,35 +81,33 @@ export function availableChatApps(
 }
 
 /**
- * The chat-app list in messaging settings: Slack's workspace rows, one row per app linked
- * with a code, linked accounts on apps no longer offered, and the bots a new link may use.
+ * The chat-app list in messaging settings: apps set up by a workspace install, with their
+ * saved workspaces, then one row per app linked with a code, then linked accounts on apps
+ * no longer offered.
  */
-export function messagingChatApps<
-  Identity extends { provider: string; botId: string },
-  Bot extends { id: string },
->(input: {
+export function messagingChatApps<Identity extends { provider: string }>(input: {
   providers: readonly string[];
   installAvailable: boolean;
   installations: readonly { provider: string }[];
   identities: readonly Identity[];
-  bots: readonly Bot[];
 }) {
   const options = messagingConnectOptions(input.providers, input.installAvailable);
-  const slackInstall = options.some(({ method }) => method === "install");
-  const showSlack =
-    slackInstall || input.installations.some(({ provider }) => provider === "slack");
-  // Saved workspaces already list Slack and its DM links.
-  const linkProviders = options
-    .filter(({ method, provider }) => method === "link" && !(showSlack && provider === "slack"))
+  const installable = options
+    .filter(({ method }) => method === "install")
     .map(({ provider }) => provider);
-  const listed = (provider: string) =>
-    linkProviders.includes(provider) || (showSlack && provider === "slack");
+  // An app with saved workspaces is listed with them, even when it also links with a code.
+  const installProviders = [
+    ...new Set([...installable, ...input.installations.map(({ provider }) => provider)]),
+  ];
+  const linkProviders = options
+    .filter(({ method, provider }) => method === "link" && !installProviders.includes(provider))
+    .map(({ provider }) => provider);
   return {
-    slackInstall,
-    showSlack,
+    installable,
+    installProviders,
     linkProviders,
-    otherIdentities: input.identities.filter(({ provider }) => !listed(provider)),
-    // A bot answers one chat app at a time.
-    freeBots: input.bots.filter((bot) => !input.identities.some(({ botId }) => botId === bot.id)),
+    otherIdentities: input.identities.filter(
+      ({ provider }) => !installProviders.includes(provider) && !linkProviders.includes(provider),
+    ),
   };
 }
