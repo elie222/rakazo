@@ -148,7 +148,7 @@ export function useComputerControls({
           commitComputer(status);
           cacheComputerFor(targetBotId, { computer: status });
         }
-        setBootingBotId(null);
+        if (!takeControl) setBootingBotId(null);
       }
       if (takeControl) {
         expectOwnControlEvent(targetBotId, "computer.takeover.granted");

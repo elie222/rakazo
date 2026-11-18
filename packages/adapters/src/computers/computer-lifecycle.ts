@@ -473,14 +473,27 @@ export async function provisionComputer(
             context,
           ),
       );
-    // A provider that cannot move the computer to the plan's size starts it at the size it has.
+    let providerReadyMs = 0;
+    let preparationMs = 0;
     const provision = async () => {
+      const start = performance.now();
       try {
         return await provisionAt(size);
       } catch (error) {
+        // A provider that cannot move the computer to the plan's size starts it at the size it has.
         if (!(error instanceof SandboxSizeUnavailableError)) throw error;
         log.warn("computer.size_unavailable", { size, reason: error.reason });
-        return provisionAt(undefined);
+        return await provisionAt(undefined);
+      } finally {
+        providerReadyMs += performance.now() - start;
+      }
+    };
+    const prepare = async (ref: ComputerRef) => {
+      const start = performance.now();
+      try {
+        await deps.sandbox.prepare(ref, context);
+      } finally {
+        preparationMs += performance.now() - start;
       }
     };
     // A new machine under the stored name, or any machine of a reclaimed boot, is incomplete until
@@ -507,13 +520,11 @@ export async function provisionComputer(
       });
       if (claim.count !== 1) throw busy("restore_claim_lost");
     };
-    const providerStarted = performance.now();
     let ref = await provision();
-    const providerReady = performance.now();
     provisioned = ref;
     await markReplacement(ref);
     try {
-      await deps.sandbox.prepare(ref, context);
+      await prepare(ref);
     } catch (error) {
       if (
         !isSandboxDamagedError(error) ||
@@ -531,7 +542,7 @@ export async function provisionComputer(
         ref = await provision();
         provisioned = ref;
         await markReplacement(ref);
-        await deps.sandbox.prepare(ref, context);
+        await prepare(ref);
       } catch (failure) {
         log.warn("computer.auto_recover", { provider: ref.kind, step: "failed", error: failure });
         // Recover stays the way out; a failure on the way says less than the damage itself.
@@ -543,7 +554,6 @@ export async function provisionComputer(
         operation: ref.fresh ? "replaced" : "resumed",
       });
     }
-    const prepared = performance.now();
     // Provision chooses its kind again, so a host change since the check above can mount a cache
     // that was not brought up to date. Failing rolls this computer back; the next start downloads.
     if (cache && !hydrated && sandboxKindCapabilities(ref.kind).serverHomeMount === "always")
@@ -631,8 +641,8 @@ export async function provisionComputer(
       provider: ref.kind,
       operation: replacement ? "create" : ref.started ? "resume" : "reuse",
       durationMs: Math.round(performance.now() - started),
-      providerReadyMs: Math.round(providerReady - providerStarted),
-      preparationMs: Math.round(prepared - providerReady),
+      providerReadyMs: Math.round(providerReadyMs),
+      preparationMs: Math.round(preparationMs),
     });
     return ref;
   } catch (error) {
