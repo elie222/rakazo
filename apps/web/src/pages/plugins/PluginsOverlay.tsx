@@ -63,12 +63,14 @@ export function PluginsOverlay({
   onClose,
   onOpenMcp,
   onOpenTemplates,
+  onOpenMessaging,
   activeBotId,
 }: {
   onConnectedAppsChange?: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onClose: () => void;
   onOpenMcp?: () => void;
   onOpenTemplates?: () => void;
+  onOpenMessaging?: () => void;
   activeBotId?: string;
 }) {
   const { t } = useLingui();
@@ -233,6 +235,7 @@ export function PluginsOverlay({
     pluginForApp,
     onOpenApp: openApp,
     onOpenDetail: openDetail,
+    onOpenChatApp: onOpenMessaging,
   };
 
   function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
@@ -565,7 +568,12 @@ export function PluginsOverlay({
               onChanged={refresh}
             />
           ) : detailItem ? (
-            <ConnectorDetail item={detailItem} state={state} onBack={closeDetail} />
+            <ConnectorDetail
+              item={detailItem}
+              state={state}
+              onBack={closeDetail}
+              onOpenChatApp={onOpenMessaging}
+            />
           ) : view === "manage" ? (
             <ManageView
               state={state}

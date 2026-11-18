@@ -1450,6 +1450,7 @@ function SpaceShell() {
           setOverlay={setOverlay}
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
+          messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
           onOpenBot={openCreatedBot}
         />

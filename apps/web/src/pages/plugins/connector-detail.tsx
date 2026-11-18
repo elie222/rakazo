@@ -4,6 +4,7 @@ import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { appToolLabel, catalogItemAccounts, catalogItemKey } from "@rakazo/core";
 import { Badge, Button, Disclosure, Input } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
+import { ChatAppLink } from "./parts";
 import type { PluginConnections } from "./use-plugin-connections";
 
 /** A connected app's page: its accounts, adding another, its tools, and uninstalling it. */
@@ -11,10 +12,12 @@ export function ConnectorDetail({
   item,
   state,
   onBack,
+  onOpenChatApp,
 }: {
   item: ConnectionCatalogItem;
   state: PluginConnections;
   onBack: () => void;
+  onOpenChatApp?: () => void;
 }) {
   const { t } = useLingui();
   const {
@@ -151,6 +154,12 @@ export function ConnectorDetail({
             ))}
           </div>
         </Disclosure>
+      ) : null}
+
+      {item.chatApp && onOpenChatApp ? (
+        <p data-testid="chat-app-hint" className="px-2 text-body-sm">
+          <ChatAppLink name={item.name} onOpen={onOpenChatApp} />
+        </p>
       ) : null}
     </div>
   );

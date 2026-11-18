@@ -942,6 +942,18 @@ export default function Integrations() {
           <Text numberOfLines={1} style={styles.title}>
             {label}
           </Text>
+          {item.chatApp && !connected ? (
+            <Text style={styles.secondary}>
+              {t`Tools for your bot.`}{" "}
+              <Text
+                accessibilityRole="link"
+                onPress={() => router.push("/messaging")}
+                style={styles.inlineLink}
+              >
+                {t`Chat from ${ph({ name: label })}`}
+              </Text>
+            </Text>
+          ) : null}
         </View>
         {renderCatalogActions(item, label)}
       </>
@@ -1130,6 +1142,7 @@ export default function Integrations() {
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
                 onConnect={() => void connect(detailItem)}
+                onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (
               <>

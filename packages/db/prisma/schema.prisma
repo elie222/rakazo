@@ -52,6 +52,10 @@ model User {
   /// Labs features this person turned on, by contracts' LabFeature id. Unknown ids are ignored.
   labs                        String[]                     @default([])
   marketingEmailOptOutAt      DateTime?
+  /// How many times this person began connecting a first model; numbers each try for measurement.
+  modelConnectStarts          Int                          @default(0)
+  /// The number of a try that chose credits and waits for the purchase that funds them.
+  pendingCreditsConnect       Int?
   /// When an organization this person owns first subscribed; uses up every trial kind.
   billingTrialUsedAt          DateTime?
   /// When an organization this person owns was given free own-key days; uses up only that
@@ -2226,6 +2230,9 @@ model ModelOAuthSession {
   result         Json?
   /// The process waiting on the provider renews this; a lapsed lease means it is gone.
   leaseExpiresAt DateTime?
+  /// Set while the sign-in is measured: the app it began in and which try it is.
+  surface        String?
+  connectNumber  Int?
   createdAt      DateTime  @default(now())
 
   @@index([userId, provider])

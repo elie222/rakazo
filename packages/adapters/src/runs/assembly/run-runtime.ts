@@ -1,13 +1,19 @@
 import { hostname } from "node:os";
 import type {
   ArtifactStore,
+  BackgroundJobPayloads,
   ConnectorProvider,
   ManagedConnectorProvider,
   MessagingSurface,
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
-import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import {
+  availableChatApps,
+  messagingProviderName,
+  phoneCallSettings,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -230,9 +236,11 @@ export function createRunRuntime(
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
+    /** Answers the lifecycle-mail job where account mail is configured. */
+    lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, ...executorDeps } = deps;
+  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -291,7 +299,16 @@ export function createRunRuntime(
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
-    messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
+    messaging: messaging
+      ? {
+          ...createMessagingContextLoader(deps.prisma),
+          chatApps: () =>
+            availableChatApps(
+              messaging.platforms().map((platform) => platform.provider),
+              Boolean(isMessagingInstallationActive),
+            ).map(messagingProviderName),
+        }
+      : undefined,
     messagingDelivery,
     web: createWebProvider(),
   });
@@ -319,6 +336,7 @@ export function createRunRuntime(
     paymentWallet: deps.paymentWallet,
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    lifecycleEmail,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }
