@@ -541,11 +541,12 @@ export class MeetingService {
           where: { id: row.id, status: "processing", transcriptId: null },
           data: { transcriptId: artifact.id },
         });
-        if (count || row.transcriptId)
-          await jobs.enqueueIn(tx, {
-            ...workJob(row.id, "transcript-check", new Date(Date.now() + TRANSCRIPT_DEADLINE)),
-            keepExisting: true,
-          });
+        if (count) {
+          await jobs.enqueueIn(
+            tx,
+            workJob(row.id, "transcript-check", new Date(Date.now() + TRANSCRIPT_DEADLINE)),
+          );
+        }
       });
       return;
     }
