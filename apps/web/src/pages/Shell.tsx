@@ -677,6 +677,15 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // Only an empty space the user stays in: a roster with nothing anywhere is on its way to
+  // onboarding, and one with a group is on its way to that group.
+  const showNewBotPrompt =
+    initialBotsLoaded &&
+    bots.length === 0 &&
+    groups.length === 0 &&
+    (archivedBots.length > 0 ||
+      archivedGroups.length > 0 ||
+      spaces.some((space) => space.hasContent));
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1146,7 +1155,7 @@ function SpaceShell() {
               callBot(bot);
             }}
           />
-          {!active && !activeGroup && initialBotsLoaded ? (
+          {showNewBotPrompt ? (
             <div className="grid flex-1 place-items-center">
               <Button onClick={() => dialogs.setCreateBotOpen(true)}>
                 <Plus size={16} aria-hidden="true" />
