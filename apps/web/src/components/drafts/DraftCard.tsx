@@ -16,12 +16,10 @@ export function DraftCard({
   block,
   messageId,
   target,
-  onRefresh,
 }: {
   block: DraftBlock;
   messageId: string;
   target: ArtifactTarget;
-  onRefresh: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
@@ -68,7 +66,6 @@ export function DraftCard({
         target={target}
         notes={notes}
         onNotesChange={(next) => setMarked({ version: block.version, notes: next })}
-        onRevised={onRefresh}
       />
     </BuiCard>
   );

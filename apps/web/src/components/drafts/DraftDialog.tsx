@@ -60,7 +60,6 @@ export function DraftDialog({
   target,
   notes,
   onNotesChange,
-  onRevised,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,7 +68,6 @@ export function DraftDialog({
   target: ArtifactTarget;
   notes: readonly DraftNote[];
   onNotesChange: (notes: DraftNote[]) => void;
-  onRevised: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const [copied, copy] = useCopyText();
@@ -91,10 +89,10 @@ export function DraftDialog({
         replyToMessageId: messageId,
         clientNonce: input.clientNonce,
       }),
-    onSaved: async () => {
+    // The thread is read again when the server signals the sent reply.
+    onSaved: () => {
       onNotesChange([]);
       onOpenChange(false);
-      await onRevised();
     },
   });
 

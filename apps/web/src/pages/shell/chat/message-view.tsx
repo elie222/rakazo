@@ -508,12 +508,7 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "draft") {
             return (
               <div key={i} className="flex justify-start">
-                <DraftCard
-                  block={block}
-                  messageId={message.id}
-                  target={artifactTarget}
-                  onRefresh={onRefresh}
-                />
+                <DraftCard block={block} messageId={message.id} target={artifactTarget} />
               </div>
             );
           }
