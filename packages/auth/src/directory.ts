@@ -100,14 +100,14 @@ export async function createDirectory(
       if (changed || !active) options.onAccountChange({ userId, active, changed });
     },
   };
-  // An address is saved canonical unless another account already holds that form: then it is
-  // an account kept under its own spelling, which stays as it is.
+  // An address is saved canonical, except for a pair kept under both spellings from before
+  // addresses were canonical: the account stored under its own spelling keeps it.
   const storedEmail = async (address: string) => {
     const email = canonicalEmail(address);
     const typed = address.trim().toLowerCase();
     if (typed === email) return email;
-    const twin = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    return twin ? typed : email;
+    const stored = await prisma.user.count({ where: { email: { in: [typed, email] } } });
+    return stored === 2 ? typed : email;
   };
   const userData = async (user: { email?: string; name?: string }) => {
     if (user.email && isMessagingEmail(user.email))
