@@ -293,7 +293,9 @@ export function agentImportLeftoverMessages(
   const messages: string[][] = [[opening]];
   let size = opening.length;
   for (const item of leftovers) {
-    const part = `## ${item.title}${joint}${fencedBlock(item.content.trim())}`;
+    // A title sits outside the fence: its Markdown is escaped so an imported name stays a name.
+    const title = item.title.replace(/[\\`*_{}[\]()<>#+!|~]/g, "\\$&");
+    const part = `## ${title}${joint}${fencedBlock(item.content.trim())}`;
     const room = THREAD_MESSAGE_TEXT_MAX_LENGTH - closing.length - 2 * joint.length;
     if (size + part.length > room && messages.at(-1)!.length > (messages.length === 1 ? 1 : 0)) {
       messages.push([]);
