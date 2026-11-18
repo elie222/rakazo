@@ -54,6 +54,16 @@ export const ApprovalCaseSchema = z
       .optional(),
     /** The tool's input schema, whose field descriptions say when an amount is in minor units. */
     inputSchema: z.record(z.string(), z.unknown()).optional(),
+    /** The owner's Allow and Block rules that match this call, as the product sends them. */
+    matchingRules: z
+      .array(
+        z.object({
+          effect: z.string().min(1),
+          matchKind: z.string().min(1),
+          matchValue: z.string(),
+        }),
+      )
+      .optional(),
     /** Outside text entered the run (a page, email, app data or someone else's message). Defaults to any outside step. */
     outsideContent: z.boolean().optional(),
     expected: z.enum(["pass", "ask"]),
@@ -619,7 +629,7 @@ export function approvalRequest(c: ApprovalCase): AutoReviewRequest {
     args: c.args,
     userTask: c.userTask,
     botDescription: c.botDescription,
-    matchingRules: [],
+    matchingRules: c.matchingRules ?? [],
     ...(c.newSite ? { newSite: true } : {}),
     ...(c.savedContextWrite ? { savedContextWrite: true } : {}),
   };
