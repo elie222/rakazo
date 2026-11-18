@@ -15,6 +15,7 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
+import { computerUsageDetails } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
@@ -97,18 +98,10 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = change.run;
   if (!status) return null;
-  const formatHours = new Intl.NumberFormat(dateLocaleForUi(), {
-    style: "unit",
-    unit: "hour",
-    maximumFractionDigits: 1,
-  });
-  const showUsage = status.canManage && showComputerUsage;
-  const usage = computerUsage.data;
-  const usageMessage = computerUsage.isError
-    ? t`Could not load computer hours`
-    : usage
-      ? t`No computer hours used yet`
-      : t`Loading…`;
+  const usageDetails =
+    status.canManage && showComputerUsage
+      ? computerUsageDetails(computerUsage, dateLocaleForUi())
+      : null;
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -278,25 +271,10 @@ export default function BillingScreen() {
               onPress={() => setShowComputerUsage((open) => !open)}
             />
           ) : null}
-          {showUsage
-            ? usage?.computers.map((computer) => (
-                <SettingsRow
-                  key={computer.id}
-                  title={
-                    computer.scope === "team"
-                      ? t`Team Computer`
-                      : (computer.botName ?? t`Private Computer`)
-                  }
-                  value={formatHours.format(computer.hours)}
-                />
-              ))
-            : null}
-          {showUsage && usage && usage.otherHours > 0 ? (
-            <SettingsRow title={t`Other computers`} value={formatHours.format(usage.otherHours)} />
-          ) : null}
-          {showUsage && (!usage || (usage.computers.length === 0 && usage.otherHours === 0)) ? (
-            <SettingsRow title={usageMessage} />
-          ) : null}
+          {usageDetails?.rows.map((row) => (
+            <SettingsRow key={row.id} title={row.label} value={row.hours} />
+          ))}
+          {usageDetails?.message ? <SettingsRow title={usageDetails.message} /> : null}
           {endTrial ? (
             <SettingsRow
               title={t`Start plan now`}

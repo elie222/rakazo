@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -81,6 +82,7 @@ const requests: Array<{ url: string; spaceId: string | null }> = [];
 let trialEnded = false;
 
 beforeEach(() => {
+  i18n.activate("en");
   trialEnded = false;
   localStorage.setItem("rakazo:space-id", "space-a");
   vi.stubGlobal(
