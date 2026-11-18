@@ -134,18 +134,15 @@ export type EvalCase = {
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
-  /** The data `configure` and `apps` serve, kept here so a run's fingerprint sees it change. */
-  fixtureData?: unknown;
+  fixtureData?: unknown; // What configure and apps serve, so the run fingerprint sees it change.
   /**
    * Services the bot reaches as MCP servers the user added, built fresh for each trial on the
    * trial's clock and served over streamable HTTP on loopback.
    */
   apps?: (now: Date) => AppEmulator[];
   routine?: { prompt: string; name?: string };
-  /** Other bots of the owner, present in the space before the first step; they never run. */
-  teammates?: Array<{ name: string; description: string }>;
-  /** The owner has connected the offline wallet emulator, so purchase tools are offered. */
-  wallet?: true;
+  teammates?: Array<{ name: string; description: string }>; // Other bots in the space; never run.
+  wallet?: true; // The owner connected the offline wallet emulator, so purchase tools appear.
   /**
    * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
    * unless `ownComputer` gives it one of its own. In a fromPeer step, `{peerHome}` is replaced by

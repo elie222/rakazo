@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentContextStrategy, AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { EvalCase } from "../evals/cases.js";
@@ -853,11 +853,7 @@ async function main() {
               const toolLists: ObservedToolList[] = [];
               const handles = await createApp({
                 runtime: observeToolCalls(observedRuntime, toolCallObservations, toolLists),
-                contextStrategy: planned.strategy as
-                  | "current"
-                  | "retrieval"
-                  | "snapshots"
-                  | "cache-aware",
+                contextStrategy: planned.strategy as AgentContextStrategy,
                 sandbox,
                 databaseUrl,
                 realtimeDatabaseUrl: databaseUrl,
