@@ -95,13 +95,12 @@ describe("attachment captions", () => {
     });
   }
 
-  it("formats bot Markdown through ChatMarkdown", () => {
+  it("hands bot Markdown to the native Markdown view", () => {
     render("bot");
 
-    // A bare address shows as host and path, joined to its site icon and isolated.
-    expect(container.textContent).toBe("important \u2060\u2068example.test/docs\u2069");
-    expect(container.querySelector('[style*="font-weight: 600"]')?.textContent).toBe("important");
-    expect(container.textContent).not.toContain("**");
+    expect(container.querySelector("rn-enriched-markdown")?.textContent).toBe(
+      "**important** https://example.test/docs",
+    );
   });
 
   it("keeps user Markdown literal through LinkifiedText and links explicit URLs", async () => {
