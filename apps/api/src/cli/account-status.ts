@@ -9,7 +9,6 @@ import {
   unwrapEnvFromKeyManager,
   userDeviceForwardSecret,
 } from "@rakazo/adapters";
-import { canonicalEmail } from "@rakazo/core";
 import {
   createDb,
   createThreadEvents,
@@ -20,6 +19,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "../account/account-status.js";
 import { loadEnv } from "../env.js";
+import { accountByEmail } from "./account-by-email.js";
 
 const [action, address] = process.argv.slice(2);
 if ((action !== "deactivate" && action !== "reactivate") || !address) {
@@ -38,18 +38,7 @@ const realtime = new PostgresRealtimeFanout({
   publisher: pool,
 });
 try {
-  const email = canonicalEmail(address);
-  // As the directory looks accounts up: the exact address, else the only one differing by case.
-  const user = await runAsSystem("find an account by email", async () => {
-    const exact = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    if (exact) return exact;
-    const matches = await prisma.user.findMany({
-      where: { email: { equals: email, mode: "insensitive" } },
-      select: { id: true },
-      take: 2,
-    });
-    return matches.length === 1 ? matches[0] : null;
-  });
+  const user = await runAsSystem("find an account by email", () => accountByEmail(prisma, address));
   if (!user) {
     process.stderr.write("No single account has that email\n");
     process.exitCode = 1;

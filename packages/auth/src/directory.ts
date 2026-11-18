@@ -50,16 +50,22 @@ export async function createDirectory(
   const { scim } = await import("@better-auth/scim");
   const identity: SCIMOptions["identity"] = {
     resolveUser: async ({ resource }, { database }) => {
-      const email = canonicalEmail(resource.primaryEmail);
+      const typed = resource.primaryEmail.trim().toLowerCase();
+      const email = canonicalEmail(typed);
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
       type Match = { id: string; emailVerified: boolean };
-      // Accounts store emails lowercased. One an older release wrote with capitals is found
-      // by case; two that differ only by case are a conflict for the operator to resolve.
-      const exact = await database.findOne<Match>({
-        model: "user",
-        where: [{ field: "email", value: email }],
-      });
+      // Accounts store emails canonical and lowercased. The spelling sent comes first, so an
+      // account kept under it from before addresses were canonical is not taken for its twin.
+      // One an older release wrote with capitals is found by case; two that differ only by
+      // case are a conflict for the operator to resolve.
+      let exact: Match | null = null;
+      for (const value of new Set([typed, email])) {
+        exact ??= await database.findOne<Match>({
+          model: "user",
+          where: [{ field: "email", value }],
+        });
+      }
       const [existing, other] = exact
         ? [exact]
         : await database.findMany<Match>({
@@ -96,7 +102,11 @@ export async function createDirectory(
     if (user.email && isMessagingEmail(user.email))
       throw new APIError("BAD_REQUEST", { message: "Email is not available" });
     return {
-      data: { ...user, ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}) },
+      data: {
+        ...user,
+        ...(user.email ? { email: canonicalEmail(user.email) } : {}),
+        ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
+      },
     };
   };
   return betterAuth({

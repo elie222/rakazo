@@ -5,6 +5,7 @@ import { BotEmailRecipientSchema } from "@rakazo/contracts";
 import { canonicalEmail } from "@rakazo/core";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { loadEnv } from "../env.js";
+import { accountByEmail } from "./account-by-email.js";
 
 const [action, address, value, ...extra] = process.argv.slice(2);
 const recipient = BotEmailRecipientSchema.safeParse(value?.trim());
@@ -30,13 +31,9 @@ const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProv
 try {
   await runAsSystem("manage an account's bot email sending policy", () =>
     prisma.$transaction(async (tx) => {
-      const matches = await tx.user.findMany({
-        where: { email: { equals: canonicalEmail(address), mode: "insensitive" } },
-        select: { id: true },
-        take: 2,
-      });
-      if (matches.length !== 1) throw new Error("No single account has that email");
-      const userId = matches[0]!.id;
+      const account = await accountByEmail(tx, address);
+      if (!account) throw new Error("No single account has that email");
+      const userId = account.id;
       await tx.$queryRaw`SELECT id FROM "user" WHERE id=${userId} FOR NO KEY UPDATE`;
       const select = {
         botEmailDailyLimit: true,

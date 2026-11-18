@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { OrganizationRole } from "@rakazo/contracts";
-import { ClientError, canonicalEmail } from "@rakazo/core";
+import { ClientError, canonicalEmail, emailSpellings } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "../billing/billing.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
@@ -301,7 +301,8 @@ export async function createOrganizationInvitation(
         where: {
           organizationId: input.organizationId,
           role: { not: GUEST_ROLE },
-          user: { email: { equals: email, mode: "insensitive" } },
+          // An account kept under another spelling of the same mailbox is still this person.
+          user: { email: { in: emailSpellings(email), mode: "insensitive" } },
         },
         select: { id: true },
       });
