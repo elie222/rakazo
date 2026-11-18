@@ -340,8 +340,10 @@ describe("buildAutoReviewPrompt", () => {
     // A new site is judged on what its URL could carry, not on whether the owner named it.
     expect(prompt).toContain("a site the owner did not name is fine");
     expect(prompt).toContain("account or order numbers, tokens or encoded text");
-    // A host name can carry data as well as a path does.
-    expect(prompt).toContain("host name, path or query holds data");
+    // Every part of the URL can carry data: host name, path, query and fragment.
+    expect(prompt).toContain(
+      "Some part of the URL (host name, path, query or fragment) holds data",
+    );
     expect(prompt).not.toContain("clearly call for this site");
   });
 

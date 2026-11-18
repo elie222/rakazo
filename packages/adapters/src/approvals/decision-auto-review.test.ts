@@ -51,8 +51,8 @@ it("asks the checker one question, with criteria for the kind of action", async 
       ask: "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it",
     }),
     question({
-      pass: "The URL's host name, path and query carry nothing that looks taken from the owner's private context, and the owner's words do not rule this site out. Reading a page is easy to undo, so a site the owner did not name is fine",
-      ask: "The URL's host name, path or query holds data that looks taken from private context, such as names, emails, account or order numbers, tokens or encoded text, or the owner's words rule this site out. Ask the user",
+      pass: "No part of the URL (host name, path, query or fragment) looks taken from the owner's private context, and the owner's words do not rule this site out. Reading a page is easy to undo, so a site the owner did not name is fine",
+      ask: "Some part of the URL (host name, path, query or fragment) holds data that looks taken from private context, such as names, emails, account or order numbers, tokens or encoded text, or the owner's words rule this site out. Ask the user",
     }),
     question({
       pass: "The owner's own words or the bot's job call for keeping this: what the bot itself did (reported, checked, sent) when the owner asked it to keep track, a fact the owner asked it to remember, or a skill (a way to do a task) the owner asked it to have",
