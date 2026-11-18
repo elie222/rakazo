@@ -588,6 +588,11 @@ export async function createScheduleFromTool(
     schedule: Record<string, unknown>;
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
     on?: unknown;
+    /**
+     * The owner's own run, with no outside content in it or with this call approved on its card. A
+     * command watch from any other call is saved turned off.
+     */
+    commandWatchTrusted?: boolean;
   },
 ) {
   const routineBotId = input.target?.botId ?? input.botId;
@@ -820,6 +825,7 @@ async function createWatchFromTool(
     timezone?: string;
     schedule: Record<string, unknown>;
     events: RoutineEvents;
+    commandWatchTrusted?: boolean;
   },
 ) {
   const parsed = scheduleWatch(input.schedule);
@@ -837,6 +843,11 @@ async function createWatchFromTool(
   }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
+  // A command watch runs a shell command by itself with no model, so it starts only when the owner's
+  // own untainted run set it up; otherwise it waits, turned off, until the owner turns it on in the
+  // app, where the command is shown. Decided here, when the routine is written, whatever approval
+  // mode let the call through.
+  const savedOff = parsed.data.kind === "command" && input.commandWatchTrusted !== true;
   const nextRunAt = new Date(Date.now() + 2_000);
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
@@ -852,10 +863,10 @@ async function createWatchFromTool(
         crons: [],
         timezone,
         notify: true,
-        active: true,
+        active: !savedOff,
         watch: parsed.data as Prisma.InputJsonValue,
         ...input.events,
-        nextRunAt,
+        nextRunAt: savedOff ? null : nextRunAt,
       },
     });
   const row =
@@ -866,7 +877,7 @@ async function createWatchFromTool(
           return insertWatch(tx, timezone);
         });
   try {
-    await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
+    if (!savedOff) await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
   } catch {
     await deps.prisma.routine
       .update({ where: { id: row.id }, data: { active: false, nextRunAt: null } })
@@ -890,7 +901,11 @@ async function createWatchFromTool(
     routineId: row.id,
     name: row.name,
     watch: parsed.data,
-    note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
+    ...(savedOff
+      ? { active: false, note: COMMAND_WATCH_OFF_NOTE }
+      : {
+          note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
+        }),
     ...eventsResult(input.events),
   };
 }
@@ -970,6 +985,14 @@ function carriedRunAtForTimezone(
 /** Steers away from cancel and recreate: a new command watch asks the user again. */
 const WATCH_RETIME_ERROR =
   "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
+
+/** What a bot is told when a command watch it made is saved turned off. */
+const COMMAND_WATCH_OFF_NOTE =
+  "Saved turned off: a command watch runs a shell command on its own, so it only starts once its owner turns it on in the app, where the command is shown. Tell the user.";
+
+/** Only the owner turns a command watch on, in the app; a bot tool never does. */
+const COMMAND_WATCH_ON_ERROR =
+  "A command watch can only be turned on in the app, where its command is shown. Tell the user.";
 
 /**
  * Edit one of this bot's routines in place: name, prompt, whether it runs in its chat, timing
@@ -1054,7 +1077,14 @@ export async function updateScheduleFromTool(
     return { error: "A schedule that watches for changes runs alongside its chat." };
   }
 
-  const active = input.active ?? existing.active;
+  // A command watch runs a shell command on its own, as its owner. A bot tool never turns one on, and
+  // one that changes hands by an edit stays off until its new owner turns it on in the app.
+  const isCommandWatch = commandWatchFromTool(existing.watch) !== undefined;
+  if (isCommandWatch && input.active === true && !existing.active) {
+    return { error: COMMAND_WATCH_ON_ERROR };
+  }
+  const offOnTakeover = isCommandWatch && existing.userId !== input.userId;
+  const active = offOnTakeover ? false : (input.active ?? existing.active);
   let crons = existing.crons;
   let nextRunAt = existing.nextRunAt;
   let carried: Date | null = null;
@@ -1148,9 +1178,21 @@ export async function updateScheduleFromTool(
       userId: existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
-      ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
-      // A watch added since the read keeps its routine alongside the chat.
-      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
+      // A takeover is fenced too: an owner who turned the watch on since the read keeps it theirs.
+      ...(timingChanged || offOnTakeover
+        ? { active: existing.active, nextRunAt: existing.nextRunAt }
+        : {}),
+      // A watch added since the read keeps its routine alongside the chat, and a resume or a
+      // takeover only applies to the watch it read, so a command put there since is never started
+      // by it nor handed to the editor still on.
+      ...(inChat || (active && !existing.active) || existing.userId !== input.userId
+        ? {
+            watch: {
+              equals:
+                existing.watch == null ? Prisma.DbNull : (existing.watch as Prisma.InputJsonValue),
+            },
+          }
+        : {}),
     },
     data: {
       // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
@@ -1167,9 +1209,10 @@ export async function updateScheduleFromTool(
   });
   if (count === 0) {
     return {
-      error: timingChanged
-        ? "The schedule changed while saving. Call schedule_list and try again."
-        : "Schedule not found.",
+      error:
+        timingChanged || existing.userId !== input.userId
+          ? "The schedule changed while saving. Call schedule_list and try again."
+          : "Schedule not found.",
     };
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
@@ -1208,6 +1251,7 @@ export async function updateScheduleFromTool(
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),
     ...timing,
+    ...(offOnTakeover ? { note: COMMAND_WATCH_OFF_NOTE } : {}),
     ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
     // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
     changes: routineChanges(

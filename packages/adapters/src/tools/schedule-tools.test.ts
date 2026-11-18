@@ -1150,6 +1150,8 @@ describe("updateScheduleFromTool", () => {
         userId: "user-1",
         id: "routine-1",
         bot: { archivedAt: null },
+        // Only the routine it read changes hands.
+        watch: { equals: Prisma.DbNull },
       },
       data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
     });
