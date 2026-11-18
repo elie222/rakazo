@@ -19,6 +19,8 @@ export const ConnectionCatalogItemSchema = z.object({
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),
+  /** Also a chat app people can message their bots from on this deployment. */
+  chatApp: z.boolean().optional(),
 });
 export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 

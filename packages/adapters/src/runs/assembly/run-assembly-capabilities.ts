@@ -3,6 +3,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
+  chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
@@ -451,9 +452,19 @@ export async function resolveRunCapabilities(
         run.userId,
       )
     : false;
+  // Only a turn in the app can carry a request to connect one.
+  const chatApps =
+    ["user", "follow_up"].includes(conversationRun.trigger) &&
+    !messagingChannelRun &&
+    !nonOwnerChatRun
+      ? [...new Set(deps.messaging?.chatApps?.() ?? [])]
+      : [];
   const messagingContext =
     [
       hasMessagingIdentity ? messagingDmSurfaceNote() : null,
+      chatApps.length > 0
+        ? chatAppConnectNote(chatApps, !bot.disabledBuiltinTools?.includes("connect_app"))
+        : null,
       messagingChannelRun
         ? messagingChannelPrivacyBlock()
         : nonOwnerChatRun

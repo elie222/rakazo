@@ -154,7 +154,14 @@ vi.mock("react-native", () => {
     ),
     View,
     ScrollView: View,
-    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    Text: ({ children, onPress }: { children: ReactNode; onPress?: () => void }) =>
+      onPress ? (
+        <button type="button" onClick={onPress}>
+          {children}
+        </button>
+      ) : (
+        <span>{children}</span>
+      ),
     Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
       <button type="button" onClick={onPress}>
         {children}
@@ -257,6 +264,25 @@ it("keeps Search visible and shows rows on a cold load until the first success",
     catalog: [item],
     connections: [account],
   });
+});
+it("leads from an app that is also a chat app here to messaging", async () => {
+  state.rpc.mockImplementation((proc: string) =>
+    proc === "connections/catalog" ? catalog.promise : Promise.resolve([]),
+  );
+  await render();
+  await act(async () =>
+    catalog.resolve([
+      { ...item, connected: false, chatApp: true },
+      { ...item, slug: "other", name: "Other app", connected: false },
+    ] as (typeof item)[]),
+  );
+  const links = [...container.querySelectorAll("button")].filter((button) =>
+    button.textContent?.startsWith("Chat from"),
+  );
+  expect(links.map((link) => link.textContent)).toEqual(["Chat from Example app"]);
+  expect(container.textContent).toContain("Tools for your bot.");
+  await act(async () => links[0]!.click());
+  expect(state.push).toHaveBeenCalledWith("/messaging");
 });
 it("paints the cached list and Added state before replacing it in the background", async () => {
   state.read.mockReturnValue({ catalog: [item], connections: [account] });

@@ -7,7 +7,12 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
-import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import {
+  availableChatApps,
+  messagingProviderName,
+  phoneCallSettings,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -291,7 +296,16 @@ export function createRunRuntime(
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     inboundEmailDomain: env.inboundEmailDomain,
-    messaging: messaging ? createMessagingContextLoader(deps.prisma) : undefined,
+    messaging: messaging
+      ? {
+          ...createMessagingContextLoader(deps.prisma),
+          chatApps: () =>
+            availableChatApps(
+              messaging.platforms().map((platform) => platform.provider),
+              Boolean(isMessagingInstallationActive),
+            ).map(messagingProviderName),
+        }
+      : undefined,
     messagingDelivery,
     web: createWebProvider(),
   });
