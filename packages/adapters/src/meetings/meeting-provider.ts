@@ -21,7 +21,9 @@ export async function configuredMeetingProviders(source = process.env): Promise<
 }
 
 export function configuredMeetingSpaces(provider: MeetingProvider, source = process.env) {
-  if (provider.describe().capabilities.offline) return undefined;
+  if (provider.describe().capabilities.offline || source.MEETING_SPACE_IDS?.trim() === "*") {
+    return undefined;
+  }
   return new Set(
     source.MEETING_SPACE_IDS?.split(",")
       .map((id) => id.trim())
