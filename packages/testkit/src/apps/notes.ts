@@ -95,7 +95,7 @@ type Filter =
   | { or: Filter[] };
 
 /** Markdown-ish lines to blocks, the way such services import pasted text. */
-function blocksFromText(text: string): BlockSeed[] {
+export function blocksFromText(text: string): BlockSeed[] {
   return text
     .split("\n")
     .filter((line) => line.trim())

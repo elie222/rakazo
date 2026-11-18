@@ -134,6 +134,8 @@ export type EvalCase = {
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
+  /** The data `configure` and `apps` serve, kept here so a run's fingerprint sees it change. */
+  fixtureData?: unknown;
   /**
    * Services the bot reaches as MCP servers the user added, built fresh for each trial on the
    * trial's clock and served over streamable HTTP on loopback.
