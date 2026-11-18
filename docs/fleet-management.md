@@ -17,14 +17,15 @@ the Electron desktop app (which hosts the web UI) and mobile bot settings.
 
 ## Which runs can use the bot management tools
 
-Only runs you started can use them: a message you sent, a follow-up to your message, or the end of
-a call. Runs started by another bot's message, a messaging channel, a spawn, tickets, a webhook or a
-routine cannot use the bot management tools, including `list_fleet`. `update_bot` remains available
-for changes to the calling bot, but cannot target another bot.
+Only runs you started can use them: a message you sent in the app or from a chat app you linked, a
+follow-up to your message, the end of a call, or one of your routines. Runs started by another
+bot's message, someone else in a messaging channel, a spawn, tickets or a webhook cannot use the
+bot management tools, including `list_fleet`. `update_bot` remains available for changes to the
+calling bot, but cannot target another bot.
 
-In Ask and Auto, a run that receives a messaging channel or webhook message while working
-cannot change the bots it manages for the rest of that run. Never ask skips this restriction.
-Channel or webhook messages already in the thread history before the run started are not covered.
+In Ask and Auto, once a run receives a messaging channel or webhook message while working, every
+change to the bots it manages goes through approval for the rest of that run, and an **Always
+allow** choice doesn't skip it. Never ask runs them.
 A follow-up counts as yours only when its source message was written by you.
 
 ## Tools

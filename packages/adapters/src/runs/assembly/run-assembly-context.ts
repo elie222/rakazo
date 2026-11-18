@@ -151,7 +151,6 @@ export async function createRunContext(
     overLimitActionCalls: 0,
     toolResults: new Map(),
     tainted: initiallyTainted,
-    ownerSettingsRefused: false,
     // A resumed turn replaces this with the baseline its saved prompt was built from.
     ownInstructionsBaseline: bot.instructions ?? "",
     earlierAttempt: undefined,
@@ -307,8 +306,8 @@ export async function buildTurnPrompt(
   const invokedSkill = runSavedSkills.find(
     (skill) =>
       // Taught skills are the space's. Only a person's own message may pull in one someone
-      // else taught; any other run follows only those its own person taught.
-      (ownerStartedRun || skill.userId === run.userId) &&
+      // else taught; any other run, a routine included, follows only those its own person taught.
+      ((ownerStartedRun && run.trigger !== "routine") || skill.userId === run.userId) &&
       promptInvokesSkill(taskPrompt, skill.name || skill.goal),
   );
   const basePrompt = invokedSkill

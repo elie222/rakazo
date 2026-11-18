@@ -1,8 +1,9 @@
-// How many code files sit directly in each folder. A folder past the limit mixes modules that
+// How many non-test, non-eval code files sit directly in each folder. A folder past the limit mixes modules that
 // should be grouped by topic, the same way a file past its line limit mixes responsibilities.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isEvalFile, isTestFile } from "./file-kinds.mjs";
 import { repoFiles } from "./ratchets.mjs";
 
 export const LIMIT = 40;
@@ -15,11 +16,12 @@ const CODE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|astro|py|sh|swift|kt|c|h|m|mm|s
 // Generated output, migrations and vendored registry components are not organised by hand.
 const IGNORED = [/\/generated\//, /\/migrations\//, /^packages\/ui-web\/src\/components\/ui\//];
 
-/** Code files per folder (direct children only), for every tracked folder that has any. */
+/** Count direct children, leaving tests free to sit alongside the files they cover. */
 export function folderCounts(files) {
   const counts = new Map();
   for (const file of files) {
     if (!CODE.test(file) || IGNORED.some((pattern) => pattern.test(file))) continue;
+    if (isTestFile(file) || isEvalFile(file)) continue;
     const folder = path.posix.dirname(file);
     counts.set(folder, (counts.get(folder) ?? 0) + 1);
   }
