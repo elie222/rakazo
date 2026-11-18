@@ -533,6 +533,7 @@ export async function resolveRunCapabilities(
   const ownerStartedRun = isOwnerStartedRun(
     conversationRun.trigger,
     (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+    nonOwnerChatRun,
   );
   // A hang-up run has no source message: its own nonce carries the call it closes.
   const callEndRun = run.trigger === "call_end";
@@ -675,26 +676,33 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
-  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
-  const teammates = conversationThread.groupId
-    ? []
-    : await deps.prisma.bot.findMany({
-        where: {
-          spaceId: run.spaceId,
-          archivedAt: null,
-          id: { not: bot.id },
-          thread: { isNot: null },
-        },
-        select: { id: true, name: true, description: true },
-        orderBy: { createdAt: "asc" },
-        take: BOT_DIRECTORY_LIMIT,
-      });
+  // The Space's other bots, which message_bot reaches from any chat, a group included.
+  const teammates = await deps.prisma.bot.findMany({
+    where: {
+      spaceId: run.spaceId,
+      archivedAt: null,
+      id: { not: bot.id },
+      thread: { isNot: null },
+    },
+    select: { id: true, name: true, description: true },
+    orderBy: { createdAt: "asc" },
+    take: BOT_DIRECTORY_LIMIT,
+  });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
-      // A call rings the bot's own person, whose chat it is; other members of a shared
-      // Space reach it by message for now.
-      phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
+      // A call rings the bot's own person in its own app chat, and only once they set up a voice
+      // provider; other members of a shared Space reach it by message for now.
+      phoneCallsEnabled:
+        deps.phoneCallsEnabled &&
+        run.userId === bot.userId &&
+        !conversationThread.externalConversationId &&
+        Boolean(
+          await deps.prisma.userVoiceCredential.findFirst({
+            where: { userId: run.userId },
+            select: { id: true },
+          }),
+        ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
       graphicalToolsAllowed,
       pageBrowserAllowed,

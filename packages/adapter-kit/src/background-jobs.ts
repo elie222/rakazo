@@ -25,6 +25,7 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "run.forget-secrets": z.object({ runId: z.string().min(1) }),
+  "approval.expire": z.object({ runId: z.string().min(1), effectId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   // The member whose turn asked for it, who pays; older jobs name only the thread.
   "history.compact": z.object({
@@ -239,6 +240,20 @@ export function runForgetSecretsJob(runId: string, availableAt: Date): Backgroun
     payload: { runId },
     availableAt,
     replaceKey: `run.forget-secrets:${runId}`,
+  };
+}
+
+/** Ends an unattended run's approval card that is still unanswered at `availableAt`. */
+export function approvalExpireJob(
+  runId: string,
+  effectId: string,
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "approval.expire",
+    payload: { runId, effectId },
+    availableAt,
+    replaceKey: `approval.expire:${effectId}`,
   };
 }
 

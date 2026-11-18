@@ -203,33 +203,12 @@ describe("update_preferences", () => {
     expect(users.starter.timezone).toBe("UTC");
   });
 
-  it("reads but no longer writes once outside content entered the run", async () => {
+  it("still writes once outside content entered the run; the approval mode decides", async () => {
     const { users, call } = fakeAccount(true, true);
-    await expect(call({ marketingEmails: false })).resolves.toEqual({
-      error: expect.stringContaining("outside content"),
+    await expect(call({ marketingEmails: false })).resolves.toMatchObject({
+      marketingEmails: false,
     });
-    expect(users.starter.marketingEmailOptOutAt).toBeNull();
-    await expect(call({})).resolves.toEqual({ timezone: "UTC", marketingEmails: true });
-  });
-
-  it("ends the turn instead of repeating the outside-content refusal", async () => {
-    const { users, call } = fakeAccount(true, true);
-    await expect(call({ marketingEmails: false })).resolves.toEqual({
-      error: expect.stringContaining("outside content"),
-    });
-    const repeat = await call({ marketingEmails: false });
-    expect(repeat).toMatchObject({
-      kind: "agent_tool_result",
-      terminate: true,
-      content: [
-        {
-          type: "text",
-          text: expect.stringContaining("Settings"),
-        },
-      ],
-    });
-    expect(JSON.stringify(repeat)).not.toContain("outside content");
-    expect(users.starter.marketingEmailOptOutAt).toBeNull();
+    expect(users.starter.marketingEmailOptOutAt).not.toBeNull();
   });
 
   it("applies a change the owner approved after outside content", async () => {
@@ -240,7 +219,7 @@ describe("update_preferences", () => {
     expect(users.starter.timezone).toBe("Asia/Tokyo");
   });
 
-  it("is offered only on runs the account owner started", () => {
+  it("is offered only on runs the account owner started, routines and their own chat app included", () => {
     const offered = (trigger: string, followUpFromUser = false) =>
       selectBuiltinToolsForRun({
         graphicalToolsAllowed: false,
@@ -253,9 +232,9 @@ describe("update_preferences", () => {
     expect(offered("user")).toBe(true);
     expect(offered("call_end")).toBe(true);
     expect(offered("follow_up", true)).toBe(true);
+    expect(offered("routine")).toBe(true);
     for (const trigger of [
       "follow_up",
-      "routine",
       "bot_message",
       "messaging",
       "webhook",

@@ -8,11 +8,7 @@ import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-sele
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
-import {
-  filterBuiltinToolsForRun,
-  filterBuiltinToolsForThread,
-  SCHEDULE_TOOL_NAMES,
-} from "../../tools/schedule-tools.js";
+import { filterBuiltinToolsForRun, SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 
@@ -136,7 +132,11 @@ export function selectBuiltinToolsForRun(options: {
   emailSend?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
-  const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  const ownerStartedRun = isOwnerStartedRun(
+    options.trigger,
+    Boolean(options.followUpFromUser),
+    options.messagingChannelRun,
+  );
   // Claiming is offered only in the owner's own chat, so once the bot claims an address there it
   // can read the mail that follows, such as a sign-up code, in the same run.
   const emailClaimOffered =
@@ -148,12 +148,9 @@ export function selectBuiltinToolsForRun(options: {
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
-        filterBuiltinToolsForThread(
-          filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-            options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
-          ),
-          options.groupId,
+        filterPageBrowserTools(
+          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+          options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
         ),
         options.trigger,
       ),
@@ -249,16 +246,18 @@ const FOLLOW_UP_TOOL_NAMES = [
 ];
 
 /**
- * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
- * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
- * are not, and some of them would need approval for every schedule.
+ * Whether this run can set its own follow-ups. Only a conversation the owner started can tell
+ * what is still open with them; a routine, webhook, channel, subagent or hand-off from another
+ * bot cannot.
  */
 export function followUpsOffered(
   tools: readonly { name: string }[],
   ownerStartedRun: boolean,
+  trigger: string,
 ): boolean {
   return (
     ownerStartedRun &&
+    trigger !== "routine" &&
     FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
   );
 }

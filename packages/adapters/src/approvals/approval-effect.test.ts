@@ -355,6 +355,16 @@ describe("resolveDuplicateEffectGate", () => {
     });
   });
 
+  it("tells the bot an expired card was not answered rather than denied", () => {
+    const expired = { error: "Nobody answered in time.", expired: true };
+    expect(resolveDuplicateEffectGate({ status: "denied", result: expired }, "send_email")).toEqual(
+      {
+        action: "return",
+        result: expired,
+      },
+    );
+  });
+
   it("returns paused for intended effects instead of executing", () => {
     expect(resolveDuplicateEffectGate({ status: "intended" }, "archive_bot")).toEqual({
       action: "paused",

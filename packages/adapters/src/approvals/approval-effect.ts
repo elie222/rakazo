@@ -8,9 +8,6 @@ export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: t
 
 const internalTermination = Symbol("internalTermination");
 
-export const OWNER_SETTINGS_REFUSAL_REPLY =
-  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
-
 /** Preserve trusted control provenance across result copies without exposing it in JSON. */
 export function internalTerminatingResult<T extends AgentToolExecutionResult>(result: T): T {
   return Object.assign(result, { [internalTermination]: true });
@@ -442,7 +439,11 @@ export function resolveDuplicateEffectGate(
   if (effect.status === "denied") {
     return {
       action: "return",
-      result: { error: DENIED_ACTION_ERROR },
+      // An expired card's result says nobody answered rather than that someone said no.
+      result:
+        (effect.result as { expired?: unknown } | null | undefined)?.expired === true
+          ? effect.result
+          : { error: DENIED_ACTION_ERROR },
     };
   }
   if (effect.status === "executing") {
