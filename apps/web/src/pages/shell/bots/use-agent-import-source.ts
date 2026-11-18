@@ -22,6 +22,7 @@ import {
   GrokBotExportError,
   grokBotExportJson,
   hasAgentImportSecrets,
+  looksLikeCredential,
   newClientId,
   openAgentImportArchive,
   parseGrokBotExport,
@@ -113,6 +114,7 @@ export function useAgentImportSource() {
         ...[...found.instructions, ...found.memory, ...found.skills].filter(
           (item) => item.containsKey,
         ),
+        ...found.routines.filter((item) => looksLikeCredential(item.content)),
       ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.

@@ -412,7 +412,10 @@ export function AgentImportPlanReview({
                     entry.id,
                     entry.title,
                     entry.content,
-                    statusNote(entry.status, entry.warnings),
+                    <>
+                      {looksLikeCredential(entry.content) ? note(keyNote) : null}
+                      {statusNote(entry.status, entry.warnings)}
+                    </>,
                   ),
                 )}
               </ul>,
