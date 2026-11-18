@@ -31,11 +31,8 @@ export interface MnemoverseItem {
   domain: string;
 }
 
-export type MnemoverseResponse<T = void> =
-  | { ok: true; value: T }
-  | { ok: false; error: string; refused?: boolean };
+export type MnemoverseResponse<T = void> = { ok: true; value: T } | { ok: false; error: string };
 
-/** A write also says when the novelty check refused it, which a shared save treats differently. */
 type Reply = { ok: true; data: unknown } | { ok: false; status?: number; error: string };
 
 /** Drops an unread body, but never waits past the request deadline for the stream to close. */
@@ -183,8 +180,7 @@ export async function writeMnemoverse(
     if (written.reason === "exact_duplicate") return { ok: true, value: undefined };
     const reason =
       typeof written.reason === "string" && written.reason ? `: ${written.reason}` : "";
-    // The service answered and declined, so asking again gets the same answer.
-    return { ok: false, error: `Mnemoverse did not store this memory${reason}.`, refused: true };
+    return { ok: false, error: `Mnemoverse did not store this memory${reason}.` };
   }
   // Only an explicit confirmation counts as saved.
   if (written?.stored !== true) {

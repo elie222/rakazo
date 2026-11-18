@@ -71,14 +71,12 @@ function sharedDomain(spaceId: string): string {
   return domainName("rakazo:space:", spaceId);
 }
 
-/** Where a save goes: the bot's own domain, and with the Shared scope the Space's as well. */
-function saveDomains(scope: DurableMemoryScope, botId: string, spaceId: string): string[] {
-  return scope === "shared"
-    ? [isolatedDomain(botId), sharedDomain(spaceId)]
-    : [isolatedDomain(botId)];
+/** Where a save goes: the Space's own domain when shared, the bot's otherwise. */
+function saveDomain(scope: DurableMemoryScope, botId: string, spaceId: string): string {
+  return scope === "shared" ? sharedDomain(spaceId) : isolatedDomain(botId);
 }
 
-/** Everything a bot may read or forget. A shared bot still sees what it saved on its own. */
+/** Everything a bot may read or forget. A shared bot still sees what it saved while isolated. */
 function recallDomains(scope: DurableMemoryScope, botId: string, spaceId: string): string[] {
   return scope === "shared"
     ? [sharedDomain(spaceId), isolatedDomain(botId)]
@@ -144,17 +142,7 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
         failed: failedDomains,
       });
     }
-    // A shared fact is saved in both domains: list it once, the better-scored copy first.
-    const seen = new Set<string>();
-    const value = [...byAtom.values()]
-      .sort((a, b) => b.score - a.score)
-      .filter((item) => {
-        const text = item.memory.trim();
-        if (seen.has(text)) return false;
-        seen.add(text);
-        return true;
-      })
-      .slice(0, request.limit);
+    const value = [...byAtom.values()].sort((a, b) => b.score - a.score).slice(0, request.limit);
     return { ok: true, value };
   }
 
@@ -164,23 +152,13 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse> {
     // Compaction summaries stay in Rakazo; Mnemoverse holds durable facts only.
     if (request.source.kind === "history") return { ok: true, value: undefined };
-    const domains = saveDomains(request.scope, request.botId, context.spaceId);
-    const writes = await Promise.all(
-      domains.map((domain) =>
-        writeMnemoverse(this.connection, request.content, domain, context.signal),
-      ),
+    const write = await writeMnemoverse(
+      this.connection,
+      request.content,
+      saveDomain(request.scope, request.botId, context.spaceId),
+      context.signal,
     );
-    const written = writes.filter((write) => write.ok).length;
-    const failed = writes.flatMap((write) => (write.ok ? [] : [write.error]));
-    if (failed.length === 0) return { ok: true, value: undefined };
-    const error = [...new Set(failed)].join("; ");
-    if (written === 0) return { ok: false, error };
-    // A copy the service declined stays declined, so only a failure that may pass is worth a retry.
-    const refused = writes.some((write) => !write.ok && write.refused);
-    return {
-      ok: false,
-      error: `Saved to one domain but not all: ${error}.${refused ? "" : " Retrying is safe."}`,
-    };
+    return write;
   }
 
   async purgeHistory(
@@ -206,7 +184,7 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
     // namespace this bot can recall, and fail closed when that cannot be shown.
     const found = await getMnemoverseAtomDomain(this.connection, id, context.signal);
     if (!found.ok) return found;
-    // Nothing there to delete: a shared fact forgotten once per copy, or a retry, ends here as done.
+    // Nothing there to delete: a retried forget ends here as done.
     if (found.value === null) {
       return { ok: true, value: { id, expired: true, reason: request.reason ?? null } };
     }

@@ -247,83 +247,37 @@ describe("Mnemoverse save", () => {
     source: { kind: "durable" as const },
   };
 
-  it("writes a shared memory to the bot's domain and the Space's", async () => {
+  it("writes a shared memory only to the Space's domain", async () => {
     const { calls } = mnemoverse();
     expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
-    expect(
-      calls
-        .map((call) => call.body)
-        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    ).toEqual([
-      { content: "Team uses UTC", domain: BOT },
-      { content: "Team uses UTC", domain: SPACE },
+    expect(calls.map((call) => call.body)).toEqual([{ content: "Team uses UTC", domain: SPACE }]);
+  });
+
+  it("keeps a shared fact out of Isolated recall and each scope's own memories in place", async () => {
+    mnemoverse();
+    await provider().save(
+      { content: "Likes tea", scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
+      context,
+    );
+    await provider().save(sharedSave, context);
+
+    const isolated = await recallOf("isolated");
+    expect(isolated.ok && isolated.value.map((item) => item.memory)).toEqual(["Likes tea"]);
+
+    const shared = await recallOf("shared");
+    expect(shared.ok && shared.value.map((item) => item.memory).sort()).toEqual([
+      "Likes tea",
+      "Team uses UTC",
     ]);
   });
 
-  it("keeps a shared fact recallable by the bot after it goes back to Isolated", async () => {
-    mnemoverse();
-    await provider().save(sharedSave, context);
-    const result = await recallOf("isolated");
-    expect(result.ok && result.value.map((item) => item.entity)).toEqual([BOT]);
+  it("reports a failed shared save instead of calling it partly saved", async () => {
+    mnemoverse([], { "POST /memory/write": () => new Response("{}", { status: 500 }) });
+    const result = await provider().save(sharedSave, context);
+    expect(!result.ok && result.error).toContain("500");
   });
 
-  it("counts a shared save as saved when one copy was written and the other refused as a duplicate", async () => {
-    const { atoms } = mnemoverse([], {});
-    const base = vi.mocked(fetch).getMockImplementation()!;
-    vi.mocked(fetch).mockImplementation(async (url, init) => {
-      if (String(url).endsWith("/memory/write") && JSON.parse(String(init?.body)).domain === BOT) {
-        return Response.json({ stored: false, atom_id: null, reason: "exact_duplicate" });
-      }
-      return base(url, init);
-    });
-    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
-    expect(atoms.map((atom) => atom.domain)).toEqual([SPACE]);
-  });
-
-  it("lists a fact saved in both domains once when recalling as shared", async () => {
-    mnemoverse();
-    await provider().save(sharedSave, context);
-    const result = await recallOf("shared");
-    expect(result.ok && result.value.map((item) => item.memory)).toEqual(["Team uses UTC"]);
-  });
-
-  it("finishes a half-done shared save when it is retried", async () => {
-    const { atoms } = mnemoverse();
-    const stored = vi.mocked(fetch).getMockImplementation()!;
-    let failSpace = true;
-    vi.mocked(fetch).mockImplementation(async (url, init) => {
-      if (String(url).endsWith("/memory/write")) {
-        const body = JSON.parse(String(init?.body));
-        if (failSpace && body.domain === SPACE) return new Response("{}", { status: 500 });
-        if (atoms.some((atom) => atom.domain === body.domain && atom.content === body.content)) {
-          return Response.json({ stored: false, reason: "exact_duplicate" });
-        }
-      }
-      return stored(url, init);
-    });
-    const first = await provider().save(sharedSave, context);
-    expect(!first.ok && first.error).toContain("Saved to one domain but not all");
-    expect(!first.ok && first.error).toContain("500");
-    failSpace = false;
-    expect(await provider().save(sharedSave, context)).toEqual({ ok: true, value: undefined });
-    expect(atoms.map((atom) => atom.domain).sort()).toEqual([BOT, SPACE]);
-  });
-
-  it("reports a shared save when one copy fails, and counts both copies as saved when both are exact duplicates", async () => {
-    mnemoverse([], {});
-    const base = vi.mocked(fetch).getMockImplementation()!;
-    vi.mocked(fetch).mockImplementation(async (url, init) => {
-      if (
-        String(url).endsWith("/memory/write") &&
-        JSON.parse(String(init?.body)).domain === SPACE
-      ) {
-        return new Response("{}", { status: 500 });
-      }
-      return base(url, init);
-    });
-    const partial = await provider().save(sharedSave, context);
-    expect(!partial.ok && partial.error).toContain("500");
-
+  it("counts an exact duplicate as saved", async () => {
     mnemoverse([], {
       "POST /memory/write": () =>
         Response.json({ stored: false, reason: "exact_duplicate", duplicate_of: "x" }),
@@ -389,24 +343,6 @@ describe("Mnemoverse save", () => {
     );
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toContain("below importance threshold");
-  });
-
-  it("does not call a declined copy safe to retry", async () => {
-    mnemoverse([], {});
-    const base = vi.mocked(fetch).getMockImplementation()!;
-    vi.mocked(fetch).mockImplementation(async (url, init) => {
-      if (
-        String(url).endsWith("/memory/write") &&
-        JSON.parse(String(init?.body)).domain === SPACE
-      ) {
-        return Response.json({ stored: false, reason: "below importance threshold" });
-      }
-      return base(url, init);
-    });
-    const result = await provider().save(sharedSave, context);
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toContain("below importance threshold");
-    expect(!result.ok && result.error).not.toContain("Retrying is safe");
   });
 
   it("does not wait on a response body that will not close", async () => {
