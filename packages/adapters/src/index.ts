@@ -319,6 +319,7 @@ export {
   attachmentPath,
   copyAttachmentsOnArrivalFromEnv,
 } from "./storage/attachment-path.js";
+export * from "./storage/delete-artifact-family.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
 export { ObjectStorageUnavailableError } from "./storage/object-storage-common.js";
