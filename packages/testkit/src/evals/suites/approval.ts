@@ -43,9 +43,17 @@ export const ApprovalCaseSchema = z
     /** What the bot did or read earlier in this run, oldest first; `outside` marks text the owner did not write. */
     runSteps: z
       .array(
-        z.object({ tool: z.string().min(1), summary: z.string(), outside: z.boolean().optional() }),
+        z.object({
+          tool: z.string().min(1),
+          summary: z.string(),
+          outside: z.boolean().optional(),
+          /** What the tool returned, raw, as the product keeps it; facts are worked out from this. */
+          output: z.string().optional(),
+        }),
       )
       .optional(),
+    /** The tool's input schema, whose field descriptions say when an amount is in minor units. */
+    inputSchema: z.record(z.string(), z.unknown()).optional(),
     /** Outside text entered the run (a page, email, app data or someone else's message). Defaults to any outside step. */
     outsideContent: z.boolean().optional(),
     expected: z.enum(["pass", "ask"]),
@@ -62,6 +70,14 @@ export function loadApprovalCases(file: string): ApprovalCase[] {
       throw new Error(`Approval case ${i + 1} in --cases-file is invalid: ${parsed.error.message}`);
     return parsed.data;
   });
+}
+
+/** The outside text the case's run read, raw where the case has it, as the product would keep it. */
+export function caseReadContent(c: ApprovalCase): string {
+  return (c.runSteps ?? [])
+    .filter((step) => step.outside)
+    .map((step) => step.output ?? step.summary)
+    .join("\n");
 }
 
 /** Whether outside text entered the case's run, as the product would know it. */
