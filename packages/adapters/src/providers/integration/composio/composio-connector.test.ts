@@ -275,11 +275,18 @@ describe("composio tool mapping", () => {
       { type: "function", function: { name: "COMPOSIO_MULTI_EXECUTE_TOOL" } },
       { slug: "COMPOSIO_SEARCH_TOOLS" },
     ]);
-    expect(tools.map((tool) => tool.batch)).toEqual([
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      undefined,
-    ]);
+    for (const tool of tools.slice(0, 2)) {
+      expect(tool.batch).toMatchObject({
+        items: "tools",
+        action: "tool_slug",
+        arguments: "arguments",
+        outgoingDrafts: {
+          GMAIL_SEND_EMAIL: { kind: "email" },
+          SLACK_SEND_MESSAGE: { kind: "message" },
+        },
+      });
+    }
+    expect(tools[2]?.batch).toBeUndefined();
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
