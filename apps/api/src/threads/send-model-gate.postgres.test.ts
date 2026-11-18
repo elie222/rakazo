@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
@@ -14,6 +15,7 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import { handleRpcError } from "../rpc-errors.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
@@ -58,7 +60,9 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
       sandbox: {},
       env: { agentRuntime: "pi", deploymentModelConfigured: false },
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    const handler = new RPCHandler(createRouter(deps), {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
     call = async (path, input) => {
       const { response } = await handler.handle(
         new Request(`http://127.0.0.1/rpc/threads/${path}`, {

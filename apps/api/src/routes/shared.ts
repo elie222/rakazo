@@ -110,6 +110,18 @@ function computerHostFor(
   return null;
 }
 
+/** Whether this member can use the deployment's model under the current funding mode. */
+export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
+  const funding = deps.billing ? await deps.billing.status(actor) : null;
+  const creditsAvailable = modelCreditsUsd(funding) !== null;
+  const fundingRequired = Boolean(funding?.creditPurchasesEnabled) && !creditsAvailable;
+  return {
+    creditsAvailable,
+    fundingRequired: Boolean(deps.env.deploymentModelConfigured) && fundingRequired,
+    hasDeployment: Boolean(deps.env.deploymentModelConfigured) && !fundingRequired,
+  };
+}
+
 /** The main model chat runs: the member's while it can run, else the deployment's. */
 export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const [member, settings] = await Promise.all([
@@ -123,11 +135,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const funding = deps.billing ? await deps.billing.status(actor) : null;
-  const creditsAvailable = modelCreditsUsd(funding) !== null;
-  const hasDeployment =
-    Boolean(deps.env.deploymentModelConfigured) &&
-    (!funding?.creditPurchasesEnabled || creditsAvailable);
+  const deploymentAccess = await deploymentModelAccess(deps, actor);
   return {
     main,
     model:
@@ -137,10 +145,8 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
       }).primary,
     settings,
-    funding,
-    creditsAvailable,
-    hasDeployment,
-    needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
+    ...deploymentAccess,
+    needsModel: deps.env.agentRuntime !== "scripted" && !main && !deploymentAccess.hasDeployment,
   };
 }
 

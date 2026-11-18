@@ -68,7 +68,7 @@ import {
   ModelCreditOfferingUnavailableError,
   UnsupportedThinkingLevelError,
 } from "./model-role-errors.js";
-import { meDto } from "./shared.js";
+import { deploymentModelAccess, meDto } from "./shared.js";
 
 /**
  * Runs an authenticated procedure with row-level security scoped to the actor's
@@ -296,17 +296,20 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole,
     settings: ModelRoleSettings,
   ): Promise<ModelRoleView> => {
-    const defaults =
-      role === "main"
-        ? {
+    if (role === "main") {
+      if (!deps.env.deploymentModelConfigured) return { ...settings, deploymentPrimary: null };
+      const { hasDeployment } = await deploymentModelAccess(deps, actor);
+      const deploymentPrimary = hasDeployment
+        ? deploymentModelRole(role, {
             settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            // Only a model the deployment can run stands in for the member's choice.
-            deployment: deps.env.deploymentModelConfigured
-              ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-              : null,
-          }
-        : { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true };
-    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+            deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+          }).primary
+        : null;
+      return { ...settings, deploymentPrimary };
+    }
+    let deploymentPrimary = deploymentModelRole(role, {
+      includedApproval: deps.billing?.modelCreditsEnabled === true,
+    }).primary;
     if (
       role === "approval" &&
       deploymentPrimary &&
