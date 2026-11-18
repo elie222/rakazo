@@ -281,7 +281,8 @@ shared/received/<YYYY>/<MM>/<YYYY-MM-DD>_<HHMM>_<sender>_<name>.<ext>
 
 The date and time are when the message arrived, in the time zone of the account the chat
 address belongs to, or UTC when it has none set. Sender and file
-names lose characters a path can't hold and are shortened. A name already taken gets `-2`,
+names lose characters a path can't hold, get `_` for each one Windows does not allow in a name,
+and are shortened. A name already taken gets `-2`,
 `-3` and so on, so a copy never replaces a file. The bot's message gets a `[saved to <path>]`
 line for each copy, so the bot knows where to find it.
 

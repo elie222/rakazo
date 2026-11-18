@@ -52,8 +52,29 @@ describe("receivedFilePath", () => {
 
   it("removes separators, dot-dot, control characters and leading dots from the name", () => {
     const path = receivedFilePath({ ...base, name: "..\\a/b\u0000c..d\n.hidden" });
-    expect(path).toBe("shared/received/2026/11/2026-11-17_1912_972541234567_abcd.hidden.mov");
+    // A backslash is one of the characters Windows does not allow, so it becomes `_`.
+    expect(path).toBe("shared/received/2026/11/2026-11-17_1912_972541234567__abcd.hidden.mov");
     expect(receivedFilePath({ ...base, name: "..." })).toContain("_video.mov");
+  });
+
+  it("removes the lone half of an emoji split by the chat app", () => {
+    const split = "😀".slice(0, 1);
+    expect(receivedFilePath({ ...base, name: `photo${split}` })).toBe(
+      "shared/received/2026/11/2026-11-17_1912_972541234567_photo.mov",
+    );
+    expect(receivedFilePath({ ...base, name: undefined, sender: `${split}x` })).toContain(
+      "_1912_x_video.mov",
+    );
+  });
+
+  it("replaces characters Windows does not allow in a name", () => {
+    const pdf = { ...base, name: "Meeting 10:30.pdf", mimeType: "application/pdf" };
+    expect(receivedFilePath(pdf)).toBe(
+      "shared/received/2026/11/2026-11-17_1912_972541234567_Meeting 10_30.pdf",
+    );
+    expect(receivedFilePath({ ...base, name: 'a*b?c<d>e|f"g\\h' })).toContain(
+      "_a_b_c_d_e_f_g_h.mov",
+    );
   });
 
   it("turns a path-like sender into one safe segment", () => {

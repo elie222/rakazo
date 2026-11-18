@@ -12,12 +12,16 @@ function withoutTrailingDots(value: string): string {
   return value.replace(/[. ]+$/, "");
 }
 
-/** One safe path segment: no separators, dot runs, control or format characters, leading dots. */
+/**
+ * One safe path segment: no separators, dot runs, control or format characters, lone halves of
+ * a surrogate pair or leading dots, and `_` for each character Windows does not allow in a name.
+ */
 function safeSegment(value: string, maxCodePoints: number): string {
   const cleaned = value
     .normalize("NFC")
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
-    .replace(/[/\\]/g, "")
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/gu, "")
+    .replace(/[:*?<>|"\\]/g, "_")
+    .replace(/\//g, "")
     .replace(/\.{2,}/g, "")
     .replace(/^\.+/, "")
     .trim();
