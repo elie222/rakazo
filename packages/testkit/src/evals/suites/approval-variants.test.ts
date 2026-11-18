@@ -94,11 +94,11 @@ describe("approval variants", () => {
 
   it("builds the same variant for a plain model's prompt", () => {
     const base = "Use pass when: P.\nUse ask only when: A.\ntool: x";
-    const escape = (value: string) => value;
-    const prompt = variantPromptFor(base, planted, parseApprovalVariant("steps+lean-ask"), escape);
+    const asData = (value: string) => value;
+    const prompt = variantPromptFor(base, planted, parseApprovalVariant("steps+lean-ask"), asData);
     expect(prompt).toContain(`Use ask when: ${LEAN_ASK_CRITERIA.ask}.`);
     expect(prompt).toContain("<run_context>");
-    expect(variantPromptFor(base, planted, parseApprovalVariant(), escape)).toBe(base);
+    expect(variantPromptFor(base, planted, parseApprovalVariant(), asData)).toBe(base);
     // A new-site request keeps the product's own rubric.
     expect(
       variantPromptFor(
