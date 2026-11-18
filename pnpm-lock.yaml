@@ -1449,6 +1449,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../db
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@rakazo/page-kit':
         specifier: workspace:*
         version: link:../page-kit

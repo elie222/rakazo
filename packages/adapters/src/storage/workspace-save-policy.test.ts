@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
+  WORKSPACE_SAVE_LIMITS,
   workspaceSaveFindCommand,
+  workspaceSaveLimits,
 } from "./workspace-save-policy.js";
 
 describe("home save exclusions", () => {
@@ -229,4 +231,32 @@ describe("tagged cache directories", () => {
       await rm(scratch, { recursive: true, force: true });
     }
   });
+});
+
+describe("workspaceSaveLimits", () => {
+  it("reads the byte limit from WORKSPACE_SAVE_MAX_GB and keeps the file limit", () => {
+    expect(workspaceSaveLimits({})).toEqual(WORKSPACE_SAVE_LIMITS);
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "  " })).toEqual(WORKSPACE_SAVE_LIMITS);
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "20" })).toEqual({
+      maxBytes: 20 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: " 0.5 " }).maxBytes).toBe(1024 ** 3 / 2);
+  });
+
+  it("accepts 100 GiB, the most a saved home can be read back at, and rejects more", () => {
+    expect(workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "100" }).maxBytes).toBe(100 * 1024 ** 3);
+    expect(() => workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: "101" })).toThrow(
+      "between 0 and 100",
+    );
+  });
+
+  it.each(["0", "0.0", "-5", "abc", "5GB", "1e3", "NaN", "Infinity", "9007199254740991"])(
+    "rejects the save limit %s, naming the setting",
+    (value) => {
+      expect(() => workspaceSaveLimits({ WORKSPACE_SAVE_MAX_GB: value })).toThrow(
+        "WORKSPACE_SAVE_MAX_GB",
+      );
+    },
+  );
 });

@@ -82,10 +82,11 @@ describe("team chat prompts", () => {
 });
 
 describe("chatAppConnectNote", () => {
-  it("names the chat apps and keeps their setup apart from connect_app", () => {
+  it("names the chat apps and keeps their setup apart from the connect card", () => {
     const note = chatAppConnectNote(["Slack", "Telegram"], true);
     expect(note).toContain("Slack, Telegram");
-    expect(note).toContain("connect_app");
+    expect(note).toContain("Settings, under Messaging");
+    expect(note).not.toContain("connect_app");
     expect(chatAppConnectNote(["Slack"], false)).toBe(
       "People can also message you from Slack. They set that up themselves in Settings, under Messaging.",
     );

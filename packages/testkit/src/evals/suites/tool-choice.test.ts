@@ -6,6 +6,7 @@ import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import {
   gradeToolChoice,
+  gradeUseTool,
   loadToolChoiceCases,
   TOOL_CHOICE_JUDGE_CALIBRATION,
   TOOL_CHOICE_JUDGE_VERSION,
@@ -88,7 +89,10 @@ describe("tool-choice grading", () => {
     const plot = { step: 2, name: "render_plot", args: {}, viaUseTool: true };
     const expect_ = { order: ["find_tool", "render_plot"] };
     const grade = (toolCalls: Evidence["toolCalls"]) =>
-      passes(gradeToolChoice(expect_, evidence({ toolCalls })));
+      passes([
+        ...gradeToolChoice(expect_, evidence({ toolCalls })),
+        ...gradeUseTool(evidence({ toolCalls })),
+      ]);
     expect(grade([found, { ...plot, loaded: true }])).toBe(true);
     expect(grade([found, { ...plot, loaded: false }])).toBe(false);
     expect(grade([found, { ...plot, loaded: true }, { step: 2, name: "use_tool", args: {} }])).toBe(

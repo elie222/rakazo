@@ -254,9 +254,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     id: "help-connect-slack",
     area: "product-help",
     kind: "guard",
-    purpose: "Look up how to connect a messaging app instead of guessing.",
+    purpose: "Tell messaging the bot from a chat app apart from connecting that app's tools.",
     prompt: "How do I connect you to Slack?",
-    expect: PRODUCT_HELP,
+    expect: {
+      replyMeans:
+        "Explains that messaging the bot from Slack is set up in Settings under Messaging, and/or offers to connect Slack so the bot can read and act in it. Does not claim that connecting the app sets up messaging the bot from Slack, and does not name internal tools.",
+    },
   },
   {
     id: "help-credits",
