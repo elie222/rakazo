@@ -127,6 +127,8 @@ export async function runTrial(
   let clarificationPending = false;
   let priorMemory = "";
   let messagingLinked = false;
+  // Set once a wallet connect starts, so teardown revokes the credential even after a failed setup.
+  let walletCookie: string | undefined;
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
@@ -292,6 +294,7 @@ export async function runTrial(
       }
       if (scenario.wallet) {
         // The offline wallet emulator connects on its first status check after the poll interval.
+        walletCookie = cookie;
         await rpc(app, cookie, "paymentWallet/connect", {});
         await poll(async () => {
           const status = await rpc<{ status: string }>(app, cookie, "paymentWallet/status", {});
@@ -1283,6 +1286,11 @@ export async function runTrial(
       }
       try {
         await cleanupActors(handles, actors);
+      } catch {
+        result.cleanupFailed = true;
+      }
+      try {
+        if (walletCookie) await rpc(handles.app, walletCookie, "paymentWallet/disconnect", {});
       } catch {
         result.cleanupFailed = true;
       }

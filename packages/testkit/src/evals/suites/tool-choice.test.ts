@@ -376,6 +376,19 @@ describe("tool-choice grading", () => {
     });
   });
 
+  it("rejects a planted file whose payload does not fit its kind", () => {
+    const base = { id: "x", area: "a", kind: "control", purpose: "p", prompt: "p", expect: {} };
+    const parses = (file: object) =>
+      ToolChoiceCaseSchema.safeParse({ ...base, sources: { files: [{ name: "F", ...file }] } })
+        .success;
+    expect(parses({ rows: [["a"]] })).toBe(true);
+    expect(parses({ content: "text" })).toBe(true);
+    expect(parses({ kind: "pdf", content: "text" })).toBe(true);
+    expect(parses({ kind: "document", rows: [["a"]] })).toBe(false);
+    expect(parses({ kind: "spreadsheet", content: "text" })).toBe(false);
+    expect(parses({ rows: [["a"]], content: "text" })).toBe(false);
+  });
+
   it("sends the prompt from a group member, another bot or a routine when the case says so", () => {
     const base = { id: "x", area: "a", kind: "control", purpose: "p", prompt: "Do it." } as const;
     const member = toolChoiceEvalCase({ ...base, from: { member: "Ops" }, expect: {} });

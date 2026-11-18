@@ -30,7 +30,14 @@ const FileSchema = z
     /** Rows of a spreadsheet's one sheet. */
     rows: z.array(z.array(z.string())).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ kind, rows, content }) =>
+      rows
+        ? content === undefined && (kind ?? "spreadsheet") === "spreadsheet"
+        : kind !== "spreadsheet",
+    { message: "A spreadsheet takes rows; a document or PDF takes content" },
+  );
 
 const NotePageSchema = z
   .object({
