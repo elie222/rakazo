@@ -99,7 +99,7 @@ export default function MeetingsDialog({
                         setUrl(event.target.value);
                       }}
                     />
-                    <Button type="submit" disabled={busy || !url.trim()}>
+                    <Button size="lg" type="submit" disabled={busy || !url.trim()}>
                       <Trans>Join meeting</Trans>
                     </Button>
                   </div>

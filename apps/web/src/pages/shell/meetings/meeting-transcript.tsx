@@ -111,7 +111,11 @@ export function MeetingTranscript({
               question.setDraft(event.target.value);
             }}
           />
-          <Button type="submit" disabled={ask.pending || removal.pending || !question.canAsk}>
+          <Button
+            size="lg"
+            type="submit"
+            disabled={ask.pending || removal.pending || !question.canAsk}
+          >
             <Trans>Ask</Trans>
           </Button>
         </div>
