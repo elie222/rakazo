@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { MeetingJoinRequest } from "@rakazo/adapter-kit";
-import { resolveAuthSecret } from "@rakazo/core/node/secrets-guard";
+import { resolveMeetingSigningKey } from "@rakazo/core/node/secrets-guard";
 
 export const MEETING_MEDIA_PATH = "/api/meetings/media";
 
@@ -28,7 +28,7 @@ export function configuredMeetingMedia(source = process.env) {
   if (origin?.protocol !== "https:" || origin.href !== `${origin.origin}/`) {
     throw new Error("MEETING_PUBLIC_ORIGIN must be a public HTTPS origin");
   }
-  const options = { publicOrigin: origin.origin, signingSecret: resolveAuthSecret(source) };
+  const options = { publicOrigin: origin.origin, signingSecret: resolveMeetingSigningKey(source) };
   return {
     ...options,
     voice: source.MEETING_LIVE_VOICE === "true",
