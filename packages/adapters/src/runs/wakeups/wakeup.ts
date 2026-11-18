@@ -20,6 +20,11 @@ import { recordConnectionCleanupAttemptsExhausted } from "../../integrations/con
 import { recordHistoryCompactAttemptsExhausted } from "../../runtime/context/history-compaction.js";
 import { RunExecutionHost } from "../lifecycle/run-execution.js";
 import { INTERACTIVE_RUN_TASK, recordJobGaveUp } from "./job-give-up.js";
+import {
+  isFollowerPayload,
+  PENDING_UNTIL_SQL,
+  RELEASE_FOLLOWERS_SQL,
+} from "./named-queue-order.js";
 
 export {
   ABANDONED_LAST_ATTEMPT_ERROR,
@@ -161,51 +166,19 @@ export class GraphileJobPublisher implements JobPublisher, JobQueueOrder {
     });
   }
 
-  /**
-   * Counts a job queued, in backoff or running; one that used up its attempts is finished, though
-   * Graphile keeps its row until the dead-job pruner removes it.
-   */
   async pendingUntil(queueName: string, exceptKey?: string): Promise<Date | null> {
     const utils = await this.getUtils();
     return utils.withPgClient(async (client) => {
-      const found = await client.query<{ run_at: Date | null }>(
-        `select max(jobs.run_at) as run_at
-         from graphile_worker._private_jobs as jobs
-         join graphile_worker._private_job_queues as queues on queues.id = jobs.job_queue_id
-         where queues.queue_name = $1 and jobs.key is distinct from $2
-           and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)`,
-        [queueName, exceptKey ?? null],
-      );
+      const found = await client.query<{ run_at: Date | null }>(PENDING_UNTIL_SQL, [
+        queueName,
+        exceptKey ?? null,
+      ]);
       return found.rows[0]?.run_at ?? null;
     });
   }
 
-  /** The follower mark is read from the stored payload, with or without its correlation wrapper. */
   async releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string) {
-    await tx.$executeRawUnsafe(
-      `with queued as (
-         select jobs.id, jobs.run_at, jobs.locked_at is null and coalesce(
-             coalesce(jobs.payload->'payload'->>'follower', jobs.payload->>'follower') = 'true',
-             false
-           ) as follower
-         from graphile_worker._private_jobs as jobs
-         join graphile_worker._private_job_queues as queues on queues.id = jobs.job_queue_id
-         where queues.queue_name = $1::text and jobs.key is distinct from $2::text
-           and (jobs.attempts < jobs.max_attempts or jobs.locked_at is not null)
-       ), head as (
-         select id, run_at, row_number() over (order by run_at, id) - 1 as place
-         from queued
-         where follower
-           and run_at < coalesce(
-             (select min(run_at) from queued where not follower), 'infinity'::timestamptz)
-       )
-       update graphile_worker._private_jobs as jobs
-       set run_at = least(head.run_at, now() + head.place * interval '1 millisecond')
-       from head
-       where jobs.id = head.id`,
-      queueName,
-      exceptKey ?? null,
-    );
+    await tx.$executeRawUnsafe(RELEASE_FOLLOWERS_SQL, queueName, exceptKey ?? null);
   }
 
   async close(): Promise<void> {
@@ -727,10 +700,8 @@ export function createRoutineRetryNoticeReconciler(
 
 const LAST_ATTEMPT = { number: 1, max: 1 } as const;
 
-/** A job due late only so it runs after the jobs ahead of it in its named queue. */
 function isFollower(job: QueuedJob): boolean {
-  const { payload } = unwrapJobPayload(job.payload);
-  return (payload as { follower?: unknown } | null)?.follower === true;
+  return isFollowerPayload(unwrapJobPayload(job.payload).payload);
 }
 
 /** Graphile's default when a job sets no cap. */

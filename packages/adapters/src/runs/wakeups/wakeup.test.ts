@@ -158,7 +158,11 @@ describe("InMemoryJobQueue", () => {
     await queue.enqueue(settle("downloading", 2 * hour, false));
     await queue.enqueue(settle("behind", 2 * hour + 1, true));
 
-    await queue.releaseFollowersIn({ $executeRawUnsafe: vi.fn() }, "messaging.inbound:identity-1", settling.replaceKey);
+    await queue.releaseFollowersIn(
+      { $executeRawUnsafe: vi.fn() },
+      "messaging.inbound:identity-1",
+      settling.replaceKey,
+    );
     await vi.advanceTimersByTimeAsync(1);
     const settled = () =>
       vi
