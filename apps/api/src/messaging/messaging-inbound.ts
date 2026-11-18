@@ -859,7 +859,8 @@ async function storeInboundMedia(
       downloadDeadline,
       downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
       attempts: DIRECT_ATTACHMENT_ATTEMPTS,
-      sender: event.from,
+      // The sender's display name, else their raw id.
+      sender: event.fromLabel?.trim() || event.from,
       reasons: true,
       ...(saveReceivedFile
         ? {

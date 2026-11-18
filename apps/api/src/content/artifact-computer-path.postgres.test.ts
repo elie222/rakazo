@@ -1,7 +1,7 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb, runAsTenant } from "@rakazo/db";
+import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOwnedArtifact, storeInboundAttachment } from "./artifacts.js";
 
@@ -103,6 +103,22 @@ describePostgres("artifact computer paths (PostgreSQL)", () => {
       "attachments/2026/11/2026-11-18_1649_+972 50 555 0100_video-3.mp4",
       "attachments/2026/11/2026-11-18_1649_+972 50 555 0100_video.mp4",
     ]);
+  });
+
+  // Chat-app and email files are stored under the system context their webhook runs in.
+  it.each([
+    ["messaging inbound", "chat.pdf"],
+    ["inbound email", "mail.pdf"],
+  ])("dates a file stored under %s in the owner's time zone", async (reason, name) => {
+    const stored = await runAsSystem(reason, () =>
+      storeInboundAttachment({ prisma, artifacts, attachmentNaming }, actor, {
+        botId,
+        attachment: { name, mimeType: "application/pdf", fetch: async () => new Uint8Array([1]) },
+        clientNonce: `system-file:${name}`,
+        sender: "Noa",
+      }),
+    );
+    expect(await pathOf(stored.id)).toBe(`attachments/2026/11/2026-11-18_1649_Noa_${name}`);
   });
 
   it("returns the same row and path for a replayed upload", async () => {

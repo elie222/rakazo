@@ -596,7 +596,6 @@ describe("createMessagingInboundHandler DM routing", () => {
         userId: "user-1",
         botId: "bot-1",
         clientNonce: "messaging-attachment:sendblue:handle-1:0",
-        sender: dmEvent.from,
       }),
     );
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
@@ -610,6 +609,27 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
     );
+  });
+
+  // The sender's display label, else their raw id.
+  it.each([
+    { fromLabel: "Dana Levi", sender: "Dana Levi" },
+    { fromLabel: null, sender: "+15551111111" },
+    { fromLabel: "  ", sender: "+15551111111" },
+  ])("names a DM's file by its sender ($sender)", async ({ fromLabel, sender }) => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-1",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 42,
+      }),
+    );
+    const deps = createDeps({ storeAttachment });
+    await createMessagingInboundHandler(deps)({ ...photoEvent, fromLabel });
+    await settled(deps);
+
+    expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
   });
 
   it("delivers a caption alongside the stored attachment", async () => {
