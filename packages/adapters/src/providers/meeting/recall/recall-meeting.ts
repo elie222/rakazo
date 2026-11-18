@@ -52,6 +52,10 @@ const SECOND = 1000;
 const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
 export function buildRecallBotConfig(input: MeetingJoinRequest) {
+  const liveVoice = Boolean(input.mediaUrl && input.liveVoice);
+  const recordingNotice = "Rakazo is capturing audio to create a meeting transcript.";
+  const liveNotice =
+    " It also processes speech in real time with AI services and may reply aloud when addressed by name.";
   return {
     meeting_url: input.meetingUrl,
     bot_name: input.botName.slice(0, 100),
@@ -59,7 +63,7 @@ export function buildRecallBotConfig(input: MeetingJoinRequest) {
     chat: {
       on_bot_join: {
         send_to: "everyone",
-        message: "Rakazo is capturing audio to create a meeting transcript.",
+        message: liveVoice ? recordingNotice + liveNotice : recordingNotice,
       },
     },
     ...(input.mediaUrl
@@ -69,7 +73,7 @@ export function buildRecallBotConfig(input: MeetingJoinRequest) {
         }
       : {}),
     recording_config: {
-      ...(input.mediaUrl ? { include_bot_in_recording: { audio: true } } : {}),
+      ...(liveVoice ? { include_bot_in_recording: { audio: true } } : {}),
       video_mixed_layout: "audio_only",
       retention: { type: "timed", hours: 24 },
     },

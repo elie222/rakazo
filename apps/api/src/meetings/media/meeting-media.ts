@@ -10,6 +10,7 @@ import { parseModelJson } from "@rakazo/adapters/model-json";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import { LeaseHeldError, LeaseLostError, recordUsage, runAsTenant, withLease } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 import type { VoiceDeps } from "../../calls/voice.js";
 import {
@@ -88,13 +89,18 @@ Bot: ${answer}`,
             },
           );
         } catch (error) {
-          // Keep a single in-flight speech turn per meeting across API replicas.
+          if (error instanceof VoiceAccountError || error instanceof ModelAccountError) {
+            getLogger().warn("Meeting voice connection refused", {
+              "meeting.failure":
+                error instanceof VoiceAccountError ? "voice_account" : "model_account",
+            });
+            return { clip: null };
+          }
+          // Leave or an overlapping turn can stop speech while the meeting is still live.
           if (
             error instanceof LeaseHeldError ||
             (error instanceof LeaseLostError && !error.cause) ||
             error instanceof NoVoiceConfigured ||
-            error instanceof VoiceAccountError ||
-            error instanceof ModelAccountError ||
             (error instanceof ClientError && error.code === "AI_CONSENT_REQUIRED")
           ) {
             return { clip: null };

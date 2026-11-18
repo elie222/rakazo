@@ -1,8 +1,10 @@
 import type { AgentRunRequest, AgentRuntime, VoiceProvider } from "@rakazo/adapter-kit";
+import { ModelAccountError, VoiceAccountError } from "@rakazo/adapter-kit";
 import { NoVoiceConfigured, UnavailableModelForAuthError } from "@rakazo/adapters";
 import { MEETING_MEDIA_PATH } from "@rakazo/adapters/meeting-media";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "../../calls/voice.js";
@@ -91,9 +93,9 @@ function fixture(modelText: string) {
   });
   const app = new Hono();
   media.mount(app);
-  const token = new URL(media.pageUrl("joined-session", new Date(Date.now() + 30_000))).hash.slice(
-    1,
-  );
+  const token = new URL(
+    media.pageUrl("joined-session", new Date(Date.now() + 30_000), true),
+  ).hash.slice(1);
   return {
     run,
     resolveModel,
@@ -205,6 +207,26 @@ describe("live meeting voice", () => {
     expect((await say()).status).toBe(204);
     expect(transcribeVoice).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      error: new VoiceAccountError(undefined, "Private voice provider details"),
+      kind: "voice_account",
+    },
+    { error: new ModelAccountError("Private model provider details"), kind: "model_account" },
+  ])("reports $kind without recording provider details", async ({ error, kind }) => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const { say } = fixture('{"reply":"An unexpected reply."}');
+      vi.mocked(transcribeVoice).mockRejectedValueOnce(error);
+      expect((await say()).status).toBe(204);
+      expect(warn).toHaveBeenCalledExactlyOnceWith("Meeting voice connection refused", {
+        "meeting.failure": kind,
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it.each(['{"reply":null}', "unstructured model text"])(

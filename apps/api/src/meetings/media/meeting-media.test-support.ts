@@ -82,7 +82,7 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
     beforeReply: (work: () => Promise<void>) => {
       beforeReply = work;
     },
-    url: () => bridge.pageUrl(DEMO_MEDIA_SESSION, new Date(Date.now() + 60_000)),
+    url: () => bridge.pageUrl(DEMO_MEDIA_SESSION, new Date(Date.now() + 60_000), true),
   };
 }
 

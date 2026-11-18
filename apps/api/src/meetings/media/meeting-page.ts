@@ -188,6 +188,10 @@ async function start() {
 }
 
 window.addEventListener("pagehide", close, { once: true });
+// A cached document has released its microphone and must authenticate again when restored.
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) location.reload();
+});
 void start().catch(() => {
   close();
   console.warn("Meeting audio could not start");
