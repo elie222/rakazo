@@ -26,7 +26,7 @@ function settingsRow(deps: RouterDeps) {
 
 export async function sharedModelSettings(deps: RouterDeps, actor: Actor) {
   await requireDeploymentModelAdmin(deps, actor);
-  const model = sharedDeploymentModel(await settingsRow(deps), true);
+  const model = sharedDeploymentModel(await settingsRow(deps));
   return {
     connection: model && { provider: model.provider, modelId: model.modelId, method: model.method },
     providers: sharedModelProviders(),
@@ -91,6 +91,7 @@ export async function configureSharedModel(
       ),
     ),
   );
+  await deps.events?.publishDeploymentModelChange?.();
   await recordAuditEvent({
     action: input ? "deployment.model.connected" : "deployment.model.disconnected",
     actor: { type: "user", id: actor.userId },

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { ClientError } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 
 const Binding = z.object({
@@ -19,29 +20,48 @@ export async function exchangeWorkloadIdentity(
 ) {
   const binding = Binding.safeParse(value);
   if (!binding.success) throw new ClientError("BAD_REQUEST", "Invalid model identity binding");
-  try {
-    const jwt = (await readFile(binding.data.tokenFile, { encoding: "utf8", signal })).trim();
-    const response = await fetcher("https://auth.openai.com/oauth/token", {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-        subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
-        subject_token: jwt,
-        identity_provider_id: binding.data.identityProviderId,
-        service_account_id: binding.data.serviceAccountId,
-      }),
-      signal,
+  const jwt = await readFile(binding.data.tokenFile, { encoding: "utf8", signal })
+    .then((value) => value.trim())
+    .catch(() => {
+      signal.throwIfAborted();
+      throw new ClientError(
+        "SERVICE_UNAVAILABLE",
+        "Could not read the workload identity assertion.",
+      );
     });
-    if (!response.ok) throw new Error("Token exchange refused");
-    const token = Token.parse(await response.json());
-    return { key: token.access_token, expiresAt: Date.now() + token.expires_in * 1000 };
-  } catch {
+  if (!jwt)
+    throw new ClientError("SERVICE_UNAVAILABLE", "The workload identity assertion is empty.");
+  const response = await fetcher("https://auth.openai.com/oauth/token", {
+    method: "POST",
+    redirect: "error",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+      subject_token: jwt,
+      identity_provider_id: binding.data.identityProviderId,
+      service_account_id: binding.data.serviceAccountId,
+    }),
+    signal,
+  }).catch(() => {
     signal.throwIfAborted();
+    throw new ClientError("SERVICE_UNAVAILABLE", "Could not reach the OpenAI token service.");
+  });
+  if (!response.ok) {
+    getLogger().warn("OpenAI workload identity exchange refused", { status: response.status });
+    if (response.status === 429 || response.status >= 500)
+      throw new ClientError("SERVICE_UNAVAILABLE", "The OpenAI token service is unavailable.");
     throw new ClientError(
       "BAD_REQUEST",
       "Model OAuth exchange failed. Check the workload identity binding.",
     );
   }
+  const token = Token.safeParse(await response.json().catch(() => undefined));
+  signal.throwIfAborted();
+  if (!token.success)
+    throw new ClientError(
+      "SERVICE_UNAVAILABLE",
+      "The OpenAI token service returned an invalid response.",
+    );
+  return { key: token.data.access_token, expiresAt: Date.now() + token.data.expires_in * 1000 };
 }

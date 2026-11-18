@@ -122,7 +122,7 @@ export async function deploymentModelAccess(
     settings === undefined
       ? await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } })
       : settings;
-  const shared = sharedDeploymentModel(row, !deps.billing);
+  const shared = sharedDeploymentModel(row);
   const funding = deps.billing ? await deps.billing.status(actor) : null;
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   return {

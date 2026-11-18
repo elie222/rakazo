@@ -116,7 +116,7 @@ export async function fleetPrepareDeps(
           hostedProvider,
           defaults: {
             settings,
-            shared: sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps))),
+            shared: sharedDeploymentModel(settings),
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
           },
         });
@@ -513,7 +513,6 @@ export async function resolveConnectedModelKey(
   if (credentialId?.startsWith("deployment:")) {
     const shared = sharedDeploymentModel(
       await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-      !(await modelCreditBillingEnabled(deps)),
     );
     if (!shared || credentialId !== `deployment:${shared.revision}`)
       throw new UnavailableModelForAuthError(
@@ -658,7 +657,7 @@ export async function resolveRunModel(
       : undefined,
     defaults: {
       settings,
-      shared: sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps))),
+      shared: sharedDeploymentModel(settings),
       deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
     },
   });

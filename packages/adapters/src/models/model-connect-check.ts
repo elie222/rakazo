@@ -1,5 +1,10 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
-import { MODEL_REQUEST_LIMIT_ERROR, normalizeRunError } from "@rakazo/core";
+import {
+  ClientError,
+  MODEL_REQUEST_LIMIT_ERROR,
+  normalizeRunError,
+  redactSecrets,
+} from "@rakazo/core";
 import { withChatCompletionsCompatibility } from "../runtime/chat-completions-compat.js";
 import { resolveRuntimeModel } from "../runtime/pi/pi-runtime-models.js";
 import { reliableModelStream } from "../runtime/pi/stream/pi-runtime-stream.js";
@@ -39,7 +44,8 @@ export async function verifyModelServesAgents(
 ): Promise<void> {
   const { models, model, apiKey } = resolveRuntimeModel(config);
   if (!model || !apiKey) {
-    if (options.requireAccepted) throw new Error("This model could not be resolved");
+    if (options.requireAccepted)
+      throw new ClientError("BAD_REQUEST", "This model could not be resolved.");
     return;
   }
   const accepted = new AbortController();
@@ -73,10 +79,19 @@ export async function verifyModelServesAgents(
   }
   if (accepted.signal.aborted) return;
   options.signal?.throwIfAborted();
-  if (options.requireAccepted) throw new Error("The provider did not accept the model request");
   const result = await stream.result();
-  if (result.stopReason !== "error" || !result.errorMessage) return;
-  const failure = normalizeRunError(result.errorMessage);
-  if (failure.kind === "context") throw new Error(MODEL_REQUEST_LIMIT_ERROR);
-  if (failure.kind && BLOCKING_KINDS.has(failure.kind)) throw new Error(failure.summary);
+  if (result.stopReason === "error" && result.errorMessage) {
+    const failure = normalizeRunError(result.errorMessage);
+    if (failure.kind === "context") {
+      if (options.requireAccepted) throw new ClientError("BAD_REQUEST", MODEL_REQUEST_LIMIT_ERROR);
+      throw new Error(MODEL_REQUEST_LIMIT_ERROR);
+    }
+    if (failure.kind && BLOCKING_KINDS.has(failure.kind)) {
+      if (options.requireAccepted)
+        throw new ClientError("BAD_REQUEST", redactSecrets(failure.summary, [apiKey]));
+      throw new Error(failure.summary);
+    }
+  }
+  if (options.requireAccepted)
+    throw new ClientError("SERVICE_UNAVAILABLE", "The provider did not accept the model request.");
 }

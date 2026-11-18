@@ -31,8 +31,10 @@ function fixture() {
   const tx = { user: { findUnique }, deploymentSettings: deployment };
   const prisma = { ...tx, $transaction: async (work: (db: typeof tx) => unknown) => work(tx) };
   const secrets = new EncryptedSecretStore("fake-test-key");
+  const publishDeploymentModelChange = vi.fn(async () => undefined);
   const deps = {
     prisma,
+    events: { publishDeploymentModelChange },
     secrets,
     env: { adminEmails: ["admin@rakazo.test"] },
   } as unknown as RouterDeps;
@@ -42,7 +44,7 @@ function fixture() {
     method: "api_key",
     apiKey: "fixture-private-api-key",
   } satisfies SharedModelInput;
-  return { deps, deployment, input, secrets, findUnique };
+  return { deps, deployment, input, secrets, findUnique, publishDeploymentModelChange };
 }
 
 describe("admin-managed deployment model", () => {
@@ -71,14 +73,17 @@ describe("admin-managed deployment model", () => {
   });
 
   it("preserves the active credential after a failed replacement and disconnects on request", async () => {
-    const { deps, deployment, input } = fixture();
+    const { deps, deployment, input, publishDeploymentModelChange } = fixture();
     await configureSharedModel(deps, actor, input);
     vi.mocked(testSharedModel).mockRejectedValueOnce(new Error("Provider rejected the model"));
     await expect(
       configureSharedModel(deps, actor, { ...input, modelId: "unknown" }),
     ).rejects.toThrow("Provider rejected");
     expect(deployment.upsert).toHaveBeenCalledOnce();
+    expect(publishDeploymentModelChange).toHaveBeenCalledOnce();
+    expect(publishDeploymentModelChange).toHaveBeenCalledAfter(deployment.upsert);
     await configureSharedModel(deps, actor, null);
+    expect(publishDeploymentModelChange).toHaveBeenCalledTimes(2);
     expect((await sharedModelSettings(deps, actor)).connection).toBeNull();
   });
 

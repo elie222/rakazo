@@ -70,6 +70,7 @@ vi.mock("./models/pi-openai-compatible-provider.js", () => ({
 import { sharedTokenPacer } from "../../models/endpoints/token-pacer.js";
 import { estimateModelContextTokens } from "../../models/model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
+import { SharedModelExchangeUnavailable } from "../../models/shared-deployment-model.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
@@ -737,9 +738,23 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
+  it("uses a configured backup when the shared OAuth exchange fails", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+    delete input.model.apiKey;
+    input.model.resolveApiKey = async () => {
+      throw new SharedModelExchangeUnavailable();
+    };
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+    await run(input);
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    expect(providerState.stream.mock.lastCall?.[0]).toMatchObject({ id: backupA.id });
+    expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({ apiKey: "backup-key" });
+  });
+
   it("authorizes a deployment model at dispatch and stops sending after revocation", async () => {
-    const input = request();
-    delete input.fallbackModels;
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
     delete input.model.apiKey;
     const revoked = "The deployment model connection changed. Start a new run.";
     const register = vi.fn();

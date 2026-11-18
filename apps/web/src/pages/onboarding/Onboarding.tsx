@@ -8,6 +8,7 @@ import { useSignOut } from "../../lib/auth/sign-out";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
+import { DeploymentModelSettingsPanel } from "../model-settings/DeploymentModelSettingsPanel";
 import { ensureFirstBot, FirstBotRetry } from "./first-bot";
 import { ModelStep } from "./model-step";
 import { useOnboardingModel } from "./use-onboarding-model";
@@ -23,6 +24,7 @@ export function OnboardingPage() {
   const [surveyDone, setSurveyDone] = useState(false);
   const step = creatingBot ? "bot" : surveyDone ? "loading" : (linkedStep ?? "loading");
   const [billingEnabled, setBillingEnabled] = useState(false);
+  const [canSetDeploymentModel, setCanSetDeploymentModel] = useState(false);
   // The step after the survey; null until me loads.
   const [afterSurvey, setAfterSurvey] = useState<"model" | "bot" | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -45,6 +47,7 @@ export function OnboardingPage() {
       .then(([me, models]) => {
         if (signal.aborted) return;
         setBillingEnabled(me.billingEnabled);
+        setCanSetDeploymentModel(me.isAdmin && !me.billingEnabled);
         setCatalog(models);
         const next = me.needsModel ? "model" : "bot";
         setAfterSurvey(next);
@@ -107,7 +110,19 @@ export function OnboardingPage() {
       <AccountMenu signingOut={signingOut} onLogOut={() => void logOut()} />
       <div className="mx-auto w-full max-w-[560px]">
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
-        {step === "model" ? <ModelStep model={model} fieldId={fieldId} /> : null}
+        {step === "model" ? (
+          <div className="space-y-8">
+            {canSetDeploymentModel ? (
+              <DeploymentModelSettingsPanel
+                providerLabel={(id) =>
+                  catalog.find((entry) => entry.provider === id)?.providerName ?? id
+                }
+                onConnected={() => goTo("bot")}
+              />
+            ) : null}
+            <ModelStep model={model} fieldId={fieldId} />
+          </div>
+        ) : null}
         {step === "bot" ? (
           <FirstBotRetry error={error} onRetry={() => void createFirstBot()} />
         ) : null}

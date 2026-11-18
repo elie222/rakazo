@@ -493,6 +493,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
+  // Mirror the deployment policy for the API and workers, including in-flight credential reads.
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
     create: {

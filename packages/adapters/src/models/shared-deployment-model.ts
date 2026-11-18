@@ -2,6 +2,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { SharedModelConnection, SharedModelInput } from "@rakazo/contracts";
 import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 import { verifyModelServesAgents } from "./model-connect-check.js";
 import { withModelCredentialLock } from "./model-credential-refresh.js";
@@ -29,6 +30,12 @@ type Row = {
 export type SharedDeploymentModel = SharedModelConnection & { revision: string };
 
 const Binding = z.record(z.string(), z.object({ provider: z.string(), config: z.unknown() }));
+export class SharedModelExchangeUnavailable extends Error {
+  constructor() {
+    super("The deployment model could not obtain an OAuth access token.");
+  }
+}
+
 const Access = z.object({ key: z.string().min(1), expiresAt: z.number() });
 type Access = z.infer<typeof Access>;
 
@@ -36,7 +43,8 @@ function identityBindings() {
   try {
     return Binding.parse(JSON.parse(process.env.RAKAZO_MODEL_OAUTH_BINDINGS || "{}"));
   } catch {
-    throw new ClientError("BAD_REQUEST", "Invalid deployment model OAuth bindings");
+    getLogger().warn("Ignoring invalid RAKAZO_MODEL_OAUTH_BINDINGS");
+    return {};
   }
 }
 
@@ -54,12 +62,8 @@ export function sharedModelProviders() {
   });
 }
 
-export function sharedDeploymentModel(
-  row: Row | null | undefined,
-  enabled: boolean,
-): SharedDeploymentModel | null {
+export function sharedDeploymentModel(row: Row | null | undefined): SharedDeploymentModel | null {
   if (
-    !enabled ||
     row?.sharedModelDisabled ||
     !row?.sharedModelProvider ||
     !row.sharedModelId ||
@@ -89,11 +93,11 @@ export async function testSharedModel(input: SharedModelInput, signal?: AbortSig
   if (!options?.methods.includes(input.method))
     throw new ClientError("BAD_REQUEST", "That provider does not support this shared connection");
   const checkSignal = deadlineSignal(20_000, signal);
+  const key =
+    input.method === "api_key"
+      ? input.apiKey
+      : (await exchange(input.provider, input.binding, checkSignal)).key;
   try {
-    const key =
-      input.method === "api_key"
-        ? input.apiKey
-        : (await exchange(input.provider, input.binding, checkSignal)).key;
     await verifyModelServesAgents(
       { provider: input.provider, id: input.modelId, apiKey: key },
       {
@@ -101,12 +105,11 @@ export async function testSharedModel(input: SharedModelInput, signal?: AbortSig
         requireAccepted: true,
       },
     );
-  } catch {
+  } catch (error) {
     signal?.throwIfAborted();
-    throw new ClientError(
-      "BAD_REQUEST",
-      "Could not verify the model connection. Check the credential and model.",
-    );
+    if (error instanceof ClientError) throw error;
+    getLogger().warn("Shared model verification failed", { provider: input.provider });
+    throw new ClientError("SERVICE_UNAVAILABLE", "The deployment model could not be verified.");
   }
 }
 
@@ -117,7 +120,9 @@ function accessFor(model: SharedDeploymentModel, binding: string): Promise<Acces
   return withModelCredentialLock(model.revision, async () => {
     if (cached?.revision === model.revision && cached.token.expiresAt - Date.now() > 30_000)
       return cached.token;
-    const token = await exchange(model.provider, binding, AbortSignal.timeout(10_000));
+    const token = await exchange(model.provider, binding, deadlineSignal(10_000)).catch(() => {
+      throw new SharedModelExchangeUnavailable();
+    });
     cached = { revision: model.revision, token };
     return token;
   });
@@ -141,9 +146,17 @@ export async function sharedModelRequestCredential(
   )
     throw revoked();
   const value = await secrets.load(row.sharedModelCipher, SHARED_DEPLOYMENT_MODEL_RECORD);
-  const key = model.method === "api_key" ? value : (await accessFor(model, value)).key;
+  const access =
+    model.method === "api_key"
+      ? value
+      : await accessFor(model, value).catch((error: unknown) => {
+          if (error instanceof SharedModelExchangeUnavailable) return error;
+          throw error;
+        });
   const latest = await current();
   if (latest?.sharedModelRevision !== model.revision || latest.sharedModelDisabled) throw revoked();
+  if (access instanceof SharedModelExchangeUnavailable) throw access;
+  const key = typeof access === "string" ? access : access.key;
   registerSecrets?.([key]);
   return key;
 }

@@ -1,6 +1,10 @@
 import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
-import { followSpaceChanges, publishSpaceChange } from "./space-changes.js";
+import {
+  followSpaceChanges,
+  publishDeploymentModelChange,
+  publishSpaceChange,
+} from "./space-changes.js";
 
 function fakeFanout() {
   const subscribers = new Map<string, Set<(payload: string) => void>>();
@@ -23,7 +27,7 @@ function fakeFanout() {
 
 async function opened(iterator: AsyncGenerator<string>) {
   const kinds = [];
-  for (let i = 0; i < 3; i += 1) kinds.push((await iterator.next()).value);
+  for (let i = 0; i < 4; i += 1) kinds.push((await iterator.next()).value);
   return kinds;
 }
 
@@ -31,7 +35,12 @@ describe("followSpaceChanges", () => {
   it("signals every kind on open, then each change in its own Space only", async () => {
     const fanout = fakeFanout();
     const iterator = followSpaceChanges(fanout as never, "space-1");
-    expect(await opened(iterator)).toEqual(["computerUpdates", "runs", "routines"]);
+    expect(await opened(iterator)).toEqual([
+      "computerUpdates",
+      "runs",
+      "routines",
+      "deploymentModel",
+    ]);
 
     const next = iterator.next();
     let signalled = false;
@@ -46,6 +55,18 @@ describe("followSpaceChanges", () => {
     expect((await next).value).toBe("routines");
 
     await iterator.return(undefined);
+    expect(fanout.topics()).toEqual([]);
+  });
+
+  it("signals a deployment model update in every open Space", async () => {
+    const fanout = fakeFanout();
+    const one = followSpaceChanges(fanout as never, "space-1");
+    const two = followSpaceChanges(fanout as never, "space-2");
+    await Promise.all([opened(one), opened(two)]);
+    await publishDeploymentModelChange(fanout as never);
+    expect((await one.next()).value).toBe("deploymentModel");
+    expect((await two.next()).value).toBe("deploymentModel");
+    await Promise.all([one.return(undefined), two.return(undefined)]);
     expect(fanout.topics()).toEqual([]);
   });
 
@@ -88,7 +109,12 @@ describe("followSpaceChanges", () => {
     const iterator = followSpaceChanges(fanout as never, "space-1");
     await opened(iterator);
     await fanout.publish("space-changes:space-1", "");
-    expect(await opened(iterator)).toEqual(["computerUpdates", "runs", "routines"]);
+    expect(await opened(iterator)).toEqual([
+      "computerUpdates",
+      "runs",
+      "routines",
+      "deploymentModel",
+    ]);
     await iterator.return(undefined);
   });
 });

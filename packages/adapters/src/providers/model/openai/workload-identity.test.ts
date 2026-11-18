@@ -31,6 +31,19 @@ describe("workload identity exchange", () => {
     });
   });
 
+  it("reports a token service outage without exposing its response", async () => {
+    vi.mocked(readFile).mockResolvedValue("fixture-assertion");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ detail: "fixture-assertion" }, { status: 503 }));
+    await expect(
+      exchangeWorkloadIdentity(binding, new AbortController().signal, fetcher),
+    ).rejects.toMatchObject({
+      kind: "SERVICE_UNAVAILABLE",
+      message: "The OpenAI token service is unavailable.",
+    });
+  });
+
   it("does not surface a rejected provider response with credentials in it", async () => {
     vi.mocked(readFile).mockResolvedValue("fixture-assertion");
     const fetcher = vi

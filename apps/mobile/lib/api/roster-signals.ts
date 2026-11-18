@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { computerUpdates } from "../computers/computer-updates";
 import { invalidateWatchChat } from "../notifications/watch-chat";
 import { useAppForeground } from "../platform/app-foreground";
+import { queryClient } from "../query/query";
 import { refreshOrganizationReads } from "../spaces/organizations";
 import { subscribeSpaceSelection } from "./api";
 import { subscribeRosterSignals } from "./api-live";
@@ -60,6 +61,11 @@ async function follow(signal: AbortSignal) {
         (kind) => {
           if (connection.signal.aborted) return;
           if (kind === "runs") invalidateWatchChat();
+          if (kind === "deploymentModel")
+            void queryClient.invalidateQueries({
+              predicate: ({ queryKey }) =>
+                queryKey.includes("me") || queryKey.includes("models/role"),
+            });
           if (kind === "computerUpdates") computerUpdates.signalled();
           else for (const listener of spaceChangeListeners) listener(kind);
         },

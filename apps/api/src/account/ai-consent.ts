@@ -141,7 +141,7 @@ export async function aiConsentStatus(
           defaults: {
             settings,
             deployment,
-            shared: sharedDeploymentModel(settings, !deps.billing),
+            shared: sharedDeploymentModel(settings),
           },
         });
       }),

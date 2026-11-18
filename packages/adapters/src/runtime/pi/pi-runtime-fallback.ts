@@ -30,6 +30,7 @@ import type { PacerSlot } from "../../models/endpoints/token-pacer.js";
 import { pacerTokensPerMinute, sharedTokenPacer } from "../../models/endpoints/token-pacer.js";
 import { estimateModelContextTokens } from "../../models/model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
+import { SharedModelExchangeUnavailable } from "../../models/shared-deployment-model.js";
 import { ModelImageLimitError, pruneForRebuild } from "../context/context-pruning.js";
 import { ContextBudgetError } from "../context/context-selection.js";
 import { reportedContextWindow } from "../context/reported-context-window.js";
@@ -591,6 +592,16 @@ export function fallbackAwareModelStream(
         );
       } catch (error) {
         paceSlot?.release();
+        if (error instanceof SharedModelExchangeUnavailable && !signalAborted()) {
+          recordFailure(target, error.message);
+          state.primaryFailure ??= error.message;
+          if (await switchToNext(target)) {
+            resetForBackup();
+            buffered = [];
+            continue;
+          }
+          if (failIfAborted(target)) return;
+        }
         finishWithThrownError(target, error);
         return;
       }

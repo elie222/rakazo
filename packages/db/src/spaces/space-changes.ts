@@ -7,6 +7,7 @@ import { ChangeLatch } from "../threads/event-stream.js";
 const IDLE_WAIT_MS = 60_000;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
+const DEPLOYMENT_MODEL_TOPIC = "deployment-model-changes";
 // compat-shim(after v0.11.0): workers from the previous release still announce computer updates
 // here until they drain.
 const legacyComputerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
@@ -24,8 +25,21 @@ export function publishSpaceChange(
   kind: SpaceChangeKind,
   options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
+  return publishChange(realtime, spaceChangesTopic(spaceId), kind, options);
+}
+
+export function publishDeploymentModelChange(realtime: RealtimeFanout | undefined) {
+  return publishChange(realtime, DEPLOYMENT_MODEL_TOPIC, "deploymentModel");
+}
+
+function publishChange(
+  realtime: RealtimeFanout | undefined,
+  topic: string,
+  kind: SpaceChangeKind,
+  options: { sleep?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
   if (realtime)
-    void retryWhileDatabaseUnavailable(() => realtime.publish(spaceChangesTopic(spaceId), kind), {
+    void retryWhileDatabaseUnavailable(() => realtime.publish(topic, kind), {
       source: `${kind} signal`,
       waitMs: PUBLISH_RETRY_MS,
       ...options,
@@ -55,13 +69,17 @@ export async function* followSpaceChanges(
     const kind = SpaceChangeKind.safeParse(payload);
     if (kind.success) changed(kind.data);
   });
-  const unsubscribeLegacy = await realtime
-    .subscribe(legacyComputerUpdatesTopic(spaceId), () => changed("computerUpdates"))
-    .catch(async (error: unknown) => {
-      await unsubscribe();
-      throw error;
-    });
+  const subscriptions = [unsubscribe];
   try {
+    subscriptions.push(
+      await realtime.subscribe(legacyComputerUpdatesTopic(spaceId), () =>
+        changed("computerUpdates"),
+      ),
+    );
+    // The same content-free signal reaches every authenticated Space stream.
+    subscriptions.push(
+      await realtime.subscribe(DEPLOYMENT_MODEL_TOPIC, () => changed("deploymentModel")),
+    );
     while (!signal?.aborted) {
       const seen = latch.generation;
       const kinds = [...pending];
@@ -70,7 +88,6 @@ export async function* followSpaceChanges(
       await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
     }
   } finally {
-    await unsubscribeLegacy();
-    await unsubscribe();
+    await Promise.all(subscriptions.map((unsubscribe) => unsubscribe()));
   }
 }

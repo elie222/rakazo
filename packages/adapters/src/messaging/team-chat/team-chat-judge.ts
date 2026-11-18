@@ -25,6 +25,10 @@ import {
 } from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
 import {
+  sharedDeploymentModel,
+  sharedModelRequestCredential,
+} from "../../models/shared-deployment-model.js";
+import {
   cleanLine,
   renderTeamChatEngagementPrompt,
   teamChatEngagementInstructions,
@@ -162,6 +166,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           history: [],
           tools: [],
           model: resolved.model,
+          registerModelSecrets: (values) => secretsToRedact.push(...values),
         },
         {
           operationId: judgeId,
@@ -231,14 +236,25 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
+    const shared = sharedDeploymentModel(settings);
     const fallback = deploymentModelRole("main", {
       settings,
+      shared,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
     }).primary;
     const credential = useOverride ? overrideCredential : (main?.credential ?? null);
     const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
     const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
+    if (!useOverride && !main && shared)
+      return {
+        model: {
+          provider,
+          id: modelId,
+          resolveApiKey: (register) =>
+            sharedModelRequestCredential(this.deps.prisma, this.deps.secrets, shared, register),
+        },
+      };
 
     const hosted =
       settings?.modelCreditsEnabled &&

@@ -43,8 +43,9 @@ export async function recordUsage(
       : undefined,
     usageSource: event.usageSource ?? null,
   };
+  const fundingSource = attribution.fundingSource ?? event.fundingSource ?? "customer";
   const data = {
-    fundingSource: attribution.fundingSource ?? "customer",
+    fundingSource,
     provider: event.provider,
     model: event.model,
     spaceId: attribution.spaceId,
@@ -61,7 +62,7 @@ export async function recordUsage(
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       await tx.usageRecord.createMany({ data: [data], skipDuplicates: true });
-      if (attribution.fundingSource === "operator") {
+      if (fundingSource === "operator") {
         if (reconcile && event.callId)
           await tx.usageRecord.updateMany({
             where: {

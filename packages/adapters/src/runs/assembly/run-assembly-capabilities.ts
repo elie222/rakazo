@@ -119,7 +119,7 @@ export async function startTurnModel(
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
   const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
-  const shared = sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps)));
+  const shared = sharedDeploymentModel(settings);
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
   const pinError =
     !pinnedComputerModels &&

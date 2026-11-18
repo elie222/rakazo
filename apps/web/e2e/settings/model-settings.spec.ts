@@ -28,15 +28,15 @@ test.afterEach(async ({ page }) => {
 });
 
 test("sets the deployment model from a supported OAuth binding", async ({ page }, testInfo) => {
-  await signup(page, `shared-model-${Date.now()}@rakazo.test`, "password12", "Deployment Admin");
-  await completeOnboarding(page);
   let connection: { provider: string; modelId: string; method: string } | null = null;
   await page.route("**/rpc/me", async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json: Record<string, unknown> };
     await route.fulfill({
       response,
-      json: { json: { ...body.json, isAdmin: true, billingEnabled: false } },
+      json: {
+        json: { ...body.json, isAdmin: true, billingEnabled: false, needsModel: !connection },
+      },
     });
   });
   await page.route("**/rpc/models/sharedDeployment", (route) =>
@@ -60,7 +60,8 @@ test("sets the deployment model from a supported OAuth binding", async ({ page }
     connection = { provider: input.provider, method: input.method, modelId: input.modelId };
     return route.fulfill({ json: { json: { ok: true } } });
   });
-  await openUserSettings(page, "models");
+  await signup(page, `shared-model-${Date.now()}@rakazo.test`, "password12", "Deployment Admin");
+  await expect(page).toHaveURL(/\/onboarding\/model$/);
   const panel = page.getByRole("region", { name: "Deployment default" });
   await panel.getByRole("button", { name: "Connect provider" }).click();
   await panel.getByRole("combobox", { name: "Provider" }).click();
@@ -70,9 +71,9 @@ test("sets the deployment model from a supported OAuth binding", async ({ page }
   await panel.getByRole("combobox", { name: "Workload identity" }).click();
   await page.getByRole("option", { name: "fixture" }).click();
   await panel.getByRole("textbox", { name: "Model ID" }).fill("fixture-model");
-  await panel.getByRole("button", { name: "Test and save" }).click();
-  await expect(panel.getByText("fixture-model", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "deployment-model-oauth");
+  await panel.getByRole("button", { name: "Test and save" }).click();
+  await expect(page).toHaveURL(/\/app\//);
 });
 
 test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, testInfo) => {

@@ -17,6 +17,47 @@ class ModelTeamChatEngagementJudge extends Judge {
 }
 
 describe("team chat engagement judge", () => {
+  it("uses the shared deployment connection when the owner has no model", async () => {
+    const deploymentSettings = {
+      findUnique: vi.fn(async () => ({
+        sharedModelProvider: "openai",
+        sharedModelId: "gpt-5",
+        sharedModelMethod: "api_key",
+        sharedModelRevision: "fixture",
+        sharedModelCipher: "encrypted",
+      })),
+    };
+    const run = vi.fn(async function* (request: AgentRunRequest) {
+      expect(request.model).toMatchObject({ provider: "openai", id: "gpt-5" });
+      await expect(request.model.resolveApiKey?.(request.registerModelSecrets)).resolves.toBe(
+        "shared-fixture-key",
+      );
+      yield { type: "done", text: '{"act":true}' };
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: { deploymentSettings } as never,
+      runtime: { run } as never,
+      secrets: { load: async () => "shared-fixture-key" } as never,
+      deploymentProvider: "anthropic",
+      deploymentModel: "unused",
+    });
+    await expect(
+      judge.decide({
+        bot: {
+          id: "bot-fixture",
+          spaceId: "space-fixture",
+          userId: "user-fixture",
+          name: "Fixture",
+          modelProvider: null,
+          modelId: null,
+        },
+        channelId: "channel-fixture",
+        rules: "",
+        messages: [],
+      }),
+    ).resolves.toEqual({ act: true });
+    expect(run).toHaveBeenCalledOnce();
+  });
   it("keeps saved project routing when deciding whether to engage", async () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },

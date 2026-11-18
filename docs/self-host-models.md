@@ -39,7 +39,7 @@ the API and worker, for models that have no stored credential.
 
 ### Shared deployment connection
 
-On a self-hosted server, a verified account listed in `RAKAZO_ADMIN_EMAILS` can open **Settings → Models → Deployment default**. Choose a provider, enter the model ID, and select **Test and save**. The connection applies to runs that use the deployment default. Disconnect it to return to the environment-configured default.
+On a self-hosted server, a verified account listed in `RAKAZO_ADMIN_EMAILS` can set the deployment default on the first model setup screen or in **Settings → Models → Deployment default**. Choose a provider, enter the model ID, and select **Test and save**. The connection applies to runs that use the deployment default. Disconnect it to return to the environment-configured default.
 
 The provider list offers API keys and, for eligible providers, OAuth. The first OAuth option uses an OpenAI Platform project service account via [workload identity federation](https://developers.openai.com/api/docs/guides/workload-identity-federation). An operator configures the trust relationship and makes a short-lived identity assertion available in a rotating, read-only file. Set the same binding on the API and worker:
 
@@ -47,7 +47,7 @@ The provider list offers API keys and, for eligible providers, OAuth. The first 
 RAKAZO_MODEL_OAUTH_BINDINGS={"workload":{"provider":"openai","config":{"tokenFile":"/run/secrets/model-identity","identityProviderId":"wip_example","serviceAccountId":"svc_acct_example"}}}
 ```
 
-Select the `workload` binding in the shared connection form. Keep the assertion file out of agent computers. Rakazo exchanges it for short-lived credentials on demand. The requests are billed to the provider project. A personal subscription sign-in remains a personal connection.
+Select the `workload` binding in the shared connection form. Keep the assertion file out of agent computers. Rakazo exchanges it for short-lived credentials on demand. If the exchange is unavailable, runs can use their configured backup models. Requests are billed to the provider project. A personal subscription sign-in remains a personal connection.
 
 ## Approvals
 

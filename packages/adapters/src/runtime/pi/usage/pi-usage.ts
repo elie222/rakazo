@@ -335,6 +335,7 @@ export function observedPiStream(
   observer?: ModelCallObserver,
   attribution: {
     operationKind: UsageOperationKind;
+    fundingSource?: "operator";
     agentId?: string;
     userId?: string;
     runId?: string;
@@ -363,6 +364,7 @@ export function observedPiStream(
       callId,
       agentId: attribution.agentId,
       operationKind,
+      ...(attribution.fundingSource ? { fundingSource: attribution.fundingSource } : {}),
     };
     try {
       await hooks?.recordUsage?.(event);

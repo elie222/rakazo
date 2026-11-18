@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SharedModelInput } from "@rakazo/contracts";
-import { Button, Input, OptionSelect } from "@rakazo/ui-web";
+import { Button, Input, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -8,8 +8,10 @@ import { useSave, useSpaceQueries } from "../../lib/query/query";
 
 export function DeploymentModelSettingsPanel({
   providerLabel,
+  onConnected,
 }: {
   providerLabel: (provider: string) => string;
+  onConnected?: () => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -26,7 +28,8 @@ export function DeploymentModelSettingsPanel({
   const save = useSave({
     save: (input: SharedModelInput | null, rpc) => rpc.models.setSharedDeployment(input),
     stale: [query.queryKey, queries.models.role.key(), queries.me.queryKey()],
-    onSaved: () => {
+    onSaved: (_saved, input) => {
+      if (input) onConnected?.();
       setApiKey("");
       setEditing(false);
       setDisconnecting(false);
@@ -35,9 +38,9 @@ export function DeploymentModelSettingsPanel({
 
   return (
     <section aria-label={t`Deployment default`} className="space-y-3">
-      <h3 className="text-body-lg font-medium">
+      <SectionHeading variant="heading">
         <Trans>Deployment default</Trans>
-      </h3>
+      </SectionHeading>
       {isError ? (
         <p role="alert">
           <Trans>Could not load the deployment model.</Trans>

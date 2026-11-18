@@ -867,6 +867,7 @@ export type AgentRuntimeEvent =
       type: "usage";
       /** Producer-side onUsage completed; consumers must not account it again. */
       accounted?: boolean;
+      fundingSource?: "operator";
       provider: string;
       model: string;
       callId?: string;

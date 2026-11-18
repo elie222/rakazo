@@ -493,6 +493,7 @@ export class PiAgentRuntime implements AgentRuntime {
                     target.config.callObserver ?? this.modelCallObserver,
                     {
                       operationKind: request.usageOperationKind ?? "answer",
+                      fundingSource: target.config.resolveApiKey ? "operator" : undefined,
                       userId: context?.userId,
                       runId: request.runId,
                     },
