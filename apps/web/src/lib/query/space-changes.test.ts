@@ -23,6 +23,7 @@ it("marks only the reads a change kind covers as stale", async () => {
     me: key("me"),
     roles: key("models", "role"),
     deployment: key("models", "sharedDeployment"),
+    calendar: key("meetingCalendar", "upcoming"),
   };
   for (const queryKey of Object.values(keys)) client.setQueryData(queryKey, []);
   const invalidated = () =>
@@ -55,6 +56,19 @@ it("marks only the reads a change kind covers as stale", async () => {
     "me",
     "roles",
     "deployment",
+  ]);
+  await spaceChanged("meetingCalendar", client);
+  expect(invalidated()).toEqual([
+    "runs",
+    "history",
+    "usage",
+    "routines",
+    "meetings",
+    "transcript",
+    "me",
+    "roles",
+    "deployment",
+    "calendar",
   ]);
 });
 

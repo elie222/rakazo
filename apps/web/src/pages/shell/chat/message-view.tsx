@@ -20,6 +20,7 @@ import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard"
 import { AskCard } from "../../../components/messages/AskCard";
 import { CloudAgentCard } from "../../../components/messages/CloudAgentCard";
 import { McpAppCard } from "../../../components/messages/McpAppCard";
+import { OutgoingDraftCard } from "../../../components/messages/OutgoingDraftCard";
 import { SubagentCard } from "../../../components/messages/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -658,17 +659,26 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "ask") {
             return (
               <div key={i} className="relative w-full min-w-0">
-                <AskCard
-                  block={block}
-                  answerIsSeparate={separateAnswers?.has(block)}
-                  canAnswer={canAnswer}
-                  canDismiss={canDismiss}
-                  onAnswer={(text, fields, remember) =>
-                    onAnswer(message, text, fields, undefined, remember)
-                  }
-                  onDismiss={() => onAnswer(message, "", undefined, true)}
-                  rpc={rpc}
-                />
+                {block.outgoingDraft ? (
+                  <OutgoingDraftCard
+                    block={block}
+                    message={message}
+                    target={artifactTarget}
+                    canAnswer={canAnswer}
+                  />
+                ) : (
+                  <AskCard
+                    block={block}
+                    answerIsSeparate={separateAnswers?.has(block)}
+                    canAnswer={canAnswer}
+                    canDismiss={canDismiss}
+                    onAnswer={(text, fields, remember) =>
+                      onAnswer(message, text, fields, undefined, remember)
+                    }
+                    onDismiss={() => onAnswer(message, "", undefined, true)}
+                    rpc={rpc}
+                  />
+                )}
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );

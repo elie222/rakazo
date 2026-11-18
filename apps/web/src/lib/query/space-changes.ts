@@ -6,6 +6,7 @@ type ReadChangeKind = Exclude<SpaceChangeKind, "computerUpdates">;
 const READS: Record<ReadChangeKind, readonly RpcPath[]> = {
   runs: ["runs/list", "routines/history", "usage/breakdown"],
   routines: ["routines/list"],
+  meetingCalendar: ["meetingCalendar/upcoming"],
   meetings: ["meetings/list", "meetings/transcript"],
   deploymentModel: DEPLOYMENT_MODEL_READS,
 };

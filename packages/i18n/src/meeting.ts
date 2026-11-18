@@ -42,3 +42,45 @@ export function transcriptTime(offsetMs: number): string {
   const seconds = Math.floor(Math.max(0, offsetMs) / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+type CalendarEventState = {
+  selection: "none" | "once" | "series" | "skipped" | "another_bot";
+  recurring: boolean;
+  scheduled: boolean;
+  quotaReached?: boolean;
+};
+
+export type MeetingCalendarAction = "once" | "series" | "skip" | "removeSeries";
+
+export function meetingCalendarStatusLabel({
+  selection,
+  scheduled,
+  quotaReached,
+}: CalendarEventState) {
+  if (selection === "another_bot") return i18n._({ id: "Another bot", message: "Another bot" });
+  if (selection === "skipped") return i18n._({ id: "Skipped", message: "Skipped" });
+  if (scheduled) return meetingStatusLabel("scheduled");
+  if (quotaReached) return i18n._({ id: "Space limit reached", message: "Space limit reached" });
+  return selection === "none" ? undefined : i18n._({ id: "Selected", message: "Selected" });
+}
+
+export function meetingCalendarActions(event: CalendarEventState): MeetingCalendarAction[] {
+  // Choosing the already selected scope is a no-op, including choosing this
+  // occurrence when the whole series is already selected.
+  if (event.selection === "series") return ["skip", "removeSeries"];
+  if (event.selection === "once") return event.recurring ? ["series", "skip"] : ["skip"];
+  return event.recurring ? ["once", "series"] : ["once"];
+}
+
+export function meetingCalendarActionLabel(action: MeetingCalendarAction) {
+  switch (action) {
+    case "once":
+      return i18n._({ id: "Join this meeting", message: "Join this meeting" });
+    case "series":
+      return i18n._({ id: "Join this series", message: "Join this series" });
+    case "skip":
+      return i18n._({ id: "Skip this meeting", message: "Skip this meeting" });
+    case "removeSeries":
+      return i18n._({ id: "Stop joining this series", message: "Stop joining this series" });
+  }
+}

@@ -48,10 +48,18 @@ const download = z.array(
   }),
 );
 
+// The provider reserves this speaker ID for bot output audio with perfect diarization.
+// https://docs.recall.ai/docs/transcription-faq#who-is-participant-2147483647
+const BOT_OUTPUT_SPEAKER_ID = 2_147_483_647;
+
 const SECOND = 1000;
 const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
 export function buildRecallBotConfig(input: MeetingJoinRequest) {
+  const liveVoice = Boolean(input.mediaUrl && input.liveVoice);
+  const recordingNotice = "Rakazo is capturing audio to create a meeting transcript.";
+  const liveNotice =
+    " It also processes speech in real time with AI services and may reply aloud when addressed by name.";
   return {
     meeting_url: input.meetingUrl,
     bot_name: input.botName.slice(0, 100),
@@ -59,10 +67,17 @@ export function buildRecallBotConfig(input: MeetingJoinRequest) {
     chat: {
       on_bot_join: {
         send_to: "everyone",
-        message: "Rakazo is capturing audio to create a meeting transcript.",
+        message: liveVoice ? recordingNotice + liveNotice : recordingNotice,
       },
     },
+    ...(input.mediaUrl
+      ? {
+          variant: { [input.platform]: "web_4_core" },
+          output_media: { camera: { kind: "webpage", config: { url: input.mediaUrl } } },
+        }
+      : {}),
     recording_config: {
+      ...(liveVoice ? { include_bot_in_recording: { audio: true } } : {}),
       video_mixed_layout: "audio_only",
       retention: { type: "timed", hours: 24 },
     },
@@ -179,7 +194,11 @@ export class RecallMeetingProvider implements MeetingProvider {
     return (await this.read(response, artifact, signal)).status?.code === "done";
   }
 
-  async downloadTranscript(transcriptId: string, signal: AbortSignal): Promise<MeetingTurn[]> {
+  async downloadTranscript(
+    transcriptId: string,
+    signal: AbortSignal,
+    options?: { selfName?: string },
+  ): Promise<MeetingTurn[]> {
     const result = await this.read(
       await this.call(`transcript/${id.parse(transcriptId)}/`, signal),
       artifact,
@@ -204,9 +223,13 @@ export class RecallMeetingProvider implements MeetingProvider {
           .filter(Boolean)
           .join(" ");
         if (!text) return [];
+        const speaker =
+          participant?.id === BOT_OUTPUT_SPEAKER_ID
+            ? options?.selfName || participant.name
+            : participant?.name;
         return [
           {
-            speaker: participant?.name?.slice(0, 256) || "Unknown speaker",
+            speaker: (speaker || "Unknown speaker").slice(0, 256),
             startMs: Math.round((words[0]?.start_timestamp?.relative ?? 0) * SECOND),
             text: text.slice(0, 32_000),
           },

@@ -24,10 +24,11 @@ import {
 import { bestEffort } from "@rakazo/logging";
 
 const MINUTE = 60_000;
+const DAY_MS = 24 * 60 * MINUTE;
 const WORK_TIMEOUT = 25_000;
 const BACKUP_AFTER = WORK_TIMEOUT + 5_000;
-const SESSION_DURATION = 2 * 60 * MINUTE + 5 * MINUTE;
-const DAILY_LIMIT = 20;
+export const MEETING_SESSION_DURATION = 2 * 60 * MINUTE + 5 * MINUTE;
+export const MEETING_DAILY_LIMIT = 20;
 const TRANSCRIPT_DEADLINE = 15 * MINUTE;
 
 type Work = BackgroundJobPayloads["meeting.work"];
@@ -71,6 +72,7 @@ export class MeetingService {
       jobs: JobPublisher;
       events: ThreadEvents;
       spaceIds?: ReadonlySet<string>;
+      buildJoin?: (input: MeetingJoinRequest) => Promise<MeetingJoinRequest> | MeetingJoinRequest;
     },
   ) {
     this.providerId = deps.provider?.describe().id;
@@ -100,7 +102,14 @@ export class MeetingService {
   async list(actor: Actor, botId: string) {
     await this.bot(actor, botId);
     const rows = await this.deps.prisma.meetingSession.findMany({
-      where: { spaceId: actor.spaceId, userId: actor.userId, botId },
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        // Upcoming calendar reservations have their own view. Show only calls the
+        // provider has started reporting, so skipping a reservation adds no history.
+        OR: [{ scheduledFor: null }, { receivedAt: { not: null }, status: { not: "scheduled" } }],
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
@@ -135,25 +144,22 @@ export class MeetingService {
       { ttlMs: 15_000 },
       async () =>
         prisma.$transaction(async (tx) => {
-          const count = await runAsSystemInTransaction(
+          const now = new Date();
+          const atLimit = await runAsSystemInTransaction(
             tx,
             "count meetings against Space allowance",
-            () =>
-              tx.meetingSession.count({
-                where: {
-                  spaceId: actor.spaceId,
-                  createdAt: { gt: new Date(Date.now() - 24 * 60 * MINUTE) },
-                },
-              }),
+            async () =>
+              (await countSpaceMeetingsForDay(tx, actor.spaceId, now)) >= MEETING_DAILY_LIMIT ||
+              (await countSpaceMeetingsInPastDay(tx, actor.spaceId, now)) >= MEETING_DAILY_LIMIT,
           );
-          if (count >= DAILY_LIMIT) {
+          if (atLimit) {
             throw new ClientError(
               "TOO_MANY_REQUESTS",
               "This Space reached its daily meeting limit.",
             );
           }
           const id = randomUUID();
-          const expiresAt = new Date(Date.now() + SESSION_DURATION);
+          const expiresAt = new Date(Date.now() + MEETING_SESSION_DURATION);
           await tx.meetingSession.create({
             data: {
               id,
@@ -438,7 +444,8 @@ export class MeetingService {
     });
     if (!count) return;
     try {
-      const observation = await provider.join(input, signal);
+      const request = this.deps.buildJoin ? await this.deps.buildJoin(input) : input;
+      const observation = await provider.join(request, signal);
       await this.observe(row.id, observation);
       // The bot record can be deleted while a vendor request is in flight.
       if (!(await prisma.meetingSession.count({ where: { id: row.id } }))) {
@@ -553,7 +560,8 @@ export class MeetingService {
       });
       return;
     }
-    const turns = await provider.downloadTranscript(artifact.id, signal);
+    const bot = await prisma.bot.findUnique({ where: { id: row.botId }, select: { name: true } });
+    const turns = await provider.downloadTranscript(artifact.id, signal, { selfName: bot?.name });
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.meetingSession.updateMany({
         where: { id: row.id, status: "processing", recordingId: row.recordingId },
@@ -747,4 +755,50 @@ function readMeetingTurns(id: string, transcript: string) {
     reportJsonColumnOnce("Stored meeting transcript is invalid", error.row);
     throw new ClientError("SERVICE_UNAVAILABLE", "This transcript couldn’t be read.");
   }
+}
+
+type MeetingQuotaReader = Pick<Prisma.TransactionClient, "meetingSession">;
+
+export function meetingUtcDayStart(timestamp: number) {
+  return Math.floor(timestamp / DAY_MS) * DAY_MS;
+}
+
+/** Count paid usage and outstanding reservations together on the same UTC day. */
+export function countSpaceMeetingsForDay(prisma: MeetingQuotaReader, spaceId: string, date: Date) {
+  const start = meetingUtcDayStart(date.getTime());
+  return countSpaceMeetings(prisma, spaceId, {
+    gte: new Date(start),
+    lt: new Date(start + DAY_MS),
+  });
+}
+
+/** Manual admission also limits recent usage across UTC midnight. */
+export function countSpaceMeetingsInPastDay(
+  prisma: MeetingQuotaReader,
+  spaceId: string,
+  now: Date,
+) {
+  return countSpaceMeetings(prisma, spaceId, {
+    gt: new Date(now.getTime() - DAY_MS),
+    lte: now,
+  });
+}
+
+function countSpaceMeetings(
+  prisma: MeetingQuotaReader,
+  spaceId: string,
+  time: { gte: Date; lt: Date } | { gt: Date; lte: Date },
+) {
+  return prisma.meetingSession.count({
+    where: {
+      spaceId,
+      OR: [
+        { scheduledFor: null, createdAt: time },
+        {
+          scheduledFor: time,
+          OR: [{ status: { not: "ended" } }, { receivedAt: { not: null } }],
+        },
+      ],
+    },
+  });
 }

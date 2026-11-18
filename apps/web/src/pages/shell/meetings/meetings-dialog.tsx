@@ -9,9 +9,18 @@ import { ErrorNotice } from "../../../components/ErrorNotice";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorDetails } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { MeetingCalendar } from "./meeting-calendar";
 import { MeetingTranscript } from "./meeting-transcript";
 
-export default function MeetingsDialog({ botId, onClose }: { botId: string; onClose: () => void }) {
+export default function MeetingsDialog({
+  botId,
+  showCalendar,
+  onClose,
+}: {
+  botId: string;
+  showCalendar: boolean;
+  onClose: () => void;
+}) {
   const { t } = useLingui();
   const [selected, select] = useState<string>();
   const [url, setUrl] = useState("");
@@ -153,6 +162,9 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                     );
                   })}
                 </ul>
+              ) : null}
+              {list.data?.enabled ? (
+                <MeetingCalendar botId={botId} initiallyOpen={showCalendar} />
               ) : null}
             </div>
           )}

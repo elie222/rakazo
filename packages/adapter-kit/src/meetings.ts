@@ -7,6 +7,9 @@ export interface MeetingJoinRequest {
   platform: MeetingPlatform;
   botName: string;
   expiresAt: Date;
+  mediaUrl?: string;
+  /** The media page can process live speech and reply aloud. Disclose this on joining. */
+  liveVoice?: boolean;
 }
 
 export interface MeetingObservation {
@@ -30,7 +33,11 @@ export interface MeetingProvider {
     signal: AbortSignal,
   ): Promise<{ id: string; ready: boolean }>;
   transcriptReady(transcriptId: string, signal: AbortSignal): Promise<boolean>;
-  downloadTranscript(transcriptId: string, signal: AbortSignal): Promise<MeetingTurn[]>;
+  downloadTranscript(
+    transcriptId: string,
+    signal: AbortSignal,
+    options?: { selfName?: string },
+  ): Promise<MeetingTurn[]>;
   deleteRecording(recordingId: string, signal: AbortSignal): Promise<void>;
   verifyWebhook(body: string, headers: Headers): MeetingObservation | "ignored" | "invalid";
 }

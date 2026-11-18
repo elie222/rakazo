@@ -9,6 +9,7 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { AgentImportSetupItemSchema } from "../integrations/agent-import-setup.js";
 import { McpTransportSchema } from "../integrations/mcp.js";
 import { McpAppCspSchema } from "../integrations/mcp-app.js";
+import { OutgoingDraft } from "../integrations/outgoing-draft.js";
 import { ToolQuestionSchema } from "../integrations/tool-question.js";
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
@@ -85,6 +86,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
+    outgoingDraft: OutgoingDraft.optional(),
     instructionUpdate: z
       .object({
         botId: Id,
