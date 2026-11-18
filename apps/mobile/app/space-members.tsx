@@ -2,21 +2,34 @@ import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceMember } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import { accountDisplay, spaceInvitee } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet } from "react-native";
-import { LoadFailure } from "../components/load-failure";
-import { NativeSymbol } from "../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { cancelHeaderOptions } from "../components/sheet-header";
-import { selectedSpaceId } from "../lib/api";
-import { selectSpace } from "../lib/api-server";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { targetRpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { settingsTarget } from "../lib/settings-target";
-import { errorText } from "../lib/user-error";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { cancelHeaderOptions } from "../components/native/sheet-header";
+import {
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../components/settings/settings-group";
+import { LoadFailure } from "../components/ui/load-failure";
+import { selectedSpaceId } from "../lib/api/api";
+import { selectSpace } from "../lib/api/api-server";
+import { errorText } from "../lib/api/user-error";
+import {
+  native,
+  useMobileTokens,
+  useResolvedAppearance,
+  useThemedStyles,
+} from "../lib/native/native";
+import { targetRpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
+import { settingsTarget } from "../lib/query/settings-target";
+
+/** The menu actions that share a link or email one instead of adding someone from the organization. */
+const LINK_ACTION = "link";
+const EMAIL_ACTION = "email";
 
 export default function SpaceMembersScreen() {
   const { t } = useLingui();
@@ -29,6 +42,8 @@ export default function SpaceMembersScreen() {
   const membersRead = targetRpcQuery(target, "spaces/members/list", { spaceId });
   const membersQuery = useScreenQuery(membersRead, { enabled: Boolean(spaceId) });
   const members = membersQuery.data ?? null;
+  /** The address being invited; null while its field is hidden. */
+  const [email, setEmail] = useState<string | null>(null);
   // A retry clears the failure until it answers.
   const error =
     membersQuery.error && !membersQuery.isFetching
@@ -36,9 +51,20 @@ export default function SpaceMembersScreen() {
       : null;
   const change = useSave({
     target,
-    save: async (ask: { kind: "invite" | "cancel" } | { kind: "remove"; userId: string }, send) => {
+    save: async (
+      ask:
+        | { kind: "invite" | "cancel" }
+        | { kind: "remove" | "add"; userId: string }
+        | { kind: "email"; email: string },
+      send,
+    ) => {
+      if (ask.kind === "email") {
+        return send("spaces/invites/create", { spaceId, email: ask.email });
+      }
       if (ask.kind === "remove") {
         await send("spaces/members/remove", { spaceId, userId: ask.userId });
+      } else if (ask.kind === "add") {
+        await send("spaces/members/add", { spaceId, userId: ask.userId });
       } else if (ask.kind === "cancel") {
         await send("spaces/invites/cancel", { spaceId });
       } else {
@@ -47,8 +73,9 @@ export default function SpaceMembersScreen() {
     },
     stale: [membersRead.queryKey],
     // Shared once the link exists and the list is read again, so a failed share hides nothing.
-    onSaved: async (link) => {
-      if (!link) return;
+    onSaved: async (link, ask) => {
+      if (ask.kind === "email") setEmail(null);
+      if (!link || link.emailed) return;
       // iOS shares a URL as a link; Android only takes text.
       await Share.share(Platform.OS === "ios" ? { url: link.url } : { message: link.url }).catch(
         (err: unknown) =>
@@ -59,9 +86,13 @@ export default function SpaceMembersScreen() {
       Alert.alert(
         ask.kind === "remove"
           ? t`Could not remove member`
-          : ask.kind === "cancel"
-            ? t`Could not cancel invites`
-            : t`Could not create invite link`,
+          : ask.kind === "add"
+            ? t`Could not add member`
+            : ask.kind === "cancel"
+              ? t`Could not cancel invites`
+              : ask.kind === "email"
+                ? t`Could not invite`
+                : t`Could not create invite link`,
         errorText(err, t`Try again.`),
       ),
   });
@@ -99,11 +130,37 @@ export default function SpaceMembersScreen() {
   }
 
   const canManage = members?.canManage === true;
+  const addable = members?.addable ?? [];
+  const invitee = members && email !== null ? spaceInvitee(members, email) : null;
+
+  function inviteByEmail() {
+    if (!invitee || email === null || pending) return;
+    if (invitee.kind === "outside") {
+      change.run({ kind: "email", email: email.trim() });
+      return;
+    }
+    // Someone in the organization joins directly, and someone already here needs nothing.
+    if (invitee.kind === "addable") change.run({ kind: "add", userId: invitee.userId });
+    setEmail(null);
+  }
+  const inviteRow = (
+    <SettingsRow
+      key="invite"
+      title={t`Invite`}
+      tinted
+      leading={
+        <NativeSymbol ios="person.badge.plus" android="person-add-outline" color={tokens.link} />
+      }
+      disabled={pending}
+      accessibilityRole="button"
+    />
+  );
   return (
     <>
       <Stack.Screen options={cancelHeaderOptions(t`Close`, () => router.back())} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
         style={styles.screen}
         contentContainerStyle={styles.content}
       >
@@ -118,7 +175,9 @@ export default function SpaceMembersScreen() {
                   key={member.userId}
                   title={display.label}
                   detail={display.label === member.email ? undefined : member.email}
-                  value={member.role === "owner" ? t`Owner` : undefined}
+                  value={
+                    member.role === "owner" ? t`Owner` : member.guest ? t`External` : undefined
+                  }
                   accessibilityActions={
                     canManage && member.role !== "owner"
                       ? [{ name: "remove", label: t`Remove` }]
@@ -149,22 +208,65 @@ export default function SpaceMembersScreen() {
               );
             })}
             {canManage ? (
-              <SettingsRow
+              // People already in the organization come first; an email or a link is for anyone
+              // else.
+              <MenuView
                 key="invite"
-                title={t`Invite`}
-                tinted
-                leading={
-                  <NativeSymbol
-                    ios="person.badge.plus"
-                    android="person-add-outline"
-                    color={tokens.link}
-                  />
+                colorScheme={appearance}
+                actions={[
+                  ...addable.map((person) => ({
+                    id: person.userId,
+                    title: accountDisplay(person, person.email).label,
+                  })),
+                  { id: EMAIL_ACTION, title: t`Invite by email`, image: "envelope" as const },
+                  { id: LINK_ACTION, title: t`Share invite link`, image: "link" as const },
+                ].map((action) => ({ ...action, attributes: { disabled: pending } }))}
+                onPressAction={({ nativeEvent }) =>
+                  nativeEvent.event === EMAIL_ACTION
+                    ? setEmail("")
+                    : nativeEvent.event === LINK_ACTION
+                      ? change.run({ kind: "invite" })
+                      : change.run({ kind: "add", userId: nativeEvent.event })
                 }
-                disabled={pending}
-                accessibilityRole="button"
-                onPress={() => change.run({ kind: "invite" })}
-              />
+              >
+                {inviteRow}
+              </MenuView>
             ) : null}
+          </SettingsGroup>
+        ) : null}
+        {canManage && email !== null ? (
+          <SettingsGroup
+            footer={
+              invitee?.kind === "outside"
+                ? t`Not in ${ph({ organization: members?.organizationName ?? "" })}. They'll only see this Space.`
+                : undefined
+            }
+          >
+            <SettingsInputRow
+              key="email"
+              accessibilityLabel={t`Email`}
+              placeholder={t`Email`}
+              autoFocus
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="emailAddress"
+              returnKeyType="send"
+              editable={!pending}
+              value={email}
+              onChangeText={setEmail}
+              onSubmitEditing={inviteByEmail}
+            />
+            <SettingsRow
+              key="send"
+              title={t`Invite`}
+              tinted
+              disabled={pending || !invitee}
+              dimmed={!invitee}
+              accessibilityRole="button"
+              onPress={inviteByEmail}
+            />
           </SettingsGroup>
         ) : null}
         {canManage && members?.openInvites ? (

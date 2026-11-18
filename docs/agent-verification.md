@@ -147,6 +147,33 @@ request recovery from an externally deleted sandbox.
 Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
 not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
 
+## Weekly exploratory QA
+
+`.github/workflows/exploratory-qa.yml` lets a real model use the web app the way
+a person would, once a week. It builds the pull request preview image (Postgres,
+the app and emulated services, with the public demo account and fake data only),
+starts it on the runner, and gives each of up to six workers one section of
+[PRODUCT.md](../PRODUCT.md), rotating weekly. Each worker drives headless
+Chromium through browser tools that cannot leave the stack, and reports bugs
+with steps, expected and actual behavior, and a screenshot. A second job with no
+model access files one issue per new bug, labeled `exploratory-qa`, and skips any
+whose fingerprint (feature, screen without ids, and the agent's bug key) an open
+issue already carries. Close an issue to let the bug be filed again.
+
+It is off by default and costs nothing until turned on. In the repository's
+Actions settings, add the secrets `MODEL_BASE_URL` (any chat-completions
+compatible endpoint) and `MODEL_API_KEY`, the variables
+`EXPLORATORY_AGENT_MODEL`, `EXPLORATORY_AGENT_INPUT_USD_PER_MTOK` and
+`EXPLORATORY_AGENT_OUTPUT_USD_PER_MTOK` (prices per million tokens), optionally
+`EXPLORATORY_AGENT_BUDGET_USD`, and finally `EXPLORATORY_AGENT_ENABLED=true`.
+Remove that variable to turn it off again.
+
+Every run is capped: a budget priced from the model's reported token usage
+(default $5, at most $25; it can overrun by at most one model call per worker),
+at most 6 workers, 30 minutes and 80 browser actions per worker, 3 bugs per feature and 10
+new issues per run. A manual run takes the budget, workers, minutes and feature
+names as inputs.
+
 ## Live flows
 
 A flow is a goal a simulated person pursues with a fresh bot through real
@@ -325,6 +352,23 @@ Keep assertions about effects and structured contracts deterministic. Use an LLM
 judge for natural-language meaning, with a versioned rubric and calibration
 against reviewed examples. Do not match prose against keywords or regexes, and
 do not let a judge override forbidden effects or missing artifacts.
+
+### Independent subagent evals
+
+`pnpm test:evals --suite subagents --list` lists four live cases for app, group
+and connected messaging conversations, including a helper's connector write.
+Run with `--live`, a subject connection
+and pricing, and a judge connection and pricing as in the group suite below.
+
+Each helper reads synthetic shipment data and saves a calculated JSON artifact.
+Grading requires completed helper and parent result runs, file reads and writes
+performed by the helper itself, and the correct saved numbers. The calibrated
+`subagent-result-meaning-v1` judge then checks whether the parent's later reply
+conveys the findings. A promise to report later cannot pass. The runner drains
+the independent workflow before observing it. Connected services and the computer
+are synthetic; models are live and no production data is used.
+The connector case requires exactly one write to the requested CRM record,
+unchanged unrelated records, and a grounded result from the parent.
 
 ### Bot deliberation evals
 

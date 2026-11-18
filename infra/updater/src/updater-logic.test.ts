@@ -26,6 +26,49 @@ describe("resolveUpdaterConfig", () => {
       projectName: DEFAULT_COMPOSE_PROJECT_NAME,
       token: base.RAKAZO_UPDATER_TOKEN,
       port: DEFAULT_UPDATER_PORT,
+      autoUpdateIntervalMs: 0,
+    });
+  });
+
+  it("only schedules when an operator explicitly selects a valid interval", () => {
+    expect(resolveUpdaterConfig({ ...base, RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6" })).toMatchObject(
+      { autoUpdateIntervalMs: 6 * 3_600_000 },
+    );
+    for (const hours of ["true", "-1", "0.5", "169", "Infinity"]) {
+      expect(() =>
+        resolveUpdaterConfig({ ...base, RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: hours }),
+      ).toThrow(/RAKAZO_AUTO_UPDATE_INTERVAL_HOURS/);
+    }
+  });
+
+  it("disables unsupported mirror scheduling without taking down manual controls", () => {
+    const config = resolveUpdaterConfig({
+      ...base,
+      RAKAZO_IMAGE: "registry.example.com/custom/app",
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+    });
+    expect(config.autoUpdateIntervalMs).toBe(0);
+    expect(config.autoUpdateDisabledReason).toMatch(/manual controls remain available/);
+    expect(
+      resolveUpdaterConfig({ ...base, RAKAZO_IMAGE: "registry.example.com/custom/app" }),
+    ).toMatchObject({ autoUpdateIntervalMs: 0, autoUpdateDisabledReason: null });
+  });
+
+  it("disables scheduling for a managed mirrored computer repository", () => {
+    const env = {
+      ...base,
+      RAKAZO_COMPUTER_IMAGE: "registry.example.com/mirror/computer",
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: "6",
+    };
+    expect(
+      resolveUpdaterConfig({ ...env, RAKAZO_UPDATE_SERVICES: "supervisor,computer" }),
+    ).toMatchObject({
+      autoUpdateIntervalMs: 0,
+      autoUpdateDisabledReason: expect.stringContaining("managed computer"),
+    });
+    expect(resolveUpdaterConfig(env)).toMatchObject({
+      autoUpdateIntervalMs: 6 * 3_600_000,
+      autoUpdateDisabledReason: null,
     });
   });
 

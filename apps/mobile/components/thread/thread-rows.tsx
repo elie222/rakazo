@@ -14,17 +14,17 @@ import {
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ListRenderItemInfo } from "react-native";
 import { StyleSheet, View } from "react-native";
-import { useUiLocale } from "../../lib/i18n";
-import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/mobile-types";
-import { threadHeaderFloats } from "../../lib/thread-edges";
-import { previewMessageText } from "../../lib/thread-message-text";
-import type { useThreadTranscript } from "../../lib/thread-transcript";
-import type { UserBubble } from "../../lib/user-bubble";
-import { TimeSeparator } from "../time-separator";
-import { UnreadDivider } from "../unread-divider";
-import { VoiceChatCard } from "../VoiceChatCard";
+import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api/mobile-types";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import type { UserBubble } from "../../lib/messages/user-bubble";
+import { threadHeaderFloats } from "../../lib/thread/scroll/thread-edges";
+import { previewMessageText } from "../../lib/thread/thread-message-text";
+import type { useThreadTranscript } from "../../lib/thread/thread-transcript";
+import { VoiceChatCard } from "../calls/VoiceChatCard";
 import type { MessageRowActions } from "./message-row";
 import { MessageRow } from "./message-row";
+import { TimeSeparator } from "./time-separator";
+import { UnreadDivider } from "./unread-divider";
 
 const rowStyles = StyleSheet.create({
   row: { marginTop: 12, width: "100%" },
@@ -106,7 +106,7 @@ export function useThreadRows({
   const locale = useUiLocale();
   const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
   const separateAnswers = useMemo(() => separateAskAnswers(visibleMessages), [visibleMessages]);
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
+  const answerableAskIds = useMemo(() => answerableAskMessageIds(snap, userId), [snap, userId]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const unreadDividerId = useMemo(

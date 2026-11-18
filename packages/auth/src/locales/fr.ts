@@ -75,4 +75,23 @@ export const FR_MESSAGES: Record<string, string> = {
     "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous vous réabonnez.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous choisissez une offre.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} vous a invité à rejoindre {organization} sur Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} vous a invité à rejoindre {organization} sur Rakazo.",
+  "Join {organization}": "Rejoindre {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Cette invitation expire dans 7 jours. Connectez-vous avec cette adresse e-mail pour l’accepter.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} vous a invité à rejoindre {space} sur Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} vous a invité à rejoindre {space} sur Rakazo.",
+  "Join {space}": "Rejoindre {space}",
+  "This invitation expires in 7 days.": "Cette invitation expire dans 7 jours.",
+  "Connect a model to start using Rakazo": "Connectez un modèle pour commencer à utiliser Rakazo",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Votre forfait Rakazo a démarré, mais vos bots ne peuvent pas répondre tant qu'aucun modèle n'est connecté.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "Connectez-vous avec votre abonnement {subscriptions} ou collez une clé API.",
+  "Connect a model": "Connecter un modèle",
 };

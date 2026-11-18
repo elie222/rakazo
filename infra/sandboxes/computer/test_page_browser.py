@@ -143,7 +143,12 @@ class FakeAgentBrowser:
         if command[:2] == ["is", "enabled"]:
             return {"enabled": command[2].lstrip("@") not in self.disabled}
         if name == "get" and command[1] == "box":
-            return self.boxes.get(command[2].lstrip("@"), {})
+            box = self.boxes.get(command[2].lstrip("@"), {})
+            # A list is the box as scrolling moves it: each read takes the next, and the last one stays.
+            if isinstance(box, list):
+                self.boxes[command[2].lstrip("@")] = box[1:] or box
+                return box[0]
+            return box
         if name == "get" and command[1] == "attr" and command[3] == "aria-disabled":
             return {"value": self.aria_disabled.get(command[2].lstrip("@"))}
         if name == "get" and command[1] == "attr":
@@ -228,6 +233,72 @@ class SnapshotTest(unittest.TestCase):
         self.assertNotIn("•", text)
         self.assertNotIn("value", next(el for el in result["elements"] if el["ref"] == "e3"))
         self.assertEqual(next(el for el in result["elements"] if el["ref"] == "e7")["value"], "checked")
+
+    def test_never_shows_which_option_a_saved_login_chose(self):
+        # The page reports the chosen option's value and label for a dropdown a saved login filled.
+        tree = PAGE.replace('- checkbox "Agree"', '- textbox "Region" [ref=e20]: France\n- checkbox "Agree"')
+        with patch.object(secrets, "filled_choices") as frames:
+            result, _ = self.snapshot(FakeAgentBrowser(tree=tree, state={"choices": ["fr", "France"]}))
+        # No dropdown in a frame shows a choice, so the frames are not read.
+        frames.assert_not_called()
+        self.assertIn('- combobox "Country" [expanded=false, ref=e4] options: "Choose", "France"\n', result["tree"])
+        self.assertNotIn("(selected)", result["tree"])
+        country = next(el for el in result["elements"] if el["ref"] == "e4")
+        self.assertNotIn("value", country)
+        self.assertEqual(country["options"], [{"label": "Choose", "value": "Choose"},
+                                              {"label": "France", "value": "France"}])
+        # Only dropdowns: a text box holding the same text still shows it.
+        self.assertEqual(next(el for el in result["elements"] if el["ref"] == "e20")["value"], "France")
+        # Past the options a snapshot lists, the chosen one is not added back.
+        options = "".join(f'  - option "Year {n}" [{"selected, " if n == 432 else ""}ref=e{n + 10}]\n'
+                          for n in range(1, 1501))
+        result, _ = self.snapshot(FakeAgentBrowser(tree=f'- combobox "Year" [ref=e1]: Year 432\n{options}',
+                                                   state={"choices": ["Year 432"]}))
+        self.assertNotIn("Year 432", json.dumps(result))
+        self.assertEqual(len(result["elements"][0]["options"]), 100)
+
+    def test_reads_frame_dropdowns_through_page_secrets_and_hides_them_when_it_cannot(self):
+        tree = PAGE.replace('  - button "Frame button" [ref=e10]\n', '  - button "Frame button" [ref=e10]\n'
+                            '  - combobox "Code" [ref=e30]: UK (+44)\n'
+                            '    - option "US (+1)" [ref=e31]\n    - option "UK (+44)" [selected, ref=e32]\n')
+        for found, hidden in (({"+44", "UK (+44)"}, True), (set(), False), (OSError("no CDP"), True)):
+            with self.subTest(found=found), patch.object(secrets, "filled_choices", **(
+                    {"side_effect": found} if isinstance(found, Exception) else {"return_value": found})):
+                result, _ = self.snapshot(FakeAgentBrowser(tree=tree))
+            code = next(el for el in result["elements"] if el["ref"] == "e30")
+            self.assertEqual("value" not in code, hidden)
+            self.assertEqual(any(option.get("selected") for option in code["options"]), not hidden)
+            # The page's own dropdown is read from the page, whatever happens in its frames.
+            self.assertIn("France (selected)", result["tree"].replace('"', ""))
+
+    def test_reads_saved_choices_in_every_frame(self):
+        frames = [("top", "F1", None), ("top", "F2", "F1"), ("oopif", "F3", "F2")]
+        answers = {"top": [["fr", "France"], None], "oopif": [["+44", "UK (+44)", ""]]}
+        client = type("Client", (), {"close": lambda self: None})()
+        with patch.object(secrets, "connect", return_value=client), \
+                patch.object(secrets, "attach", return_value="top"), \
+                patch.object(secrets, "all_frames", return_value=frames), \
+                patch.object(secrets, "world_in", side_effect=[1, 2, 3]) as world_in, \
+                patch.object(secrets, "eval_json", side_effect=lambda c, session, expr, context_id: answers[session].pop(0)):
+            self.assertEqual(RealFilledChoices(9222, "tab-1"), {"fr", "France", "+44", "UK (+44)"})
+        self.assertEqual([call.args[1:] for call in world_in.call_args_list],
+                         [("top", "F1"), ("top", "F2"), ("oopif", "F3")])
+
+    def test_a_frame_walk_past_its_cap_is_not_taken_as_every_frame(self):
+        children = {"top": [f"s{n}" for n in range(40)]}
+
+        class Client:
+            def call(self, method, params=None, session_id=None):
+                return {"frameTree": {"frame": {"id": f"F-{session_id}"}}}
+
+            def frame_sessions(self, session):
+                return children.get(session, [])
+        with patch.object(secrets, "auto_attach", side_effect=lambda client, session: children.get(session, [])[:32]):
+            self.assertEqual(len(secrets.all_frames(Client(), "top")), 32)
+            with self.assertRaisesRegex(RuntimeError, "too many frames"):
+                secrets.all_frames(Client(), "top", complete=True)
+            children["top"] = children["top"][:5]
+            self.assertEqual(len(secrets.all_frames(Client(), "top", complete=True)), 6)
 
     def test_leaves_payment_frames_out_and_points_to_fill_card(self):
         result, _ = self.snapshot()
@@ -493,8 +564,12 @@ class FakePurchases:
         return {"url": "https://shop.example.test/pay", "title": "Pay"}
 
     def click(self, box, scrolled):
-        if box.get("ref") in FakePurchases.offscreen and not scrolled:
-            raise helper.Offscreen()
+        # A box below a 713-pixel viewport is out of view, and once scrolled to, what the page shows decides.
+        if box.get("ref") in FakePurchases.offscreen or box.get("y", 0) >= 713:
+            if not scrolled:
+                raise helper.Offscreen()
+            if box.get("y", 0) >= 713:
+                return FakePurchases.shows
         return box.get("pay")
 
     def signals(self, enter, deadline=float("inf"), frames=True):
@@ -510,12 +585,17 @@ class FakePurchases:
 RealPurchases = helper.Purchases
 
 
+RealFilledChoices = secrets.filled_choices
+
+
 def setUpModule():
     helper.Purchases = FakePurchases
+    secrets.filled_choices = lambda port, target: set()
 
 
 def tearDownModule():
     helper.Purchases = RealPurchases
+    secrets.filled_choices = RealFilledChoices
 
 
 PAY = {"reason": "final_step", "label": "Pay $5", "amount": "$5", "amountFrom": "button"}
@@ -622,6 +702,24 @@ class PurchaseTest(unittest.TestCase):
         FakePurchases.offscreen = {"e8"}
         self.assertEqual(self.act([{"kind": "click", "ref": "e8"}], browser)["error"], helper.PURCHASE_REFUSED)
         self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_a_smooth_scroll_is_checked_where_it_stops_not_where_it_starts(self):
+        browser = FakeAgentBrowser()
+        note = {"ref": "e8", "x": 10, "width": 40, "height": 20}
+        browser.boxes["e8"] = [{**note, "y": y} for y in (1500, 1500, 900, 400, 100, 100)]
+        FakePurchases.shows = {**PAY, "reason": "payment_page", "label": "Pay using Gift Card"}
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertIsNone(result["purchase"])
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e8"]])
+
+    def test_a_control_still_out_of_view_after_scrolling_asks_what_the_page_shows(self):
+        browser = FakeAgentBrowser()
+        browser.boxes["e8"] = {"ref": "e8", "x": 10, "y": 1500, "width": 40, "height": 20}
+        FakePurchases.shows = PAY
+        with patch.object(helper.time, "sleep"):
+            result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e8"}]})
+        self.assertEqual(result["purchase"]["label"], PAY["label"])
 
     def test_purchase_check_names_the_clicks_that_would_buy_and_presses_nothing(self):
         browser = pays(FakeAgentBrowser(), "e7")
@@ -1050,15 +1148,19 @@ class ActTest(unittest.TestCase):
     def test_saved_logins_cards_and_pay_tokens_go_through_page_secrets_only(self):
         steps = [{"kind": "fill", "ref": "e3", "text": "fake-password", "origin": "https://portal.example.test",
                   "field": "password"},
+                 # A visible saved field on a dropdown picks its option in page_secrets too, never through
+                 # agent-browser's select, whose errors repeat the text.
+                 {"kind": "fill", "ref": "e4", "text": "fake-choice", "origin": "https://portal.example.test",
+                  "field": "username"},
                  {"kind": "fill", "text": CARD_NUMBER, "origin": MERCHANT, "field": "card", "cardField": "number"},
                  {"kind": "pay_token", "text": PAY_TOKEN, "origin": MERCHANT, "merchantAccountId": "acct_fake123"}]
         with patch.object(secrets, "run_step") as run_step:
             result, browser = self.act(steps)
-        self.assertEqual(result["completed"], 3)
-        self.assertEqual(browser.actions(), [["focus", "@e3"]])
+        self.assertEqual(result["completed"], 4)
+        self.assertEqual(browser.actions(), [["focus", "@e3"], ["focus", "@e4"]])
         self.assertEqual([call.args for call in run_step.call_args_list], [(9222, "tab-1", step) for step in steps])
         sent = json.dumps(browser.sent)
-        for secret in ("fake-password", CARD_NUMBER, PAY_TOKEN):
+        for secret in ("fake-password", "fake-choice", CARD_NUMBER, PAY_TOKEN):
             self.assertNotIn(secret, sent)
 
     def test_a_refused_secret_is_settled_and_an_unconfirmed_card_field_is_uncertain(self):

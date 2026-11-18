@@ -116,7 +116,8 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
+New installs default to `latest` (stable releases, `linux/amd64` + `linux/arm64`). A stable
+release must exist; setup does not fall back to main builds. Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
@@ -276,7 +277,8 @@ builds pin the image tag to their own version; unpackaged builds pull `edge`. De
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
 instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
-**Stop Local Stack** in the application menu stops the managed stack without quitting.
+**Quit and Stop Bots** in the application menu stops the managed stack and quits; switching to
+another server also stops it.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show

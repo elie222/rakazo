@@ -10,18 +10,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSave } from "../../lib/query";
-import { closeSettingsSheet } from "../../lib/settings-sheet";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import type { SignupSurveyTeamSize } from "../../lib/signup-survey";
-import { SIGNUP_SURVEY_TEAM_SIZE_CHOICES, signupSurveyAnswers } from "../../lib/signup-survey";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import type { SignupSurveyTeamSize } from "../../lib/auth/signup-survey";
+import { SIGNUP_SURVEY_TEAM_SIZE_CHOICES, signupSurveyAnswers } from "../../lib/auth/signup-survey";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { closeSettingsSheet } from "../../lib/settings/settings-sheet";
 
 type Use = NonNullable<SignupSurveyAnswers["use"]>;
 

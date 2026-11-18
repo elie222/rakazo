@@ -91,6 +91,7 @@ import type {
   VoiceInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
   WebFetchCapabilities,
   WebFetchRequest,
@@ -234,6 +235,15 @@ export interface SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ): Promise<Uint8Array>;
+  /** Reads a file from the disk a stopped computer would resume from, without starting it.
+   * Returns undefined if the provider cannot verify or serve the file from that disk.
+   */
+  readStoppedFile?(
+    computer: ComputerRef,
+    path: string,
+    context: AdapterContext,
+    options: { maxBytes: number; savedAt?: Date },
+  ): Promise<Uint8Array | undefined>;
   writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext): Promise<void>;
   /** Large files may come as streams. A provider that lists first refuses `limits` up front. */
   exportWorkspace(
@@ -317,6 +327,11 @@ export interface ManagedConnectorProvider
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
   /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
   needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;
+  /**
+   * Connection refs the provider reports as signed in, which tell a finished sign-in from an
+   * abandoned one. Undefined when the provider cannot say.
+   */
+  listConnectedRefs?(context: AdapterContext): Promise<string[] | undefined>;
   /** Connection refs the provider reports as dead until the user reconnects them. */
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
@@ -428,6 +443,8 @@ export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
   /** Adds the job, or replaces the one with its key, as part of the caller's transaction. */
   enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void>;
+  /** `enqueueIn` for many jobs in one statement; a key given twice keeps its last job. */
+  enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void>;
   /** Removes the keyed job as part of the caller's transaction. */
   cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;
@@ -441,6 +458,8 @@ export interface JobWorkerHost {
 
 export interface AgentHomeStore {
   describe(): AdapterDescriptor<{ revisions: boolean }>;
+  /** The most one computer save copies; unset means the default of 5 GiB and a million files. */
+  readonly saveLimits?: WorkspaceExportLimits;
   checkout(botId: string, dest: string, context: AdapterContext): Promise<string>;
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
@@ -453,6 +472,7 @@ export interface AgentHomeStore {
     context: AdapterContext,
     options?: { directory?: string; skipHidden?: boolean },
   ): AsyncIterable<PortableFile>;
+  /** Throws `SandboxFileTooLargeError` for a file over `maxBytes`. */
   readFile(
     botId: string,
     path: string,
@@ -566,7 +586,7 @@ export interface TransactionalEmailProvider {
  */
 export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
-  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
+  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ id: string; url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
   /**
    * Paid own-key plan invoices created since `since`, the payments a referring partner earns on.
@@ -575,7 +595,7 @@ export interface BillingProvider {
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
-  createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ id: string; url: string }>;
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
   /**
@@ -600,9 +620,11 @@ export interface BillingProvider {
   describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
-  createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  createCheckout(input: BillingCheckoutRequest): Promise<{ id: string; url: string }>;
   /** Expires every open checkout session of the customer; resolves once none can be paid. */
   expireOpenCheckouts(customerId: string): Promise<void>;
+  /** Expires checkout session `id` so it cannot be paid; a no-op once it is no longer open. */
+  expireCheckout(id: string): Promise<void>;
   createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
@@ -636,7 +658,10 @@ export interface VoiceProvider {
     options?: { language?: string },
   ): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
-  transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+  transcribe?(
+    request: VoiceTranscribeRequest,
+    context: AdapterContext,
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }>;
 }
 
 /**
@@ -650,6 +675,8 @@ export interface MessagingSurface {
   describe(): AdapterDescriptor<{ providers: string[] }>;
   /** Enabled platforms and what each supports. */
   platforms(): MessagingPlatformDescriptor[];
+  /** Resolve public linking destinations on demand, including recovery after a startup outage. */
+  resolveAddresses?(signal?: AbortSignal): Promise<Record<string, string>>;
   /**
    * Verify and process one platform webhook request. Parsed events reach the
    * sink registered via onInbound before the returned response resolves.
@@ -683,6 +710,11 @@ export interface MessagingSurface {
    * webhook URL is reachable) otherwise never start until a webhook or send touches them.
    */
   initialize?(): Promise<void>;
+  /**
+   * Stop pulling inbound updates so a replacement process can claim them, while sends keep
+   * working. No-op for surfaces that only receive webhooks.
+   */
+  stopReceiving?(): Promise<void>;
   /**
    * Release long-lived inbound resources (Telegram getUpdates polling) so a
    * replacement process can claim them. No-op when the surface never started.

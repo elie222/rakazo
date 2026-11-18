@@ -20,6 +20,7 @@ import {
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  OwnedOrganizationHasMembersError,
   personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
@@ -78,7 +79,12 @@ export {
 } from "./email.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
+export { modelConnectionEmail } from "./model-connection-email.js";
 export type { OidcConfig } from "./oidc.js";
+export {
+  organizationInvitationEmail,
+  spaceInvitationEmail,
+} from "./organization-invitation-email.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {
   integrationClaimConfirmEmail,
@@ -114,6 +120,8 @@ export interface AuthEnv {
   logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /** Runs once the account is gone. */
+  afterDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
   afterDeleteSession?: (session: AuthSession) => Promise<void>;
   /** Runs when a password change replaces the caller's own session instead of ending it. */
@@ -480,7 +488,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           try {
             await env.beforeDeleteUser?.(user.id);
           } catch (error) {
-            if (error instanceof SpaceDeletionInProgressError)
+            if (
+              error instanceof SpaceDeletionInProgressError ||
+              error instanceof OwnedOrganizationHasMembersError
+            )
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }
@@ -500,6 +511,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });
+          await env.afterDeleteUser?.(user.id);
         },
       },
     },

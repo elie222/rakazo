@@ -30,6 +30,8 @@ function handlers(): BackgroundJobHandlers {
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "run.forget-secrets": vi.fn(async () => undefined),
+    "approval.expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
@@ -48,6 +50,7 @@ function handlers(): BackgroundJobHandlers {
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
+    "email.lifecycle": vi.fn(async () => undefined),
   };
 }
 

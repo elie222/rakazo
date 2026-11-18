@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   isModelCredentialRejected,
@@ -515,5 +516,18 @@ describe("sign-in retry requests", () => {
     );
     expect(isSignInRetryRequest(error)).toBe(true);
     expect(isTransientModelError(error)).toBe(false);
+  });
+});
+
+describe("status codes in long messages", () => {
+  it("reads a status after spacing and a separator", () => {
+    expect(isModelCredentialRejected("status code =  401 invalid api key")).toBe(true);
+  });
+
+  it("stays fast on long runs of spacing after a status word", () => {
+    expectLinearTime(() => {
+      isTransientModelError(`status${"\t".repeat(200_000)}x`);
+      isModelCredentialRejected(`http status${"\t".repeat(200_000)}x`);
+    });
   });
 });

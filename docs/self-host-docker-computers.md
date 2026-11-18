@@ -34,6 +34,13 @@ The supervisor reaches Docker at `/var/run/docker.sock` (or `//./pipe/docker_eng
 
 ## Restricted computer egress
 
+On a cloud VM, explicitly choose `SANDBOX_COMPUTER_EGRESS=restricted` after installing
+the host rules. This refuses to start computers if enforcement is missing. The default
+`auto` preserves compatibility on hosts without those rules and can allow access to
+cloud metadata and internal networks. Restricted egress also blocks intentional access
+to local models, private repositories and other LAN services. Choose `open` only when
+that network access is intended and the host is appropriately isolated.
+
 Restricted egress gives Docker computers the public internet (browsing, DNS, apt, git
 over SSH) but not the Docker host, the LAN, or link-local cloud metadata such as
 `169.254.169.254`, which on a cloud VM would hand instance credentials to anything a bot runs.
@@ -212,6 +219,33 @@ reaches the host's GPU driver directly, which is a larger attack surface than th
 sandbox, and nothing limits how much GPU memory or time one computer takes from the others or
 from other GPU software on the host. Enable it only when you trust every bot on the deployment
 with that.
+
+## Browser proxy
+
+Some public sites refuse connections from datacenter addresses. With
+`SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL` the bot browser sends selected sites through an HTTP
+proxy you run, and every other site connects directly as before (Docker sandboxes only). The
+value is a [proxy auto-config](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_PAC_file)
+(PAC) script: an absolute `http://` or `https://` URL the browser downloads it from, or the whole
+script as a base64 `data:` URL of at most 64 KiB, for example:
+
+```sh
+pac='function FindProxyForURL(url, host) {
+  if (dnsDomainIs(host, ".example.com")) return "PROXY proxy.example.net:3128";
+  return "DIRECT";
+}'
+echo "SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL=data:application/x-ns-proxy-autoconfig;base64,$(printf '%s' "$pac" | base64 | tr -d '\n')"
+```
+
+The supervisor refuses to start with any other kind of value, or one containing spaces. It hands
+the value to every computer, whose browser starts with `--proxy-pac-url`; page reading and the
+bot's browser actions use that same browser, so they follow the script too. Programs the bot
+runs in its terminal do not. Unset, nothing changes.
+
+Under restricted egress the computer reaches only public addresses, so the PAC URL and the
+proxy must be on public addresses as well; a proxy on the Docker host or the LAN is blocked.
+Recreate the supervisor after a change; each computer picks it up on its next start, which
+replaces it. The home and saved browser profiles are kept.
 
 ## Time zone and language
 
