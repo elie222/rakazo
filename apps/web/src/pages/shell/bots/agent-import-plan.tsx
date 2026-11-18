@@ -353,7 +353,15 @@ export function AgentImportPlanReview({
             <Trans>Set up in chat</Trans>
           </h3>
           <ul className="mt-2">
-            {plan.leftovers.map((entry) => item(entry.id, entry.title, entry.content))}
+            {plan.leftovers.map((entry, index) => {
+              const position = index + 1;
+              return item(
+                entry.id,
+                safeLabel(entry.title, entry.containsKey, t`Routine ${position}`),
+                entry.content,
+                entry.containsKey ? note(keyNote) : undefined,
+              );
+            })}
           </ul>
         </section>
       ) : null}

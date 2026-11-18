@@ -1,10 +1,15 @@
 import type { Actor, Bot } from "@rakazo/contracts";
-import { AgentImportCreateInput, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import {
+  AgentImportCreateInput,
+  GROK_BOT_EXPORT_PATH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentImportServices } from "./agent-import.js";
 import {
   agentImportSetupState,
   createImportedBot,
+  leftoverMessages,
   previewAgentImport,
   requestDigest,
 } from "./agent-import.js";
@@ -241,6 +246,23 @@ describe("a Grok Bot's event routines", () => {
       { name: "Support", active: false, messageProvider: "slack" },
       { name: "Mail", active: false, emailSenders: "owner" },
     ]);
+  });
+});
+
+describe("leftover chat messages", () => {
+  it("keeps each message within a chat message's length and every leftover whole", () => {
+    const leftovers = ["One", "Two", "Three"].map((title) => ({
+      id: title,
+      title,
+      content: title.repeat(15_000),
+    }));
+    const messages = leftoverMessages(leftovers);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((text) => text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH)).toBe(true);
+    const all = messages.join("\n\n");
+    for (const item of leftovers) expect(all).toContain(`## ${item.title}\n\n${item.content}`);
+    expect(messages[0]).toMatch(/^The import could not set these up:/);
+    expect(messages.at(-1)).toMatch(/Tell me which ones to set up\.$/);
   });
 });
 

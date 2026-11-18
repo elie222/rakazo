@@ -692,6 +692,11 @@ function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLef
   };
 }
 
+/** A leftover is posted in a chat message, so one longer than a file may be is left out. */
+function fitsChatMessage(item: AgentImportLeftover): boolean {
+  return item.title.length + item.content.length <= AGENT_IMPORT_MAX_FILE_LENGTH / 2;
+}
+
 /**
  * Imported text is data: nothing here follows it. Routines and apps are added by the server;
  * a routine none of `triggers` can start is left over for the new bot's chat.
@@ -706,6 +711,7 @@ export function parseGrokBot(
   const toSetUp = bot.routines.filter(
     (routine) => routine.instruction && grokRoutineTrigger(routine, triggers) === null,
   );
+  const leftovers = toSetUp.map(routineLeftover);
   const memory: AgentImportMemory[] = [
     ...memoryDocuments("MEMORY", memories),
     ...memoryDocuments("USER", userFacts),
@@ -728,10 +734,15 @@ export function parseGrokBot(
         ]
       : [],
     memory,
-    leftovers: toSetUp.map(routineLeftover),
+    leftovers: leftovers.filter(fitsChatMessage),
     skills: skills.flatMap(({ item }) => (item ? [item] : [])),
-    skipped: skills.flatMap(({ item, path }) =>
-      item ? [] : [{ path, reason: "invalid_skill" as const }],
-    ),
+    skipped: [
+      ...skills.flatMap(({ item, path }) =>
+        item ? [] : [{ path, reason: "invalid_skill" as const }],
+      ),
+      ...leftovers
+        .filter((item) => !fitsChatMessage(item))
+        .map((item) => ({ path: `routines: ${item.title}`, reason: "unsupported" as const })),
+    ],
   };
 }

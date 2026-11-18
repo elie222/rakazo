@@ -31,6 +31,7 @@ import {
   CreateRoutineInput,
   isValidTimeZone,
   MEMORY_INDEX_PATH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
@@ -366,15 +367,26 @@ export async function createImportedBot<PreparedKey>(
 }
 
 /**
- * Imported text shown in the new bot's chat. Nothing runs on it until the owner writes: an
- * automatic turn would let an export's text act with the owner's access unasked.
+ * Imported text shown in the new bot's chat, in as many messages as the length of one allows.
+ * Nothing runs on it until the owner writes: an automatic turn would let an export's text act
+ * with the owner's access unasked.
  */
-function leftoverText(leftovers: AgentImportLeftover[]): string {
-  return [
-    "The import could not set these up:",
-    ...leftovers.map((item) => `## ${item.title}\n\n${item.content.trim()}`),
-    "Tell me which ones to set up.",
-  ].join("\n\n");
+export function leftoverMessages(leftovers: AgentImportLeftover[]): string[] {
+  const opening = "The import could not set these up:";
+  const closing = "Tell me which ones to set up.";
+  const messages: string[][] = [[opening]];
+  let size = opening.length;
+  for (const item of leftovers) {
+    const part = `## ${item.title}\n\n${item.content.trim()}`;
+    if (size + part.length + closing.length + 6 > THREAD_MESSAGE_TEXT_MAX_LENGTH) {
+      messages.push([]);
+      size = 0;
+    }
+    messages.at(-1)!.push(part);
+    size += part.length + 2;
+  }
+  messages.at(-1)!.push(closing);
+  return messages.map((parts) => parts.join("\n\n"));
 }
 
 /** A bot to create from a plan: an import's files or a template build it. */
@@ -694,8 +706,8 @@ export async function writeImportedBot<PreparedKey>(
       });
       await announceAdded(tx, botId, message, thread.id, checklist);
     }
-    if (leftovers.length) {
-      const blocks: MessageBlock[] = [{ kind: "text", text: leftoverText(leftovers) }];
+    for (const text of leftovers.length ? leftoverMessages(leftovers) : []) {
+      const blocks: MessageBlock[] = [{ kind: "text", text }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,
         role: "bot",
