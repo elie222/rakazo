@@ -101,7 +101,11 @@ async function openImport(page: Page) {
 /** Opens a row of the preview; a row with nothing left to tick starts closed. */
 async function expandRow(preview: Locator, testId: string) {
   const trigger = preview.getByTestId(testId).getByRole("heading").first().getByRole("button");
-  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  // Retried: a row above that is still opening can move this one from under the click.
+  await expect(async () => {
+    if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true", { timeout: 1000 });
+  }).toPass();
 }
 
 function origin(panel: Locator, name: string) {
