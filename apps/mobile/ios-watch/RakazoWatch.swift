@@ -14,6 +14,8 @@ struct RakazoWatch: App {
 private final class WatchConnection: NSObject, WCSessionDelegate {
   private(set) var reachable = false
   private(set) var chatRevision: String?
+  private(set) var identityRevision: String?
+  private(set) var rosterRevision: String?
 
   override init() {
     super.init()
@@ -36,7 +38,13 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
     _ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]
   ) {
     guard let revision = applicationContext["chatRevision"] as? String else { return }
-    Task { @MainActor in self.chatRevision = revision }
+    let identity = applicationContext["identityRevision"] as? String
+    let roster = applicationContext["rosterRevision"] as? String
+    Task { @MainActor in
+      self.identityRevision = identity
+      self.rosterRevision = roster
+      self.chatRevision = revision
+    }
   }
 
   func request(_ request: WatchRequest) async throws -> WatchReply {
@@ -69,6 +77,7 @@ private struct WatchChats: View {
   @State private var path: [WatchChat] = []
   @State private var failure: WatchFailure?
   @State private var loading = false
+  @State private var needsReload = false
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -103,26 +112,44 @@ private struct WatchChats: View {
       if connection.reachable && phase == .active { await load() }
       else if phase == .active && chats.isEmpty { failure = .unavailable }
     }
-    .onChange(of: phase) {
-      guard phase == .background else { return }
-      path = []
-      chats = []
-      scope = nil
+    .onChange(of: connection.rosterRevision) {
+      needsReload = true
     }
+    .onChange(of: connection.identityRevision) {
+      clearChats()
+      needsReload = true
+    }
+    .onChange(of: needsReload && !loading && path.isEmpty && phase == .active) { _, ready in
+      guard ready else { return }
+      needsReload = false
+      Task { await load() }
+    }
+    .onChange(of: phase) {
+      if phase == .background { clearChats() }
+    }
+  }
+
+  private func clearChats() {
+    path = []
+    chats = []
+    scope = nil
+    failure = nil
   }
 
   private func load() async {
     guard !loading else { return }
+    let identity = connection.identityRevision
     loading = true
     defer { loading = false }
     do {
       let reply = try await connection.request(WatchRequest(action: .chats))
-      guard phase == .active, !Task.isCancelled else { return }
+      guard phase == .active, !Task.isCancelled, identity == connection.identityRevision
+      else { return }
       scope = reply.scope
       chats = reply.chats ?? []
       failure = nil
     } catch {
-      guard !Task.isCancelled else { return }
+      guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []
       scope = nil
       failure = error as? WatchFailure ?? .unavailable
@@ -154,8 +181,8 @@ private struct WatchConversation: View {
         .sheet(isPresented: $editing) {
           VStack {
             TextField("Message", text: $draft)
-            Button("Send") { editing = false; Task { await send() } }
-              .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Send") { startSend() }
+              .disabled(working || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           }
           .padding(.horizontal)
         }
@@ -166,8 +193,8 @@ private struct WatchConversation: View {
       ForEach(messages.reversed()) { message in
         if let prompt = message.prompt {
           NavigationLink {
-            WatchReview(prompt: prompt) { answer in
-              try await answerPrompt(message.id, prompt: prompt, answer: answer)
+            WatchReview(prompt: prompt, busy: $working) { answer in
+              startAnswer(message.id, prompt: prompt, answer: answer)
             }
           } label: {
             Label {
@@ -212,35 +239,41 @@ private struct WatchConversation: View {
   @State private var editing = false
 
   private func refresh() async {
-    guard !working else { return }
+    guard !working else {
+      needsRefresh = true
+      return
+    }
     working = true
     defer { working = false }
+    await read()
+  }
+
+  private func read() async {
+    let identity = connection.identityRevision
     do {
-      try await read()
-      if !Task.isCancelled { failure = nil }
+      let reply = try await connection.request(WatchRequest(action: .thread, scope: scope, chat: chat))
+      guard !Task.isCancelled, identity == connection.identityRevision else { return }
+      messages = reply.messages ?? []
+      botWorking = reply.botWorking == true
+      failure = nil
     } catch {
-      guard !Task.isCancelled else { return }
+      guard !Task.isCancelled, identity == connection.identityRevision else { return }
       let reason = error as? WatchFailure ?? .unavailable
+      messages = []
+      botWorking = false
       if reason == .reload { await reloadChats() }
-      else {
-        messages = []
-        botWorking = false
-        failure = reason
-      }
+      else { failure = reason }
     }
   }
 
-  private func read() async throws {
-    let reply = try await connection.request(WatchRequest(action: .thread, scope: scope, chat: chat))
-    if !Task.isCancelled {
-      messages = reply.messages ?? []
-      botWorking = reply.botWorking == true
-    }
+  private func startSend() {
+    guard !working else { return }
+    working = true
+    editing = false
+    Task { await send() }
   }
 
   private func send() async {
-    guard !working else { return }
-    working = true
     defer { working = false }
     if draft != sendingText {
       sendingText = draft
@@ -255,27 +288,29 @@ private struct WatchConversation: View {
     }
     draft = ""
     sendingText = nil
-    failure = nil
-    do { try await read() }
-    catch { failure = error as? WatchFailure ?? .unavailable }
+    await read()
   }
 
-  private func answerPrompt(_ id: String, prompt: WatchPrompt, answer: String) async throws {
-    guard !working else { throw WatchFailure.unavailable }
+  private func startAnswer(
+    _ id: String, prompt: WatchPrompt, answer: String
+  ) -> Task<Void, Error>? {
+    guard !working else { return nil }
     working = true
-    defer { working = false }
-    _ = try await connection.request(
-      WatchRequest(action: .answer, scope: scope, chat: chat, text: answer, nonce: UUID(),
-        messageId: id, prompt: prompt))
-    messages.removeAll { $0.id == id }
-    do { try await read() }
-    catch { failure = error as? WatchFailure ?? .unavailable }
+    return Task {
+      defer { working = false }
+      _ = try await connection.request(
+        WatchRequest(action: .answer, scope: scope, chat: chat, text: answer, nonce: UUID(),
+          messageId: id, prompt: prompt))
+      messages.removeAll { $0.id == id }
+      await read()
+    }
   }
 }
 
 private struct WatchReview: View {
   let prompt: WatchPrompt
-  let submit: (String) async throws -> Void
+  @Binding var busy: Bool
+  let submit: (String) -> Task<Void, Error>?
   @Environment(\.dismiss) private var dismiss
   @State private var answer = ""
   @State private var saving = false
@@ -290,16 +325,15 @@ private struct WatchReview: View {
         if let detail = prompt.detail, !detail.isEmpty { Text(detail) }
         if let failure { Text(failure.label) }
         if failure != .rejected && failure != .answerUnconfirmed {
-          if prompt.kind == .approval {
-            Button("Allow Once") { save("allow") }.disabled(saving)
-            Button("Deny", role: .destructive) { save("deny") }.disabled(saving)
-          } else if prompt.options.isEmpty {
+          if prompt.options.isEmpty {
             TextField("Answer", text: $answer)
             Button("Send") { save(answer) }
-              .disabled(saving || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .disabled(busy || saving || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           } else {
             ForEach(prompt.options) { option in
-              Button(option.label) { save(option.id) }.disabled(saving)
+              Button(option.label, role: prompt.kind == .approval && option.id == "deny" ? .destructive : nil) {
+                save(option.id)
+              }.disabled(busy || saving)
             }
           }
         }
@@ -309,11 +343,11 @@ private struct WatchReview: View {
   }
 
   private func save(_ answer: String) {
-    guard !saving else { return }
+    guard !saving, let submission = submit(answer) else { return }
     saving = true
     Task {
       defer { saving = false }
-      do { try await submit(answer); dismiss() }
+      do { try await submission.value; dismiss() }
       catch { failure = error as? WatchFailure ?? .unavailable }
     }
   }

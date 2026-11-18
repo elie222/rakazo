@@ -48,11 +48,14 @@ struct WatchThread: Decodable {
           options.count == ids.count
         else { return handoff }
         let prompt: WatchPrompt
-        if approvalEffectId != nil {
+        if let approvalEffectId {
           guard !title.isEmpty, ids.contains("allow"), ids.contains("deny"),
             ids.isSubset(of: ["allow", "deny", "always"])
           else { return handoff }
-          prompt = WatchPrompt(kind: .approval, title: title, detail: detail, options: [])
+          prompt = WatchPrompt(
+            kind: .approval, title: title, detail: detail,
+            options: options.filter { $0.id == "allow" || $0.id == "deny" },
+            approvalEffectId: approvalEffectId)
         } else {
           prompt = WatchPrompt(kind: .question, title: title, detail: detail, options: options)
         }

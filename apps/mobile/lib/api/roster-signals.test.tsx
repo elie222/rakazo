@@ -114,13 +114,15 @@ describe("useRosterSignals", () => {
     vi.unstubAllGlobals();
   });
 
-  it("forwards run signals to the paired watch without starting another stream", () => {
+  it("forwards roster and run signals to the paired watch without starting another stream", () => {
     act(() => root.render(<Stream />));
     expect(streams).toHaveLength(1);
     act(() => streams[0]?.change("routines"));
     expect(watch.invalidateWatchChat).not.toHaveBeenCalled();
     act(() => streams[0]?.change("runs"));
     expect(watch.invalidateWatchChat).toHaveBeenCalledOnce();
+    act(() => streams[0]?.signal());
+    expect(watch.invalidateWatchChat).toHaveBeenLastCalledWith("roster");
   });
 
   it("reads once when shown, then on every signal and never on a timer", async () => {

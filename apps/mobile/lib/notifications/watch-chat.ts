@@ -1,12 +1,16 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 
+type WatchChange = "chat" | "roster" | "sessionUnavailable" | "sessionReady";
+
 const relay =
   Platform.OS === "ios"
-    ? requireOptionalNativeModule<{ invalidateWatchChat?(): void }>("RakazoNotifications")
+    ? requireOptionalNativeModule<{ invalidateWatchChat?(kind: WatchChange): void }>(
+        "RakazoNotifications",
+      )
     : null;
 
-/** Let the paired watch re-read through its own authorized request after a run signal. */
-export function invalidateWatchChat() {
-  relay?.invalidateWatchChat?.();
+/** Let the paired watch re-read through its own authorized request after a run signal, or clear its view when the iPhone session changes. */
+export function invalidateWatchChat(kind: WatchChange = "chat") {
+  relay?.invalidateWatchChat?.(kind);
 }

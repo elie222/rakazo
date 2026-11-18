@@ -46,6 +46,7 @@ struct WatchPrompt: Codable, Equatable {
   struct Option: Codable, Identifiable, Equatable {
     let id: String
     let label: String
+    let outcome: String?
   }
 
   enum Kind: String, Codable { case question, approval, phone }
@@ -53,4 +54,5 @@ struct WatchPrompt: Codable, Equatable {
   let title: String
   let detail: String?
   let options: [Option]
+  var approvalEffectId: String?
 }

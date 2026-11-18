@@ -52,6 +52,7 @@ async function follow(signal: AbortSignal) {
         () => {
           if (connection.signal.aborted) return;
           opened = true;
+          invalidateWatchChat("roster");
           // Each connection opens with a signal, so a reconnect catches up on what it missed.
           for (const listener of rosterListeners) listener();
         },

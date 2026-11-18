@@ -7,33 +7,66 @@ import WatchConnectivity
 final class WatchRelay: NSObject, WCSessionDelegate {
   static let shared = WatchRelay()
   private var scope: UUID?
+  private var identityRevision = UUID()
+  private var rosterRevision = UUID()
+  private var sessionReady = true
   private var scopedSession: RakazoSession?
   private var spaceId: String?
   private var chats: [WatchChat] = []
+
+  private enum Change: String { case chat, roster, sessionUnavailable, sessionReady }
 
   func activate() {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
-    NotificationCenter.default.addObserver(
-      self, selector: #selector(chatChanged), name: Notification.Name("RakazoWatchChatChanged"),
-      object: nil)
+    // The relay lives for the process. Enqueue session changes in order without making
+    // the React Native thread wait on the main queue.
+    _ = NotificationCenter.default.addObserver(
+      forName: Notification.Name("RakazoWatchChatChanged"), object: nil, queue: nil
+    ) { [weak self] notification in
+      guard let kind = notification.object as? String, let change = Change(rawValue: kind)
+      else { return }
+      DispatchQueue.main.async { [weak self] in self?.chatChanged(change) }
+    }
   }
 
-  @objc private nonisolated func chatChanged() {
-    Task { @MainActor in
-      let session = WCSession.default
-      guard session.activationState == .activated, session.isWatchAppInstalled else { return }
-      do { try session.updateApplicationContext(["chatRevision": UUID().uuidString]) }
-      catch {
-        // The watch re-reads when it becomes active or the phone becomes reachable again.
-      }
+  private func chatChanged(_ change: Change) {
+    switch change {
+    case .sessionUnavailable, .sessionReady:
+      sessionReady = change == .sessionReady
+      identityRevision = UUID()
+      scope = nil
+      scopedSession = nil
+      spaceId = nil
+      chats = []
+    case .roster:
+      rosterRevision = UUID()
+    case .chat:
+      break
+    }
+    publishRevision()
+  }
+
+  private func publishRevision() {
+    let session = WCSession.default
+    guard session.activationState == .activated, session.isWatchAppInstalled else { return }
+    do {
+      try session.updateApplicationContext([
+        "chatRevision": UUID().uuidString,
+        "rosterRevision": rosterRevision.uuidString,
+        "identityRevision": identityRevision.uuidString,
+      ])
+    } catch {
+      // The watch re-reads when it becomes active or the phone becomes reachable again.
     }
   }
 
   nonisolated func session(
     _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?
-  ) {}
+  ) {
+    if state == .activated { Task { @MainActor in publishRevision() } }
+  }
 
   nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
@@ -70,22 +103,26 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
   private func currentSession() throws -> RakazoSession {
     guard UIApplication.shared.isProtectedDataAvailable else { throw WatchFailure.unlockPhone }
+    guard sessionReady else { throw WatchFailure.signIn }
     return try RakazoSession.load()
   }
 
-  private func verify(_ session: RakazoSession) throws {
-    guard try sameSession(session, currentSession()) else { throw WatchFailure.reload }
+  private func verify(_ session: RakazoSession, revision: UUID) throws {
+    guard revision == identityRevision, try sameSession(session, currentSession()) else {
+      throw WatchFailure.reload
+    }
   }
 
   private func handle(_ request: WatchRequest) async throws -> WatchReply {
+    let revision = identityRevision
     let session = try currentSession()
     let userId = try await session.currentUserId()
-    try verify(session)
+    try verify(session, revision: revision)
 
     if request.action == .chats {
       let list: WatchSpace = try await session.rpc(
         "spaces/list", [:], spaceId: session.selectedSpaceId, timeout: 8)
-      try verify(session)
+      try verify(session, revision: revision)
       if scopedSession.map({ sameSession($0, session) }) != true || spaceId != list.current.id {
         scope = UUID()
         scopedSession = session
@@ -106,7 +143,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
     if request.action == .thread {
       let thread: WatchThread = try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
-      try verify(session)
+      try verify(session, revision: revision)
       return WatchReply(
         messages: thread.watchMessages(for: userId),
         botWorking: thread.activeRuns?.contains {
@@ -123,7 +160,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     switch request.action {
     case .send:
       try await session.requireConsent(target, spaceId: spaceId, timeout: 8)
-      try verify(session)
+      try verify(session, revision: revision)
       input["text"] = text
       try await write("threads/send", input, session: session, spaceId: spaceId, failure: .sendUnconfirmed)
     case .answer:
@@ -134,7 +171,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         let runId = message.runId, thread.ownsPendingAsk(message, userId: userId),
         let prompt = message.pendingAsk?.watchPrompt(), prompt == request.prompt, canAnswer(prompt, text)
       else { throw WatchFailure.rejected }
-      try verify(session)
+      try verify(session, revision: revision)
       input["runId"] = runId
       input["messageId"] = message.id
       input["answer"] = text
@@ -148,7 +185,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
     switch prompt.kind {
     case .phone: false
-    case .approval: answer == "allow" || answer == "deny"
+    case .approval: prompt.options.contains { $0.id == answer }
     case .question: prompt.options.isEmpty || prompt.options.contains { $0.id == answer }
     }
   }
