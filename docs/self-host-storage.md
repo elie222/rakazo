@@ -280,11 +280,14 @@ shared/received/<YYYY>/<MM>/<YYYY-MM-DD>_<HHMM>_<sender>_<name>.<ext>
 ```
 
 The date and time are when the message arrived, in the time zone of the account the chat
-address belongs to, or UTC when it has none set. Sender and file
-names lose characters a path can't hold, get `_` for each one Windows does not allow in a name,
-and are shortened. A name already taken gets `-2`,
-`-3` and so on, so a copy never replaces a file. The bot's message gets a `[saved to <path>]`
-line for each copy, so the bot knows where to find it.
+address belongs to, or UTC when it has none set. Sender and file names lose characters a path
+can't hold, get `_` for each one Windows does not allow in a name, and are shortened. A name
+already taken gets `-2`, `-3` and so on, so a copy never replaces a file. The bot's message gets
+a `[saved to <path>]` line for each copy, so the bot knows where to find it.
+
+The path holds the sender's chat address, such as a phone number. On a team computer the
+copies of every member's direct messages sit in `shared/received/`, where every bot and member
+with access to that computer can open them.
 
 Which computers get a copy:
 
@@ -301,23 +304,34 @@ container while it sleeps, and the container works in the server's copy of its h
 server does not write there until the container is gone. The file still reaches the bot,
 without the line.
 
-Once a day the worker deletes copies that arrived more than 31 days ago, going by the date in
-their name rather than the file's own time, then the month and year folders that leaves empty.
-It only deletes files named like a copy, inside the dated folders under `received/` or
+Once a day the worker deletes copies after about a month (31 days, by the date in their name
+rather than the file's own time), then the month and year folders that leaves empty. It only
+deletes files named like a copy, inside the dated folders under `received/` or
 `shared/received/`; anything else there stays. It cleans the same homes that get a copy while
 stopped, and never a computer that is running or asleep: copies on a running computer go once
 it is stopped and its home is back with the server, and copies on a computer that gets none
-while stopped are never cleaned up. A Docker computer is stopped without a container only
-after an update, recovery or reset removes it, or once it is gone, so one that just sleeps
-between uses keeps its copies.
+while stopped, such as one whose provider keeps its own disk, are never cleaned up. A Docker
+computer is stopped without a container only after an update, recovery or reset removes it, or
+once it is gone, so one that just sleeps between uses keeps its copies. Turning the setting off
+stops the cleanup too, so copies already made stay until removed by hand.
 
 Limits:
 
 - A message settled by its backup job, because receiving it here failed or the API restarted
-  first, reaches the bot without a copy.
+  first, reaches the bot without a copy or a line, and so does a message the chat app delivers
+  again after such a restart.
 - One copy at a time is made on a computer, across all API processes, and the cleanup takes the
   same turn. Each copy has 30 seconds, waiting included; one not made by then is skipped, and
   the next copy goes ahead. A copy still being written at that point can land later without the
   line; the cleanup removes it like any other.
+- A message's files are copied between its downloads, so each later file of the message starts
+  downloading a little later, within the same download time limit.
+- A copy into a stopped computer's stored home is not held against a start or a save of that
+  computer. If the computer starts from its previous save and then saves again, the copy can be
+  lost although the bot was told its path; the same can happen on a running computer that saves
+  and stops between the check of its state and the write.
+- With homes kept in object storage, each copy into a stopped computer downloads its stored
+  home and uploads it again whole. A large home can take longer than the 30 seconds, leaving a copy without its line, and
+  the daily cleanup downloads every home it looks at.
 - A message handed to a message routine still gets its copies, but the routine is not told
   where they are.
