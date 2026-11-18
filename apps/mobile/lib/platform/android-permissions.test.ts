@@ -45,7 +45,9 @@ describe("Android permission config", () => {
   it("translates the add-only photo library prompt", () => {
     const { expo } = readMobileAppConfig();
     for (const path of Object.values(expo.locales)) {
-      const locale = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", path), "utf8")) as {
+      const locale = JSON.parse(
+        readFileSync(resolve(import.meta.dirname, "..", "..", path), "utf8"),
+      ) as {
         ios?: Record<string, unknown>;
       };
       expect(typeof locale.ios?.NSPhotoLibraryAddUsageDescription).toBe("string");
