@@ -1182,9 +1182,10 @@ export async function updateScheduleFromTool(
       ...(timingChanged || offOnTakeover
         ? { active: existing.active, nextRunAt: existing.nextRunAt }
         : {}),
-      // A watch added since the read keeps its routine alongside the chat, and a resume only
-      // applies to the watch it read, so a command put there since is never started by it.
-      ...(inChat || (active && !existing.active)
+      // A watch added since the read keeps its routine alongside the chat, and a resume or a
+      // takeover only applies to the watch it read, so a command put there since is never started
+      // by it nor handed to the editor still on.
+      ...(inChat || (active && !existing.active) || existing.userId !== input.userId
         ? {
             watch: {
               equals:
@@ -1208,9 +1209,10 @@ export async function updateScheduleFromTool(
   });
   if (count === 0) {
     return {
-      error: timingChanged
-        ? "The schedule changed while saving. Call schedule_list and try again."
-        : "Schedule not found.",
+      error:
+        timingChanged || existing.userId !== input.userId
+          ? "The schedule changed while saving. Call schedule_list and try again."
+          : "Schedule not found.",
     };
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");

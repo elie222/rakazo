@@ -1,3 +1,4 @@
+import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { createScheduleFromTool, updateScheduleFromTool } from "./schedule-tools.js";
 
@@ -175,6 +176,32 @@ describe("schedule_update on a command watch", () => {
       active: false,
       watch: { equals: { kind: "files", paths: ["inbox"], everyMinutes: 30 } },
     });
+  });
+
+  it("hands over only the watch it read: a command put there since is not taken over live", async () => {
+    for (const read of [
+      { watch: { kind: "files", paths: ["inbox"], everyMinutes: 30 }, ...live },
+      { watch: null, crons: ["0 9 * * *"], ...live },
+    ]) {
+      const w = world(watchRow(read));
+      await updateScheduleFromTool(w.deps, update("other", { prompt: "mine now" }));
+      const where = (
+        w.updateMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }]
+      )[0].where;
+      expect(where).toMatchObject({
+        userId: "u",
+        watch: { equals: read.watch ?? Prisma.DbNull },
+      });
+    }
+  });
+
+  it("tells the bot to retry when the watch changed under a takeover", async () => {
+    const w = world(watchRow({ watch: null, crons: ["0 9 * * *"], ...live }));
+    w.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect(await updateScheduleFromTool(w.deps, update("other", { prompt: "x" }))).toHaveProperty(
+      "error",
+      expect.stringMatching(/changed while saving/),
+    );
   });
 
   it("does not turn off a takeover of a watch that runs no command", async () => {
