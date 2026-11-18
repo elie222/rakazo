@@ -75,6 +75,13 @@ export function DraftDialog({
   const [copied, copy] = useCopyText();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [noteText, setNoteText] = useState("");
+  // A new version's text moves under any open passage, so what was being noted is let go.
+  const [version, setVersion] = useState(block.version);
+  if (version !== block.version) {
+    setVersion(block.version);
+    setPanel(null);
+    setNoteText("");
+  }
   const bodyRef = useRef<HTMLDivElement>(null);
   const revise = useSave({
     save: (input: { text: string; clientNonce: string }, rpc) =>

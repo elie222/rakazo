@@ -170,6 +170,14 @@ function DraftSheet({
   // the passage being noted.
   const [noting, setNoting] = useState(false);
   const [revision, setRevision] = useState(0);
+  // A new version's text moves under any selected passage, so what was being noted is let go.
+  const [version, setVersion] = useState(block.version);
+  if (version !== block.version) {
+    setVersion(block.version);
+    setSelection(null);
+    setNoteText("");
+    setNoting(false);
+  }
   const revise = useSave({
     save: (input: { text: string; clientNonce: string }, send) =>
       send("threads/send", {
@@ -236,7 +244,7 @@ function DraftSheet({
             <Text style={[styles.sheetSubject, { color: tokens.foreground }]}>{block.subject}</Text>
           ) : null}
           <TextInput
-            key={revision}
+            key={`${block.version}:${revision}`}
             testID="draft-body"
             multiline
             scrollEnabled={false}
