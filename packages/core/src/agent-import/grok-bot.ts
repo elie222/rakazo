@@ -683,14 +683,24 @@ function distinct(lines: readonly string[]): string[] {
 }
 
 /** A routine with every setting the export gave, for the new bot to set up in its chat. */
-function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLeftover {
+function routineLeftover(
+  routine: GrokBotRoutine,
+  index: number,
+  skillNames: ReadonlyMap<string, string>,
+): AgentImportLeftover {
+  // An imported skill is mentioned by the name it is saved under, as a created routine does, so
+  // a rename on a clash follows it.
+  const skills = routine.skills.map((name) => {
+    const saved = skillNames.get(name.toLowerCase());
+    return saved ? `@${saved}` : name;
+  });
   const fields = [
     ["Trigger", routine.trigger || "unknown"],
     ["Details", routine.details],
     ["Schedule", routine.when],
     ["Cron", routine.cron],
     ["Time zone", routine.timeZone],
-    ["Skills", routine.skills.join(", ")],
+    ["Skills", skills.join(", ")],
   ].flatMap(([label, value]) => (value ? [`- ${label}: ${value}`] : []));
   return {
     id: `leftover:routine:${index}`,
@@ -703,7 +713,8 @@ function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLef
 function fitsChatMessage(item: AgentImportLeftover): boolean {
   if (item.content.length > THREAD_MESSAGE_TEXT_MAX_LENGTH) return false;
   const [only, ...more] = agentImportLeftoverMessages([item]);
-  return more.length === 0 && (only?.length ?? 0) <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
+  // Room is kept for skill names that grow when a clash renames them.
+  return more.length === 0 && (only?.length ?? 0) <= THREAD_MESSAGE_TEXT_MAX_LENGTH - 2_000;
 }
 
 /**
@@ -720,7 +731,8 @@ export function parseGrokBot(
   const toSetUp = bot.routines.filter(
     (routine) => routine.instruction && grokRoutineTrigger(routine, triggers) === null,
   );
-  const leftovers = toSetUp.map(routineLeftover);
+  const skillNames = grokSkillNames(bot);
+  const leftovers = toSetUp.map((routine, index) => routineLeftover(routine, index, skillNames));
   const memory: AgentImportMemory[] = [
     ...memoryDocuments("MEMORY", memories),
     ...memoryDocuments("USER", userFacts),

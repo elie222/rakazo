@@ -682,7 +682,12 @@ export async function writeImportedBot<PreparedKey>(
       });
       await announceAdded(tx, botId, message, thread.id, checklist);
     }
-    for (const text of leftovers.length ? agentImportLeftoverMessages(leftovers) : []) {
+    // A leftover names a renamed skill as its created routines do.
+    const handedOver = leftovers.map((item) => ({
+      ...item,
+      content: renameRoutineSkillMentions(item.content, renamed),
+    }));
+    for (const text of handedOver.length ? agentImportLeftoverMessages(handedOver) : []) {
       const blocks: MessageBlock[] = [{ kind: "text", text }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,

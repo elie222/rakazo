@@ -770,6 +770,34 @@ describe("leftover chat messages", () => {
     expect(messages.at(-1)).toMatch(/Tell me which ones to set up\.$/);
   });
 
+  it("names an imported skill by the name it is saved under, and another as written", () => {
+    const [bot] = parseGrokBotExport(
+      JSON.stringify({
+        format: "grok-bot-export",
+        version: 1,
+        bots: [
+          {
+            name: "Bramble",
+            skills: [{ name: "Weekly Health", description: "Review.", instructions: "Do it." }],
+            routines: [
+              {
+                name: "Elsewhere",
+                instruction: "Review accounts.",
+                trigger: "other",
+                skills: ["Weekly Health", "notes"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const parsed = parseAgentImport([
+      { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+    ]);
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.leftovers[0]?.content).toContain("- Skills: @weekly-health, notes");
+  });
+
   it("fences text with many separate backticks without running out of arguments", () => {
     const text = "` ".repeat(40_000).trim();
     expect(agentImportLeftoverMessages([{ title: "A", content: text }])[0]).toContain(
