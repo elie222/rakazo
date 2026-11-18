@@ -287,23 +287,28 @@ line for each copy, so the bot knows where to find it.
 
 Which computers get a copy:
 
-- A running computer of any kind, written straight into it.
-- A Docker computer, running or not: it works in the server's copy of its home.
-- A stopped computer whose home the server holds and restores on its next start, written into
-  that stored home. This covers remote computers whose stored home only the server writes,
-  except Kubernetes computers set up to mount the server's home directory.
+- A running computer of any kind, Docker included, written straight into it.
+- A stopped computer with no machine left whose home the server holds, written into that
+  stored home for its next start. This covers Docker computers whose container was removed, and
+  remote computers whose stored home only the server writes, except Kubernetes computers set up
+  to mount the server's home directory.
 
-Other computers get no copy: one starting or going to sleep, a stopped one whose provider keeps
-its machine and disk, a stopped remote one whose stored home it writes itself, a stopped one on
-a person's own device, and a bot with no computer. The file still reaches the bot, without the
-line.
+Other computers get no copy: one starting, going to sleep or asleep, a stopped one whose
+provider keeps its machine and disk, a stopped remote one whose stored home it writes itself, a
+stopped one on a person's own device, and a bot with no computer. A Docker computer keeps its
+container while it sleeps, and the container works in the server's copy of its home, so the
+server does not write there until the container is gone. The file still reaches the bot,
+without the line.
 
 Once a day the worker deletes copies that arrived more than 31 days ago, going by the date in
 their name rather than the file's own time, then the month and year folders that leaves empty.
 It only deletes files named like a copy, inside the dated folders under `received/` or
 `shared/received/`; anything else there stays. It cleans the same homes that get a copy while
-stopped: copies on a running remote computer go once it is stopped and its home is back with
-the server, and copies on a computer that gets none while stopped are never cleaned up.
+stopped, and never a computer that is running or asleep: copies on a running computer go once
+it is stopped and its home is back with the server, and copies on a computer that gets none
+while stopped are never cleaned up. A Docker computer is stopped without a container only
+after an update, recovery or reset removes it, or once it is gone, so one that just sleeps
+between uses keeps its copies.
 
 Limits:
 

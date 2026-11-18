@@ -67,19 +67,22 @@ function writeTarget(
 }
 
 /**
- * Whether the stored home is where this computer's received files live while it is not running
- * them itself: the computer works in the server's home directory whatever its state, or it is
- * stopped and its next start restores the stored home. A machine the provider kept resumes with
+ * Whether the server may write and delete in this computer's stored home now: the computer is
+ * stopped and no machine of it is left, so nothing else has the home open, and its next start
+ * begins from it. A computer is marked stopped with no machine only once its machine was
+ * deleted or found gone. A Docker computer's container mounts the server's copy of its home and
+ * is kept while the computer sleeps; a bot with a shell in it could swap a folder for a link
+ * between the server's checks and its write or delete, so a running one is written through the
+ * container and one in any other state is left alone. A machine the provider kept resumes with
  * its own disk, and a save or restore under way could replace or miss the file.
  */
 export function homeHoldsReceivedFiles(
   sandbox: SandboxProvider,
   computer: Pick<ComputerRow, "kind" | "state" | "providerRef">,
 ): boolean {
-  if (sandboxKindCapabilities(computer.kind).serverHomeMount === "always") return true;
+  if (computer.state !== "stopped" || computer.providerRef) return false;
   return (
-    computer.state === "stopped" &&
-    !computer.providerRef &&
+    sandboxKindCapabilities(computer.kind).serverHomeMount === "always" ||
     serverOwnsTeamHome(sandbox, computer.kind)
   );
 }
@@ -114,8 +117,9 @@ function isFileExists(error: unknown): boolean {
 
 /**
  * Copies a received file into the bot's computer under `received/` (`shared/received/` on a
- * team computer), never over a file already there. A computer neither running nor booting
- * from a home the server holds is skipped. One save at a time picks a name on a computer, in
+ * team computer), never over a file already there. A running computer is written through its
+ * machine, a stopped one whose home the server holds into that stored home, and any other is
+ * skipped. One save at a time picks a name on a computer, in
  * every process, so two bots or two API instances never pick the same one.
  */
 export async function saveReceivedFile(
@@ -130,26 +134,27 @@ export async function saveReceivedFile(
 ): Promise<SaveReceivedFileResult> {
   const computerId = input.bot.computerId;
   if (!computerId) return { skipped: "no_computer" };
-  const computer = await deps.prisma.computer.findUnique({
-    where: { id: computerId },
-    select: { scope: true, homeKey: true, kind: true, providerRef: true, state: true },
-  });
-  if (!computer) return { skipped: "no_computer" };
-  const target = writeTarget(deps, computer, context);
-  if (!target) return { skipped: "home_not_reachable" };
-  const mode = parseComputerMode(computer.scope);
-  const naming = {
-    at: input.at,
-    timeZone: deps.timeZone,
-    // The path goes into the bot's prompt, so it carries no framing characters.
-    sender: sanitizeMessagingLabel(input.sender),
-    name: input.name === undefined ? undefined : sanitizeMessagingLabel(input.name),
-    mimeType: input.mimeType,
-    computerMode: mode,
-  };
-  const root = mode === "team" ? "shared/received/" : "received/";
-  const folder = path.posix.dirname(receivedFilePath({ ...naming, taken: () => false }));
-  const save = async () => {
+  const save = async (): Promise<SaveReceivedFileResult> => {
+    // Read under the folder's lease, so the target follows the latest state of the computer.
+    const computer = await deps.prisma.computer.findUnique({
+      where: { id: computerId },
+      select: { scope: true, homeKey: true, kind: true, providerRef: true, state: true },
+    });
+    if (!computer) return { skipped: "no_computer" };
+    const target = writeTarget(deps, computer, context);
+    if (!target) return { skipped: "home_not_reachable" };
+    const mode = parseComputerMode(computer.scope);
+    const naming = {
+      at: input.at,
+      timeZone: deps.timeZone,
+      // The path goes into the bot's prompt, so it carries no framing characters.
+      sender: sanitizeMessagingLabel(input.sender),
+      name: input.name === undefined ? undefined : sanitizeMessagingLabel(input.name),
+      mimeType: input.mimeType,
+      computerMode: mode,
+    };
+    const root = mode === "team" ? "shared/received/" : "received/";
+    const folder = path.posix.dirname(receivedFilePath({ ...naming, taken: () => false }));
     const taken = await pathsIn(target, folder);
     for (let tries = 1; ; tries += 1) {
       const relative = receivedFilePath({ ...naming, taken: (candidate) => taken.has(candidate) });
@@ -159,7 +164,7 @@ export async function saveReceivedFile(
       }
       try {
         await target.write(stored, input.bytes);
-        return stored;
+        return { saved: stored };
       } catch (error) {
         // The stored home never replaces a file: one written since the listing takes the next name.
         if (!isFileExists(error) || tries >= MAX_NAME_TRIES) throw error;
@@ -167,7 +172,7 @@ export async function saveReceivedFile(
       }
     }
   };
-  const saved = await retry(
+  return retry(
     () =>
       withLease(
         deps.prisma,
@@ -182,5 +187,4 @@ export async function saveReceivedFile(
       signal: context.signal,
     },
   );
-  return { saved };
 }

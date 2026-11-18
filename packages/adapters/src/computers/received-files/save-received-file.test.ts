@@ -116,6 +116,36 @@ describe("saveReceivedFile", () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
+  it("writes a running Docker computer's file through its container, not its mounted home", async () => {
+    const { deps, writeFile, writeBinaryFile } = setup(
+      { kind: "docker", providerRef: "ctr-1", state: "running" },
+      { computerFiles: { "shared/received/2026/11": [] } },
+    );
+
+    await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({ saved: TEAM_PATH });
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "ctr-1", kind: "docker" }),
+      { path: TEAM_PATH, content: bytes },
+      context,
+    );
+    expect(writeBinaryFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["starting", { state: "booting", providerRef: null }],
+    ["stopping", { state: "suspending", providerRef: "ctr-1" }],
+    ["asleep with its container kept", { state: "suspended", providerRef: "ctr-1" }],
+    ["stopped with its container kept", { state: "stopped", providerRef: "ctr-1" }],
+  ])("skips a Docker computer %s, whose container may mount its home", async (_label, row) => {
+    const { deps, writeBinaryFile, writeFile } = setup({ kind: "docker", ...row });
+
+    await expect(saveReceivedFile(deps, input, context)).resolves.toEqual({
+      skipped: "home_not_reachable",
+    });
+    expect(writeBinaryFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
   it("writes the stored home of a stopped remote computer the next start restores", async () => {
     const { deps, writeBinaryFile } = setup({ kind: "e2b", state: "stopped", providerRef: null });
 
@@ -299,7 +329,9 @@ describe("saveReceivedFile", () => {
     expect(queries.at(-1)!.sql).toContain("DELETE FROM");
     const taken = queryRaw.invocationCallOrder[0]!;
     const released = queryRaw.invocationCallOrder.at(-1)!;
-    for (const order of [homeList, writeBinaryFile].map(
+    // The computer is read under the lease too, so its state is the latest before the write.
+    const read = vi.mocked(deps.prisma.computer.findUnique);
+    for (const order of [read, homeList, writeBinaryFile].map(
       (call) => call.mock.invocationCallOrder[0]!,
     )) {
       expect(order).toBeGreaterThan(taken);

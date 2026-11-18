@@ -105,9 +105,9 @@ async function pruneComputer(
 /**
  * The worker's daily pass that deletes received chat-app files a month after they arrived
  * (by the date in their name, never the file's own time), then the month and year folders that
- * leaves empty. Only homes the server holds are pruned: a computer running on a provider's
- * own disk is left alone. Anything not named like a received file stays. Off unless the
- * setting is on.
+ * leaves empty. Only the homes of stopped computers the server holds are pruned: a running
+ * computer, Docker included, and one on a provider's own disk are left alone. Anything not
+ * named like a received file stays. Off unless the setting is on.
  */
 export function createReceivedFilesPruner(deps: {
   prisma: PrismaClient;
@@ -127,7 +127,7 @@ export function createReceivedFilesPruner(deps: {
     let removed = 0;
     for (let after: string | undefined; ; ) {
       const computers = await deps.prisma.computer.findMany({
-        where: after ? { id: { gt: after } } : undefined,
+        where: { state: "stopped", providerRef: null, ...(after ? { id: { gt: after } } : {}) },
         orderBy: { id: "asc" },
         take: COMPUTER_PAGE_SIZE,
         select: {
@@ -158,7 +158,15 @@ export function createReceivedFilesPruner(deps: {
               deps.prisma,
               `received-files:${computer.id}`,
               { ttlMs: PRUNE_LEASE_MS, signal: context.signal },
-              (lease) => pruneComputer(deps.home, computer, cutoff, context, lease.signal),
+              async (lease) => {
+                // Read again under the lease: the computer may have started since the page was read.
+                const current = await deps.prisma.computer.findUnique({
+                  where: { id: computer.id },
+                  select: { kind: true, providerRef: true, state: true },
+                });
+                if (!current || !homeHoldsReceivedFiles(deps.sandbox, current)) return 0;
+                return pruneComputer(deps.home, computer, cutoff, context, lease.signal);
+              },
             ).catch((error: unknown) => {
               if (error instanceof LeaseHeldError) return 0;
               throw error;

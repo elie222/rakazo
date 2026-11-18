@@ -31,7 +31,12 @@ const team: ComputerRow = {
   state: "stopped",
 };
 
-async function setup(computers: ComputerRow[], files: Record<string, string[]>) {
+async function setup(
+  computers: ComputerRow[],
+  files: Record<string, string[]>,
+  /** The rows a read under the lease finds, when they changed since the page was read. */
+  current: ComputerRow[] = computers,
+) {
   const root = await mkdtemp(path.join(tmpdir(), "rakazo-prune-"));
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   const home = new LocalAgentHomeStore(root);
@@ -46,7 +51,13 @@ async function setup(computers: ComputerRow[], files: Record<string, string[]>) 
     query.join("").includes("INSERT INTO") ? [{ fence: 1n }] : [{}],
   );
   const prisma = {
-    computer: { findMany: vi.fn(async () => computers) },
+    computer: {
+      findMany: vi.fn(async () => computers),
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          current.find((row) => row.id === where.id) ?? null,
+      ),
+    },
     $queryRaw: queryRaw,
   } as unknown as PrismaClient;
   const sandbox = {
@@ -185,6 +196,24 @@ describe("createReceivedFilesPruner", () => {
   it("skips a computer whose home the server does not hold", async () => {
     const remote = { ...team, kind: "e2b", state: "running", providerRef: "sbx-1" };
     const { prune, names } = await setup([remote], { "team-home": [OLD] });
+
+    await prune();
+
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
+  });
+
+  it("skips a running Docker computer, whose container mounts its home", async () => {
+    const running = { ...team, state: "running", providerRef: "ctr-1" };
+    const { prune, names } = await setup([running], { "team-home": [OLD] });
+
+    await prune();
+
+    expect(await names("team-home", "shared/received/2026/09")).toHaveLength(1);
+  });
+
+  it("skips a computer that started after the page of computers was read", async () => {
+    const started = { ...team, state: "booting" };
+    const { prune, names } = await setup([team], { "team-home": [OLD] }, [started]);
 
     await prune();
 
