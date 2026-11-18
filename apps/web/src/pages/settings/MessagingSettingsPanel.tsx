@@ -19,11 +19,15 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDownIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -272,28 +276,22 @@ export function MessagingSettingsPanel() {
     const app = providerLabel(provider);
     return t`Connect ${app}`;
   };
-  const changeBotLabel = (provider: string) => {
+  const optionsLabel = (provider: string) => {
     const app = providerLabel(provider);
-    return t`Change bot for ${app}`;
+    return t`Options for ${app}`;
   };
 
   /**
    * Issues a code for `provider`. With a choice of bots it asks which first, showing the
    * ones already linked elsewhere as unavailable.
    */
-  function linkAction(
-    row: string,
-    provider: string,
-    label: ReactNode,
-    variant: "outline" | "ghost",
-    { ariaLabel, ask = false }: { ariaLabel?: string; ask?: boolean } = {},
-  ) {
-    const only = bots.length === 1 && !ask && !linkedBots.has(bots[0]!.id) ? bots[0] : undefined;
+  function linkAction(row: string, provider: string, label: ReactNode, ariaLabel?: string) {
+    const only = bots.length === 1 && !linkedBots.has(bots[0]!.id) ? bots[0] : undefined;
     if (only || bots.length === 0) {
       return (
         <Button
           size="sm"
-          variant={variant}
+          variant="outline"
           aria-label={ariaLabel}
           disabled={issuingLink || !only}
           onClick={() => only && void startLink(row, provider, only.id)}
@@ -306,7 +304,7 @@ export function MessagingSettingsPanel() {
       <DropdownMenu>
         <DropdownMenuTrigger
           disabled={issuingLink}
-          render={<Button size="sm" variant={variant} aria-label={ariaLabel} />}
+          render={<Button size="sm" variant="outline" aria-label={ariaLabel} />}
         >
           {label}
           <ChevronDownIcon data-icon="inline-end" />
@@ -316,16 +314,47 @@ export function MessagingSettingsPanel() {
             <DropdownMenuLabel>
               <Trans>Bot</Trans>
             </DropdownMenuLabel>
-            {bots.map((bot) => (
-              <DropdownMenuItem
-                key={bot.id}
-                disabled={linkedBots.has(bot.id)}
-                onClick={() => void startLink(row, provider, bot.id)}
-              >
-                {bot.name}
-              </DropdownMenuItem>
-            ))}
+            {botItems(row, provider)}
           </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  const botItems = (row: string, provider: string) =>
+    bots.map((bot) => (
+      <DropdownMenuItem
+        key={bot.id}
+        disabled={linkedBots.has(bot.id)}
+        onClick={() => void startLink(row, provider, bot.id)}
+      >
+        {bot.name}
+      </DropdownMenuItem>
+    ));
+
+  /** A connected row's one control: its actions, the removing one last. */
+  function rowMenu(
+    provider: string,
+    actions: ReactNode,
+    remove: { label: ReactNode; run: () => Promise<unknown> },
+  ) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button size="icon-sm" variant="outline" aria-label={optionsLabel(provider)} />}
+        >
+          <EllipsisIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-44">
+          {actions ? (
+            <>
+              {actions}
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          <DropdownMenuItem variant="destructive" onClick={() => void act(remove.run)}>
+            {remove.label}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -374,34 +403,36 @@ export function MessagingSettingsPanel() {
           detail={`${identity.address}, ${identity.botName}`}
         />
       }
-      control={
-        <>
-          {movable && bots.length > 1
-            ? linkAction(
-                `identity:${identity.id}`,
-                identity.provider,
-                <Trans>Change bot</Trans>,
-                "ghost",
-                { ariaLabel: changeBotLabel(identity.provider), ask: true },
-              )
-            : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
-            }
-          >
-            <Trans>Unlink</Trans>
-          </Button>
-        </>
-      }
+      control={rowMenu(
+        identity.provider,
+        movable && bots.length > 1 ? (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger disabled={issuingLink}>
+              <Trans>Change bot</Trans>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {botItems(`identity:${identity.id}`, identity.provider)}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ) : null,
+        {
+          label: <Trans>Unlink</Trans>,
+          run: () => rpc.messaging.identities.unlink({ identityId: identity.id }),
+        },
+      )}
     >
       {linkCodeFor(`identity:${identity.id}`)}
     </SettingsRow>
   );
 
-  const memberLinkAction = linkAction("member", "slack", <Trans>Link DMs</Trans>, "ghost");
+  const memberLinkRow = (
+    <SettingsRow
+      label={<AppLabel provider="slack" />}
+      control={linkAction("member", "slack", <Trans>Link DMs</Trans>)}
+    >
+      {linkCodeFor("member")}
+    </SettingsRow>
+  );
 
   const respondButtons = (respond: (accept: boolean) => Promise<unknown>) => (
     <>
@@ -468,35 +499,27 @@ export function MessagingSettingsPanel() {
                     .join(", ")}
                 />
               }
-              control={
-                <>
-                  {status?.providers.includes(installation.provider) ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={issuingLink}
-                      onClick={() =>
-                        void startLink(
-                          `install:${installation.id}`,
-                          installation.provider,
-                          installation.botId,
-                        )
-                      }
-                    >
-                      <Trans>Link DMs</Trans>
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="ghost"
+              control={rowMenu(
+                installation.provider,
+                status?.providers.includes(installation.provider) ? (
+                  <DropdownMenuItem
+                    disabled={issuingLink}
                     onClick={() =>
-                      void act(() => rpc.messaging.installations.remove({ id: installation.id }))
+                      void startLink(
+                        `install:${installation.id}`,
+                        installation.provider,
+                        installation.botId,
+                      )
                     }
                   >
-                    <Trans>Disconnect</Trans>
-                  </Button>
-                </>
-              }
+                    <Trans>Link DMs</Trans>
+                  </DropdownMenuItem>
+                ) : null,
+                {
+                  label: <Trans>Disconnect</Trans>,
+                  run: () => rpc.messaging.installations.remove({ id: installation.id }),
+                },
+              )}
             >
               {linkCodeFor(`install:${installation.id}`)}
             </SettingsRow>
@@ -506,27 +529,18 @@ export function MessagingSettingsPanel() {
             <SettingsRow
               label={<AppLabel provider="slack" />}
               control={
-                <>
-                  {memberLink ? memberLinkAction : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={connectLabel("slack")}
-                    onClick={installSlack}
-                  >
-                    <Trans>Connect</Trans>
-                  </Button>
-                </>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={connectLabel("slack")}
+                  onClick={installSlack}
+                >
+                  <Trans>Connect</Trans>
+                </Button>
               }
-            >
-              {linkCodeFor("member")}
-            </SettingsRow>
+            />
           ) : null}
-          {memberLink && slackInstallations.length ? (
-            <SettingsRow label={<AppLabel provider="slack" />} control={memberLinkAction}>
-              {linkCodeFor("member")}
-            </SettingsRow>
-          ) : null}
+          {memberLink ? memberLinkRow : null}
           {slackInstall && slackInstallations.length ? (
             <button
               type="button"
@@ -548,8 +562,7 @@ export function MessagingSettingsPanel() {
                   `app:${provider}`,
                   provider,
                   <Trans>Connect</Trans>,
-                  "outline",
-                  { ariaLabel: connectLabel(provider) },
+                  connectLabel(provider),
                 )}
               >
                 {linkCodeFor(`app:${provider}`)}

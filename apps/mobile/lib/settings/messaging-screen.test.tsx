@@ -29,7 +29,42 @@ vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => foregroun
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../native/native", () => ({
   native: {},
+  useResolvedAppearance: () => "light",
   useThemedStyles: (factory: () => unknown) => factory(),
+}));
+type MenuAction = {
+  id: string;
+  title: string;
+  attributes?: { disabled?: boolean };
+  subactions?: MenuAction[];
+};
+// The menu's actions show as buttons, those of a submenu flattened in.
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    actions,
+    onPressAction,
+    children,
+  }: {
+    actions: MenuAction[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    children?: ReactNode;
+  }) => (
+    <>
+      {children}
+      {actions
+        .flatMap((action) => (action.subactions ? [action, ...action.subactions] : [action]))
+        .map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            disabled={action.attributes?.disabled}
+            onClick={() => onPressAction({ nativeEvent: { event: action.id } })}
+          >
+            {action.title}
+          </button>
+        ))}
+    </>
+  ),
 }));
 vi.mock("../api/user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
@@ -642,4 +677,23 @@ it("moves a linked app to another bot with a code instead of unlinking it", asyn
     expect.anything(),
   );
   expect(container.textContent).toContain("ABCD-2345");
+});
+
+it("unlinks a linked app from its row's menu", async () => {
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["sendblue"],
+    identities: [
+      { id: "mi-1", provider: "sendblue", botId: "bot-1", botName: "Chief", address: "+1555" },
+    ],
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  // A single bot leaves nothing to change: Unlink is the menu's one action.
+  expect(() => button("iMessage", "Change bot")).toThrow();
+  await press("iMessage", "Unlink");
+  expect(rpc).toHaveBeenCalledWith(
+    "messaging/identities/unlink",
+    { identityId: "mi-1" },
+    expect.anything(),
+  );
 });

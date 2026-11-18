@@ -195,6 +195,18 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings.getByRole("button", { name: "Connect Feishu" })).toBeEnabled();
   await expect(messagingSettings.getByRole("button", { name: "Connect WhatsApp" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "messaging-slack-workspace");
+  // A connected row keeps its actions in one menu.
+  await messagingSettings.getByRole("button", { name: "Options for WhatsApp" }).click();
+  await expect(page.getByRole("menuitem", { name: "Unlink", exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Change bot", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("menuitem", { name: "Chief", exact: true })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "messaging-connected-menu");
+  // The first Escape closes only the bot list, the second the menu.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", { name: "Unlink", exact: true })).toHaveCount(0);
   // With several bots, Connect asks which one the chat app talks to.
   await messagingSettings.getByRole("button", { name: "Connect iMessage" }).click();
   await expect(page.getByRole("menuitem", { name: "Lead", exact: true })).toBeVisible();

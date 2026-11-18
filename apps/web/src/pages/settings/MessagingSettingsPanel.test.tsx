@@ -68,7 +68,19 @@ vi.mock("@rakazo/ui-web", () => {
     DropdownMenuContent: Pass,
     DropdownMenuGroup: Pass,
     DropdownMenuLabel: Pass,
-    DropdownMenuTrigger: ({ children, disabled }: ComponentProps<"button">) => (
+    DropdownMenuSeparator: () => <hr />,
+    DropdownMenuSub: Pass,
+    DropdownMenuSubContent: Pass,
+    DropdownMenuTrigger: ({
+      children,
+      disabled,
+      render,
+    }: ComponentProps<"button"> & { render?: { props: { "aria-label"?: string } } }) => (
+      <button type="button" disabled={disabled} aria-label={render?.props["aria-label"]}>
+        {children}
+      </button>
+    ),
+    DropdownMenuSubTrigger: ({ children, disabled }: ComponentProps<"button">) => (
       <button type="button" disabled={disabled}>
         {children}
       </button>
@@ -539,7 +551,11 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
     { id: "bot-2", name: "Team" },
   ]);
   await renderOverlay();
-  await act(async () => rowButton("Slack", "Team").click());
+  // Its own row beside Connect, so each row keeps one control.
+  const slackRows = [...container.querySelectorAll('[data-testid="messaging-chat-apps"] .px-4')];
+  expect(slackRows.map((row) => row.querySelectorAll(":scope button").length)).toEqual([1, 3]);
+  const team = [...slackRows[1]!.querySelectorAll("button")].find((b) => b.textContent === "Team");
+  await act(async () => team!.click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
   expect(messaging.installations.start).not.toHaveBeenCalled();
 });
@@ -639,6 +655,9 @@ it("moves a linked app to another bot with a code instead of unlinking it", asyn
     { id: "bot-2", name: "Team" },
   ]);
   await renderOverlay();
+  // One control per row: the row's actions sit in its options menu.
+  const [options] = appRow("Telegram").querySelectorAll("button");
+  expect(options?.getAttribute("aria-label")).toBe("Options for Telegram");
   expect(rowButton("Telegram", "Change bot")).toBeDefined();
   // Chief already answers Telegram.
   expect(rowButton("Telegram", "Chief").disabled).toBe(true);

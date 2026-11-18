@@ -1,3 +1,5 @@
+import type { MenuAction } from "@expo/ui/community/menu";
+import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
@@ -7,6 +9,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
 import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
 import { LoadFailure } from "../../components/ui/load-failure";
 import { MenuPickerMenu } from "../../components/ui/menu-picker";
@@ -14,7 +17,7 @@ import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api/api";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/api/session";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { native, useThemedStyles } from "../../lib/native/native";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import type { SaveSend } from "../../lib/query/query";
 import { formRead, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -26,6 +29,7 @@ export default function MessagingSettings() {
   const { t } = useLingui();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
+  const colorScheme = useResolvedAppearance();
   const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const linkGuard = useMemo(() => createMessagingLinkGuard(linkScope, session), [session]);
   const issuingLink = useSyncExternalStore(linkGuard.subscribe, linkGuard.isPending);
@@ -232,26 +236,17 @@ export default function MessagingSettings() {
     const app = messagingProviderName(provider);
     return t`Connect ${app}`;
   };
-  const changeBotLabel = (provider: string) => {
+  const optionsLabel = (provider: string) => {
     const app = messagingProviderName(provider);
-    return t`Change bot for ${app}`;
+    return t`Options for ${app}`;
   };
   /**
    * Issues a code for `provider`. With a choice of bots it asks which first, showing the
    * ones already linked elsewhere as unavailable.
    */
-  const linkAction = (
-    row: string,
-    provider: string,
-    label: string,
-    {
-      accessibilityLabel = label,
-      ask = false,
-    }: { accessibilityLabel?: string; ask?: boolean } = {},
-  ) => {
+  const linkAction = (row: string, provider: string, label: string, accessibilityLabel = label) => {
     const first = bots[0];
-    const only =
-      bots.length === 1 && !ask && first && !linkedBots.has(first.id) ? first : undefined;
+    const only = bots.length === 1 && first && !linkedBots.has(first.id) ? first : undefined;
     const disabled = busy || issuingLink;
     if (only || bots.length === 0) {
       return (
@@ -305,6 +300,53 @@ export default function MessagingSettings() {
       </Text>
     );
   };
+  /** A connected row's one control: a native menu of its actions, the removing one last. */
+  const rowMenu = (
+    provider: string,
+    actions: MenuAction[],
+    onAction: (id: string) => void,
+    remove: { title: string; run: (send: SaveSend) => Promise<unknown> },
+  ) => {
+    const disabled = busy || issuingLink;
+    return (
+      <View pointerEvents={disabled ? "none" : "auto"} style={disabled && styles.disabled}>
+        <MenuView
+          colorScheme={colorScheme}
+          actions={[
+            ...actions,
+            {
+              id: "remove-section",
+              title: "",
+              displayInline: true,
+              subactions: [
+                { id: "remove", title: remove.title, attributes: { destructive: true } },
+              ],
+            },
+          ]}
+          onPressAction={({ nativeEvent }) => {
+            if (disabled) return;
+            if (nativeEvent.event === "remove") act(remove.run);
+            else onAction(nativeEvent.event);
+          }}
+        >
+          <View
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={optionsLabel(provider)}
+            accessibilityState={{ disabled }}
+            style={styles.menuButton}
+          >
+            <NativeSymbol
+              ios="ellipsis"
+              android="ellipsis-horizontal"
+              size={20}
+              color={mobileTokens().mutedForeground}
+            />
+          </View>
+        </MenuView>
+      </View>
+    );
+  };
   /**
    * A linked account. `movable` offers a code for another bot: sent from this account, it
    * moves the same link, chats and all.
@@ -314,21 +356,27 @@ export default function MessagingSettings() {
       key={identity.id}
       title={messagingProviderName(identity.provider)}
       detail={`${identity.address}, ${identity.botName}`}
-      trailing={
-        <View style={styles.actions}>
-          {movable && bots.length > 1
-            ? linkAction(`identity:${identity.id}`, identity.provider, t`Change bot`, {
-                accessibilityLabel: changeBotLabel(identity.provider),
-                ask: true,
-              })
-            : null}
-          {textAction(
-            t`Unlink`,
-            (send) => send("messaging/identities/unlink", { identityId: identity.id }),
-            "destructive",
-          )}
-        </View>
-      }
+      trailing={rowMenu(
+        identity.provider,
+        movable && bots.length > 1
+          ? [
+              {
+                id: "change",
+                title: t`Change bot`,
+                subactions: bots.map((bot) => ({
+                  id: `bot:${bot.id}`,
+                  title: bot.name,
+                  attributes: { disabled: linkedBots.has(bot.id) },
+                })),
+              },
+            ]
+          : [],
+        (id) => startLink(`identity:${identity.id}`, identity.provider, id.slice("bot:".length)),
+        {
+          title: t`Unlink`,
+          run: (send) => send("messaging/identities/unlink", { identityId: identity.id }),
+        },
+      )}
     />,
     linkCode(`identity:${identity.id}`),
   ];
@@ -388,32 +436,18 @@ export default function MessagingSettings() {
             ]
               .filter(Boolean)
               .join(", ")}
-            trailing={
-              <View style={styles.actions}>
-                {status?.providers.includes(installation.provider) ? (
-                  <NativeActionButton
-                    label={t`Link DMs`}
-                    prominence="quiet"
-                    size="compact"
-                    fill={false}
-                    variant="text"
-                    disabled={busy || issuingLink}
-                    onPress={() =>
-                      startLink(
-                        `install:${installation.id}`,
-                        installation.provider,
-                        installation.botId,
-                      )
-                    }
-                  />
-                ) : null}
-                {textAction(
-                  t`Disconnect`,
-                  (send) => send("messaging/installations/remove", { id: installation.id }),
-                  "destructive",
-                )}
-              </View>
-            }
+            trailing={rowMenu(
+              installation.provider,
+              status?.providers.includes(installation.provider)
+                ? [{ id: "link-dms", title: t`Link DMs` }]
+                : [],
+              () =>
+                startLink(`install:${installation.id}`, installation.provider, installation.botId),
+              {
+                title: t`Disconnect`,
+                run: (send) => send("messaging/installations/remove", { id: installation.id }),
+              },
+            )}
           />,
           linkCode(`install:${installation.id}`),
         ])}
@@ -423,23 +457,20 @@ export default function MessagingSettings() {
             key="slack"
             title={messagingProviderName("slack")}
             trailing={
-              <View style={styles.actions}>
-                {memberLink ? linkAction("member", "slack", t`Link DMs`) : null}
-                <NativeActionButton
-                  label={t`Connect`}
-                  accessibilityLabel={connectLabel("slack")}
-                  prominence="quiet"
-                  size="compact"
-                  fill={false}
-                  variant="text"
-                  disabled={busy || issuingLink}
-                  onPress={installSlack}
-                />
-              </View>
+              <NativeActionButton
+                label={t`Connect`}
+                accessibilityLabel={connectLabel("slack")}
+                prominence="quiet"
+                size="compact"
+                fill={false}
+                variant="text"
+                disabled={busy || issuingLink}
+                onPress={installSlack}
+              />
             }
           />
         ) : null}
-        {memberLink && slackInstallations.length ? (
+        {memberLink ? (
           <SettingsRow
             key="member"
             title={messagingProviderName("slack")}
@@ -463,9 +494,7 @@ export default function MessagingSettings() {
             <SettingsRow
               key={provider}
               title={messagingProviderName(provider)}
-              trailing={linkAction(`app:${provider}`, provider, t`Connect`, {
-                accessibilityLabel: connectLabel(provider),
-              })}
+              trailing={linkAction(`app:${provider}`, provider, t`Connect`, connectLabel(provider))}
             />,
             linkCode(`app:${provider}`),
           ];
@@ -523,6 +552,7 @@ function createStyles() {
     code: { color: native.label, paddingHorizontal: 16, paddingVertical: 12 },
     link: { color: mobileTokens().link, fontSize: 16, fontWeight: "500" },
     disabled: { opacity: 0.45 },
+    menuButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
     error: { color: mobileTokens().destructive, padding: 12 },
   });
 }
