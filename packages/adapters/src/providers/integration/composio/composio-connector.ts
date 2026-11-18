@@ -415,10 +415,10 @@ export function planLiveConnectionSync(
     if (row.providerRef && liveRefSet?.has(row.providerRef)) connectIds.push(row.id);
   }
   const connectIdSet = new Set(connectIds);
-  // Providers that already have a connected row before this sync. Extra pending
-  // rows for those providers are additional-account attempts, not abandoned
-  // first connects — keep them. Concurrent pendings with no connected row yet
-  // still collapse to one connect + revoke the rest.
+  // Providers that already have a connected row before this sync. An extra pending row for
+  // one is an additional-account attempt: kept while its sign-in page may still be open, or
+  // when its age is unknown, and cleared after that. Concurrent pendings with no connected
+  // row yet still collapse to one connect + revoke the rest.
   const previouslyConnected = new Set(
     rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
   );
