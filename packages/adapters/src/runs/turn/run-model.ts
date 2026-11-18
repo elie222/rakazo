@@ -40,6 +40,7 @@ import {
   retireToReconnectMarker,
   withModelCredentialLock,
 } from "../../models/model-credential-refresh.js";
+import { piRuntimeEnvironmentKey } from "../../models/model-provider-registry.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
@@ -219,22 +220,12 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
     (provider === "scripted" && deps.runtime?.describe().capabilities.scripted) ||
     (!credential && deployment.provider === provider && deployment.hostCredentials);
-  // Match Pi's OpenRouter fallback only when no explicit key overrides it.
-  const runtimeKey =
-    !material.deploymentCredential &&
-    material.apiKey === undefined &&
-    (provider === "openrouter" || provider === "scripted")
-      ? process.env.OPENROUTER_API_KEY
-      : undefined;
-  if (
-    !material.deploymentCredential &&
-    !material.apiKey?.trim() &&
-    !runtimeKey?.trim() &&
-    !keyless
-  ) {
+  const apiKey =
+    material.apiKey ??
+    (material.deploymentCredential ? undefined : piRuntimeEnvironmentKey(provider));
+  if (!material.deploymentCredential && !apiKey?.trim() && !keyless) {
     throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
   }
-  const apiKey = material.apiKey ?? runtimeKey;
   if (apiKey) args[6]?.([apiKey]);
   const callObserver =
     !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;

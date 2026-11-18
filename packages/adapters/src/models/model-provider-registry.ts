@@ -151,6 +151,13 @@ export function modelProviderDefinition(id: string): ModelProviderDefinition | u
     : undefined;
 }
 
+/** Only OpenRouter and its legacy scripted alias can use the implicit runtime key. */
+export function piRuntimeEnvironmentKey(provider: string, env: NodeJS.ProcessEnv = process.env) {
+  return provider === "openrouter" || provider === "scripted"
+    ? env[modelProviders.openrouter.deployment.keyEnv]
+    : undefined;
+}
+
 async function googleKeyWasRejected(response: Response): Promise<boolean> {
   const reader = response.body?.getReader();
   if (!reader) return false;
