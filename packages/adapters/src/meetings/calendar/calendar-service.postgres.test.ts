@@ -386,8 +386,18 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       emulator.setCalendarStatus(acceptedId!, "connected");
       await service.sync(pending.id);
       expect((await listing(second)).connected).toBe(true);
+      emulator.failNextDisconnect(503);
+      await runAsTenant(second, () => service.disconnect(second));
+      expect(await listing(second)).toMatchObject({
+        connected: false,
+        connecting: false,
+        disconnecting: true,
+        events: [],
+      });
+      await expect(authorize()).rejects.toMatchObject({ kind: "CONFLICT" });
       await runAsTenant(second, () => service.disconnect(second));
       expect(emulator.connectedCalendars()).toEqual([]);
+      expect((await listing(second)).disconnecting).toBe(false);
 
       const held = deferred<void>();
       const pendingDisconnect = await authorize();

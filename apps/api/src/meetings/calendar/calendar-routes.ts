@@ -1,7 +1,6 @@
 import type { MeetingCalendarService } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MeetingCalendarOAuthError } from "@rakazo/contracts";
 import {
-  CALENDAR_OAUTH_UNAVAILABLE_ERRORS,
   DESKTOP_MEETING_CALENDAR_DENIED,
   DESKTOP_MEETING_CALENDAR_FAILED,
   DESKTOP_MEETING_CALENDAR_LAUNCH_PATH,
@@ -15,6 +14,24 @@ import { clientErrorStatus } from "../../client-error-status.js";
 import { readBoundedBody } from "../../http/http-body.js";
 import type { RouterContext } from "../../routes/context.js";
 
+function calendarOAuthError(error: string | undefined): MeetingCalendarOAuthError {
+  switch (error) {
+    case "access_denied":
+      return "denied";
+    case "temporarily_unavailable":
+    case "server_error":
+      return "unavailable";
+    default:
+      return "failed";
+  }
+}
+
+const desktopOAuthErrors = {
+  denied: DESKTOP_MEETING_CALENDAR_DENIED,
+  unavailable: DESKTOP_MEETING_CALENDAR_UNAVAILABLE,
+  failed: DESKTOP_MEETING_CALENDAR_FAILED,
+} satisfies Record<MeetingCalendarOAuthError, string>;
+
 export function meetingCalendarRoutes(ctx: RouterContext) {
   const { authed, deps, repos } = ctx;
   const configured = () => {
@@ -25,8 +42,9 @@ export function meetingCalendarRoutes(ctx: RouterContext) {
   return {
     meetingCalendar: {
       status: authed.meetingCalendar.status.handler(async ({ context: { actor }, input }) => {
-        await repos.getBot(actor, input.botId);
-        return { available: deps.meetingCalendar?.available(actor.spaceId) ?? false };
+        const available = deps.meetingCalendar?.available(actor.spaceId) ?? false;
+        if (available) await repos.getBot(actor, input.botId);
+        return { available };
       }),
       upcoming: authed.meetingCalendar.upcoming.handler(async ({ context: { actor }, input }) => {
         if (!deps.meetingCalendar)
@@ -96,10 +114,11 @@ export function mountMeetingCalendarHttp(
     }
     if (!state || state.length > 128 || (code && code.length > 8192))
       return c.text("Invalid calendar authorization.", 400);
+    const failure = error !== undefined || !code ? calendarOAuthError(error) : undefined;
     if (state.startsWith("mobile-")) {
       const params = new URLSearchParams({
         state,
-        ...(code ? { code } : { error: error ?? "access_denied" }),
+        ...(failure ? { error: failure } : { code: code! }),
       });
       return c.redirect(`${MOBILE_MEETING_CALENDAR_CALLBACK_URL}?${params}`, 303);
     }
@@ -109,23 +128,15 @@ export function mountMeetingCalendarHttp(
       // The browser cannot redeem the code. Only the initiating desktop session
       // can finish it over authenticated RPC after native loopback capture.
       target.searchParams.set("state", state);
-      const result =
-        error === "access_denied"
-          ? DESKTOP_MEETING_CALENDAR_DENIED
-          : error && CALENDAR_OAUTH_UNAVAILABLE_ERRORS.includes(error)
-            ? DESKTOP_MEETING_CALENDAR_UNAVAILABLE
-            : error
-              ? DESKTOP_MEETING_CALENDAR_FAILED
-              : code!;
-      target.searchParams.set("code", result);
+      target.searchParams.set("code", failure ? desktopOAuthErrors[failure] : code!);
       return c.redirect(target.href, 303);
     }
     if (!state.startsWith("web-")) return c.text("Invalid calendar authorization.", 400);
-    if (error === "access_denied") return c.redirect("/app", 303);
-    if (error && CALENDAR_OAUTH_UNAVAILABLE_ERRORS.includes(error)) {
+    if (failure === "denied") return c.redirect("/app", 303);
+    if (failure === "unavailable") {
       return c.text("Calendar sign-in is temporarily unavailable.", 503);
     }
-    if (!code || error) return c.text("Calendar authorization did not complete.", 400);
+    if (!code || failure) return c.text("Calendar authorization did not complete.", 400);
     const actor = await sessionActor(c.req.raw);
     if (!actor)
       return c.text("Open Rakazo in this browser and sign in, then connect your calendar.", 401);

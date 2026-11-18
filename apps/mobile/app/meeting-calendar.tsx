@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RpcOutput } from "@rakazo/contracts";
 import {
-  CALENDAR_OAUTH_UNAVAILABLE_ERRORS,
+  MeetingCalendarOAuthErrorSchema,
   MOBILE_MEETING_CALENDAR_CALLBACK_URL,
 } from "@rakazo/contracts";
 import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
@@ -51,13 +51,20 @@ export default function MeetingCalendarScreen() {
           const { searchParams } = new URL(result.url);
           const state = searchParams.get("state");
           const code = searchParams.get("code");
-          const error = searchParams.get("error");
-          if (state !== started.state) throw new Error(t`Calendar sign-in did not complete.`);
-          if (error === "access_denied") return;
-          if (error && CALENDAR_OAUTH_UNAVAILABLE_ERRORS.includes(error)) {
-            throw new Error(t`Calendar sign-in is temporarily unavailable.`);
+          if (
+            state !== started.state ||
+            ["state", "code", "error"].some((key) => searchParams.getAll(key).length > 1)
+          )
+            throw new Error(t`Calendar sign-in did not complete.`);
+          if (searchParams.has("error")) {
+            const error = MeetingCalendarOAuthErrorSchema.safeParse(searchParams.get("error"));
+            if (error.data === "denied") return;
+            if (error.data === "unavailable") {
+              throw new Error(t`Calendar sign-in is temporarily unavailable.`);
+            }
+            throw new Error(t`Calendar sign-in did not complete.`);
           }
-          if (error || !code) throw new Error(t`Calendar sign-in did not complete.`);
+          if (!code) throw new Error(t`Calendar sign-in did not complete.`);
           return send("meetingCalendar/complete", { state, code });
         }
         case "disconnect":
@@ -116,10 +123,12 @@ export default function MeetingCalendarScreen() {
         <ActivityIndicator />
       ) : !data.available ? (
         <SettingsFooter>{t`Calendar scheduling is unavailable.`}</SettingsFooter>
-      ) : data.connecting ? (
-        <SettingsGroup label={t`Connecting calendar…`}>
+      ) : data.disconnecting || data.connecting ? (
+        <SettingsGroup
+          label={data.disconnecting ? t`Disconnecting calendar…` : t`Connecting calendar…`}
+        >
           <SettingsRow
-            title={t`Disconnect calendar`}
+            title={data.disconnecting ? t`Try again` : t`Disconnect calendar`}
             disabled={save.pending}
             onPress={() => save.run({ kind: "disconnect" })}
           />

@@ -7,8 +7,10 @@ export const DESKTOP_MEETING_CALENDAR_LAUNCH_PATH = "/api/meetings/calendar/oaut
 export const DESKTOP_MEETING_CALENDAR_DENIED = "rakazo-calendar-denied";
 export const DESKTOP_MEETING_CALENDAR_UNAVAILABLE = "rakazo-calendar-unavailable";
 export const DESKTOP_MEETING_CALENDAR_FAILED = "rakazo-calendar-failed";
-export const CALENDAR_OAUTH_UNAVAILABLE_ERRORS = ["temporarily_unavailable", "server_error"];
 export const MOBILE_MEETING_CALENDAR_CALLBACK_URL = "rakazo://meeting-calendar-oauth";
+
+export const MeetingCalendarOAuthErrorSchema = z.enum(["denied", "unavailable", "failed"]);
+export type MeetingCalendarOAuthError = z.infer<typeof MeetingCalendarOAuthErrorSchema>;
 
 const bot = z.object({ botId: z.string().min(1).max(128) });
 const event = bot.extend({ eventId: z.string().min(1).max(256) });
@@ -32,6 +34,7 @@ export const meetingCalendarRpc = {
         available: z.boolean(),
         connected: z.boolean(),
         connecting: z.boolean().optional(),
+        disconnecting: z.boolean().optional(),
         calendarLabel: z.string(),
         events: z.array(upcoming),
       }),

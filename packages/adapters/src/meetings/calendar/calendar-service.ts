@@ -83,6 +83,7 @@ export class MeetingCalendarService {
       connecting: Boolean(
         connection && !connection.externalCalendarId && !connection.disconnecting,
       ),
+      disconnecting: connection?.disconnecting ?? false,
       calendarLabel: provider.calendarLabel,
     };
     if (!connection?.externalCalendarId || connection.disconnecting)

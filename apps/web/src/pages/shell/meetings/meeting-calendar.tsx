@@ -63,7 +63,10 @@ export function MeetingCalendar({ botId }: { botId: string }) {
       }
     },
   });
-  if (!available) return null;
+  const statusRetry =
+    availability.data?.available === undefined &&
+    (availability.isError || (availability.isFetched && availability.isFetching));
+  if (!available && !statusRetry) return null;
 
   const formatter = new Intl.DateTimeFormat(i18n.locale, {
     dateStyle: "medium",
@@ -86,9 +89,21 @@ export function MeetingCalendar({ botId }: { botId: string }) {
       </SectionHeading>
       {open ? (
         <div className="flex flex-col gap-3 pt-2">
+          {statusRetry ? (
+            <ErrorNotice error={errorDetails(availability.error, t`Could not load calendar`)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={availability.isFetching}
+                onClick={() => void availability.refetch()}
+              >
+                <Trans>Try again</Trans>
+              </Button>
+            </ErrorNotice>
+          ) : null}
           {error ? <ErrorNotice error={errorDetails(error, t`Could not update calendar`)} /> : null}
           {!list.data ? (
-            list.isPending ? (
+            list.isPending && available ? (
               <p role="status">
                 <Trans>Loading calendar…</Trans>
               </p>
@@ -160,10 +175,10 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                 </p>
               )}
             </>
-          ) : list.data.connecting ? (
+          ) : list.data.disconnecting || list.data.connecting ? (
             <>
               <p role="status" className="text-body text-muted-foreground">
-                <Trans>Connecting calendar…</Trans>
+                {list.data.disconnecting ? t`Disconnecting calendar…` : t`Connecting calendar…`}
               </p>
               <Button
                 variant="outline"
@@ -172,7 +187,7 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                 disabled={save.pending}
                 onClick={() => save.run({ action: "disconnect" })}
               >
-                <Trans>Disconnect calendar</Trans>
+                {list.data.disconnecting ? t`Try again` : t`Disconnect calendar`}
               </Button>
             </>
           ) : (

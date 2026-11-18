@@ -31,6 +31,10 @@ export default function MeetingsScreen() {
   const calendar = useScreenQuery(rpcQuery("meetingCalendar/status", { botId }), {
     enabled: Boolean(botId && list.data?.enabled),
   });
+  const calendarStatusRetry =
+    list.data?.enabled &&
+    calendar.data?.available === undefined &&
+    (calendar.isError || (calendar.isFetched && calendar.isFetching));
   const focused = useIsFocused();
   useSpaceChanges(
     "meetings",
@@ -136,12 +140,21 @@ export default function MeetingsScreen() {
           })}
         </SettingsGroup>
       ) : null}
-      {calendar.data?.available ? (
+      {list.data?.enabled && calendar.data?.available ? (
         <SettingsGroup>
           <SettingsRow
             title={t`Auto-join`}
             chevron="right"
             onPress={() => router.push({ pathname: "/meeting-calendar", params: { botId } })}
+          />
+        </SettingsGroup>
+      ) : calendarStatusRetry ? (
+        <SettingsGroup label={t`Auto-join`}>
+          <SettingsRow
+            title={t`Could not load calendar`}
+            value={t`Try again`}
+            disabled={calendar.isFetching}
+            onPress={() => void calendar.refetch()}
           />
         </SettingsGroup>
       ) : null}

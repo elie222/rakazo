@@ -24,7 +24,16 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
     expect(upcomingRequests).toHaveLength(initial);
     await page.getByRole("button", { name: "Auto-join" }).click();
   };
+  // Drop status requests, then let the user's retry hit the real API and emulator.
+  const statusRoute = "**/rpc/meetingCalendar/status";
+  await page.route(statusRoute, (route) => route.abort());
   await openSchedule();
+  const retry = page.getByRole("button", { name: "Try again", exact: true });
+  await expect(retry).toBeVisible();
+  expect(upcomingRequests).toHaveLength(0);
+  await captureScreenshot(page, testInfo, "meeting-calendar-status-retry");
+  await page.unroute(statusRoute);
+  await retry.click();
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();
   await expect(page.getByRole("dialog", { name: "Meetings" })).toHaveCount(0);
   await openSchedule();
