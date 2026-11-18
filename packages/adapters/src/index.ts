@@ -95,6 +95,8 @@ export * from "./mcp/remote-mcp.js";
 export * from "./media/media-generation-factory.js";
 export * from "./media/media-generation-provider.js";
 export * from "./media/media-video-poll.js";
+export * from "./meetings/calendar/calendar-notifications.js";
+export * from "./meetings/calendar/calendar-service.js";
 export * from "./meetings/meeting-provider.js";
 export * from "./meetings/meeting-service.js";
 export { purgeClearedConversationMemory } from "./memory/conversation-memory-cleanup.js";

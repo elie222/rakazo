@@ -1,5 +1,5 @@
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import type { MeetingService } from "@rakazo/adapters";
+import type { MeetingCalendarService, MeetingService } from "@rakazo/adapters";
 import { expireComputerControl, stopCancelledGroupRuns, wakeRun } from "@rakazo/adapters";
 import type { PrismaClient, SpaceDeparture, ThreadEvents } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -17,11 +17,18 @@ export async function afterSpaceDeparture(
     jobs: JobPublisher;
     events: ThreadEvents;
     meetings?: Pick<MeetingService, "stopForDepartedMember">;
+    meetingCalendar?: Pick<MeetingCalendarService, "disconnectOwner">;
   },
   actor: { spaceId: string; userId: string },
   departure: SpaceDeparture,
   departedUserId = actor.userId,
 ): Promise<void> {
+  const calendar =
+    deps.meetingCalendar &&
+    bestEffort(
+      "disconnect meeting calendar after Space departure",
+      deps.meetingCalendar.disconnectOwner({ spaceId: actor.spaceId, userId: departedUserId }),
+    );
   const meetings =
     deps.meetings &&
     bestEffort(
@@ -48,5 +55,5 @@ export async function afterSpaceDeparture(
     ),
   );
   await Promise.all(departure.continuationRunIds.map((runId) => wakeRun(deps.jobs, runId)));
-  await meetings;
+  await Promise.all([calendar, meetings]);
 }

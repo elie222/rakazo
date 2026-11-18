@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { canLeaveMeeting } from "@rakazo/contracts";
+import { showCalendarStatusRetry } from "@rakazo/core";
 import { meetingPlatformLabel, meetingStatusLabel, meetingTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -28,6 +29,10 @@ export default function MeetingsScreen() {
   const styles = useThemedStyles(createStyles);
   const read = rpcQuery("meetings/list", { botId });
   const list = useScreenQuery(read, { enabled: Boolean(botId) });
+  const calendar = useScreenQuery(rpcQuery("meetingCalendar/status", { botId }), {
+    enabled: Boolean(botId && list.data?.enabled),
+  });
+  const calendarStatusRetry = list.data?.enabled && showCalendarStatusRetry(calendar);
   const focused = useIsFocused();
   useSpaceChanges(
     "meetings",
@@ -131,6 +136,24 @@ export default function MeetingsScreen() {
               />
             );
           })}
+        </SettingsGroup>
+      ) : null}
+      {list.data?.enabled && calendar.data?.available ? (
+        <SettingsGroup>
+          <SettingsRow
+            title={t`Auto-join`}
+            chevron="right"
+            onPress={() => router.push({ pathname: "/meeting-calendar", params: { botId } })}
+          />
+        </SettingsGroup>
+      ) : calendarStatusRetry ? (
+        <SettingsGroup label={t`Auto-join`}>
+          <SettingsRow
+            title={t`Could not load calendar`}
+            value={t`Try again`}
+            disabled={calendar.isFetching}
+            onPress={() => void calendar.refetch()}
+          />
         </SettingsGroup>
       ) : null}
     </ScrollView>

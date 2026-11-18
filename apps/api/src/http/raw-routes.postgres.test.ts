@@ -95,6 +95,14 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
     expect(turn.status).toBe(401);
   });
 
+  it("refuses unsigned meeting calendar events", async () => {
+    const response = await handles.app.request("/api/meetings/calendar/webhook", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("reviews only routes the app registers", () => {
     const registered = rawRoutes(handles.app);
     expect(
