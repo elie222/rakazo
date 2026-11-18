@@ -138,10 +138,10 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
     key: "/abc-defg-hij",
   });
   expect(() => parseMeetingUrl("https://meet.google.com.evil.example/abc-defg-hij")).toThrow(
-    "Enter a valid meeting link.",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
   expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow(
-    "Enter a valid meeting link.",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
 });
 
@@ -177,10 +177,10 @@ it("preserves Teams meeting context and rejects look-alike or non-meeting links"
     key: "19:meeting_Fake-thread@thread.v2",
   });
   expect(() => parseMeetingUrl(`https://teams.microsoft.com.example.test${path}`)).toThrow(
-    "Enter a valid meeting link.",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
   expect(() => parseMeetingUrl("https://teams.microsoft.com/download")).toThrow(
-    "Enter a valid meeting link.",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
 });
 

@@ -26,6 +26,14 @@ test("a bot joins a meeting and saves its transcript as an artifact", async ({
   const meetings = page.getByRole("dialog", { name: "Meetings" });
   const linkInput = meetings.getByRole("textbox", { name: "Meeting link" });
   const joinButton = meetings.getByRole("button", { name: "Join meeting" });
+  await linkInput.fill("invalid meeting link");
+  await joinButton.click();
+  await expect(
+    meetings.getByText("Enter a valid Zoom, Google Meet, or Microsoft Teams link.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "meeting-invalid-link");
   await linkInput.fill(meetingUrl);
   await expectSameHeight(linkInput, joinButton);
   await joinButton.click();

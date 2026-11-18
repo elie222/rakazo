@@ -77,6 +77,7 @@ export default function MeetingsDialog({
               {list.data?.enabled ? (
                 <form
                   className="flex flex-col gap-2"
+                  noValidate
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (url.trim() && !busy) join.run(url.trim());
