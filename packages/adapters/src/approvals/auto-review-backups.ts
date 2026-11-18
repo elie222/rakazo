@@ -42,7 +42,7 @@ export async function reviewWithBackups(
       getLogger().warn("auto_review.checker_failed", {
         "auto_review.reason": code,
         "auto_review.provider": candidate.provider,
-        "auto_review.role": candidate.role,
+        "auto_review.role": candidate.included ? "included" : candidate.role,
         "error.name": error instanceof Error ? error.name : typeof error,
       });
       result = {

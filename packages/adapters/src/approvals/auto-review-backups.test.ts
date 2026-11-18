@@ -113,6 +113,18 @@ describe("approval model backups", () => {
     expect(review).toHaveBeenCalledTimes(2);
     expect(result.reason).toBe(AUTO_REVIEW_FAILURE_REASONS.credits_required);
   });
+  it("logs the included fallback apart from the default reviewer", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await reviewWithBackups(
+      [{ provider: "fixture", model: "checker", included: true, role: "default" }],
+      async () => {
+        throw new Error("fake detail");
+      },
+      new AbortController().signal,
+    );
+    expect(sink.events[0]?.["auto_review.role"]).toBe("included");
+  });
   it("keeps a deliberate ask from the first reviewer away from the included reviewer", async () => {
     const review = vi.fn(async () => ({ decision: "ask" as const, model: "member" }));
     await reviewWithBackups(
