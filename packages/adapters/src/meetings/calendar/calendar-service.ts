@@ -11,12 +11,12 @@ import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, runAsSystem, withLease } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { parseMeetingUrl } from "../meeting-link.js";
 import {
   countSpaceMeetingsForDay,
   MEETING_DAILY_LIMIT,
   MEETING_SESSION_DURATION,
   meetingUtcDayStart,
-  parseMeetingUrl,
 } from "../meeting-service.js";
 import { CalendarAuthorization, signCalendarConnectionRef } from "./calendar-authorization.js";
 import {

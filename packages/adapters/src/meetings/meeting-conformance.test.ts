@@ -10,9 +10,9 @@ import {
   TRANSCRIPT_ID,
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
+import { parseMeetingUrl } from "./meeting-link.js";
 import { configuredMeetingMedia } from "./meeting-media-grant.js";
 import { configuredMeetingSpaces } from "./meeting-provider.js";
-import { parseMeetingUrl } from "./meeting-service.js";
 
 const input: MeetingJoinRequest = {
   sessionId: "meeting-session-123",
@@ -138,9 +138,11 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
     key: "/abc-defg-hij",
   });
   expect(() => parseMeetingUrl("https://meet.google.com.evil.example/abc-defg-hij")).toThrow(
-    "valid Zoom",
+    "Enter a valid meeting link.",
   );
-  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow("valid Zoom");
+  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow(
+    "Enter a valid meeting link.",
+  );
 });
 
 it("sends a Teams meeting link and its passcode to the provider", async () => {
@@ -175,9 +177,11 @@ it("preserves Teams meeting context and rejects look-alike or non-meeting links"
     key: "19:meeting_Fake-thread@thread.v2",
   });
   expect(() => parseMeetingUrl(`https://teams.microsoft.com.example.test${path}`)).toThrow(
-    "valid Zoom",
+    "Enter a valid meeting link.",
   );
-  expect(() => parseMeetingUrl("https://teams.microsoft.com/download")).toThrow("valid Zoom");
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/download")).toThrow(
+    "Enter a valid meeting link.",
+  );
 });
 
 it.each([

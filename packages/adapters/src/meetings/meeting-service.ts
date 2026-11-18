@@ -10,10 +10,11 @@ import type {
 import { MeetingJoinRejected } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { MeetingPlatformSchema, MeetingStatusSchema } from "@rakazo/contracts";
-import { ClientError, meetingTargetFromUrl } from "@rakazo/core";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { LeaseHeldError, runAsSystem, runAsSystemInTransaction, withLease } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { parseMeetingUrl } from "./meeting-link.js";
 import { meetingTranscriptArtifact, readMeetingTurns } from "./meeting-transcript.js";
 
 const MINUTE = 60_000;
@@ -34,17 +35,6 @@ const errors = {
   transcript: "The meeting transcript couldn’t be created.",
   join: "The bot couldn’t join the meeting.",
 };
-
-export function parseMeetingUrl(input: string) {
-  const meeting = meetingTargetFromUrl(input);
-  if (!meeting) {
-    throw new ClientError(
-      "BAD_REQUEST",
-      "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
-    );
-  }
-  return meeting;
-}
 
 function workJob(sessionId: string, action: JobAction, availableAt = new Date()): Job {
   return {
