@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -32,7 +33,7 @@ async function render(markdown: string, streaming = false) {
   });
   // Mermaid loads and draws asynchronously.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
 }
 
@@ -110,6 +111,7 @@ describe("web markdown diagrams", () => {
   it.each([
     ["blockquote", "> ", "> "],
     ["nested blockquote", "> > ", "> > "],
+    ["tight nested blockquote", ">> ", ">> "],
     ["list", "- ", "  "],
     ["quoted list", "> - ", ">   "],
   ])("waits for a streaming fence inside a %s to close", async (_name, first, rest) => {
@@ -127,6 +129,12 @@ describe("web markdown diagrams", () => {
     expect(mermaid.render).toHaveBeenCalledTimes(1);
   });
 
+  it("checks a long quoted last line of a streaming fence quickly", async () => {
+    // A backtracking check never finishes on this line, so the test's own timeout catches it.
+    await render(`\`\`\`mermaid\n${freshDiagram()}\n${"\t>".repeat(100)}x`, true);
+    expect(mermaid.parse).not.toHaveBeenCalled();
+  });
+
   it("leaves other fences and empty mermaid fences as code", async () => {
     await render("```ts\nconst a = 1;\n```\n\n```mermaid\n\n```");
     expect(container.querySelectorAll("pre")).toHaveLength(2);
@@ -140,10 +148,10 @@ describe("web markdown diagrams", () => {
     );
     await act(async () => {
       document.documentElement.dataset.theme = "light";
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
     expect(mermaid.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({ darkMode: false }),

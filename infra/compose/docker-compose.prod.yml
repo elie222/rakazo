@@ -41,6 +41,7 @@ x-app-environment: &app-environment # Runtime
   API_URL:
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
@@ -55,6 +56,13 @@ x-app-environment: &app-environment # Runtime
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
   BOT_EMAIL_SMTP_URL:
+  # Account mail: the API sends sign-in and account messages, the worker the ones queued for later.
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
+  WELCOME_EMAIL_ENABLED:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -75,6 +83,7 @@ x-app-environment: &app-environment # Runtime
   LOG_LEVEL:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -108,6 +117,7 @@ x-app-environment: &app-environment # Runtime
   MODEL_STREAM_MAX_RETRIES:
   MODEL_STREAM_TIMEOUT_MS:
   MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_CREDIT_OFFERINGS:
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
@@ -303,6 +313,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -516,13 +528,7 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      WELCOME_EMAIL_ENABLED:
       EXPERIMENTS:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -535,6 +541,7 @@ services:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"
@@ -576,7 +583,7 @@ services:
     # takes most of the worker's CPU.
     command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
@@ -685,6 +692,8 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     logging: *logging
     user: root
@@ -697,9 +706,11 @@ services:
       # Keep interpolation optional so deployments that do not enable this profile need no token.
       # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
       RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       # `-p` is available to Compose interpolation but is not injected into containers unless it is
       # declared here. The sidecar must target the project the operator actually started.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}

@@ -25,11 +25,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMobileTokens } from "../../lib/native";
-import { useSave } from "../../lib/query";
-import { useThreadReadOnly } from "../../lib/thread-read-only";
-import { errorText } from "../../lib/user-error";
-import { NativeActionButton } from "../native-action-button";
+import { errorText } from "../../lib/api/user-error";
+import { useMobileTokens } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
+import { NativeActionButton } from "../native/native-action-button";
 
 const COPIED_MS = 2000;
 /** Stands in for the note of a passage still being noted. */

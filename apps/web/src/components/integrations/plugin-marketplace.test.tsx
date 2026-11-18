@@ -22,14 +22,14 @@ vi.mock("./space-availability", () => ({
   useOwnSpaces: () => [],
 }));
 
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     capabilities: { pluginPreview: api.preview, install: api.install, pluginParts: api.parts },
     mcp: { assignments: { approve: api.approve } },
     agentSkills: { list: api.skills, get: api.skill },
   },
 }));
-vi.mock("../../lib/mcp-connect", () => ({ connectMcpOauth: api.connect }));
+vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpOauth: api.connect }));
 vi.mock("@rakazo/chat-ui/web", () => ({
   useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
 }));

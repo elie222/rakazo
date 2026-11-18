@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot } from "./helpers";
+import { captureScreenshot } from "./helpers/helpers";
 
 // Tall enough that each scenario's transcript fits without scrolling inside the chat pane.
 test.use({ viewport: { width: 1280, height: 2200 } });
@@ -47,6 +47,20 @@ test("a draft opens to mark the passages to change", async ({ page }, testInfo) 
   await expect(dialog.getByText("2 notes")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Revise" })).toBeEnabled();
   await captureScreenshot(page, testInfo, "draft-marked-up");
+});
+
+test("gallery shows a tool's question as plain text with its form", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=approvals&theme=light");
+  const [open, declined] = await page.getByTestId("tool-question-card").all();
+  await expect(open!.getByText("Run **send_email** to sam@example.test?")).toBeVisible();
+  await expect(open!.getByRole("checkbox", { name: "Approve this call" })).toBeVisible();
+  await expect(open!.getByRole("textbox", { name: "Reason" })).toBeVisible();
+  await expect(open!.getByText("This call")).toBeVisible();
+  await expect(open!.getByRole("button", { name: "Accept" })).toBeEnabled();
+  await expect(open!.getByRole("button", { name: "Decline" })).toBeEnabled();
+  await expect(declined!.getByText("Declined", { exact: true })).toBeVisible();
+  await open!.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "tool-question-card");
 });
 
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {

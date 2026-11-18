@@ -6,11 +6,11 @@ import { addDraftNote, draftRevisionText, draftSegments, newClientId } from "@ra
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Input } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
-import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCopyText } from "../../lib/copy-text";
-import { useSave } from "../../lib/query";
+import type { ArtifactTarget } from "../../lib/pages/artifact-open";
+import { useSave } from "../../lib/query/query";
+import { errorDetails } from "../../lib/query/user-error";
 import { useEventListener } from "../../lib/use-event-listener";
-import { errorDetails } from "../../lib/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 
 const PANEL_WIDTH = 288;

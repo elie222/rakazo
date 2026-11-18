@@ -139,6 +139,15 @@ alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CL
 `PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
 API and worker.
 
+A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
+`.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
+to lack it. To let a bot read or send from one, create an Outlook auth config in the Composio
+dashboard that lists the defaults plus the `.Shared` variants you need (`Mail.Read.Shared`,
+`Mail.ReadWrite.Shared`, `Mail.Send.Shared`), and make it the config new Outlook connections use. The
+person's account also needs Full Access to the mailbox in Exchange, and a tenant admin may need to
+consent to the `.Shared` permissions. A new config affects new connections only, so people connected
+before the change must disconnect and reconnect Outlook.
+
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
 base URL; Rakazo appends `api/search`.
@@ -164,10 +173,21 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
 
+### WhatsApp Business Cloud
+
+Use an operator-owned business number and the direct adapter. See the
+[WhatsApp launch runbook](./hosted-whatsapp-launch.md) for registration, token permissions,
+webhook setup, current regional AI restrictions and service-window limits. Credentials alone do
+not establish eligibility. Proactive template reminders are not implemented.
+
 ### Telegram
 
-Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
-worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses the provider
+Telegram sends its webhook secret in `X-Telegram-Bot-Api-Secret-Token`. The receiving API
+uses automatic transport selection and can poll when no webhook is registered; workers never
+poll. Register the hosted webhook before starting multiple API instances. Linking destinations
+come from the authenticated bot identity, never a configured username.
+See the [hosted Telegram runbook](./hosted-telegram.md) for operator registration and acceptance.
+An extra bot named `<NAME>` (letters and digits) uses the provider
 `telegram-<name>` and the webhook `/api/v1/messaging/webhook/telegram-<name>`; see
 [settings with names you choose](./self-host-configuration.md#settings-with-names-you-choose).
 Telegram groups use personal group linking, like iMessage: each linked member approves their own
@@ -177,6 +197,9 @@ receives group messages that mention it. Broadcast channel posts never start run
 can run side by side, allowing one person to link a different Rakazo bot through each.
 
 ### iMessage through Photon
+
+This connection uses the Stable Spectrum API, not Photon 2.0 Beta credentials. See the
+[hosted iMessage/SMS runbook](./hosted-imessage-sms.md) for adapter limits and operator checks.
 
 Photon receives messages over an outbound stream from the API, so it works without a public URL.
 To use webhooks instead, set `PHOTON_WEBHOOK_SECRET`. Each additional project uses

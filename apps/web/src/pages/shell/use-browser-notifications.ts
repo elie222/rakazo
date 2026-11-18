@@ -2,16 +2,17 @@ import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import { computerUpdates } from "../../lib/computers/computer-updates";
 import {
   browserNotificationTag,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
-} from "../../lib/browser-notifications";
-import { computerUpdates } from "../../lib/computer-updates";
-import { followStream } from "../../lib/follow-stream";
-import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
-import type { RpcClient } from "../../lib/rpc";
-import { isReadChangeKind, spaceChanged } from "../../lib/space-changes";
+} from "../../lib/platform/browser-notifications";
+import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/notification-icon";
+import { followStream } from "../../lib/query/follow-stream";
+import type { RpcClient } from "../../lib/query/rpc";
+import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
+import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -124,6 +125,7 @@ export function useBrowserNotifications(
       (signal) => rpc.notifications.subscribe(undefined, { signal }),
       (frame) => {
         if (frame.type === "roster") rosterRef.current?.changed();
+        else if (frame.type === "organizations") void organizationsChanged();
         else if (frame.type === "computerUpdates") computerUpdates.signalled();
         else if (isReadChangeKind(frame.type)) void spaceChanged(frame.type);
         else if (frame.alert) show(frame.alert);

@@ -83,7 +83,7 @@ ARG GIT_SHA
 ENV NODE_ENV=production
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
-# The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/drain.ts).
+# The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).
 # deploy-main.sh sends it only to an API whose image names one.
 LABEL org.rakazo.run-drain-signal=SIGUSR2
 USER node

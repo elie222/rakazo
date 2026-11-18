@@ -3,8 +3,8 @@ import type { DraftBlock } from "@rakazo/contracts";
 import type { DraftNote } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useState } from "react";
-import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCopyText } from "../../lib/copy-text";
+import type { ArtifactTarget } from "../../lib/pages/artifact-open";
 import { BuiCard } from "../ai/primitives";
 import { DraftDialog, DraftHeading } from "./DraftDialog";
 

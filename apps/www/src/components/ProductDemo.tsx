@@ -1,8 +1,8 @@
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { DemoBot, DemoMessage, DemoRoutine, DemoRoutineRun, DemoScreen } from "../demo";
-import type { DemoMessages } from "../i18n/demo-text";
-import { fillDemoText } from "../i18n/demo-text";
+import type { DemoMessages, DemoTextKey, DemoValues } from "../i18n/demo-text";
+import { fillDemoText, lookupDemoText } from "../i18n/demo-text";
 import { LandingBotAvatar } from "./LandingBotAvatar";
 import type { DemoTrigger } from "./product-demo-when";
 import {
@@ -13,10 +13,11 @@ import {
   resolveRoutineWhen,
 } from "./product-demo-when";
 
-export type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
+export type DemoTranslator = (source: DemoTextKey, values?: DemoValues) => string;
+type DemoLookup = (source: string, values?: DemoValues) => string;
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
-const FREQS = [
+const FREQS: readonly DemoTextKey[] = [
   "Every hour",
   "Every day",
   "Weekdays",
@@ -25,9 +26,9 @@ const FREQS = [
   "Interval",
   "Advanced",
 ];
-const UNITS = ["minutes", "hours", "days"];
+const UNITS: readonly DemoTextKey[] = ["minutes", "hours", "days"];
 const NUMBERS = [1, 2, 3, 5, 10, 15, 30, 45];
-const TIMES = [
+const TIMES: readonly DemoTextKey[] = [
   "6:00 AM",
   "7:00 AM",
   "8:00 AM",
@@ -38,7 +39,12 @@ const TIMES = [
   "9:00 PM",
 ];
 
-const ONBOARD = [
+const ONBOARD: readonly {
+  q: DemoTextKey;
+  sub: DemoTextKey;
+  opts: readonly DemoTextKey[];
+  ack: DemoTextKey;
+}[] = [
   {
     q: "What do you mainly want me helping with?",
     sub: "Pick whatever’s closest, or type your own.",
@@ -104,8 +110,8 @@ function cloneBots(source: DemoBot[]): LiveBot[] {
   }));
 }
 
-function displayedWhen(when: string, text: DemoTranslator): string {
-  return displayRoutineWhen(when, text);
+function displayedWhen(when: string, lookup: DemoLookup): string {
+  return displayRoutineWhen(when, lookup);
 }
 
 function previewForBot(bot: LiveBot, extra: ExtraMessages) {
@@ -423,10 +429,12 @@ function OnboardThread({
   answers,
   onAnswer,
   text,
+  lookup,
 }: {
   answers: string[];
   onAnswer: (value: string) => void;
   text: DemoTranslator;
+  lookup: DemoLookup;
 }) {
   return (
     <>
@@ -439,20 +447,26 @@ function OnboardThread({
       {ONBOARD.map((step, index) => {
         const answer = answers[index];
         if (answer !== undefined) {
-          const letter = String.fromCharCode(65 + Math.max(0, step.opts.indexOf(answer)));
+          const letter = String.fromCharCode(
+            65 +
+              Math.max(
+                0,
+                step.opts.findIndex((opt) => opt === answer),
+              ),
+          );
           return (
             <Fragment key={step.q}>
               <div className="product-demo__choice product-demo__choice--done">
                 <div className="product-demo__choice-q">{text(step.q)}</div>
                 <div className="product-demo__choice-picked">
                   <span className="product-demo__choice-letter">{letter}</span>
-                  <span>{text(answer)}</span>
+                  <span>{lookup(answer)}</span>
                   <span className="product-demo__choice-check">✓</span>
                 </div>
               </div>
               <div className="product-demo__message product-demo__message--bot">
                 <div className="product-demo__bubble product-demo__bubble--bot">
-                  {text(step.ack, { answer: text(answer) })}
+                  {text(step.ack, { answer: lookup(answer) })}
                 </div>
               </div>
             </Fragment>
@@ -500,6 +514,7 @@ export function ProductDemo({
   strings: DemoMessages;
 }) {
   const text: DemoTranslator = (source, values) => fillDemoText(strings, source, values);
+  const lookup: DemoLookup = (source, values) => lookupDemoText(strings, source, values);
   const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(initialBots));
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -977,7 +992,12 @@ export function ProductDemo({
 
           <div className="product-demo__thread" ref={scrollRef}>
             {active.onboarding ? (
-              <OnboardThread answers={active.answers} onAnswer={answerOnboard} text={text} />
+              <OnboardThread
+                answers={active.answers}
+                onAnswer={answerOnboard}
+                text={text}
+                lookup={lookup}
+              />
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
               <div className="product-demo__empty-thread">
@@ -1110,7 +1130,7 @@ export function ProductDemo({
                         <span className="product-demo__routine-icon">◷</span>
                         <span className="product-demo__routine-name">{routine.name}</span>
                         <span className="product-demo__routine-when">
-                          {displayedWhen(routine.when, text)}
+                          {displayedWhen(routine.when, lookup)}
                         </span>
                       </button>
                     ))}
@@ -1226,7 +1246,7 @@ export function ProductDemo({
                   ) : (
                     <div className="product-demo__triggers">
                       {routineDraft.triggers.map((trigger, index) => {
-                        const { lead, detail } = describeTrigger(trigger, text);
+                        const { lead, detail } = describeTrigger(trigger, lookup);
                         const timed = [
                           "Every day",
                           "Weekdays",
