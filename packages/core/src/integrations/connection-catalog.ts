@@ -91,7 +91,7 @@ export async function connectCatalogItem(
 export async function waitForConnection<Row extends { status: string }>(
   connectionId: string,
   complete: (input: { connectionId: string }) => Promise<Row>,
-  options: { signal: AbortSignal; isCurrent?: () => boolean; attempts: number },
+  options: { signal: AbortSignal; isCurrent?: () => boolean; attempts: number; pollMs?: number },
 ): Promise<{ status: "connected"; row: Row } | { status: "pending" } | { status: "aborted" }> {
   const stopped = () => options.signal.aborted || options.isCurrent?.() === false;
   for (let attempt = 0; attempt < options.attempts; attempt += 1) {
@@ -105,9 +105,37 @@ export async function waitForConnection<Row extends { status: string }>(
     if (stopped()) return { status: "aborted" };
     if (row?.status === "connected") return { status: "connected", row };
     if (row?.status === "revoked") return { status: "aborted" };
-    await abortableDelay(CATALOG_CONNECT_POLL_MS, options.signal);
+    await abortableDelay(options.pollMs ?? CATALOG_CONNECT_POLL_MS, options.signal);
   }
   return stopped() ? { status: "aborted" } : { status: "pending" };
+}
+
+const PROMPT_SIGN_IN_ATTEMPTS = 60;
+const SLOW_SIGN_IN_POLL_MS = 5_000;
+// The rest of the ten minutes a sign-in page stays usable for.
+const SLOW_SIGN_IN_ATTEMPTS = 96;
+
+/**
+ * Waits for a sign-in for as long as its page can still finish. Past the time most take,
+ * `onSlow` lets the caller offer to start over while this attempt is still watched, so a slow
+ * sign-in is not reported as failed while the person is in the middle of it.
+ */
+export async function waitForSignIn<Row extends { status: string }>(
+  connectionId: string,
+  complete: (input: { connectionId: string }) => Promise<Row>,
+  options: { signal: AbortSignal; onSlow: () => void },
+): Promise<{ status: "connected"; row: Row } | { status: "pending" } | { status: "aborted" }> {
+  const prompt = await waitForConnection(connectionId, complete, {
+    signal: options.signal,
+    attempts: PROMPT_SIGN_IN_ATTEMPTS,
+  });
+  if (prompt.status !== "pending") return prompt;
+  options.onSlow();
+  return waitForConnection(connectionId, complete, {
+    signal: options.signal,
+    attempts: SLOW_SIGN_IN_ATTEMPTS,
+    pollMs: SLOW_SIGN_IN_POLL_MS,
+  });
 }
 
 /** The server's NOT_FOUND code, not any 404 a proxy or an older server might send. */

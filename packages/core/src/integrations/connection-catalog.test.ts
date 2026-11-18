@@ -6,6 +6,7 @@ import {
   isCatalogItemConnected,
   nextCatalogAccountLabel,
   waitForConnection,
+  waitForSignIn,
 } from "./connection-catalog.js";
 
 const item: ConnectionCatalogItem = {
@@ -185,5 +186,41 @@ describe("waitForConnection", () => {
     }
     expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
     expect(complete).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("waitForSignIn", () => {
+  it("keeps watching a slow sign-in after letting the person start over", async () => {
+    let finished = false;
+    const complete = vi.fn(async () => account("slow", finished ? "connected" : "pending"));
+    const onSlow = vi.fn(() => {
+      finished = true;
+    });
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("slow", complete, {
+        signal: new AbortController().signal,
+        onSlow,
+      });
+      await vi.runAllTimersAsync();
+      expect(await result).toEqual({ status: "connected", row: account("slow", "connected") });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(onSlow).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer to start over once a newer attempt took its place", async () => {
+    const onSlow = vi.fn();
+    const result = await waitForSignIn(
+      "old",
+      vi.fn().mockResolvedValue(account("old", "revoked")),
+      {
+        signal: new AbortController().signal,
+        onSlow,
+      },
+    );
+    expect(result).toEqual({ status: "aborted" });
+    expect(onSlow).not.toHaveBeenCalled();
   });
 });
