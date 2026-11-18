@@ -11,6 +11,7 @@ import {
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
 import { configuredMeetingMedia } from "./meeting-media-grant.js";
+import { configuredMeetingSpaces } from "./meeting-provider.js";
 import { parseMeetingUrl } from "./meeting-service.js";
 
 const input: MeetingJoinRequest = {
@@ -30,6 +31,15 @@ function real(emulator = new RecallMeetingEmulator(), prefix: "webhook" | "svix"
     fetch: emulator.fetch,
   });
 }
+
+it("enables all Spaces only when the operator explicitly asks for them", () => {
+  const provider = real();
+  expect(configuredMeetingSpaces(provider, { MEETING_SPACE_IDS: " * " })).toBeUndefined();
+  expect(configuredMeetingSpaces(provider, {})).toEqual(new Set());
+  expect(configuredMeetingSpaces(provider, { MEETING_SPACE_IDS: "space-a, space-b" })).toEqual(
+    new Set(["space-a", "space-b"]),
+  );
+});
 
 describe.each<{ name: string; create(): MeetingProvider }>([
   { name: "meeting emulator", create: () => new MeetingEmulator() },
