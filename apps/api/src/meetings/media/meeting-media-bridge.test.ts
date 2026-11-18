@@ -122,6 +122,36 @@ describe("meeting media bridge", () => {
     }
   });
 
+  it("rejects an in-flight upload if the meeting is revoked before transcription", async () => {
+    const { emulator, app, headers } = fixture();
+    const reading = deferred<void>();
+    const submitted = deferred<void>();
+    const body = new ReadableStream(
+      {
+        async pull(controller) {
+          reading.resolve();
+          await submitted.promise;
+          controller.enqueue(meetingTone(16));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request(`https://rakazo.example.test${MEETING_MEDIA_PATH}/turn`, {
+      method: "POST",
+      headers,
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const response = app.request(request);
+    await reading.promise;
+    emulator.revoke();
+    submitted.resolve();
+    expect((await response).status).toBe(401);
+    expect(emulator.readinessChecks).toBe(0);
+    expect(emulator.received).toHaveLength(0);
+  });
+
   it("gates voice on admission, bounds capture size, and can return silence", async () => {
     const { emulator, turn } = fixture();
     emulator.session.admitted = false;
@@ -143,6 +173,21 @@ describe("meeting media bridge", () => {
     expect(await (await session()).json()).toEqual({ botName: "Atlas", voice: false });
     expect((await turn()).status).toBe(403);
     expect(emulator.received).toHaveLength(0);
+  });
+
+  it("waits for a temporarily unavailable connection before enabling the microphone", async () => {
+    vi.useFakeTimers();
+    try {
+      const { emulator, session } = fixture();
+      emulator.setVoiceAvailable("retry");
+      const pending = session();
+      await vi.waitFor(() => expect(emulator.readinessChecks).toBe(1));
+      emulator.setVoiceAvailable(true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(await (await pending).json()).toEqual({ botName: "Atlas", voice: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the same microphone grant usable after a temporary connection failure", async () => {
