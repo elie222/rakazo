@@ -334,11 +334,11 @@ async function pressLink(url: string) {
   });
 }
 
-/** The link variants whose pattern matches this URL. */
-function variantsFor(url: string) {
-  return Object.entries(nativeProps().markdownStyle?.linkVariants ?? {})
-    .filter(([pattern]) => new RegExp(pattern).test(url))
-    .map(([, variant]) => variant);
+/** The style the native view gives this URL: the first variant whose pattern matches. */
+function variantFor(url: string) {
+  return Object.entries(nativeProps().markdownStyle?.linkVariants ?? {}).find(([pattern]) =>
+    new RegExp(pattern).test(url),
+  )?.[1];
 }
 
 const image = (url: string, placement: MarkdownImageOccurrence["placement"] = "inline") => ({
@@ -798,9 +798,9 @@ describe("native website links", () => {
       "https://native-a.example.test/p/1": {},
       "https://www.native-b.example.test/status/9?s=1": { label: "native-b.example.test/status/9" },
     });
-    expect(variantsFor("https://native-a.example.test/p/1")).toEqual([
+    expect(variantFor("https://native-a.example.test/p/1")).toEqual(
       expect.objectContaining({ pill: expect.any(Object), color: darkTokens.foreground }),
-    ]);
+    );
     await view.cleanup();
   });
 
@@ -899,8 +899,13 @@ describe("native website links", () => {
     expect(nativeProps().linkPillContent).toEqual({});
     expect(load).not.toHaveBeenCalled();
     // Links that are not websites keep the plain link style.
-    for (const url of others.slice(0, 3)) expect(variantsFor(url)).toEqual([]);
+    for (const url of others.slice(0, 2)) expect(variantFor(url)).toBeUndefined();
     expect(nativeProps().markdownStyle?.link).toMatchObject({ color: darkTokens.link });
+    // Addresses the app will not open read as plain text.
+    for (const url of ["/docs", "javascript:alert(1)", "ftp://example.test/f"]) {
+      expect(variantFor(url)).toEqual({ color: darkTokens.foreground, underline: false });
+    }
+    expect(variantFor("HTTPS://native-a.example.test/")).toBeUndefined();
     await view.cleanup();
   });
 });
@@ -919,14 +924,16 @@ describe("native mention links", () => {
       link("rakazo-mention:bot.1", "Ada"),
       link("rakazo-mention:gone", "Old bot"),
     ]);
-    const colors = (url: string) => variantsFor(url).map((variant) => variant.color);
-    expect(colors("rakazo-mention:bot.1")).toContain(lightTokens.destructive);
+    expect(variantFor("rakazo-mention:bot.1")).toEqual({
+      color: lightTokens.destructive,
+      underline: false,
+    });
     // Only its own URL takes the bot's color: the pattern is exact, dots included.
-    expect(colors("rakazo-mention:botx1")).not.toContain(lightTokens.destructive);
-    expect(colors("rakazo-mention:gone")).toEqual([darkTokens.foreground]);
-    for (const variant of variantsFor("rakazo-mention:bot.1")) {
-      expect(variant.underline).toBe(false);
-    }
+    expect(variantFor("rakazo-mention:botx1")?.color).toBe(darkTokens.foreground);
+    expect(variantFor("rakazo-mention:gone")).toEqual({
+      color: darkTokens.foreground,
+      underline: false,
+    });
 
     await pressLink("rakazo-mention:bot.1");
     expect(open).toHaveBeenCalledTimes(1);
@@ -945,7 +952,7 @@ describe("native markdown page links", () => {
     const openPage = vi.fn();
     const markdown = "See [Duplex voice](page:page_1) and [z](page:a/b)";
     const view = await mount(<ChatMarkdown onOpenPage={openPage}>{markdown}</ChatMarkdown>);
-    expect(variantsFor("page:page_1")).toEqual([expect.objectContaining({ underline: true })]);
+    expect(variantFor("page:page_1")).toMatchObject({ underline: true });
     await pressLink("page:page_1");
     expect(openPage).toHaveBeenCalledWith("page_1");
     await pressLink("page:a/b");
@@ -953,7 +960,7 @@ describe("native markdown page links", () => {
     expect(openPage).toHaveBeenCalledTimes(1);
 
     await view.render(<ChatMarkdown>{markdown}</ChatMarkdown>);
-    expect(variantsFor("page:page_1")).toEqual([expect.objectContaining({ underline: false })]);
+    expect(variantFor("page:page_1")).toMatchObject({ underline: false });
     await pressLink("page:page_1");
     expect(openPage).toHaveBeenCalledTimes(1);
     expect(alert).not.toHaveBeenCalled();

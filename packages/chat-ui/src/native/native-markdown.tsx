@@ -1,5 +1,5 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
-import { fontWeight, typeScale } from "@rakazo/ui-tokens";
+import { fontWeight, MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
 import type { ReactElement } from "react";
 import { useCallback, useContext, useMemo, useState } from "react";
 import { Platform } from "react-native";
@@ -35,6 +35,9 @@ const BLOCK_GAP = 8;
 const WEBSITE_LINK = "^https?://";
 const MENTION_LINK = "^rakazo-mention:";
 const PAGE_LINK = "^page:";
+// Addresses the app will not open (any scheme but these) read as plain text, as they do on web.
+const UNOPENABLE_LINK =
+  "^(?![Hh][Tt][Tt][Pp][Ss]?:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Tt][Ee][Ll]:|rakazo-mention:|page:)";
 
 /** How a mention link draws and opens: its bot's color, or nothing for a bot that is gone. */
 export type MentionLink = { color: string; open: () => void };
@@ -56,7 +59,14 @@ function nativeMarkdownStyle(
     fontSize: typeScale.secondary.fontSize,
     fontWeight: String(fontWeight.semibold),
   };
-  const linkVariants: MarkdownStyle["linkVariants"] = {
+  // The first pattern that matches an address decides its style, so each bot's own color comes
+  // before the plain mention style.
+  const linkVariants: MarkdownStyle["linkVariants"] = {};
+  for (const [href, color] of mentionColors) {
+    linkVariants[`^${escapeRegExp(href)}$`] = { color, underline: false };
+  }
+  Object.assign(linkVariants, {
+    [UNOPENABLE_LINK]: { color: palette.foreground, underline: false },
     [WEBSITE_LINK]: {
       color: palette.foreground,
       underline: true,
@@ -69,10 +79,7 @@ function nativeMarkdownStyle(
     },
     [MENTION_LINK]: { color: palette.foreground, underline: false },
     [PAGE_LINK]: { color: palette.foreground, underline: pagesOpen },
-  };
-  for (const [href, color] of mentionColors) {
-    linkVariants[`^${escapeRegExp(href)}$`] = { color, underline: false };
-  }
+  });
   return {
     paragraph: { ...text, lineHeight: typeScale.body.lineHeight },
     h1: {
@@ -279,6 +286,7 @@ export function NativeMarkdown({
       resolveImageSource={resolveImageSource}
       streamingAnimation={streaming}
       dir="auto"
+      maxFontSizeMultiplier={MAX_FONT_SCALE}
       selectable={false}
       enableLinkPreview={false}
       enableCodeBlockWrapToggle={false}
