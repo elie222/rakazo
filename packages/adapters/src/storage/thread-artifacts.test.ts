@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { attachmentComputerPathFor } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -68,6 +69,39 @@ describe("current-turn thread files", () => {
       expect.objectContaining({ data: expect.objectContaining({ name: expectedName }) }),
     );
     expect(result.block).toMatchObject({ name: expectedName, mimeType: "application/pdf" });
+  });
+  it("keeps a bot's attached file on its id path, with no stored computer path", async () => {
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      // The column's default when a write leaves it out.
+      create: vi.fn(async ({ data }) => ({ id: "artifact-7", computerPath: null, ...data })),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+    const attached: Array<{ id: string; mimeType: string; computerPath: string | null }> = [];
+    await attachWorkspaceFileToThread(
+      {
+        prisma: {
+          artifact,
+          $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+        } as unknown as PrismaClient,
+        artifacts: { put: vi.fn().mockResolvedValue({ id: "stored" }) } as unknown as ArtifactStore,
+      },
+      {
+        spaceId: "space",
+        userId: "owner",
+        botId: "bot",
+        runId: "run",
+        filePath: "report.pdf",
+        bytes: new Uint8Array([1, 2, 3]),
+        operationId: "op",
+        onAttached: async (_tx, row) => {
+          attached.push(row);
+        },
+      },
+    );
+    expect(attached).toHaveLength(1);
+    expect(attached[0]?.computerPath).toBeNull();
+    expect(attachmentComputerPathFor(attached[0]!)).toBe("attachments/artifact-7.pdf");
   });
   it("rejects generated output above a lower configured attachment limit before storage", async () => {
     const put = vi.fn();

@@ -432,6 +432,15 @@ export function attachmentComputerPath(artifactId: string, mimeType: string): st
   return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;
 }
 
+/** An artifact's path in the bot's workspace: the one stored when it arrived, else its id path. */
+export function attachmentComputerPathFor(row: {
+  id: string;
+  mimeType: string;
+  computerPath?: string | null;
+}): string {
+  return row.computerPath ?? attachmentComputerPath(row.id, row.mimeType);
+}
+
 export function attachmentsForThread<T extends { threadKey: string }>(
   attachments: readonly T[],
   threadKey: string | undefined,

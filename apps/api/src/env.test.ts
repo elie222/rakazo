@@ -25,6 +25,16 @@ describe("loadEnv", () => {
       "MAX_ATTACHMENTS_PER_MESSAGE",
     );
   });
+  it("reads how attachment copies are named, and refuses to start on a bad value", () => {
+    expect(loadEnv(base).attachmentNaming).toEqual({ names: "id", folders: "none" });
+    expect(
+      loadEnv({ ...base, ATTACHMENT_COPY_NAMES: "readable", ATTACHMENT_COPY_FOLDERS: "month" })
+        .attachmentNaming,
+    ).toEqual({ names: "readable", folders: "month" });
+    expect(() => loadEnv({ ...base, ATTACHMENT_COPY_NAMES: "dated" })).toThrow(
+      "ATTACHMENT_COPY_NAMES",
+    );
+  });
 
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);

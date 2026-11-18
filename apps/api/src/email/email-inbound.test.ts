@@ -313,6 +313,31 @@ describe("inbound email route", () => {
     expect(saveEmail.mock.calls[0]?.[0].data).toMatchObject({ verified: false });
   });
 
+  // The sender's display name, else their address.
+  it.each([
+    { name: "Owner", sender: "Owner" },
+    { name: " ", sender: "owner@example.test" },
+  ])("names a kept file by its sender ($sender)", async ({ name, sender }) => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "invoice.pdf",
+      mimeType: "application/pdf",
+      size: 3,
+    }));
+    const { post } = setup({
+      storeAttachment,
+      message: email({
+        from: { address: "owner@example.test", name },
+        attachments: [
+          { name: "invoice.pdf", mimeType: "application/pdf", bytes: new Uint8Array(3) },
+        ],
+      }),
+    });
+
+    await post();
+    expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
+  });
+
   it.each([false, true])(
     "keeps the files of a copy that names the bot after one that did not (inline: %s)",
     async (inline) => {

@@ -8,7 +8,12 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { MessagingDelivery, MessagingInstallations, TeamChat } from "@rakazo/adapters";
+import type {
+  AttachmentNaming,
+  MessagingDelivery,
+  MessagingInstallations,
+  TeamChat,
+} from "@rakazo/adapters";
 import {
   applyMessagingOutboundStatus,
   createMessagingTeamChatHistory,
@@ -73,6 +78,7 @@ export async function startMessagingRuntime({
     prisma,
     artifacts,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    attachmentNaming: env.attachmentNaming,
   });
   const inboundDeps = {
     prisma,
@@ -221,6 +227,7 @@ export function createInboundAttachmentStores(deps: {
   prisma: PrismaClient;
   artifacts: ArtifactStore;
   maxUploadSizeBytes: number;
+  attachmentNaming?: AttachmentNaming;
 }): { direct: InboundAttachmentStore; teamChat: InboundAttachmentStore } {
   const downloadBudget = createDownloadBudget(DOWNLOAD_BUDGET_FILES * deps.maxUploadSizeBytes);
   const store =

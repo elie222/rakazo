@@ -2,11 +2,13 @@ import { readFileSync } from "node:fs";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
+  AttachmentNaming,
   MessagingEnvironmentValues,
   SandboxProviderOptions,
 } from "@rakazo/adapters";
 import {
   apnsVoipConfig,
+  attachmentNamingFromEnv,
   deploymentLabsFromEnv,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
@@ -93,6 +95,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   maxUploadSizeBytes: number;
   /** What one computer save may copy; the worker reads the same setting. */
   workspaceSaveLimits: WorkspaceExportLimits;
+  /** How copies of incoming files are named in a bot's computer. */
+  attachmentNaming: AttachmentNaming;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -285,6 +289,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
+    attachmentNaming: attachmentNamingFromEnv(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     deploymentVoice: deploymentVoiceFromEnv(
       source.DEPLOYMENT_VOICE,

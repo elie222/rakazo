@@ -104,11 +104,14 @@ function choice<T extends string>(
   return match;
 }
 
-/** The attachment-copy settings `ATTACHMENT_COPY_NAMES` and `ATTACHMENT_COPY_FOLDERS`. */
-export function attachmentNamingFromEnv(source: NodeJS.ProcessEnv): {
+/** How attachment copies are named: `ATTACHMENT_COPY_NAMES` and `ATTACHMENT_COPY_FOLDERS`. */
+export type AttachmentNaming = {
   names: "id" | "readable";
   folders: "none" | "month";
-} {
+};
+
+/** The attachment-copy settings `ATTACHMENT_COPY_NAMES` and `ATTACHMENT_COPY_FOLDERS`. */
+export function attachmentNamingFromEnv(source: NodeJS.ProcessEnv): AttachmentNaming {
   return {
     names: choice(source, "ATTACHMENT_COPY_NAMES", ["id", "readable"], "id"),
     folders: choice(source, "ATTACHMENT_COPY_FOLDERS", ["none", "month"], "none"),

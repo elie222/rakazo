@@ -11,6 +11,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import type {
+  AttachmentNaming,
   CloudAgentConnection,
   CodexLiveCatalog,
   ConnectorRegistry,
@@ -144,6 +145,7 @@ export interface RouterDeps {
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     maxAttachmentsPerMessage?: number;
+    attachmentNaming?: AttachmentNaming;
     agentRuntime: string;
     teamChatJudgeProvider?: string;
     teamChatJudgeModel?: string;

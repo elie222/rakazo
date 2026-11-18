@@ -38,6 +38,8 @@ export type EmailInboundDeps = Pick<WebhookDeps, "prisma" | "jobs"> & {
     clientNonce: string;
     /** Never joins a same-name file's versions, so a stranger's file cannot become the current one. */
     standalone: boolean;
+    /** The sender's display name, else their address; it names the file's copy. */
+    sender?: string;
   }) => Promise<{ id: string; name: string; mimeType: string; size: number }>;
   /** Parses and authenticates the raw message; tests pass a fixed one. */
   readEmail?: (raw: Uint8Array) => Promise<InboundEmail>;
@@ -342,6 +344,7 @@ async function storeAttachments(
   standalone: boolean,
 ): Promise<InboxFile[]> {
   const keyHash = createHash("sha256").update(email.key).digest("base64url");
+  const sender = email.from?.name.trim() || email.from?.address;
   const files: InboxFile[] = [];
   let kept = 0;
   // Retain the original index for storage nonces while giving explicit files first use of slots.
@@ -368,6 +371,7 @@ async function storeAttachments(
         },
         clientNonce: `email-attachment:${bot.id}:${keyHash}:${index}`,
         standalone: standalone || file.inline === true,
+        sender,
       });
       kept += 1;
       files.push({

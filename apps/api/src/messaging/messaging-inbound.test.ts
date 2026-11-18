@@ -596,6 +596,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         userId: "user-1",
         botId: "bot-1",
         clientNonce: "messaging-attachment:sendblue:handle-1:0",
+        sender: dmEvent.from,
       }),
     );
     expect(deps.sendUserMessage).toHaveBeenCalledWith(

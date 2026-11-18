@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
   artifactTypeLabel,
+  attachmentComputerPathFor,
   attachmentExtensionForMimeType,
   attachmentsForBot,
   blocksToAgentHistorySegments,
@@ -17,6 +18,27 @@ import {
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
+
+describe("attachmentComputerPathFor", () => {
+  it("keeps the id path for a row without a stored path", () => {
+    expect(attachmentComputerPathFor({ id: "a1", mimeType: "image/png", computerPath: null })).toBe(
+      "attachments/a1.png",
+    );
+    expect(attachmentComputerPathFor({ id: "a1", mimeType: "image/png" })).toBe(
+      "attachments/a1.png",
+    );
+  });
+
+  it("uses the path stored when the file arrived", () => {
+    expect(
+      attachmentComputerPathFor({
+        id: "a1",
+        mimeType: "image/png",
+        computerPath: "attachments/2026/11/2026-11-18_1649_Dana_photo.png",
+      }),
+    ).toBe("attachments/2026/11/2026-11-18_1649_Dana_photo.png");
+  });
+});
 
 describe("attachment helpers", () => {
   it.each([

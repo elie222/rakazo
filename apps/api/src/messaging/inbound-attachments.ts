@@ -36,6 +36,8 @@ export type InboundAttachmentStore = (input: {
   downloadDeadline?: number;
   downloadTimeoutMs?: number;
   attempts?: number;
+  /** Who sent the file; it names the file's copy in the bot's computer. */
+  sender?: string;
 }) => Promise<
   InboundArtifact & {
     /** Downloaded content; absent when a replayed delivery returned a stored row. */
@@ -60,6 +62,7 @@ export async function storeInboundAttachments(
     downloadDeadline?: number;
     downloadTimeoutMs?: number;
     attempts?: number;
+    sender?: string;
     reasons?: boolean;
     /** Called with each downloaded file before the next one is fetched; it must not throw. */
     onStored?: (artifact: InboundArtifact, bytes: Uint8Array) => Promise<void>;
@@ -67,7 +70,7 @@ export async function storeInboundAttachments(
 ) {
   const stored: Array<{ artifact: InboundArtifact; bytes: Uint8Array | undefined }> = [];
   const unavailable: string[] = [];
-  const { downloadDeadline, downloadTimeoutMs, attempts } = options;
+  const { downloadDeadline, downloadTimeoutMs, attempts, sender } = options;
   for (const [index, attachment] of attachments.entries()) {
     const label = (reason: UnavailableReason) =>
       unavailableFileLine(attachment.name, options.reasons ? reason : undefined);
@@ -87,6 +90,7 @@ export async function storeInboundAttachments(
         ...(downloadDeadline !== undefined ? { downloadDeadline } : {}),
         ...(downloadTimeoutMs !== undefined ? { downloadTimeoutMs } : {}),
         ...(attempts !== undefined ? { attempts } : {}),
+        ...(sender !== undefined ? { sender } : {}),
       });
       stored.push({
         artifact,

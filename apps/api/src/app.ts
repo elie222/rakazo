@@ -862,6 +862,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,
       maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
+      attachmentNaming: env.attachmentNaming,
       agentRuntime: env.agentRuntime,
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -1168,7 +1169,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       ...env.inboundEmail,
       storeAttachment: ({ spaceId, userId, ...input }) =>
         storeInboundAttachment(
-          { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
+          {
+            prisma,
+            artifacts,
+            maxUploadSizeBytes: env.maxUploadSizeBytes,
+            attachmentNaming: env.attachmentNaming,
+          },
           { spaceId, userId },
           input,
         ),

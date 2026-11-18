@@ -68,7 +68,11 @@ export function contentRoutes(ctx: RouterContext) {
         if (!botId) throw new IsolationError();
         try {
           return await createOwnedArtifact(
-            { ...deps, maxUploadSizeBytes: attachmentMaxBytes(deps.env) },
+            {
+              ...deps,
+              maxUploadSizeBytes: attachmentMaxBytes(deps.env),
+              attachmentNaming: deps.env.attachmentNaming,
+            },
             context.actor,
             { ...input, botId },
           );

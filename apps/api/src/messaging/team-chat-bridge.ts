@@ -1,8 +1,4 @@
-import type {
-  JobPublisher,
-  MessagingInboundAttachment,
-  TeamChatInboundMessage,
-} from "@rakazo/adapter-kit";
+import type { JobPublisher, TeamChatInboundMessage } from "@rakazo/adapter-kit";
 import { teamChatEngageJob } from "@rakazo/adapter-kit";
 import type { TeamChat } from "@rakazo/adapters";
 import {
@@ -83,7 +79,7 @@ export class TeamChatBridge {
       );
     }
     if (!recorded.threadMessageId) {
-      const files = await this.storeFiles(recorded.id, conversation, message.attachments ?? []);
+      const files = await this.storeFiles(recorded.id, conversation, message);
       await this.deps.teamChat.mirrorTranscript(
         { ...recorded, externalConversation: conversation },
         files,
@@ -191,18 +187,19 @@ export class TeamChatBridge {
   private async storeFiles(
     externalMessageId: string,
     conversation: { spaceId: string; userId: string; botId: string },
-    attachments: MessagingInboundAttachment[],
+    message: Pick<TeamChatInboundMessage, "attachments" | "senderName">,
     limit = ATTACHMENT_MAX_COUNT,
     downloadDeadline?: number,
   ) {
     const { stored, unavailable } = await storeInboundAttachments(
       this.deps.storeAttachment,
       conversation,
-      attachments,
+      message.attachments ?? [],
       {
         clientNonce: (index) => teamChatAttachmentNonce(externalMessageId, index),
         limit,
         downloadDeadline,
+        sender: message.senderName,
       },
     );
     return { artifacts: stored.map(({ artifact }) => artifact), unavailable };
@@ -292,7 +289,7 @@ export class TeamChatBridge {
       const files = await this.storeFiles(
         recorded.id,
         conversation,
-        message.attachments ?? [],
+        message,
         fileLimits[index],
         downloadDeadline,
       );

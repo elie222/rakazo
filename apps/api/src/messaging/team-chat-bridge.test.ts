@@ -633,6 +633,7 @@ describe("TeamChatBridge.receive", () => {
         userId: "owner-1",
         botId: "bot-1",
         clientNonce: teamChatAttachmentNonce(target.externalMessageId, 0),
+        sender: "Ada",
       }),
     );
     expect(chat.transcripts()).toEqual([

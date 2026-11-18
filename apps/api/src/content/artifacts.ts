@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
-import { inboundAttachmentMimeType } from "@rakazo/adapters";
+import type { AttachmentNaming } from "@rakazo/adapters";
+import { attachmentPath, inboundAttachmentMimeType, userTimeZone } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -31,17 +32,22 @@ import {
   HIDDEN_ARTIFACT_MIME_TYPES,
   IsolationError,
   isRecordNotFound,
+  isUniqueViolation,
   Prisma,
   withResolvedArtifactVersion,
 } from "@rakazo/db";
 import { InboundAttachmentUnavailableError } from "../messaging/inbound-attachments.js";
 import type { DownloadBudget } from "../messaging/intake/download-budget.js";
 
+/** Today's naming: no stored path, so a copy keeps `attachments/<id><ext>`. */
+const ID_NAMES: AttachmentNaming = { names: "id", folders: "none" };
+
 export async function createOwnedArtifact(
   deps: {
     prisma: PrismaClient;
     artifacts: ArtifactStore;
     maxUploadSizeBytes?: number;
+    attachmentNaming?: AttachmentNaming;
   },
   actor: Actor,
   input: {
@@ -64,7 +70,17 @@ export async function createOwnedArtifact(
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64, deps.maxUploadSizeBytes);
-  return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
+  const sender =
+    deps.attachmentNaming?.names === "readable"
+      ? await uploaderName(deps.prisma, actor.userId)
+      : undefined;
+  return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes, sender });
+}
+
+/** The uploader's account name, which names their files; none when it is blank. */
+async function uploaderName(prisma: PrismaClient, userId: string): Promise<string | undefined> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+  return user?.name.trim() || undefined;
 }
 
 /** Pauses after the first and second failed download tries; the last repeats. */
@@ -82,6 +98,7 @@ export async function storeInboundAttachment(
     maxUploadSizeBytes?: number;
     /** This process's memory for downloads: each reserves its size before it starts. */
     downloadBudget?: DownloadBudget;
+    attachmentNaming?: AttachmentNaming;
   },
   owner: ArtifactOwner,
   input: {
@@ -95,6 +112,8 @@ export async function storeInboundAttachment(
     attempts?: number;
     /** Stored as a file of its own, never as the next version of one with the same name. */
     standalone?: boolean;
+    /** Who sent the file, as the chat app or email names them; it names the file's copy. */
+    sender?: string;
   },
 ): Promise<StoredInboundAttachment> {
   const replayed = await findReplayedArtifact(deps.prisma, owner, input);
@@ -179,6 +198,7 @@ export async function storeInboundAttachment(
     bytes,
     clientNonce: input.clientNonce,
     standalone: input.standalone,
+    sender: input.sender,
   });
   // The replay return above carries no bytes; callers treat them as optional.
   return { ...stored, bytes };
@@ -186,8 +206,28 @@ export async function storeInboundAttachment(
 
 type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;
 
+/** Paths tried for one file before giving up: each clash takes the next counter. */
+const COMPUTER_PATH_ATTEMPTS = 20;
+const COMPUTER_PATH_INDEX = "artifacts_space_computer_path_key";
+
+/** The path tried is another file's. It never names the path, so it is safe to log. */
+class ComputerPathTakenError extends Error {
+  constructor() {
+    super("The file's computer path is taken");
+    this.name = "ComputerPathTakenError";
+  }
+}
+
+function isComputerPathClash(error: unknown): boolean {
+  if (!isUniqueViolation(error)) return false;
+  const { meta } = error as {
+    meta?: { driverAdapterError?: { cause?: { constraint?: { index?: string } } } };
+  };
+  return meta?.driverAdapterError?.cause?.constraint?.index === COMPUTER_PATH_INDEX;
+}
+
 async function storeOwnedArtifact(
-  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore; attachmentNaming?: AttachmentNaming },
   actor: ArtifactOwner,
   input: {
     botId: string;
@@ -198,43 +238,82 @@ async function storeOwnedArtifact(
     bytes: Uint8Array;
     clientNonce?: string;
     standalone?: boolean;
+    sender?: string;
   },
 ) {
   const { mimeType, bytes } = input;
+  const naming = deps.attachmentNaming ?? ID_NAMES;
+  // Only a readable name is dated, in the owner's time zone.
+  const timeZone =
+    naming.names === "readable" ? await userTimeZone(deps.prisma, actor.userId) : undefined;
+  const arrival = (attempt: number): { computerPath: string | null; createdAt?: Date } => {
+    if (timeZone === undefined) return { computerPath: null };
+    const at = new Date();
+    const computerPath = attachmentPath({
+      at,
+      timeZone,
+      sender: input.sender,
+      name: input.name,
+      mimeType,
+      attempt,
+      folders: naming.folders,
+    });
+    return { computerPath, createdAt: at };
+  };
   const context = createAdapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
-  const { row, replay } = await withResolvedArtifactVersion(
-    deps.prisma,
-    {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      groupId: input.groupId,
-      name: input.name,
+  // A clash aborts its transaction, so each attempt resolves the version again in a new one.
+  const insert = (attempt: number) =>
+    withResolvedArtifactVersion(
+      deps.prisma,
+      {
+        spaceId: actor.spaceId,
+        botId: input.botId,
+        groupId: input.groupId,
+        name: input.name,
+      },
+      async (tx, { rootArtifactId, version }) => {
+        // A retry of the same upload has the same name and target, so it waits on the same lock.
+        const raced = await findReplayedArtifact(tx, actor, input);
+        if (raced) return { row: raced, replay: true };
+        const created = await tx.artifact
+          .create({
+            data: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              botId: input.botId,
+              groupId: input.groupId,
+              name: input.name,
+              description: input.description?.trim() || null,
+              mimeType,
+              size: bytes.byteLength,
+              hash,
+              storageKey: stored.id,
+              ...(input.standalone
+                ? { rootArtifactId: null, version: 1, standalone: true }
+                : { rootArtifactId, version }),
+              clientNonce: input.clientNonce,
+              ...arrival(attempt),
+            },
+          })
+          .catch((error: unknown) => {
+            // Not a unique violation, so the version lookup does not retry the same path.
+            throw isComputerPathClash(error) ? new ComputerPathTakenError() : error;
+          });
+        return { row: created, replay: false };
+      },
+    );
+  let tries = 0;
+  const { row, replay } = await retry(
+    () => {
+      tries += 1;
+      return insert(tries);
     },
-    async (tx, { rootArtifactId, version }) => {
-      // A retry of the same upload has the same name and target, so it waits on the same lock.
-      const raced = await findReplayedArtifact(tx, actor, input);
-      if (raced) return { row: raced, replay: true };
-      const created = await tx.artifact.create({
-        data: {
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          botId: input.botId,
-          groupId: input.groupId,
-          name: input.name,
-          description: input.description?.trim() || null,
-          mimeType,
-          size: bytes.byteLength,
-          hash,
-          storageKey: stored.id,
-          ...(input.standalone
-            ? { rootArtifactId: null, version: 1, standalone: true }
-            : { rootArtifactId, version }),
-          clientNonce: input.clientNonce,
-        },
-      });
-      return { row: created, replay: false };
+    {
+      attempts: COMPUTER_PATH_ATTEMPTS,
+      delayMs: 0,
+      retryable: (error) => error instanceof ComputerPathTakenError,
     },
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
