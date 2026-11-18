@@ -140,6 +140,19 @@ async function decryptFailure(): Promise<unknown> {
 }
 
 describe("reviewer failure reasons", () => {
+  it("logs nothing when the run is cancelled mid-review", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const controller = new AbortController();
+    const review = vi.fn(async () => {
+      controller.abort();
+      throw new DOMException("Aborted", "AbortError");
+    });
+    await reviewWithBackups(candidates, review, controller.signal);
+    expect(review).toHaveBeenCalledOnce();
+    expect(sink.events).toEqual([]);
+  });
+
   it.each<[AutoReviewFailureCode, () => unknown]>([
     ["credits_required", () => new HostedModelCreditsRequiredError("fake detail")],
     ["credits_required", () => new ModelCreditAccountUnavailableError()],

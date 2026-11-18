@@ -35,6 +35,8 @@ export async function reviewWithBackups(
     try {
       result = await review(candidate);
     } catch (error) {
+      // A cancelled run is not a checker failure.
+      if (signal.aborted) break;
       const code = autoReviewFailureCode(error);
       // Only the cause: ids, messages and the reviewed action stay out of logs.
       getLogger().warn("auto_review.checker_failed", {
