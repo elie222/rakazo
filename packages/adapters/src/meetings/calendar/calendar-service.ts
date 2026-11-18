@@ -15,6 +15,7 @@ import {
   countSpaceMeetingsForDay,
   MEETING_DAILY_LIMIT,
   MEETING_SESSION_DURATION,
+  meetingUtcDayStart,
   parseMeetingUrl,
 } from "../meeting-service.js";
 import { CalendarAuthorization, signCalendarConnectionRef } from "./calendar-authorization.js";
@@ -124,7 +125,33 @@ export class MeetingCalendarService {
       } as const);
     }
     events.sort((first, second) => first.startsAt - second.startsAt);
-    return { ...calendar, events };
+    const waiting = (event: (typeof events)[number]) =>
+      !event.scheduled && (event.selection === "once" || event.selection === "series");
+    const days = new Set(
+      events.filter(waiting).map(({ startsAt }) => meetingUtcDayStart(startsAt)),
+    );
+    const fullDays = new Set<number>();
+    if (days.size) {
+      await runAsSystem("read meeting quota for selected calendar events", async () => {
+        await Promise.all(
+          [...days].map(async (day) => {
+            if (
+              (await countSpaceMeetingsForDay(prisma, actor.spaceId, new Date(day))) >=
+              MEETING_DAILY_LIMIT
+            ) {
+              fullDays.add(day);
+            }
+          }),
+        );
+      });
+    }
+    return {
+      ...calendar,
+      events: events.map((event) => ({
+        ...event,
+        quotaReached: waiting(event) && fullDays.has(meetingUtcDayStart(event.startsAt)),
+      })),
+    };
   }
 
   async updateSelection(actor: Owner, botId: string, eventId: string, action: CalendarAction) {

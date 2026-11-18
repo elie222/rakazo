@@ -21,6 +21,7 @@ const upcoming = z.object({
   recurring: z.boolean(),
   selection: z.enum(["none", "once", "series", "skipped", "another_bot"]),
   scheduled: z.boolean(),
+  quotaReached: z.boolean().optional(),
 });
 
 export const meetingCalendarRpc = {

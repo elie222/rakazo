@@ -4,6 +4,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { RecallCalendarEmulator } from "../../providers/meeting/recall/calendar-emulator.js";
+import { countSpaceMeetingsForDay, countSpaceMeetingsInPastDay } from "../meeting-service.js";
 import { MeetingCalendarService } from "./calendar-service.js";
 
 const postgres =
@@ -172,8 +173,49 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       expect(emulator.scheduled(lastReview.id)).toBeUndefined();
 
       const zoom = firstEvents.find(({ platform }) => platform === "zoom")!;
+      const fullDay = new Date(zoom.startsAt);
+      const quotaSessions = Array.from({ length: 20 }, () => randomUUID());
+      await runAsSystem("seed completed meetings on the calendar event's UTC day", () =>
+        prisma.meetingSession.createMany({
+          data: quotaSessions.map((id) => ({
+            id,
+            spaceId,
+            userId: second.userId,
+            botId,
+            platform: "zoom",
+            provider: emulator.provider.id,
+            status: "ended",
+            createdAt: fullDay,
+            expiresAt: fullDay,
+          })),
+        }),
+      );
+
+      const afterMidnight = new Date(
+        Date.UTC(fullDay.getUTCFullYear(), fullDay.getUTCMonth(), fullDay.getUTCDate() + 1, 0, 1),
+      );
+      await runAsSystem("compare the UTC day and rolling meeting usage", async () => {
+        expect(await countSpaceMeetingsForDay(prisma, spaceId, afterMidnight)).toBe(0);
+        expect(await countSpaceMeetingsInPastDay(prisma, spaceId, afterMidnight)).toBe(20);
+      });
+
       await runAsTenant(first, () => service.updateSelection(first, botId, zoom.id, "once"));
+      expect(emulator.scheduled(zoom.id)).toBeUndefined();
+      expect((await listing(first)).events.find(({ id }) => id === zoom.id)).toMatchObject({
+        selection: "once",
+        scheduled: false,
+        quotaReached: true,
+      });
+      await runAsSystem("free calendar capacity", () =>
+        prisma.meetingSession.deleteMany({ where: { id: { in: quotaSessions } } }),
+      );
+      await service.sync(owner.id);
       const originalBot = emulator.scheduled(zoom.id);
+      expect(originalBot).toBeTruthy();
+      expect((await listing(first)).events.find(({ id }) => id === zoom.id)).toMatchObject({
+        scheduled: true,
+        quotaReached: false,
+      });
       const revisedLink = "https://zoom.us/j/12345678901?pwd=changed-fixture-password";
       emulator.revision(zoom.id, { meeting_url: revisedLink });
       await service.sync(owner.id);

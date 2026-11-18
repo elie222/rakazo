@@ -47,14 +47,20 @@ type CalendarEventState = {
   selection: "none" | "once" | "series" | "skipped" | "another_bot";
   recurring: boolean;
   scheduled: boolean;
+  quotaReached?: boolean;
 };
 
 export type MeetingCalendarAction = "once" | "series" | "skip" | "removeSeries";
 
-export function meetingCalendarStatusLabel({ selection, scheduled }: CalendarEventState) {
+export function meetingCalendarStatusLabel({
+  selection,
+  scheduled,
+  quotaReached,
+}: CalendarEventState) {
   if (selection === "another_bot") return i18n._({ id: "Another bot", message: "Another bot" });
   if (selection === "skipped") return i18n._({ id: "Skipped", message: "Skipped" });
   if (scheduled) return meetingStatusLabel("scheduled");
+  if (quotaReached) return i18n._({ id: "Space limit reached", message: "Space limit reached" });
   return selection === "none" ? undefined : i18n._({ id: "Selected", message: "Selected" });
 }
 
