@@ -2966,6 +2966,8 @@ model MeetingCalendarConnection {
   provider           String
   externalCalendarId String?
   disconnecting      Boolean                 @default(false)
+  createdAt          DateTime                @default(now())
+  eventsDigest       String?
   rules              MeetingCalendarRule[]
   bookings           MeetingCalendarBooking[]
 

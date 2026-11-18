@@ -64,6 +64,7 @@ import {
   MeetingCalendarService,
   MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingAddresses,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
@@ -618,6 +619,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         },
         userId,
       );
+      await meetingCalendar?.disconnectUser(userId);
       await removePiUserSessions(env.dataDir, userId);
       await pushTokens
         .remove(userId)
@@ -708,8 +710,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       oauthStateKey: env.authSecret,
       enabled: (spaceId) => meetings.enabled(spaceId),
       buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
-      publish: async ({ spaceId }) => {
-        await events.publishSpaceChange?.(spaceId, "meetings");
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
       },
     });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(

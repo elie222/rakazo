@@ -167,25 +167,7 @@ export class MeetingService {
           const count = await runAsSystemInTransaction(
             tx,
             "count meetings against Space allowance",
-            () =>
-              tx.meetingSession.count({
-                where: {
-                  spaceId: actor.spaceId,
-                  OR: [
-                    {
-                      scheduledFor: null,
-                      createdAt: { gt: new Date(Date.now() - 24 * 60 * MINUTE) },
-                    },
-                    {
-                      scheduledFor: {
-                        gt: new Date(Date.now() - 24 * 60 * MINUTE),
-                        lte: new Date(),
-                      },
-                      status: { not: "ended" },
-                    },
-                  ],
-                },
-              }),
+            () => countSpaceMeetingsForDay(tx, actor.spaceId, new Date()),
           );
           if (count >= MEETING_DAILY_LIMIT) {
             throw new ClientError(
@@ -744,4 +726,26 @@ function readMeetingTurns(id: string, transcript: string) {
     reportJsonColumnOnce("Stored meeting transcript is invalid", error.row);
     throw new ClientError("SERVICE_UNAVAILABLE", "This transcript couldn’t be read.");
   }
+}
+
+/** Count paid usage and outstanding reservations together on the same UTC day. */
+export function countSpaceMeetingsForDay(
+  prisma: Pick<PrismaClient, "meetingSession"> | Pick<Prisma.TransactionClient, "meetingSession">,
+  spaceId: string,
+  date: Date,
+) {
+  const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const day = { gte: new Date(start), lt: new Date(start + 24 * 60 * MINUTE) };
+  return prisma.meetingSession.count({
+    where: {
+      spaceId,
+      OR: [
+        { scheduledFor: null, createdAt: day },
+        {
+          scheduledFor: day,
+          OR: [{ status: { not: "ended" } }, { receivedAt: { not: null } }],
+        },
+      ],
+    },
+  });
 }

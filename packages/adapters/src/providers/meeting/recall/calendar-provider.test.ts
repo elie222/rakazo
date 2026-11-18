@@ -20,7 +20,7 @@ async function connect(emulator: RecallCalendarEmulator, connectionId: string) {
   if (!code) throw new Error("Emulator did not return an OAuth code.");
   return (
     await provider.connect(
-      { connectionId, code, redirectUri, verifier: "calendar-verifier" },
+      { connectionRef: connectionId, code, redirectUri, verifier: "calendar-verifier" },
       signal,
     )
   ).calendarId;
@@ -56,7 +56,7 @@ describe("calendar provider over its offline HTTP protocol", () => {
   it("links an OAuth calendar, pages across occurrences, and normalizes decline and cancellation", async () => {
     const emulator = new RecallCalendarEmulator(now);
     const calendarId = await connect(emulator, "calendar-one");
-    expect(await emulator.provider.status(calendarId, signal)).toBe("connected");
+    expect((await emulator.provider.getConnection(calendarId, signal))?.status).toBe("connected");
 
     const events = await eventsFor(emulator, calendarId);
     expect(events).toHaveLength(3);
@@ -75,7 +75,7 @@ describe("calendar provider over its offline HTTP protocol", () => {
     expect(await eventsFor(emulator, calendarId)).toHaveLength(2);
 
     await emulator.provider.disconnect(calendarId, signal);
-    expect(await emulator.provider.status(calendarId, signal)).toBe("disconnected");
+    expect(await emulator.provider.getConnection(calendarId, signal)).toBeNull();
   });
 
   it("deduplicates a shared occurrence and preserves the other calendar on unschedule", async () => {

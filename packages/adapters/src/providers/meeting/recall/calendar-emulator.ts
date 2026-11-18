@@ -9,6 +9,14 @@ const secret = `whsec_${Buffer.from("calendar-emulator-secret").toString("base64
 const signatureConfig = { prefix: "webhook", secret } as const;
 const oauthCode = "offline-calendar-code";
 
+type CalendarState = "connecting" | "connected" | "disconnected";
+type CalendarFixture = {
+  id: string;
+  metadata: { rakazoConnectionRef: string };
+  created_at: string;
+  status_changes: [{ status: CalendarState; created_at: string }];
+};
+
 interface FakeEvent {
   id: string;
   calendar_id: string;
@@ -27,6 +35,9 @@ interface FakeEvent {
 export class RecallCalendarEmulator {
   readonly provider: RecallCalendarProvider;
   private readonly calendars = new Map<string, FakeEvent[]>();
+  private readonly connections = new Map<string, CalendarFixture>();
+  private nextConnectionReply?: Promise<void>;
+  private breakNextConnection = false;
   private readonly schedules = new Map<string, { botId: string; meetingUrl: string }>();
   private readonly externalIds = new Map<string, string>();
   private failNextStatus: number | undefined;
@@ -59,6 +70,24 @@ export class RecallCalendarEmulator {
       fetch,
       verify: (body, headers) => verifyRecallSignature(signatureConfig, body, headers),
     });
+  }
+
+  connectedCalendars() {
+    return [...this.connections.keys()];
+  }
+
+  holdNextConnectionReply(until: Promise<void>) {
+    this.nextConnectionReply = until;
+  }
+
+  loseNextConnectionReply() {
+    this.breakNextConnection = true;
+  }
+
+  setCalendarStatus(calendarId: string, status: CalendarState) {
+    const connection = this.connections.get(calendarId);
+    if (!connection) throw new Error("No such emulator calendar connection");
+    connection.status_changes[0].status = status;
   }
 
   revision(
@@ -128,10 +157,10 @@ export class RecallCalendarEmulator {
             oauth_client_id: z.literal("offline-calendar-client"),
             oauth_client_secret: z.literal("offline-calendar-secret"),
             oauth_refresh_token: z.literal("offline-refresh"),
-            metadata: z.object({ connectionId: z.string().min(1) }),
+            metadata: z.object({ rakazoConnectionRef: z.string().min(1) }),
           })
           .parse(await request.json());
-        const calendarId = body.metadata.connectionId;
+        const calendarId = body.metadata.rakazoConnectionRef.split(".", 1)[0]!;
         const events = [
           this.event(
             calendarId,
@@ -152,25 +181,40 @@ export class RecallCalendarEmulator {
           ),
         ];
         this.calendars.set(calendarId, events);
-        return Response.json(
-          {
-            id: calendarId,
-            status_changes: [{ status: "connected", created_at: now.toISOString() }],
-          },
-          { status: 201 },
-        );
+        const connection: CalendarFixture = {
+          id: calendarId,
+          metadata: body.metadata,
+          created_at: now.toISOString(),
+          status_changes: [{ status: "connected", created_at: now.toISOString() }],
+        };
+        this.connections.set(calendarId, connection);
+        const until = this.nextConnectionReply;
+        this.nextConnectionReply = undefined;
+        if (until) await until;
+        request.signal.throwIfAborted();
+        if (this.breakNextConnection) {
+          this.breakNextConnection = false;
+          return new Response(null, { status: 503 });
+        }
+        return Response.json(connection, { status: 201 });
       }
+      if (!id && request.method === "GET") {
+        const since = url.searchParams.get("created_at__gte");
+        const results = [...this.connections.values()].filter(
+          (connection) => !since || connection.created_at >= since,
+        );
+        return Response.json({ results, next: null });
+      }
+      const connection = this.connections.get(id ?? "");
       const events = this.calendars.get(id ?? "");
-      if (id && events) {
+      if (id && connection && events) {
         if (request.method === "DELETE") {
           this.calendars.delete(id);
+          this.connections.delete(id);
           for (const event of events) this.schedules.delete(event.id);
           return new Response(null, { status: 204 });
         }
-        return Response.json({
-          id,
-          status_changes: [{ status: "connected", created_at: now.toISOString() }],
-        });
+        return Response.json(connection);
       }
     }
     if (resource === "calendar-events") {
@@ -185,7 +229,10 @@ export class RecallCalendarEmulator {
         );
         const pageSize = 2;
         const cursor = Number(url.searchParams.get("cursor") ?? "0");
-        const results = live.slice(cursor, cursor + pageSize);
+        const results = live.slice(cursor, cursor + pageSize).map((event) => ({
+          ...event,
+          raw: JSON.stringify(event.raw),
+        }));
         const next = new URL(url);
         next.searchParams.set("cursor", String(cursor + pageSize));
         return Response.json({ results, next: cursor + pageSize < live.length ? next.href : null });

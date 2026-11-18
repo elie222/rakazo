@@ -173,6 +173,21 @@ export function MeetingCalendar({ botId }: { botId: string }) {
                 </p>
               )}
             </>
+          ) : list.data.connecting ? (
+            <>
+              <p role="status" className="text-body text-muted-foreground">
+                <Trans>Connecting calendar…</Trans>
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={save.pending}
+                onClick={() => save.run({ action: "disconnect" })}
+              >
+                <Trans>Disconnect calendar</Trans>
+              </Button>
+            </>
           ) : (
             <>
               <p className="text-body text-muted-foreground">

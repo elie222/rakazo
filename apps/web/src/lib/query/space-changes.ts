@@ -15,10 +15,10 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["usage", "breakdown"],
   ],
   routines: [["routines", "list"]],
+  meetingCalendar: [["meetingCalendar", "upcoming"]],
   meetings: [
     ["meetings", "list"],
     ["meetings", "transcript"],
-    ["meetingCalendar", "upcoming"],
   ],
 };
 

@@ -9,6 +9,8 @@ CREATE TABLE "meeting_calendar_connections" (
     "provider" TEXT NOT NULL,
     "externalCalendarId" TEXT,
     "disconnecting" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "eventsDigest" TEXT,
     UNIQUE ("spaceId", "userId"),
     UNIQUE ("provider", "externalCalendarId")
 );

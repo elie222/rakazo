@@ -24,6 +24,7 @@ export const meetingCalendarRpc = {
       z.object({
         available: z.boolean(),
         connected: z.boolean(),
+        connecting: z.boolean().optional(),
         calendarLabel: z.string(),
         events: z.array(upcoming),
       }),

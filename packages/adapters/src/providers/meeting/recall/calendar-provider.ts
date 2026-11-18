@@ -1,15 +1,17 @@
 import type {
+  MeetingCalendarConnectionState,
   MeetingCalendarEvent,
   MeetingCalendarProvider,
   MeetingJoinRequest,
 } from "@rakazo/adapter-kit";
-import { RetryJobLaterError } from "@rakazo/adapter-kit";
+import { MeetingCalendarConnectRejected, RetryJobLaterError } from "@rakazo/adapter-kit";
 import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 import { buildRecallBotConfig } from "./recall-meeting.js";
 
 const calendarSchema = z.object({
   id: z.string().min(1),
+  metadata: z.object({ rakazoConnectionRef: z.string().optional() }).nullish(),
   status_changes: z.array(
     z.object({
       created_at: z.iso.datetime({ offset: true }),
@@ -18,6 +20,17 @@ const calendarSchema = z.object({
   ),
 });
 
+const rawEvent = z
+  .object({
+    summary: z.string().optional(),
+    recurringEventId: z.string().optional(),
+    status: z.string().optional(),
+    attendees: z
+      .array(z.object({ self: z.boolean().optional(), responseStatus: z.string().optional() }))
+      .optional(),
+  })
+  .nullish();
+
 const eventSchema = z.object({
   id: z.string().min(1),
   calendar_id: z.string().min(1),
@@ -25,16 +38,15 @@ const eventSchema = z.object({
   end_time: z.iso.datetime({ offset: true }).transform((value) => new Date(value)),
   meeting_url: z.string().nullish(),
   is_deleted: z.boolean(),
-  raw: z
-    .object({
-      summary: z.string().optional(),
-      recurringEventId: z.string().optional(),
-      status: z.string().optional(),
-      attendees: z
-        .array(z.object({ self: z.boolean().optional(), responseStatus: z.string().optional() }))
-        .optional(),
-    })
-    .nullish(),
+  raw: z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    try {
+      return JSON.parse(value) as unknown;
+    } catch (error) {
+      if (error instanceof SyntaxError) return value;
+      throw error;
+    }
+  }, rawEvent),
 });
 
 const eventPage = z.object({
@@ -59,6 +71,17 @@ const webhookSchema = z.discriminatedUnion("event", [
     data: z.object({ calendar_id: z.string(), last_updated_ts: z.iso.datetime({ offset: true }) }),
   }),
 ]);
+
+function toConnection(row: z.infer<typeof calendarSchema>): MeetingCalendarConnectionState {
+  return {
+    calendarId: row.id,
+    connectionRef: row.metadata?.rakazoConnectionRef,
+    status:
+      row.status_changes.sort(
+        (first, second) => Date.parse(second.created_at) - Date.parse(first.created_at),
+      )[0]?.status ?? "connecting",
+  };
+}
 
 function toEvent(row: z.output<typeof eventSchema>): MeetingCalendarEvent {
   return {
@@ -118,40 +141,29 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
 
   async connect(
     {
-      connectionId,
+      connectionRef,
       code,
       verifier,
       redirectUri,
-    }: { connectionId: string; code: string; verifier: string; redirectUri: string },
+    }: {
+      connectionRef: string;
+      code: string;
+      verifier: string;
+      redirectUri: string;
+    },
     signal: AbortSignal,
   ): Promise<{ calendarId: string }> {
-    const response = await (this.options.fetch ?? fetch)("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        code_verifier: verifier,
-        client_id: this.options.oauthClientId,
-        client_secret: this.options.oauthClientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
-      redirect: "error",
-      signal,
-    });
-    if (!response.ok) throw new Error("Could not redeem the calendar authorization.");
-    const { refresh_token } = z
-      .object({ refresh_token: z.string().min(1) })
-      .parse(await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal));
+    const refreshToken = await this.redeem(code, verifier, redirectUri, signal);
     const calendar = await this.request("/api/v2/calendars/", signal, {
       method: "POST",
       body: {
-        metadata: { connectionId },
+        metadata: { rakazoConnectionRef: connectionRef },
         platform: "google_calendar",
         oauth_client_id: this.options.oauthClientId,
         oauth_client_secret: this.options.oauthClientSecret,
-        oauth_refresh_token: refresh_token,
+        oauth_refresh_token: refreshToken,
       },
+      calendarCreation: true,
     });
     return {
       calendarId: calendarSchema.parse(
@@ -160,22 +172,73 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
     };
   }
 
-  async status(calendarId: string, signal: AbortSignal) {
+  async getConnection(calendarId: string, signal: AbortSignal) {
     const response = await this.request(this.calendarPath(calendarId), signal, {
       allowMissing: true,
     });
     if (response.status === 404) {
       cancelResponseBody(response);
-      return "disconnected" as const;
+      return null;
     }
-    const calendar = calendarSchema.parse(
-      await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal),
+    return toConnection(
+      calendarSchema.parse(
+        await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal),
+      ),
     );
-    return (
-      calendar.status_changes.sort(
-        (first, second) => Date.parse(second.created_at) - Date.parse(first.created_at),
-      )[0]?.status ?? "connecting"
-    );
+  }
+
+  async findConnection(connectionRef: string, createdSince: Date, signal: AbortSignal) {
+    const url = new URL("/api/v2/calendars/", this.options.baseUrl);
+    url.searchParams.set("created_at__gte", createdSince.toISOString());
+    url.searchParams.set("platform", "google_calendar");
+    const pageSchema = z.object({ results: z.array(calendarSchema), next: z.string().nullish() });
+    const seen = new Set<string>();
+    let next: URL | null = url;
+    while (next) {
+      if (next.origin !== url.origin || next.pathname !== url.pathname || seen.has(next.href)) {
+        throw new Error("Invalid calendar connection pagination.");
+      }
+      seen.add(next.href);
+      const response = await this.request(next, signal);
+      const page = pageSchema.parse(
+        await readBoundedJsonResponse<unknown>(response, 2 * 1024 * 1024, signal),
+      );
+      const match = page.results.find(
+        (calendar) => calendar.metadata?.rakazoConnectionRef === connectionRef,
+      );
+      if (match) return toConnection(match);
+      next = page.next ? new URL(page.next, url) : null;
+    }
+    return null;
+  }
+
+  private async redeem(code: string, verifier: string, redirectUri: string, signal: AbortSignal) {
+    try {
+      const response = await (this.options.fetch ?? fetch)("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          code_verifier: verifier,
+          client_id: this.options.oauthClientId,
+          client_secret: this.options.oauthClientSecret,
+          redirect_uri: redirectUri,
+          grant_type: "authorization_code",
+        }),
+        redirect: "error",
+        signal,
+      });
+      if (!response.ok) {
+        cancelResponseBody(response);
+        throw new Error("Could not redeem calendar authorization.");
+      }
+      return z
+        .object({ refresh_token: z.string().min(1) })
+        .parse(await readBoundedJsonResponse<unknown>(response, 64 * 1024, signal)).refresh_token;
+    } catch {
+      // No token was sent to the meeting provider in this part of the flow.
+      throw new MeetingCalendarConnectRejected("Could not authorize the calendar.");
+    }
   }
 
   async disconnect(calendarId: string, signal: AbortSignal): Promise<void> {
@@ -301,7 +364,12 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
   private async request(
     path: string | URL,
     signal: AbortSignal,
-    options: { method?: string; body?: unknown; allowMissing?: boolean } = {},
+    options: {
+      method?: string;
+      body?: unknown;
+      allowMissing?: boolean;
+      calendarCreation?: boolean;
+    } = {},
   ) {
     const response = await (this.options.fetch ?? fetch)(new URL(path, this.options.baseUrl), {
       method: options.method ?? "GET",
@@ -315,6 +383,9 @@ export class RecallCalendarProvider implements MeetingCalendarProvider {
     });
     if (!response.ok && !(options.allowMissing && response.status === 404)) {
       cancelResponseBody(response);
+      if (options.calendarCreation && [400, 401, 403, 429].includes(response.status)) {
+        throw new MeetingCalendarConnectRejected("The provider rejected the calendar connection.");
+      }
       if (response.status === 409 || response.status === 429 || response.status === 507) {
         throw new RetryJobLaterError(
           parseRetryAfter(response.headers.get("retry-after")) ?? 30_000,

@@ -14,6 +14,7 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
+  RetryJobLaterError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -279,7 +280,8 @@ export function createBackgroundJobHandlers(deps: {
       );
     }),
     "meeting.calendar-sync": async (payload) => {
-      await deps.meetingCalendarSync?.(payload);
+      if (!deps.meetingCalendarSync) throw new RetryJobLaterError(60_000);
+      await deps.meetingCalendarSync(payload);
     },
     "meeting.work": async (payload) => {
       await deps.meetingWork?.(payload);

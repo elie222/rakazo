@@ -17,7 +17,7 @@ Set the same meeting-provider configuration on the API and worker.
 | `MEETING_WEBHOOK_SIGNATURE` | `webhook` by default. Set `svix` for older workspaces that use endpoint secrets. |
 | `MEETING_SPACE_IDS`         | Comma-separated list of Spaces authorized to send bots.                          |
 
-Configure the status webhook to use `/api/meetings/events` on your public API origin. Subscribe to bot lifecycle events, `recording.done`, `recording.failed`, `transcript.done`, and `transcript.failed`. The operator's workspace incurs per-minute capture and transcription costs. This deployment admits up to 20 manual meetings per Space per rolling day. A meeting can record for up to two hours.
+Configure the status webhook to use `/api/meetings/events` on your public API origin. Subscribe to bot lifecycle events, `recording.done`, `recording.failed`, `transcript.done`, and `transcript.failed`. The operator's workspace incurs per-minute capture and transcription costs. Each Space can use or reserve up to 20 meetings per UTC day. A meeting can record for up to two hours.
 
 The server configures audio-only capture and 24-hour provider retention. Once Rakazo imports the transcript it requests removal of the provider copy of the recording. Rakazo stores the transcript under the Space's content-encryption policy.
 
@@ -43,7 +43,7 @@ Set `MEETING_CALENDAR_CLIENT_ID` and `MEETING_CALENDAR_CLIENT_SECRET` on the API
 
 Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/calendar/webhook` on the public API origin. Use the workspace signing secret. If your workspace uses legacy per-endpoint Svix secrets, set `MEETING_CALENDAR_WEBHOOK_SECRET` to the calendar endpoint's signing secret.
 
-In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Each Space can schedule up to 20 meetings for the same UTC day. Linked calendars with the same selected bot share one scheduled participant per occurrence. The final transcript is available to the member who owns that shared session.
+In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Each Space can schedule up to 20 meetings for the same UTC day. Linked calendars with the same selected bot share one scheduled participant per occurrence. The final transcript is available to the member who owns that shared session. If they withdraw before the bot starts joining, Rakazo can pass the reservation to an active member who still has that occurrence booked.
 
 To exercise connection and scheduling with the local emulator, run:
 

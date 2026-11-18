@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { RecallCalendarEmulator } from "../../providers/meeting/recall/calendar-emulator.js";
@@ -17,6 +18,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
     const first = { spaceId, userId: randomUUID() };
     const second = { spaceId, userId: randomUUID() };
     const now = new Date("2026-11-18T10:00:00Z");
+    let clock = now;
     const emulator = new RecallCalendarEmulator(now);
     const resolved = async () => {};
     const jobs: JobPublisher = {
@@ -27,6 +29,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       cancelIn: vi.fn(resolved),
       close: vi.fn(resolved),
     };
+    const publish = vi.fn(resolved);
     const service = new MeetingCalendarService({
       prisma,
       provider: emulator.provider,
@@ -35,8 +38,8 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       oauthStateKey: "offline-fixture-key",
       enabled: (space) => space === spaceId,
       buildJoin: (input) => input,
-      publish: vi.fn(resolved),
-      now: () => now,
+      publish,
+      now: () => clock,
     });
     try {
       await runAsSystem("seed calendar integration fixture", async () => {
@@ -104,7 +107,9 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       const firstConnection = await runAsTenant(first, () =>
         prisma.meetingCalendarConnection.findFirstOrThrow({ where: first }),
       );
+      publish.mockClear();
       await service.sync(firstConnection.id);
+      expect(publish).not.toHaveBeenCalled();
       expect(emulator.scheduled(firstReview.id)).toBeTruthy();
       expect(emulator.scheduled(firstReview.id)).toBe(emulator.scheduled(secondReview.id));
       expect(emulator.scheduled(lastReview.id)).toBeTruthy();
@@ -119,6 +124,23 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await runAsTenant(first, () => service.updateSelection(first, botId, firstReview.id, "skip"));
       expect(emulator.scheduled(firstReview.id)).toBeUndefined();
       expect(emulator.scheduled(secondReview.id)).toBeTruthy();
+
+      const shared = await runAsTenant(second, () =>
+        prisma.meetingSession.findFirst({
+          where: {
+            provider: emulator.provider.id,
+            externalId: emulator.scheduled(secondReview.id),
+          },
+        }),
+      );
+      expect(shared?.userId).toBe(second.userId);
+      expect(
+        await runAsTenant(first, () =>
+          prisma.meetingSession.findFirst({
+            where: { id: shared?.id },
+          }),
+        ),
+      ).toBeNull();
 
       const old = emulator.scheduled(lastReview.id);
       emulator.revision(lastReview.id, {
@@ -153,6 +175,71 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await runAsTenant(second, () => service.disconnect(second));
       expect(emulator.scheduled(secondReview.id)).toBeUndefined();
       expect((await listing(second)).connected).toBe(false);
+      const authorize = async () => {
+        const began = await runAsTenant(second, () => service.begin(second, "web"));
+        const code = new URL(began.authorizationUrl).searchParams.get("code")!;
+        return { complete: () => service.completeFromBrowser(second.userId, began.state, code) };
+      };
+      const retry = await authorize();
+      emulator.loseNextConnectionReply();
+      await expect(retry.complete()).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
+      expect((await listing(second)).connecting).toBe(true);
+      const pending = await runAsTenant(second, () =>
+        prisma.meetingCalendarConnection.findFirstOrThrow({ where: second }),
+      );
+      const [acceptedId] = emulator.connectedCalendars();
+      expect(jobs.enqueueIn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          name: "meeting.calendar-sync",
+          payload: { connectionId: pending.id },
+        }),
+      );
+      emulator.setCalendarStatus(acceptedId!, "connecting");
+      await expect(service.sync(pending.id)).rejects.toMatchObject({ delayMs: 30_000 });
+      emulator.setCalendarStatus(acceptedId!, "connected");
+      await service.sync(pending.id);
+      expect((await listing(second)).connected).toBe(true);
+      await runAsTenant(second, () => service.disconnect(second));
+      expect(emulator.connectedCalendars()).toEqual([]);
+
+      const held = deferred<void>();
+      const pendingDisconnect = await authorize();
+      emulator.holdNextConnectionReply(held.promise);
+      const completing = pendingDisconnect.complete();
+      try {
+        await vi.waitFor(() => expect(emulator.connectedCalendars()).toHaveLength(1));
+        await runAsTenant(second, () => service.disconnect(second));
+      } finally {
+        held.resolve();
+        await completing;
+      }
+      expect(emulator.connectedCalendars()).toEqual([]);
+      expect((await listing(second)).connected).toBe(false);
+
+      const stale = randomUUID();
+      await runAsTenant(second, () =>
+        prisma.meetingCalendarConnection.create({
+          data: { ...second, id: stale, provider: emulator.provider.id, createdAt: clock },
+        }),
+      );
+      clock = new Date(clock.getTime() + 11 * 60_000);
+      await service.sync(stale);
+      const restart = await authorize();
+      emulator.loseNextConnectionReply();
+      await expect(restart.complete()).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
+      const [late] = emulator.connectedCalendars();
+      // Simulate an acceptance after recovery pruned the local reservation.
+      await runAsTenant(second, () =>
+        prisma.meetingCalendarConnection.deleteMany({ where: second }),
+      );
+      const change = emulator.change(late!);
+      expect(service.verifyChange(change.body, change.headers)).toMatchObject({
+        kind: "events",
+        calendarId: late,
+      });
+      await service.providerChanged(late!);
+      expect(emulator.connectedCalendars()).toEqual([]);
     } finally {
       await runAsSystem("clean calendar integration fixture", async () => {
         await prisma.meetingCalendarConnection.deleteMany({ where: { spaceId } });

@@ -24,7 +24,11 @@ export default function MeetingCalendarScreen() {
   const read = rpcQuery("meetingCalendar/upcoming", { botId });
   const { data, error, refetch } = useScreenQuery(read, { enabled: Boolean(botId) });
   const focused = useIsFocused();
-  useSpaceChanges("meetings", () => refetch({ cancelRefetch: false }), focused && Boolean(botId));
+  useSpaceChanges(
+    "meetingCalendar",
+    () => refetch({ cancelRefetch: false }),
+    focused && Boolean(botId),
+  );
   const save = useSave({
     stale: [read.queryKey, rpcQuery("meetings/list", { botId }).queryKey],
     save: async (action: Action, send) => {
@@ -123,6 +127,14 @@ export default function MeetingCalendarScreen() {
         <ActivityIndicator />
       ) : !data.available ? (
         <SettingsFooter>{t`Calendar scheduling is unavailable.`}</SettingsFooter>
+      ) : data.connecting ? (
+        <SettingsGroup label={t`Connecting calendar…`}>
+          <SettingsRow
+            title={t`Disconnect calendar`}
+            disabled={save.pending}
+            onPress={() => save.run({ kind: "disconnect" })}
+          />
+        </SettingsGroup>
       ) : !data.connected ? (
         <SettingsGroup
           footer={t`Connecting shares calendar access with the meeting service. You choose which meetings your bot joins.`}

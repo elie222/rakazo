@@ -49,6 +49,7 @@ import {
   MeetingCalendarService,
   MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -278,8 +279,8 @@ async function main() {
       oauthStateKey: resolveAuthSecret(),
       enabled: (spaceId) => meetings.enabled(spaceId),
       buildJoin: meetingMedia?.buildJoin ?? ((input) => input),
-      publish: async ({ spaceId }) => {
-        await events.publishSpaceChange?.(spaceId, "meetings");
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
       },
     });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
