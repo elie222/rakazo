@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { BLOCKED_ITEM_ANSWER } from "@rakazo/contracts";
+import { BLOCKED_ITEM_ANSWER, FULL_VAULT_ANSWER } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -93,6 +93,26 @@ test("renders masked secret card and saves without putting the value in chat", a
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card.getByText(BLOCKED_ITEM_ANSWER, { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "secret-card-blocked");
+  await page.unroute("**/rpc/threads/answer");
+
+  // The Vault filled up while the card waited: the card says the Vault is full, and what to do.
+  await page.route("**/rpc/threads/answer", (route) =>
+    route.fulfill({
+      status: 400,
+      json: {
+        json: { defined: false, code: "BAD_REQUEST", status: 400, message: FULL_VAULT_ANSWER },
+      },
+    }),
+  );
+  await secretField.fill(secretValue);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  // The server's text stays short for bots; the card says what to remove.
+  await expect(
+    card.getByText("Your Vault is full. Remove items you no longer need, then try again.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "secret-card-full");
   await page.unroute("**/rpc/threads/answer");
 
   await secretField.fill(secretValue);

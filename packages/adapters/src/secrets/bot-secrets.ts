@@ -30,6 +30,7 @@ import {
   encodeCardSecret,
   encodeContactSecret,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   GeneratedSecretRules,
   GenerateSecretInput,
   isPrivateNetworkHost,
@@ -116,7 +117,7 @@ export class VaultItemRefusedError extends ClientError {
 /** The vault already holds as many items as it may. */
 export class VaultFullError extends VaultItemRefusedError {
   constructor() {
-    super("Credential limit reached");
+    super(FULL_VAULT_ANSWER);
     this.name = "VaultFullError";
   }
 }
