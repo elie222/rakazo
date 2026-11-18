@@ -104,7 +104,7 @@ import { TOOL_CHOICE_CASES } from "../evals/suites/tool-choice-cases.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
-import { APPROVAL_OPTIONS, runApprovalSuite } from "./approval-eval.js";
+import { APPROVAL_OPTIONS, refuseApprovalOptions, runApprovalSuite } from "./approval-eval.js";
 import type { DisposablePostgres } from "./postgres.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
@@ -157,6 +157,7 @@ async function main() {
     return;
   }
   if (values.fresh && !store) throw new Error("--fresh only applies with --store");
+  refuseApprovalOptions(values);
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),

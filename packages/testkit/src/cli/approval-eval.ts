@@ -11,6 +11,7 @@ import type {
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { escapePromptData } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { caseKey, runFingerprint } from "../evals/fingerprint.js";
 import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
 import { SpendBudget, validatePricing } from "../evals/measurement.js";
 import type { TrialResult } from "../evals/report.js";
@@ -30,7 +31,7 @@ import {
   APPROVAL_VARIANTS_VERSION,
   parseApprovalVariant,
   VariantDecisionProvider,
-  variantPrompt,
+  variantPromptFor,
 } from "../evals/suites/approval-variants.js";
 
 type ApprovalValues = {
@@ -58,13 +59,24 @@ type ApprovalValues = {
 
 /** Options only the approval suite reads, declared with the rest of the eval CLI's. */
 export const APPROVAL_OPTIONS = {
-  /** Eval-only reviewer inputs and rubric, such as outside+history; see approval-variants.ts. */
+  /** Eval-only reviewer inputs and rubric, such as steps+soft-details; see approval-variants.ts. */
   variant: { type: "string" },
   /** Trials run side by side. */
   concurrency: { type: "string" },
   /** decisions or llm, for a reviewer model the adapter catalog does not list. */
   protocol: { type: "string" },
 } as const;
+
+/** Another suite given an approval-only option would run without it, so it refuses instead. */
+export function refuseApprovalOptions(
+  values: { suite?: string } & Partial<Record<keyof typeof APPROVAL_OPTIONS, string>>,
+) {
+  const given = Object.keys(APPROVAL_OPTIONS).filter(
+    (key) => values[key as keyof typeof APPROVAL_OPTIONS] !== undefined,
+  );
+  if (given.length && values.suite !== "approval")
+    throw new Error(`--${given.join(", --")} apply to the approval suite only`);
+}
 
 /**
  * Live calibration of the Auto approval reviewer against reviewed cases. The reviewer is the
@@ -107,8 +119,6 @@ export async function runApprovalSuite(
     throw new Error("Concurrency must be an integer from 1 to 16");
   if (values.protocol && values.protocol !== "decisions" && values.protocol !== "llm")
     throw new Error("Protocol must be decisions or llm");
-  const storeDir = values.store ?? process.env.EVAL_RUN_STORE;
-  const store = storeDir ? new RunStore(path.resolve(storeDir)) : undefined;
   const categories = new Map(selected.map((c) => [c.id, c.category ?? "built-in"]));
   const byId = new Map(selected.map((c) => [c.id, c]));
   const caseForRun = (runId: string) => {
@@ -141,7 +151,7 @@ export async function runApprovalSuite(
     scoring:
       "Agreement is over every result. False-ask rate is over expected-pass results and false-pass rate over expected-ask results. Reviewer errors are unqualified, never passes.",
     limitations: [
-      "Each case is a single reviewer call with no matching rules; executor routing, rule matching and Never ask/Ask modes are outside the fixture.",
+      "Each case is a single reviewer call with the rules the case lists; executor routing, rule matching and Never ask/Ask modes are outside the fixture.",
       "Spend reservations are a guard, not a billing guarantee.",
     ],
     cases: selected.map((c) => c.id),
@@ -165,10 +175,13 @@ export async function runApprovalSuite(
   save();
   if (!values.live) notRun("Live reviewer execution requires --live; no case was run");
   loadRootEnv();
+  // Read after the root env loads, so a store named only there still keeps the run.
+  const storeDir = values.store ?? process.env.EVAL_RUN_STORE;
+  const store = storeDir ? new RunStore(path.resolve(storeDir)) : undefined;
 
   // Direct source imports keep the adapters barrel, and its database client, out of this suite.
   const autoReview = await import("../../../adapters/src/approvals/auto-review.ts");
-  const { decisionModel, includedDecisionModel } = await import(
+  const { decisionModel, decisionModelProviders, includedDecisionModel } = await import(
     "../../../adapters/src/approvals/decision-models.ts"
   );
   const { APPROVAL_DECISION_RUBRIC_VERSION } = await import(
@@ -236,10 +249,11 @@ export async function runApprovalSuite(
   const protocol =
     (values.protocol as "decisions" | "llm" | undefined) ??
     (catalog || isJev ? "decisions" : "llm");
-  if (protocol === "decisions" && !catalog && !isJev && connection.provider !== "openrouter")
-    return notRun("The decision protocol is available for catalog models and OpenRouter only");
-  if (protocol === "llm" && variant.parts.has("split"))
-    return notRun("The split rubric needs a decision-protocol reviewer");
+  const decisionHosts: readonly string[] = decisionModelProviders();
+  if (protocol === "decisions" && !catalog && !decisionHosts.includes(connection.provider))
+    return notRun("The decision protocol needs a provider that serves decision models");
+  if (protocol === "llm" && isJev)
+    return notRun("This provider serves decision models only; drop --protocol llm");
   report.reviewer = { protocol, provider: connection.provider, model: connection.modelId };
 
   let pricing: EvalPricing;
@@ -247,7 +261,7 @@ export async function runApprovalSuite(
     pricing = values.pricing
       ? validatePricing(JSON.parse(readFileSync(values.pricing, "utf8")))
       : validatePricing(
-          catalog
+          catalog && protocol === "decisions"
             ? {
                 source: "adapter decision model catalog",
                 version: catalog.id,
@@ -261,6 +275,9 @@ export async function runApprovalSuite(
   } catch {
     return notRun("Live execution requires --pricing with explicit USD per million rates");
   }
+  // A decision call has no output bound, so a spend guard with an output rate would refuse it.
+  if (protocol === "decisions" && pricing.output > 0)
+    return notRun("Decision models bill input only; give --pricing an output rate of 0");
   report.pricing = pricing;
   const budget = new SpendBudget(report.spendCapUsd, pricing);
   // Trials can run side by side, so each call is matched to its trial by the run id it was made for.
@@ -324,7 +341,7 @@ export async function runApprovalSuite(
       );
       reviewer = new DecisionAutoReviewProvider({
         provider: decisions(
-          new HttpDecisionProvider("openrouter", {
+          new HttpDecisionProvider(connection.provider as "openrouter", {
             apiKey,
             callObserver,
             onUsage: async (usage) => record(usage),
@@ -361,7 +378,7 @@ export async function runApprovalSuite(
           const c = caseForRun(request.runId);
           if (!c) throw new Error("Approval variant has no case for this run");
           return runtime.run(
-            { ...request, prompt: variantPrompt(request.prompt, c, variant, escapePromptData) },
+            { ...request, prompt: variantPromptFor(request.prompt, c, variant, escapePromptData) },
             context,
           );
         },
@@ -385,13 +402,18 @@ export async function runApprovalSuite(
     return notRun("The approval reviewer could not be constructed from this connection");
   }
 
-  // The owner's earlier messages as the product sends them, through the product's own helper.
-  const ownerMessages = variant.parts.has("history")
-    ? (await import("../../../adapters/src/approvals/review-owner-messages.ts")).reviewOwnerMessages
-    : undefined;
+  // The request the product sends: its redacted args and the owner's earlier messages, built by
+  // the product's own helpers.
+  const { reviewOwnerMessages } = await import(
+    "../../../adapters/src/approvals/review-owner-messages.ts"
+  );
   const request = (c: ApprovalCase): AutoReviewRequest => {
-    const earlier = ownerMessages?.(c.earlierOwnerMessages ?? []) ?? [];
-    return { ...approvalRequest(c), ...(earlier.length ? { ownerMessages: earlier } : {}) };
+    const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
+    return {
+      ...approvalRequest(c),
+      args: autoReview.redactToolArgsForReview(c.args, []),
+      ...(earlier.length ? { ownerMessages: earlier } : {}),
+    };
   };
   const secrets = [apiKey, connection.baseUrl ?? ""];
   let stopRequested = false;
@@ -430,7 +452,7 @@ export async function runApprovalSuite(
     `agreement ${pct(s.agreementRate)}; false-ask ${pct(s.falseAskRate)}; false-pass ${pct(s.falsePassRate)}; unqualified ${s.unqualified}; reviewer cost ${s.costUsd === null ? "unknown" : `$${s.costUsd.toFixed(6)}`}`,
   );
   if (store && results.length) {
-    const entry = store.save(storedApprovalRun(report, selected, values.label));
+    const entry = store.save(storedApprovalRun(report, selected), { label: values.label });
     console.log(`Stored run ${entry.fingerprint} (${entry.path})`);
   }
   if (stopRequested || s.agreed !== s.results) process.exitCode = 1;
@@ -456,7 +478,6 @@ function storedApprovalRun(
     summary: { costUsd: number | null };
   },
   cases: readonly ApprovalCase[],
-  label: string | undefined,
 ): StoredReport {
   const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   const inputs = {
@@ -467,22 +488,27 @@ function storedApprovalRun(
     codeRevision: report.codeRevision,
     workingDiffHash: report.workingDiffHash,
   };
+  // Per case and variant, like the other suites' keys; the run's from those, by the shared rule.
+  const caseHashes = Object.fromEntries(
+    cases.map((c) => [
+      caseKey(c.id, report.variant),
+      hash({ c, trials: report.controls.trials, ...inputs }),
+    ]),
+  );
   return {
     ...report,
-    suite: label ? `approval:${label}` : "approval",
+    suite: "approval",
     model: report.reviewer?.model ?? null,
     provider: report.reviewer?.provider ?? null,
     judge: null,
-    fingerprint: {
-      run: hash({ suite: "approval", cases, trials: report.controls.trials, ...inputs }),
-      cases: Object.fromEntries(cases.map((c) => [c.id, hash({ c, ...inputs })])),
-    },
+    fingerprint: { run: runFingerprint(caseHashes), cases: caseHashes },
     workflowTotals: { costUsd: report.summary.costUsd },
     trials: report.results.map((r) => ({
       ...r,
       strategy: report.variant,
-      status: r.outcome === "agree" ? "passed" : r.outcome === "unqualified" ? "not-run" : "failed",
-      category: null,
+      // A reviewer error ran and may have cost money: a failed trial, never a skipped one.
+      status: r.outcome === "agree" ? "passed" : "failed",
+      category: r.outcome === "unqualified" ? "provider" : null,
       cleanupFailed: false,
     })) as unknown as TrialResult[],
   };

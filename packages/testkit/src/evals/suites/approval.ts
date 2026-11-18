@@ -1,4 +1,5 @@
 import type { AutoReviewProvider, AutoReviewRequest, AutoReviewResult } from "@rakazo/adapter-kit";
+import { ActionApprovalRuleSchema } from "@rakazo/contracts";
 import { z } from "zod";
 import { readCasesFile } from "../cases.js";
 import type { EvalPricing, MeasuredCall } from "../measurement.js";
@@ -13,17 +14,11 @@ import { measureCalls } from "../measurement.js";
 export const APPROVAL_FIXTURE_VERSION = "approval-cases-v4";
 
 export type ApprovalExpectation = "pass" | "ask";
-export const APPROVAL_RUN_KINDS = [
-  "chat",
-  "chat_app",
-  "routine",
-  "webhook",
-  "bot_message",
-] as const;
 /**
  * One reviewed situation. `userTask` is what today's reviewer sees as the owner's request (the
  * current message, or only the owner's own words in routine, webhook and delegated runs). The
- * optional situation fields describe the rest of the run; only context variants show them.
+ * optional situation fields describe the rest of the run: the owner's earlier messages reach the
+ * reviewer as the product sends them, and the steps variant shows earlier calls.
  */
 export const ApprovalCaseSchema = z
   .object({
@@ -36,36 +31,30 @@ export const ApprovalCaseSchema = z
     args: z.record(z.string(), z.unknown()),
     newSite: z.boolean().optional(),
     savedContextWrite: z.boolean().optional(),
-    /** How the run started. */
-    runKind: z.enum(APPROVAL_RUN_KINDS).optional(),
+    /** How the run started (chat, routine, webhook, another bot...); describes the case only. */
+    runKind: z.string().min(1).optional(),
     /** The owner's earlier messages in this conversation, oldest first; `userTask` is the latest. */
     earlierOwnerMessages: z.array(z.string()).optional(),
     /** What the bot did or read earlier in this run, oldest first; `outside` marks text the owner did not write. */
     runSteps: z
       .array(
-        z.object({
-          tool: z.string().min(1),
-          summary: z.string(),
-          outside: z.boolean().optional(),
-          /** What the tool returned, raw, as the product keeps it; facts are worked out from this. */
-          output: z.string().optional(),
-        }),
+        z
+          .object({
+            tool: z.string().min(1),
+            summary: z.string(),
+            outside: z.boolean().optional(),
+            /** What the tool returned, raw where the case has it; the steps variant shows this. */
+            output: z.string().optional(),
+          })
+          .strict(),
       )
       .optional(),
-    /** The tool's input schema, whose field descriptions say when an amount is in minor units. */
-    inputSchema: z.record(z.string(), z.unknown()).optional(),
     /** The owner's Allow and Block rules that match this call, as the product sends them. */
     matchingRules: z
       .array(
-        z.object({
-          effect: z.string().min(1),
-          matchKind: z.string().min(1),
-          matchValue: z.string(),
-        }),
+        ActionApprovalRuleSchema.pick({ effect: true, matchKind: true, matchValue: true }).strict(),
       )
       .optional(),
-    /** Outside text entered the run (a page, email, app data or someone else's message). Defaults to any outside step. */
-    outsideContent: z.boolean().optional(),
     expected: z.enum(["pass", "ask"]),
     why: z.string().min(1),
   })
@@ -80,24 +69,6 @@ export function loadApprovalCases(file: string): ApprovalCase[] {
       throw new Error(`Approval case ${i + 1} in --cases-file is invalid: ${parsed.error.message}`);
     return parsed.data;
   });
-}
-
-/** The outside text the case's run read, raw where the case has it, as the product would keep it. */
-export function caseReadContent(c: ApprovalCase): string {
-  return (c.runSteps ?? [])
-    .filter((step) => step.outside)
-    .map((step) => step.output ?? step.summary)
-    .join("\n");
-}
-
-/** Whether outside text entered the case's run, as the product would know it. */
-export function caseHasOutsideContent(c: ApprovalCase): boolean {
-  return (
-    c.outsideContent ??
-    (c.runSteps?.some((step) => step.outside) ||
-      c.runKind === "webhook" ||
-      c.runKind === "bot_message")
-  );
 }
 
 const assistant = "Personal assistant for the owner's email, calendar and chat.";
@@ -670,11 +641,15 @@ export function summarizeApproval(
 ): ApprovalSummary {
   const overall = summarizeResults(results);
   if (!categories) return overall;
-  const byCategory: Record<string, ReturnType<typeof summarizeResults>> = {};
-  for (const category of [...new Set(categories.values())].sort())
-    byCategory[category] = summarizeResults(
-      results.filter((r) => categories.get(r.caseId) === category),
-    );
+  // Own entries for every name, including one like "__proto__".
+  const byCategory: Record<string, ReturnType<typeof summarizeResults>> = Object.fromEntries(
+    [...new Set(categories.values())]
+      .sort()
+      .map((category) => [
+        category,
+        summarizeResults(results.filter((r) => categories.get(r.caseId) === category)),
+      ]),
+  );
   return { ...overall, byCategory };
 }
 

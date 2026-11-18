@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AutoReviewProvider, AutoReviewRequest, AutoReviewResult } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { deferred } from "@rakazo/core/test-async";
+import { describe, expect, it, vi } from "vitest";
 import type { MeasuredCall } from "../measurement.js";
 import type { ApprovalCase } from "./approval.js";
 import {
@@ -11,7 +12,6 @@ import {
   APPROVAL_FIXTURE_VERSION,
   approvalRequest,
   approvalTrialRunId,
-  caseHasOutsideContent,
   loadApprovalCases,
   runApprovalCases,
   summarizeApproval,
@@ -209,9 +209,17 @@ describe("approval cases file", () => {
       writeFileSync(file, `${JSON.stringify(extra)}\n`);
       const [loaded] = loadApprovalCases(file);
       expect(loaded).toEqual(extra);
-      expect(caseHasOutsideContent(loaded!)).toBe(true);
-      expect(caseHasOutsideContent({ ...loaded!, runSteps: [] })).toBe(false);
-      expect(caseHasOutsideContent({ ...loaded!, runSteps: [], runKind: "webhook" })).toBe(true);
+      // Nested objects reject unknown fields too, so a typo cannot silently drop a field.
+      writeFileSync(
+        file,
+        `${JSON.stringify({ ...extra, runSteps: [{ tool: "x", summary: "", outsid: true }] })}\n`,
+      );
+      expect(() => loadApprovalCases(file)).toThrow(/case 1/);
+      writeFileSync(
+        file,
+        `${JSON.stringify({ ...extra, matchingRules: [{ effect: "allow", matchKind: "tool", matchValue: "x" }] })}\n`,
+      );
+      expect(() => loadApprovalCases(file)).toThrow(/case 1/);
       writeFileSync(file, `${JSON.stringify({ ...extra, surprise: 1 })}\n`);
       expect(() => loadApprovalCases(file)).toThrow(/case 1/);
     } finally {
@@ -249,6 +257,9 @@ describe("approval cases file", () => {
 describe("approval trials side by side", () => {
   it("charges each trial only for the calls made under its own run id", async () => {
     const calls: Array<MeasuredCall & { runId: string }> = [];
+    // Case "a" is held open until the others have answered, so calls from different trials interleave.
+    const gate = deferred();
+    const answered: string[] = [];
     const reviewer: AutoReviewProvider = {
       describe: () => ({
         id: "scripted",
@@ -257,8 +268,8 @@ describe("approval trials side by side", () => {
         capabilities: { offline: true, keyless: true },
       }),
       review: async (request, context) => {
-        // Later cases answer first, so calls from different trials interleave.
-        await new Promise((resolve) => setImmediate(resolve));
+        if (request.userTask === "a") await gate.promise;
+        answered.push(request.userTask);
         calls.push({
           id: `${context.runId}-call`,
           runId: context.runId!,
@@ -269,7 +280,7 @@ describe("approval trials side by side", () => {
       },
     };
     const cases = [fixture("a", "pass"), fixture("bb", "pass"), fixture("ccc", "ask")];
-    const results = await runApprovalCases(cases, reviewer, {
+    const running = runApprovalCases(cases, reviewer, {
       trials: 2,
       timeoutMs: 5_000,
       concurrency: 4,
@@ -279,6 +290,10 @@ describe("approval trials side by side", () => {
         return mine;
       },
     });
+    await vi.waitFor(() => expect(answered).toHaveLength(4));
+    expect(answered).not.toContain("a");
+    gate.resolve();
+    const results = await running;
     expect(results).toHaveLength(6);
     for (const r of results) {
       expect(r.modelCalls).toBe(1);
@@ -330,6 +345,16 @@ describe("approval suite CLI", () => {
     );
     expect(output.trim().split("\n")).toHaveLength(APPROVAL_CASES.length);
     expect(output).toContain("email-asked-recipient: expected pass");
+  });
+
+  it("refuses approval-only options on other suites rather than ignoring them", () => {
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", cli, "--suite", "tool-choice", "--variant", "steps", "--list"],
+        { encoding: "utf8", stdio: "pipe", timeout: 20_000 },
+      ),
+    ).toThrow(/approval suite only/);
   });
 
   it("records a not-run report without --live", () => {
