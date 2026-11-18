@@ -55,26 +55,28 @@ export async function createDirectory(
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
       type Match = { id: string; emailVerified: boolean };
-      // Accounts store emails canonical and lowercased. The spelling sent comes first, so an
+      // Accounts store emails canonical and lowercased. The spelling sent is tried first, so an
       // account kept under it from before addresses were canonical is not taken for its twin.
       // One an older release wrote with capitals is found by case; two that differ only by
       // case are a conflict for the operator to resolve.
-      let exact: Match | null = null;
+      let existing: Match | undefined;
       for (const value of new Set([typed, email])) {
-        exact ??= await database.findOne<Match>({
+        const exact = await database.findOne<Match>({
           model: "user",
           where: [{ field: "email", value }],
         });
+        const [match, other] = exact
+          ? [exact]
+          : await database.findMany<Match>({
+              model: "user",
+              where: [{ field: "email", value, mode: "insensitive" }],
+              limit: 2,
+            });
+        if (other)
+          throw new APIError("CONFLICT", { message: "More than one account has this email" });
+        existing = match;
+        if (existing) break;
       }
-      const [existing, other] = exact
-        ? [exact]
-        : await database.findMany<Match>({
-            model: "user",
-            where: [{ field: "email", value: email, mode: "insensitive" }],
-            limit: 2,
-          });
-      if (other)
-        throw new APIError("CONFLICT", { message: "More than one account has this email" });
       if (!existing) return { action: "create" };
       // Only a proven mailbox is the directory's person: anyone could have signed up with the
       // address first.
@@ -98,13 +100,22 @@ export async function createDirectory(
       if (changed || !active) options.onAccountChange({ userId, active, changed });
     },
   };
+  // An address is saved canonical unless another account already holds that form: then it is
+  // an account kept under its own spelling, which stays as it is.
+  const storedEmail = async (address: string) => {
+    const email = canonicalEmail(address);
+    const typed = address.trim().toLowerCase();
+    if (typed === email) return email;
+    const twin = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    return twin ? typed : email;
+  };
   const userData = async (user: { email?: string; name?: string }) => {
     if (user.email && isMessagingEmail(user.email))
       throw new APIError("BAD_REQUEST", { message: "Email is not available" });
     return {
       data: {
         ...user,
-        ...(user.email ? { email: canonicalEmail(user.email) } : {}),
+        ...(user.email ? { email: await storedEmail(user.email) } : {}),
         ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
       },
     };

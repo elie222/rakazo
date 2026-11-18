@@ -6,10 +6,8 @@ describe("accountByEmail", () => {
     user: {
       findUnique: async ({ where }: { where: { email: string } }) =>
         emails.includes(where.email) ? { id: where.email } : null,
-      findMany: async ({ where }: { where: { OR: { email: { equals: string } }[] } }) =>
-        emails
-          .filter((email) => where.OR.some((clause) => clause.email.equals === email.toLowerCase()))
-          .map((id) => ({ id })),
+      findMany: async ({ where }: { where: { email: { equals: string } } }) =>
+        emails.filter((email) => email.toLowerCase() === where.email.equals).map((id) => ({ id })),
     },
   });
 
@@ -17,6 +15,8 @@ describe("accountByEmail", () => {
     const both = users(["cy@gmail.com", "cy@googlemail.com"]) as never;
     expect(await accountByEmail(both, "Cy@GoogleMail.com")).toEqual({ id: "cy@googlemail.com" });
     expect(await accountByEmail(both, "cy@gmail.com")).toEqual({ id: "cy@gmail.com" });
+    const kept = users(["Cy@GoogleMail.com", "cy@gmail.com"]) as never;
+    expect(await accountByEmail(kept, "cy@googlemail.com")).toEqual({ id: "Cy@GoogleMail.com" });
     const moved = users(["cy@gmail.com"]) as never;
     expect(await accountByEmail(moved, "cy@googlemail.com")).toEqual({ id: "cy@gmail.com" });
   });
