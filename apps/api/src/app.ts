@@ -600,8 +600,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
-      // Billing cancels inside, after the account's spaces are claimed and before anything is
-      // destroyed, so a provider failure aborts deletion with the account as it was.
+      // Calendar cleanup and billing run under the Space claims, before content teardown.
       await deleteAccountContent(
         {
           prisma,
@@ -620,7 +619,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         },
         userId,
       );
-      await meetingCalendar?.disconnectUser(userId);
       await removePiUserSessions(env.dataDir, userId);
       await pushTokens
         .remove(userId)

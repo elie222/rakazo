@@ -60,17 +60,16 @@ export async function deleteAccountContent(
 ): Promise<void> {
   const deadline = requestDeadline(DELETION_TIMEOUT_MS, "Account deletion timed out");
   let claim: Awaited<ReturnType<typeof claimSpacesLeavingWithAccount>> | undefined;
-  let stage = "billing" as "billing" | "teardown" | "done";
+  let stage = "preflight" as "preflight" | "teardown" | "done";
   let leaseSignal: AbortSignal | undefined;
   // Given up because someone joined: another deletion may claim them, and that is no takeover.
   const released = new Set<string>();
   /** Lets the next attempt start at once: nothing of this one is left running. */
   const handBack = async (taken: NonNullable<typeof claim>) => {
     const { claimId, attemptId, takenOver } = taken;
-    // Nothing was destroyed before billing finished, so the account stays as it was: give back
-    // only what this attempt claimed, keeping claims an earlier attempt left and other deletions'
-    // markers. From teardown on, a retry takes the claims over at once.
-    if (stage === "billing")
+    // Before teardown, give back only what this attempt claimed, keeping claims an earlier
+    // attempt left and other deletions' markers. From teardown on, a retry takes over at once.
+    if (stage === "preflight")
       await restoreSpaceDeletionClaims(deps.prisma, { claimId, attemptId }, takenOver);
     else await expireSpaceDeletionClaims(deps.prisma, { claimId, attemptId });
   };
@@ -89,6 +88,11 @@ export async function deleteAccountContent(
     // refused by it, so nobody joins after this passes.
     await assertNoOwnedOrganizationWithMembers(deps.prisma, userId);
     const { claimId, spaceIds } = claim;
+    lease.signal.throwIfAborted();
+    await disconnectMeetingCalendarsForDeletion(deps, { userId });
+    lease.signal.throwIfAborted();
+    await disconnectClaimedSpaceCalendars(deps, spaceIds);
+    lease.signal.throwIfAborted();
     // Cancel under the claims, so a checkout opened while another organization's cancellation
     // waits is refused by the deletion check instead of outliving the account.
     await deps.billing?.cancelForDeletedUser(userId);
@@ -99,7 +103,6 @@ export async function deleteAccountContent(
       lease.signal.throwIfAborted();
     }
     stage = "teardown";
-    await disconnectMeetingCalendarsForDeletion(deps, { userId });
     const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
     // Then leave other people's Spaces, so what this account made there passes to their owners
     // instead of being torn down with it. None of them is claimed above: each keeps another full
@@ -179,9 +182,9 @@ type OrganizationDeletionDeps = SpaceDeletionDeps & {
 };
 
 /**
- * Claiming hides the organization from the owner's list. Its subscriptions are cancelled before
- * anything is destroyed, and a billing failure releases the claim, so the organization stays as it
- * was; any later failure leaves the Spaces claimed, and deleting again, or the sweep once the lease
+ * Claiming hides the organization from the owner's list. Calendar cleanup and subscription
+ * cancellation run before content teardown, and a failure there releases a fresh claim.
+ * Any later failure leaves the Spaces claimed, and deleting again, or the sweep once the lease
  * lapses, finishes. One attempt at a time holds the organization's lease, and renewing it keeps
  * the Spaces' claim fresh too, since space and account deletion still judge a claim by its age.
  * Audit events keep no foreign key to their organization, so the record outlives it.
@@ -240,6 +243,8 @@ export async function deleteOrganization(
     // Work cut off by the deadline or a lost lease that resumes later starts nothing new: a later
     // attempt may own it.
     const stillLeased = () => lease.signal.throwIfAborted();
+    await disconnectClaimedSpaceCalendars(deps, spaceIds);
+    stillLeased();
     await keepOrganizationTrialUse(deps.prisma, organizationId);
     stillLeased();
     await deps.billing?.cancelForDeletedOrganization(organizationId);
@@ -331,6 +336,12 @@ export function finishStalledOrganizationDeletions(
     });
 }
 
+function disconnectClaimedSpaceCalendars(deps: SpaceDeletionDeps, spaceIds: string[]) {
+  return settleAll(
+    spaceIds.map((spaceId) => disconnectMeetingCalendarsForDeletion(deps, { spaceId })),
+  );
+}
+
 /** Tears down the bots and computers matched, then deletes the claimed Spaces and their files. */
 async function deleteClaimedSpaces(
   deps: SpaceDeletionDeps,
@@ -354,9 +365,6 @@ async function deleteClaimedSpaces(
   const context = (spaceId: string, botId?: string) =>
     adapterContext(input.operationId, input.userId, spaceId, botId, input.signal);
   input.signal?.throwIfAborted();
-  await settleAll(
-    input.spaceIds.map((spaceId) => disconnectMeetingCalendarsForDeletion(deps, { spaceId })),
-  );
   const bots = await deps.prisma.bot.findMany({
     where: input.bots,
     select: {
