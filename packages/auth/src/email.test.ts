@@ -299,4 +299,11 @@ it("asks for one thing in the model connection email: the connect step", async (
     unsubscribeUrl,
   ]);
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
+  const german = await modelConnectionEmail(
+    { name: "Ana", email: "user@example.test" },
+    { webOrigin: "https://app.example.test", unsubscribeUrl },
+    "de",
+  );
+  expect(german.subject).toBe("Verbinde ein Modell, um mit Rakazo loszulegen");
+  expect(german.text).toContain("Abo von ChatGPT oder Claude");
 });

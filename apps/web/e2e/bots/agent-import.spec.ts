@@ -405,8 +405,7 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
 
   const preview = panel.getByTestId("agent-import-preview");
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Bramble");
-  await expect(preview.getByTestId("agent-import-memory").getByRole("checkbox")).toHaveCount(3);
-  await expect(preview.getByRole("checkbox", { name: "grok-bot-routines.md" })).toBeChecked();
+  await expect(preview.getByTestId("agent-import-memory").getByRole("checkbox")).toHaveCount(2);
   const skill = preview.getByRole("checkbox", { name: "weekly-account-health" });
   const routine = preview.getByRole("checkbox", { name: "Monday review" });
   const webhookRoutine = preview.getByRole("checkbox", { name: "Triage issues" });
@@ -414,8 +413,10 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   await expect(skill).not.toBeChecked();
   await expect(routine).not.toBeChecked();
   await expect(webhookRoutine).not.toBeChecked();
-  // This server has no Slack, so that routine stays in the note.
-  await expect(preview.getByRole("checkbox", { name: "Support pings" })).toHaveCount(0);
+  // This server has no Slack, so that routine is left for the bot to set up in chat.
+  await expect(
+    preview.getByTestId("agent-import-leftovers").getByRole("checkbox", { name: "Support pings" }),
+  ).toBeChecked();
   const routinesSection = preview.getByTestId("agent-import-routines");
   await expect(routinesSection).toContainText("Point its source at the new webhook");
   await expect(routinesSection).toContainText("Needs an email address");
@@ -438,11 +439,8 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   const botId = activeBotId(page);
   expect((await rpc<Bot>(page, "bots/get", { botId })).instructions).toBe("Keep replies short.");
   const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId });
-  expect(memory.map((doc) => doc.path).sort()).toEqual([
-    "MEMORY.md",
-    "USER.md",
-    "grok-bot-routines.md",
-  ]);
+  expect(memory.map((doc) => doc.path).sort()).toEqual(["MEMORY.md", "USER.md"]);
+  await expect(page.getByText("The import could not set these up:").first()).toBeVisible();
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.map((item) => item.name)).toContain("weekly-account-health");
   const routines = await rpc<Routine[]>(page, "routines/list", { botId });

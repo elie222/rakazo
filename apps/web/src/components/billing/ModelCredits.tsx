@@ -59,6 +59,7 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { InfoTooltip } from "../InfoTooltip";
+import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
@@ -855,6 +856,7 @@ export function ModelCreditsSettings({
               </Trans>
             </p>
           ) : null}
+          {status.canManage ? <ComputerUsage /> : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
