@@ -123,15 +123,18 @@ describe("posting into a group", () => {
 });
 
 describe("finding the group to post into", () => {
-  function prismaWith(groups: unknown[]) {
-    const findMany = vi.fn(async (_args: unknown) => groups);
-    return { prisma: { chatGroup: { findMany } } as unknown as PrismaClient, findMany };
+  function prismaWith(joined: unknown[], exists = false) {
+    const findMany = vi.fn(async (_args: unknown) => joined);
+    const findFirst = vi.fn(async (_args: unknown) => (exists ? { id: "group-x" } : null));
+    return {
+      prisma: { chatGroup: { findMany, findFirst } } as unknown as PrismaClient,
+      findMany,
+    };
   }
   const joined = (id: string, threadId = `thread-${id}`) => ({
     id,
     name: "Launch",
     thread: { id: threadId },
-    members: [{ id: "m" }],
   });
 
   it("finds a group the bot belongs to by exact name", async () => {
@@ -143,7 +146,12 @@ describe("finding the group to post into", () => {
     });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ spaceId: "space-1", name: "Launch", archivedAt: null }),
+        where: expect.objectContaining({
+          spaceId: "space-1",
+          name: "Launch",
+          archivedAt: null,
+          members: { some: { botId: "bot-a", bot: { archivedAt: null } } },
+        }),
       }),
     );
   });
@@ -153,9 +161,7 @@ describe("finding the group to post into", () => {
       findPostableGroup(prismaWith([]).prisma, run, { groupName: "Nope" }),
     ).resolves.toEqual({ error: 'no group named "Nope"' });
     await expect(
-      findPostableGroup(prismaWith([{ ...joined("group-1"), members: [] }]).prisma, run, {
-        groupId: "group-1",
-      }),
+      findPostableGroup(prismaWith([], true).prisma, run, { groupId: "group-1" }),
     ).resolves.toEqual({ error: "you are not a member of that group" });
     await expect(
       findPostableGroup(prismaWith([joined("group-1"), joined("group-2")]).prisma, run, {

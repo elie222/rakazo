@@ -28,30 +28,26 @@ export async function findPostableGroup(
 ): Promise<{ error: string } | { id: string; name: string }> {
   if (ref.groupId && ref.groupName) return { error: "pass group_id or group_name, not both" };
   if (!ref.groupId && !ref.groupName) return { error: "pass group_id or group_name" };
-  const groups = await prisma.chatGroup.findMany({
-    where: {
-      spaceId: run.spaceId,
-      archivedAt: null,
-      thread: { isNot: null },
-      ...(ref.groupId ? { id: ref.groupId } : { name: ref.groupName }),
-    },
-    select: {
-      id: true,
-      name: true,
-      thread: { select: { id: true } },
-      members: { where: { botId: run.botId, bot: { archivedAt: null } }, select: { id: true } },
-    },
-    take: 10,
+  const named = {
+    spaceId: run.spaceId,
+    archivedAt: null,
+    thread: { isNot: null },
+    ...(ref.groupId ? { id: ref.groupId } : { name: ref.groupName }),
+  };
+  const joined = await prisma.chatGroup.findMany({
+    where: { ...named, members: { some: { botId: run.botId, bot: { archivedAt: null } } } },
+    select: { id: true, name: true, thread: { select: { id: true } } },
+    take: 2,
   });
-  if (!groups.length) {
+  if (joined.length > 1) {
+    return { error: `more than one of your groups is named "${ref.groupName}"; pass group_id` };
+  }
+  if (!joined.length) {
+    const exists = await prisma.chatGroup.findFirst({ where: named, select: { id: true } });
+    if (exists) return { error: "you are not a member of that group" };
     return {
       error: ref.groupId ? "no group with that id" : `no group named "${ref.groupName}"`,
     };
-  }
-  const joined = groups.filter((group) => group.members.length > 0);
-  if (!joined.length) return { error: "you are not a member of that group" };
-  if (joined.length > 1) {
-    return { error: `more than one of your groups is named "${ref.groupName}"; pass group_id` };
   }
   const group = joined[0]!;
   if (group.thread?.id === run.threadId) {
