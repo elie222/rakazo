@@ -33,6 +33,7 @@ import type { ModelCredential } from "../../lib/models/model-auth";
 import { useSpaceQueries } from "../../lib/query/query";
 import { CompatibleModelFields } from "./compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./connection-controls";
+import { DeploymentModelSettingsPanel } from "./DeploymentModelSettingsPanel";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { ModelSettingsPanel } from "./model-settings-panel";
@@ -432,6 +433,9 @@ export function ModelSettingsOverlay({
               onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
               panel={connectionAt === "computer" ? panelFor(true) : null}
             />
+          ) : null}
+          {scope === "account" && me.isAdmin && !me.billingEnabled ? (
+            <DeploymentModelSettingsPanel providerLabel={providerLabel} />
           ) : null}
           {scope === "space" || firstConnection ? null : (
             <ProvidersSection

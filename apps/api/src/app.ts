@@ -498,8 +498,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     create: {
       id: "default",
       modelCreditsEnabled,
+      sharedModelDisabled: Boolean(billing),
     },
-    update: { modelCreditsEnabled },
+    update: { modelCreditsEnabled, sharedModelDisabled: Boolean(billing) },
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,

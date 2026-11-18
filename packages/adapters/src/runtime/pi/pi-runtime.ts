@@ -413,12 +413,14 @@ export class PiAgentRuntime implements AgentRuntime {
         }
 
         let contextPolicy = createRuntimeContextPolicy(request, context, {
-          credentialScope: apiKey,
+          credentialScope: request.model.resolveApiKey ? request.model.connectionId : apiKey,
           imageTokens: estimatePiImageTokens,
         });
         const contextPolicyFor = (target: RuntimeModelTarget) =>
           createRuntimeContextPolicy({ ...request, model: target.config }, context, {
-            credentialScope: target.credentials?.accessToken ?? target.apiKey,
+            credentialScope: target.config.resolveApiKey
+              ? target.config.connectionId
+              : (target.credentials?.accessToken ?? target.apiKey),
             imageTokens: estimatePiImageTokens,
           });
         let sentContext: { context: Context; sourceLength: number } | undefined;

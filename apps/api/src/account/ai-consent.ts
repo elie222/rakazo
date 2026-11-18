@@ -8,6 +8,7 @@ import {
   parseModelSecret,
   resolveMemberMainModel,
   selectConfiguredModel,
+  sharedDeploymentModel,
   toStringRecord,
 } from "@rakazo/adapters";
 import type {
@@ -137,7 +138,11 @@ export async function aiConsentStatus(
           overrideCredential,
           main,
           hostedProvider: deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
-          defaults: { settings, deployment },
+          defaults: {
+            settings,
+            deployment,
+            shared: sharedDeploymentModel(settings, !deps.billing),
+          },
         });
       }),
     );

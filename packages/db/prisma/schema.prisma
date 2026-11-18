@@ -810,6 +810,12 @@ model DeploymentSettings {
   defaultModelProvider            String?
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
+  sharedModelProvider             String?
+  sharedModelId                   String?
+  sharedModelMethod               String?
+  sharedModelRevision             String?
+  sharedModelCipher               String?
+  sharedModelDisabled             Boolean  @default(false)
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
   computerProvider                String?

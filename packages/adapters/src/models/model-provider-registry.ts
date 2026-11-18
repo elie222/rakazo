@@ -26,6 +26,11 @@ export interface ModelProviderDefinition {
   };
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
+  sharedApiKey?: boolean;
+  sharedOAuth?: (
+    config: unknown,
+    signal: AbortSignal,
+  ) => Promise<{ key: string; expiresAt: number }>;
   /** Optional authenticated recovery of a dispatched request. */
   usageLookup?: (apiKey: string) => ModelUsageLookup;
   /** Host credentials it can run on instead of a key, e.g. "AWS IAM". */
@@ -56,7 +61,15 @@ export const modelProviders = {
         "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
     },
   },
-  openai: { recommendedModel: "gpt-6-luna" },
+  openai: {
+    recommendedModel: "gpt-6-luna",
+    sharedApiKey: true,
+    sharedOAuth: async (config, signal) =>
+      (await import("../providers/model/openai/workload-identity.js")).exchangeWorkloadIdentity(
+        config,
+        signal,
+      ),
+  },
   openrouter: {
     usageLookup: (apiKey: string) => new OpenRouterUsageLookup(apiKey),
     recommendedModel: "anthropic/claude-haiku-5.5",

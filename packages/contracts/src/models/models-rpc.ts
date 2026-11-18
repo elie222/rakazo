@@ -22,6 +22,7 @@ import {
   ModelRoleUpdateSchema,
   ModelRoleViewSchema,
 } from "./model-roles.js";
+import { SharedModelInputSchema, SharedModelSettingsSchema } from "./shared-model.js";
 import {
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
@@ -31,6 +32,10 @@ import {
 
 export const modelsRpc = {
   models: {
+    sharedDeployment: oc.output(SharedModelSettingsSchema),
+    setSharedDeployment: oc
+      .input(SharedModelInputSchema.nullable())
+      .output(z.object({ ok: z.literal(true) })),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

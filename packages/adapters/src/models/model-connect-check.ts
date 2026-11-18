@@ -31,10 +31,17 @@ export async function verifyModelServesAgents(
     AgentRunModel,
     "provider" | "id" | "apiKey" | "accountId" | "gatewayId" | "projectId" | "region" | "maxTokens"
   >,
-  options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {},
+  options: {
+    fetch?: typeof globalThis.fetch;
+    signal?: AbortSignal;
+    requireAccepted?: boolean;
+  } = {},
 ): Promise<void> {
   const { models, model, apiKey } = resolveRuntimeModel(config);
-  if (!model || !apiKey) return;
+  if (!model || !apiKey) {
+    if (options.requireAccepted) throw new Error("This model could not be resolved");
+    return;
+  }
   const accepted = new AbortController();
   const signal = AbortSignal.any([
     accepted.signal,
@@ -66,6 +73,7 @@ export async function verifyModelServesAgents(
   }
   if (accepted.signal.aborted) return;
   options.signal?.throwIfAborted();
+  if (options.requireAccepted) throw new Error("The provider did not accept the model request");
   const result = await stream.result();
   if (result.stopReason !== "error" || !result.errorMessage) return;
   const failure = normalizeRunError(result.errorMessage);

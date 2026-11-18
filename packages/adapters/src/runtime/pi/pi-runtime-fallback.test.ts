@@ -737,6 +737,44 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
+  it("authorizes a deployment model at dispatch and stops sending after revocation", async () => {
+    const input = request();
+    delete input.fallbackModels;
+    delete input.model.apiKey;
+    const revoked = "The deployment model connection changed. Start a new run.";
+    const register = vi.fn();
+    input.registerModelSecrets = register;
+    input.model.resolveApiKey = vi
+      .fn<NonNullable<typeof input.model.resolveApiKey>>()
+      .mockImplementationOnce(async (registerSecrets) => {
+        registerSecrets?.(["shared-bearer"]);
+        return "shared-bearer";
+      })
+      .mockRejectedValueOnce(new Error(revoked));
+    const first = new AssistantMessageEventStream();
+    providerState.stream.mockReturnValue(first);
+    const initialRun = run(input);
+    await vi.waitFor(() => expect(providerState.stream).toHaveBeenCalledOnce());
+    expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({
+      apiKey: "shared-bearer",
+      maxRetries: 0,
+    });
+    expect(register).toHaveBeenCalledBefore(providerState.stream);
+    expect(register).toHaveBeenCalledWith(["shared-bearer"]);
+    const agentOptions = providerState.agentOptions!;
+    const second = await agentOptions.streamFn(
+      primary,
+      { messages: [] } as unknown as TranscriptContext,
+      {},
+    );
+    expect(await second.result()).toMatchObject({ stopReason: "error", errorMessage: revoked });
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    const reply = message(primary, [{ type: "text", text: "Ready" }], "stop");
+    first.push({ type: "done", reason: "stop", message: reply });
+    first.end(reply);
+    await initialRun;
+  });
+
   it("preserves OAuth getApiKey behavior with no backup list", async () => {
     const input = request();
     delete input.fallbackModels;

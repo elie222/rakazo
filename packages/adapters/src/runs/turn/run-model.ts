@@ -52,6 +52,11 @@ import {
   validateModelAuthAvailability,
 } from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
+import type { SharedDeploymentModel } from "../../models/shared-deployment-model.js";
+import {
+  sharedDeploymentModel,
+  sharedModelRequestCredential,
+} from "../../models/shared-deployment-model.js";
 import { codexLiveModel } from "../../runtime/pi/models/pi-codex-catalog.js";
 import { LOCAL_PROVIDER_ID } from "../../runtime/pi/models/pi-local-provider.js";
 import {
@@ -111,6 +116,7 @@ export async function fleetPrepareDeps(
           hostedProvider,
           defaults: {
             settings,
+            shared: sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps))),
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
           },
         });
@@ -169,7 +175,8 @@ export async function modelCreditBillingEnabled(
 
 export async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
   const [deps, userId, spaceId, , provider] = args;
-  const operatorFunded = args[7]?.operatorFunded === true;
+  const shared = args[7]?.deploymentConnection;
+  const operatorFunded = args[7]?.operatorFunded === true || !!shared;
   if (operatorFunded && (args[3] || args[7]?.creditOfferingId || args[7]?.requireStoredSecret))
     throw new UnavailableModelForAuthError("Conflicting model funding sources");
   const billingEnabled = !operatorFunded && (await modelCreditBillingEnabled(deps));
@@ -209,10 +216,12 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!credential && deployment.provider === provider && deployment.hostCredentials);
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
-    material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
+    !material.resolveApiKey &&
+    material.apiKey === undefined &&
+    (provider === "openrouter" || provider === "scripted")
       ? process.env.OPENROUTER_API_KEY
       : undefined;
-  if (!material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
+  if (!material.resolveApiKey && !material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
     throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
   }
   const apiKey = material.apiKey ?? runtimeKey;
@@ -229,7 +238,11 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     apiKey,
     redact: [...new Set([...material.redact, ...(apiKey ? [apiKey] : [])])],
     callObserver,
-    connectionId: fundingOfferingId ? `credits:${fundingOfferingId}` : credential?.id,
+    connectionId: shared
+      ? `deployment:${shared.revision}`
+      : fundingOfferingId
+        ? `credits:${fundingOfferingId}`
+        : credential?.id,
   };
 }
 
@@ -250,9 +263,16 @@ async function resolveModelKeyMaterial(
   {
     requireStoredSecret = false,
     operatorFunded = false,
-  }: { requireStoredSecret?: boolean; creditOfferingId?: string; operatorFunded?: boolean } = {},
+    deploymentConnection,
+  }: {
+    requireStoredSecret?: boolean;
+    creditOfferingId?: string;
+    operatorFunded?: boolean;
+    deploymentConnection?: SharedDeploymentModel;
+  } = {},
 ): Promise<{
   apiKey?: string;
+  resolveApiKey?: AgentRunRequest["model"]["resolveApiKey"];
   accountId?: string;
   gatewayId?: string;
   projectId?: string;
@@ -279,6 +299,22 @@ async function resolveModelKeyMaterial(
   ownCredential?: true;
   redact: string[];
 }> {
+  if (deploymentConnection) {
+    if (provider !== deploymentConnection.provider || modelId !== deploymentConnection.modelId)
+      throw new UnavailableModelForAuthError(
+        "The deployment model connection changed. Start a new run.",
+      );
+    return {
+      resolveApiKey: (register) =>
+        sharedModelRequestCredential(
+          deps.prisma,
+          deps.secretStore,
+          deploymentConnection,
+          register ?? registerSecrets,
+        ),
+      redact: [],
+    };
+  }
   if (credential) {
     if (canonicalPiProviderId(credential.provider) !== canonicalPiProviderId(provider))
       throw new UnavailableModelForAuthError("Model connection does not match provider");
@@ -434,6 +470,7 @@ export function resolvedModelRunFields(
   return {
     connectionId: resolved.connectionId,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
+    resolveApiKey: resolved.resolveApiKey,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
@@ -473,6 +510,29 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
+  if (credentialId?.startsWith("deployment:")) {
+    const shared = sharedDeploymentModel(
+      await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+      !(await modelCreditBillingEnabled(deps)),
+    );
+    if (!shared || credentialId !== `deployment:${shared.revision}`)
+      throw new UnavailableModelForAuthError(
+        "The deployment model connection changed. Start a new run.",
+      );
+    return {
+      credential: null,
+      resolved: await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        provider,
+        modelId,
+        registerSecrets,
+        { deploymentConnection: shared },
+      ),
+    };
+  }
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(
@@ -598,6 +658,7 @@ export async function resolveRunModel(
       : undefined,
     defaults: {
       settings,
+      shared: sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps))),
       deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
     },
   });
@@ -619,6 +680,8 @@ export async function resolveRunModel(
     id,
     undefined,
     {
+      deploymentConnection:
+        "deploymentConnection" in selected ? selected.deploymentConnection : undefined,
       creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
       requireStoredSecret: Boolean(
         selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

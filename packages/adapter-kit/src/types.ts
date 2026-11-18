@@ -604,6 +604,8 @@ export interface AgentRunModel {
   /** Opaque id of the stored connection serving it, so a model can fall back to another account. */
   connectionId?: string;
   apiKey?: string;
+  /** Resolves a deployment-owned credential at each model dispatch. */
+  resolveApiKey?: (registerSecrets?: (values: string[]) => void) => Promise<string>;
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
@@ -655,6 +657,8 @@ export type AgentContextStrategy = "current" | "retrieval" | "snapshots" | "cach
 export const DEFAULT_CONTEXT_STRATEGY: AgentContextStrategy = "retrieval";
 
 export interface AgentRunRequest {
+  /** Updates output redaction before a late-resolved model credential reaches a provider. */
+  registerModelSecrets?: (values: string[]) => void;
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   contextStrategy?: AgentContextStrategy;

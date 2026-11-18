@@ -36,6 +36,7 @@ import {
   pinnedModelCredentialError,
 } from "../../models/model-selection.js";
 import { modelAcceptsImageInput } from "../../models/model-vision.js";
+import { sharedDeploymentModel } from "../../models/shared-deployment-model.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
@@ -118,6 +119,7 @@ export async function startTurnModel(
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
   const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
+  const shared = sharedDeploymentModel(settings, !(await modelCreditBillingEnabled(deps)));
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
   const pinError =
     !pinnedComputerModels &&
@@ -146,7 +148,7 @@ export async function startTurnModel(
         hostedProvider: (await modelCreditBillingEnabled(deps))
           ? resolveDeploymentModel().provider
           : undefined,
-        defaults: { settings, deployment: runDeployment },
+        defaults: { settings, deployment: runDeployment, shared },
       });
   const selectedProvider = selected.provider ?? runtimeFallback?.provider;
   const selectedModelId = selected.id ?? runtimeFallback?.id;
@@ -199,6 +201,8 @@ export async function startTurnModel(
       id: selectedModelId,
       credential: selected.credential,
       connectionId: selected.connectionId,
+      deploymentConnection:
+        "deploymentConnection" in selected ? selected.deploymentConnection : undefined,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,

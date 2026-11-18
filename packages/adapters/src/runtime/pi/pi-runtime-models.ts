@@ -128,14 +128,15 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   if (model && !listed && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     model = withModelCapabilities(model, modelConfig);
   }
-  const apiKey = modelConfig.oauth
-    ? undefined
-    : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? modelConfig.apiKey || "local"
-      : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-        // another provider would ship our key to a vendor it was not issued for.
-        (modelConfig.apiKey ??
-        (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+  const apiKey =
+    modelConfig.oauth || modelConfig.resolveApiKey
+      ? undefined
+      : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? modelConfig.apiKey || "local"
+        : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
+          // another provider would ship our key to a vendor it was not issued for.
+          (modelConfig.apiKey ??
+          (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
   if (model) model = withVertexRouting(model, modelConfig);
   return { provider, modelId, models, model, apiKey, credentials };
 }

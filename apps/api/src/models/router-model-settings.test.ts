@@ -20,6 +20,7 @@ describe("model setup gate", () => {
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
+    sharedModel?: boolean;
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
@@ -40,15 +41,21 @@ describe("model setup gate", () => {
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            options.deploymentModelCredentialCipher
+        findUnique: vi.fn().mockResolvedValue(
+          options.sharedModel
+            ? {
+                sharedModelProvider: "anthropic",
+                sharedModelId: "test-model",
+                sharedModelMethod: "api_key",
+                sharedModelRevision: "test-revision",
+                sharedModelCipher: "test-ciphertext",
+              }
+            : options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
               : options.savedDeploymentModel
                 ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
                 : null,
-          ),
+        ),
       },
     } as unknown as PrismaClient;
     const deps = {
@@ -216,6 +223,18 @@ describe("model setup gate", () => {
     await expect(withKey.json()).resolves.toEqual({
       json: expect.objectContaining({ hostCredentialProvider: null, hostCredentialSource: null }),
     });
+  });
+
+  it("lets a member use a shared deployment model without giving them its credentials", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "pi", sharedModel: true });
+    const response = await call(handler, actor, "me", null);
+    expect(await response.json()).toMatchObject({
+      json: { needsModel: false, defaultProvider: "anthropic", defaultModel: "test-model" },
+    });
+    const settings = await call(handler, actor, "models/sharedDeployment", null);
+    expect(settings.status).toBe(403);
+    const save = await call(handler, actor, "models/setSharedDeployment", null);
+    expect(save.status).toBe(403);
   });
 
   it("does not accept a stored deployment cipher the executor cannot use", async () => {

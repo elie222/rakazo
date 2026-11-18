@@ -415,7 +415,12 @@ export function fallbackAwareModelStream(
         }
         // Never borrow the primary or process-wide key for a backup. Production resolves
         // each candidate lazily from the authenticated user's Space-scoped credential store.
-        if (!config.apiKey && !config.oauth && config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+        if (
+          !config.apiKey &&
+          !config.resolveApiKey &&
+          !config.oauth &&
+          config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
+        ) {
           skip("No credential is available for the backup model.");
           continue;
         }
@@ -571,13 +576,14 @@ export function fallbackAwareModelStream(
         }
       }
       try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
+        const freshApiKey = await target.config.resolveApiKey?.(state.request.registerModelSecrets);
+        const apiKey = freshApiKey ?? target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
           sentTarget,
           requestContext(),
           // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
-          state.request.fallbackModels?.length
+          state.request.fallbackModels?.length || target.config.resolveApiKey
             ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
             : thinkingOverride
               ? { ...attemptOptions, reasoning }
