@@ -785,7 +785,7 @@ async function main() {
           if (plan.kind === "run" || !plan.trials.some((t) => t.trial === planned.trial))
             return true;
           stored.plan = plan;
-          return false;
+          return liveBudget.refuse();
         },
         scenario,
       );
@@ -827,7 +827,8 @@ async function main() {
                     cacheWriteRetention,
                     maxCostUsd,
                   }) => {
-                    if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
+                    if (!acceptingCalls || stored.plan)
+                      throw new Error("Eval trial stopped scheduling inference");
                     if (provider === connection.provider && modelId === connection.modelId)
                       return liveBudget.reserve(
                         inputTokensEstimate,
