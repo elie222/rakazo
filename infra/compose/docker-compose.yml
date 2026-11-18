@@ -551,6 +551,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
       RUN_DRAIN_ENABLED:
     volumes:

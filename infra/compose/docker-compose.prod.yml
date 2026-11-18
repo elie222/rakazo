@@ -617,6 +617,7 @@ services:
       replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
       # A stopping worker ends the turns it is running before it hands them back, which fits
       # inside stop_grace_period. The deploy starts its replacement first, so nothing waits.
