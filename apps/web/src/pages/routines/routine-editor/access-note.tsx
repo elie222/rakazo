@@ -1,14 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 
-/** "Runs as Dana" or "Runs as you": whose accounts and approval rules a routine's runs use. */
+/** "Runs as Dana", only for another member's routine: whose accounts and approval rules its runs use. */
 export function RunsAsLabel({ routine }: { routine: Routine }) {
   const { t } = useLingui();
-  if (!routine.runsAs) return null;
+  if (!routine.runsAs || routine.runsAs.isViewer) return null;
   const name = routine.runsAs.name;
   return (
     <span data-testid="routine-runs-as" className="truncate" dir="auto">
-      {routine.runsAs.isViewer ? t`Runs as you` : t`Runs as ${name}`}
+      {t`Runs as ${name}`}
     </span>
   );
 }

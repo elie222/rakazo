@@ -125,7 +125,7 @@ it("offers no switch to restart a one-shot that already ran", async () => {
   expect(toggle?.hasAttribute("data-disabled")).toBe(true);
 });
 
-it("says who a routine runs as, and 'you' for the viewer's own", async () => {
+it("says who a routine runs as only when it is another member's", async () => {
   await render({
     routines: [
       { ...routine(1), runsAs: { name: "Dana", isViewer: false } },
@@ -138,5 +138,5 @@ it("says who a routine runs as, and 'you' for the viewer's own", async () => {
     [...container.querySelectorAll('[data-testid="routine-runs-as"]')].map(
       (node) => node.textContent,
     ),
-  ).toEqual(["Runs as Dana", "Runs as you"]);
+  ).toEqual(["Runs as Dana"]);
 });
