@@ -19,7 +19,7 @@ export function chatAppConnectNote(
     return `${apps} They set that up themselves in Settings, under Messaging.`;
   return [
     apps,
-    "They set that up themselves in Settings, under Messaging; connect_app does not do it, it only gives you tools to read and act in an app.",
+    "They set that up themselves in Settings, under Messaging. The connect card you can show does not do it; it only gives you tools to read and act in an app.",
     "When someone asks to connect one of these, or to talk to you from it, tell them which of the two fits what they want, and ask if you cannot tell.",
   ].join(" ");
 }

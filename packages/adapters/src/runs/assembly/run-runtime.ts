@@ -224,8 +224,7 @@ type SetByRunRuntime =
   | "inboundEmailDomain"
   | "maxUploadSizeBytes"
   | "messaging"
-  | "messagingDelivery"
-  | "web";
+  | "messagingDelivery";
 
 /** The run executor and the background job handlers that drive it. */
 export function createRunRuntime(
@@ -310,7 +309,7 @@ export function createRunRuntime(
         }
       : undefined,
     messagingDelivery,
-    web: createWebProvider(),
+    web: executorDeps.web ?? createWebProvider(),
   });
   const jobHandlers = createBackgroundJobHandlers({
     executor,

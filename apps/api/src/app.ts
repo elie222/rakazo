@@ -14,6 +14,7 @@ import type {
   RealtimeFanout,
   SandboxProvider,
   TransactionalEmailProvider,
+  WebProvider,
 } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
@@ -267,6 +268,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   userDevices?: UserDeviceGateway;
   /** Test-only present moment the agent is told. */
   now?: () => Date;
+  /** Test-only web search and fetch. */
+  web?: WebProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -289,6 +292,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    web,
     now,
     ...envOverrides
   } = overrides;
@@ -715,6 +719,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
+      web,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
