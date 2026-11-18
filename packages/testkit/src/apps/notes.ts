@@ -289,7 +289,13 @@ export class NotesEmulator extends AppEmulator {
       url: this.url(page.id, page.title),
       parent: this.parentOf(page.parentId),
       last_edited_time: page.edited,
+      ...this.editor(page),
     };
+  }
+
+  /** Who last edited a page, as notes services report it: a user object with a name. */
+  private editor(page: Page) {
+    return page.editedBy ? { last_edited_by: { object: "user", name: page.editedBy } } : {};
   }
 
   private row(page: Page) {
@@ -298,7 +304,7 @@ export class NotesEmulator extends AppEmulator {
       url: this.url(page.id, page.title),
       properties: page.properties,
       last_edited_time: page.edited,
-      ...(page.editedBy ? { last_edited_by: page.editedBy } : {}),
+      ...this.editor(page),
     };
   }
 

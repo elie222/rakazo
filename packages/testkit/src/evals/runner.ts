@@ -624,7 +624,7 @@ export async function runTrial(
       }
       if ("clear" in step) {
         await Promise.all([captureTools(), captureUsage()]);
-        await rpc(app, cookie, "threads/clear", { botId });
+        await rpc(app, cookie, "threads/clear", threadOf(botId, group));
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
@@ -1549,6 +1549,10 @@ async function waitForMessagingDelivery(
 function actorScopes(actors: readonly EvalActor[]) {
   return actors.map(({ userId, spaceId }) => ({ userId, spaceId }));
 }
+
+/** The thread a case talks in: its group's for a group case, otherwise the bot's direct chat. */
+export const threadOf = (botId: string, group?: { id: string }) =>
+  group ? { groupId: group.id } : { botId };
 
 async function findScopeBots(
   prisma: EvalApp["prisma"],
