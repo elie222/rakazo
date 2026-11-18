@@ -363,7 +363,7 @@ describe("development backup failures", () => {
     if (hasEnv) expect(f.commands()[0]).toContain(path.join(f.checkout, ".env"));
   });
 
-  it.each(["", ".", "..", "../data", "link/snapshot"])(
+  it.each(["", ".", "..", ".pending", "../data", "link/snapshot"])(
     "rejects unsafe stamp %j without changing contents or modes",
     (stamp) => {
       const f = fixture();
@@ -432,9 +432,14 @@ describe("development backup failures", () => {
     expect(statSync(output).mode & 0o777).toBe(0o700);
     expect(statSync(path.join(output, "rakazo.sql")).mode & 0o777).toBe(0o600);
     expect(statSync(path.join(output, "homes.tgz")).mode & 0o777).toBe(0o600);
+    expect(readFileSync(path.join(output, "rakazo.sql"), "utf8")).toContain("CREATE TABLE");
+    expect(contents(path.join(output, "homes.tgz"))).toContain("data/home.txt");
   });
 
-  it("keeps reused artifacts private and unreplaced when the database dump fails", () => {
+  it.each([
+    { failure: "FAIL_DUMP", status: 2 },
+    { failure: "FAIL_TAR", status: 1 },
+  ])("keeps both previous artifacts when $failure occurs", ({ failure, status }) => {
     const f = fixture();
     mkdirSync(path.join(f.checkout, "data"));
     const output = path.join(f.checkout, "backups/example");
@@ -444,15 +449,16 @@ describe("development backup failures", () => {
     }
     chmodSync(output, 0o755);
 
-    const result = f.run("scripts/backup.sh", ["example"], { FAIL_DUMP: "1" });
+    const result = f.run("scripts/backup.sh", ["example"], { [failure]: "1" });
 
-    expect(result.status).toBe(2);
+    expect(result.status).toBe(status);
     expect(result.stdout).not.toContain("Backup written");
-    expect(readFileSync(path.join(output, "homes.tgz"), "utf8")).toBe("old backup");
     expect(statSync(output).mode & 0o777).toBe(0o700);
     for (const name of ["rakazo.sql", "homes.tgz"]) {
+      expect(readFileSync(path.join(output, name), "utf8")).toBe("old backup");
       expect(statSync(path.join(output, name)).mode & 0o777).toBe(0o600);
     }
+    expect(f.run("scripts/backup.sh", ["example"]).status).toBe(0);
   });
 
   it.each(["directory", "artifact"])("does not write through a backup %s symlink", (kind) => {
@@ -478,6 +484,34 @@ describe("development backup failures", () => {
     ).toBe("keep this");
     expect(f.commands()).toEqual([]);
   });
+
+  it("preserves the previous backup if publishing the new directory fails", () => {
+    const f = fixture();
+    write(path.join(f.checkout, "data/home.txt"), "new home");
+    const output = path.join(f.checkout, "backups/example");
+    write(path.join(output, "rakazo.sql"), "old dump");
+    write(path.join(output, "homes.tgz"), "old archive");
+    const move = path.join(f.root, "bin/mv");
+    write(move, '#!/bin/bash\n[[ "$1" != */new ]] || exit 23\nexec /bin/mv "$@"\n');
+    chmodSync(move, 0o755);
+
+    expect(f.run("scripts/backup.sh", ["example"]).status).toBe(23);
+    expect(readFileSync(path.join(output, "rakazo.sql"), "utf8")).toBe("old dump");
+    expect(readFileSync(path.join(output, "homes.tgz"), "utf8")).toBe("old archive");
+  });
+
+  it.each([".pending/example/previous", "example/notes"])(
+    "leaves an occupied backup path alone: %s",
+    (occupied) => {
+      const f = fixture();
+      mkdirSync(path.join(f.checkout, "data"));
+      const entry = path.join(f.checkout, "backups", occupied);
+      write(entry, "keep");
+      expect(f.run("scripts/backup.sh", ["example"]).status).not.toBe(0);
+      expect(readFileSync(entry, "utf8")).toBe("keep");
+      expect(f.commands()).toEqual([]);
+    },
+  );
 
   it("refuses to back up without data", () => {
     const f = fixture();
