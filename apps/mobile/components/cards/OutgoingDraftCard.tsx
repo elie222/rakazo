@@ -40,7 +40,7 @@ export function OutgoingDraftCard({
   const shown = resolved ? draft.values : values;
   const wasDiscarded = (resolved ?? submitted) === "deny";
   const isEmail = shown.kind === "email";
-  const toLabel = isEmail ? t`To` : t`Conversation ID`;
+  const toLabel = t`To`;
   const caption = [typeScale.caption, { color: tokens.mutedForeground }];
   const body = [typeScale.body, { color: tokens.foreground }];
   const subjectStyle = [typeScale.headline, { color: tokens.foreground }];
@@ -94,6 +94,8 @@ export function OutgoingDraftCard({
         {open ? (
           <TextInput
             accessibilityLabel={t`Message`}
+            placeholder={t`Message`}
+            placeholderTextColor={tokens.mutedForeground}
             value={values.body}
             onChangeText={(body) => setValues({ ...values, body })}
             style={[styles.input, styles.message, ...body]}

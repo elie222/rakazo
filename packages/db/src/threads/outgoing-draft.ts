@@ -51,8 +51,15 @@ export function editOutgoingDraft(
     const entry = batch ? draftBatchEntry(args, batch) : undefined;
     if (batch && !entry) return undefined;
     const original = entry?.args ?? args;
-    if (!Object.entries(fields).every(([key, value]) => original[key] === value)) return undefined;
+    const bodyWasOmitted = values.kind === "email" && !Object.hasOwn(original, draft.keys.body);
+    if (
+      !Object.entries(fields).every(([key, value]) =>
+        key === draft.keys.body && bodyWasOmitted ? value === "" : original[key] === value,
+      )
+    )
+      return undefined;
     const updated = { ...original, ...edited };
+    if (bodyWasOmitted && values.body === "") delete updated[draft.keys.body];
     return batch && entry
       ? { ...args, [batch.items]: [{ ...entry.item, [batch.arguments]: updated }] }
       : updated;

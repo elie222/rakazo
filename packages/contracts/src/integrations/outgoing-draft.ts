@@ -8,17 +8,11 @@ export const OutgoingDraftValues = z.discriminatedUnion("kind", [
       .string()
       .max(998)
       .regex(/^[^\r\n]*$/),
-    body: z
-      .string()
-      .max(16_000)
-      .refine((body) => body.trim().length > 0),
+    body: z.string().max(16_000),
   }),
   z.strictObject({
     kind: z.literal("message"),
-    to: z
-      .string()
-      .regex(/^[CDGU][A-Z0-9]+$/)
-      .max(32),
+    to: z.string().regex(/^(?:[CDGU][A-Z0-9]{1,31}|#[a-z0-9_-]{1,80})$/),
     body: z
       .string()
       .max(16_000)

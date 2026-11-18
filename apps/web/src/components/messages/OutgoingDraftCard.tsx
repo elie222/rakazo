@@ -39,7 +39,7 @@ export function OutgoingDraftCard({
   const shown = resolved ? draft.values : values;
   const wasDiscarded = (resolved ?? submitted) === "deny";
   const isEmail = shown.kind === "email";
-  const toLabel = isEmail ? t`To` : t`Conversation ID`;
+  const toLabel = t`To`;
   const Icon = isEmail ? Mail : MessageSquare;
   const inlineField = "rounded-sm border-transparent px-0 py-0 shadow-none dark:bg-transparent";
 
@@ -94,6 +94,7 @@ export function OutgoingDraftCard({
             {open ? (
               <Textarea
                 aria-label={t`Message`}
+                placeholder={t`Message`}
                 rows={3}
                 className={`${inlineField} min-h-20 resize-none leading-relaxed`}
                 value={values.body}

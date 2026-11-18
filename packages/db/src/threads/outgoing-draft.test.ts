@@ -71,6 +71,35 @@ describe("editOutgoingDraft", () => {
     ).toBeUndefined();
   });
 
+  it("keeps an omitted email body absent unless the owner writes one", () => {
+    const original = { to: draft.values.to, subject: "Review" };
+    const subjectOnly = {
+      ...draft,
+      keys: { ...draft.keys, to: "to" },
+      values: { ...values, to: original.to, body: "" },
+    };
+    const effect = { id: "effect", request: { ...original, subject: values.subject } };
+    expect(
+      editOutgoingDraft(effect, subjectOnly, outgoingDraftAnswer(subjectOnly.values))?.request,
+    ).toEqual(effect.request);
+    expect(editOutgoingDraft(effect, subjectOnly, outgoingDraftAnswer(values))?.request).toEqual({
+      to: values.to,
+      subject: values.subject,
+      body: values.body,
+    });
+  });
+
+  it("can edit a conversation from a channel ID to a named channel", () => {
+    const message = { kind: "message", to: "C12345", body: "Note" } as const;
+    const update = { ...message, to: "#general" };
+    const card = { source: "Team chat", keys: { to: "channel", body: "text" }, values: message };
+    const effect = { id: "effect", request: { channel: message.to, text: message.body } };
+    expect(editOutgoingDraft(effect, card, outgoingDraftAnswer(update))?.request).toEqual({
+      channel: "#general",
+      text: message.body,
+    });
+  });
+
   it("rejects an unreviewed request, invalid destination or extra arguments", () => {
     const effect = { id: "effect", request: args };
     expect(editOutgoingDraft(effect, draft, "allow")).toBeUndefined();

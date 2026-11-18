@@ -444,7 +444,11 @@ function previewOutgoingDraft(
   args: Record<string, unknown>,
   secrets: string[],
 ) {
-  const { kind, source, keys, defaults = {} } = descriptor;
+  const { kind, source, defaults = {}, recipientAlias } = descriptor;
+  const keys =
+    recipientAlias && !Object.hasOwn(args, descriptor.keys.to)
+      ? { ...descriptor.keys, to: recipientAlias }
+      : descriptor.keys;
   const editable = new Set(Object.values(keys));
   // Attachments, extra recipients, formatting and other options stay on the full approval card.
   if (
@@ -457,7 +461,7 @@ function previewOutgoingDraft(
   const values = {
     kind,
     to: args[keys.to],
-    body: args[keys.body],
+    body: kind === "email" && !Object.hasOwn(args, keys.body) ? "" : args[keys.body],
     ...(keys.subject ? { subject: args[keys.subject] } : {}),
   };
   // A redacted preview must never stand in for the exact message the person reviews.

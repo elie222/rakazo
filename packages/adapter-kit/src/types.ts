@@ -335,6 +335,7 @@ export interface OutgoingDraftDescriptor {
   source: string;
   keys: { to: string; body: string; subject?: string };
   defaults?: Record<string, string | boolean>;
+  recipientAlias?: string;
 }
 
 /**

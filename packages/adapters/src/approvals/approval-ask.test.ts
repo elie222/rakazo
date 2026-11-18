@@ -23,7 +23,7 @@ describe("buildApprovalAskBlock", () => {
   });
 
   it("shows an editable draft only when the full outgoing message fits on the card", () => {
-    const args = { channel: "C12345", text: "Review the report" };
+    const args = { channel: "#general", text: "Review the report" };
     const entry = { action: "send", arguments: args };
     const options = {
       allowOutgoingDraft: true,
@@ -42,7 +42,7 @@ describe("buildApprovalAskBlock", () => {
     };
     expect(buildApprovalAskBlock("effect", "batch", { tools: [entry] }, [], options)).toMatchObject(
       {
-        outgoingDraft: { values: { kind: "message", to: "C12345", body: "Review the report" } },
+        outgoingDraft: { values: { kind: "message", to: "#general", body: "Review the report" } },
         actions: [
           { id: "allow", label: "Send" },
           { id: "deny", label: "Discard" },
@@ -58,6 +58,32 @@ describe("buildApprovalAskBlock", () => {
     const attachment = { ...entry, arguments: { ...args, attachment: "example-file" } };
     expect(
       buildApprovalAskBlock("effect", "batch", { tools: [attachment] }, [], options),
+    ).not.toHaveProperty("outgoingDraft");
+  });
+
+  it("previews a subject-only email with the recipient alias", () => {
+    const outgoingDraft = {
+      kind: "email" as const,
+      source: "Mail",
+      keys: { to: "recipient_email", subject: "subject", body: "body" },
+      recipientAlias: "to",
+    };
+    const args = { to: "sam@example.test", subject: "Review" };
+    const options = { outgoingDraft, allowOutgoingDraft: true };
+    expect(buildApprovalAskBlock("effect", "send_email", args, [], options)).toMatchObject({
+      outgoingDraft: {
+        keys: { to: "to" },
+        values: { kind: "email", to: args.to, subject: args.subject, body: "" },
+      },
+    });
+    expect(
+      buildApprovalAskBlock(
+        "effect",
+        "send_email",
+        { ...args, recipient_email: "other@example.test" },
+        [],
+        options,
+      ),
     ).not.toHaveProperty("outgoingDraft");
   });
 
