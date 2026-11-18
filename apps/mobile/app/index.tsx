@@ -61,6 +61,7 @@ import { AvatarViewportScope, createAvatarViewport } from "../lib/bots/avatar-li
 import { mobileLogoAvatarActivity } from "../lib/bots/logo-avatar-activity";
 import { useUiLocale } from "../lib/i18n/i18n";
 import { useArchivedCount } from "../lib/inbox/archived/use-archived-count";
+import { chatRpc } from "../lib/inbox/chat-rpc";
 import type { CreateAction } from "../lib/inbox/create-chooser";
 import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox/inbox-changes";
 import { retainInboxValue } from "../lib/inbox/inbox-retention";
@@ -84,7 +85,7 @@ import type { OrganizeTarget } from "../lib/inbox/sections/organize-target";
 import { findOrganizeTarget } from "../lib/inbox/sections/organize-target";
 import { useCollapsedSections } from "../lib/inbox/sections/use-collapsed-sections";
 import { useInbox } from "../lib/inbox/use-inbox";
-import { chatRpc, useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
+import { useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
 import { useInboxDay } from "../lib/inbox/use-inbox-day";
 import { useInboxHeader } from "../lib/inbox/use-inbox-header";
 import { useSnoozeClock } from "../lib/inbox/use-snooze-clock";
@@ -405,11 +406,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     onShareSelect,
     snoozeNow,
   ]);
-  // The first chats this Space lists open from a saved copy on their first tap.
+  // The first chats the inbox lists open from a saved copy on their first tap.
   useEffect(() => {
-    if (inboxLoaded.current && !onShareSelect)
-      void preloadChats(inboxChats(listData, { bots, groups }));
-  }, [listData, bots, groups, onShareSelect]);
+    if (inboxLoaded.current && !onShareSelect) void preloadChats(inboxChats(listData));
+  }, [listData, onShareSelect]);
   // Snoozed chats stay off the icon until they wake.
   const badgeCount = me
     ? unreadChatCount(
