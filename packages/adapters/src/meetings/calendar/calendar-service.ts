@@ -89,7 +89,7 @@ export class MeetingCalendarService {
     if (!connection?.externalCalendarId || connection.disconnecting)
       return { ...calendar, events: [] };
 
-    const events = [];
+    const events: RpcOutput<"meetingCalendar/upcoming">["events"] = [];
     const [rules, bookings] = await Promise.all([
       prisma.meetingCalendarRule.findMany({ where: { connectionId: connection.id } }),
       prisma.meetingCalendarBooking.findMany({
@@ -123,7 +123,7 @@ export class MeetingCalendarService {
         recurring: event.seriesId !== null,
         selection,
         scheduled: scheduled.has(event.id),
-      } as const);
+      });
     }
     events.sort((first, second) => first.startsAt - second.startsAt);
     const waiting = (event: (typeof events)[number]) =>
