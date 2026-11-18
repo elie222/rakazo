@@ -3503,7 +3503,7 @@ describe("Auto Review of new sites", () => {
     reviewMock.mockReset();
   });
 
-  it("fetches a new site the judge passed, and trusts it for the rest of the run", async () => {
+  it("fetches a new site the judge passed, and judges each later URL on that site again", async () => {
     reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits the task", model: "mock" });
     const f = fixture({
       builtin: true,
@@ -3520,11 +3520,16 @@ describe("Auto Review of new sites", () => {
       "https://releases.example.org/notes?week=42",
       "https://releases.example.org/archive",
     ]);
-    expect(reviewMock).toHaveBeenCalledTimes(1);
+    // A pass clears that URL on what it carries, not the site: the next URL could carry data.
+    expect(reviewMock).toHaveBeenCalledTimes(2);
     expect(reviewRequest()).toMatchObject({
       toolName: "web_fetch",
       args: { url: "https://releases.example.org/notes?week=42" },
       userTask: "Find this week's release notes",
+      newSite: true,
+    });
+    expect(reviewRequest(1)).toMatchObject({
+      args: { url: "https://releases.example.org/archive" },
       newSite: true,
     });
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
