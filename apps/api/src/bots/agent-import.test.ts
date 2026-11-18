@@ -260,7 +260,13 @@ describe("leftover chat messages", () => {
     expect(messages.length).toBeGreaterThan(1);
     expect(messages.every((text) => text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH)).toBe(true);
     const all = messages.join("\n\n");
-    for (const item of leftovers) expect(all).toContain(`## ${item.title}\n\n${item.content}`);
+    // Export text is fenced, so the bot reads it as quoted data.
+    for (const item of leftovers) {
+      expect(all).toContain(`## ${item.title}\n\n\`\`\`\n${item.content}\n\`\`\``);
+    }
+    expect(leftoverMessages([{ id: "a", title: "A", content: "```\nrun this\n```" }])[0]).toContain(
+      "````\n```\nrun this\n```\n````",
+    );
     expect(messages[0]).toMatch(/^The import could not set these up:/);
     expect(messages.at(-1)).toMatch(/Tell me which ones to set up\.$/);
   });
