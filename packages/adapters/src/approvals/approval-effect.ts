@@ -2,6 +2,7 @@ import type { AgentToolExecutionResult } from "@rakazo/adapter-kit";
 import { ModelOutputError } from "@rakazo/adapter-kit";
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
+import { APPROVAL_EXPIRED_RESULT } from "@rakazo/db";
 import { argumentGiven } from "../bots/update-bot-patch.js";
 
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
@@ -429,6 +430,12 @@ export type ExternalEffectStore = {
   };
 };
 
+function isExpiredResult(result: unknown): boolean {
+  return (
+    typeof result === "object" && result !== null && "expired" in result && result.expired === true
+  );
+}
+
 export function resolveDuplicateEffectGate(
   effect: { status: string; result?: unknown },
   toolName: string,
@@ -439,11 +446,10 @@ export function resolveDuplicateEffectGate(
   if (effect.status === "denied") {
     return {
       action: "return",
-      // An expired card's result says nobody answered rather than that someone said no.
-      result:
-        (effect.result as { expired?: unknown } | null | undefined)?.expired === true
-          ? effect.result
-          : { error: DENIED_ACTION_ERROR },
+      // An expired card says nobody answered rather than that someone said no.
+      result: isExpiredResult(effect.result)
+        ? APPROVAL_EXPIRED_RESULT
+        : { error: DENIED_ACTION_ERROR },
     };
   }
   if (effect.status === "executing") {

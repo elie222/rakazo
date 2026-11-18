@@ -1,4 +1,5 @@
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
+import { APPROVAL_EXPIRED_RESULT } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   approvalPausedToolResult,
@@ -356,13 +357,11 @@ describe("resolveDuplicateEffectGate", () => {
   });
 
   it("tells the bot an expired card was not answered rather than denied", () => {
-    const expired = { error: "Nobody answered in time.", expired: true };
-    expect(resolveDuplicateEffectGate({ status: "denied", result: expired }, "send_email")).toEqual(
-      {
-        action: "return",
-        result: expired,
-      },
-    );
+    const stored = { error: "Text stored in the row.", expired: true };
+    expect(resolveDuplicateEffectGate({ status: "denied", result: stored }, "send_email")).toEqual({
+      action: "return",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
   });
 
   it("returns paused for intended effects instead of executing", () => {

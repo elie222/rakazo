@@ -67,7 +67,7 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 > A routine run started by a webhook, an email or a Slack message follows your
 > [approval](./approvals.md) mode and Always allow list. Since outside text could steer it, tools
 > that change something are checked even if they never ask in your own chats. Nobody may be
-> watching, so a card it posts expires after 30 minutes and the action isn't done. Always allow on a
+> watching, so an approval card it posts expires after 30 minutes and the action isn't done. Always allow on a
 > tool such as shell or the browser lets outside text use it freely.
 
 ## Test, pause and review

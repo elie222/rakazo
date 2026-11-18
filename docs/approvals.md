@@ -35,8 +35,8 @@ When a bot needs a yes, it posts a card in the chat showing exactly what it want
 Cards never block the chat. Keep talking to the bot, and answer the card whenever you're ready. You
 get a notification when a bot is waiting on you, if notifications are on in the bot's settings.
 
-A card from a run nobody is watching, such as a routine, a webhook or another bot's message,
-expires after 30 minutes. The bot doesn't do that action and says so in its reply.
+An approval card from a run nobody is watching, such as a routine, a webhook or another bot's
+message, expires after 30 minutes. The bot doesn't do that action and says so in its reply.
 
 ## Allow and Block lists
 

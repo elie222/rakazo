@@ -652,7 +652,7 @@ async function currentModelNames(
 
 /**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
- * they go through approval like any other action.
+ * they go through approval like any other action, and runs someone else started cannot change them.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -724,6 +724,13 @@ async function prepareOwnBotUpdate(
     return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
+  // A run someone else started acts with their authority, and its card is theirs to answer. A new
+  // bot's first run sets the instructions its creator asked for.
+  if (run.trigger !== "created" && !ctx.source.ownerStartedRun)
+    return refusal(
+      "instructions_run_not_owner_started",
+      "Instruction changes are blocked for runs someone else started.",
+    );
   if (Object.keys(args).some((key) => key !== "instructions"))
     return refusal(
       "instructions_need_own_call",

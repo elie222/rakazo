@@ -255,8 +255,8 @@ export async function gateToolCall(
   // neither an allow rule nor an automatic reviewer may create them.
   const unattendedWatch = watch?.kind === "command" || httpWatch;
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
-  // ones its runs may fetch. Once outside content entered this run, the approval model checks a
-  // routine naming a site this run was not given: passing it trusts the site for every later run.
+  // ones its runs may fetch. Once outside content entered this run, a routine naming a site this
+  // run was not given trusts the site for every later run, so its card offers no Always allow.
   const scheduleNamesNewSite =
     (name === "schedule_create" ||
       name === "create_child_routine" ||
@@ -264,10 +264,18 @@ export async function gateToolCall(
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   // An event trigger opens a standing way in for outside text (a chat app's every message, mail,
-  // a webhook), so once outside content entered this run, the approval model checks it, as above.
+  // a webhook), so once outside content entered this run, its card offers no Always allow either.
   const routineAddsEvents =
     (name === "schedule_create" || name === "schedule_update" || name === "create_child_routine") &&
     asksRoutineEvents(args.on) &&
+    (await isRunTainted(ctx));
+  // A routine runs later as the owner's own words, so one written or rewritten after outside
+  // content entered this run goes through the approval mode like any consequential action: text
+  // the bot read must not plant a prompt that later runs with the owner's trust.
+  const routineWrittenAfterOutside =
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && (Boolean(args.prompt) || asksRoutineEvents(args.on)))) &&
     (await isRunTainted(ctx));
   const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),
@@ -276,8 +284,6 @@ export async function gateToolCall(
   const reviewOnly =
     connectorReadGated ||
     savedContextWriteReviewed ||
-    scheduleNamesNewSite ||
-    routineAddsEvents ||
     (Boolean(request.settingsChange) && (await isRunTainted(ctx)));
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
@@ -286,6 +292,7 @@ export async function gateToolCall(
     request.heldForApproval ||
     paying ||
     unattendedWatch ||
+    routineWrittenAfterOutside ||
     siteGate === "new" ||
     unidentifiedAction ||
     (!catalogControlRead &&

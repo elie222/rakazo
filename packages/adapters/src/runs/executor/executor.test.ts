@@ -641,7 +641,7 @@ describe("run tool selection", () => {
     expect(disabled).toEqual(baseline.filter((name) => name !== "web_search"));
   });
 
-  it("offers group messaging in and outside group threads", () => {
+  it("offers group messaging to bots outside group threads", () => {
     expect(toolNames("user")).toContain("handoff_to_bot");
     for (const trigger of ["bot_message", "routine", "webhook", "follow_up"]) {
       expect(toolNames(trigger)).toContain("handoff_to_bot");
@@ -657,7 +657,7 @@ describe("run tool selection", () => {
         messagingChannelRun: false,
       }).map((tool) => tool.name),
     ).toContain("handoff_to_bot");
-    expect(toolNames("user", "group-1")).toContain("message_bot");
+    expect(toolNames("user", "group-1")).not.toContain("message_bot");
     expect(toolNames("user")).toContain("message_bot");
   });
 

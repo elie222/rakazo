@@ -8,7 +8,11 @@ import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-sele
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
-import { filterBuiltinToolsForRun, SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
+import {
+  filterBuiltinToolsForRun,
+  filterBuiltinToolsForThread,
+  SCHEDULE_TOOL_NAMES,
+} from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 
@@ -148,9 +152,12 @@ export function selectBuiltinToolsForRun(options: {
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
-        filterPageBrowserTools(
-          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-          options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+        filterBuiltinToolsForThread(
+          filterPageBrowserTools(
+            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+            options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+          ),
+          options.groupId,
         ),
         options.trigger,
       ),

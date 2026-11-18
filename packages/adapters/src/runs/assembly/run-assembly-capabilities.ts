@@ -676,18 +676,20 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
-  // The Space's other bots, which message_bot reaches from any chat, a group included.
-  const teammates = await deps.prisma.bot.findMany({
-    where: {
-      spaceId: run.spaceId,
-      archivedAt: null,
-      id: { not: bot.id },
-      thread: { isNot: null },
-    },
-    select: { id: true, name: true, description: true },
-    orderBy: { createdAt: "asc" },
-    take: BOT_DIRECTORY_LIMIT,
-  });
+  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
+  const teammates = conversationThread.groupId
+    ? []
+    : await deps.prisma.bot.findMany({
+        where: {
+          spaceId: run.spaceId,
+          archivedAt: null,
+          id: { not: bot.id },
+          thread: { isNot: null },
+        },
+        select: { id: true, name: true, description: true },
+        orderBy: { createdAt: "asc" },
+        take: BOT_DIRECTORY_LIMIT,
+      });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
