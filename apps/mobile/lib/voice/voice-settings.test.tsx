@@ -786,7 +786,7 @@ function expectOnlyDisconnect() {
 }
 
 it.each([personalPlan, workPlan])(
-  "connects through the model connection $label with no key, then offers only Disconnect",
+  "connects through the model connection $label with no key, then offers only the other one",
   async (connection) => {
     state.load.mockResolvedValue(false);
     withLinkedProvider(null, { modelConnections: [personalPlan, workPlan] });
@@ -802,7 +802,12 @@ it.each([personalPlan, workPlan])(
       apiKey: "",
       modelCredentialId: connection.id,
     });
-    expectOnlyDisconnect();
+    const other = connection === personalPlan ? workPlan : personalPlan;
+    const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+    expect(labels.filter((label) => label?.startsWith("Use "))).toEqual([`Use ${other.label}`]);
+    expect(keyField()).toBeNull();
+    expect(labels).not.toContain("Or paste an API key");
+    expect(button("Disconnect").disabled).toBe(false);
     expect(container.textContent).toContain("linked voice");
   },
 );
@@ -905,6 +910,24 @@ it("offers the new connection, not another sign-in, when voice cannot connect th
       (item) => item.textContent === "Sign in with a plan",
     ),
   ).toBe(false);
+});
+
+it("moves a working link to another of the account's subscriptions", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: false, modelCredentialId: personalPlan.id } as { hasKey: boolean }, {
+    modelConnections: [personalPlan, workPlan],
+  });
+  await render();
+  await click("Linked");
+  expect(container.textContent).not.toContain(`Use ${personalPlan.label}`);
+  expect(container.textContent).not.toContain("Or paste an API key");
+  await click(`Use ${workPlan.label}`);
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+    modelCredentialId: workPlan.id,
+  });
 });
 
 it("links voice again once the model connection it used is gone", async () => {

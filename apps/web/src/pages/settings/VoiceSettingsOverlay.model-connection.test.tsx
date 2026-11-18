@@ -356,6 +356,53 @@ describe("a provider the account's model connection can authenticate", () => {
     }
   });
 
+  it("moves a working link to another of the account's subscriptions", async () => {
+    const { container, close } = await open(
+      {
+        ...xai,
+        modelConnections: [
+          { id: "cred-model-1", label: "xAI" },
+          { id: "cred-model-2", label: "xAI 2" },
+        ],
+      },
+      [{ ...linkedCredential, modelCredentialId: "cred-model-1" }],
+    );
+    try {
+      expect(button(container, "Use xAI")).toBeUndefined();
+      expect(button(container, "Or paste an API key")).toBeUndefined();
+      await click(button(container, "Use xAI 2"));
+      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ provider: "xai", apiKey: "", modelCredentialId: "cred-model-2" }),
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  it("keeps Disconnect off while a sign-in to link voice again is open", async () => {
+    const { container, close } = await open({ ...xai, modelSignIn: "Sign in with Subscription" }, [
+      { ...linkedCredential, modelCredentialId: "cred-gone" },
+    ]);
+    vi.spyOn(window, "open").mockReturnValue(null);
+    models.beginOAuth.mockReset().mockResolvedValue({
+      mode: "device-code",
+      loginId: "login-1",
+      verificationUri: "https://example.test/device",
+      userCode: "ABCD-1234",
+      expiresInSeconds: 300,
+    });
+    models.completeOAuth.mockReset().mockReturnValue(deferred<{ status: "ready" }>().promise);
+    models.cancelOAuth.mockReset().mockResolvedValue(undefined);
+    try {
+      expect(button(container, "Disconnect")?.disabled).toBe(false);
+      await click(button(container, "Sign in with Subscription"));
+      expect(container.textContent).toContain("ABCD-1234");
+      expect(button(container, "Disconnect")?.disabled).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
   it("offers only Disconnect once linked to the model connection", async () => {
     const { container, close } = await open(
       { ...xai, modelConnections: [{ id: "cred-model-1", label: "SuperGrok" }] },

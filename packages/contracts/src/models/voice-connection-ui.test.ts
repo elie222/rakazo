@@ -30,6 +30,29 @@ describe("voiceConnectionForm", () => {
     expect(form({ hasKey: true })).toMatchObject({ linked: false, modelConnections: [] });
   });
 
+  it("lets a working link move to another of the account's connections", () => {
+    const two = [
+      { id: "model-1", label: "xAI" },
+      { id: "model-2", label: "xAI 2" },
+    ];
+    expect(
+      form({ hasKey: false, modelCredentialId: "model-1" }, { modelConnections: two }),
+    ).toEqual({
+      linked: true,
+      canConnect: false,
+      modelConnections: [two[1]],
+      modelSignIn: undefined,
+    });
+    // A link that names no connection may be on either, so both are offered.
+    expect(form({ hasKey: false }, { modelConnections: two })).toMatchObject({
+      linked: true,
+      modelConnections: two,
+    });
+    expect(form({ hasKey: true }, { modelConnections: two })).toMatchObject({
+      modelConnections: [],
+    });
+  });
+
   it("offers the choices again once the model connection a link uses is gone", () => {
     const replacement = [{ id: "model-2", label: "xAI 2" }];
     expect(

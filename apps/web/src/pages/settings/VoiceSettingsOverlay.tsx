@@ -278,8 +278,11 @@ export function VoiceSettingsOverlay({
     apiKey,
     baseUrl,
   });
+  // A linked connection has no key to fold away, only other connections to move to.
   const keyFolded =
-    (modelConnections.length > 0 || Boolean(modelSignIn)) && keyShownFor !== selected?.id;
+    !linked &&
+    (modelConnections.length > 0 || Boolean(modelSignIn)) &&
+    keyShownFor !== selected?.id;
 
   /** Connects with the key form, or through the account's model connection when given one. */
   async function connect(modelCredentialId?: string): Promise<boolean> {
@@ -705,7 +708,8 @@ export function VoiceSettingsOverlay({
                   variant="outline"
                   size="sm"
                   className="mt-3"
-                  disabled={busy}
+                  // A sign-in finishing after a disconnect would connect voice again.
+                  disabled={busy || signingIn}
                   onClick={() => void disconnectProvider()}
                 >
                   {pending === "disconnect" ? (

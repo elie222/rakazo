@@ -691,7 +691,7 @@ export default function VoiceSettings() {
                 onPress={signIn}
               />
             ) : null}
-            {offersModelConnection ? (
+            {offersModelConnection && !linked ? (
               <DisclosureRow
                 label={t`Or paste an API key`}
                 expanded={showKeyForm}
