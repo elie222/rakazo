@@ -1,4 +1,5 @@
 export * from "./account/ai-consent.js";
+export * from "./account/email-address.js";
 export * from "./account/email-typo.js";
 export * from "./account/organizations.js";
 export * from "./account/passkey-offer.js";
