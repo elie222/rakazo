@@ -106,6 +106,17 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       await expect(
         runAsTenant(second, () => service.updateSelection(second, botId, firstReview.id, "once")),
       ).rejects.toMatchObject({ kind: "NOT_FOUND" });
+      await runAsTenant(first, () => service.updateSelection(first, botId, lastReview.id, "once"));
+      await runAsTenant(first, () =>
+        service.updateSelection(first, botId, firstReview.id, "series"),
+      );
+      expect(emulator.scheduled(firstReview.id)).toBeTruthy();
+      expect(emulator.scheduled(lastReview.id)).toBeTruthy();
+      await runAsTenant(first, () =>
+        service.updateSelection(first, botId, firstReview.id, "removeSeries"),
+      );
+      expect(emulator.scheduled(firstReview.id)).toBeUndefined();
+      expect(emulator.scheduled(lastReview.id)).toBeUndefined();
       await runAsTenant(first, () =>
         service.updateSelection(first, botId, firstReview.id, "series"),
       );

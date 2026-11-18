@@ -67,8 +67,6 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   await openDisconnect();
   await confirmation.getByRole("button", { name: "Disconnect calendar" }).click();
   await expect(page.getByRole("button", { name: "Connect Google Calendar" })).toBeVisible();
-  await meetings.getByRole("button", { name: "Close" }).click();
-  await expect(meetings).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("button", { name: "Meetings", exact: true })).toBeVisible();
   await expect(meetings).toHaveCount(0);

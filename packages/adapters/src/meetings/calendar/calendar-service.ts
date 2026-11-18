@@ -179,20 +179,30 @@ export class MeetingCalendarService {
         throw new ClientError("CONFLICT", "This calendar is disconnecting.");
       if (action === "removeSeries") {
         await tx.meetingCalendarRule.deleteMany({
-          where: { connectionId: connection.id, scope, targetId, botId },
+          where: {
+            connectionId: connection.id,
+            botId,
+            OR: [
+              { scope, targetId },
+              { scope: "event", seriesId: targetId },
+            ],
+          },
         });
       } else {
-        const selected = action === "skip" ? null : botId;
+        const selected = {
+          botId: action === "skip" ? null : botId,
+          eventStartsAt: scope === "event" ? event.startsAt : null,
+          seriesId: scope === "event" ? event.seriesId : null,
+        };
         await tx.meetingCalendarRule.upsert({
           where: { connectionId_scope_targetId: { connectionId: connection.id, scope, targetId } },
           create: {
             connectionId: connection.id,
             scope,
             targetId,
-            botId: selected,
-            eventStartsAt: scope === "event" ? event.startsAt : null,
+            ...selected,
           },
-          update: { botId: selected, eventStartsAt: scope === "event" ? event.startsAt : null },
+          update: selected,
         });
         // Re-enable the visible instance when a series is selected from a skipped occurrence.
         if (action === "series") {

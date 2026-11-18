@@ -2995,6 +2995,7 @@ model MeetingCalendarRule {
   targetId      String
   botId         String?
   eventStartsAt DateTime?
+  seriesId      String?
 
   @@id([connectionId, scope, targetId])
   @@map("meeting_calendar_rules")

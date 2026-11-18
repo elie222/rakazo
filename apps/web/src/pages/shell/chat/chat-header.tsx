@@ -3,7 +3,7 @@ import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
@@ -129,19 +129,19 @@ export function ChatHeader({
 
 function MeetingsControl({ botId }: { botId: string }) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
   const { botId: routeBotId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const returningToCalendar =
     routeBotId === botId && searchParams.get(MEETING_CALENDAR_RETURN_PARAM) === "1";
-  function close() {
-    setOpen(false);
-    if (returningToCalendar) {
-      const next = new URLSearchParams(searchParams);
-      next.delete(MEETING_CALENDAR_RETURN_PARAM);
-      setSearchParams(next, { replace: true });
-    }
-  }
+  const [view, setView] = useState<"closed" | "meetings" | "calendar">(
+    returningToCalendar ? "calendar" : "closed",
+  );
+  useEffect(() => {
+    if (!returningToCalendar) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete(MEETING_CALENDAR_RETURN_PARAM);
+    setSearchParams(next, { replace: true });
+  }, [returningToCalendar, searchParams, setSearchParams]);
   return (
     <>
       <IconTooltip label={t`Meetings`}>
@@ -149,15 +149,19 @@ function MeetingsControl({ botId }: { botId: string }) {
           variant="floating"
           size="icon-lg"
           aria-label={t`Meetings`}
-          onClick={() => setOpen(true)}
+          onClick={() => setView("meetings")}
           className="app-no-drag"
         >
           <Video strokeWidth={1.6} className="size-[17px]" />
         </Button>
       </IconTooltip>
-      {open || returningToCalendar ? (
+      {view !== "closed" ? (
         <Suspense>
-          <MeetingsDialog botId={botId} showCalendar={returningToCalendar} onClose={close} />
+          <MeetingsDialog
+            botId={botId}
+            showCalendar={view === "calendar"}
+            onClose={() => setView("closed")}
+          />
         </Suspense>
       ) : null}
     </>
