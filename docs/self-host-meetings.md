@@ -33,6 +33,6 @@ MEETING_PROVIDER=emulator pnpm test:e2e -- --spec=meeting-transcript.spec.ts
 
 ## Add the branded camera and live voice
 
-Set `MEETING_PUBLIC_ORIGIN` to the public HTTPS origin serving the API on both the API and worker. The meeting bot displays the Rakazo mark and its name on camera. The API and worker must use the same `BETTER_AUTH_SECRET` to sign media access. The meeting provider needs access to `/api/meetings/media` and its assets on that origin.
+Set `MEETING_PUBLIC_ORIGIN` to the public HTTPS origin serving the API on both the API and worker. The meeting bot displays the Rakazo mark and its name on camera. Generate a dedicated `MEETING_SIGNING_KEY` with `openssl rand -hex 32` and set it to the same value on the API and worker. It signs access to the camera page. The meeting provider needs access to `/api/meetings/media` and its assets on that origin.
 
 Enable `MEETING_LIVE_VOICE=true` on the API to let the bot listen and reply when addressed. Configure server-side speech recognition, speech synthesis, and a model for the bot. Live voice uses those connections and their usage limits. The bot receives recent meeting speech as context for replies. The camera page carries that context while it is connected and discards it when it reloads. The post-meeting transcript is imported independently and includes the bot's spoken replies where the meeting provider can attribute them.
