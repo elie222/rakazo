@@ -163,7 +163,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     let target = [chat.kind.targetKey: chat.id]
 
     if request.action == .thread {
-      let thread: WatchThread = try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
+      let thread = try await readThread(target, session: session, spaceId: spaceId)
       try verify(session, revision: revision)
       return WatchReply(
         messages: thread.watchMessages(for: userId),
@@ -187,7 +187,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     case .answer:
       // Re-read the live card, so stale or forged commands cannot answer hidden fields,
       // change standing permissions, or approve a request the Watch could not display in full.
-      let thread: WatchThread = try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
+      let thread = try await readThread(target, session: session, spaceId: spaceId)
       guard let message = thread.messages.first(where: { $0.id == request.messageId }),
         let runId = message.runId, thread.ownsPendingAsk(message, userId: userId),
         let prompt = message.pendingAsk?.watchPrompt(), prompt == request.prompt, canAnswer(prompt, text)
@@ -201,6 +201,16 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       throw WatchFailure.rejected
     }
     return WatchReply()
+  }
+
+  private func readThread(
+    _ target: [String: String], session: RakazoSession, spaceId: String
+  ) async throws -> WatchThread {
+    do {
+      return try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
+    } catch MessageBotError.rejected(let status, _) where status == 403 || status == 404 {
+      throw WatchFailure.reload
+    }
   }
 
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {

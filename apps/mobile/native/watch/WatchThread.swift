@@ -14,13 +14,14 @@ struct WatchThread: Decodable {
       let status: String?
       let input: String?
       let detail: String?
+      let detailFormat: String?
       let actions: [WatchPrompt.Option]?
       let approvalEffectId: String?
       // These cards need the full review UI on iPhone.
       let requiresPhone: Bool
 
       private enum CodingKeys: String, CodingKey {
-        case kind, text, status, input, detail, actions, approvalEffectId
+        case kind, text, status, input, detail, detailFormat, actions, approvalEffectId
         case receipt, instructionUpdate, settingsUpdate, credential, oneTimeCode, loginFields
       }
 
@@ -31,6 +32,7 @@ struct WatchThread: Decodable {
         status = try values.decodeIfPresent(String.self, forKey: .status)
         input = try values.decodeIfPresent(String.self, forKey: .input)
         detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        detailFormat = try values.decodeIfPresent(String.self, forKey: .detailFormat)
         actions = try values.decodeIfPresent([WatchPrompt.Option].self, forKey: .actions)
         approvalEffectId = try values.decodeIfPresent(String.self, forKey: .approvalEffectId)
         requiresPhone = [
@@ -49,8 +51,11 @@ struct WatchThread: Decodable {
         else { return handoff }
         let prompt: WatchPrompt
         if let approvalEffectId {
-          guard !title.isEmpty, ids.contains("allow"), ids.contains("deny"),
-            ids.isSubset(of: ["allow", "deny", "always"])
+          // Approval cards use an ellipsis when they shorten a title, detail or batch item.
+          // Send code and any review that may omit context to the iPhone.
+          guard !title.isEmpty, !title.contains("…"),
+            let detail, !detail.isEmpty, !detail.contains("…"), detailFormat != "code",
+            ids.contains("allow"), ids.contains("deny"), ids.isSubset(of: ["allow", "deny", "always"])
           else { return handoff }
           prompt = WatchPrompt(
             kind: .approval, title: title.replacingOccurrences(
