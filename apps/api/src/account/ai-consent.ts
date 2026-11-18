@@ -6,9 +6,9 @@ import {
   cloudAgentsEnabled,
   cloudAgentsForActor,
   parseModelSecret,
+  readSharedDeploymentModel,
   resolveMemberMainModel,
   selectConfiguredModel,
-  sharedDeploymentModel,
   toStringRecord,
 } from "@rakazo/adapters";
 import type {
@@ -47,71 +47,78 @@ export async function aiConsentStatus(
       ? [target.botId]
       : target.memberBotIds
     : undefined;
-  const [preferences, roleChoices, main, bots, routines, voices, memory, settings, consents] =
-    await Promise.all([
-      modelsEnabled
-        ? deps.prisma.userModelPreference.findMany({
-            where: { userId: actor.userId },
-            include: { credential: true },
-          })
-        : [],
-      modelsEnabled
-        ? modelRoleTarget(deps.prisma, actor).then((roles) =>
-            listModelRoleChoices(deps.prisma, roles),
+  const [
+    preferences,
+    roleChoices,
+    main,
+    bots,
+    routines,
+    voices,
+    memory,
+    settings,
+    shared,
+    consents,
+  ] = await Promise.all([
+    modelsEnabled
+      ? deps.prisma.userModelPreference.findMany({
+          where: { userId: actor.userId },
+          include: { credential: true },
+        })
+      : [],
+    modelsEnabled
+      ? modelRoleTarget(deps.prisma, actor).then((roles) =>
+          listModelRoleChoices(deps.prisma, roles),
+        )
+      : [],
+    modelsEnabled
+      ? resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor)
+      : null,
+    modelsEnabled
+      ? // Any bot in the space runs on this member's credentials when they message it.
+        deps.prisma.bot.findMany({
+          where: {
+            spaceId: actor.spaceId,
+            archivedAt: null,
+            ...(botIds ? { id: { in: botIds } } : {}),
+          },
+          select: { modelProvider: true, modelId: true, thinkingLevel: true },
+        })
+      : [],
+    // An active routine with its own model is another recipient for this bot.
+    // A paused routine is included only when this check is for that routine,
+    // so it does not block an ordinary chat message.
+    modelsEnabled
+      ? deps.prisma.routine.findMany({
+          where: {
+            userId: actor.userId,
+            spaceId: actor.spaceId,
+            modelProvider: { not: null },
+            modelId: { not: null },
+            bot: { archivedAt: null },
+            ...(botIds ? { botId: { in: botIds } } : {}),
+            OR: query.routineId ? [{ active: true }, { id: query.routineId }] : [{ active: true }],
+          },
+          select: { modelProvider: true, modelId: true, thinkingLevel: true },
+        })
+      : [],
+    uses.includes("voice")
+      ? query.uses
+        ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then((credential) =>
+            credential ? [{ credential, isDefault: true }] : [],
           )
-        : [],
-      modelsEnabled
-        ? resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor)
-        : null,
-      modelsEnabled
-        ? // Any bot in the space runs on this member's credentials when they message it.
-          deps.prisma.bot.findMany({
-            where: {
-              spaceId: actor.spaceId,
-              archivedAt: null,
-              ...(botIds ? { id: { in: botIds } } : {}),
-            },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
-          })
-        : [],
-      // An active routine with its own model is another recipient for this bot.
-      // A paused routine is included only when this check is for that routine,
-      // so it does not block an ordinary chat message.
-      modelsEnabled
-        ? deps.prisma.routine.findMany({
-            where: {
-              userId: actor.userId,
-              spaceId: actor.spaceId,
-              modelProvider: { not: null },
-              modelId: { not: null },
-              bot: { archivedAt: null },
-              ...(botIds ? { botId: { in: botIds } } : {}),
-              OR: query.routineId
-                ? [{ active: true }, { id: query.routineId }]
-                : [{ active: true }],
-            },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
-          })
-        : [],
-      uses.includes("voice")
-        ? query.uses
-          ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential, isDefault: true }] : []),
-            )
-          : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
-              listVoicePreferences(deps.prisma, target),
-            )
-        : [],
-      uses.includes("memory")
-        ? deps.prisma.spaceMemoryConfig.findUnique({ where: { spaceId: actor.spaceId } })
-        : null,
-      modelsEnabled
-        ? deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } })
-        : null,
-      deps.prisma.aiDataConsent.findMany({
-        where: { userId: actor.userId, spaceId: actor.spaceId, version: AI_DISCLOSURE_VERSION },
-      }),
-    ]);
+        : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
+            listVoicePreferences(deps.prisma, target),
+          )
+      : [],
+    uses.includes("memory")
+      ? deps.prisma.spaceMemoryConfig.findUnique({ where: { spaceId: actor.spaceId } })
+      : null,
+    modelsEnabled ? deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }) : null,
+    modelsEnabled ? readSharedDeploymentModel(deps.prisma) : null,
+    deps.prisma.aiDataConsent.findMany({
+      where: { userId: actor.userId, spaceId: actor.spaceId, version: AI_DISCLOSURE_VERSION },
+    }),
+  ]);
   const allowed = new Set(consents.map((row) => row.recipientKey));
   const recipients = new Map<string, AiRecipient>();
   const add = (recipient: ReturnType<typeof aiRecipient>) => {
@@ -141,7 +148,7 @@ export async function aiConsentStatus(
           defaults: {
             settings,
             deployment,
-            shared: sharedDeploymentModel(settings),
+            shared,
           },
         });
       }),

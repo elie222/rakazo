@@ -301,7 +301,7 @@ export function createRouterContext(deps: RouterDeps) {
       );
       return access?.hasDeployment
         ? deploymentModelRole(role, {
-            settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+            settings: access.settings,
             deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
             shared: access.shared,
           }).primary

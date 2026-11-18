@@ -163,6 +163,7 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
     secret: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

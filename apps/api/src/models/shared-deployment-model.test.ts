@@ -28,7 +28,7 @@ function fixture() {
       return create;
     }),
   };
-  const tx = { user: { findUnique }, deploymentSettings: deployment };
+  const tx = { user: { findUnique }, deploymentModelConnection: deployment };
   const prisma = { ...tx, $transaction: async (work: (db: typeof tx) => unknown) => work(tx) };
   const secrets = new EncryptedSecretStore("fake-test-key");
   const publishDeploymentModelChange = vi.fn(async () => undefined);
@@ -55,13 +55,13 @@ describe("admin-managed deployment model", () => {
     await configureSharedModel(deps, actor, input);
     const row = deployment.upsert.mock.calls[0]![0].create;
     expect(row).toMatchObject({
-      sharedModelProvider: input.provider,
-      sharedModelId: input.modelId,
+      provider: input.provider,
+      modelId: input.modelId,
     });
-    expect(row.sharedModelRevision).toEqual(expect.any(String));
+    expect(row.revision).toEqual(expect.any(String));
     expect(JSON.stringify(row)).not.toContain(input.apiKey);
     await expect(
-      secrets.load(String(row.sharedModelCipher), SHARED_DEPLOYMENT_MODEL_RECORD),
+      secrets.load(String(row.credentialCipher), SHARED_DEPLOYMENT_MODEL_RECORD),
     ).resolves.toBe(input.apiKey);
     const visible = await sharedModelSettings(deps, actor);
     expect(visible.connection).toEqual({
@@ -69,7 +69,7 @@ describe("admin-managed deployment model", () => {
       modelId: input.modelId,
       method: input.method,
     });
-    expect(JSON.stringify(visible)).not.toContain(String(row.sharedModelCipher));
+    expect(JSON.stringify(visible)).not.toContain(String(row.credentialCipher));
   });
 
   it("preserves the active credential after a failed replacement and disconnects on request", async () => {

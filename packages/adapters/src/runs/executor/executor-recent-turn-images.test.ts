@@ -269,6 +269,7 @@ async function runWithModel(
       }),
     },
 
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

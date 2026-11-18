@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
+  DEPLOYMENT_MODEL_CONNECTION_ID,
+  readSharedDeploymentModel,
   SHARED_DEPLOYMENT_MODEL_RECORD,
-  sharedDeploymentModel,
   sharedModelProviders,
   testSharedModel,
 } from "@rakazo/adapters";
@@ -20,13 +21,12 @@ async function requireDeploymentModelAdmin(
     throw new ClientError("FORBIDDEN", "Shared model settings require a self-hosted deployment");
 }
 
-function settingsRow(deps: RouterDeps) {
-  return deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-}
+const connectionWhere = { id: DEPLOYMENT_MODEL_CONNECTION_ID };
+const revisionSelect = { revision: true } as const;
 
 export async function sharedModelSettings(deps: RouterDeps, actor: Actor) {
   await requireDeploymentModelAdmin(deps, actor);
-  const model = sharedDeploymentModel(await settingsRow(deps));
+  const model = await readSharedDeploymentModel(deps.prisma);
   return {
     connection: model && { provider: model.provider, modelId: model.modelId, method: model.method },
     providers: sharedModelProviders(),
@@ -40,9 +40,14 @@ export async function configureSharedModel(
   signal?: AbortSignal,
 ) {
   await requireDeploymentModelAdmin(deps, actor);
-  const previous = await settingsRow(deps);
-  const expected = previous?.sharedModelRevision ?? null;
-  if (input) await testSharedModel(input, signal);
+  const previous = await runAsSystem("read deployment model revision before validation", () =>
+    deps.prisma.deploymentModelConnection.findUnique({
+      where: connectionWhere,
+      select: revisionSelect,
+    }),
+  );
+  const expected = previous?.revision ?? null;
+  if (input) await testSharedModel(input, signal, deps.modelConnectionFetch);
   signal?.throwIfAborted();
   const ciphertext = input
     ? (
@@ -60,11 +65,11 @@ export async function configureSharedModel(
       ).ciphertext
     : null;
   const update = {
-    sharedModelProvider: input?.provider ?? null,
-    sharedModelId: input?.modelId ?? null,
-    sharedModelMethod: input?.method ?? null,
-    sharedModelRevision: randomUUID(),
-    sharedModelCipher: ciphertext,
+    provider: input?.provider ?? null,
+    modelId: input?.modelId ?? null,
+    method: input?.method ?? null,
+    revision: randomUUID(),
+    credentialCipher: ciphertext,
   };
   await withTransactionRetry(() =>
     runAsSystem("a deployment admin configures the shared model", () =>
@@ -72,18 +77,18 @@ export async function configureSharedModel(
         async (tx) => {
           signal?.throwIfAborted();
           await requireDeploymentModelAdmin({ ...deps, prisma: tx }, actor);
-          const row = await tx.deploymentSettings.findUnique({
-            where: { id: "default" },
-            select: { sharedModelRevision: true },
+          const row = await tx.deploymentModelConnection.findUnique({
+            where: connectionWhere,
+            select: revisionSelect,
           });
-          if ((row?.sharedModelRevision ?? null) !== expected)
+          if ((row?.revision ?? null) !== expected)
             throw new ClientError(
               "CONFLICT",
               "The deployment model changed. Refresh settings and try again.",
             );
-          await tx.deploymentSettings.upsert({
-            where: { id: "default" },
-            create: { id: "default", ...update },
+          await tx.deploymentModelConnection.upsert({
+            where: connectionWhere,
+            create: { ...connectionWhere, ...update },
             update,
           });
         },

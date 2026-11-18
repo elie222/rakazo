@@ -29,6 +29,7 @@ function setup() {
       },
       spaceMemoryConfig: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
+      deploymentModelConnection: { findUnique: vi.fn(async () => null) },
       aiDataConsent: { findMany: vi.fn(async () => []), upsert },
       $transaction: vi.fn(async (write: (tx: unknown) => Promise<unknown>) =>
         write({ aiDataConsent: { upsert } }),
@@ -50,12 +51,12 @@ describe("consent grants", () => {
         thinkingLevel: null,
       },
     ] as never);
-    vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
-      sharedModelProvider: "openai",
-      sharedModelId: "gpt-6-luna",
-      sharedModelMethod: "oauth",
-      sharedModelRevision: "fixture",
-      sharedModelCipher: "sealed-binding",
+    vi.mocked(deps.prisma.deploymentModelConnection.findUnique).mockResolvedValue({
+      provider: "openai",
+      modelId: "gpt-6-luna",
+      method: "oauth",
+      revision: "fixture",
+      credentialCipher: "sealed-binding",
     } as never);
     const status = await aiConsentStatus(deps, actor, { uses: ["model"] });
     expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);

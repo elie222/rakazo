@@ -810,12 +810,6 @@ model DeploymentSettings {
   defaultModelProvider            String?
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
-  sharedModelProvider             String?
-  sharedModelId                   String?
-  sharedModelMethod               String?
-  sharedModelRevision             String?
-  sharedModelCipher               String?
-  sharedModelDisabled             Boolean  @default(false)
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
   computerProvider                String?
@@ -825,6 +819,18 @@ model DeploymentSettings {
   updatedAt                       DateTime @updatedAt
 
   @@map("deployment_settings")
+}
+
+model DeploymentModelConnection {
+  id               String  @id @default("default")
+  provider         String?
+  modelId          String?
+  method           String?
+  revision         String?
+  credentialCipher String?
+  disabled         Boolean @default(false)
+
+  @@map("deployment_model_connections")
 }
 
 /// Append-only security audit trail. No foreign keys, so an account deletion

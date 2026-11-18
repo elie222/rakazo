@@ -41,20 +41,26 @@ describe("model setup gate", () => {
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
-        findUnique: vi.fn().mockResolvedValue(
-          options.sharedModel
-            ? {
-                sharedModelProvider: "anthropic",
-                sharedModelId: "test-model",
-                sharedModelMethod: "api_key",
-                sharedModelRevision: "test-revision",
-                sharedModelCipher: "test-ciphertext",
-              }
-            : options.deploymentModelCredentialCipher
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(
+            options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
               : options.savedDeploymentModel
                 ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
                 : null,
+          ),
+      },
+      deploymentModelConnection: {
+        findUnique: vi.fn().mockResolvedValue(
+          options.sharedModel
+            ? {
+                provider: "anthropic",
+                modelId: "test-model",
+                method: "api_key",
+                revision: "test-revision",
+              }
+            : null,
         ),
       },
     } as unknown as PrismaClient;

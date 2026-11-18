@@ -222,6 +222,7 @@ async function failRun(scenario: Scenario) {
           : null,
       ),
     },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

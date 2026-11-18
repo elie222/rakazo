@@ -145,6 +145,7 @@ export function threadsRoutes(ctx: RouterContext) {
           ? {
               secrets: deps.secrets,
               deployment,
+              settings: setup.settings,
               shared: setup.shared,
               hostedProvider: setup.creditsAvailable ? deployment?.provider : undefined,
               codexCatalog,

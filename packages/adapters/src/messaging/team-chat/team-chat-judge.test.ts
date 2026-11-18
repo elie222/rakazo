@@ -20,23 +20,26 @@ describe("team chat engagement judge", () => {
   it.each([undefined, "former-offering"])(
     "uses the shared deployment connection without a runnable member model (offering=%s)",
     async (creditOfferingId) => {
-      const deploymentSettings = {
+      const deploymentModelConnection = {
         findUnique: vi.fn(async () => ({
-          sharedModelProvider: "openai",
-          sharedModelId: "gpt-5",
-          sharedModelMethod: "api_key",
-          sharedModelRevision: "fixture",
-          sharedModelCipher: "encrypted",
+          provider: "openai",
+          modelId: "gpt-5",
+          method: "api_key",
+          revision: "fixture",
+          credentialCipher: "encrypted",
         })),
       };
       const run = vi.fn(async function* (request: AgentRunRequest) {
         expect(request.model).toMatchObject({ provider: "openai", id: "gpt-5" });
-        await expect(request.model.resolveApiKey?.(request.registerModelSecrets)).resolves.toBe(
-          "shared-fixture-key",
-        );
+        await expect(
+          request.model.deploymentCredential?.resolve(new AbortController().signal),
+        ).resolves.toBe("shared-fixture-key");
         yield { type: "done", text: '{"act":true}' };
       });
-      const prisma = { deploymentSettings };
+      const prisma = {
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        deploymentModelConnection,
+      };
       if (creditOfferingId) {
         const row = {
           ...mainRole(

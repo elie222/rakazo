@@ -36,7 +36,6 @@ import {
   pinnedModelCredentialError,
 } from "../../models/model-selection.js";
 import { modelAcceptsImageInput } from "../../models/model-vision.js";
-import { sharedDeploymentModel } from "../../models/shared-deployment-model.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
@@ -117,9 +116,8 @@ export async function startTurnModel(
 ) {
   const { deps, run, runId, workerId, fence, attempt, secrets: runSecrets } = hold;
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
-  const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
+  const { bot, main, modelChoice, overrideCredential, settings, shared } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
-  const shared = sharedDeploymentModel(settings);
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
   const pinError =
     !pinnedComputerModels &&

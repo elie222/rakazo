@@ -129,7 +129,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
     model = withModelCapabilities(model, modelConfig);
   }
   const apiKey =
-    modelConfig.oauth || modelConfig.resolveApiKey
+    modelConfig.oauth || modelConfig.deploymentCredential
       ? undefined
       : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? modelConfig.apiKey || "local"

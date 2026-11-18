@@ -141,6 +141,7 @@ async function requestSecretWith(origin: string, extra: Record<string, unknown> 
       },
       task: { findUniqueOrThrow: async () => ({ id: run.taskId, prompt: "Sign in to the site" }) },
       computer: { updateMany: async () => ({ count: 1 }) },
+      deploymentModelConnection: { findUnique: async () => null },
       deploymentSettings: {
         findUnique: async () => ({
           defaultModelProvider: "openrouter",

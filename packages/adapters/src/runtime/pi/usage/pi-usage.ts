@@ -25,6 +25,7 @@ import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
+import { modelCredentialRedaction } from "../stream/pi-credential-redaction.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 
@@ -131,6 +132,7 @@ async function observeRequestId(
   id: unknown,
   reported: ReportedUsageFields,
   onRequestId?: (id: string) => void | Promise<void>,
+  safeText?: (text: string) => string,
 ): Promise<void> {
   if (
     reportedRequestIds.has(reported) ||
@@ -139,14 +141,16 @@ async function observeRequestId(
     id.length > 256
   )
     return;
-  reportedRequestIds.set(reported, id);
-  await onRequestId?.(id);
+  const safeId = safeText?.(id) ?? id;
+  reportedRequestIds.set(reported, safeId);
+  await onRequestId?.(safeId);
 }
 
 async function observeUsageEvent(
   raw: unknown,
   reported: ReportedUsageFields,
   onRequestId?: (id: string) => void | Promise<void>,
+  safeText?: (text: string) => string,
 ): Promise<void> {
   if (!raw || typeof raw !== "object") return;
   const event = raw as RawUsageEvent;
@@ -154,6 +158,7 @@ async function observeUsageEvent(
     event.response?.id ?? event.message?.id ?? event.id,
     reported,
     onRequestId,
+    safeText,
   );
   try {
     const usage = event.usage ?? event.response?.usage ?? event.message?.usage;
@@ -222,6 +227,7 @@ export function usageReportingFetch(
   fetcher: typeof fetch,
   reported: ReportedUsageFields,
   onRequestId?: (id: string) => void | Promise<void>,
+  safeText?: (text: string) => string,
 ): typeof fetch {
   return async (input, init) => {
     const transport = fetchForRequest(fetcher, init);
@@ -239,7 +245,12 @@ export function usageReportingFetch(
     }
     // OpenRouter's Anthropic-format stream carries the upstream message id; its usage
     // lookup accepts only the generation id from this header.
-    await observeRequestId(response.headers.get("x-generation-id"), reported, onRequestId);
+    await observeRequestId(
+      response.headers.get("x-generation-id"),
+      reported,
+      onRequestId,
+      safeText,
+    );
     // These HTTP responses reject the request before generation. Timeouts,
     // transport failures, and server errors remain uncertain and retain their holds.
     if (
@@ -267,7 +278,7 @@ export function usageReportingFetch(
       } catch {
         return;
       }
-      await observeUsageEvent(event, reported, onRequestId);
+      await observeUsageEvent(event, reported, onRequestId, safeText);
     };
     const body = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
@@ -347,6 +358,7 @@ export function observedPiStream(
     imageTokens?: ContextBudget["imageTokens"];
     onUsage?: (usage: AgentUsage) => void;
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
+    deploymentApiKey?: string;
     /** Provider failures only; excludes context, reservations and usage settlement. */
     onProviderError?: (message: AssistantMessage) => void;
     onRejectedRequest?: (rejection: RejectedProviderRequest | undefined, model: Model<Api>) => void;
@@ -355,6 +367,10 @@ export function observedPiStream(
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
   const callId = randomUUID();
+  const redaction = hooks?.deploymentApiKey
+    ? modelCredentialRedaction(hooks.deploymentApiKey)
+    : undefined;
+  const safeText = (text: string) => redaction?.redact(text) ?? text;
   const emitUsage = async (usage: AgentUsage, operationKind = attribution.operationKind) => {
     const event = {
       type: "usage" as const,
@@ -389,6 +405,8 @@ export function observedPiStream(
       let started = false;
       let settled = false;
       let partialMessage: AssistantMessage | undefined;
+      let safePartial: AssistantMessage | undefined;
+      let safeTerminal: AssistantMessage | undefined;
       let providerError: unknown;
       let providerThrew = false;
       let inputTokensEstimate = 0;
@@ -469,7 +487,13 @@ export function observedPiStream(
               collectRawUsage
                 ? { ...historyOptions, fetch: historyOptions?.fetch ?? globalThis.fetch }
                 : historyOptions,
-              hooks.onRejectedRequest,
+              (rejection, requestModel) =>
+                hooks.onRejectedRequest?.(
+                  rejection?.requestId
+                    ? { ...rejection, requestId: safeText(rejection.requestId) }
+                    : rejection,
+                  requestModel,
+                ),
             )
           : historyOptions;
         let upstream: ReturnType<Models["streamSimple"]>;
@@ -492,10 +516,11 @@ export function observedPiStream(
                       : (streamOptions?.fetch ?? globalThis.fetch),
                     reported,
                     reportRequestId,
+                    redaction?.redact,
                   ),
                   onProviderStreamEvent: async (event, eventModel) => {
                     if (!sseObserved.has(reported)) {
-                      await observeUsageEvent(event, reported, reportRequestId);
+                      await observeUsageEvent(event, reported, reportRequestId, redaction?.redact);
                     }
                     await callerOnProviderStreamEvent?.(event, eventModel);
                   },
@@ -529,8 +554,16 @@ export function observedPiStream(
               : event.type === "error"
                 ? event.error
                 : event.partial;
-          if (event.type === "done" || event.type === "error") {
-            const message = event.type === "done" ? event.message : event.error;
+          const safeEvent = redaction?.event(event) ?? event;
+          safePartial =
+            safeEvent.type === "done"
+              ? safeEvent.message
+              : safeEvent.type === "error"
+                ? safeEvent.error
+                : safeEvent.partial;
+          if (safeEvent.type === "done" || safeEvent.type === "error") {
+            const message = partialMessage;
+            safeTerminal = safePartial;
             normalized = normalizePiUsage(message.usage, model, reported);
             span?.setAttributes({
               "pi.ai.response.stop_reason": message.stopReason,
@@ -543,7 +576,7 @@ export function observedPiStream(
               "pi.ai.usage.cost": normalized.costUsd ?? undefined,
             });
             if (event.type === "error") span?.setStatus({ status: "error" });
-            recordPiTelemetryContent(span, "pi.ai.response", message.content);
+            recordPiTelemetryContent(span, "pi.ai.response", safeTerminal.content);
             const operationKind = usageOperationKind(
               attribution.operationKind,
               preparedContext,
@@ -567,10 +600,15 @@ export function observedPiStream(
               /* Cache telemetry cannot discard accounted spend. */
             }
           }
-          if (event.type === "error") hooks?.onProviderError?.(event.error);
-          stream.push(event);
+          if (safeEvent.type === "error") hooks?.onProviderError?.(safeEvent.error);
+          if (safeEvent.type === "done") {
+            const tail = redaction?.finalTextDelta(safeEvent.message);
+            if (tail) stream.push(tail);
+          }
+          stream.push(safeEvent);
         }
-        stream.end(await upstream.result());
+        const final = safeTerminal ?? (await upstream.result());
+        stream.end(safeTerminal ?? redaction?.message(final) ?? final);
       } catch (error) {
         span?.setStatus({ status: "error" });
         let terminalError = error;
@@ -606,7 +644,7 @@ export function observedPiStream(
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.
         const message = {
           role: "assistant" as const,
-          content: hooks?.onProviderError ? (partialMessage?.content ?? []) : [],
+          content: hooks?.onProviderError ? (safePartial?.content ?? []) : [],
           api: model.api,
           provider: model.provider,
           model: model.id,
@@ -619,8 +657,9 @@ export function observedPiStream(
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
           stopReason: "error" as const,
-          errorMessage:
+          errorMessage: safeText(
             terminalError instanceof Error ? terminalError.message : String(terminalError),
+          ),
           timestamp: Date.now(),
         };
         if (providerThrew) {
@@ -631,8 +670,9 @@ export function observedPiStream(
             });
           hooks?.onProviderError?.({
             ...message,
-            errorMessage:
+            errorMessage: safeText(
               providerError instanceof Error ? providerError.message : String(providerError),
+            ),
           });
         }
         stream.push({ type: "error", reason: "error", error: message });

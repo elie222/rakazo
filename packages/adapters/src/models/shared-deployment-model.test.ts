@@ -1,4 +1,4 @@
-import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError, SharedModelCredentialUnavailable } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -7,8 +7,7 @@ import { exchangeWorkloadIdentity } from "../providers/model/openai/workload-ide
 import { verifyModelServesAgents } from "./model-connect-check.js";
 import { selectConfiguredModel } from "./model-roles.js";
 import {
-  SharedModelCredentialUnavailable,
-  sharedDeploymentModel,
+  readSharedDeploymentModel,
   sharedModelProviders,
   sharedModelRequestCredential,
   testSharedModel,
@@ -25,11 +24,11 @@ afterEach(() => {
 });
 
 const current = {
-  sharedModelProvider: "test-provider",
-  sharedModelId: "test-model",
-  sharedModelMethod: "api_key",
-  sharedModelRevision: "current-revision",
-  sharedModelCipher: "sealed-key",
+  provider: "test-provider",
+  modelId: "test-model",
+  method: "api_key" as const,
+  revision: "current-revision",
+  credentialCipher: "sealed-key",
 };
 
 function oauthModel(revision: string) {
@@ -39,24 +38,29 @@ function oauthModel(revision: string) {
   );
   const row = {
     ...current,
-    sharedModelProvider: "openai",
-    sharedModelMethod: "oauth",
-    sharedModelRevision: revision,
+    provider: "openai",
+    method: "oauth" as const,
+    revision: revision,
   };
   const findUnique = vi.fn().mockResolvedValue(row);
-  const prisma = { deploymentSettings: { findUnique } } as unknown as Pick<
+  const prisma = { deploymentModelConnection: { findUnique } } as unknown as Pick<
     PrismaClient,
-    "deploymentSettings"
+    "deploymentModelConnection"
   >;
   const load = vi.fn(async () => "fixture");
   const read = (signal?: AbortSignal) =>
-    sharedModelRequestCredential(prisma, { load }, sharedDeploymentModel(row)!, undefined, signal);
+    sharedModelRequestCredential(prisma, { load }, row, signal);
   return { read, findUnique, row, load };
 }
 
 describe("the deployment default", () => {
-  it("fills the fallback slot while personal selections keep their precedence", () => {
-    const shared = sharedDeploymentModel(current);
+  it("fills the fallback slot while personal selections keep their precedence", async () => {
+    const findUnique = vi.fn().mockResolvedValue(current);
+    const prisma = { deploymentModelConnection: { findUnique } } as unknown as Pick<
+      PrismaClient,
+      "deploymentModelConnection"
+    >;
+    const shared = await readSharedDeploymentModel(prisma);
     const defaults = { shared, deployment: { provider: "env-provider", model: "env-model" } };
     const run = { override: null, overrideCredential: null, main: null, defaults };
     expect(selectConfiguredModel(run)).toMatchObject({
@@ -75,12 +79,14 @@ describe("the deployment default", () => {
         },
       }),
     ).toMatchObject({ provider: "personal-provider", id: "personal-model" });
+    findUnique.mockResolvedValue({ ...current, disabled: true });
+    const disabled = await readSharedDeploymentModel(prisma);
     expect(
       selectConfiguredModel({
         ...run,
         defaults: {
           ...defaults,
-          shared: sharedDeploymentModel({ ...current, sharedModelDisabled: true }),
+          shared: disabled,
         },
       }),
     ).toMatchObject({
@@ -148,17 +154,13 @@ describe("the deployment default", () => {
     await expect(read()).rejects.toEqual(
       new SharedModelCredentialUnavailable("The deployment model credential could not be read."),
     );
-    findUnique
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce({ ...row, sharedModelDisabled: true });
+    findUnique.mockResolvedValueOnce(row).mockResolvedValueOnce({ ...row, disabled: true });
     await expect(read()).rejects.toThrow("deployment model connection changed");
   });
 
   it("keeps a revoked connection from falling back when its exchange fails", async () => {
     const { findUnique, read, row } = oauthModel("revoked-failure");
-    findUnique
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce({ ...row, sharedModelRevision: "new" });
+    findUnique.mockResolvedValueOnce(row).mockResolvedValueOnce({ ...row, revision: "new" });
     vi.mocked(exchangeWorkloadIdentity).mockRejectedValueOnce(
       new ClientError("SERVICE_UNAVAILABLE", "upstream unavailable"),
     );
@@ -184,15 +186,15 @@ describe("the deployment default", () => {
       .mockResolvedValueOnce(current)
       .mockResolvedValueOnce({
         ...current,
-        sharedModelRevision: "new-revision",
+        revision: "new-revision",
       });
-    const prisma = { deploymentSettings: { findUnique } } as unknown as Pick<
+    const prisma = { deploymentModelConnection: { findUnique } } as unknown as Pick<
       PrismaClient,
-      "deploymentSettings"
+      "deploymentModelConnection"
     >;
     const load = vi.fn(async () => "fixture-key");
-    await expect(
-      sharedModelRequestCredential(prisma, { load }, sharedDeploymentModel(current)!),
-    ).rejects.toThrow("deployment model connection changed");
+    await expect(sharedModelRequestCredential(prisma, { load }, current)).rejects.toThrow(
+      "deployment model connection changed",
+    );
   });
 });

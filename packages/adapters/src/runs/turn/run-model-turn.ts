@@ -9,7 +9,6 @@ import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
-import { addRunSecrets } from "../assembly/run-context.js";
 import {
   botEmailInstruction,
   runIdentityInstruction,
@@ -64,7 +63,7 @@ export async function runModelTurn(
       )
       .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
     const request = modelTurnRequest(services, hold, turn);
-    if (request.model.resolveApiKey) {
+    if (request.model.deploymentCredential) {
       await recordAuditEvent({
         action: "deployment.model.selected",
         actor: { type: "user", id: hold.run.userId },
@@ -258,7 +257,6 @@ function modelTurnRequest(
     tools,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
-    registerModelSecrets: (values) => addRunSecrets(turn.ctx, values),
     model: mainRunModel,
     computerModel,
     fallbackModels: fallbackModels.map((choice) => ({

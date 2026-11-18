@@ -8,6 +8,7 @@ import type {
 import {
   canonicalPiProviderId,
   creditOfferingFromConnectionId,
+  modelRoleConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
@@ -54,8 +55,10 @@ import {
 import { connectionModelSettings } from "../../models/model-settings.js";
 import type { SharedDeploymentModel } from "../../models/shared-deployment-model.js";
 import {
-  sharedDeploymentModel,
-  sharedModelRequestCredential,
+  bindDeploymentModelCredential,
+  DEPLOYMENT_MODEL_CONNECTION_PREFIX,
+  deploymentModelConnectionId,
+  readSharedDeploymentModel,
 } from "../../models/shared-deployment-model.js";
 import { codexLiveModel } from "../../runtime/pi/models/pi-codex-catalog.js";
 import { LOCAL_PROVIDER_ID } from "../../runtime/pi/models/pi-local-provider.js";
@@ -105,9 +108,10 @@ export async function fleetPrepareDeps(
           provider,
         ),
       defaultModel: async () => {
-        const [main, settings] = await Promise.all([
+        const [main, settings, shared] = await Promise.all([
           resolveMemberMainModel(deps, scope),
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+          readSharedDeploymentModel(deps.prisma),
         ]);
         const selected = selectConfiguredModel({
           override: null,
@@ -116,7 +120,7 @@ export async function fleetPrepareDeps(
           hostedProvider,
           defaults: {
             settings,
-            shared: sharedDeploymentModel(settings),
+            shared,
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
           },
         });
@@ -216,12 +220,17 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!credential && deployment.provider === provider && deployment.hostCredentials);
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
-    !material.resolveApiKey &&
+    !material.deploymentCredential &&
     material.apiKey === undefined &&
     (provider === "openrouter" || provider === "scripted")
       ? process.env.OPENROUTER_API_KEY
       : undefined;
-  if (!material.resolveApiKey && !material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
+  if (
+    !material.deploymentCredential &&
+    !material.apiKey?.trim() &&
+    !runtimeKey?.trim() &&
+    !keyless
+  ) {
     throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
   }
   const apiKey = material.apiKey ?? runtimeKey;
@@ -238,11 +247,9 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     apiKey,
     redact: [...new Set([...material.redact, ...(apiKey ? [apiKey] : [])])],
     callObserver,
-    connectionId: shared
-      ? `deployment:${shared.revision}`
-      : fundingOfferingId
-        ? `credits:${fundingOfferingId}`
-        : credential?.id,
+    connectionId:
+      material.connectionId ??
+      modelRoleConnectionId({ creditOfferingId: fundingOfferingId, credentialId: credential?.id }),
   };
 }
 
@@ -272,7 +279,8 @@ async function resolveModelKeyMaterial(
   } = {},
 ): Promise<{
   apiKey?: string;
-  resolveApiKey?: AgentRunRequest["model"]["resolveApiKey"];
+  connectionId?: string;
+  deploymentCredential?: AgentRunRequest["model"]["deploymentCredential"];
   accountId?: string;
   gatewayId?: string;
   projectId?: string;
@@ -305,14 +313,7 @@ async function resolveModelKeyMaterial(
         "The deployment model connection changed. Start a new run.",
       );
     return {
-      resolveApiKey: (register, signal) =>
-        sharedModelRequestCredential(
-          deps.prisma,
-          deps.secretStore,
-          deploymentConnection,
-          register ?? registerSecrets,
-          signal,
-        ),
+      ...bindDeploymentModelCredential(deps.prisma, deps.secretStore, deploymentConnection),
       redact: [],
     };
   }
@@ -471,7 +472,7 @@ export function resolvedModelRunFields(
   return {
     connectionId: resolved.connectionId,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
-    resolveApiKey: resolved.resolveApiKey,
+    deploymentCredential: resolved.deploymentCredential,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
@@ -511,11 +512,9 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
-  if (credentialId?.startsWith("deployment:")) {
-    const shared = sharedDeploymentModel(
-      await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-    );
-    if (!shared || credentialId !== `deployment:${shared.revision}`)
+  if (credentialId?.startsWith(DEPLOYMENT_MODEL_CONNECTION_PREFIX)) {
+    const shared = await readSharedDeploymentModel(deps.prisma);
+    if (!shared || credentialId !== deploymentModelConnectionId(shared))
       throw new UnavailableModelForAuthError(
         "The deployment model connection changed. Start a new run.",
       );
@@ -634,7 +633,7 @@ export async function resolveRunModel(
       })
     : null;
   const hasOverride = Boolean(override?.modelProvider && override.modelId);
-  const [overrideCredential, main, settings] = await Promise.all([
+  const [overrideCredential, main, settings, shared] = await Promise.all([
     hasOverride
       ? findConnectedModelCredential(
           deps.prisma,
@@ -648,6 +647,7 @@ export async function resolveRunModel(
     deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     }),
+    readSharedDeploymentModel(deps.prisma),
   ]);
   const selected = selectConfiguredModel({
     override,
@@ -658,7 +658,7 @@ export async function resolveRunModel(
       : undefined,
     defaults: {
       settings,
-      shared: sharedDeploymentModel(settings),
+      shared,
       deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
     },
   });
@@ -670,6 +670,7 @@ export async function resolveRunModel(
     id ??= runtimeFallback?.id ?? null;
   }
   if (!provider || !id) throw new Error(MISSING_MODEL_RUN_ERROR);
+  const creditOfferingId = creditOfferingFromConnectionId(selected.connectionId);
   // The key is resolved for the provider that won above, not before it is known.
   const resolved = await resolveModelKey(
     deps,
@@ -682,10 +683,8 @@ export async function resolveRunModel(
     {
       deploymentConnection:
         "deploymentConnection" in selected ? selected.deploymentConnection : undefined,
-      creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
-      requireStoredSecret: Boolean(
-        selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),
-      ),
+      creditOfferingId,
+      requireStoredSecret: Boolean(selected.connectionId && !creditOfferingId),
     },
   );
   return {

@@ -25,8 +25,8 @@ import {
 } from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
 import {
-  sharedDeploymentModel,
-  sharedModelRequestCredential,
+  bindDeploymentModelCredential,
+  readSharedDeploymentModel,
 } from "../../models/shared-deployment-model.js";
 import {
   cleanLine,
@@ -166,7 +166,6 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           history: [],
           tools: [],
           model: resolved.model,
-          registerModelSecrets: (values) => secretsToRedact.push(...values),
         },
         {
           operationId: judgeId,
@@ -201,19 +200,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   private async resolveModel(bot: TeamChatEngagementInput["bot"]): Promise<{
     model: AgentRunModel;
   } | null> {
-    const settings = await this.deps.prisma.deploymentSettings.findUnique({
-      where: { id: "default" },
-    });
+    const { prisma, secrets } = this.deps;
     const scope = { userId: bot.userId, spaceId: bot.spaceId };
-    const member = await resolveMemberMainModel(
-      { prisma: this.deps.prisma, secretStore: this.deps.secrets },
-      scope,
-    );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
-    const overrideCredential = requestedProvider
-      ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
-      : null;
+    const [settings, shared, member, overrideCredential] = await Promise.all([
+      prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+      readSharedDeploymentModel(prisma),
+      resolveMemberMainModel({ prisma, secretStore: secrets }, scope),
+      requestedProvider ? findModelCredential(prisma, scope, requestedProvider) : null,
+    ]);
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(
       requestedProvider &&
@@ -224,7 +220,6 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             modelCreditOfferings() &&
             approvedModelCreditOffering(requestedProvider, requestedModel))),
     );
-    const shared = sharedDeploymentModel(settings);
     // A hosted-credit choice cannot run while the self-hosted shared default is active.
     const main =
       member &&
@@ -252,14 +247,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
-          resolveApiKey: (register, signal) =>
-            sharedModelRequestCredential(
-              this.deps.prisma,
-              this.deps.secrets,
-              shared,
-              register,
-              signal,
-            ),
+          ...bindDeploymentModelCredential(prisma, secrets, shared),
         },
       };
 
