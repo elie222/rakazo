@@ -336,6 +336,12 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       const pastBooking = await runAsTenant(second, () =>
         prisma.meetingCalendarBooking.findFirstOrThrow({ where: { eventId: lateReview.id } }),
       );
+      const dayMs = 24 * 60 * 60_000;
+      const movedReview = new Date(now.getTime() + 12 * dayMs);
+      emulator.revision(review.id, {
+        start_time: movedReview.toISOString(),
+        end_time: new Date(movedReview.getTime() + 30 * 60_000).toISOString(),
+      });
       clock = new Date(lateReview.startsAt + 1);
       await service.sync(connected.id);
       const findBooking = () =>
@@ -353,6 +359,19 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       );
       await service.sync(connected.id);
       expect(await findBooking()).toBeNull();
+      clock = new Date(now.getTime() + 10 * dayMs);
+      await service.sync(connected.id);
+      await runAsTenant(second, async () => {
+        const rules = await prisma.meetingCalendarRule.findMany({
+          where: { connectionId: connected.id },
+        });
+        expect(rules.some(({ targetId }) => targetId === race.id)).toBe(false);
+        expect(rules).toContainEqual(
+          expect.objectContaining({ targetId: review.id, eventStartsAt: movedReview, botId: null }),
+        );
+        expect(rules.some(({ scope }) => scope === "series")).toBe(true);
+      });
+      expect(emulator.scheduled(review.id)).toBeUndefined();
       clock = now;
 
       emulator.failNextDisconnect(503);

@@ -27,6 +27,7 @@ const SYNC_MS = 60_000;
 const CLEANUP_MARGIN_MS = 5_000;
 const ADMISSION_RECHECK_MS = 2 * 60_000;
 const CALENDAR_LOOKAHEAD_MS = 14 * 24 * 60 * 60_000;
+const OCCURRENCE_RULE_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const CALENDAR_REFRESH_MS = 6 * 60 * 60_000;
 
 type Owner = Pick<Actor, "spaceId" | "userId">;
@@ -191,8 +192,14 @@ export class MeetingCalendarService {
         const selected = action === "skip" ? null : botId;
         await tx.meetingCalendarRule.upsert({
           where: { connectionId_scope_targetId: { connectionId: connection.id, scope, targetId } },
-          create: { connectionId: connection.id, scope, targetId, botId: selected },
-          update: { botId: selected },
+          create: {
+            connectionId: connection.id,
+            scope,
+            targetId,
+            botId: selected,
+            eventStartsAt: scope === "event" ? event.startsAt : null,
+          },
+          update: { botId: selected, eventStartsAt: scope === "event" ? event.startsAt : null },
         });
         // Re-enable the visible instance when a series is selected from a skipped occurrence.
         if (action === "series") {
@@ -522,10 +529,52 @@ export class MeetingCalendarService {
             });
           }
           await this.publishChanges(connection, events, lease);
+          await this.pruneOccurrenceRules(connectionId, calendarId, connection.rules, lease);
           if (retryCancellation) throw retryCancellation;
         },
       ),
     );
+  }
+
+  private async pruneOccurrenceRules(
+    connectionId: string,
+    calendarId: string,
+    rules: { scope: string; targetId: string; eventStartsAt: Date | null }[],
+    lease: HeldLease,
+  ) {
+    const { prisma, provider } = this.options;
+    const cutoff = new Date(this.now().getTime() - OCCURRENCE_RULE_RETENTION_MS);
+    const stale = rules
+      .filter(
+        ({ scope, eventStartsAt }) =>
+          scope === "event" && (!eventStartsAt || eventStartsAt < cutoff),
+      )
+      .slice(0, 10);
+    for (const { scope, targetId, eventStartsAt } of stale) {
+      lease.signal.throwIfAborted();
+      const event = await bestEffort(
+        "check an old meeting calendar occurrence",
+        provider.getEvent(targetId, deadlineSignal(5_000, lease.signal)),
+      );
+      if (event === undefined) continue;
+      const where = { connectionId, scope, targetId, eventStartsAt };
+      await prisma.$transaction(async (tx) => {
+        await assertLeaseHeld(tx, lease);
+        if (
+          event &&
+          event.calendarId === calendarId &&
+          !event.cancelled &&
+          event.startsAt >= cutoff
+        ) {
+          await tx.meetingCalendarRule.updateMany({
+            where,
+            data: { eventStartsAt: event.startsAt },
+          });
+        } else {
+          await tx.meetingCalendarRule.deleteMany({ where });
+        }
+      });
+    }
   }
 
   private async scheduleCalendarRefresh(connectionId: string) {
@@ -653,7 +702,7 @@ export class MeetingCalendarService {
             SELECT id, status FROM meeting_sessions WHERE "activeKey" = ${key} FOR UPDATE
           `;
           if (existing?.status === "leaving") {
-            await this.recordSkippedEvent(tx, connection.id, eventId);
+            await this.recordSkippedEvent(tx, connection.id, eventId, startsAt);
             return null;
           }
           if (
@@ -707,18 +756,23 @@ export class MeetingCalendarService {
   ) {
     await this.options.prisma.$transaction(async (tx) => {
       await assertLeaseHeld(tx, lease);
-      await this.recordSkippedEvent(tx, connectionId, booking.eventId);
+      await this.recordSkippedEvent(tx, connectionId, booking.eventId, booking.startsAt);
     });
     if (detach) await this.removeBooking(connectionId, booking, lease);
     else await this.dropBooking(connectionId, booking, lease);
   }
 
-  private recordSkippedEvent(tx: Prisma.TransactionClient, connectionId: string, eventId: string) {
+  private recordSkippedEvent(
+    tx: Prisma.TransactionClient,
+    connectionId: string,
+    eventId: string,
+    eventStartsAt: Date,
+  ) {
     const rule = { connectionId, scope: "event", targetId: eventId };
     return tx.meetingCalendarRule.upsert({
       where: { connectionId_scope_targetId: rule },
-      create: { ...rule, botId: null },
-      update: { botId: null },
+      create: { ...rule, botId: null, eventStartsAt },
+      update: { botId: null, eventStartsAt },
     });
   }
 

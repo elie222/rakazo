@@ -29,6 +29,7 @@ CREATE TABLE "meeting_calendar_rules" (
     "scope" TEXT NOT NULL,
     "targetId" TEXT NOT NULL,
     "botId" TEXT,
+    "eventStartsAt" TIMESTAMP(3),
     PRIMARY KEY ("connectionId", "scope", "targetId")
 );
 

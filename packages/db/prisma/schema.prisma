@@ -2988,11 +2988,12 @@ model MeetingCalendarAuthorization {
 }
 
 model MeetingCalendarRule {
-  connectionId String
-  connection   MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  scope        String
-  targetId     String
-  botId        String?
+  connectionId  String
+  connection    MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  scope         String
+  targetId      String
+  botId         String?
+  eventStartsAt DateTime?
 
   @@id([connectionId, scope, targetId])
   @@map("meeting_calendar_rules")

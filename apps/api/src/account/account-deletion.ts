@@ -37,7 +37,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "../billing/billing.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
-import { requireDisconnectedMeetingCalendars } from "../spaces/space-deletion.js";
+import { disconnectMeetingCalendarsForDeletion } from "../spaces/space-deletion.js";
 import { afterSpaceDeparture } from "../spaces/space-departure.js";
 
 /** Bounds one account or organization deletion attempt. Providers may ignore the abort signal, so
@@ -99,8 +99,7 @@ export async function deleteAccountContent(
       lease.signal.throwIfAborted();
     }
     stage = "teardown";
-    await deps.meetingCalendar?.disconnectUser(userId);
-    await requireDisconnectedMeetingCalendars(deps.prisma, { userId });
+    await disconnectMeetingCalendarsForDeletion(deps, { userId });
     const leaving = { OR: [{ userId }, { spaceId: { in: spaceIds } }] };
     // Then leave other people's Spaces, so what this account made there passes to their owners
     // instead of being torn down with it. None of them is claimed above: each keeps another full
@@ -356,10 +355,7 @@ async function deleteClaimedSpaces(
     adapterContext(input.operationId, input.userId, spaceId, botId, input.signal);
   input.signal?.throwIfAborted();
   await settleAll(
-    input.spaceIds.map(async (spaceId) => {
-      await deps.meetingCalendar?.disconnectSpace(spaceId);
-      await requireDisconnectedMeetingCalendars(deps.prisma, { spaceId });
-    }),
+    input.spaceIds.map((spaceId) => disconnectMeetingCalendarsForDeletion(deps, { spaceId })),
   );
   const bots = await deps.prisma.bot.findMany({
     where: input.bots,

@@ -125,6 +125,30 @@ describePostgres("space deletion lease (PostgreSQL)", () => {
       await expect(remove(sandbox, person, person.spaceId)).rejects.toMatchObject({
         kind: "SERVICE_UNAVAILABLE",
       });
+      const disconnectSpace = vi.fn(async () => {
+        throw new Error("fixture calendar provider unavailable");
+      });
+      await expect(
+        runAsTenant(person, () =>
+          deleteSpaceWithContent(
+            {
+              ...deps(sandbox),
+              meetingCalendar: {
+                disconnectSpace,
+                disconnectOwner: vi.fn(),
+                disconnectUser: vi.fn(),
+              },
+            },
+            person,
+            person.spaceId,
+          ),
+        ),
+      ).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+        message: "Disconnect meeting calendars before deleting.",
+        cause: expect.objectContaining({ message: "fixture calendar provider unavailable" }),
+      });
+      expect(disconnectSpace).toHaveBeenCalledOnce();
       expect(sandbox.destroy).not.toHaveBeenCalled();
       expect(await system.space.findUnique({ where: { id: person.spaceId } })).toMatchObject({
         deletionClaimId: null,

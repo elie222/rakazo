@@ -65,17 +65,32 @@ export type SpaceDeletionDeps = {
   secrets?: Pick<SecretStore, "delete">;
 };
 
-/** Keep the connection ID available for teardown even when its provider is disabled or switched. */
-export async function requireDisconnectedMeetingCalendars(
-  prisma: PrismaClient,
+/** Keep provider handles available until the disconnect has been confirmed. */
+export async function disconnectMeetingCalendarsForDeletion(
+  { prisma, meetingCalendar }: Pick<SpaceDeletionDeps, "prisma" | "meetingCalendar">,
   scope: { spaceId: string } | { userId: string },
 ) {
-  const remaining = await runAsSystem("check meeting calendar teardown before deletion", () =>
-    prisma.meetingCalendarConnection.findFirst({ where: scope, select: { id: true } }),
-  );
-  if (remaining) {
-    throw new ClientError("SERVICE_UNAVAILABLE", "Disconnect meeting calendars before deleting.");
+  const requireDisconnected = async (cause?: unknown) => {
+    const remaining = await runAsSystem("check meeting calendar teardown before deletion", () =>
+      prisma.meetingCalendarConnection.findFirst({ where: scope, select: { id: true } }),
+    );
+    if (remaining) {
+      throw new ClientError(
+        "SERVICE_UNAVAILABLE",
+        "Disconnect meeting calendars before deleting.",
+        undefined,
+        { cause },
+      );
+    }
+  };
+  try {
+    if ("spaceId" in scope) await meetingCalendar?.disconnectSpace(scope.spaceId);
+    else await meetingCalendar?.disconnectUser(scope.userId);
+  } catch (cause) {
+    await requireDisconnected(cause);
+    throw cause;
   }
+  await requireDisconnected();
 }
 
 /**
@@ -145,11 +160,9 @@ export async function deleteSpaceWithContent(
       lease.signal.throwIfAborted();
     };
 
-    if (deps.meetingCalendar) {
-      const calendar = deps.meetingCalendar;
-      await teardown(() => calendar.disconnectSpace(spaceId), "Space calendar teardown timed out");
-    }
-    await requireDisconnectedMeetingCalendars(deps.prisma, { spaceId });
+    // A pending calendar disconnect is safe to retry before structural teardown begins.
+    await disconnectMeetingCalendarsForDeletion(deps, { spaceId });
+    lease.signal.throwIfAborted();
     for (const bot of await listClaimedSpaceBots(deps.prisma, claimedInput)) {
       try {
         await teardown(
