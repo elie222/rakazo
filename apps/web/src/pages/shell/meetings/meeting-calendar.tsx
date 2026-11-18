@@ -34,9 +34,15 @@ import { useEventListener } from "../../../lib/use-event-listener";
 type Selection = { eventId: string; action: MeetingCalendarAction };
 type Action = Selection | { action: "connect" | "disconnect" };
 
-export function MeetingCalendar({ botId }: { botId: string }) {
+export function MeetingCalendar({
+  botId,
+  initiallyOpen,
+}: {
+  botId: string;
+  initiallyOpen: boolean;
+}) {
   const { t, i18n } = useLingui();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const queries = useSpaceQueries();
   const read = queries.meetingCalendar.upcoming.queryOptions({ input: { botId } });

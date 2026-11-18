@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MeetingPlatformSchema } from "./meetings.js";
 
 export const MEETING_CALENDAR_CALLBACK_PATH = "/api/meetings/calendar/oauth/callback";
+export const MEETING_CALENDAR_RETURN_PARAM = "meeting-calendar";
 export const DESKTOP_MEETING_CALENDAR_LAUNCH_PATH = "/api/meetings/calendar/oauth/desktop";
 export const DESKTOP_MEETING_CALENDAR_DENIED = "rakazo-calendar-denied";
 export const DESKTOP_MEETING_CALENDAR_UNAVAILABLE = "rakazo-calendar-unavailable";

@@ -46,8 +46,9 @@ export class CalendarAuthorization {
   async begin(
     { spaceId, userId }: Owner,
     client: "web" | "mobile" | "desktop",
-    desktop?: {
-      loopbackPort: number;
+    options?: {
+      botId?: string;
+      loopbackPort?: number;
       sessionId?: string;
     },
   ) {
@@ -66,12 +67,12 @@ export class CalendarAuthorization {
     }
     const state =
       client === "desktop"
-        ? `desktop-${desktop?.loopbackPort}-${randomUUID()}`
+        ? `desktop-${options?.loopbackPort}-${randomUUID()}`
         : `${client}-${randomUUID()}`;
     const loopback = this.desktopLoopback(state);
     if (
       client === "desktop" &&
-      (!desktop?.sessionId || !loopback || new URL(webOrigin).protocol !== "https:")
+      (!options?.sessionId || !loopback || new URL(webOrigin).protocol !== "https:")
     ) {
       throw new ClientError(
         "BAD_REQUEST",
@@ -81,7 +82,8 @@ export class CalendarAuthorization {
     const authorization = {
       id: state,
       expiresAt: new Date(this.now().getTime() + OAUTH_SESSION_MS),
-      sessionId: client === "desktop" ? desktop!.sessionId : null,
+      sessionId: client === "desktop" ? options?.sessionId : null,
+      botId: client === "web" ? (options?.botId ?? null) : null,
     };
     await prisma.meetingCalendarAuthorization.upsert({
       where: { spaceId_userId: { spaceId, userId } },
@@ -131,23 +133,27 @@ export class CalendarAuthorization {
   }
 
   async completeFromBrowser(userId: string, state: string, code: string) {
-    const owner = await runAsSystem(
+    const authorization = await runAsSystem(
       "find an authorization belonging to the signed-in calendar user",
       async () => {
         const authorization = await this.options.prisma.meetingCalendarAuthorization.findFirst({
           where: { id: state, userId, expiresAt: { gt: this.now() } },
-          select: { spaceId: true, userId: true },
+          select: { spaceId: true, userId: true, botId: true },
         });
         if (!authorization) return null;
         const member = await this.options.prisma.spaceMember.findUnique({
-          where: { spaceId_userId: authorization },
+          where: {
+            spaceId_userId: { spaceId: authorization.spaceId, userId: authorization.userId },
+          },
           select: { id: true },
         });
         return member ? authorization : null;
       },
     );
-    if (!owner) throw new ClientError("BAD_REQUEST", "Start the calendar sign-in again.");
+    if (!authorization) throw new ClientError("BAD_REQUEST", "Start the calendar sign-in again.");
+    const { botId, ...owner } = authorization;
     await runAsTenant(owner, () => this.complete(owner, state, code));
+    return botId;
   }
 
   async complete(actor: Owner, state: string, code: string, sessionId?: string) {

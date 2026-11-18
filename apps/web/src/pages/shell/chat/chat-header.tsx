@@ -1,8 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
+import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
@@ -128,6 +130,18 @@ export function ChatHeader({
 function MeetingsControl({ botId }: { botId: string }) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  const { botId: routeBotId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const returningToCalendar =
+    routeBotId === botId && searchParams.get(MEETING_CALENDAR_RETURN_PARAM) === "1";
+  function close() {
+    setOpen(false);
+    if (returningToCalendar) {
+      const next = new URLSearchParams(searchParams);
+      next.delete(MEETING_CALENDAR_RETURN_PARAM);
+      setSearchParams(next, { replace: true });
+    }
+  }
   return (
     <>
       <IconTooltip label={t`Meetings`}>
@@ -141,9 +155,9 @@ function MeetingsControl({ botId }: { botId: string }) {
           <Video strokeWidth={1.6} className="size-[17px]" />
         </Button>
       </IconTooltip>
-      {open ? (
+      {open || returningToCalendar ? (
         <Suspense>
-          <MeetingsDialog botId={botId} onClose={() => setOpen(false)} />
+          <MeetingsDialog botId={botId} showCalendar={returningToCalendar} onClose={close} />
         </Suspense>
       ) : null}
     </>

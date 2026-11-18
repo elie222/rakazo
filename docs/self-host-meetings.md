@@ -47,10 +47,11 @@ Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/cal
 
 In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Rakazo reserves meetings within the next 14 days and extends a recurring series as that window moves. Each Space can use or reserve up to 20 meetings per UTC day. A manual join also counts meetings in the past 24 hours. **Space limit reached** marks a selected event that still needs a reservation. Linked calendars with the same selected bot share one scheduled participant per occurrence. The final transcript is available to the member who owns that shared session. If they withdraw before the bot starts joining, Rakazo can pass the reservation to an active member who still has that occurrence booked.
 
-Before removing calendar credentials or switching meeting providers, disconnect the calendars associated with the old credentials. Rakazo verifies provider cleanup before it deletes an account or Space with a linked calendar.
+Before removing calendar credentials or switching meeting providers, disconnect the calendars associated with the old credentials. Account, organization, and Space deletion require confirmed calendar cleanup before cancelling billing or removing content. If billing cancellation fails and you keep the account or organization, reconnect the calendar and select its meetings again.
 
 To exercise connection and scheduling with the local emulator, run:
 
 ```sh
-MEETING_PROVIDER=emulator pnpm test:e2e -- --spec=meeting-calendar.spec.ts
+MEETING_PROVIDER=emulator MEETING_SIGNING_KEY="$(openssl rand -hex 32)" \
+  pnpm test:e2e -- --spec=meeting-calendar.spec.ts
 ```

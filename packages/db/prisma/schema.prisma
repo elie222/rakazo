@@ -2980,6 +2980,7 @@ model MeetingCalendarAuthorization {
   id        String   @id
   spaceId   String
   userId    String
+  botId     String?
   expiresAt DateTime
   sessionId String?
 

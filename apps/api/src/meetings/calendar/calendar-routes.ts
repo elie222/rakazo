@@ -6,6 +6,7 @@ import {
   DESKTOP_MEETING_CALENDAR_LAUNCH_PATH,
   DESKTOP_MEETING_CALENDAR_UNAVAILABLE,
   MEETING_CALENDAR_CALLBACK_PATH,
+  MEETING_CALENDAR_RETURN_PARAM,
   MOBILE_MEETING_CALENDAR_CALLBACK_URL,
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -60,7 +61,7 @@ export function meetingCalendarRoutes(ctx: RouterContext) {
             input.client,
             input.client === "desktop"
               ? { loopbackPort: input.loopbackPort, sessionId }
-              : undefined,
+              : { botId: input.botId },
           );
         },
       ),
@@ -141,12 +142,15 @@ export function mountMeetingCalendarHttp(
     if (!actor)
       return c.text("Open Rakazo in this browser and sign in, then connect your calendar.", 401);
     try {
-      await service.authorization.completeFromBrowser(actor.userId, state, code);
+      const botId = await service.authorization.completeFromBrowser(actor.userId, state, code);
+      return c.redirect(
+        botId ? `/app/${encodeURIComponent(botId)}?${MEETING_CALENDAR_RETURN_PARAM}=1` : "/app",
+        303,
+      );
     } catch (cause) {
       if (cause instanceof ClientError) return c.text(cause.message, clientErrorStatus(cause.kind));
       throw cause;
     }
-    return c.redirect("/app", 303);
   });
 
   app.post("/api/meetings/calendar/webhook", async (c) => {

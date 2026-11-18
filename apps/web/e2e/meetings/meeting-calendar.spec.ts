@@ -35,8 +35,9 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   await page.unroute(statusRoute);
   await retry.click();
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();
-  await expect(page.getByRole("dialog", { name: "Meetings" })).toHaveCount(0);
-  await openSchedule();
+  const meetings = page.getByRole("dialog", { name: "Meetings" });
+  await expect(meetings.getByRole("heading", { name: "Upcoming meetings" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "meeting-calendar-return-from-sign-in");
 
   const events = page.getByRole("listitem").filter({ hasText: "Design review" });
   const first = events.first();
@@ -66,4 +67,9 @@ test("a recurring meeting is scheduled and one occurrence can be skipped", async
   await openDisconnect();
   await confirmation.getByRole("button", { name: "Disconnect calendar" }).click();
   await expect(page.getByRole("button", { name: "Connect Google Calendar" })).toBeVisible();
+  await meetings.getByRole("button", { name: "Close" }).click();
+  await expect(meetings).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Meetings", exact: true })).toBeVisible();
+  await expect(meetings).toHaveCount(0);
 });

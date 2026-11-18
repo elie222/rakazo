@@ -73,14 +73,18 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
         });
       });
 
-      const start = await runAsTenant(first, () => service.authorization.begin(first, "web"));
+      const start = await runAsTenant(first, () =>
+        service.authorization.begin(first, "web", { botId }),
+      );
       const firstCode = new URL(start.authorizationUrl).searchParams.get("code")!;
       await expect(
         service.authorization.completeFromBrowser(second.userId, start.state, firstCode),
       ).rejects.toMatchObject({
         kind: "BAD_REQUEST",
       });
-      await service.authorization.completeFromBrowser(first.userId, start.state, firstCode);
+      await expect(
+        service.authorization.completeFromBrowser(first.userId, start.state, firstCode),
+      ).resolves.toBe(botId);
       const startSecond = await runAsTenant(second, () =>
         service.authorization.begin(second, "web"),
       );
