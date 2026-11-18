@@ -1,7 +1,7 @@
 import type { AdapterContext, MessagingInboundMessage } from "@rakazo/adapter-kit";
 import type { ReceivedFile, SaveReceivedFileResult } from "@rakazo/adapters";
-import { savedFileLine } from "@rakazo/adapters";
-import { deadlineSignal, localTimezone, withAbort } from "@rakazo/core";
+import { savedFileLine, userTimeZone } from "@rakazo/adapters";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { PrismaClient, ProvisionedMessagingIdentity } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { RECEIVED_FILE_SAVE_TIMEOUT_MS } from "./limits.js";
@@ -31,9 +31,10 @@ export async function saveReceivedCopy(
   const save = deps.saveReceivedFile;
   const signal = deadlineSignal(RECEIVED_FILE_SAVE_TIMEOUT_MS);
   const copy = async () => {
-    const [bot, owner] = await Promise.all([
+    // Named in the account's own time zone, or UTC when it has none, as the bot's clock is.
+    const [bot, timeZone] = await Promise.all([
       deps.prisma.bot.findUnique({ where: { id: ids.botId }, select: { computerId: true } }),
-      deps.prisma.user.findUnique({ where: { id: ids.userId }, select: { timezone: true } }),
+      userTimeZone(deps.prisma, ids.userId),
     ]);
     const computerId = bot?.computerId ?? null;
     const operationId = `messaging-received-file:${event.provider}:${event.handle}`;
@@ -44,7 +45,7 @@ export async function saveReceivedCopy(
       mimeType: file.mimeType,
       bytes,
       at: new Date(receivedAt),
-      timeZone: owner?.timezone ?? localTimezone(),
+      timeZone,
     };
     const context: AdapterContext = {
       operationId,

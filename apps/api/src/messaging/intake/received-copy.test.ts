@@ -29,6 +29,25 @@ function controlledDeadlines() {
 }
 
 describe("saveReceivedCopy", () => {
+  it.each([
+    ["the account's zone", "Asia/Jerusalem", "Asia/Jerusalem"],
+    ["UTC when the account has none", null, "UTC"],
+    ["UTC when the account's zone is not a real one", "Mars/Olympus_Mons", "UTC"],
+  ])("names the copy in %s", async (_label, timezone, expected) => {
+    const saveReceivedFile = vi.fn<SaveReceivedFile>(async () => ({ saved: "x.jpg" }));
+    const deps = { prisma: fakePrisma(timezone), saveReceivedFile };
+
+    await saveReceivedCopy(deps, ids, event, file, bytes, {
+      saves: createSenderQueue(),
+      receivedAt: Date.now(),
+    });
+
+    expect(saveReceivedFile).toHaveBeenCalledWith(
+      expect.objectContaining({ timeZone: expected }),
+      expect.anything(),
+    );
+  });
+
   it("moves on to the next copy into a computer once a hung one reaches its deadline", async () => {
     const deadlines = controlledDeadlines();
     const saveReceivedFile = vi
