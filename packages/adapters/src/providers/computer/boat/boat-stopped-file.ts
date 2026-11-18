@@ -1,3 +1,4 @@
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   cancelResponseBody,
   deadlineSignal,
@@ -5,8 +6,8 @@ import {
   readResponseWithin,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import type { BoatSandboxSdk } from "./boat-client.js";
 import { BoatApiError } from "./boat-errors.js";
-import type { BoatSandboxSdk } from "./boat-sandbox.js";
 
 type SnapshotClient = Pick<
   BoatSandboxSdk,
@@ -60,6 +61,7 @@ export async function readBoatStoppedFile(
       !operation.stop.requestedAt ||
       verifiedAt < operation.stop.requestedAt ||
       snapshot?.sandboxId !== sandboxId ||
+      snapshot.status !== "completed" ||
       snapshot.origin !== "captured" ||
       snapshot.completedAt?.getTime() !== snapshotCompletedAt.getTime()
     )
@@ -77,10 +79,11 @@ export async function readBoatStoppedFile(
     });
   } catch (error) {
     callerSignal.throwIfAborted();
-    // Missing paths, links and snapshots with no file index are handled by the live reader.
+    // The live path handles API refusals, including files or snapshots the index cannot serve.
     if (signal.aborted) return fallBackToLiveRead("deadline");
-    if (error instanceof ResponseTooLargeError) return fallBackToLiveRead("file_too_large");
-    if (error instanceof BoatApiError && [403, 404, 409].includes(error.response.status))
+    if (error instanceof ResponseTooLargeError)
+      throw new SandboxFileTooLargeError(maxBytes, { cause: error });
+    if (error instanceof BoatApiError)
       return fallBackToLiveRead("snapshot_request_refused", error.response.status);
     throw error;
   }

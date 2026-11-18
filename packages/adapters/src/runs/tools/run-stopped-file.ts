@@ -1,6 +1,5 @@
-import { isSandboxProviderOutage } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { isSandboxGoneError } from "../../computers/sandbox/sandbox-errors.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import {
   normalizeWorkspacePath,
@@ -57,7 +56,7 @@ export async function readStoppedRunFile(ctx: RunContext, storedPath: string, ma
   });
   if (!suspended?.providerRef) return undefined;
 
-  const bytes = await deps.sandbox
+  const result = await deps.sandbox
     .readStoppedFile(toComputerRef(suspended), path, context, {
       maxBytes,
       savedAt:
@@ -65,11 +64,15 @@ export async function readStoppedRunFile(ctx: RunContext, storedPath: string, ma
     })
     .catch((error: unknown) => {
       context.signal.throwIfAborted();
-      if (!isSandboxGoneError(error) && !isSandboxProviderOutage(error)) throw error;
-      getLogger().warn("computer.stopped_file_read_failed", { error });
+      if (error instanceof SandboxFileTooLargeError) return error;
+      // This optional read is side-effect free. If the provider fails, use the live path.
+      getLogger().warn("computer.stopped_file_read_failed", {
+        "computer.id": stored.id,
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
       return undefined;
     });
-  if (!bytes) return undefined;
+  if (!result) return undefined;
 
   // Discard a snapshot read if another caller woke, reset or moved the computer during it.
   const unchanged = await deps.prisma.computer.findFirst({
@@ -83,6 +86,7 @@ export async function readStoppedRunFile(ctx: RunContext, storedPath: string, ma
     select: { id: true },
   });
   if (!unchanged) return undefined;
+  if (result instanceof SandboxFileTooLargeError) throw result;
   getLogger().info("computer.file_read_without_wake", { "computer.id": stored.id });
-  return bytes;
+  return result;
 }

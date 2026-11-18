@@ -1,3 +1,4 @@
+import { SandboxFileTooLargeError, SandboxProviderAccountError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
@@ -56,6 +57,28 @@ describe("read_file with a suspended computer", () => {
 
   it("discards saved bytes if the computer changes before the read returns", async () => {
     const { read, findFirst, get, stored } = setup();
+    findFirst.mockResolvedValueOnce(stored).mockResolvedValueOnce(null);
+    await expect(read("notes.txt")).resolves.toMatchObject({ content: "live contents" });
+    expect(get).toHaveBeenCalledOnce();
+  });
+
+  it("uses the live reader when the provider's optional snapshot read fails", async () => {
+    const { read, readStoppedFile, get } = setup();
+    readStoppedFile.mockRejectedValueOnce(new SandboxProviderAccountError());
+    await expect(read("notes.txt")).resolves.toMatchObject({ content: "live contents" });
+    expect(get).toHaveBeenCalledOnce();
+  });
+
+  it("reports a verified oversized file without waking, and retries if the computer changed", async () => {
+    const { read, readStoppedFile, findFirst, get, stored } = setup();
+    const tooLarge = new SandboxFileTooLargeError(250_000);
+    readStoppedFile.mockRejectedValueOnce(tooLarge);
+    await expect(read("notes.txt")).resolves.toMatchObject({
+      error: expect.stringContaining("file is over"),
+    });
+    expect(get).not.toHaveBeenCalled();
+
+    readStoppedFile.mockRejectedValueOnce(tooLarge);
     findFirst.mockResolvedValueOnce(stored).mockResolvedValueOnce(null);
     await expect(read("notes.txt")).resolves.toMatchObject({ content: "live contents" });
     expect(get).toHaveBeenCalledOnce();

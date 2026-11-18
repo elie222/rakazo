@@ -5,6 +5,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
@@ -79,8 +80,8 @@ async function boat() {
 
 describe("stopped workspace files", () => {
   it("reads the stopped disk without starting the sandbox", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
     const { api, computer, provider } = await boat();
-    const resume = vi.spyOn(api, "resume");
     const bytes = new TextEncoder().encode("last saved content");
     await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
     await provider.stop(computer, context);
@@ -91,20 +92,41 @@ describe("stopped workspace files", () => {
     expect(
       await provider.readStoppedFile(computer, "missing.txt", context, { maxBytes: 100 }),
     ).toBeUndefined();
-    expect(
-      await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 4 }),
-    ).toBeUndefined();
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 4 }),
+    ).rejects.toBeInstanceOf(SandboxFileTooLargeError);
     expect(resume).not.toHaveBeenCalled();
+    expect(api.state(computer.id)).toBe("archived");
+  });
+
+  it("falls back for an incomplete snapshot or a rejected snapshot request", async () => {
+    const getLatest = vi.spyOn(FakeBoatApi.prototype, "getLatestSandboxSnapshot");
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    await provider.stop(computer, context);
+    const latest = await api.getLatestSandboxSnapshot({ sandboxId: computer.id });
+    Object.assign(latest.snapshot!, { status: "failed" });
+    getLatest.mockResolvedValueOnce(latest);
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
+
+    download.mockRejectedValueOnce(boatError(422, "unprocessable", "Snapshot cannot be read"));
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).toHaveBeenCalledOnce();
   });
 
   it("ignores earlier snapshots after a forced stop or a newer Rakazo checkpoint", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
     const { api, computer, provider } = await boat();
     const bytes = new TextEncoder().encode("last saved content");
     await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
     await provider.stop(computer, context);
     vi.setSystemTime(Date.now() + 1);
 
-    const download = vi.spyOn(api, "getSnapshotFileRaw");
     await expect(
       provider.readStoppedFile(computer, "notes.txt", context, {
         maxBytes: 100,

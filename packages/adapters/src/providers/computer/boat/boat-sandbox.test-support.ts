@@ -49,7 +49,7 @@ import {
   simpleCommand,
 } from "../../../computers/screens/linux-desktop.test-support.js";
 import { workspaceArchive } from "../../../storage/workspace-archive.test-support.js";
-import type { BoatSandboxSdk } from "./boat-sandbox.js";
+import type { BoatSandboxSdk } from "./boat-client.js";
 import {
   BOAT_COMPUTER_SNAPSHOT,
   BOAT_WRITABLE_WORKSPACE_COMMAND,
