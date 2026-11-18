@@ -128,6 +128,8 @@ export async function runTrial(
   let clarificationPending = false;
   let priorMemory = "";
   let messagingLinked = false;
+  // Set once a wallet connect starts, so teardown revokes the credential even after a failed setup.
+  let walletCookie: string | undefined;
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
@@ -281,6 +283,25 @@ export async function runTrial(
         });
         peer = { id: created.id, name: scenario.peer.name };
       }
+      // Other bots in the space that the subject can see and manage; none runs a model.
+      for (const teammate of scenario.teammates ?? []) {
+        const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
+          ...teammate,
+          title: "",
+          instructions: "",
+          notifyOnFinish: false,
+        });
+        await discardBotIntroRun(trial, cookie, created.id);
+      }
+      if (scenario.wallet) {
+        // The offline wallet emulator connects on its first status check after the poll interval.
+        walletCookie = cookie;
+        await rpc(app, cookie, "paymentWallet/connect", {});
+        await poll(async () => {
+          const status = await rpc<{ status: string }>(app, cookie, "paymentWallet/status", {});
+          return status.status === "connected" ? true : undefined;
+        }, deadline);
+      }
       if (scenario.group) {
         // Without roles, members only author seeded history and never run a model.
         const { roles } = scenario.group;
@@ -345,7 +366,7 @@ export async function runTrial(
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
-        name: "Release watch",
+        name: scenario.routine.name ?? "Release watch",
         prompt: scenario.routine.prompt,
         crons: ["0 9 * * *"],
         timezone: "UTC",
@@ -608,7 +629,7 @@ export async function runTrial(
       }
       if ("clear" in step) {
         await Promise.all([captureTools(), captureUsage()]);
-        await rpc(app, cookie, "threads/clear", { botId });
+        await rpc(app, cookie, "threads/clear", threadOf(botId, chatGroup));
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
@@ -1270,6 +1291,11 @@ export async function runTrial(
       } catch {
         result.cleanupFailed = true;
       }
+      try {
+        if (walletCookie) await rpc(handles.app, walletCookie, "paymentWallet/disconnect", {});
+      } catch {
+        result.cleanupFailed = true;
+      }
       // After the trial's work stopped, so no run is cut off mid-call.
       await Promise.all(hostedApps.map((hosted) => hosted.close()));
       try {
@@ -1534,14 +1560,18 @@ function actorScopes(actors: readonly EvalActor[]) {
   return actors.map(({ userId, spaceId }) => ({ userId, spaceId }));
 }
 
+/** The thread a case talks in: its group's for a group case, otherwise the bot's direct chat. */
+export const threadOf = (botId: string, group?: { id: string }) =>
+  group ? { groupId: group.id } : { botId };
+
 async function findScopeBots(
   prisma: EvalApp["prisma"],
   actors: readonly EvalActor[],
-): Promise<Array<{ id: string; userId: string; spaceId: string }>> {
+): Promise<Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>> {
   if (!actors.length) return [];
   return prisma.bot.findMany({
     where: { OR: actorScopes(actors) },
-    select: { id: true, userId: true, spaceId: true },
+    select: { id: true, userId: true, spaceId: true, archivedAt: true },
   });
 }
 
@@ -1564,11 +1594,13 @@ export async function cleanupActors(
   // A parent can finish spawning a child while its abort is settling. Repeat until
   // every bot and run visible after abort was included in the pass.
   for (let pass = 0; pass < 8; pass++) {
-    let bots: Array<{ id: string; userId: string; spaceId: string }> = actors.map((actor) => ({
-      id: actor.botId,
-      userId: actor.userId,
-      spaceId: actor.spaceId,
-    }));
+    let bots: Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }> =
+      actors.map((actor) => ({
+        id: actor.botId,
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        archivedAt: null,
+      }));
     let runsBeforeStop: Array<{ id: string }> = [];
     try {
       await prisma.routine.updateMany({
@@ -1594,6 +1626,8 @@ export async function cleanupActors(
     }
 
     for (const bot of bots) {
+      // Archiving already stopped a bot's work (a case may archive one); its runs are cancelled below.
+      if (bot.archivedAt) continue;
       const actorCookie = cookieForBot(bot, actors);
       if (!actorCookie) {
         failures.push(new Error("No actor session for scoped bot"));
@@ -1631,7 +1665,9 @@ export async function cleanupActors(
       }
     }
 
-    let botsAfter: Array<{ id: string; userId: string; spaceId: string }> | undefined;
+    let botsAfter:
+      | Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>
+      | undefined;
     let runsAfter: Array<{ id: string; status: string }> | undefined;
     let activeRoutineCount: number | undefined;
     try {
