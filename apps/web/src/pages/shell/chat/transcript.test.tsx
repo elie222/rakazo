@@ -512,3 +512,26 @@ it("follows later messages to the end once a reply that fit has finished", () =>
   });
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 5_000, behavior: "auto" });
 });
+
+it("lets a tap at a held reply near the end resume following", () => {
+  const sent = history();
+  render(baseProps(sent));
+  render({ ...baseProps(sent), followRequest: 1 });
+  const { transcript, size, scrollTo } = measuredTranscript({ m5: 0 });
+  const reply = textMessage("m5", "bot", "Here are three cabins");
+  transcript.scrollTop = 1_000;
+  size.content = 1_530;
+  render({ ...baseProps([...sent, reply]), followRequest: 1 });
+
+  act(() => {
+    transcript.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  scrollTo.mockClear();
+  size.content = 3_000;
+  render({
+    ...baseProps([...sent, { ...reply, blocks: [{ kind: "text", text: "Long" }] }]),
+    followRequest: 1,
+  });
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 3_000, behavior: "auto" });
+});

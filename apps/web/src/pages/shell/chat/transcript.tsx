@@ -579,12 +579,14 @@ export const Transcript = memo(function Transcript({
           autoScrolling.current = false;
           following.current = false;
           rowsBeforeReply.current = null;
+          heldAt.current = null;
         }}
         onTouchStart={(event) => {
           lastScrollTop.current = event.currentTarget.scrollTop;
           autoScrolling.current = false;
           following.current = false;
           rowsBeforeReply.current = null;
+          heldAt.current = null;
         }}
         onScrollEnd={() => {
           followIfNearEnd();
@@ -596,6 +598,7 @@ export const Transcript = memo(function Transcript({
             autoScrolling.current = false;
             following.current = false;
             rowsBeforeReply.current = null;
+            heldAt.current = null;
           }
         }}
         onScroll={(event) => {
