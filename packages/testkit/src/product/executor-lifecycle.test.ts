@@ -94,10 +94,8 @@ describeIntegration("run executor lifecycle", () => {
           yield* originalRun(request, context);
           return;
         }
-        read(
-          request.prompt,
-          request.tools.map(({ name }) => name),
-        );
+        const toolNames = request.tools.map(({ name }) => name);
+        read(request.prompt, toolNames);
         yield {
           type: "tool",
           name: "read_meeting_transcript",
