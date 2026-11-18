@@ -190,8 +190,9 @@ For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
 (case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. mDNS `.local` names
-name a LAN host by convention, so they need no entry. These hosts ignore
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
+name a LAN host by convention, so they need no entry. mDNS resolves where the API and worker run:
+it works on native installs and mDNS-aware hosts, but usually not on container bridge DNS. These
+hosts ignore `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you
