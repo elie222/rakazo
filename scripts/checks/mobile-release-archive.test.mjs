@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
 test("repository ignore rules leave tracked mobile files available for Expo uploads", () => {
-  const tracked = execFileSync("git", ["ls-files", "-z", "--", "apps/mobile"], { cwd: root });
+  const workspaces = execFileSync(
+    process.execPath,
+    [".github/scripts/mobile-dependency-tree.mjs", "--workspace-only"],
+    {
+      cwd: root,
+      encoding: "utf8",
+      input: readFileSync(new URL("../../pnpm-lock.yaml", import.meta.url)),
+    },
+  )
+    .trim()
+    .split("\n");
+  const tracked = execFileSync("git", ["ls-files", "-z", "--", ...workspaces], { cwd: root });
   const result = spawnSync("git", ["check-ignore", "--no-index", "--verbose", "-z", "--stdin"], {
     cwd: root,
     encoding: "utf8",
