@@ -2249,6 +2249,19 @@ describe("own instructions through update_bot", () => {
     );
     expect(f.instructionState.instructions).toBe("Draft only");
   });
+  it("splits a combined update that sends the default offset", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([
+      {
+        args: { name: "Scout", instructions: first, instructions_offset: 0 },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      expect.objectContaining({ ok: true, saved: ["name", "instructions"] }),
+    ]);
+  });
   it("does not report a repeated current value as saved", async () => {
     const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
     Object.assign(f.liveBot, { name: "Assistant" });

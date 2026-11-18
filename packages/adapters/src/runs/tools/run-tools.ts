@@ -99,7 +99,9 @@ function ownFieldsBesideInstructions(args: Record<string, unknown>): string[] {
   if (
     argumentGiven(bot_id) ||
     !argumentGiven(instructions) ||
-    argumentGiven(instructions_offset ?? instructionsOffset)
+    // Zero is the default offset, which the update drops, so only a later page makes this a read.
+    ((instructions_offset ?? instructionsOffset) !== 0 &&
+      argumentGiven(instructions_offset ?? instructionsOffset))
   )
     return [];
   // Only the gate sets these; a model sending them is ignored.
