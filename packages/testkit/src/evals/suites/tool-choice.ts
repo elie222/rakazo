@@ -159,8 +159,10 @@ function replyText(evidence: Evidence): string {
   const asked = evidence.toolCalls
     .filter((call) => call.step === evidence.finalStep && call.name === "ask_user")
     .map((call) => {
-      const { question, options } = (call.args ?? {}) as { question?: unknown; options?: unknown };
-      return [question, ...(Array.isArray(options) ? options : [])].filter(Boolean).join("\n");
+      const { question, detail, options } = (call.args ?? {}) as Record<string, unknown>;
+      return [question, detail, ...(Array.isArray(options) ? options : [])]
+        .filter(Boolean)
+        .join("\n");
     });
   return [evidence.text, ...asked].filter((part) => part.trim()).join("\n\n");
 }
