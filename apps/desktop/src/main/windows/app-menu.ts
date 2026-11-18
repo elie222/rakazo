@@ -26,10 +26,12 @@ async function runMenuUpdateCheck() {
   // A found update starts downloading on its own; wait for it so the answer can be "restart".
   if (state.phase === "available" || state.phase === "downloading") {
     // Say so now: the download can take minutes, and the menu click has no other answer.
-    void alert({
+    const downloading = alert({
       message: t("Downloading Rakazo {version}…", { version: state.availableVersion ?? "" }),
     });
     state = await desktop.desktopUpdater.download();
+    // The result waits for that alert, so the two never show at once.
+    await downloading;
   }
   if (state.phase === "ready") {
     const { response } = await alert({
