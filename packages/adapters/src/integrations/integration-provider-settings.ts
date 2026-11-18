@@ -7,7 +7,6 @@ import type {
 import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
 import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
@@ -158,8 +157,8 @@ export class IntegrationProviderSettings {
     };
     const [slugs, refs] = await Promise.all([
       provider.listConnectedExternalIds(context),
-      // Without the accounts the sync falls back to the latest attempt.
-      bestEffort("list signed-in connection refs", provider.listConnectedRefs?.(context)),
+      // A failed listing fails the sync, so a later one matches the rows instead of guessing.
+      provider.listConnectedRefs?.(context),
     ]);
     return { slugs, refs };
   }

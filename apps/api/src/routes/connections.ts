@@ -4,7 +4,7 @@ import type { Actor } from "@rakazo/contracts";
 import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
@@ -38,15 +38,16 @@ async function reconcileConnections(
         provider: true,
         displayName: true,
         status: true,
-        updatedAt: true,
         providerRef: true,
       },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      // Latest attempt first: the one to connect when the provider cannot say whose account is live.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     })
   ).filter((row: { provider: string }) =>
     connectedProviderKeys.has(row.provider.trim().toLowerCase()),
   );
-  // Asked only when a sign-in is waiting to be matched to the account it created.
+  // Asked only when a sign-in is waiting to be matched to the account it created. A failed
+  // listing fails this pass, so the next one matches the rows instead of this one guessing.
   const liveRefs = rows.some((row) => row.status === "pending")
     ? await listConnectedRefs()
     : undefined;
@@ -134,11 +135,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                   provider.describe().id,
                   nowConnected,
                   reconnectRefs,
-                  () =>
-                    bestEffort(
-                      "list signed-in connection refs",
-                      provider.listConnectedRefs?.(adapterContext),
-                    ),
+                  async () => provider.listConnectedRefs?.(adapterContext),
                 ).catch((error) => {
                   getLogger().error(
                     `${provider.describe().id} connection reconciliation failed`,

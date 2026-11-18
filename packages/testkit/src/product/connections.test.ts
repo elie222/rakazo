@@ -132,8 +132,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     }
 
     await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "connected" },
-      { id: duplicate.id, status: "revoked" },
+      { id: first.id, status: "revoked" },
+      { id: duplicate.id, status: "connected" },
     ]);
     await expect(statuses([otherProvider.id, otherUser.id, otherWorkspace.id])).resolves.toEqual([
       { id: otherProvider.id, status: "pending" },
@@ -143,8 +143,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
     await rpc(app, ownerCookie, "connections/catalog");
     await expect(statuses([first.id, duplicate.id])).resolves.toEqual([
-      { id: first.id, status: "connected" },
-      { id: duplicate.id, status: "revoked" },
+      { id: first.id, status: "revoked" },
+      { id: duplicate.id, status: "connected" },
     ]);
   });
 
