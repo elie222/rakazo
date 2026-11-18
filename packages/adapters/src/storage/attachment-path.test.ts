@@ -70,6 +70,22 @@ describe("attachmentPath", () => {
     expect(attachmentPath(hebrew)).toBe(`${dir}/${stamp}חשבונית.pdf`);
   });
 
+  it.each([
+    ["IMG_1234.JPEG", "image/jpeg", "IMG_1234.jpg"],
+    ["IMG_1234.jpeg", "image/jpeg", "IMG_1234.jpg"],
+    ["IMG_1234.JPG", "image/jpeg", "IMG_1234.jpg"],
+    ["clip.MOV", "video/quicktime", "clip.mov"],
+    ["page.HTM", "text/html", "page.html"],
+  ])("drops the name's own extension %s for %s in any spelling", (name, mimeType, file) => {
+    expect(attachmentPath({ ...base, name, mimeType })).toBe(`${dir}/${stamp}${file}`);
+  });
+
+  it("keeps an extension that is for another type as part of the name", () => {
+    expect(attachmentPath({ ...base, name: "scan.png", mimeType: "image/jpeg" })).toBe(
+      `${dir}/${stamp}scan.png.jpg`,
+    );
+  });
+
   it("removes separators, dot-dot, control characters and leading dots from the name", () => {
     const path = attachmentPath({ ...base, name: "..\\a/b\u0000c..d\n.hidden" });
     // A backslash becomes `_` (Windows does not allow it); a line break and a quote become spaces.

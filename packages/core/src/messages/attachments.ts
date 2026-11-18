@@ -427,6 +427,20 @@ export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
 }
 
+/**
+ * The name's own extension, as written, when it is one for this MIME type in any spelling or
+ * case (`.JPEG` for image/jpeg); otherwise "".
+ */
+export function ownExtensionForMimeType(name: string, mimeType: string): string {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return "";
+  const extension = name.slice(dot);
+  const lower = extension.toLowerCase();
+  return Object.hasOwn(EXTENSION_MIME_TYPES, lower) && EXTENSION_MIME_TYPES[lower] === mimeType
+    ? extension
+    : "";
+}
+
 /** Where a run copies an attached file in the bot's workspace; history tools report the same path. */
 export function attachmentComputerPath(artifactId: string, mimeType: string): string {
   return `attachments/${artifactId}${attachmentExtensionForMimeType(mimeType)}`;

@@ -12,12 +12,34 @@ import {
   inferAttachmentMimeType,
   isStaticPng,
   normalizeVoiceTranscript,
+  ownExtensionForMimeType,
   PNG_ANIMATION_HEADER_BYTES,
   promptTextForAttachments,
   toolStepsHistoryText,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
+
+describe("ownExtensionForMimeType", () => {
+  it.each([
+    ["IMG_1234.JPEG", "image/jpeg", ".JPEG"],
+    ["IMG_1234.jpeg", "image/jpeg", ".jpeg"],
+    ["clip.MOV", "video/quicktime", ".MOV"],
+    ["notes.markdown", "text/markdown", ".markdown"],
+    ["scan.png", "image/jpeg", ""],
+    ["photo", "image/jpeg", ""],
+    ["a.constructor", "image/jpeg", ""],
+  ])("finds %s's own extension for %s", (name, mimeType, extension) => {
+    expect(ownExtensionForMimeType(name, mimeType)).toBe(extension);
+  });
+
+  it("recognizes the canonical extension", () => {
+    for (const mimeType of ["image/png", "video/mp4", "application/pdf", "text/html"])
+      expect(
+        ownExtensionForMimeType(`a${attachmentExtensionForMimeType(mimeType)}`, mimeType),
+      ).toBe(attachmentExtensionForMimeType(mimeType));
+  });
+});
 
 describe("attachmentComputerPathFor", () => {
   it("keeps the id path for a row without a stored path", () => {

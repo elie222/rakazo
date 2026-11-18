@@ -1,4 +1,8 @@
-import { attachmentExtensionForMimeType, sanitizeMessagingLabel } from "@rakazo/core";
+import {
+  attachmentExtensionForMimeType,
+  ownExtensionForMimeType,
+  sanitizeMessagingLabel,
+} from "@rakazo/core";
 
 /** Matches the `YYYY-MM-DD_HHMM_` date stamp a readable attachment copy starts its name with. */
 export const ATTACHMENT_NAME_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{4}_/;
@@ -80,9 +84,9 @@ export function attachmentPath(input: {
   const extension = attachmentExtensionForMimeType(input.mimeType);
   const sender = safeSegment(sanitizeMessagingLabel(input.sender ?? ""), MAX_SENDER_CODE_POINTS);
   let name = safeSegment(sanitizeMessagingLabel(input.name), MAX_NAME_CODE_POINTS);
-  if (extension && name.toLowerCase().endsWith(extension)) {
-    name = withoutTrailingDots(name.slice(0, -extension.length));
-  }
+  // The name's own extension goes in any spelling, so `IMG_1234.JPEG` does not end in `.JPEG.jpg`.
+  const own = ownExtensionForMimeType(name, input.mimeType);
+  if (own) name = withoutTrailingDots(name.slice(0, -own.length));
   name ||= mediaKind(input.mimeType);
 
   const folder = input.folders === "month" ? `attachments/${year}/${month}` : "attachments";
