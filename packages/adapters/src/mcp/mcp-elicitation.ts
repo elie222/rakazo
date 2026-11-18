@@ -96,6 +96,14 @@ function questionField(
     const maximum = num(s.maximum);
     // A range nothing fits cannot be answered.
     if (minimum !== undefined && maximum !== undefined && minimum > maximum) return undefined;
+    // Nor can a whole-number field whose range holds no whole number.
+    if (
+      s.type === "integer" &&
+      minimum !== undefined &&
+      maximum !== undefined &&
+      Math.ceil(minimum) > Math.floor(maximum)
+    )
+      return undefined;
     const value = num(s.default);
     // A default the field itself would refuse is no default: the person starts empty.
     const fallback =

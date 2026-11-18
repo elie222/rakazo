@@ -436,6 +436,12 @@ describe("toolQuestionFromElicitation", () => {
         requestedSchema: { properties: { n: { type: "number", minimum: 10, maximum: 5 } } },
       }),
     ).toBeUndefined();
+    expect(
+      toolQuestionFromElicitation("G", {
+        message: "m",
+        requestedSchema: { properties: { n: { type: "integer", minimum: 0.5, maximum: 0.6 } } },
+      }),
+    ).toBeUndefined();
   });
 
   it("skips URL mode, nested objects and multi-select", () => {

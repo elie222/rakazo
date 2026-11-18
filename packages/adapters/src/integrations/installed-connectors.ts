@@ -168,7 +168,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     sessionRunId?: string;
     elicitation: true;
   } {
-    // Sources people add (gateways such as Executor) may stop a tool to ask the person.
+    // Sources people add (tool gateways among them) may stop a tool to ask the person.
     if (!context.runId) return { elicitation: true };
     return {
       elicitation: true,
