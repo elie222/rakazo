@@ -123,11 +123,6 @@ function MessageBubbleWithMentions({
         props.bots.find((bot) => bot.id === id)?.color ??
         props.members?.find((member) => member.botId === id)?.color
       }
-      avatarSetOf={(id) =>
-        props.bots.find((bot) => bot.id === id)?.avatarSet ??
-        props.members?.find((member) => member.botId === id)?.avatarSet
-      }
-      tokens={mobileTokens()}
       onOpenBot={props.onOpenBot}
     >
       <MessageBubbleBody

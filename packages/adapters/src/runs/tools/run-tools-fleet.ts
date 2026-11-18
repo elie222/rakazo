@@ -392,10 +392,7 @@ export const fleetTools: ToolHandlers = {
         // predates the baseline makes the commit itself refuse.
         previousInstructions: ctx.state.ownInstructionsBaseline,
       });
-      if ("error" in set)
-        return call.finish({
-          error: `${updated || Object.keys(settings.data).length ? "Your other changes were saved, but your instructions were not: " : ""}${set.error}`,
-        });
+      if ("error" in set) return call.finish(set);
     }
     return call.finish({
       ok: true,

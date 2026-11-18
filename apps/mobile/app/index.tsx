@@ -78,6 +78,7 @@ import {
   spaceInboxItems,
 } from "../lib/inbox/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox/inbox-swipe";
+import { inboxChats, preloadChats } from "../lib/inbox/preload-chats";
 import { loadSavedInbox } from "../lib/inbox/saved-chats";
 import type { OrganizeTarget } from "../lib/inbox/sections/organize-target";
 import { findOrganizeTarget } from "../lib/inbox/sections/organize-target";
@@ -404,6 +405,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     onShareSelect,
     snoozeNow,
   ]);
+  // The first chats this Space lists open from a saved copy on their first tap.
+  useEffect(() => {
+    if (inboxLoaded.current && !onShareSelect)
+      void preloadChats(inboxChats(listData, { bots, groups }));
+  }, [listData, bots, groups, onShareSelect]);
   // Snoozed chats stay off the icon until they wake.
   const badgeCount = me
     ? unreadChatCount(
