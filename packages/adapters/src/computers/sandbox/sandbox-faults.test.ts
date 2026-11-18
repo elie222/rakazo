@@ -94,6 +94,26 @@ describe.each([
     ).rejects.toThrow(/escapes the computer workspace/i);
   });
 
+  it("reads '.' segments as the folder they are in", async () => {
+    const provider = await makeProvider();
+    const computer = await provisionPrepared(
+      provider,
+      { botId: "dot", homePath: "/unused" },
+      context,
+    );
+    await provider.writeFile(
+      computer,
+      { path: "./notes/./a.txt", content: new TextEncoder().encode("a") },
+      context,
+    );
+    expect(await provider.listFiles(computer, ".", context)).toEqual(
+      await provider.listFiles(computer, "", context),
+    );
+    expect(await provider.listFiles(computer, "./notes", context)).toEqual(
+      await provider.listFiles(computer, "notes", context),
+    );
+  });
+
   it("reports missing and oversized reads without returning partial data", async () => {
     const provider = await makeProvider();
     const computer = await provisionPrepared(
