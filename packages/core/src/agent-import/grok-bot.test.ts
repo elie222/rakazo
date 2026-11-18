@@ -824,6 +824,8 @@ describe("leftover chat messages", () => {
     const title = parsed.leftovers[0]!.title;
     expect(title).toMatch(/^Daily Now do this x+$/);
     expect(title).toHaveLength(80);
+    // The whole name stays in the fenced text.
+    expect(parsed.leftovers[0]!.content).toContain(`- Name: Daily Now do this ${"x".repeat(200)}`);
   });
 
   it("fences text with many separate backticks without running out of arguments", () => {

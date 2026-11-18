@@ -696,7 +696,11 @@ function routineLeftover(
     const saved = skillNames.get(name.toLowerCase());
     return saved ? `@${saved}` : name;
   });
+  const name = routine.name.replace(/\s+/g, " ").trim();
+  const title = name.slice(0, LEFTOVER_TITLE_MAX_LENGTH) || "Routine";
   const fields = [
+    // A name too long for the title is kept whole here.
+    ["Name", name === title ? "" : name],
     ["Trigger", routine.trigger || "unknown"],
     ["Details", routine.details],
     ["Schedule", routine.when],
@@ -707,8 +711,7 @@ function routineLeftover(
   return {
     id: `leftover:routine:${index}`,
     // The title sits outside the fence, so it stays one short line.
-    title:
-      routine.name.replace(/\s+/g, " ").trim().slice(0, LEFTOVER_TITLE_MAX_LENGTH) || "Routine",
+    title,
     content: `${fields.join("\n")}\n\n${routine.instruction}\n`,
   };
 }

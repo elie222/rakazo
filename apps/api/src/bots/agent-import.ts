@@ -13,6 +13,7 @@ import type {
   AgentImportCreateInput,
   AgentImportErrorReason,
   AgentImportFile,
+  AgentImportLeftover,
   AgentImportMemoryDestination,
   AgentImportNeed,
   AgentImportPlan,
@@ -182,6 +183,8 @@ async function takenNames(db: Reader, actor: Actor) {
 export type Built = {
   plan: AgentImportPlan;
   settings: (AgentImportSettings & { keyValues: Map<string, string> }) | null;
+  /** Leftovers as read, before the preview's skill names; absent when a plan has none. */
+  leftoverInputs?: Map<string, AgentImportLeftover>;
   routineInputs: Map<string, CreateRoutineInputType>;
   mcpConfigs: Map<string, ImportedMcpServer & { slug: string }>;
   connectedKeyIds: Set<string>;
@@ -297,9 +300,18 @@ async function buildPlan(
     ];
   });
 
+  // Shown with the names its skills are saved under, as the chat will show it; the write
+  // renames the text as read, under the creation lock.
+  const leftoverInputs = new Map(plan.leftovers.map((item) => [item.id, item]));
+  const leftovers = plan.leftovers.map((item) => ({
+    ...item,
+    content: renameRoutineSkillMentions(item.content, previewSkillNames),
+  }));
+
   return {
-    plan: { ...plan, model, mcpServers, routines, apiKeys, skipped },
+    plan: { ...plan, model, mcpServers, routines, apiKeys, leftovers, skipped },
     settings,
+    leftoverInputs,
     routineInputs,
     mcpConfigs,
     connectedKeyIds,
@@ -406,7 +418,8 @@ export async function writeImportedBot<PreparedKey>(
   };
   const retried = await already();
   if (retried) return { bot: retried, created: false };
-  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await input.build();
+  const { plan, settings, leftoverInputs, routineInputs, mcpConfigs, connectedKeyIds } =
+    await input.build();
   const instructions = combineImportedInstructions(
     selected(plan.instructions, input.selection.instructions),
   );
@@ -431,7 +444,9 @@ export async function writeImportedBot<PreparedKey>(
   const routines = selected(plan.routines, input.selection.routines).map(
     (item) => routineInputs.get(item.id)!,
   );
-  const leftovers = selected(plan.leftovers, input.selection.leftovers ?? []);
+  const leftovers = selected(plan.leftovers, input.selection.leftovers ?? []).map(
+    (item) => leftoverInputs?.get(item.id) ?? item,
+  );
   // A key whose provider was connected after the preview is still selected; skip it.
   if (new Set(input.selection.apiKeys).size !== input.selection.apiKeys.length) {
     throw refused("BAD_REQUEST", "selection_mismatch", "The selection does not match the files.");
