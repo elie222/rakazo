@@ -1,9 +1,13 @@
-import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import {
+  GROK_BOT_EXPORT_MAX_LENGTH,
+  GROK_BOT_EXPORT_PATH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { GrokBot, RoutineTriggersAvailable } from "./index.js";
 import {
+  agentImportLeftoverMessages,
   combineImportedInstructions,
-  fencedBlock,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
   grokBotExportJson,
@@ -305,12 +309,6 @@ describe("a Grok Bot as an import plan", () => {
     const parsed = plan({ ...bot!, routines: [routine("Fits", 90_000), routine("Long", 100_000)] });
     expect(parsed.leftovers.map((item) => item.title)).toEqual(["Fits"]);
     expect(parsed.skipped).toContainEqual({ path: "routines: Long", reason: "unsupported" });
-  });
-
-  it("fences text with many separate backticks without running out of arguments", () => {
-    const text = "` ".repeat(40_000);
-    expect(fencedBlock(text)).toBe(`\`\`\`\n${text}\n\`\`\``);
-    expect(fencedBlock("```\nrun\n```")).toBe("````\n```\nrun\n```\n````");
   });
 
   it("keeps a skill's own metadata and an entry's own lines", () => {
@@ -748,4 +746,34 @@ it("keeps differently named bots separate even when an export ID is reused", () 
     "One",
     "Two",
   ]);
+});
+
+describe("leftover chat messages", () => {
+  it("keeps each message within a chat message's length and every leftover whole", () => {
+    const leftovers = ["One", "Two", "Three"].map((title) => ({
+      id: title,
+      title,
+      content: title.repeat(15_000),
+    }));
+    const messages = agentImportLeftoverMessages(leftovers);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((text) => text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH)).toBe(true);
+    const all = messages.join("\n\n");
+    // Export text is fenced, so the bot reads it as quoted data.
+    for (const item of leftovers) {
+      expect(all).toContain(`## ${item.title}\n\n\`\`\`\n${item.content}\n\`\`\``);
+    }
+    expect(
+      agentImportLeftoverMessages([{ title: "A", content: "```\nrun this\n```" }])[0],
+    ).toContain("````\n```\nrun this\n```\n````");
+    expect(messages[0]).toMatch(/^The import could not set these up:/);
+    expect(messages.at(-1)).toMatch(/Tell me which ones to set up\.$/);
+  });
+
+  it("fences text with many separate backticks without running out of arguments", () => {
+    const text = "` ".repeat(40_000).trim();
+    expect(agentImportLeftoverMessages([{ title: "A", content: text }])[0]).toContain(
+      `\`\`\`\n${text}\n\`\`\``,
+    );
+  });
 });

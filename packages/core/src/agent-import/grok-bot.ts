@@ -15,7 +15,13 @@ import { nextCronDateAcrossStrict } from "../routines/schedule.js";
 import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
 import type { AgentImportParse } from "./types.js";
-import { fencedBlock, freeName, memoryItem, renameSkillMd, skillItem } from "./types.js";
+import {
+  agentImportLeftoverMessages,
+  freeName,
+  memoryItem,
+  renameSkillMd,
+  skillItem,
+} from "./types.js";
 
 export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
@@ -693,13 +699,11 @@ function routineLeftover(routine: GrokBotRoutine, index: number): AgentImportLef
   };
 }
 
-/**
- * A leftover is posted whole in one chat message, fenced, beside a heading and two short lines;
- * one that cannot fit is left out. Its length is checked first, so a long one is never scanned.
- */
+/** A leftover is posted whole in one chat message; one that cannot fit is left out. */
 function fitsChatMessage(item: AgentImportLeftover): boolean {
-  const room = THREAD_MESSAGE_TEXT_MAX_LENGTH - 200 - item.title.length;
-  return item.content.length <= room && fencedBlock(item.content.trim()).length <= room;
+  if (item.content.length > THREAD_MESSAGE_TEXT_MAX_LENGTH) return false;
+  const [only, ...more] = agentImportLeftoverMessages([item]);
+  return more.length === 0 && (only?.length ?? 0) <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
 }
 
 /**
@@ -747,7 +751,11 @@ export function parseGrokBot(
       ),
       ...leftovers
         .filter((item) => !fitsChatMessage(item))
-        .map((item) => ({ path: `routines: ${item.title}`, reason: "unsupported" as const })),
+        // A name shaped like a key is not shown.
+        .map((item) => ({
+          path: `routines: ${looksLikeCredential(item.title) ? "Routine" : item.title}`,
+          reason: "unsupported" as const,
+        })),
     ],
   };
 }

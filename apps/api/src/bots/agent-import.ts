@@ -13,7 +13,6 @@ import type {
   AgentImportCreateInput,
   AgentImportErrorReason,
   AgentImportFile,
-  AgentImportLeftover,
   AgentImportMemoryDestination,
   AgentImportNeed,
   AgentImportPlan,
@@ -31,12 +30,11 @@ import {
   CreateRoutineInput,
   isValidTimeZone,
   MEMORY_INDEX_PATH,
-  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
+  agentImportLeftoverMessages,
   combineImportedInstructions,
-  fencedBlock,
   messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
@@ -367,29 +365,6 @@ export async function createImportedBot<PreparedKey>(
   return written.bot;
 }
 
-/**
- * Imported text shown in the new bot's chat, in as many messages as the length of one allows.
- * Nothing runs on it until the owner writes: an automatic turn would let an export's text act
- * with the owner's access unasked.
- */
-export function leftoverMessages(leftovers: AgentImportLeftover[]): string[] {
-  const opening = "The import could not set these up:";
-  const closing = "Tell me which ones to set up.";
-  const messages: string[][] = [[opening]];
-  let size = opening.length;
-  for (const item of leftovers) {
-    const part = `## ${item.title}\n\n${fencedBlock(item.content.trim())}`;
-    if (size + part.length + closing.length + 6 > THREAD_MESSAGE_TEXT_MAX_LENGTH) {
-      messages.push([]);
-      size = 0;
-    }
-    messages.at(-1)!.push(part);
-    size += part.length + 2;
-  }
-  messages.at(-1)!.push(closing);
-  return messages.map((parts) => parts.join("\n\n"));
-}
-
 /** A bot to create from a plan: an import's files or a template build it. */
 export type ImportedBotRequest = Pick<
   AgentImportCreateInput,
@@ -707,7 +682,7 @@ export async function writeImportedBot<PreparedKey>(
       });
       await announceAdded(tx, botId, message, thread.id, checklist);
     }
-    for (const text of leftovers.length ? leftoverMessages(leftovers) : []) {
+    for (const text of leftovers.length ? agentImportLeftoverMessages(leftovers) : []) {
       const blocks: MessageBlock[] = [{ kind: "text", text }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,
