@@ -51,6 +51,7 @@ import {
 } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
+import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
@@ -841,13 +842,17 @@ async function reviewToolCall(
     // A new site, or a memory or skill save after outside content, is judged on the owner's own words only:
     // the task prompt of a webhook or bot-started run carries text someone else wrote.
     const ownerWordsOnly = (review.newSite && fetchUrl) || review.savedContextWrite;
+    const reviewArgs =
+      review.newSite && fetchUrl
+        ? { url: redactSecrets(fetchUrl, ctx.secrets) }
+        : redactToolArgsForReview(args, ctx.secrets);
+    const ownerMessages = reviewOwnerMessages(
+      (await ctx.trust.loadEarlierOwnerMessages()).map((text) => redactSecrets(text, ctx.secrets)),
+    );
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
-      args:
-        review.newSite && fetchUrl
-          ? { url: redactSecrets(fetchUrl, ctx.secrets) }
-          : redactToolArgsForReview(args, ctx.secrets),
+      args: reviewArgs,
       userTask: redactSecrets(
         outsideRun ? ownerWords : ownerWordsOnly ? await ctx.trust.loadOwnerWords() : userTask,
         ctx.secrets,
@@ -856,6 +861,7 @@ async function reviewToolCall(
       matchingRules: review.matchingRules,
       ...(review.newSite && fetchUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
+      ...(ownerMessages.length ? { ownerMessages } : {}),
     };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,

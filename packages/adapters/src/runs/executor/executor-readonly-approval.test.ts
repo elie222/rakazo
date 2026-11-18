@@ -3582,6 +3582,36 @@ describe("Auto Review of new sites", () => {
     expect(JSON.stringify(reviewRequest())).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");
   });
 
+  it("gives the judge the owner's own earlier messages in the chat, oldest first", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unrelated site", model: "mock" });
+    const f = fixture({
+      builtin: true,
+      autoReview: true,
+      sourceRole: "user",
+      prompt: "yes, fetch it",
+    });
+    f.prisma.message.findUnique.mockResolvedValue({
+      role: "user",
+      blocks: [{ kind: "text", text: "yes, fetch it" }],
+      seq: 7,
+      threadId: "thread-1",
+      authorUserId: "user-1",
+    } as never);
+    f.prisma.message.findMany.mockImplementation((async (query: { where?: { seq?: unknown } }) =>
+      query.where?.seq
+        ? [
+            { id: "m5", blocks: [{ kind: "text", text: "Find the changelog for widget 2.0" }] },
+            { id: "m3", blocks: [{ kind: "text", text: "Morning" }] },
+          ]
+        : []) as never);
+    f.setCalls([fetchCall("https://changelog.example.net/widget")]);
+    await f.run();
+    expect(reviewRequest()).toMatchObject({
+      userTask: "yes, fetch it",
+      ownerMessages: ["Morning", "Find the changelog for widget 2.0"],
+    });
+  });
+
   it("gives the judge none of a message the owner did not write", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Unrelated site", model: "mock" });
     const f = fixture({

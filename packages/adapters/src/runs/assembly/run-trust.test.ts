@@ -102,3 +102,78 @@ describe("delegated authorization provenance", () => {
     expect(findFirst).not.toHaveBeenCalled();
   });
 });
+
+describe("the owner's earlier messages", () => {
+  const blocks = (text: string) => [{ kind: "text", text }];
+  function loaders(input: {
+    source?: { id: string; role: string; blocks: unknown } | null;
+    ownerStartedRun?: boolean;
+    messagingChannelRun?: boolean;
+    trigger?: string;
+    sourceRow?: { seq: number; threadId: string; authorUserId: string | null } | null;
+    rows?: Array<{ id: string; blocks: unknown }>;
+  }) {
+    const findMany = vi.fn(async () => input.rows ?? []);
+    const findUnique = vi.fn(async () => input.sourceRow ?? null);
+    const trust = createRunTrustLoaders(
+      { prisma: { message: { findMany, findUnique } } } as unknown as ExecutorDeps,
+      {
+        run: {
+          userId: "owner",
+          spaceId: "space",
+          trigger: input.trigger ?? "user",
+          threadId: "chat",
+        },
+        runId: "run",
+        botId: "bot",
+        taskPrompt: "yes",
+        ownerStartedRun: input.ownerStartedRun ?? true,
+        messagingChannelRun: input.messagingChannelRun ?? false,
+        sourceMessage:
+          input.source === undefined
+            ? { id: "m9", role: "user", blocks: blocks("yes") }
+            : input.source,
+        connectedPlugins: [],
+      },
+    );
+    return { trust, findMany };
+  }
+
+  it("reads the owner's own messages before this one, oldest first", async () => {
+    const { trust, findMany } = loaders({
+      sourceRow: { seq: 9, threadId: "chat", authorUserId: "owner" },
+      // Newest first, as the query orders them.
+      rows: [
+        { id: "m7", blocks: blocks("Refund order 1182 for $40") },
+        { id: "m5", blocks: [{ kind: "image", url: "x" }] },
+        { id: "m3", blocks: blocks("Morning") },
+      ],
+    });
+    expect(await trust.loadEarlierOwnerMessages()).toEqual([
+      "Morning",
+      "Refund order 1182 for $40",
+    ]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { threadId: "chat", role: "user", authorUserId: "owner", seq: { lt: 9 } },
+        take: 3,
+      }),
+    );
+  });
+
+  it("reads nothing for a run the owner's own chat message did not start", async () => {
+    const sourceRow = { seq: 9, threadId: "chat", authorUserId: "owner" };
+    for (const input of [
+      { ownerStartedRun: false, sourceRow },
+      { messagingChannelRun: true, sourceRow },
+      { trigger: "helper_result", sourceRow },
+      { source: null, sourceRow },
+      { sourceRow: { ...sourceRow, authorUserId: "member" } },
+      { sourceRow: { ...sourceRow, threadId: "other" } },
+    ]) {
+      const { trust, findMany } = loaders({ ...input, rows: [{ id: "m1", blocks: blocks("x") }] });
+      expect(await trust.loadEarlierOwnerMessages()).toEqual([]);
+      expect(findMany).not.toHaveBeenCalled();
+    }
+  });
+});

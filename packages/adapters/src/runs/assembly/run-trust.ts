@@ -19,6 +19,7 @@ import {
   boundDirectApprovalDetails,
   catalogApprovalDetails,
 } from "../../approvals/approval-effect.js";
+import { REVIEW_OWNER_MESSAGES } from "../../approvals/review-owner-messages.js";
 import type { EffectiveModelRole } from "../../models/model-roles.js";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import { routineTaskInstructions } from "../../routines/routine-watch.js";
@@ -68,7 +69,13 @@ export function connectorTrustKeys(
 export function createRunTrustLoaders(
   deps: ExecutorDeps,
   input: {
-    run: { userId: string; spaceId: string; trigger: string; delegatedFromRunId?: string | null };
+    run: {
+      userId: string;
+      spaceId: string;
+      trigger: string;
+      delegatedFromRunId?: string | null;
+      threadId?: string;
+    };
     runId: string;
     botId: string;
     taskPrompt: string;
@@ -171,6 +178,47 @@ export function createRunTrustLoaders(
     })();
     return ownerWordsPromise;
   };
+  // The owner's own earlier messages in the chat their message started this run from, oldest
+  // first. Only their own chat messages count: never a bot's, a channel member's or a tool's.
+  let earlierOwnerMessagesPromise: Promise<string[]> | undefined;
+  const loadEarlierOwnerMessages = () => {
+    earlierOwnerMessagesPromise ??= (async () => {
+      if (
+        !run.threadId ||
+        !ownerStartedRun ||
+        messagingChannelRun ||
+        sourceMessage?.role !== "user" ||
+        run.trigger === BACKGROUND_HELPER_TRIGGER ||
+        run.trigger === HELPER_RESULT_TRIGGER
+      )
+        return [];
+      const source = await deps.prisma.message.findUnique({
+        where: { id: sourceMessage.id },
+        select: { seq: true, threadId: true, authorUserId: true },
+      });
+      if (source?.threadId !== run.threadId || source.authorUserId !== run.userId) return [];
+      const rows = await deps.prisma.message.findMany({
+        where: {
+          threadId: run.threadId,
+          role: "user",
+          authorUserId: run.userId,
+          seq: { lt: source.seq },
+        },
+        orderBy: { seq: "desc" },
+        take: REVIEW_OWNER_MESSAGES,
+        select: { id: true, blocks: true },
+      });
+      return rows
+        .reverse()
+        .map((row) =>
+          storedMessageBlocks(row)
+            .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+            .join("\n"),
+        )
+        .filter((text) => text.trim());
+    })();
+    return earlierOwnerMessagesPromise;
+  };
   let trustedSitesPromise: Promise<Set<string>> | undefined;
   const loadTrustedSites = () => {
     trustedSitesPromise ??= deps.prisma.externalEffect
@@ -247,6 +295,7 @@ export function createRunTrustLoaders(
     loadApprovalModel,
     loadAutoReviewPreference,
     loadOwnerWords,
+    loadEarlierOwnerMessages,
     loadTrustedSites,
     routineNamesNewSite,
     loadTrustedConnectors,

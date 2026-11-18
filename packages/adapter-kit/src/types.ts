@@ -1685,6 +1685,11 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
+   * result or anyone else's message. Redacted and capped by the caller.
+   */
+  ownerMessages?: string[];
 }
 
 export interface AutoReviewResult {

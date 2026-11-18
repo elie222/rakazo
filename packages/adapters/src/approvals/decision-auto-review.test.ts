@@ -60,3 +60,30 @@ it("asks the checker one question, with criteria for the kind of action", async 
     }),
   ]);
 });
+
+it("gives the checker the owner's earlier messages, and says what they are", async () => {
+  const sent: DecisionRequest[] = [];
+  const provider = new DecisionAutoReviewProvider({
+    provider: {
+      decide: async (decision) => {
+        sent.push(decision);
+        return {
+          model: "checker",
+          answers: { decision: { type: "choice", choice: "pass", confidence: 1 } },
+        };
+      },
+    },
+    providerId: "decisions",
+    model: "checker",
+  });
+  await provider.review({ ...request, ownerMessages: ["Draft it to Ana"] }, context);
+  await provider.review(request, context);
+  expect(sent[0]!.state).toMatchObject({ ownerEarlierMessages: ["Draft it to Ana"] });
+  expect(sent[0]!.questions.decision!.instructions).toMatch(
+    /owner_earlier_messages are the owner's own earlier messages/,
+  );
+  expect(sent[1]!.state).not.toHaveProperty("ownerEarlierMessages");
+  expect(sent[1]!.questions.decision!.instructions).toBe(
+    "Should this bot action run without asking its owner first?",
+  );
+});
