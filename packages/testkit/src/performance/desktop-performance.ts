@@ -26,6 +26,7 @@ import {
   benchmarkEnvironment,
   cdpMetrics,
   migrateDatabase,
+  nonnegativeInteger,
   output,
   positiveInteger,
   repositoryRoot as root,
@@ -776,11 +777,4 @@ function renderMarkdown(report: PerformanceReport) {
 
 function bytesToMib(value: number) {
   return roundMetric(value / 1024 / 1024);
-}
-
-function nonnegativeInteger(value: string) {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0)
-    throw new Error(`Expected a non-negative integer: ${value}`);
-  return parsed;
 }
