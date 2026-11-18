@@ -238,12 +238,12 @@ export function isOwnerStartedRun(
 }
 
 /**
- * Runs nobody is watching when they ask: a schedule, a webhook, another bot or a ticket started
- * them. An approval card one of them posts expires unanswered after this long, and the action does
+ * Runs nobody is watching when they ask: a schedule, a webhook, another bot (a message or a new
+ * bot's first task) or a ticket started them. An approval card one of them posts expires unanswered after this long, and the action does
  * not run; a card from a chat someone is in stays open until answered.
  */
 export const UNATTENDED_APPROVAL_EXPIRE_AFTER_MS = 30 * 60 * 1000;
-const UNATTENDED_TRIGGERS = new Set(["routine", "webhook", "bot_message", "tickets"]);
+const UNATTENDED_TRIGGERS = new Set(["routine", "webhook", "bot_message", "spawn", "tickets"]);
 
 export function approvalCardExpires(trigger: string): boolean {
   return UNATTENDED_TRIGGERS.has(trigger);

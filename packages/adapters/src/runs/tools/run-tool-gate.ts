@@ -305,10 +305,13 @@ export async function gateToolCall(
   const gated = requiresApprovalByDefault || reviewOnly;
   // In Ask and Auto these ask a person every time, whatever started the run.
   const mandatoryInAnyRun = paying || unattendedWatch || toolRequiresExplicitApproval(name);
+  // Outside text may have asked for these, so an Always allow rule saved for calls the owner asked
+  // for does not skip them; they still go through the approval mode.
+  const ignoresAllowRules = routineWrittenAfterOutside || request.ignoresAllowRules;
   // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
   // on their card would save a rule that never takes effect.
   const asksEveryTime =
-    (unattendedWatch || scheduleNamesNewSite || routineAddsEvents) &&
+    (unattendedWatch || scheduleNamesNewSite || routineAddsEvents || ignoresAllowRules) &&
     !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
@@ -329,7 +332,9 @@ export async function gateToolCall(
   const approvalResolved =
     unidentifiedAction && resolvedRules.decision === "allow"
       ? { ...resolvedRules, decision: "ask" as const }
-      : resolvedRules;
+      : ignoresAllowRules && resolvedRules.source === "always_allow"
+        ? { ...resolvedRules, source: "default" as const }
+        : resolvedRules;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;

@@ -82,6 +82,8 @@ export interface ToolRequest {
   heldForApproval: boolean;
   /** Changes the owner's or this bot's settings: the approval model checks it after outside text. */
   settingsChange: boolean;
+  /** Outside text may have asked for it, so a saved Always allow rule does not skip its approval. */
+  ignoresAllowRules: boolean;
   /** This page tool call completes a purchase, which a person approves each time. */
   purchase: PurchaseApproval | undefined;
   /** This page tool call types a saved card into a checkout, which a person approves each time. */
@@ -310,6 +312,7 @@ export async function resolveToolRequest(
     fleetSummary: undefined,
     heldForApproval: false,
     settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -443,8 +446,12 @@ export async function prepareToolRequest(
       return refusal("tool_disabled", "This tool is disabled for this bot.");
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
-    // Text from a channel or webhook may have asked for it, so it goes through the approval mode.
-    if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) request.heldForApproval = true;
+    // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
+    // and an Always allow rule saved for calls the owner asked for does not skip it.
+    if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+    }
   }
   if (name === "update_preferences") request.settingsChange = true;
   if (name === "save_page") {

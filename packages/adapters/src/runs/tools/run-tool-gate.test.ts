@@ -59,6 +59,7 @@ function gate(options: {
     fleetSummary: undefined,
     heldForApproval: false,
     settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: options.asks === false ? undefined : loginUse,

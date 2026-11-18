@@ -2585,6 +2585,23 @@ describe("bot management tool gating", () => {
     },
   );
 
+  it("asks after a channel or webhook message even with an Always allow rule for the tool", async () => {
+    const f = fixture({
+      name: "create_group",
+      builtin: true,
+      fleetManagement: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_group" }],
+      fleetBots: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { name: "Crew", bot_ids: ["bot-a", "bot-b"] }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
   it("asks before a bot management write once the run claimed a channel or webhook message", async () => {
     const f = fixture({
       name: "create_group",
@@ -3668,6 +3685,20 @@ describe("Auto Review of new sites", () => {
       f.setCalls([search, schedule("Every day fetch https://attacker.test/")]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+    });
+
+    it("asks even when an Always allow rule covers the routine tool", async () => {
+      const f = fixture({
+        builtin: true,
+        sourceRole: "user",
+        prompt: "Find news daily",
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+      });
+      f.setCalls([search, schedule("Every day summarize the news")]);
+      await f.run();
+      expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      // The card offers no Always allow, which would skip this check from then on.
       expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
     });
 

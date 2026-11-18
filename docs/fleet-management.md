@@ -24,7 +24,8 @@ bot management tools, including `list_fleet`. `update_bot` remains available for
 calling bot, but cannot target another bot.
 
 In Ask and Auto, once a run receives a messaging channel or webhook message while working, every
-change to the bots it manages asks first for the rest of that run. Never ask runs them.
+change to the bots it manages goes through approval for the rest of that run, and an **Always
+allow** choice doesn't skip it. Never ask runs them.
 A follow-up counts as yours only when its source message was written by you.
 
 ## Tools

@@ -235,6 +235,7 @@ describe("approvalCardExpires", () => {
     ["routine", true],
     ["webhook", true],
     ["bot_message", true],
+    ["spawn", true],
     ["tickets", true],
     ["user", false],
     ["messaging", false],
