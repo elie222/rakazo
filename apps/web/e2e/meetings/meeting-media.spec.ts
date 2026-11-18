@@ -118,12 +118,18 @@ mediaTest(
     ]);
     await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
     await ready.promise;
-    await page.evaluate(() => (window as MeetingAudioProbe).speak?.());
+    const startedAtFrame = await page.evaluate(() => {
+      const channel = window as MeetingAudioProbe;
+      channel.speak?.();
+      return channel.inputFrames;
+    });
     try {
-      await page.waitForFunction(() => {
-        const channel = window as MeetingAudioProbe;
-        return channel.workletReady === true && channel.playbackStarted === 1;
-      });
+      // The second tone and its trailing silence take fewer than twenty 64 ms frames.
+      await page.waitForFunction(
+        (target) => (window as MeetingAudioProbe).inputFrames >= target,
+        startedAtFrame + 20,
+      );
+      expect(media.received).toHaveLength(3);
     } finally {
       reply.resolve();
     }
