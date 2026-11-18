@@ -380,7 +380,7 @@ export function createRunReconciler(
     | "leadership"
     | "reconcileRoutineRetryNotices"
     | "reconcileHomeStorage"
-    | "reconcileReceivedFiles"
+    | "reconcileAttachmentCopies"
     | "reconcileDeadJobs"
   > = {},
   chat: { messagingDelivery?: MessagingDelivery; teamChat?: TeamChat } = {},

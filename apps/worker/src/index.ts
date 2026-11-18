@@ -20,6 +20,7 @@ import {
   createApnsActivityProvider,
   createApnsVoipProvider,
   createArtifactStore,
+  createAttachmentCopiesPruner,
   createCloudAgentConnection,
   createConnectorRuntime,
   createDeadJobPruner,
@@ -28,7 +29,6 @@ import {
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
-  createReceivedFilesPruner,
   createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
   createRunReconciler,
@@ -38,6 +38,7 @@ import {
   createTicketChangeNotifier,
   drainRuns,
   ExpoPushProvider,
+  filesCleanupSettings,
   GraphileJobPublisher,
   homeStorageSweeper,
   InMemoryJobQueue,
@@ -150,6 +151,8 @@ async function main() {
     runSecretWriter: createRunSecretWriter(secrets),
   });
   const env = runRuntimeEnvFromProcess(process.env);
+  // Read once, so a value that is not understood stops the start.
+  const cleanupSettings = filesCleanupSettings(process.env);
   const boardEvents = createBoardEvents(realtime);
   const runtime =
     process.env.AGENT_RUNTIME === "scripted"
@@ -322,11 +325,11 @@ async function main() {
             executor.notifyRoutineRetryAttemptsExhausted(runId),
           ),
       reconcileHomeStorage: homeStorageSweeper(home),
-      reconcileReceivedFiles: createReceivedFilesPruner({
+      reconcileAttachmentCopies: createAttachmentCopiesPruner({
         prisma,
         home,
         sandbox,
-        enabled: env.copyAttachmentsOnArrival,
+        settings: cleanupSettings,
       }),
       reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
     },

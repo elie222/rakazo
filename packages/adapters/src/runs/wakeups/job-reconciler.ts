@@ -127,8 +127,8 @@ export function createJobReconciler(
     reconcileAuditLog?: () => Promise<void>;
     reconcileChatHistoryRetention?: () => Promise<void>;
     reconcileHomeStorage?: () => Promise<void>;
-    /** Deletes chat-app files received more than a month ago from homes the server holds. */
-    reconcileReceivedFiles?: () => Promise<void>;
+    /** Deletes old copies of attachments from computers whose homes the server holds. */
+    reconcileAttachmentCopies?: () => Promise<void>;
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
     /** Gives chat messages whose backup job was lost a new one. */
@@ -175,7 +175,7 @@ export function createJobReconciler(
     deps.reconcileAuditLog,
     deps.reconcileChatHistoryRetention,
     deps.reconcileHomeStorage,
-    deps.reconcileReceivedFiles,
+    deps.reconcileAttachmentCopies,
     deps.reconcileIdleComputers,
     deps.reconcileDeadJobs,
     deps.reconcileChatDelivery,
