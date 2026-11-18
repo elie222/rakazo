@@ -138,6 +138,26 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
       expect(emulator.scheduled(firstReview.id)).toBeTruthy();
       expect(emulator.scheduled(firstReview.id)).toBe(emulator.scheduled(secondReview.id));
       expect(emulator.scheduled(lastReview.id)).toBeTruthy();
+      const reservation = emulator.scheduled(firstReview.id);
+      const ownReservation = () =>
+        runAsTenant(first, () =>
+          prisma.meetingSession.findFirstOrThrow({
+            where: { provider: emulator.provider.id, externalId: reservation },
+          }),
+        );
+      expect((await ownReservation()).shareTranscript).toBe(false);
+      await runAsTenant(second, () =>
+        service.updateSelection(second, botId, secondReview.id, "once", true),
+      );
+      expect((await ownReservation()).shareTranscript).toBe(false);
+      const scheduleOnSharingChange = vi.spyOn(emulator.provider, "schedule");
+      await runAsTenant(first, () =>
+        service.updateSelection(first, botId, firstReview.id, "series", true),
+      );
+      expect((await ownReservation()).shareTranscript).toBe(true);
+      expect(emulator.scheduled(firstReview.id)).toBe(reservation);
+      expect(scheduleOnSharingChange).not.toHaveBeenCalled();
+      scheduleOnSharingChange.mockRestore();
       expect(jobs.enqueueIn).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -159,6 +179,7 @@ postgres("meeting calendar reconciliation (PostgreSQL)", () => {
         }),
       );
       expect(shared?.userId).toBe(second.userId);
+      expect(shared?.shareTranscript).toBe(true);
       expect(
         await runAsTenant(first, () =>
           prisma.meetingSession.findFirst({

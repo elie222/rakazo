@@ -29,7 +29,7 @@ export default function MeetingsDialog({
   const list = useQuery(read);
   useEventListener(window, "focus", () => void list.refetch({ cancelRefetch: false }));
   const join = useSave({
-    save: (url: string, rpc) => rpc.meetings.join({ botId, url }),
+    save: (url: string, rpc) => rpc.meetings.join({ botId, url, shareTranscript: true }),
     stale: [read.queryKey],
     onSaved: () => setUrl(""),
   });
@@ -98,13 +98,13 @@ export default function MeetingsDialog({
                         setUrl(event.target.value);
                       }}
                     />
-                    <Button type="submit" disabled={busy || !url.trim()}>
+                    <Button size="lg" type="submit" disabled={busy || !url.trim()}>
                       <Trans>Join meeting</Trans>
                     </Button>
                   </div>
                   <p id="meeting-capture-notice" className="text-body-sm text-muted-foreground">
                     <Trans>
-                      Only send the bot if you have permission to record and transcribe the meeting.
+                      Get permission to record and share the transcript with this Space.
                     </Trans>
                   </p>
                 </form>

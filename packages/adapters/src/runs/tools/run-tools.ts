@@ -5,6 +5,11 @@ import {
   isTerminatingReplyResult,
 } from "../../approvals/approval-effect.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { listChatTranscripts, readChatMeeting } from "../../meetings/meeting-chat.js";
+import {
+  meetingTranscriptArgs,
+  READ_MEETING_TRANSCRIPT,
+} from "../../meetings/meeting-chat.tool-definition.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
@@ -48,6 +53,20 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(fileTools),
   ...Object.entries(pageTools),
   ...Object.entries(memoryTools),
+  [
+    READ_MEETING_TRANSCRIPT,
+    async (ctx, call) => {
+      const input = meetingTranscriptArgs.safeParse(call.args);
+      if (!input.success || !ctx.source.meetingChat || (await ctx.trust.receivedOutsideMessage())) {
+        return call.finish({ error: "A meeting in this bot’s chat is required." });
+      }
+      const { meeting_id, offset, before } = input.data;
+      if (!meeting_id)
+        return call.finish(await listChatTranscripts(ctx.deps.prisma, ctx.run, before));
+      const transcript = await readChatMeeting(ctx.deps.prisma, ctx.run, meeting_id, offset);
+      return call.finish(transcript ?? { error: "The meeting transcript is unavailable." });
+    },
+  ],
   ...Object.entries(integrationTools),
   ...Object.entries(taskTools),
   ...Object.entries(messagingTools),
