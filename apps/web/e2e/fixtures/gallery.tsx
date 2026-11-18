@@ -158,6 +158,34 @@ const questions: Scenario = {
     ]),
     bot([
       {
+        // A bot's own prose: with no format named, its detail reads as Markdown like the question.
+        kind: "ask",
+        text: "Send this draft to Sam?",
+        detail:
+          "Hi Sam,\n\n**Tuesday at 2 pm** works for me.\n\n- Total: **$17.40**\n- Delivery included",
+        status: "pending",
+        actions: [
+          { id: "send", label: "Send it" },
+          { id: "edit", label: "Show me first" },
+        ],
+      },
+    ]),
+    bot([
+      {
+        // A detail the producer named as text keeps every character as written.
+        kind: "ask",
+        text: "Use this command?",
+        detail: "Use **literal** stars.",
+        detailFormat: "text",
+        status: "pending",
+        actions: [
+          { id: "keep", label: "Keep it" },
+          { id: "change", label: "Change it" },
+        ],
+      },
+    ]),
+    bot([
+      {
         kind: "choice",
         question: "What do you want me on first?",
         options: [

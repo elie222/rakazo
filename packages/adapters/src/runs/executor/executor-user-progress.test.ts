@@ -1157,6 +1157,32 @@ describe("text written before a question", () => {
     expect(ask.detail?.length).toBeLessThanOrEqual(4_001);
   });
 
+  it("leaves a Markdown detail unnamed so the card renders it as prose", async () => {
+    const detail = "Total is **set** and `SKU-1` ships today.";
+    const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        {
+          type: "ask",
+          text: "Send this email?",
+          detail,
+          detailMarkdown: true,
+          actions: [
+            { id: "choice-1", label: "Send it" },
+            { id: "choice-2", label: "Show me first" },
+          ],
+        },
+      ],
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    const blocks = (pauseRunForInput.mock.calls[0] as unknown as [{ blocks: MessageBlock[] }])[0]
+      .blocks;
+    const ask = blocks.find((block) => block.kind === "ask");
+    if (ask?.kind !== "ask") throw new Error("expected ask block");
+    expect(ask.detail).toBe(detail);
+    expect(ask.detailFormat).toBeUndefined();
+  });
+
   it("keeps a detail-less ask block exactly as it was", async () => {
     const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
       runtimeEvents: [

@@ -18,7 +18,10 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 const favicon = vi.hoisted(() => ({ icon: null as string | null, asked: [] as string[] }));
 vi.mock("@rakazo/chat-ui/web", () => ({
-  ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  // Routing only: the renderer's own tests prove that Markdown becomes markup.
+  ChatMarkdown: ({ children }: { children: ReactNode }) => (
+    <span data-testid="chat-markdown">{children}</span>
+  ),
   useLinkFavicon: (href: string) => {
     if (href) favicon.asked.push(href);
     return { icon: href ? favicon.icon : null, unusable: () => undefined };
@@ -517,6 +520,32 @@ it("shows a question's detail as plain text above its options", async () => {
   expect(detail.classList.contains("font-sans")).toBe(true);
   expect(detail.classList.contains("bg-background")).toBe(false);
   expect(button("ASend it")).toBeDefined();
+});
+
+it("renders a question's own detail as Markdown and keeps a named text detail literal", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Send this email?",
+    detail: "Hi Ana,\n\nThe **total** is set.",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Send it" },
+      { id: "choice-2", label: "Show me first" },
+    ],
+  };
+  await render(block, undefined, onAnswer);
+  const detail = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(detail.querySelector('[data-testid="chat-markdown"]')?.textContent).toBe(block.detail);
+  await act(async () => button("ASend it")!.click());
+  expect(onAnswer).toHaveBeenCalledWith("choice-1");
+
+  // A card that names its detail as plain text keeps every character as written.
+  await render({ ...block, detail: "Use **literal** stars", detailFormat: "text" });
+  const literal = container.querySelector('[data-testid="ask-detail"]')!;
+  expect(literal.querySelector('[data-testid="chat-markdown"]')).toBeNull();
+  expect(literal.tagName).toBe("PRE");
+  expect(literal.textContent).toBe("Use **literal** stars");
 });
 
 it("shows what a sign-in approval types besides the login, above its two answers", async () => {

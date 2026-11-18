@@ -374,13 +374,17 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         const askArgs = {
           question: "Which option?",
           options: ["Keep going", "Stop here"],
+          // Opted in: the card renders the detail as Markdown.
+          detail_markdown: true,
         };
         this.emit({
           type: "tool_execution_start",
           toolName: askUser.name,
           args: askArgs,
         });
-        if (!this.aborted) await askUser.execute("ask-1", askArgs);
+        // Pi prepares the model's arguments before it runs the tool.
+        const preparedAsk = askUser.prepareArguments?.(askArgs) ?? askArgs;
+        if (!this.aborted) await askUser.execute("ask-1", preparedAsk);
         return;
       }
 
@@ -2425,6 +2429,7 @@ describe("Pi connector tool dispatch", () => {
       expect.objectContaining({
         type: "ask",
         text: "Which option?",
+        detailMarkdown: true,
       }),
     );
 
