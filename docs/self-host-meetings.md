@@ -8,14 +8,14 @@ The transcript belongs to the member who started the session. They can open it f
 
 Set the same meeting-provider configuration on the API and worker.
 
-| Setting | Value |
-| --- | --- |
-| `MEETING_PROVIDER` | Use `recall` for Recall.ai. Leave empty to disable new joins. |
-| `MEETING_API_KEY` | API credential from the provider workspace. |
-| `MEETING_REGION` | Workspace's region. |
-| `MEETING_WEBHOOK_SECRET` | Signing secret for the workspace's status webhooks. |
+| Setting                     | Value                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `MEETING_PROVIDER`          | Use `recall` for Recall.ai. Leave empty to disable new joins.                    |
+| `MEETING_API_KEY`           | API credential from the provider workspace.                                      |
+| `MEETING_REGION`            | Workspace's region.                                                              |
+| `MEETING_WEBHOOK_SECRET`    | Signing secret for the workspace's status webhooks.                              |
 | `MEETING_WEBHOOK_SIGNATURE` | `webhook` by default. Set `svix` for older workspaces that use endpoint secrets. |
-| `MEETING_SPACE_IDS` | Comma-separated list of Spaces authorized to send bots. |
+| `MEETING_SPACE_IDS`         | Comma-separated list of Spaces authorized to send bots.                          |
 
 Configure the status webhook to use `/api/meetings/events` on your public API origin. Subscribe to bot lifecycle events, `recording.done`, `recording.failed`, `transcript.done`, and `transcript.failed`. The operator's workspace incurs per-minute capture and transcription costs. This deployment admits up to 20 manual meetings per Space per rolling day. A meeting can record for up to two hours.
 

@@ -95,6 +95,8 @@ export * from "./mcp/remote-mcp.js";
 export * from "./media/media-generation-factory.js";
 export * from "./media/media-generation-provider.js";
 export * from "./media/media-video-poll.js";
+export * from "./meetings/meeting-provider.js";
+export * from "./meetings/meeting-service.js";
 export { purgeClearedConversationMemory } from "./memory/conversation-memory-cleanup.js";
 export { readAgentMemory } from "./memory/memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
@@ -307,6 +309,3 @@ export * from "./webhooks/audit-forwarding.js";
 export * from "./webhooks/destination-emulator.js";
 export * from "./webhooks/github-webhook-emulator.js";
 export * from "./webhooks/inbound-delivery.js";
-
-export * from "./meetings/meeting-provider.js";
-export * from "./meetings/meeting-service.js";
