@@ -3591,6 +3591,7 @@ describe("Auto Review of new sites", () => {
       prompt: "yes, fetch it",
     });
     f.prisma.message.findUnique.mockResolvedValue({
+      id: "message-7",
       role: "user",
       blocks: [{ kind: "text", text: "yes, fetch it" }],
       seq: 7,
