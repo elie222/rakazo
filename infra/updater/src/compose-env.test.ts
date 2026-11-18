@@ -65,6 +65,8 @@ const NOT_PASSED: Record<string, string> = {
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
+  RAKAZO_NET_FILE: "path of the tailnet helper on a Windows computer, not read by the api or worker",
+  RAKAZO_NET_HELPER: "tailnet helper bytes written only into a bot computer's shell",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
