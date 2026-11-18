@@ -36,7 +36,8 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     model,
     computer,
   });
-  const meetings = isMeetingChat(hold.run, records.thread)
+  const meetingChat = isMeetingChat(hold.run, records.thread, capabilities.sourceMessage);
+  const meetings = meetingChat
     ? ((await bestEffort(
         "load recent meetings for direct chat",
         recentChatMeetings(hold.deps.prisma, hold.run),
@@ -67,6 +68,7 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     capabilities,
     tools,
     computerInstructions,
+    meetingChat,
   });
   const prompt = await buildTurnPrompt(hold, {
     saved,

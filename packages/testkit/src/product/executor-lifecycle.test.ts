@@ -56,8 +56,24 @@ describeIntegration("run executor lifecycle", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it("gives a regular chat turn meeting context and lets it read the transcript", async () => {
-    const seeded = await seedRun("meeting-follow-up", "What happened in the meeting before these?");
+  it.each([
+    { label: "user", trigger: "user", role: "user", canRead: true },
+    { label: "user-follow-up", trigger: "follow_up", role: "user", canRead: true },
+    { label: "bot-follow-up", trigger: "follow_up", role: "bot", canRead: false },
+  ] as const)("scopes meeting transcript access for $label chat turns", async (scenario) => {
+    const question = "What happened in the meeting before these?";
+    const seeded = await seedRun(`meeting-${scenario.label}`, question);
+    const source = await runAsSystem("test fixture", () =>
+      createThreadMessage(handles.prisma, {
+        threadId: seeded.thread.id,
+        role: scenario.role,
+        blocks: [{ kind: "text", text: question }],
+      }),
+    );
+    await db.run.update({
+      where: { id: seeded.run.id },
+      data: { trigger: scenario.trigger, sourceMessageId: source.id },
+    });
     const closedAt = new Date(Date.now() - 60_000);
     const identity = {
       spaceId: seeded.me.spaceId,
@@ -96,6 +112,10 @@ describeIntegration("run executor lifecycle", () => {
         }
         const toolNames = request.tools.map(({ name }) => name);
         read(request.prompt, toolNames);
+        if (!scenario.canRead) {
+          yield { type: "done", text: "Done." };
+          return;
+        }
         yield {
           type: "tool",
           name: "read_meeting_transcript",
@@ -108,6 +128,13 @@ describeIntegration("run executor lifecycle", () => {
       await runAsTenant(seeded.me, () =>
         handles.executor.continueRun(seeded.run.id, "meeting-worker"),
       );
+      if (!scenario.canRead) {
+        expect(read).toHaveBeenCalledWith(
+          expect.not.stringContaining(meeting.id),
+          expect.not.arrayContaining(["read_meeting_transcript"]),
+        );
+        return;
+      }
       expect(read).toHaveBeenCalledWith(
         expect.stringContaining(meeting.id),
         expect.arrayContaining(["read_meeting_transcript"]),

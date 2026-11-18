@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Message, Prisma, PrismaClient } from "@rakazo/db";
+import { mayBeChannelMessage } from "@rakazo/db";
 import { meetingTranscriptText, readMeetingTurns } from "./meeting-transcript.js";
 
 type MeetingChat = { spaceId: string; botId: string };
@@ -15,17 +16,26 @@ const meetingSummary = {
   sharedArtifact: { select: { name: true } },
 } satisfies Prisma.MeetingSessionSelect;
 type MeetingChatThread = {
+  id: string;
   botId: string | null;
   groupId: string | null;
   externalConversationId: string | null;
 };
 
-export function isMeetingChat(run: MeetingChat & { trigger: string }, thread: MeetingChatThread) {
+export function isMeetingChat(
+  run: MeetingChat & { trigger: string },
+  thread: MeetingChatThread,
+  source: Pick<Message, "id" | "role" | "threadId" | "blocks"> | null,
+) {
   return (
-    run.trigger === "user" &&
     thread.botId === run.botId &&
     !thread.groupId &&
-    !thread.externalConversationId
+    !thread.externalConversationId &&
+    (run.trigger === "user" ||
+      (run.trigger === "follow_up" &&
+        source?.role === "user" &&
+        source.threadId === thread.id &&
+        !mayBeChannelMessage(source)))
   );
 }
 

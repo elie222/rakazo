@@ -5,11 +5,7 @@ import {
   isTerminatingReplyResult,
 } from "../../approvals/approval-effect.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
-import {
-  isMeetingChat,
-  listChatTranscripts,
-  readChatMeeting,
-} from "../../meetings/meeting-chat.js";
+import { listChatTranscripts, readChatMeeting } from "../../meetings/meeting-chat.js";
 import {
   meetingTranscriptArgs,
   READ_MEETING_TRANSCRIPT,
@@ -61,7 +57,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
     READ_MEETING_TRANSCRIPT,
     async (ctx, call) => {
       const input = meetingTranscriptArgs.safeParse(call.args);
-      if (!input.success || !isMeetingChat(ctx.run, ctx.thread)) {
+      if (!input.success || !ctx.source.meetingChat || (await ctx.trust.receivedOutsideMessage())) {
         return call.finish({ error: "A meeting in this bot’s chat is required." });
       }
       const { meeting_id, offset, before } = input.data;

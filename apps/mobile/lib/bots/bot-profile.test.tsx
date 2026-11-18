@@ -1737,6 +1737,15 @@ describe("artifacts opened for one bot", () => {
       madeByBots: true,
       limit: 30,
     });
+    expect(container.textContent).not.toContain("second-report.md");
+
+    const readsAfterFocus = listSpaceArtifacts.mock.calls.length;
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    expect(listSpaceArtifacts.mock.calls.slice(readsAfterFocus)).toEqual([
+      [{ botId: "bot-fixture", madeByBots: true, limit: 30 }],
+    ]);
   });
 
   it("never pages the new filter with the old filter's cursor", async () => {
