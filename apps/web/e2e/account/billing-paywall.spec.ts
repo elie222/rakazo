@@ -172,7 +172,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await expect(settings.getByText("Research bot", { exact: true })).toBeHidden();
   await settings.getByRole("button", { name: "Hours by computer" }).click();
   await expect(settings.getByText("Research bot", { exact: true })).toBeVisible();
-  await expect(settings.getByText("3.5 hr", { exact: true })).toBeVisible();
+  await expect(settings.getByText("3.5 hr", { exact: true })).toBeInViewport({ ratio: 1 });
   await captureScreenshot(page, testInfo, "billing-hours-by-computer");
   await settings.getByRole("button", { name: "Hours by computer" }).click();
   await settings.getByRole("button", { name: "Add credits", exact: true }).click();
