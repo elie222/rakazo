@@ -78,8 +78,10 @@ const status = {
 };
 
 const requests: Array<{ url: string; spaceId: string | null }> = [];
+let trialEnded = false;
 
 beforeEach(() => {
+  trialEnded = false;
   localStorage.setItem("rakazo:space-id", "space-a");
   vi.stubGlobal(
     "fetch",
@@ -88,8 +90,20 @@ beforeEach(() => {
         url: request.url,
         spaceId: new Headers(init?.headers ?? request.headers).get("x-rakazo-space-id"),
       });
+      if (request.url.endsWith("/billing/endTrial")) {
+        trialEnded = true;
+        return Response.json({ json: {} });
+      }
+      if (request.url.endsWith("/billing/computerUsage")) {
+        return Response.json({
+          json: {
+            computers: [],
+            otherHours: trialEnded ? 0 : 1,
+          },
+        });
+      }
       return Response.json({
-        json: request.url.endsWith("/billing/endTrial") ? {} : status,
+        json: trialEnded ? { ...status, state: "active", computerHoursLeft: 25 } : status,
       });
     }),
   );
@@ -142,6 +156,12 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   });
 
   await act(async () => {
+    button(container, "Hours by computer").click();
+    await flush();
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Other computers"));
+
+  await act(async () => {
     button(container, "Start plan now").click();
   });
   // The confirmation quotes the price the panel loaded, not the new organization's.
@@ -153,6 +173,9 @@ it("sends the panel's confirmations to the space it opened for", async () => {
 
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
+  await vi.waitFor(() => expect(container.textContent).toContain("No computer hours used yet"));
+  const usageReads = requests.filter(({ url }) => url.endsWith("/billing/computerUsage"));
+  expect(usageReads.map(({ spaceId }) => spaceId)).toEqual(["space-a", "space-a"]);
   act(() => root.unmount());
   container.remove();
 });

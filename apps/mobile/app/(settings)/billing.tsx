@@ -62,7 +62,8 @@ export default function BillingScreen() {
   const statusQuery = useScreenQuery(statusRead);
   const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
   const [showComputerUsage, setShowComputerUsage] = useState(false);
-  const computerUsage = useScreenQuery(rpcQuery("billing/computerUsage", undefined, space), {
+  const usageRead = rpcQuery("billing/computerUsage", undefined, space);
+  const computerUsage = useScreenQuery(usageRead, {
     enabled: showComputerUsage && status?.canManage === true && status.computerHoursLeft != null,
   });
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function BillingScreen() {
   }, [readError, errorUpdatedAt, t]);
   const change = useSave({
     target,
+    stale: [usageRead.queryKey],
     save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
       const next = await work(send);
       if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);

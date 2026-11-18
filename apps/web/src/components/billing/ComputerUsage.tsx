@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Disclosure } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";

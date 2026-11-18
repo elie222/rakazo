@@ -182,12 +182,11 @@ export async function sandboxRunHours(
   now = new Date(),
 ): Promise<Array<{ kind: string; hours: number }>> {
   // The allowance is per organization, so it counts the computers of all its Spaces.
-  return runAsSystem(
-    "computer allowance across an organization's Spaces",
-    () => prisma.$queryRaw<Array<{ kind: string; hours: number }>>`
-    SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
-    FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-    GROUP BY "kind"`,
+  return runAsSystem("computer allowance across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ kind: string; hours: number }>>(Prisma.sql`
+      SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
+      FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
+      GROUP BY "kind"`),
   );
 }
 
@@ -197,13 +196,11 @@ export function sandboxRunHoursByComputer(
   since: Date,
   now: Date,
 ) {
-  return runAsSystem(
-    "computer usage across an organization's Spaces",
-    () =>
-      prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>`
+  return runAsSystem("computer usage across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>(Prisma.sql`
       SELECT "computerId", "kind", SUM("seconds")::float8 / 3600 AS "hours"
       FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-      GROUP BY "computerId", "kind"`,
+      GROUP BY "computerId", "kind"`),
   );
 }
 
