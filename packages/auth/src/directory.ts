@@ -1,5 +1,5 @@
 import type { SCIMOptions } from "@better-auth/scim";
-import { displayName, isMessagingEmail } from "@rakazo/core";
+import { canonicalEmail, displayName, isMessagingEmail } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth";
@@ -50,7 +50,7 @@ export async function createDirectory(
   const { scim } = await import("@better-auth/scim");
   const identity: SCIMOptions["identity"] = {
     resolveUser: async ({ resource }, { database }) => {
-      const email = resource.primaryEmail.toLowerCase();
+      const email = canonicalEmail(resource.primaryEmail);
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
       type Match = { id: string; emailVerified: boolean };

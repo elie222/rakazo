@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { canonicalEmail } from "@rakazo/core";
 import type { RouterDeps } from "../router.js";
 
 type AdminDeps = Pick<RouterDeps, "prisma"> & { env: Pick<RouterDeps["env"], "adminEmails"> };
@@ -11,7 +12,9 @@ export async function isAdmin(deps: AdminDeps, userId: string): Promise<boolean>
     where: { id: userId },
     select: { email: true, emailVerified: true },
   });
-  return Boolean(user?.emailVerified && admins.includes(user.email.toLowerCase()));
+  return Boolean(
+    user?.emailVerified && admins.map(canonicalEmail).includes(canonicalEmail(user.email)),
+  );
 }
 
 export async function requireAdmin(deps: AdminDeps, userId: string): Promise<void> {

@@ -1,6 +1,8 @@
 // Operator-only: bot-email-policy.js status <email> | limit <email> <0..1000> | replies <email> on|off | allow|deny <email> <recipient>
+
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { BotEmailRecipientSchema } from "@rakazo/contracts";
+import { canonicalEmail } from "@rakazo/core";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { loadEnv } from "../env.js";
 
@@ -29,7 +31,7 @@ try {
   await runAsSystem("manage an account's bot email sending policy", () =>
     prisma.$transaction(async (tx) => {
       const matches = await tx.user.findMany({
-        where: { email: { equals: address.trim(), mode: "insensitive" } },
+        where: { email: { equals: canonicalEmail(address), mode: "insensitive" } },
         select: { id: true },
         take: 2,
       });
@@ -45,7 +47,7 @@ try {
         where: { id: userId },
         select: { ...select, email: true },
       });
-      if (previous.email.toLowerCase() !== address.trim().toLowerCase())
+      if (canonicalEmail(previous.email) !== canonicalEmail(address))
         throw new Error("Account email changed while waiting; no policy change was applied");
       const policy =
         action === "status"

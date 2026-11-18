@@ -14,3 +14,7 @@ WHERE lower(u.email) LIKE '%@googlemail.com'
 UPDATE invitation
 SET email = lower(split_part(email, '@', 1)) || '@gmail.com'
 WHERE lower(email) LIKE '%@googlemail.com';
+
+UPDATE access_grants
+SET email = lower(split_part(email, '@', 1)) || '@gmail.com'
+WHERE lower(email) LIKE '%@googlemail.com';

@@ -1,5 +1,7 @@
 // Operator control: model-credit-cap.js set <email> <total-usd> | clear|status <email>
+
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { canonicalEmail } from "@rakazo/core";
 import { createDb, modelCreditCapStatus, runAsSystem, setModelCreditCap } from "@rakazo/db";
 import { loadEnv } from "../env.js";
 
@@ -24,7 +26,7 @@ const env = loadEnv();
 const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProviderFromEnv() });
 try {
   await runAsSystem("manage an account's model credit cap", async () => {
-    const email = address.trim().toLowerCase();
+    const email = canonicalEmail(address);
     const exact = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     const matches = exact
       ? [exact]

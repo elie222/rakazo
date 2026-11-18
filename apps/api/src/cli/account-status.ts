@@ -1,5 +1,6 @@
 // `docker compose exec api node dist/cli/account-status.js deactivate|reactivate <email>`:
 // turns an account off or back on, as the identity provider would over SCIM.
+
 import {
   contentKeyProviderFromEnv,
   PostgresRealtimeFanout,
@@ -8,6 +9,7 @@ import {
   unwrapEnvFromKeyManager,
   userDeviceForwardSecret,
 } from "@rakazo/adapters";
+import { canonicalEmail } from "@rakazo/core";
 import {
   createDb,
   createThreadEvents,
@@ -36,7 +38,7 @@ const realtime = new PostgresRealtimeFanout({
   publisher: pool,
 });
 try {
-  const email = address.trim().toLowerCase();
+  const email = canonicalEmail(address);
   // As the directory looks accounts up: the exact address, else the only one differing by case.
   const user = await runAsSystem("find an account by email", async () => {
     const exact = await prisma.user.findUnique({ where: { email }, select: { id: true } });

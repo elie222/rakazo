@@ -1,4 +1,5 @@
 import type { OrganizationList, SpaceMembers } from "@rakazo/contracts";
+import { canonicalEmail } from "./email-address.js";
 
 type Organization = OrganizationList["organizations"][number];
 
@@ -56,7 +57,8 @@ export function spaceInvitee(
   // The invite takes at most 254 characters, the longest address mail can carry.
   if (!local || extra !== undefined || address.length > 254 || /\s/.test(address)) return null;
   if (dot < 1 || dot === domain.length - 1) return null;
-  const owns = (person: { email: string }) => person.email.toLowerCase() === address;
+  const owns = (person: { email: string }) =>
+    canonicalEmail(person.email) === canonicalEmail(address);
   if (list.members.some(owns)) return { kind: "member" };
   const person = list.addable?.find(owns);
   return person ? { kind: "addable", userId: person.userId } : { kind: "outside" };
