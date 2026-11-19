@@ -730,6 +730,11 @@ describe("bot settings device voice menu", () => {
     await act(async () => root.render(<BotSettingsScreen />));
     expect(container.textContent).not.toContain("notes/0.md");
     await expand();
+    expect(container.textContent).not.toContain("Task 0");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Open work"]')!.click(),
+    );
+    expect(container.textContent).toContain("Task 0");
     expect(container.textContent).not.toContain("Task 6");
     expect(container.textContent).not.toContain("notes/6.md");
     for (const button of [...container.querySelectorAll("button")].filter(

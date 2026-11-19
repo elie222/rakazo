@@ -3,8 +3,8 @@ import type { ScratchpadItem } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Plus, X } from "lucide-react";
+import { useId, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 
 const NO_ITEMS: ScratchpadItem[] = [];
@@ -21,6 +21,10 @@ export function ScratchpadSection({ botId }: { botId: string }) {
   const list = queries.scratchpad.list.queryOptions({ input: { botId } });
   // The bot edits its open work as it runs, so every open refreshes behind the cached list.
   const items = useQuery({ ...list, refetchOnMount: "always" }).data ?? NO_ITEMS;
+  const listId = useId();
+  // Folded like Settings, so a long list never pushes the rest of the panel away.
+  const [open, setOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -77,19 +81,36 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <SectionHeading variant="label" className="mb-2 flex items-center justify-between pe-1">
-        <Trans>Open work</Trans>
+      <SectionHeading variant="label" className="flex min-h-6 items-center gap-1 pe-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => setOpen((value) => !value)}
+          className="-my-2 flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Trans>Open work</Trans>
+          {items.length ? <span className="tabular-nums">{items.length}</span> : null}
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
         <Button
           variant="ghost"
           size="icon-xs"
           aria-label={t`Add open work`}
           title={t`Add open work`}
-          onClick={() => setAdding((value) => !value)}
+          onClick={() => {
+            setAdding(!(open && adding));
+            setOpen(true);
+          }}
         >
           <Plus className="size-4" />
         </Button>
       </SectionHeading>
-      <div className="rounded-xl bg-muted/50 p-4">
+      {/* Stays mounted so a draft survives folding the list away. */}
+      <div id={listId} hidden={!open} className="mt-2 rounded-xl bg-muted/50 p-4">
         {(showAll ? items : items.slice(0, 5)).map((item) => (
           <div
             key={item.id}
@@ -103,14 +124,21 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               className="mt-[3px]"
             />
             <div className="min-w-0 flex-1">
-              <div
-                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+              {/* One line each until opened, so the list stays scannable whatever a note holds. */}
+              <button
+                type="button"
+                aria-expanded={expandedId === item.id}
+                onClick={() => setExpandedId((id) => (id === item.id ? null : item.id))}
+                className={`block w-full rounded-sm text-start text-body-lg outline-none focus-visible:ring-2 focus-visible:ring-ring ${expandedId === item.id ? "break-words" : "truncate"} ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
                 dir="auto"
               >
                 {item.title}
-              </div>
-              {item.notes ? (
-                <div className="mt-0.5 text-body-sm text-muted-foreground/80" dir="auto">
+              </button>
+              {item.notes && expandedId === item.id ? (
+                <div
+                  className="mt-0.5 whitespace-pre-wrap break-words text-body-sm text-muted-foreground/80"
+                  dir="auto"
+                >
                   {item.notes}
                 </div>
               ) : null}
