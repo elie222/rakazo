@@ -2674,7 +2674,8 @@ def run(argv: list[str]) -> int:
                 saved = downloads.finish()
             except Exception:
                 saved = [{"error": DOWNLOAD_FAILED}]
-        dialog = page.dialog() if page else None
+        # A purchase check presses nothing, an alert's OK included, and a failed one always fails, which asks.
+        dialog = page.dialog() if page and command != "purchase_check" else None
         failure = page.dialog_result(dialog, {}) if page and dialog else {
             "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
         print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))

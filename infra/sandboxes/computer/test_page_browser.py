@@ -704,6 +704,19 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(use_tab.called, used)
             self.assertEqual(json.loads(printed.call_args.args[0])["ok"], not used)
 
+    def test_a_failed_purchase_check_fails_even_with_an_alert_open(self):
+        listing = [{"type": "page", "id": "tab-1", "url": "https://shop.example.test/pay"}]
+        alert = {"hasDialog": True, "type": "alert", "message": "Hi"}
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "http_get_json", return_value=listing), \
+                patch.object(helper, "AgentBrowser", return_value=FakeAgentBrowser()), \
+                patch.object(helper.PageBrowser, "purchase_check", side_effect=RuntimeError("page gone")), \
+                patch.object(helper.PageBrowser, "dialog", return_value=alert) as dialog, \
+                patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
+        dialog.assert_not_called()
+        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+
     def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
         for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):
             with self.subTest(listing=listing), patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), \
