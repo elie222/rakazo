@@ -426,6 +426,9 @@ async function resolveModelKeyMaterial(
   if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+    // Credits a member chose follow the allowlist like their own connections do.
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     const material = await approvedModelCreditMaterial(
       deps.prisma,
       deps.secretStore,
