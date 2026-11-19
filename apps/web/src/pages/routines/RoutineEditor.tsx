@@ -40,8 +40,7 @@ export function RoutineEditor({
   onEnsureWebhook,
   onRevealWebhook,
   onHideWebhook,
-  onSaveWebhookSignature,
-  onClearWebhookSignature,
+  onWebhookSignatureSaved,
 }: {
   bot: { id: string; name: string };
   draft: RoutineDraftState;
@@ -67,8 +66,7 @@ export function RoutineEditor({
   onEnsureWebhook: () => Promise<void>;
   onRevealWebhook: () => Promise<void>;
   onHideWebhook: () => void;
-  onSaveWebhookSignature: (signature: WebhookSignature, secret: string) => Promise<void>;
-  onClearWebhookSignature: () => Promise<void>;
+  onWebhookSignatureSaved: (botId: string, signature: WebhookSignature | null) => void;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
@@ -216,9 +214,9 @@ export function RoutineEditor({
               onReveal={revealWebhook}
               onHide={onHideWebhook}
               signing={{
+                botId: bot.id,
                 signature: webhook.signature,
-                onSave: onSaveWebhookSignature,
-                onClear: onClearWebhookSignature,
+                onSaved: onWebhookSignatureSaved,
               }}
             />
           ) : null}

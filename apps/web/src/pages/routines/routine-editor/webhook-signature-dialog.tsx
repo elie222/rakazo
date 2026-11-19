@@ -14,8 +14,9 @@ import {
   Input,
   OptionSelect,
 } from "@rakazo/ui-web";
-import { useEffect, useId, useState } from "react";
-import { errorText } from "../../../lib/query/user-error";
+import { useEffect, useEffectEvent, useId, useState } from "react";
+import { useSave } from "../../../lib/query/query";
+import { errorCode, errorText } from "../../../lib/query/user-error";
 
 type Scheme = WebhookSignature["scheme"];
 type Draft = {
@@ -74,59 +75,65 @@ function signatureFrom(draft: Draft): WebhookSignature | null {
 
 /** Sets the secret a webhook sender generated, and how it signs deliveries with it. */
 export function WebhookSignatureDialog({
+  botId,
   open,
   onOpenChange,
   signature,
-  onSave,
-  onClear,
+  onSaved,
 }: {
+  botId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   signature: WebhookSignature | null;
-  onSave: (signature: WebhookSignature, secret: string) => Promise<void>;
-  onClear: () => Promise<void>;
+  /** The format now saved for the bot, or null once removed. */
+  onSaved: (botId: string, signature: WebhookSignature | null) => void;
 }) {
   const { t } = useLingui();
   const id = useId();
   const label = useWebhookSignatureLabel();
   const [draft, setDraft] = useState(() => draftFrom(signature));
   const [secret, setSecret] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const ready = signatureFrom(draft);
+  // Null removes the secret; the bot is the one the dialog was opened for.
+  const save = useSave({
+    save: async (input: { signature: WebhookSignature; secret: string } | null, client) => {
+      if (!input) {
+        await client.bots.clearWebhookSignature({ botId });
+        return null;
+      }
+      return (await client.bots.setWebhookSignature({ botId, ...input })).webhookSignature;
+    },
+    onSaved: (saved) => {
+      setSecret("");
+      onSaved(botId, saved);
+      onOpenChange(false);
+    },
+  });
+  const error = save.error
+    ? errorCode(save.error) === "FORBIDDEN"
+      ? t`Only the bot's creator can set its webhook key.`
+      : errorText(save.error)
+    : null;
   const change = (next: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...next }));
-    setError(null);
+    save.reset();
   };
 
   // Each opening starts from what is saved, for whichever bot the card now shows.
-  useEffect(() => {
-    if (!open) return;
+  const startOver = useEffectEvent(() => {
     setDraft(draftFrom(signature));
     setSecret("");
-    setError(null);
+    save.reset();
+  });
+  useEffect(() => {
+    if (open) startOver();
   }, [open, signature]);
-
-  async function run(action: () => Promise<void>) {
-    if (saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await action();
-      setSecret("");
-      onOpenChange(false);
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!saving) onOpenChange(next);
+        if (!save.pending) onOpenChange(next);
       }}
     >
       <DialogContent>
@@ -140,7 +147,7 @@ export function WebhookSignatureDialog({
           onSubmit={(event) => {
             event.preventDefault();
             const trimmed = secret.trim();
-            if (ready && trimmed) void run(() => onSave(ready, trimmed));
+            if (ready && trimmed) save.run({ signature: ready, secret: trimmed });
           }}
         >
           <Field>
@@ -227,7 +234,7 @@ export function WebhookSignatureDialog({
               value={secret}
               onChange={(event) => {
                 setSecret(event.target.value);
-                setError(null);
+                save.reset();
               }}
               className="font-mono text-body-sm"
             />
@@ -238,13 +245,13 @@ export function WebhookSignatureDialog({
               <Button
                 type="button"
                 variant="destructive"
-                disabled={saving}
-                onClick={() => void run(onClear)}
+                disabled={save.pending}
+                onClick={() => save.run(null)}
               >
                 <Trans>Remove</Trans>
               </Button>
             ) : null}
-            <Button type="submit" disabled={saving || !ready || !secret.trim()}>
+            <Button type="submit" disabled={save.pending || !ready || !secret.trim()}>
               <Trans>Save</Trans>
             </Button>
           </DialogFooter>

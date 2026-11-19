@@ -322,9 +322,9 @@ export function InboundTriggerCard({
   onHide: () => void;
   /** A secret the sender generated, for senders that sign deliveries instead. */
   signing?: {
+    botId: string;
     signature: WebhookSignature | null;
-    onSave: (signature: WebhookSignature, secret: string) => Promise<void>;
-    onClear: () => Promise<void>;
+    onSaved: (botId: string, signature: WebhookSignature | null) => void;
   };
 }) {
   const { t } = useLingui();
@@ -416,9 +416,9 @@ export function InboundTriggerCard({
         <WebhookSignatureDialog
           open={signingOpen}
           onOpenChange={setSigningOpen}
+          botId={signing.botId}
           signature={signing.signature}
-          onSave={signing.onSave}
-          onClear={signing.onClear}
+          onSaved={signing.onSaved}
         />
       ) : null}
     </div>

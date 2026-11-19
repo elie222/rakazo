@@ -199,8 +199,7 @@ function RoutineShot() {
         onEnsureWebhook={async () => undefined}
         onRevealWebhook={async () => undefined}
         onHideWebhook={() => undefined}
-        onSaveWebhookSignature={async () => undefined}
-        onClearWebhookSignature={async () => undefined}
+        onWebhookSignatureSaved={() => undefined}
       />
     </main>
   );

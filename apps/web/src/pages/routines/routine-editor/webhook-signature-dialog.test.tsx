@@ -3,8 +3,23 @@
 import type { WebhookSignature } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createQueryRoot } from "../../../lib/query/query-root.test-support";
+
+const rpc = vi.hoisted(() => ({
+  bots: {
+    setWebhookSignature: vi.fn(async (input: { signature: unknown }) => ({
+      webhookSignature: input.signature,
+    })),
+    clearWebhookSignature: vi.fn(async () => ({ ok: true })),
+  },
+}));
+vi.mock("../../../lib/query/rpc", () => ({
+  rpc,
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+  selectedSpaceId: () => null,
+}));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: ReactNode }) => children,
@@ -51,24 +66,29 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { WebhookSignatureDialog } from "./webhook-signature-dialog";
 
-let root: ReturnType<typeof createRoot> | undefined;
+let root: ReturnType<typeof createQueryRoot> | undefined;
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
 
 afterEach(() => {
   act(() => root?.unmount());
   document.body.replaceChildren();
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function render(props: Partial<ComponentProps<typeof WebhookSignatureDialog>> = {}) {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
+  root = createQueryRoot(container);
   const all = {
+    botId: "bot-1",
     open: true,
     onOpenChange: vi.fn(),
     signature: null,
-    onSave: vi.fn(async () => undefined),
-    onClear: vi.fn(async () => undefined),
+    onSaved: vi.fn(),
     ...props,
   };
   await act(async () => root?.render(<WebhookSignatureDialog {...all} />));
@@ -98,7 +118,7 @@ const submit = (container: HTMLElement) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent === "Save")!;
 
 it("saves a body HMAC with its header, algorithm, encoding and prefix", async () => {
-  const { container, onSave, onOpenChange } = await render();
+  const { container, onSaved, onOpenChange } = await render();
   await act(async () => setValue(field(container, "Format"), "hmac"));
   expect(submit(container).disabled).toBe(true);
 
@@ -112,21 +132,24 @@ it("saves a body HMAC with its header, algorithm, encoding and prefix", async ()
   expect(field(container, "Secret").getAttribute("type")).toBe("password");
   await act(async () => submit(container).click());
 
-  expect(onSave).toHaveBeenCalledExactlyOnceWith(
-    {
-      scheme: "hmac",
-      header: "X-Signature",
-      algorithm: "sha512",
-      encoding: "base64",
-      prefix: "sha512=",
-    },
-    "fake-sender-secret",
-  );
+  const signature = {
+    scheme: "hmac",
+    header: "X-Signature",
+    algorithm: "sha512",
+    encoding: "base64",
+    prefix: "sha512=",
+  };
+  expect(rpc.bots.setWebhookSignature).toHaveBeenCalledExactlyOnceWith({
+    botId: "bot-1",
+    signature,
+    secret: "fake-sender-secret",
+  });
+  await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith("bot-1", signature));
   expect(onOpenChange).toHaveBeenCalledWith(false);
 });
 
 it("needs both headers for a v0 signature", async () => {
-  const { container, onSave } = await render();
+  const { container } = await render();
   await act(async () => {
     setValue(field(container, "Format"), "timestamp-v0");
     setValue(field(container, "Signature header"), "x-request-signature");
@@ -135,19 +158,20 @@ it("needs both headers for a v0 signature", async () => {
   expect(submit(container).disabled).toBe(true);
   await act(async () => setValue(field(container, "Timestamp header"), "x-request-timestamp"));
   await act(async () => submit(container).click());
-  expect(onSave).toHaveBeenCalledWith(
-    {
+  expect(rpc.bots.setWebhookSignature).toHaveBeenCalledWith({
+    botId: "bot-1",
+    signature: {
       scheme: "timestamp-v0",
       header: "x-request-signature",
       timestampHeader: "x-request-timestamp",
     },
-    "fake-sender-secret",
-  );
+    secret: "fake-sender-secret",
+  });
 });
 
 it("starts from the saved format, never shows the saved secret, and can remove it", async () => {
   const signature: WebhookSignature = { scheme: "timestamp-v1", header: "x-event-signature" };
-  const { container, onClear } = await render({ signature });
+  const { container, onSaved } = await render({ signature });
   expect((field(container, "Format") as HTMLSelectElement).value).toBe("timestamp-v1");
   expect((field(container, "Signature header") as HTMLInputElement).value).toBe(
     "x-event-signature",
@@ -155,20 +179,24 @@ it("starts from the saved format, never shows the saved secret, and can remove i
   expect((field(container, "Secret") as HTMLInputElement).value).toBe("");
   const remove = [...container.querySelectorAll("button")].find((b) => b.textContent === "Remove");
   await act(async () => remove?.click());
-  expect(onClear).toHaveBeenCalledOnce();
+  expect(rpc.bots.clearWebhookSignature).toHaveBeenCalledExactlyOnceWith({ botId: "bot-1" });
+  await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith("bot-1", null));
 });
 
 it("keeps the dialog open with the reason when saving fails", async () => {
-  const onSave = vi.fn(async () => {
-    throw new Error("Only the bot's creator can set its webhook key.");
-  });
-  const { container, onOpenChange } = await render({ onSave });
+  rpc.bots.setWebhookSignature.mockRejectedValueOnce(
+    Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 }),
+  );
+  const { container, onOpenChange, onSaved } = await render();
   await act(async () => setValue(field(container, "Secret"), "whsec_fake"));
   await act(async () => submit(container).click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-    "Only the bot's creator can set its webhook key.",
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Only the bot's creator can set its webhook key.",
+    ),
   );
   expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  expect(onSaved).not.toHaveBeenCalled();
 });
 
 it("starts again from the saved format each time it opens", async () => {
