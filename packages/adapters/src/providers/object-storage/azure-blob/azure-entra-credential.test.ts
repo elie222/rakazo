@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as IdentitySdk from "@azure/identity";
 import { describe, expect, it } from "vitest";
 import { entraAuthFromEnv, entraCredential } from "./azure-entra-credential.js";
@@ -55,8 +56,9 @@ describe("entraAuthFromEnv", () => {
       entraAuthFromEnv({
         OBJECT_STORAGE_AUTH: "client-certificate",
         ...principal,
-        OBJECT_STORAGE_CERTIFICATE: new URL("./azure-entra-test-certificate.pem", import.meta.url)
-          .pathname,
+        OBJECT_STORAGE_CERTIFICATE: fileURLToPath(
+          new URL("./azure-entra-test-certificate.pem", import.meta.url),
+        ),
       }),
     ).toEqual({
       kind: "client-certificate",
