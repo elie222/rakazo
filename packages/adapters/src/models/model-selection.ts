@@ -53,6 +53,11 @@ import {
 } from "./endpoints/openai-compatible-url.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -223,6 +228,7 @@ export async function modelCredentialAuthKindsForSpace(
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
+  const allowlist = modelProviderAllowlist();
   const providers =
     modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
     (hostedProvider ? [hostedProvider] : []);
@@ -233,11 +239,14 @@ export async function modelCredentialAuthKindsForSpace(
             (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
           ),
         )
-      ).filter((provider): provider is string => provider !== null)
+      ).filter(
+        (provider): provider is string =>
+          provider !== null && modelProviderAllowed(allowlist, provider),
+      )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
   // Start with connections so a concurrent detach can only leave an empty list of preferences.
-  const rows = await prisma.userModelCredential.findMany({
+  const accountRows = await prisma.userModelCredential.findMany({
     where: { userId: scope.userId },
     select: {
       id: true,
@@ -250,6 +259,11 @@ export async function modelCredentialAuthKindsForSpace(
       },
     },
   });
+  // Filter refused providers before loading secrets for catalog choices.
+  const rows =
+    allowlist === null
+      ? accountRows
+      : accountRows.filter((row) => modelProviderAllowed(allowlist, row.provider));
   const credentials = rows.map(({ userPreferences, ...credential }) => credential);
   const preferences = rows.flatMap(({ userPreferences, ...credential }) =>
     userPreferences.map((preference) => ({ ...preference, credential })),
@@ -781,6 +795,9 @@ export async function validateBotModelChange(
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
     const hosted =
       Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted

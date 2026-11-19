@@ -33,11 +33,13 @@ export function messageRowLayout(
         !block.instructionUpdate &&
         !block.settingsUpdate),
   );
+  // A routine row is one centered line, so its menu host spans the column instead of the text.
+  const routineRow = blocks.some((block) => block.kind === "routine_event");
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
     width: full ? "100%" : fillsBubble && !activityBotId ? "90%" : undefined,
     maxWidth: full ? "100%" : activityBotId ? undefined : "90%",
-    menuFullWidth: wideAsk || fillsBubble,
+    menuFullWidth: wideAsk || fillsBubble || routineRow,
     menuMaxWidth: wideAsk
       ? columnWidth - COLUMN_PADDING - gutter
       : isCenteredAgentEvent(blocks)

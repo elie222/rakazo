@@ -1,11 +1,8 @@
 import { ph, t } from "@lingui/core/macro";
 import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
-import { AI_PRIVACY_URL } from "@rakazo/contracts";
-import { Alert, AppState, Linking } from "react-native";
+import { Alert } from "react-native";
 
-export const FOREGROUND_FALLBACK_MS = 400;
-
-/** What a provider receives for one use of AI data. */
+/** What a provider receives for one use of AI data, in full, for the settings screen. */
 export function aiDataDisclosure(use: AiDataUse): string {
   switch (use) {
     case "model":
@@ -17,129 +14,35 @@ export function aiDataDisclosure(use: AiDataUse): string {
   }
 }
 
-export function promptAiConsent(
-  recipient: AiRecipient,
-  privacyUrl = AI_PRIVACY_URL,
-): Promise<boolean> {
+/** The one-line version shown when asking; the settings screen carries the full list. */
+function consentSummary(use: AiDataUse): string {
+  switch (use) {
+    case "model":
+      return t`Messages, files, bot instructions, memories and connected-app content are sent to run your bots.`;
+    case "voice":
+      return t`Your recordings and the text you play are sent for transcription and speech.`;
+    case "memory":
+      return t`Conversations, names and searches are sent to store and recall context.`;
+  }
+}
+
+export function promptAiConsent(recipient: AiRecipient): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
-    let dialogOpen = false;
-    let waitingForPrivacyReturn = false;
-    let leftForeground = false;
-    let privacyAttempt = 0;
-    let scheduledShow: ReturnType<typeof setTimeout> | undefined;
-    let foregroundFallback: ReturnType<typeof setTimeout> | undefined;
-
-    const cancelForegroundFallback = () => {
-      if (foregroundFallback === undefined) return;
-      clearTimeout(foregroundFallback);
-      foregroundFallback = undefined;
-    };
-
-    const isCurrentPrivacyAttempt = (attempt: number) =>
-      attempt === privacyAttempt && !settled && waitingForPrivacyReturn;
-
-    const stillInForeground = () => !leftForeground && AppState.currentState === "active";
-
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active") {
-        if (!waitingForPrivacyReturn) return;
-        leftForeground = true;
-        cancelForegroundFallback();
-        return;
-      }
-      if (!waitingForPrivacyReturn || settled) return;
-      cancelForegroundFallback();
-      waitingForPrivacyReturn = false;
-      showWhenReady();
-    });
-
-    const cleanup = () => {
-      subscription.remove();
-      if (scheduledShow !== undefined) clearTimeout(scheduledShow);
-      cancelForegroundFallback();
-    };
-
     const finish = (allowed: boolean) => {
       if (settled) return;
       settled = true;
-      cleanup();
       resolve(allowed);
     };
-
-    const scheduleShow = () => {
-      if (settled || waitingForPrivacyReturn || scheduledShow !== undefined) return;
-      scheduledShow = setTimeout(() => {
-        scheduledShow = undefined;
-        show();
-      }, 0);
-    };
-
-    const showWhenReady = () => {
-      if (settled || waitingForPrivacyReturn || dialogOpen) return;
-      scheduleShow();
-    };
-
-    const show = () => {
-      if (settled || waitingForPrivacyReturn || dialogOpen) return;
-      dialogOpen = true;
-      let privacyPolicyPressed = false;
-      Alert.alert(
-        t`Share data with ${ph({ name: recipient.name })}?`,
-        [
-          recipient.detail,
-          aiDataDisclosure(recipient.use),
-          t`You can turn this off in Account → AI data sharing.`,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-        [
-          { text: t`Not now`, style: "cancel", onPress: () => finish(false) },
-          {
-            text: t`Privacy policy`,
-            onPress: () => {
-              // The button callback is the deterministic lifecycle point on both platforms.
-              // RN only maps onDismiss on Android, and Android consumes a button callback
-              // instead of sending a second dismissed action.
-              privacyPolicyPressed = true;
-              dialogOpen = false;
-              cancelForegroundFallback();
-              const attempt = ++privacyAttempt;
-              leftForeground = AppState.currentState !== "active";
-              waitingForPrivacyReturn = true;
-              foregroundFallback = setTimeout(() => {
-                foregroundFallback = undefined;
-                if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
-                waitingForPrivacyReturn = false;
-                show();
-              }, FOREGROUND_FALLBACK_MS);
-              void Linking.openURL(privacyUrl).then(
-                () => {
-                  if (attempt !== privacyAttempt || settled) return;
-                },
-                () => {
-                  if (!isCurrentPrivacyAttempt(attempt)) return;
-                  cancelForegroundFallback();
-                  waitingForPrivacyReturn = false;
-                  showWhenReady();
-                },
-              );
-            },
-          },
-          { text: t`Allow`, onPress: () => finish(true) },
-        ],
-        {
-          cancelable: true,
-          onDismiss: () => {
-            if (privacyPolicyPressed) return;
-            dialogOpen = false;
-            if (settled) return;
-            finish(false);
-          },
-        },
-      );
-    };
-
-    show();
+    Alert.alert(
+      t`Send data to ${ph({ name: recipient.name })}?`,
+      consentSummary(recipient.use),
+      [
+        { text: t`Not now`, style: "cancel", onPress: () => finish(false) },
+        { text: t`Allow`, onPress: () => finish(true) },
+      ],
+      // Android dismisses on an outside tap without a button callback.
+      { cancelable: true, onDismiss: () => finish(false) },
+    );
   });
 }

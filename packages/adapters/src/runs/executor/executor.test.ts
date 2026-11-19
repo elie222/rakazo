@@ -26,7 +26,11 @@ import {
   modelAcceptsImageInput,
 } from "../../models/model-vision.js";
 import { RetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
-import { modelsForRequest, resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
+import {
+  modelsForRequest,
+  resolveRuntimeModel,
+  thinkingLevelFor,
+} from "../../runtime/pi/pi-runtime-models.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import {
   desktopGuardShellInstruction,
@@ -2504,7 +2508,7 @@ describe("createRunExecutor", () => {
 
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "routine-1", active: true },
-      data: { active: false, nextRunAt: null },
+      data: { active: false, nextRunAt: null, resumeOnRestore: true },
     });
     expect($transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -4320,6 +4324,96 @@ description: Prepare standup notes
       for (const name of IMAGE_RETURNING_COMPUTER_TOOLS) {
         expect(names.includes(name)).toBe(supportsImages);
       }
+    },
+  );
+
+  it.each([
+    ["gpt-6.2-sol", 500_000, undefined],
+    ["gpt-6.2-astra", 272_000, undefined],
+    ["gpt-6.2-sol", 500_000, 128_000],
+  ] as const)(
+    "runs %s with account reasoning, image support and context limits",
+    async (modelId, contextWindow, savedContextWindow) => {
+      const expectedContextWindow = savedContextWindow ?? contextWindow;
+      const supportsImages = true;
+      const provider = "openai-codex";
+      const plaintext = serializeModelSecret({
+        kind: "oauth",
+        credential: {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 3_600_000,
+          accountId: "acct-live",
+        },
+        models: { [modelId]: { contextWindow: savedContextWindow } },
+      });
+      const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: provider,
+            modelId,
+            thinkingLevel: null,
+          })),
+        },
+        userModelPreference: {
+          findFirst: vi.fn(async () =>
+            modelPreference({
+              provider,
+              secretId: "secret-codex",
+              modelId,
+            }),
+          ),
+        },
+        userModelCredential: {
+          findMany: vi.fn(async () => []),
+          findFirst: vi.fn(async () => null),
+        },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        secret: {
+          findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
+          findUnique: vi.fn(async () => null),
+        },
+      } as unknown as PrismaClient;
+      const read = vi.fn(async () => [
+        {
+          slug: modelId,
+          reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+          contextWindow,
+          supportsImages,
+          supportsFastTier: false,
+        },
+      ]);
+      const executor = createRunExecutor({
+        prisma,
+        secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+        codexCatalog: { read },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+      const model = await executor.resolveModel({
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      });
+
+      expect(model).toMatchObject({
+        provider,
+        id: modelId,
+        reasoning: true,
+        acceptsImages: true,
+        contextWindow: expectedContextWindow,
+      });
+      const runtime = resolveRuntimeModel(model!).model!;
+      expect(runtime).toMatchObject({
+        id: modelId,
+        api: "openai-codex-responses",
+        reasoning: true,
+        contextWindow: expectedContextWindow,
+      });
+      expect(runtime.input).toContain("image");
+      expect(thinkingLevelFor(runtime, "high")).toBe("high");
+      expect(thinkingLevelFor(runtime, "max")).toBe("max");
     },
   );
 

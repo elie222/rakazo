@@ -173,6 +173,24 @@ const BOUNDARY =
   /(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|No|approx))(?<![.\d])([.!?])(["')\]]*)\s+/g;
 
 /**
+ * Markdown (or any agent output) as the sentences a voice reads, one per item. Unlike
+ * toUtterances nothing is glued together, so a short sentence keeps its own identity.
+ */
+export function splitSentences(input: string): string[] {
+  const MARK = "\u0000";
+  return speakable(input)
+    .replace(BOUNDARY, `$1$2${MARK}`)
+    .split(MARK)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** What a sentence says, ignoring case, markup and punctuation: `**Done.` matches `Done.` */
+export function sentenceKey(sentence: string): string {
+  return sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
  * Split speakable text into utterances a synthesizer can start on.
  * Short fragments are glued onto their neighbour so the voice keeps context.
  * maxChars bounds UTF-16 code units, matching the synthesis API's limit.
@@ -181,15 +199,7 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
   if (!Number.isInteger(maxChars) || maxChars < 2) {
     throw new RangeError("maxChars must be an integer of at least 2");
   }
-  const text = speakable(input);
-  if (!text) return [];
-
-  const MARK = "\u0000";
-  const rough = text
-    .replace(BOUNDARY, `$1$2${MARK}`)
-    .split(MARK)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const rough = splitSentences(input);
 
   const out: string[] = [];
   for (const piece of rough) {

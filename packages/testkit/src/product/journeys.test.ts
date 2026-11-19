@@ -1650,6 +1650,40 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(snap)).not.toContain(secret);
   });
 
+  it("keeps the zero data retention choice across a key replacement until it is turned off", async () => {
+    const cookie = await signup(app, `zdr-j-${stamp}@rakazo.test`, "Retention");
+    const connect = (extra: Record<string, unknown>) =>
+      rpc<{ id: string; zeroDataRetention?: boolean }>(app, cookie, "models/connect", {
+        provider: "openrouter",
+        modelId: "scripted",
+        ...extra,
+      });
+    const saved = async () =>
+      (
+        await rpc<Array<{ provider: string; zeroDataRetention?: boolean }>>(
+          app,
+          cookie,
+          "models/credentials",
+        )
+      ).find((credential) => credential.provider === "openrouter");
+
+    await connect({ apiKey: "test-zdr-key-one-not-real", zeroDataRetention: true });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    // A replacement key that does not mention the choice keeps it.
+    await connect({ apiKey: "test-zdr-key-two-not-real" });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    await connect({ apiKey: "test-zdr-key-three-not-real", zeroDataRetention: false });
+    expect((await saved())?.zeroDataRetention).toBeUndefined();
+
+    const refused = await raw(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "test-zdr-anthropic-not-real",
+      modelId: "claude-sonnet-4-5",
+      zeroDataRetention: true,
+    });
+    expect(refused.status).toBe(400);
+  });
+
   it("8: retrying a completed effect does not duplicate the destination write", async () => {
     const cookie = await signup(app, `crash-j-${stamp}@rakazo.test`, "Crash");
     await runWithoutAsking(cookie);

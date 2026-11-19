@@ -72,6 +72,12 @@ credentials and survives **Disconnect**; switching to a different client drops t
 On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
 refuses to send it anywhere else afterwards. Replacing the client clears the binding.
 
+Other providers register clients themselves but only for redirect addresses they know, plus the
+loopback addresses desktop apps use, and refuse `<your web origin>/mcp/oauth/callback` with
+`invalid_redirect_uri`. Connect those from the desktop app: it signs in on a loopback address
+instead and reads the result from its own sign-in window. A browser and the mobile app cannot,
+and show the provider's refusal.
+
 Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP spec has them
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
 the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
