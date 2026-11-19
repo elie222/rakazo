@@ -7,6 +7,11 @@ import type { ThreadEvents } from "../threads/events.js";
 
 export const pageChangesScope = (userId: string) => `pages:${userId}`;
 
+/** Longer than the model calls and the queue's backoff, including finalization attempts. */
+export function pageRevisionPendingCutoff() {
+  return new Date(Date.now() - 30 * 60_000);
+}
+
 export async function signalPageUsers(events: ThreadEvents, userIds: readonly (string | null)[]) {
   await Promise.all(
     [...new Set(userIds)]

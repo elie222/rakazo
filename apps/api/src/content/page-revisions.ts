@@ -7,7 +7,12 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { canPageRequestRevision, IsolationError, signalPage } from "@rakazo/db";
+import {
+  canPageRequestRevision,
+  IsolationError,
+  pageRevisionPendingCutoff,
+  signalPage,
+} from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
 import { readPageReview, StalePageReviewError, writePageReview } from "./page-collaboration.js";
 
@@ -43,6 +48,7 @@ export async function askPageRevision(
   { pageId, commentId, retryOf }: { pageId: string; commentId: string; retryOf?: string },
 ) {
   const id = await writePageReview(prisma, actor, pageId, async (tx, { page, owner, grant }) => {
+    const pendingCutoff = pageRevisionPendingCutoff();
     const comment = await tx.pageComment.findFirst({
       where: { id: commentId, pageId, ...(owner ? {} : { authorId: actor.userId }) },
       select: {
@@ -51,7 +57,7 @@ export async function askPageRevision(
         requests: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { ...pageRevisionRequestSelect, createdAt: true },
+          select: pageRevisionRequestSelect,
         },
       },
     });
@@ -70,29 +76,32 @@ export async function askPageRevision(
     if (comment.resolvedAt) throw new ClientError("CONFLICT", "Reopen this comment first");
     if (previous?.status === "published") return null;
     if (previous && (previous.status === "pending" || previous.status === "ready")) {
-      if (await pageRevisionAuthorized(tx, previous)) return null;
+      const expired = previous.status === "pending" && previous.createdAt < pendingCutoff;
+      if (!expired && (await pageRevisionAuthorized(tx, previous))) return null;
       await tx.pageRevisionRequest.update({
         where: { id: previous.id },
-        data: { status: "cancelled", draftCode: null, draftSource: null },
+        data: { status: expired ? "failed" : "cancelled", draftCode: null, draftSource: null },
       });
     }
     const active = await tx.pageRevisionRequest.findFirst({
       where: {
         comment: { pageId, version: comment.version, resolvedAt: null },
-        status: { in: ["pending", "ready"] },
-        OR: [
-          { grantId: null },
-          {
-            grantId: {
-              in: (
-                await tx.pageGrant.findMany({
-                  where: { pageId, user: { emailVerified: true, deactivatedAt: null } },
-                  select: { id: true },
-                })
-              ).map(({ id }) => id),
+        OR: [{ status: "pending", createdAt: { gte: pendingCutoff } }, { status: "ready" }],
+        AND: {
+          OR: [
+            { grantId: null },
+            {
+              grantId: {
+                in: (
+                  await tx.pageGrant.findMany({
+                    where: { pageId, user: { emailVerified: true, deactivatedAt: null } },
+                    select: { id: true },
+                  })
+                ).map(({ id }) => id),
+              },
             },
-          },
-        ],
+          ],
+        },
       },
       select: { id: true },
     });

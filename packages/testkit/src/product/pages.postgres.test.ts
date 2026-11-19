@@ -13,7 +13,7 @@ import type { createApp } from "@rakazo/api/app";
 import type { AiConsentStatus, PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
-import { deletePageShareSecrets } from "@rakazo/db";
+import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "../discard-bot-intro.js";
@@ -461,6 +461,67 @@ describePages("pages", () => {
       const retry = await db().pageRevisionRequest.findUnique({ where: { retryOf: revision.id } });
       expect(retry?.status).toBe("ready");
     });
+  });
+
+  it("finalizes an exhausted draft and lets an abandoned request be retried", async () => {
+    const owner = await signup(app, `draft-recovery-${stamp}@example.test`, "Author");
+    const { id: requesterId } = await me(app, owner);
+    const bot = await createBot(app, owner, "Recovery bot");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Recovery", source: page("Recovery") })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const add = () =>
+      rpc<{ id: string }>(app, owner, "pageReviews/comment", {
+        pageId,
+        submissionId: randomUUID(),
+        version: 1,
+        section: "Recovery",
+        body: "Clarify recovery.",
+      });
+    const finished = await add();
+    const exhausted = await db().pageRevisionRequest.create({
+      data: { commentId: finished.id, requesterId },
+    });
+    const dispatched = revisionCalls.mock.calls.length;
+    revisionCalls.mockRejectedValueOnce(new Error("Test draft failure"));
+    await jobs.enqueue({ ...pageRevisionJob(exhausted.id), maxAttempts: 1 });
+    await vi.waitFor(async () => {
+      const request = await db().pageRevisionRequest.findUniqueOrThrow({
+        where: { id: exhausted.id },
+      });
+      expect(request.status).toBe("failed");
+    });
+    expect(revisionCalls).toHaveBeenCalledTimes(dispatched + 1);
+
+    const stuck = await add();
+    const createdAt = new Date(pageRevisionPendingCutoff().getTime() - 60_000);
+    const abandoned = await db().pageRevisionRequest.create({
+      data: { commentId: stuck.id, requesterId, createdAt },
+    });
+    const other = await add();
+    await db().pageRevisionRequest.create({
+      data: { commentId: other.id, requesterId, createdAt },
+    });
+    expect(await rpc(app, owner, "pageReviews/comments", { pageId })).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: stuck.id,
+          revision: expect.objectContaining({ id: abandoned.id, status: "failed" }),
+        }),
+      ]),
+    });
+    revisionCalls.mockResolvedValueOnce(page("Recovered draft"));
+    await rpc(app, owner, "pageReviews/askRevision", {
+      pageId,
+      commentId: stuck.id,
+      retryOf: abandoned.id,
+    });
+    await vi.waitFor(async () => {
+      const retry = await db().pageRevisionRequest.findUnique({ where: { retryOf: abandoned.id } });
+      expect(retry?.status).toBe("ready");
+    });
+    expect(revisionCalls).toHaveBeenCalledTimes(dispatched + 2);
   });
 
   it("limits reviewer comments and drafts while reserving an allowance for the owner", async () => {

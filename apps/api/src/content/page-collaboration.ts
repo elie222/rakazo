@@ -10,6 +10,7 @@ import {
   lockPage,
   pageOwnerWhere,
   pageRevisionBotSelect,
+  pageRevisionPendingCutoff,
   runAsSystem,
   signalPage,
   signalPageUsers,
@@ -263,7 +264,7 @@ export function pageComments(
         requests: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { id: true, status: true, resultVersion: true, grantId: true },
+          select: { id: true, status: true, resultVersion: true, grantId: true, createdAt: true },
         },
       },
     });
@@ -278,6 +279,7 @@ export function pageComments(
         })
       ).map(({ id }) => id),
     );
+    const pendingCutoff = pageRevisionPendingCutoff();
     return {
       items: rows.slice(0, LIST_SIZE).map(({ requests: [request], ...row }) => ({
         id: row.id,
@@ -296,7 +298,9 @@ export function pageComments(
                 !active.has(request.grantId) &&
                 (request.status === "pending" || request.status === "ready")
                   ? "cancelled"
-                  : PageRevisionStatus.parse(request.status),
+                  : request.status === "pending" && request.createdAt < pendingCutoff
+                    ? "failed"
+                    : PageRevisionStatus.parse(request.status),
               resultVersion: request.resultVersion,
             }
           : null,

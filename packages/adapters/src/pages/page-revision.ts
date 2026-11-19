@@ -15,6 +15,7 @@ import {
   lockPage,
   memberHasModelAccess,
   pageRevisionBotSelect,
+  pageRevisionPendingCutoff,
   recordUsage,
   runAsSystem,
   runAsTenant,
@@ -29,7 +30,9 @@ import { PAGE_REVISION_INSTRUCTIONS, pageRevisionPrompt } from "./page-revision.
 
 const MODEL_TIMEOUT = 90_000;
 const BACKUP_DELAY = MODEL_TIMEOUT + 15_000;
-const MAX_ATTEMPTS = 3;
+const MAX_DRAFT_ATTEMPTS = 3;
+// Reserve retries for writing the outcome after an abort, lease contention, or database failure.
+const MAX_ATTEMPTS = MAX_DRAFT_ATTEMPTS + 3;
 
 export function pageRevisionJob(requestId: string, backup = false): BackgroundJob {
   return {
@@ -47,6 +50,7 @@ const requestSelect = {
   id: true,
   requesterId: true,
   consentSpaceId: true,
+  createdAt: true,
   grantId: true,
   status: true,
   comment: {
@@ -125,7 +129,7 @@ type Dependencies = {
 export function createPageRevisions(deps: Dependencies) {
   const { prisma, jobs, events } = deps;
 
-  async function work(requestId: string, attempt?: BackgroundJobAttempt) {
+  async function runAttempt(requestId: string, generate: boolean) {
     const key = revisionKey(requestId);
     return runAsSystem("process a page-only revision request", () =>
       withLease(
@@ -143,56 +147,54 @@ export function createPageRevisions(deps: Dependencies) {
           const { comment } = row;
           const { page } = comment;
           let draft: { draftSource: string; draftCode: string } | undefined;
-          if (await pageRevisionAuthorized(prisma, row)) {
+          if (
+            generate &&
+            row.createdAt >= pageRevisionPendingCutoff() &&
+            (await pageRevisionAuthorized(prisma, row))
+          ) {
             const source = await prisma.pageVersion.findUnique({
               where: { pageId_version: { pageId: page.id, version: comment.version } },
               select: { source: true },
             });
             if (source && page.bot) {
               const scope = { spaceId: page.spaceId, userId: page.userId, botId: page.bot.id };
-              try {
-                draft = await runAsTenant(scope, () =>
-                  generateDraft(
-                    deps,
-                    scope,
-                    requestId,
-                    source.source,
-                    comment,
-                    lease.signal,
-                    (model) =>
-                      runAsSystem(
-                        "recheck page access and AI consent before model dispatch",
-                        async () => {
-                          const fresh = await read();
-                          if (
-                            fresh?.status !== "pending" ||
-                            !(await pageRevisionAuthorized(prisma, fresh))
-                          )
-                            return false;
-                          const recipient = pageRevisionRecipient(page.id, model);
-                          if (!recipient) return true;
-                          if (!fresh.consentSpaceId) return false;
-                          return Boolean(
-                            await prisma.aiDataConsent.findFirst({
-                              where: {
-                                userId: fresh.requesterId,
-                                spaceId: fresh.consentSpaceId,
-                                recipientKey: recipient.key,
-                                version: AI_DISCLOSURE_VERSION,
-                              },
-                              select: { recipientKey: true },
-                            }),
-                          );
-                        },
-                      ),
-                  ),
-                );
-              } catch (error) {
-                if (!attempt || attempt.number < attempt.max) throw error;
-                getLogger().error("page revision failed after retries", error, {
-                  "page.revision_request_id": requestId,
-                });
-              }
+              draft = await runAsTenant(scope, () =>
+                generateDraft(
+                  deps,
+                  scope,
+                  requestId,
+                  source.source,
+                  comment,
+                  lease.signal,
+                  (model) =>
+                    runAsSystem(
+                      "recheck page access and AI consent before model dispatch",
+                      async () => {
+                        const fresh = await read();
+                        if (
+                          fresh?.status !== "pending" ||
+                          fresh.createdAt < pageRevisionPendingCutoff() ||
+                          !(await pageRevisionAuthorized(prisma, fresh))
+                        )
+                          return false;
+                        const recipient = pageRevisionRecipient(page.id, model);
+                        if (!recipient) return true;
+                        if (!fresh.consentSpaceId) return false;
+                        return Boolean(
+                          await prisma.aiDataConsent.findFirst({
+                            where: {
+                              userId: fresh.requesterId,
+                              spaceId: fresh.consentSpaceId,
+                              recipientKey: recipient.key,
+                              version: AI_DISCLOSURE_VERSION,
+                            },
+                            select: { recipientKey: true },
+                          }),
+                        );
+                      },
+                    ),
+                ),
+              );
             }
           }
           await prisma.$transaction(async (tx) => {
@@ -207,7 +209,7 @@ export function createPageRevisions(deps: Dependencies) {
             await tx.pageRevisionRequest.update({
               where: { id: requestId },
               data:
-                authorized && draft
+                authorized && draft && fresh.createdAt >= pageRevisionPendingCutoff()
                   ? { ...draft, status: "ready" }
                   : {
                       status: authorized ? "failed" : "cancelled",
@@ -218,6 +220,21 @@ export function createPageRevisions(deps: Dependencies) {
         },
       ),
     );
+  }
+
+  async function work(requestId: string, attempt?: BackgroundJobAttempt) {
+    const generate = !attempt || attempt.number <= MAX_DRAFT_ATTEMPTS;
+    try {
+      await runAttempt(requestId, generate);
+    } catch (error) {
+      if (attempt && (attempt.number === MAX_DRAFT_ATTEMPTS || attempt.number >= attempt.max))
+        getLogger().error("page revision attempt failed", error, {
+          "page.revision_request_id": requestId,
+        });
+      if (!attempt || attempt.number < attempt.max || !generate) throw error;
+      // An in-memory or older queue may have no attempts left for the terminal write.
+      await runAttempt(requestId, false);
+    }
   }
 
   return {
