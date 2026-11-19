@@ -15,8 +15,13 @@ import type { ColorValue } from "react-native";
 import { I18nManager, PlatformColor, Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { SharedValue } from "react-native-reanimated";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
 import type { InboxRowAction, inboxRowActions } from "../../lib/inbox/inbox-swipe";
 import { INBOX_ROW_ACTIONS } from "../../lib/inbox/inbox-swipe";
 import { hapticSelection } from "../../lib/native/haptics";
@@ -55,7 +60,9 @@ export function InboxSwipeContent({
   const offset = useSharedValue(0);
   const resting = useSharedValue(0);
   const dragStart = useSharedValue(0);
+  const dragging = useSharedValue(false);
   const armed = useSharedValue(false);
+  const [showActions, setShowActions] = useState(false);
   const [open, setOpen] = useState(false);
   const trailingWidth = LEADING_WIDTH + (actions.trailing.length - 1) * ACTION_STEP;
   const { leading } = actions;
@@ -67,14 +74,26 @@ export function InboxSwipeContent({
     [activeSwipe, id],
   );
 
+  function settleOffset(target: number) {
+    "worklet";
+    offset.value = withTiming(target, undefined, (finished) => {
+      if (finished && target === 0) scheduleOnRN(setShowActions, false);
+    });
+  }
+
   function close() {
-    resting.value = 0;
-    offset.value = withTiming(0);
+    scheduleOnUI(() => {
+      "worklet";
+      dragging.value = false;
+      resting.value = 0;
+      settleOffset(0);
+    });
     setOpen(false);
     if (activeSwipe?.current?.id === id) activeSwipe.current = null;
   }
 
   function begin() {
+    setShowActions(true);
     if (!activeSwipe || activeSwipe.current?.id === id) return;
     activeSwipe.current?.close();
     activeSwipe.current = { id, close };
@@ -91,11 +110,14 @@ export function InboxSwipeContent({
     .failOffsetY([-8, 8])
     .maxPointers(1)
     .onStart(() => {
+      cancelAnimation(offset);
       dragStart.value = offset.value;
+      dragging.value = true;
       armed.value = false;
       scheduleOnRN(begin);
     })
     .onUpdate(({ translationX }) => {
+      if (!dragging.value) return;
       const distance = dragStart.value + translationX * DIRECTION;
       const rail = distance > 0 ? LEADING_WIDTH : trailingWidth;
       const fullSwipe =
@@ -107,8 +129,10 @@ export function InboxSwipeContent({
       offset.value = Math.sign(distance) * Math.min(Math.abs(distance), rail);
     })
     .onEnd(({ translationX }, success) => {
+      if (!dragging.value) return;
+      dragging.value = false;
       if (!success) {
-        offset.value = withTiming(resting.value);
+        settleOffset(resting.value);
         return;
       }
       const distance = offset.value;
@@ -122,7 +146,7 @@ export function InboxSwipeContent({
       if (distance < -OPEN_DISTANCE && !(resting.value < 0 && towardCenter))
         target = -trailingWidth;
       resting.value = target;
-      offset.value = withTiming(target);
+      settleOffset(target);
       scheduleOnRN(setOpen, target !== 0);
     });
   const foreground = useAnimatedStyle(() => ({
@@ -138,29 +162,35 @@ export function InboxSwipeContent({
         }}
       >
         {/* The row exposes the same actions to VoiceOver. */}
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none" accessibilityElementsHidden>
-          <SwipeActionButton
-            action={leading}
-            label={i18n._(INBOX_ROW_ACTIONS[leading].label)}
-            fill={READ_FILL}
-            offset={offset}
-            edge="start"
-            index={0}
-            onPress={() => activate(leading)}
-          />
-          {actions.trailing.map((action, index) => (
+        {showActions ? (
+          <View
+            style={StyleSheet.absoluteFill}
+            pointerEvents="box-none"
+            accessibilityElementsHidden
+          >
             <SwipeActionButton
-              key={action}
-              action={action}
-              label={i18n._(INBOX_ROW_ACTIONS[action].label)}
-              fill={action === "archive" ? ARCHIVE_FILL : PIN_FILL}
+              action={leading}
+              label={i18n._(INBOX_ROW_ACTIONS[leading].label)}
+              fill={READ_FILL}
               offset={offset}
-              edge="end"
-              index={index}
-              onPress={() => activate(action)}
+              edge="start"
+              index={0}
+              onPress={() => activate(leading)}
             />
-          ))}
-        </View>
+            {actions.trailing.map((action, index) => (
+              <SwipeActionButton
+                key={action}
+                action={action}
+                label={i18n._(INBOX_ROW_ACTIONS[action].label)}
+                fill={action === "archive" ? ARCHIVE_FILL : PIN_FILL}
+                offset={offset}
+                edge="end"
+                index={index}
+                onPress={() => activate(action)}
+              />
+            ))}
+          </View>
+        ) : null}
         <Animated.View style={[{ backgroundColor: tokens.background }, foreground]}>
           {children}
           {open ? (

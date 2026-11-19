@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenSwipe } from "../../components/inbox/inbox-swipe-context";
+import { InboxSwipeContext } from "../../components/inbox/inbox-swipe-context";
 import type { InboxSwipeRowProps } from "../../components/inbox/inbox-swipe-row";
 import { InboxSwipeRow } from "../../components/inbox/inbox-swipe-row.ios";
 import { NativeListRowContext } from "../../components/native/native-list-row";
@@ -86,7 +88,11 @@ vi.mock("react-native-gesture-handler", () => {
 vi.mock("react-native-reanimated", () => ({
   default: { View: ({ children }: { children: ReactNode }) => children },
   useSharedValue: <T,>(initial: T) => useState(() => ({ value: initial }))[0],
-  withTiming: (target: number) => target,
+  cancelAnimation: () => {},
+  withTiming: (target: number, _config: undefined, done?: (finished: boolean) => void) => {
+    done?.(true);
+    return target;
+  },
   useAnimatedStyle: (style: typeof swipe.foreground | (typeof swipe.actionStyles)[number]) => {
     const result = style();
     if ("opacity" in result) swipe.actionStyles.push(style as (typeof swipe.actionStyles)[number]);
@@ -95,6 +101,7 @@ vi.mock("react-native-reanimated", () => ({
   },
 }));
 vi.mock("react-native-worklets", () => ({
+  scheduleOnUI: (callback: () => void) => callback(),
   scheduleOnRN: <T extends unknown[]>(callback: (...args: T) => void, ...args: T) =>
     callback(...args),
 }));
@@ -334,7 +341,8 @@ describe("iOS swipe row", () => {
     row: Partial<InboxSwipeRowProps> & { key?: string } = {},
     preview: InboxSwipeRowProps["preview"] = { title: "Ada", message: "Hi", avatar: <i /> },
   ) {
-    const key = row.key ?? "bot:1";
+    const { key = "bot:1", ...props } = row;
+    const activeSwipe: { current: OpenSwipe | null } = { current: null };
     const onAction = vi.fn<(action: InboxRowAction) => void>();
     const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
     const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
@@ -343,26 +351,39 @@ describe("iOS swipe row", () => {
     const root = createRoot(container);
     act(() =>
       root.render(
-        <InboxSwipeRow
-          rowKey={key}
-          sections={sections}
-          preview={preview}
-          onAction={onAction}
-          onOrganize={onOrganize}
-          onEditSection={onEditSection}
-          snoozed={false}
-          onSnooze={onSnooze}
-          {...row}
-        >
-          <span>{key}</span>
-        </InboxSwipeRow>,
+        <InboxSwipeContext.Provider value={activeSwipe}>
+          <InboxSwipeRow
+            rowKey={key}
+            sections={sections}
+            preview={preview}
+            onAction={onAction}
+            onOrganize={onOrganize}
+            onEditSection={onEditSection}
+            snoozed={false}
+            onSnooze={onSnooze}
+            {...props}
+          >
+            <span>{key}</span>
+          </InboxSwipeRow>
+        </InboxSwipeContext.Provider>,
       ),
     );
     const find = (selector: string) => container.querySelector<HTMLElement>(selector);
     const items = find('[data-ui="ContextMenu.Items"]')!;
     const press = (label: string) =>
       act(() => items.querySelector<HTMLElement>(`[data-label="${label}"]`)!.click());
-    return { container, find, items, press, onAction, onOrganize, onEditSection, onSnooze, root };
+    return {
+      container,
+      find,
+      items,
+      press,
+      activeSwipe,
+      onAction,
+      onOrganize,
+      onEditSection,
+      onSnooze,
+      root,
+    };
   }
 
   const entry = (item: Element) => [
@@ -377,6 +398,8 @@ describe("iOS swipe row", () => {
 
   it("offers native buttons for the revealed actions", () => {
     const { container, onAction, root } = render({ unread: true, pinned: true });
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).toBeNull();
+    act(() => swipe.start());
     const buttons = Array.from(
       container.querySelectorAll<HTMLElement>('[data-ui="ContextMenu.Trigger"] button'),
     );
@@ -399,12 +422,12 @@ describe("iOS swipe row", () => {
     (direction, action) => {
       const { onAction, root } = render({ unread: true });
       swipe.measure({ nativeEvent: { layout: { width: 300 } } });
-      const firstAction = swipe.actionStyles[direction === 1 ? 0 : 1]!;
 
       act(() => {
         swipe.start();
         swipe.update({ translationX: direction * 19 });
       });
+      const firstAction = swipe.actionStyles[direction === 1 ? 0 : 1]!;
       expect(swipe.foreground().transform).toEqual([{ translateX: direction * 19 }]);
       expect(firstAction().opacity).toBe(0);
       act(() => swipe.update({ translationX: direction * 24 }));
@@ -431,6 +454,24 @@ describe("iOS swipe row", () => {
       act(() => root.unmount());
     },
   );
+
+  it("stays closed when scrolling dismisses the row mid-swipe", () => {
+    const { container, activeSwipe, onAction, root } = render();
+    act(() => {
+      swipe.start();
+      swipe.update({ translationX: -45 });
+    });
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).not.toBeNull();
+    act(() => activeSwipe.current?.close());
+    act(() => {
+      swipe.update({ translationX: -65 });
+      swipe.end({ translationX: -65 }, true);
+    });
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).toBeNull();
+    expect(swipe.foreground().transform).toEqual([{ translateX: 0 }]);
+    expect(onAction).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
 
   it("joins the native inbox list as one of its rows, sized to its row", () => {
     const container = document.createElement("div");
