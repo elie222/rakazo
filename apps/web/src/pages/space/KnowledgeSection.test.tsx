@@ -201,7 +201,7 @@ it("deletes a bot memory document after confirmation but never MEMORY.md", async
     scope: "bot" as const,
     botId: "bot-fixture",
     path,
-    content: `# ${path}`,
+    content: `Notes in ${id}`,
     revision: 1,
     updatedAt: "",
   });
@@ -224,9 +224,12 @@ it("deletes a bot memory document after confirmation but never MEMORY.md", async
   };
   try {
     await show(root, <KnowledgeSection botId="bot-fixture" />);
-    await act(async () => button("MEMORY.md").click());
+    expect(container.textContent).not.toContain("MEMORY.md");
+    expect(button("retired").textContent).toBe("retired");
+    await act(async () => button("Notes in memory-index").click());
     expect(container.textContent).not.toContain("Delete");
-    await act(async () => button("projects/retired.md").click());
+    await act(async () => button("Cancel").click());
+    await act(async () => button("retired").click());
     await act(async () => button("Delete").click());
     expect(memoryApi.remove).not.toHaveBeenCalled();
     memoryApi.list.mockResolvedValueOnce([doc("memory-index", "MEMORY.md")] as never);
@@ -234,8 +237,8 @@ it("deletes a bot memory document after confirmation but never MEMORY.md", async
     await settle();
     expect(memoryApi.remove).toHaveBeenCalledWith({ documentId: "memory-project" });
     expect(memoryApi.list).toHaveBeenCalledTimes(2);
-    expect(container.textContent).not.toContain("projects/retired.md");
-    expect(container.textContent).toContain("MEMORY.md");
+    expect(container.textContent).not.toContain("retired");
+    expect(container.textContent).toContain("Notes in memory-index");
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -266,29 +269,30 @@ it("downloads only each row’s saved markdown with its own filename", async () 
   const root = createRoot(container);
   try {
     await show(root, <KnowledgeSection botId="bot-fixture" />);
-    const download = container.querySelector<HTMLButtonElement>('[aria-label="Download"]')!;
-    expect(download).not.toBeNull();
-    expect(download.parentElement?.textContent).toContain("MEMORY.md");
+    const button = (text: string) =>
+      [...container.querySelectorAll("button")].find((node) => node.textContent === text)!;
+    expect(container.textContent).not.toContain("Download");
+    await act(async () => button("Fixture memory").click());
     memoryApi.list.mockResolvedValueOnce([
       { ...doc, content: "Latest saved memory", revision: 2 },
       { ...doc, id: "other-fixture", path: "projects/notes.md", content: "Other document" },
     ] as never);
-    await act(async () => download.click());
+    await act(async () => button("Download").click());
     expect(memoryApi.list).toHaveBeenCalledTimes(2);
     expect(downloadArtifactBytes).toHaveBeenLastCalledWith(
       "MEMORY.md",
       "text/markdown",
       new TextEncoder().encode("Latest saved memory"),
     );
-    const downloads = container.querySelectorAll<HTMLButtonElement>('[aria-label="Download"]');
-    await act(async () => downloads[1]!.click());
+    await act(async () => button("Cancel").click());
+    await act(async () => button("notes").click());
+    await act(async () => button("Download").click());
     expect(downloadArtifactBytes).toHaveBeenLastCalledWith(
       "notes.md",
       "text/markdown",
       new TextEncoder().encode("Other document"),
     );
     expect(container.querySelector("h3")?.textContent).toBe("Memory");
-    expect(container.querySelector("textarea")).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -316,13 +320,15 @@ it("hides empty bot memory and limits long lists to five documents", async () =>
       })) as never,
     );
     await show(root, <KnowledgeSection key="busy" botId="fixture" />);
-    expect(host.textContent).not.toContain("notes/6.md");
+    const names = () => [...host.querySelectorAll("button")].map((node) => node.textContent);
+    expect(names()).toContain("4");
+    expect(names()).not.toContain("6");
     await act(async () =>
       [...host.querySelectorAll("button")]
         .find((node) => node.textContent === "Show more")!
         .click(),
     );
-    expect(host.textContent).toContain("notes/6.md");
+    expect(names()).toContain("6");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -355,7 +361,7 @@ it("keeps the last cleared memory document available to reopen in the session", 
     [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
   try {
     await show(root, <KnowledgeSection botId="fixture" />);
-    await act(async () => button("MEMORY.md").click());
+    await act(async () => button("Saved memory").click());
     await act(async () => {
       const field = host.querySelector("textarea")!;
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "");
@@ -369,8 +375,7 @@ it("keeps the last cleared memory document available to reopen in the session", 
       content: "",
       expectedRevision: 1,
     });
-    expect(host.textContent).toContain("MEMORY.md");
-    await act(async () => button("MEMORY.md").click());
+    await act(async () => button("Nothing remembered yet").click());
     expect(host.querySelector("textarea")?.value).toBe("");
   } finally {
     await act(async () => root.unmount());
@@ -391,9 +396,10 @@ it.each(["missing", "failed"])(
       await show(root, <KnowledgeSection botId="fixture" />);
       if (result === "missing") memoryApi.list.mockResolvedValueOnce([]);
       else memoryApi.list.mockRejectedValueOnce(new Error("offline"));
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>('[aria-label="Download"]')!.click(),
-      );
+      const button = (text: string) =>
+        [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
+      await act(async () => button("Cached memory").click());
+      await act(async () => button("Download").click());
       expect(downloadArtifactBytes).not.toHaveBeenCalled();
       expect(host.textContent).toContain("Could not load");
     } finally {
@@ -512,7 +518,7 @@ async function openMemory() {
   const button = (text: string) =>
     [...host.querySelectorAll("button")].find((node) => node.textContent === text)!;
   await show(root, <KnowledgeSection botId="fixture" />);
-  await act(async () => button("notes/plan.md").click());
+  await act(async () => button("plan").click());
   await act(async () => {
     const field = host.querySelector("textarea")!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
@@ -544,7 +550,7 @@ it("saves a memory document once, holds the editor meanwhile, then reads the lis
     expect(memoryApi.update).toHaveBeenCalledTimes(1);
     expect(memory.host.querySelector("textarea")?.disabled).toBe(true);
     expect(memory.button("Cancel").disabled).toBe(true);
-    expect(memory.button("notes/plan.md").disabled).toBe(true);
+    expect(memory.button("plan").disabled).toBe(true);
 
     const reads = [memoryApi.list.mock.calls.length, memoryApi.budget.mock.calls.length];
     const saved = { ...memory.doc, content: "Edited", revision: 2 };
@@ -554,7 +560,7 @@ it("saves a memory document once, holds the editor meanwhile, then reads the lis
     expect(memoryApi.list).toHaveBeenCalledTimes(reads[0]! + 1);
     expect(memoryApi.budget).toHaveBeenCalledTimes(reads[1]! + 1);
     expect(memory.host.querySelector("textarea")).toBeNull();
-    expect(memory.button("notes/plan.md").disabled).toBe(false);
+    expect(memory.button("plan").disabled).toBe(false);
   } finally {
     await memory.cleanup();
   }

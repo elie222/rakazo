@@ -11,7 +11,6 @@ import {
   DEFAULT_NEW_BOT_AVATAR_SET,
   disabledBuiltinToolSet,
   InstructionVersionSchema,
-  initialBotMemory,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
@@ -589,7 +588,7 @@ export function createRepos(
               botId: created.id,
               scope: "bot",
               path: "MEMORY.md",
-              content: initialBotMemory(input.name),
+              content: "",
             },
           });
           await input.seed?.(tx, created.id);

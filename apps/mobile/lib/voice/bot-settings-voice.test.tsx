@@ -724,23 +724,23 @@ describe("bot settings device voice menu", () => {
     }));
     mocks.docs = Array.from({ length: 7 }, (_, i) => ({
       id: `doc-${i}`,
-      path: `notes/${i}.md`,
+      path: `notes/note-${i}.md`,
       content: "Fixture notes",
     }));
+    // Memory sits above Advanced, so its notes show without expanding it.
     await act(async () => root.render(<BotSettingsScreen />));
-    expect(container.textContent).not.toContain("notes/0.md");
-    await expand();
+    expect(container.textContent).toContain("note-0");
     expect(container.textContent).not.toContain("Task 6");
-    expect(container.textContent).not.toContain("notes/6.md");
+    expect(container.textContent).not.toContain("note-6");
     for (const button of [...container.querySelectorAll("button")].filter(
       (node) => node.textContent === "Show more",
     ))
       await act(async () => button.click());
     expect(container.textContent).toContain("Task 6");
-    expect(container.textContent).toContain("notes/6.md");
+    expect(container.textContent).toContain("note-6");
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>("button")]
-        .find((node) => node.textContent === "notes/6.md")!
+        .find((node) => node.textContent === "note-6")!
         .click(),
     );
     expect(mocks.push).toHaveBeenCalledWith({
@@ -808,7 +808,6 @@ describe("bot settings device voice menu", () => {
       "Read replies aloud",
       "Device voice",
       "Manage other bots",
-      "Instructions",
     ]) {
       expect(container.textContent).not.toContain(label);
     }
@@ -817,11 +816,14 @@ describe("bot settings device voice menu", () => {
     expect(trigger.getAttribute("role")).toBe("button");
     expect(JSON.parse(trigger.dataset.style!)).toMatchObject({ marginTop: 24, minHeight: 44 });
     const headings = [...container.querySelectorAll<HTMLElement>('[role="header"]')];
-    expect(headings.map((heading) => heading.textContent)).toEqual(["Notifications"]);
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      "Notifications",
+      "Instructions",
+    ]);
     expect(trigger.querySelector('[data-ios="chevron.right"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Instructions"]')).toBeNull();
-    await expand();
+    // Instructions sit above Advanced, so they show before it is expanded.
     expect(container.querySelector('[aria-label="Instructions"]')).not.toBeNull();
+    await expand();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(trigger.querySelector('[data-ios="chevron.down"]')).not.toBeNull();
     expect(JSON.parse((trigger.nextElementSibling as HTMLElement).dataset.style!)).toMatchObject({
@@ -829,7 +831,6 @@ describe("bot settings device voice menu", () => {
       marginTop: 24,
     });
     const labels = {
-      instructions: "Instructions",
       computer: "Own computer",
       model: "Model",
       readAloud: "Read replies aloud",
@@ -850,7 +851,7 @@ describe("bot settings device voice menu", () => {
     expect(actual).toEqual(
       Object.values(BOT_SETTINGS_SECTIONS)
         .flat()
-        .filter((key) => key in labels && key !== "instructions"),
+        .filter((key) => key in labels),
     );
     expect(actual).toEqual([
       "model",

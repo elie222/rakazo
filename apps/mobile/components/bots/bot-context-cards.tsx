@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { isEmptyBotMemory } from "@rakazo/contracts";
+import { isEmptyBotMemory, memoryDocumentName, memoryNotesPreview } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
@@ -151,7 +151,7 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
               <SettingsRow
                 key={doc.id}
                 accessibilityRole="button"
-                title={doc.path}
+                title={memoryRowTitle(doc) || t`Memory`}
                 chevron="right"
                 onPress={() =>
                   router.push({ pathname: "/memory-note", params: { id: doc.id, botId } })
@@ -173,4 +173,16 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
       {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
     </>
   );
+}
+
+const PREVIEW_LENGTH = 80;
+
+/** A note by its name, or the main notes by the start of their first note. */
+function memoryRowTitle(doc: { path: string; content: string }): string {
+  const name = memoryDocumentName(doc.path);
+  if (name) return name;
+  const preview = memoryNotesPreview(doc.content);
+  return preview.length > PREVIEW_LENGTH
+    ? `${preview.slice(0, PREVIEW_LENGTH).trimEnd()}…`
+    : preview;
 }

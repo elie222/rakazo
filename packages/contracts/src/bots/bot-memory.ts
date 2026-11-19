@@ -1,18 +1,30 @@
 import * as z from "zod";
 import { Id, MemoryScope } from "../ids.js";
 
-/** The heading seeded when a bot is created, before it has learned anything. */
-export function initialBotMemory(name: string): string {
-  return `# ${name}\n\n`;
-}
-
 export function isEmptyBotMemory(doc: Pick<MemoryDocument, "path" | "content">): boolean {
   if (!doc.content.trim()) return true;
   if (doc.path !== MEMORY_INDEX_PATH) return false;
-  // Match the seed's complete shape, including its trailing blank line. The bot
-  // may have been renamed since creation, so its current name is not a baseline.
-  const heading = doc.content.split("\n")[0] ?? "";
-  return heading.startsWith("# ") && doc.content === initialBotMemory(heading.slice(2));
+  // Bots created before memory started empty were seeded with `# <name>\n\n`. Match that
+  // whole shape; the bot may have been renamed since, so its current name is no baseline.
+  return /^# [^\n]*\n\n$/.test(doc.content);
+}
+
+/**
+ * What people call a memory document. The main notes have no name of their own: they are
+ * the memory itself, so the stored file name never reaches the screen.
+ */
+export function memoryDocumentName(path: string): string | null {
+  if (path === MEMORY_INDEX_PATH) return null;
+  return (path.split("/").at(-1) ?? path).replace(/\.md$/i, "");
+}
+
+/** The first note in a memory document, skipping headings. */
+export function memoryNotesPreview(content: string): string {
+  for (const line of content.split("\n")) {
+    const text = line.trim();
+    if (text && !text.startsWith("#")) return text;
+  }
+  return "";
 }
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
