@@ -34,7 +34,14 @@ it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
         headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
         body: JSON.stringify(body),
       });
+    const capabilities = async () => {
+      const response = await handles.app.request("/api/auth/capabilities");
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      return response.json();
+    };
     try {
+      expect(await capabilities()).toMatchObject({ registrationOpen: true });
       // Two first signups at once: exactly one becomes the account.
       const first = ["owner@example.test", "racer@example.test"].map((email) => ({
         email,
@@ -44,6 +51,7 @@ it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
         first.map((account) => post("/sign-up/email", { ...account, name: "First" }, webOrigin)),
       );
       expect(signups.filter((response) => response.status === 200)).toHaveLength(1);
+      expect(await capabilities()).toMatchObject({ registrationOpen: false });
       const owner = first[signups.findIndex((response) => response.status === 200)]!;
       const loser = first.find((account) => account !== owner)!;
       expect((await post("/sign-in/email", loser, webOrigin)).status).toBeGreaterThanOrEqual(400);
