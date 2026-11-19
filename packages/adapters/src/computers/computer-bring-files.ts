@@ -170,22 +170,31 @@ export async function bringBotFiles(
     await ensureComputerWorkspaceLayout(deps.sandbox, to.computer, "team", botId, context);
   }
   if (setsAside) await replaceVisibleEntries(deps.sandbox, to.computer, "aside", folder, context);
+  let brought = 0;
   async function* placed(): AsyncIterable<PortableFile> {
     for await (const file of savedBotFiles(deps.home, from, botId, context)) {
+      brought += 1;
       yield prefix ? { ...file, path: `${prefix}${file.path}` } : file;
     }
   }
+  // The older files come back, so a move that brought nothing leaves the computer as it found it.
+  const putBack = async () => {
+    if (!setsAside) return;
+    await bestEffort(
+      "put back a bot's older files",
+      replaceVisibleEntries(deps.sandbox, to.computer, "back", folder, context),
+    );
+  };
   try {
     await deps.sandbox.importWorkspace(to.computer, placed(), context);
   } catch (error) {
-    // The older files come back, so a move that failed leaves the computer as it found it.
-    if (setsAside) {
-      await bestEffort(
-        "put back a bot's older files",
-        replaceVisibleEntries(deps.sandbox, to.computer, "back", folder, context),
-      );
-    }
+    await putBack();
     throw error;
+  }
+  // The saved home was emptied between the check above and the export.
+  if (brought === 0) {
+    await putBack();
+    return false;
   }
   // Left behind, the folder is hidden and the next move drops it.
   if (setsAside) {

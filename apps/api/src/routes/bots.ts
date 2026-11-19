@@ -551,7 +551,13 @@ export function botsRoutes(ctx: RouterContext) {
         const claimed = await deps.prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
           return tx.bot.updateMany({
-            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
+            // Still on the computer read above: a switch that finished meanwhile changed it.
+            where: {
+              id: bot.id,
+              computerId: bot.computerId,
+              computerSwitching: false,
+              computer: { maintenanceId: null },
+            },
             data: { computerSwitching: true },
           });
         });

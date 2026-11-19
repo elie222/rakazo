@@ -256,6 +256,30 @@ describe("bringing a bot's files to the computer it moved to", () => {
     await expect(own.read("project/notes.md")).resolves.toBe("kept");
   });
 
+  it("keeps the older files when the saved home turns out empty at the export", async () => {
+    const home = await savedHomes({ "team-home/bots/bot1/project/notes.md": "newer" });
+    const own = await localComputer({ "project/notes.md": "older" });
+    const exportHome = home.exportHome.bind(home);
+    let reads = 0;
+    // The first read finds a file; by the second the folder is gone.
+    home.exportHome = (key, ctx, options) => {
+      reads += 1;
+      return reads === 1
+        ? exportHome(key, ctx, options)
+        : exportHome("nothing-saved", ctx, options);
+    };
+
+    const brought = await bringBotFiles(
+      { home, sandbox: own.sandbox },
+      { botId: "bot1", from: TEAM, to: { computer: own.computer, scope: "dedicated" } },
+      context,
+    );
+
+    expect(brought).toBe(false);
+    await expect(own.read("project/notes.md")).resolves.toBe("older");
+    await own.missing(".rakazo-replaced");
+  });
+
   it("arrives whole on a second try after the first import fails", async () => {
     const home = await savedHomes({ "team-home/bots/bot1/project/notes.md": "progress" });
     const provider = new FakeSandboxProvider();
