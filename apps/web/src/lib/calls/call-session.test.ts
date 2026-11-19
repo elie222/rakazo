@@ -638,6 +638,25 @@ describe("call session", () => {
     );
   });
 
+  it("ends a card with no full stop of its own before the instruction", async () => {
+    const choice = askMessage("choice-1", {
+      text: "Pick a plan",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    getThread.mockResolvedValue(
+      snapshot([callerMessage("pick for me"), choice], waitingRun) as never,
+    );
+    await heard("pick for me");
+    expect(speak).toHaveBeenCalledWith(
+      "Pick a plan. Say yes or no, or answer in a sentence.",
+      expect.objectContaining({ messageId: "choice-1" }),
+    );
+  });
+
   it("reads a card past its stopped run's progress, then listens without reading it again", async () => {
     const progress = {
       ...streamingMessage(""),
@@ -657,7 +676,7 @@ describe("call session", () => {
     );
     await heard("pick for me");
     expect(speak).toHaveBeenCalledWith(
-      "Allow or deny?. Say yes or no, or answer in a sentence.",
+      "Allow or deny? Say yes or no, or answer in a sentence.",
       expect.objectContaining({ messageId: "choice-1" }),
     );
     const listens = listen.mock.calls.length;
@@ -1763,7 +1782,7 @@ async function approvalWait(turn: ThreadMessage, approval: ThreadMessage) {
   getThread.mockResolvedValue(snapshot([turn, approval], waitingRun) as never);
   await heard("check the site");
   expect(speak).toHaveBeenLastCalledWith(
-    "Open example.com?. Approve or deny it on screen.",
+    "Open example.com? Approve or deny it on screen.",
     expect.objectContaining({ messageId: "approval-1" }),
   );
   await finishSpeaking();
