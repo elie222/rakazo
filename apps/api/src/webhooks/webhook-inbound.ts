@@ -8,10 +8,9 @@ import {
   wakeRun,
 } from "@rakazo/adapters";
 import type { MessageBlock, WebhookSignature } from "@rakazo/contracts";
-import { WebhookSignatureSchema } from "@rakazo/contracts";
 import { inboundRoutineBlock } from "@rakazo/core";
 import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
-import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
+import { accountDeactivated, botWebhookSignature, SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -227,7 +226,7 @@ export async function loadWebhookTarget(
       thread: { select: { id: true } },
     },
   });
-  const signature = WebhookSignatureSchema.safeParse(bot?.webhookSignature).data ?? null;
+  const signature = bot ? botWebhookSignature(bot) : null;
   const signingSecretId = (signature && bot?.webhookSigningSecretId) || null;
 
   // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.

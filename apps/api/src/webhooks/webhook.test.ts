@@ -9,7 +9,7 @@ import {
 import type { WebhookSignature } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
-import { createLogger, createTestSink } from "@rakazo/logging";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
@@ -1649,13 +1649,18 @@ describe("signed webhook deliveries", () => {
     },
   );
 
-  it("ignores a stored scheme it cannot read", async () => {
+  it("refuses signatures under a stored scheme it cannot read, and reports the row", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const deps = createDeps({
       signing: { signature: { scheme: "unknown" } as unknown as WebhookSignature },
       routines: [WEBHOOK_ROUTINE],
     });
     const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", standardDelivery(raw));
     expect(res.status).toBe(401);
+    expect(
+      sink.events.map(({ level, table, column, id }) => ({ level, table, column, id })),
+    ).toEqual([{ level: "error", table: "bots", column: "webhookSignature", id: "bot-1" }]);
   });
 
   it("decrypts the signing secret once across rejected deliveries", async () => {

@@ -5,6 +5,7 @@ import type {
   BotSection,
   MessageBlock,
   SpaceBot,
+  WebhookSignature,
 } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
@@ -24,6 +25,7 @@ import {
   teamComputerUserId,
 } from "../computers/computers.js";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import { reportJsonColumnOnce } from "../database/json-column.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
 import { BotSectionNameConflictError, IsolationError } from "../database/scope.js";
 import { withTransactionRetry } from "../database/transaction-retry.js";
@@ -71,6 +73,27 @@ function rosterRunErrorId(
 // section and reorder writes, so the newest message's time wins when the chat has one.
 function rosterUpdatedAt(newestMessage: { createdAt: Date } | undefined, botUpdatedAt: Date) {
   return newestMessage?.createdAt ?? botUpdatedAt;
+}
+
+/**
+ * How the bot's webhook sender signs, as saved. A stored value of another shape is reported and
+ * read as none, so signed deliveries are refused until the creator saves the secret again.
+ */
+export function botWebhookSignature(bot: {
+  id: string;
+  webhookSignature?: unknown;
+}): WebhookSignature | null {
+  const parsed = WebhookSignatureSchema.nullable().safeParse(bot.webhookSignature ?? null);
+  if (parsed.success) return parsed.data;
+  reportJsonColumnOnce(
+    "Stored webhook signature does not match its schema; signed deliveries are refused",
+    {
+      table: "bots",
+      column: "webhookSignature",
+      id: bot.id,
+    },
+  );
+  return null;
 }
 
 function mapBot(
@@ -157,7 +180,7 @@ function mapBot(
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     webhookConfigured: Boolean(bot.webhookSecretId),
-    webhookSignature: WebhookSignatureSchema.safeParse(bot.webhookSignature).data ?? null,
+    webhookSignature: botWebhookSignature(bot),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,
   };
