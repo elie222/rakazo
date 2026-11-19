@@ -89,14 +89,14 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 2. Read the `VERDICT` line and act:
 
-   | verdict         | do                                                                            |
-   | --------------- | ----------------------------------------------------------------------------- |
-   | `green`         | Check the completion gate below, then report.                                 |
-   | `failures`      | Triage below.                                                                 |
-   | `open-comments` | Answer them below.                                                            |
-   | `pending`       | Checks are still running (you woke early, or one registered late). Back to 1. |
-   | `out-of-sync`   | Push or reconcile, then back to 1.                                            |
-   | `CLOSED` or `MERGED` | Report the PR state.                                                    |
+   | verdict              | do                                                                            |
+   | -------------------- | ----------------------------------------------------------------------------- |
+   | `green`              | Check the completion gate below, then report.                                 |
+   | `failures`           | Triage below.                                                                 |
+   | `open-comments`      | Answer them below.                                                            |
+   | `pending`            | Checks are still running (you woke early, or one registered late). Back to 1. |
+   | `out-of-sync`        | Push or reconcile, then back to 1.                                            |
+   | `CLOSED` or `MERGED` | Report the PR state.                                                          |
 
 3. After any push or reply, go back to 1 once. A verdict is only good for the
    SHA it was taken on; never mix observations from two commits.
