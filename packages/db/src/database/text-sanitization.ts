@@ -41,14 +41,17 @@ function sanitizeValue(value: unknown, key?: string): unknown {
   const keys = Object.keys(value);
   // Only JSON can carry such a key (Prisma field names cannot); keep colliding keys apart.
   if (keys.some((key) => sanitizeUtf16ForJson(key) !== key)) return sanitizeJsonValue(value);
-  return sanitizeEntries(value, keys);
+  return sanitizeEntries(value, keys, key);
 }
 
-function sanitizeEntries(value: Record<string, unknown>, keys: readonly string[]) {
+/** Prisma's `{ set }` and `{ push }` write the field they sit under, so they keep its name. */
+const FIELD_OPERATIONS = new Set(["set", "push"]);
+
+function sanitizeEntries(value: Record<string, unknown>, keys: readonly string[], field?: string) {
   let out: Record<string, unknown> | undefined;
   for (const key of keys) {
     if (!(key in value)) continue;
-    const next = sanitizeValue(value[key], key);
+    const next = sanitizeValue(value[key], FIELD_OPERATIONS.has(key) && field ? field : key);
     if (next === value[key]) continue;
     out ??= { ...value };
     out[key] = next;

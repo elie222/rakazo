@@ -36,6 +36,7 @@ describe("sanitizeWriteArgs", () => {
         name: "\u202EAlice\u202C",
         workspaceName: "\u2067Acme\u2069",
         participantNames: ["\u202ECarol\u202C"],
+        title: { set: "\u202EDave\u202C" },
         text: "mixed\u200F direction",
         blocks: [{ kind: "channel_message", fromLabel: "\u202EBob\u202C", text: "hi\u200F" }],
         note: "fine",
@@ -45,6 +46,7 @@ describe("sanitizeWriteArgs", () => {
         name: string;
         workspaceName: string;
         participantNames: string[];
+        title: { set: string };
         text: string;
         blocks: Array<{ fromLabel: string; text: string }>;
         note: string;
@@ -54,6 +56,7 @@ describe("sanitizeWriteArgs", () => {
     expect(out.data.name).toBe("Alice");
     expect(out.data.workspaceName).toBe("Acme");
     expect(out.data.participantNames).toEqual(["Carol"]);
+    expect(out.data.title.set).toBe("Dave");
     expect(out.data.blocks[0]?.fromLabel).toBe("Bob");
     // Message content keeps what the person wrote, marks included.
     expect(out.data.text).toBe("mixed\u200F direction");
