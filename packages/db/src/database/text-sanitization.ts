@@ -13,21 +13,13 @@ const WRITE_OPERATIONS = new Set([
 const WRITE_KEYS = ["data", "create", "update"] as const;
 
 /**
- * The fields whose value names something a person reads: a bot, a space, a member, a page, or the
- * sender label on a chat-app message. A directional control in one of these makes the name draw as
- * another name, so it is dropped from them. Message text and every other value keep their
- * characters: mixed-direction writing uses the marks legitimately, and the stored text must still
- * be what the person wrote.
+ * Fields whose value names something a person reads: a bot, a space, a member, a workspace, a
+ * page, or the sender label on a chat-app message (`name`, `displayName`, `participantNames`,
+ * `fromLabel`, `title`, ...). A directional control in one makes the name draw as another name, so
+ * it is dropped from them. Message text and every other value keep their characters:
+ * mixed-direction writing uses the marks legitimately, and stored text must stay what was written.
  */
-const NAME_KEYS = new Set([
-  "name",
-  "displayname",
-  "label",
-  "fromlabel",
-  "channelname",
-  "sendername",
-  "title",
-]);
+const NAME_KEY = /(names?|label|title)$/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
@@ -39,12 +31,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function sanitizeValue(value: unknown, key?: string): unknown {
   if (typeof value === "string") {
     const repaired = sanitizeUtf16ForJson(value);
-    return key !== undefined && NAME_KEYS.has(key.toLowerCase())
-      ? stripDirectionalControls(repaired)
-      : repaired;
+    return key !== undefined && NAME_KEY.test(key) ? stripDirectionalControls(repaired) : repaired;
   }
   if (Array.isArray(value)) {
-    const items = value.map((item) => sanitizeValue(item));
+    const items = value.map((item) => sanitizeValue(item, key));
     return items.some((item, index) => item !== value[index]) ? items : value;
   }
   if (!isPlainObject(value)) return value;
