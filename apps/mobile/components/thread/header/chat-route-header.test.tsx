@@ -76,15 +76,16 @@ it("declares an archived chat's Restore button in place of the gift", () => {
   expect(rightItems(options)).toEqual([{ type: "button", label: "Restore" }]);
 });
 
-it("beside the chat list, declares the sidebar button in place of the back button", () => {
+it("beside the chat list, leaves hiding it to the list and declares Show chats once hidden", () => {
   const options = header({ botId: "bot-1" }, { split: true, inboxHidden: false });
   expect(options.headerBackVisible).toBe(false);
-  const [item] = leftItems(options);
-  expect(item).toMatchObject({ type: "button", label: "Hide chats" });
+  expect(leftItems(options)).toEqual([]);
+  const hidden = header({ botId: "bot-1" }, { split: true, inboxHidden: true });
+  expect(hidden.headerBackVisible).toBe(false);
+  const [item] = leftItems(hidden);
+  expect(item).toMatchObject({ type: "button", label: "Show chats" });
   (item as { onPress: () => void }).onPress();
-  expect(setInboxHidden).toHaveBeenCalledWith(true);
-  const [shown] = leftItems(header({ botId: "bot-1" }, { split: true, inboxHidden: true }));
-  expect(shown).toMatchObject({ label: "Show chats" });
+  expect(setInboxHidden).toHaveBeenCalledWith(false);
 });
 
 it("folded like a book beside the chat list, declares neither a back nor a sidebar button", () => {
