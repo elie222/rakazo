@@ -10,7 +10,7 @@ vi.mock("expo-notifications", () => ({
   useLastNotificationResponse: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
-  router: { push: vi.fn() },
+  router: { dismissTo: vi.fn(), push: vi.fn() },
 }));
 vi.mock("../api/session", () => ({
   loadSessionToken: vi.fn(),
@@ -40,14 +40,14 @@ beforeEach(() => {
 });
 
 describe("opening a notification tap", () => {
-  it("closes the settings sheet before opening the thread, so it doesn't open behind it", async () => {
+  it("returns to the chat list before opening the notified thread", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
 
     await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
     expect(closeSettingsSheet).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(closeSettingsSheet).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(router.push).mock.invocationCallOrder[0] ?? 0,
-    );
+    expect(router.dismissTo).toHaveBeenCalledExactlyOnceWith("/");
+    expect(closeSettingsSheet).toHaveBeenCalledBefore(router.dismissTo);
+    expect(router.dismissTo).toHaveBeenCalledBefore(router.push);
   });
 
   it("opens a signed-in tap once when the cold start and the listener both see it", async () => {
@@ -62,6 +62,7 @@ describe("opening a notification tap", () => {
     release.resolve("token");
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(false);
+    expect(router.dismissTo).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(
       { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
@@ -79,6 +80,7 @@ describe("opening a notification tap", () => {
     });
     vi.mocked(Notifications.getLastNotificationResponse).mockReturnValue(response);
     await expect(openNotificationResponse(response)).resolves.toBe(false);
+    expect(router.dismissTo).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(Notifications.clearLastNotificationResponse).toHaveBeenCalledTimes(1);
 
