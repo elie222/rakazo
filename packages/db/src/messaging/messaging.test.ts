@@ -61,6 +61,22 @@ describe("provisionMessagingIdentity", () => {
     expect(prisma.messagingIdentity.findUnique).not.toHaveBeenCalled();
   });
 
+  it("keeps the sender's address out of the error it throws", async () => {
+    const prisma = { messagingIdentity: { findUnique: vi.fn() } };
+    // The message is logged, so it may name the provider but never the phone number or id.
+    await expect(
+      provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+        provider: "sendblue",
+        address: "+1 (555) 123-4567",
+      }),
+    ).rejects.toThrow("Invalid messaging address for sendblue");
+    const error = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+1 (555) 123-4567",
+    }).catch((thrown: Error) => thrown);
+    expect(String(error)).not.toMatch(/\d/);
+  });
+
   it("throws instead of returning an empty thread id when the thread is missing", async () => {
     const existing = {
       id: "mi-1",
@@ -140,6 +156,37 @@ describe("provisionMessagingIdentity create race", () => {
       threadId: "thread-winner",
       created: false,
     });
+  });
+
+  it("keeps the address out of the error when the winning identity is gone too", async () => {
+    const prisma = {
+      messagingIdentity: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => {
+          throw Object.assign(
+            new Error("Unique constraint failed on the fields: (`provider`,`address`)"),
+            { code: "P2002" },
+          );
+        }),
+      },
+      user: {
+        findUnique: vi.fn(async () => ({
+          id: "user-1",
+          email: "msg-sendblue15551234567@messaging.invalid",
+        })),
+      },
+      spaceMember: { findFirst: vi.fn(async () => ({ spaceId: "ws-1" })) },
+      bot: { findFirst: vi.fn(async () => ({ id: "bot-1" })) },
+      thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
+    };
+    const error = await provisionMessagingIdentity(prisma as unknown as PrismaClient, {
+      provider: "sendblue",
+      address: "+15551234567",
+    }).catch((thrown: Error) => thrown);
+
+    // The message is logged, so it may name the provider but never a digit of the number.
+    expect(String(error)).toContain("vanished after create failed");
+    expect(String(error)).not.toMatch(/\d/);
   });
 });
 

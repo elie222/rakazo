@@ -652,6 +652,7 @@ export async function selectRunTools(
     connected: ConnectedRun;
     turnContext: TurnContext;
     capabilities: RunCapabilities;
+    meetingTranscriptsAvailable?: boolean;
   },
 ) {
   const { contextStrategy, mediaGeneration, paidServices } = services;
@@ -726,6 +727,7 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,
       groupId: conversationThread.groupId,

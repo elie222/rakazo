@@ -29,7 +29,7 @@ export default function MeetingsDialog({
   const list = useQuery(read);
   useEventListener(window, "focus", () => void list.refetch({ cancelRefetch: false }));
   const join = useSave({
-    save: (url: string, rpc) => rpc.meetings.join({ botId, url }),
+    save: (url: string, rpc) => rpc.meetings.join({ botId, url, shareTranscript: true }),
     stale: [read.queryKey],
     onSaved: () => setUrl(""),
   });
@@ -77,6 +77,7 @@ export default function MeetingsDialog({
               {list.data?.enabled ? (
                 <form
                   className="flex flex-col gap-2"
+                  noValidate
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (url.trim() && !busy) join.run(url.trim());
@@ -90,7 +91,6 @@ export default function MeetingsDialog({
                       id="meeting-link"
                       type="url"
                       aria-describedby="meeting-capture-notice"
-                      placeholder={t`Zoom or Google Meet link`}
                       autoComplete="off"
                       value={url}
                       disabled={busy}
@@ -99,13 +99,13 @@ export default function MeetingsDialog({
                         setUrl(event.target.value);
                       }}
                     />
-                    <Button type="submit" disabled={busy || !url.trim()}>
+                    <Button size="lg" type="submit" disabled={busy || !url.trim()}>
                       <Trans>Join meeting</Trans>
                     </Button>
                   </div>
                   <p id="meeting-capture-notice" className="text-body-sm text-muted-foreground">
                     <Trans>
-                      Only send the bot if you have permission to record and transcribe the meeting.
+                      Get permission to record and share the transcript with this Space.
                     </Trans>
                   </p>
                 </form>

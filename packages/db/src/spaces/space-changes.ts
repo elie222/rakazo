@@ -9,9 +9,6 @@ const IDLE_WAIT_MS = 60_000;
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
 const DEPLOYMENT_MODEL_TOPIC = "deployment-model-changes";
 const perSpaceKinds = SpaceChangeKind.options.filter((kind) => kind !== "deploymentModel");
-// compat-shim(after v0.11.0): workers from the previous release still announce computer updates
-// here until they drain.
-const legacyComputerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
 
 const PUBLISH_RETRY_MS = 15_000;
 
@@ -71,16 +68,11 @@ export async function* followSpaceChanges(
     const kind = SpaceChangeKind.safeParse(payload);
     if (kind.success && kind.data !== "deploymentModel") changed(kind.data);
   });
-  const subscriptions = [unsubscribe];
+  let unsubscribeDeployment: (() => Promise<void>) | undefined;
   try {
-    subscriptions.push(
-      await realtime.subscribe(legacyComputerUpdatesTopic(spaceId), () =>
-        changed("computerUpdates"),
-      ),
-    );
     // The same content-free signal reaches every authenticated Space stream.
-    subscriptions.push(
-      await realtime.subscribe(DEPLOYMENT_MODEL_TOPIC, () => changed("deploymentModel")),
+    unsubscribeDeployment = await realtime.subscribe(DEPLOYMENT_MODEL_TOPIC, () =>
+      changed("deploymentModel"),
     );
     while (!signal?.aborted) {
       const seen = latch.generation;
@@ -90,6 +82,6 @@ export async function* followSpaceChanges(
       await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
     }
   } finally {
-    await Promise.all(subscriptions.map((unsubscribe) => unsubscribe()));
+    await Promise.all([unsubscribe(), unsubscribeDeployment?.()]);
   }
 }

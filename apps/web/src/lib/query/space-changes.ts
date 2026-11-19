@@ -8,6 +8,7 @@ const READS: Record<ReadChangeKind, readonly RpcPath[]> = {
   routines: ["routines/list"],
   meetingCalendar: ["meetingCalendar/upcoming"],
   meetings: ["meetings/list", "meetings/transcript"],
+  artifacts: ["artifacts/listSpace"],
   deploymentModel: DEPLOYMENT_MODEL_READS,
 };
 

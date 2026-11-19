@@ -315,6 +315,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["meetings/join", { botId: "missing-bot", url: "https://meet.google.com/abc-defg-hij" }],
       ["meetings/leave", { id: "missing-meeting" }],
       ["meetings/transcript", { id: "missing-meeting" }],
+      ["meetings/shareTranscript", { id: "missing-meeting" }],
       ["meetings/deleteTranscript", { id: "missing-meeting" }],
       ["meetings/ask", { id: "missing-meeting", question: "What was decided?" }],
       ["bots/get", { botId: "missing-bot" }],

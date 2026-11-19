@@ -137,6 +137,7 @@ export const SpaceChangeKind = z.enum([
   "runs",
   "routines",
   "meetings",
+  "artifacts",
   "meetingCalendar",
   "deploymentModel",
 ]);

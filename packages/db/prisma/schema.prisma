@@ -2014,6 +2014,8 @@ model Artifact {
   version        Int        @default(1)
   // A file a stranger emailed: its own family, never one a later upload of that name joins.
   standalone     Boolean    @default(false)
+  meetingSessionId String? @unique
+  meetingSession MeetingSession? @relation(fields: [meetingSessionId], references: [id], onDelete: Cascade)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 
@@ -2955,6 +2957,8 @@ model MeetingSession {
   recordingId  String?
   transcriptId String?
   transcript   String?   @db.Text
+  shareTranscript Boolean @default(false)
+  sharedArtifact Artifact?
   error        String?
   requestedAt  DateTime?
   receivedAt   DateTime?
@@ -3008,6 +3012,7 @@ model MeetingCalendarRule {
   botId         String?
   eventStartsAt DateTime?
   seriesId      String?
+  shareTranscript Boolean @default(false)
 
   @@id([connectionId, scope, targetId])
   @@map("meeting_calendar_rules")
@@ -3021,6 +3026,7 @@ model MeetingCalendarBooking {
   startsAt     DateTime
   linked       Boolean                   @default(false)
   configDigest String
+  shareTranscript Boolean @default(false)
 
   @@id([connectionId, eventId])
   @@index([sessionId])
