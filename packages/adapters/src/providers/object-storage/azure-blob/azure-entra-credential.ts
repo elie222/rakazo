@@ -60,8 +60,14 @@ function certificateBundle(value: string): string {
       .replace(/\\n/g, "\n")
       .replace(/\r\n/g, "\n")
       .trim();
-  } catch (error) {
-    throw new Error(`OBJECT_STORAGE_CERTIFICATE could not be read: ${(error as Error).message}`);
+  } catch {
+    // A value without a PEM header lands here read as a path, and the filesystem error's
+    // message would repeat the whole value — private key included — into startup logs, so the
+    // error never echoes it. Base64-encoded bundles (as Kubernetes secrets often hold them)
+    // must be decoded before they are set.
+    throw new Error(
+      "OBJECT_STORAGE_CERTIFICATE is neither a readable PEM file nor an inline PEM bundle; decode base64 bundles before setting them",
+    );
   }
   const begins = certificate.match(/^-----BEGIN [^-]+-----$/gm) ?? [];
   const ends = certificate.match(/^-----END [^-]+-----$/gm) ?? [];

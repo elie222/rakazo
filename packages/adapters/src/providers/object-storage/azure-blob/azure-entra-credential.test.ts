@@ -91,7 +91,20 @@ describe("entraAuthFromEnv", () => {
         ...principal,
         OBJECT_STORAGE_CERTIFICATE: "/certs/not-there.pem",
       }),
-    ).toThrow(/OBJECT_STORAGE_CERTIFICATE could not be read/);
+    ).toThrow(/neither a readable PEM file nor an inline PEM bundle/);
+    // A value without a PEM header — a base64 bundle, as Kubernetes secrets often hold them —
+    // must fail without the value leaking into the error, private key included.
+    const base64 = Buffer.from(certificate).toString("base64");
+    try {
+      entraAuthFromEnv({
+        OBJECT_STORAGE_AUTH: "client-certificate",
+        ...principal,
+        OBJECT_STORAGE_CERTIFICATE: base64,
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).not.toContain(base64.slice(0, 60));
+    }
     const directory = mkdtempSync(join(tmpdir(), "entra-"));
     try {
       const mismatched = `${certificate.split("-----BEGIN PRIVATE KEY-----")[0]}${generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "sec1", format: "pem" })}`;
