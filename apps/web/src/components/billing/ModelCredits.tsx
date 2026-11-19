@@ -15,6 +15,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,18 +123,6 @@ function tierPriceCents(offer: TierOffer, interval: ByokInterval): number | null
   return interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
 }
 
-/** "8 vCPU, 16 GB, 100 computer hours a month" */
-function useTierComputer() {
-  const { t } = useLingui();
-  return (offer: TierOffer) => {
-    const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
-    const hours = offer.computerHours;
-    if (offer.computerSizeChoice)
-      return t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${hours} Standard computer hours a month`;
-    return t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
-  };
-}
-
 /** The own-key plan's tiers at `interval`, each with its price and computer. */
 function ByokTierSelect({
   tiers,
@@ -149,7 +138,6 @@ function ByokTierSelect({
   onChange: (offer: TierOffer) => void;
 }) {
   const { t, i18n } = useLingui();
-  const computer = useTierComputer();
   const offered = tiers.flatMap((offer) => {
     const cents = tierPriceCents(offer, interval);
     return cents === null
@@ -189,7 +177,9 @@ function ByokTierSelect({
                 <span>
                   {offer.name} · {price}
                 </span>
-                <span className="text-label text-muted-foreground">{computer(offer)}</span>
+                <span className="text-label text-muted-foreground">
+                  {tierComputerDescription(offer)}
+                </span>
               </span>
             </SelectItem>
           ))}
@@ -290,8 +280,7 @@ function TierPlans({
   const powerDetail = (offer: TierOffer, base: TierOffer) => {
     const { memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
     const usage = Math.round(offer.computerHours / base.computerHours);
-    if (offer.computerSizeChoice)
-      return t`Up to ${memoryGb} GB of RAM and ${usage}× the Standard computer hours of ${base.name}.`;
+    if (offer.computerSizeChoice) return tierComputerDescription(offer);
     return t`${memoryGb} GB of RAM and ${usage}× the computer time of ${base.name}. Time counts only while your bot uses its computer.`;
   };
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
@@ -654,7 +643,6 @@ export function ModelCreditsSettings({
   const [checkoutTier, setCheckoutTier] = useState<ByokTier>("standard");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<"failed" | "uncharged" | null>(null);
-  const computer = useTierComputer();
   const balance = new Intl.NumberFormat(i18n.locale, {
     style: "currency",
     currency: "USD",
@@ -748,8 +736,8 @@ export function ModelCreditsSettings({
           {currentTier ? (
             <p className="mt-2 text-body text-muted-foreground">
               {tierChange
-                ? computer(currentTier)
-                : `${currentTier.name} · ${computer(currentTier)}`}
+                ? tierComputerDescription(currentTier)
+                : `${currentTier.name} · ${tierComputerDescription(currentTier)}`}
             </p>
           ) : null}
           {tierChange || yearlySavings !== null ? (

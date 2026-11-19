@@ -1,6 +1,15 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
-import type { ComputerSize } from "@rakazo/contracts";
+import type { BillingStatus, ComputerSize } from "@rakazo/contracts";
+import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
+
+export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
+  const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
+  const hours = offer.computerHours;
+  return offer.computerSizeChoice
+    ? t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${hours} Standard computer hours a month`
+    : t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
+}
 
 export function computerSizeLabel(size: ComputerSize, withUsage = false): string {
   switch (size) {

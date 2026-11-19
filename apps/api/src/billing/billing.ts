@@ -757,7 +757,7 @@ export function createBillingService(deps: {
         const subscribed = subscribedByokPrice(account);
         const tier = subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
-        const offers = byokTierOffers(hourMicros);
+        const offers = byokTierOffers(Boolean(sized), hourMicros);
         const sizing =
           sizePreference &&
           computerSizeSettings({ ...sizePreference, modelCredits: credits, billing: account });

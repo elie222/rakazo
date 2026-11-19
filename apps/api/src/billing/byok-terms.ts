@@ -4,7 +4,6 @@ import {
   BYOK_TIERS,
   ByokTierSchema,
   byokTierPriceCents,
-  SANDBOX_SIZE_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
 } from "@rakazo/contracts";
 import type { BillingAccount } from "@rakazo/db";
@@ -59,7 +58,7 @@ export function subscribedByokPrice(account: BillingAccount | null) {
 }
 
 /** The tiers on offer, in order; empty when the own-key plan is free. */
-export function byokTierOffers(hourMicros?: number) {
+export function byokTierOffers(sizeChoice: boolean, hourMicros?: number) {
   return ByokTierSchema.options.flatMap((tier) => {
     const monthlyPriceCents = byokTierPriceCents(tier, "month");
     if (monthlyPriceCents === null) return [];
@@ -72,9 +71,7 @@ export function byokTierOffers(hourMicros?: number) {
         annualPriceCents: byokTierPriceCents(tier, "year"),
         computerSize: terms.computerSize,
         computerHours: sandboxAllowanceHours(terms.computerAllowanceCents, hourMicros),
-        ...(hourMicros === SANDBOX_SIZE_HOURLY_COST_MICROS.standard
-          ? { computerSizeChoice: true as const }
-          : {}),
+        ...(sizeChoice ? { computerSizeChoice: true as const } : {}),
       },
     ];
   });

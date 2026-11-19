@@ -10,17 +10,22 @@ export async function saveComputerSize(
   organizationId: string,
   size: ComputerSize,
 ): Promise<void> {
-  const current = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: {
-      computerSize: true,
-      modelCredits: { select: { mode: true } },
-      billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
-    },
+  await prisma.$transaction(async (tx) => {
+    // Billing sync locks this row before it clears a size the new plan cannot use.
+    await tx.$queryRaw`SELECT "organizationId" FROM "billing_accounts"
+      WHERE "organizationId" = ${organizationId} FOR SHARE`;
+    const current = await tx.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        computerSize: true,
+        modelCredits: { select: { mode: true } },
+        billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+      },
+    });
+    if (!current || !computerSizeSettings(current).available.includes(size))
+      throw new ClientError("BAD_REQUEST", "Your plan does not include this computer size");
+    await tx.organization.update({ where: { id: organizationId }, data: { computerSize: size } });
   });
-  if (!current || !computerSizeSettings(current).available.includes(size))
-    throw new ClientError("BAD_REQUEST", "Your plan does not include this computer size");
-  await prisma.organization.update({ where: { id: organizationId }, data: { computerSize: size } });
 }
 
 export async function readComputerUsage(
