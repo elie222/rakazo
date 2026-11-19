@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
+  releaseRoutineBackoffs,
   routineAccountBackoffMs,
 } from "./routine-backoff.js";
 
@@ -102,5 +103,26 @@ describePostgres("backing off a routine on refused model accounts (PostgreSQL)",
     const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
     expect(row.accountFailures).toBe(0);
     expect(row.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now() + 60_000);
+  });
+
+  it("releases every held routine of the owner when they save a model connection", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    for (const { routine, deps } of [first, second]) {
+      for (let count = 0; count < 6; count++) {
+        await backOffRoutineAfterAccountError(deps, {
+          routineId: routine.id,
+          userId: routine.userId,
+        });
+      }
+    }
+
+    await releaseRoutineBackoffs(first.deps, identity.userId);
+
+    for (const { routine } of [first, second]) {
+      const row = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
+      expect(row.accountFailures).toBe(0);
+      expect(row.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now() + 60_000);
+    }
   });
 });
