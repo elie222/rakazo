@@ -7,13 +7,12 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
 import {
-  accountVoiceCatalog,
   mountVoiceHttpRoutes,
   persistVoiceCredential,
   synthesizeVoice,
-  voiceCredentialLink,
   withVoiceConnection,
 } from "./voice.js";
+import { accountVoiceCatalog, voiceCredentialLink } from "./voice-model-connection.js";
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
 
@@ -288,10 +287,17 @@ describe("persistVoiceCredential through a model connection", () => {
     const saved = await persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" });
 
     expect(verify).toHaveBeenCalledWith("xai-model-key", expect.anything());
-    expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything());
+    expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything(), {});
     expect(put).toHaveBeenCalledWith(adapters.modelConnectionVoiceSecret(), expect.anything());
     expect(JSON.stringify(put.mock.calls)).not.toContain("xai-model-key");
     expect(saved).toMatchObject({ provider: "xai", hasKey: false, voiceId: "eve" });
+  });
+
+  it("lists the voices of the speech model it is connected with", async () => {
+    const { listVoices } = stubProvider();
+    const input = { provider: "openrouter", plaintext: "or-key-123", speechModel: "a/b" };
+    await persistVoiceCredential(linkedDeps().deps, actor, input);
+    expect(listVoices).toHaveBeenCalledWith("or-key-123", expect.anything(), { model: "a/b" });
   });
 
   it("links the model connection the user chose and checks it with that one's key", async () => {

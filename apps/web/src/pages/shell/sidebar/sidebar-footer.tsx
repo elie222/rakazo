@@ -169,7 +169,8 @@ export function SidebarFooter({
             {mini ? (
               <Button
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={onIntegrations}
               >
                 <Plug className="text-muted-foreground" strokeWidth={1.75} />
@@ -179,7 +180,8 @@ export function SidebarFooter({
             {usage ? (
               <Button
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={onUsage}
               >
                 <Gauge className="text-muted-foreground" strokeWidth={1.75} />
@@ -191,7 +193,8 @@ export function SidebarFooter({
             ) : null}
             <Button
               variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
+              size="lg"
+              className="w-full justify-start gap-2.5 font-normal"
               aria-label={t`Settings`}
               onClick={onSettings}
             >
@@ -200,7 +203,8 @@ export function SidebarFooter({
             </Button>
             <Button
               variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
+              size="lg"
+              className="w-full justify-start gap-2.5 font-normal"
               onClick={onSkills}
             >
               <ScrollText className="text-muted-foreground" strokeWidth={1.75} />
@@ -208,7 +212,8 @@ export function SidebarFooter({
             </Button>
             <Button
               variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
+              size="lg"
+              className="w-full justify-start gap-2.5 font-normal"
               onClick={onArtifacts}
             >
               <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
@@ -217,7 +222,8 @@ export function SidebarFooter({
             {onBoard ? (
               <Button
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={onBoard}
               >
                 <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />
@@ -228,7 +234,8 @@ export function SidebarFooter({
               <Button
                 key={link.id}
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={() => onLink?.(link)}
               >
                 <Link2 className="text-muted-foreground" strokeWidth={1.75} />
@@ -237,7 +244,7 @@ export function SidebarFooter({
             ))}
             <div className="my-1 border-t border-border" />
             <a
-              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
+              className={`${buttonVariants({ variant: "ghost", size: "lg" })} w-full justify-start gap-2.5 font-normal`}
               href={
                 /Android/i.test(navigator.userAgent) ? ANDROID_APP_STORE_URL : IOS_APP_STORE_URL
               }
@@ -250,7 +257,8 @@ export function SidebarFooter({
             {onInvite ? (
               <Button
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={onInvite}
               >
                 <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
@@ -258,7 +266,7 @@ export function SidebarFooter({
               </Button>
             ) : null}
             <a
-              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
+              className={`${buttonVariants({ variant: "ghost", size: "lg" })} w-full justify-start gap-2.5 font-normal`}
               href="https://github.com/elie222/rakazo/blob/main/docs/self-host.md"
               target="_blank"
               rel="noreferrer"
@@ -269,7 +277,8 @@ export function SidebarFooter({
             <div className="my-1 border-t border-border" />
             <Button
               variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
+              size="lg"
+              className="w-full justify-start gap-2.5 font-normal"
               disabled={signingOut}
               onClick={onLogOut}
             >
@@ -289,7 +298,8 @@ export function SidebarFooter({
           variant="secondary"
           ref={pillRef}
           onClick={onIntegrations}
-          className="h-9 min-w-0 flex-1 justify-between"
+          size="lg"
+          className="min-w-0 flex-1 justify-between"
         >
           <span ref={labelRef} className="flex min-w-0 items-center gap-2">
             <Plug className="text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
@@ -343,7 +353,11 @@ function OrganizationRow({
           delay={100}
           data-testid="organization-menu-trigger"
           render={
-            <Button variant="ghost" className="h-9 w-full justify-start gap-2.5 font-normal" />
+            <Button
+              variant="ghost"
+              size="lg"
+              className="w-full justify-start gap-2.5 font-normal"
+            />
           }
         >
           <Building2 className="text-muted-foreground" strokeWidth={1.75} />
@@ -363,7 +377,8 @@ function OrganizationRow({
                 key={organization.id}
                 variant="ghost"
                 aria-current={current ? "true" : undefined}
-                className="h-9 w-full justify-between gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-between gap-2.5 font-normal"
                 onClick={() => onSwitch?.(organization)}
               >
                 <span className="min-w-0 truncate">{organization.name}</span>
@@ -376,7 +391,8 @@ function OrganizationRow({
               <div className="my-1 border-t border-border" />
               <Button
                 variant="ghost"
-                className="h-9 w-full justify-start gap-2.5 font-normal"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
                 onClick={onCreate}
               >
                 <Plus className="text-muted-foreground" strokeWidth={1.75} />

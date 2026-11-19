@@ -142,6 +142,18 @@ export default function BotProfile() {
         />
       </View>
       <SettingsGroup>
+        {bot?.meetingsEnabled ? (
+          <SettingsRow
+            key="meetings"
+            accessibilityRole="button"
+            chevron="right"
+            title={t`Meetings`}
+            leading={
+              <NativeSymbol ios="video" android="videocam-outline" color={tokens.mutedForeground} />
+            }
+            onPress={() => router.push({ pathname: "/meetings", params: { botId } })}
+          />
+        ) : null}
         <SettingsRow
           key="routines"
           accessibilityRole="button"

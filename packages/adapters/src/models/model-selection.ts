@@ -53,6 +53,11 @@ import {
 } from "./endpoints/openai-compatible-url.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -163,6 +168,14 @@ export class UnavailableModelForAuthError extends Error {
   }
 }
 
+/** A saved model connection's secret was removed after it was chosen. */
+export class ModelConnectionGoneError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelConnectionGoneError";
+  }
+}
+
 export type SpaceCatalogAuth = {
   managedProvider?: string;
   managedProviders?: string[];
@@ -215,6 +228,7 @@ export async function modelCredentialAuthKindsForSpace(
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
+  const allowlist = modelProviderAllowlist();
   const providers =
     modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
     (hostedProvider ? [hostedProvider] : []);
@@ -225,10 +239,13 @@ export async function modelCredentialAuthKindsForSpace(
             (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
           ),
         )
-      ).filter((provider): provider is string => provider !== null)
+      ).filter(
+        (provider): provider is string =>
+          provider !== null && modelProviderAllowed(allowlist, provider),
+      )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, preferences] = await Promise.all([
+  const [allCredentials, allPreferences] = await Promise.all([
     prisma.userModelCredential.findMany({
       where: { userId: scope.userId },
       select: {
@@ -257,6 +274,16 @@ export async function modelCredentialAuthKindsForSpace(
       },
     }),
   ]);
+  // A refused provider is not read at all, so its secret is never loaded and an unavailable
+  // store cannot fail the catalog for the providers this deployment still offers.
+  const credentials =
+    allowlist === null
+      ? allCredentials
+      : allCredentials.filter((row) => modelProviderAllowed(allowlist, row.provider));
+  const preferences =
+    allowlist === null
+      ? allPreferences
+      : allPreferences.filter((row) => modelProviderAllowed(allowlist, row.credential.provider));
   const connectedProviders = new Set([
     ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
     ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
@@ -785,6 +812,9 @@ export async function validateBotModelChange(
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
     const hosted =
       Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted

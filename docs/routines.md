@@ -36,7 +36,8 @@ accepts a cron expression. Times use your timezone, set in **Settings → Genera
 
 The bot checks something at a set interval (**Check every**, from 5 minutes to a day) and runs only
 when it changed. **What to watch** can be files or folders on the computer, a command's output, or a
-tool from a connected app. Turn on **Post "No changes" in chat** if you want a note every time. A
+tool from a connected app. A tool's arguments can hold a date that moves with the calendar: ask the
+bot to watch, say, what is due before `{{today+2d}}`. Turn on **Post "No changes" in chat** if you want a note every time. A
 watch can't be combined with a schedule.
 
 ### Webhook
@@ -66,8 +67,10 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 > [!NOTE]
 > A routine run started by a webhook, an email or a Slack message follows your
 > [approval](./approvals.md) mode and Always allow list. Since outside text could steer it, tools
-> that change something are checked even if they never ask in your own chats, and a purchase is
-> refused. Always allow on a tool such as shell or the browser lets outside text use it freely.
+> that change something are checked even if they never ask in your own chats. Nobody may be
+> watching, so an approval card it posts expires after 30 minutes by default and the action isn't done.
+> `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS` changes that window. Always allow on a
+> tool such as shell or the browser lets outside text use it freely.
 
 ## Test, pause and review
 

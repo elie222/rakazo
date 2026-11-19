@@ -87,4 +87,16 @@ export const TR_MESSAGES: Record<string, string> = {
     "{inviter} sizi Rakazo'da {space} alanına katılmaya davet etti.",
   "Join {space}": "{space} alanına katıl",
   "This invitation expires in 7 days.": "Bu davetin süresi 7 gün içinde dolar.",
+  "Connect a model to start using Rakazo": "Rakazo’yu kullanmaya başlamak için bir model bağlayın",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazo planınız başladı, ancak bir model bağlanana kadar botlarınız yanıt veremez.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions} aboneliğinizle oturum açın veya bir API anahtarı yapıştırın.",
+  "Connect a model": "Model bağla",
+  "Bring your old assistant to Rakazo": "Eski asistanınızı Rakazo'ya taşıyın",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "{assistants} üzerinde zaten bir asistan kurdunuz mu? Rakazo onun talimatlarını, belleğini, becerilerini ve rutinlerini yeni bir bot olarak getirebilir; böylece baştan başlamazsınız.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "Başka herhangi bir asistanla da çalışır: ona tek bir istem gönderin ve yanıtını yapıştırın.",
+  "Import an agent": "Ajan içe aktar",
 };

@@ -35,6 +35,9 @@ be loopback or resolve to private addresses (a Compose service name, an RFC1918 
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
 address for every request. Space members use the saved connection without seeing its key.
 
+A self-hosted Supermemory server must be v0.0.9 or later; run `supermemory-server upgrade` on
+older servers.
+
 For [Honcho](https://github.com/plastic-labs/honcho), enable `AUTH_USE_AUTH` on the Honcho
 server and use an admin JWT from its `scripts/generate_jwt.py --admin` as the key, so each Space
 gets its own workspace. A workspace-scoped JWT works when you enter that workspace. Honcho needs
@@ -68,6 +71,12 @@ client's allowed redirect URIs. The client is stored encrypted with the server's
 credentials and survives **Disconnect**; switching to a different client drops the current grant.
 On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
 refuses to send it anywhere else afterwards. Replacing the client clears the binding.
+
+Other providers register clients themselves but only for redirect addresses they know, plus the
+loopback addresses desktop apps use, and refuse `<your web origin>/mcp/oauth/callback` with
+`invalid_redirect_uri`. Connect those from the desktop app: it signs in on a loopback address
+instead and reads the result from its own sign-in window. A browser and the mobile app cannot,
+and show the provider's refusal.
 
 Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP spec has them
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
@@ -106,8 +115,10 @@ variables. Any other `npx` form (local paths, git and tarball URLs, unknown `npx
 refused. `npx` is the only supported package launcher: other package managers and runners
 (`npm`, `pnpm`, `yarn`, `bun`, `bunx`, `deno`, `uv`, `uvx`, `pipx` and the like) are refused
 even when allowlisted. To run a server from another ecosystem, install it on the host and
-allowlist its binary. An allowlisted interpreter or shell (`node`, `python`, `sh`) runs any
-code passed in its arguments, so allowlist it only where that is acceptable. Each server runs as one process per user in each of the API and worker,
+allowlist its binary. To run a server that lives on another machine, allowlist `ssh`, which the
+app image includes, and launch the server through it. An allowlisted interpreter or shell
+(`node`, `python`, `sh`) runs any code passed in its arguments, and `ssh` runs local commands
+through options such as `ProxyCommand`, so allowlist these only where that is acceptable. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is

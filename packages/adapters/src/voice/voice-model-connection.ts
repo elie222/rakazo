@@ -6,6 +6,11 @@ import {
   resolveStoredModelAuth,
   withModelCredentialLock,
 } from "../models/model-credential-refresh.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../models/model-provider-allowlist.js";
 import { isRetiredModelCredentialError } from "../runtime/pi/models/pi-oauth.js";
 import type { SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import { voiceCatalogEntry } from "./voice-factory.js";
@@ -69,6 +74,10 @@ export async function resolveVoiceKey(
   // Only a provider the catalog lets use the model connection may; elsewhere it is a pasted key.
   const link = parseModelConnectionVoiceSecret(plaintext);
   if (!link || !voiceCatalogEntry(provider)?.modelConnection) return plaintext;
+  // A model connection the deployment's allowlist refuses is not borrowed for voice either.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new VoiceAccountError(undefined, MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  }
   const missing = () =>
     new VoiceAccountError(
       undefined,

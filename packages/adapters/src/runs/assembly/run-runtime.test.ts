@@ -3,6 +3,7 @@ import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { describe, expect, it } from "vitest";
 import { mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import { workspaceSaveLimits } from "../../storage/workspace-save-policy.js";
 import { deploymentLabsFromEnv } from "../labs-env.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
 
@@ -35,6 +36,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
   };
 }
@@ -62,6 +64,7 @@ describe("runRuntimeEnvFromProcess", () => {
       PHONE_CALLS_ENABLED: "true",
       PHONE_CALL_RING_SECONDS: "30",
       MAX_UPLOAD_SIZE_MB: "20",
+      WORKSPACE_SAVE_MAX_GB: "20",
       INBOUND_EMAIL_DOMAIN: " Bots.Example.Test ",
       TEAM_CHAT_JUDGE_PROVIDER: " openrouter ",
       TEAM_CHAT_JUDGE_MODEL: "small-model",
@@ -69,5 +72,13 @@ describe("runRuntimeEnvFromProcess", () => {
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {
     expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
+  });
+
+  it("reads the computer save limit and rejects a bad one", () => {
+    const env = (WORKSPACE_SAVE_MAX_GB?: string) =>
+      runRuntimeEnvFromProcess({ NODE_ENV: "test", WORKSPACE_SAVE_MAX_GB });
+    expect(env("20").workspaceSaveLimits.maxBytes).toBe(20 * 1024 ** 3);
+    expect(env().workspaceSaveLimits.maxBytes).toBe(5 * 1024 ** 3);
+    expect(() => env("0")).toThrow("WORKSPACE_SAVE_MAX_GB");
   });
 });

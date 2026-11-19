@@ -1,11 +1,11 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForConnection } from "@rakazo/core";
+import { appConnectedInput, waitForSignIn } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Linking, Text, View } from "react-native";
+import { AppState, Linking, Text, View } from "react-native";
 import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { appConnectPresentation } from "../../lib/cards/app-connect";
@@ -60,19 +60,25 @@ export function AppConnectCard({
       );
       if (controller.signal.aborted) return;
       if (started.authorizationUrl) await Linking.openURL(started.authorizationUrl);
-      const result = await waitForConnection(
+      const result = await waitForSignIn(
         started.connectionId,
         (input) => rpc("connections/complete", input, { signal: controller.signal }),
-        { signal: controller.signal, attempts: 60 },
+        {
+          signal: controller.signal,
+          onSlow: () => setBusy(false),
+          whenBack: (read) => {
+            const subscription = AppState.addEventListener("change", (state) => {
+              if (state === "active") read();
+            });
+            return () => subscription.remove();
+          },
+        },
       );
-      if (result.status === "aborted") return;
       if (result.status === "connected") {
         await rpc("onboarding/appConnected", appConnectedInput(botId, threadId, block, messageId));
         if (controller.signal.aborted) return;
         setLocalStatus("connected");
-        return;
       }
-      setError(t`Authorization timed out. Please try again.`);
     } catch (reason) {
       if (!controller.signal.aborted) {
         setError(errorText(reason, t`Could not authorize this app`));

@@ -607,7 +607,7 @@ it("leaves the key field empty until a key is saved", async () => {
   }
 });
 
-it("labels the empty main slot by what runs there", async () => {
+it("shows just the connection action when no model is available", async () => {
   vi.mocked(rpc.me).mockResolvedValue({
     ...account("deepseek", "deepseek-chat"),
     needsModel: true,
@@ -615,8 +615,11 @@ it("labels the empty main slot by what runs there", async () => {
   const view = await renderSettings();
   try {
     expect(section("main").querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
-      "Choose a model",
+      "Connect a model",
     );
+    expect(view.container.querySelector('[data-testid="model-role-approval"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-computer"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-providers"]')).toBeNull();
   } finally {
     await view.unmount();
   }
@@ -778,7 +781,7 @@ it("connects the main model from the empty default row as the space default", as
   });
   const view = await renderSettings();
   try {
-    await pick("Change Main model", "DeepSeek");
+    await pick("Connect a model", "DeepSeek");
     expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
     await typeInto(keyField(view.container), "sk-fixture-deepseek");
     const loads = models.role.mock.calls.length;
@@ -878,6 +881,79 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
     );
   } finally {
     await saved.unmount();
+  }
+});
+
+it("offers zero data retention only where the provider supports it and saves it explicitly", async () => {
+  const entry = {
+    provider: "example-gateway",
+    providerName: "Example Gateway",
+    id: "example/model",
+    label: "Example",
+    billing: "API key",
+    auth: "api-key" as const,
+    authHint: "API key",
+    dataRetentionControl: true as const,
+  };
+  const { dataRetentionControl: _control, ...withoutControl } = entry;
+  const plain = { ...withoutControl, provider: "example-plain", providerName: "Example Plain" };
+  const credential = {
+    id: "cred-gw",
+    provider: entry.provider,
+    label: "Example Gateway",
+    hasKey: true,
+    isDefault: true,
+    modelId: entry.id,
+  };
+  vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
+  models.list.mockResolvedValue([entry, plain]);
+  models.credentials.mockResolvedValue([credential]);
+  models.connect.mockResolvedValue({ ...credential, zeroDataRetention: true });
+
+  const view = await renderSettings();
+  try {
+    await manage();
+    const toggle = () => view.container.querySelector("[role='switch']");
+    expect(toggle()?.getAttribute("aria-checked")).toBe("false");
+    expect(() => buttons(view.container, "Save")).toThrow("Missing button");
+    await click(toggle());
+    expect(toggle()?.getAttribute("aria-checked")).toBe("true");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: entry.provider,
+        zeroDataRetention: true,
+        credentialId: credential.id,
+      }),
+    );
+    expect(models.connect.mock.lastCall?.[0]).not.toHaveProperty("apiKey");
+  } finally {
+    await view.unmount();
+  }
+
+  models.credentials.mockResolvedValue([{ ...credential, zeroDataRetention: true }]);
+  const saved = await renderSettings();
+  try {
+    await manage();
+    const toggle = saved.container.querySelector("[role='switch']");
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    await click(toggle);
+    await click(buttons(saved.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zeroDataRetention: false }),
+    );
+  } finally {
+    await saved.unmount();
+  }
+
+  vi.mocked(rpc.me).mockResolvedValue(account(plain.provider, plain.id));
+  models.credentials.mockResolvedValue([{ ...credential, provider: plain.provider }]);
+  const unsupported = await renderSettings();
+  try {
+    await manage();
+    expect(unsupported.container.querySelector("[role='switch']")).toBeNull();
+  } finally {
+    await unsupported.unmount();
   }
 });
 
@@ -1428,7 +1504,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   ]);
   const view = await renderSettings(false);
   try {
-    await openPicker("Add fallback");
+    await openPicker("Change Main model");
     expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
     await choose("Ollama Cloud");
     expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");

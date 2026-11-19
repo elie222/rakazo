@@ -82,4 +82,16 @@ export const HE_MESSAGES: Record<string, string> = {
     "{inviter} הזמין/ה אותך להצטרף ל-{space} ב-Rakazo.",
   "Join {space}": "הצטרפות ל-{space}",
   "This invitation expires in 7 days.": "ההזמנה תפוג בעוד 7 ימים.",
+  "Connect a model to start using Rakazo": "חיבור מודל כדי להתחיל להשתמש ב-Rakazo",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "התוכנית שלך ב-Rakazo התחילה, אבל הבוטים שלך לא יוכלו לענות עד שיחובר מודל.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "אפשר להתחבר עם המינוי שלך ל-{subscriptions} או להדביק מפתח API.",
+  "Connect a model": "חיבור מודל",
+  "Bring your old assistant to Rakazo": "הביאו את העוזר הקודם שלכם ל-Rakazo",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "כבר הגדרתם עוזר ב-{assistants}? Rakazo יכול להעביר את ההנחיות, הזיכרון, המיומנויות והשגרות שלו לבוט חדש, כדי שלא תתחילו מחדש.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "זה עובד גם עם כל עוזר אחר: שלחו לו פרומפט אחד והדביקו את התשובה שלו.",
+  "Import an agent": "ייבוא סוכן",
 };

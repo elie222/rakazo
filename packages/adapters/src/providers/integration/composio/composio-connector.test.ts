@@ -275,11 +275,18 @@ describe("composio tool mapping", () => {
       { type: "function", function: { name: "COMPOSIO_MULTI_EXECUTE_TOOL" } },
       { slug: "COMPOSIO_SEARCH_TOOLS" },
     ]);
-    expect(tools.map((tool) => tool.batch)).toEqual([
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      undefined,
-    ]);
+    for (const tool of tools.slice(0, 2)) {
+      expect(tool.batch).toMatchObject({
+        items: "tools",
+        action: "tool_slug",
+        arguments: "arguments",
+        outgoingDrafts: {
+          GMAIL_SEND_EMAIL: { kind: "email" },
+          SLACK_SEND_MESSAGE: { kind: "message" },
+        },
+      });
+    }
+    expect(tools[2]?.batch).toBeUndefined();
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
@@ -1532,6 +1539,49 @@ describe("composio tool mapping", () => {
         ["GITHUB"],
       ),
     ).toEqual({ connectIds: ["row-gh"], revokeIds: [] });
+  });
+
+  it("connects the attempt whose own account is signed in, not an earlier abandoned one", () => {
+    const attempt = (id: string, providerRef: string | null, minutesAgo: number) => ({
+      id,
+      provider: "gmail",
+      status: "pending",
+      displayName: "Gmail",
+      providerRef,
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 12, -minutesAgo)),
+    });
+    const now = Date.UTC(2026, 0, 1, 12);
+    const rows = [attempt("first", "ca_expired", 30), attempt("retry", "ca_live", 20)];
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_live"])).toEqual({
+      connectIds: ["retry"],
+      revokeIds: ["first"],
+    });
+    // The person finished the first page after starting a second.
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_expired"]).connectIds).toEqual([
+      "first",
+    ]);
+    // Without the account list, the latest attempt is the likelier one.
+    expect(planLiveConnectionSync(rows, ["gmail"], now).connectIds).toEqual(["retry"]);
+    // The live account belongs to neither attempt, so neither row may claim it.
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_other"]).connectIds).toEqual([]);
+    // Beside a connected account, an attempt past the authorization window is cleared, and
+    // one whose own sign-in finished is connected as another account.
+    const beside = [{ ...attempt("done", "ca_live", 60), status: "connected" }];
+    expect(
+      planLiveConnectionSync([...beside, attempt("stale", "ca_expired", 30)], ["gmail"], now, [
+        "ca_live",
+      ]).revokeIds,
+    ).toEqual(["stale"]);
+    expect(
+      planLiveConnectionSync([...beside, attempt("second", "ca_second", 30)], ["gmail"], now, [
+        "ca_live",
+        "ca_second",
+      ]),
+    ).toEqual({ connectIds: ["second"], revokeIds: [] });
+    // A row saved before its sign-in answered holds no account and is still recovered.
+    expect(
+      planLiveConnectionSync([attempt("first", null, 30)], ["gmail"], now, ["ca_other"]).connectIds,
+    ).toEqual(["first"]);
   });
 
   it("only fetches live Composio slugs when a Rakazo row is still pending or errored", () => {

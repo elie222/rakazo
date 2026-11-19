@@ -2,7 +2,7 @@
 
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
-import { act } from "react";
+import { act, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -88,6 +88,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { QueryUserProvider, queryClient } from "../../lib/query/query";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { useOrganizations } from "../../lib/spaces/organizations";
+import type { OrganizationPage } from "./OrganizationSettingsPanel";
 import { DeleteOrganizationDialog, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 
 let container: HTMLDivElement;
@@ -180,7 +181,13 @@ describe("renaming the organization", () => {
         <QueryClientProvider client={queryClient}>
           <QueryUserProvider value="user-a">
             <SpaceRpcProvider spaceId="space-work">
-              {panel ? <OrganizationSettingsPanel onBusyChange={onBusyChange} /> : null}
+              {panel ? (
+                <OrganizationSettingsPanel
+                  page="main"
+                  onPageChange={() => {}}
+                  onBusyChange={onBusyChange}
+                />
+              ) : null}
               <Names />
             </SpaceRpcProvider>
           </QueryUserProvider>
@@ -316,13 +323,18 @@ describe("organization members", () => {
         <QueryClientProvider client={queryClient}>
           <QueryUserProvider value="user-a">
             <SpaceRpcProvider spaceId="space-work">
-              <OrganizationSettingsPanel />
+              <Members />
             </SpaceRpcProvider>
           </QueryUserProvider>
         </QueryClientProvider>,
       ),
     );
     await act(flush);
+  }
+  /** The page the panel is on is the settings window's to keep, as in the real window. */
+  function Members() {
+    const [page, setPage] = useState<OrganizationPage>("main");
+    return <OrganizationSettingsPanel page={page} onPageChange={setPage} />;
   }
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find((each) => each.textContent === label);

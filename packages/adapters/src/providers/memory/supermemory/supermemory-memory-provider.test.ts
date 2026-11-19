@@ -4,6 +4,7 @@ import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
 import {
+  createSupermemoryProvider,
   prepareSupermemoryConnection,
   SupermemoryMemoryProvider,
 } from "./supermemory-memory-provider.js";
@@ -24,6 +25,10 @@ function provider() {
   });
 }
 
+function namespaceOf(url: unknown): string {
+  return decodeURIComponent(new URL(String(url)).pathname.split("/")[2] ?? "");
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("SupermemoryMemoryProvider", () => {
@@ -42,9 +47,10 @@ describe("SupermemoryMemoryProvider", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(
-      fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).containerTag),
-    ).toEqual(["rakazo:workspace:workspace-1", "rakazo:bot-1"]);
+    expect(fetchMock.mock.calls.map((call) => namespaceOf(call[0]))).toEqual([
+      "rakazo:workspace:workspace-1",
+      "rakazo:bot-1",
+    ]);
   });
 
   it("adds the current history generation only after compaction", async () => {
@@ -67,9 +73,10 @@ describe("SupermemoryMemoryProvider", () => {
       context,
     );
 
-    expect(
-      fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).containerTag),
-    ).toEqual(["rakazo:bot-1", "rakazo:bot-1:history:3"]);
+    expect(fetchMock.mock.calls.map((call) => namespaceOf(call[0]))).toEqual([
+      "rakazo:bot-1",
+      "rakazo:bot-1:history:3",
+    ]);
   });
 
   it("passes recall limits and cancellation through to the provider client", async () => {
@@ -107,9 +114,10 @@ describe("SupermemoryMemoryProvider", () => {
       context,
     );
 
-    expect(
-      fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).containerTag),
-    ).toEqual(["rakazo:workspace:workspace-1", "rakazo:bot-1"]);
+    expect(fetchMock.mock.calls.map((call) => namespaceOf(call[0]))).toEqual([
+      "rakazo:workspace:workspace-1",
+      "rakazo:bot-1",
+    ]);
   });
 
   it("purges only requested history generations", async () => {
@@ -119,8 +127,8 @@ describe("SupermemoryMemoryProvider", () => {
     await provider().purgeHistory({ botId: "bot-1", generations: [2, 3, 3] }, context);
 
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      "http://localhost:6767/v3/container-tags/rakazo%3Abot-1%3Ahistory%3A2",
-      "http://localhost:6767/v3/container-tags/rakazo%3Abot-1%3Ahistory%3A3",
+      "http://localhost:6767/ns/rakazo%3Abot-1%3Ahistory%3A2",
+      "http://localhost:6767/ns/rakazo%3Abot-1%3Ahistory%3A3",
     ]);
   });
 
@@ -167,14 +175,36 @@ const credentials = { apiKey: "sm_test_key" };
 const privateResolver = async () => [{ address: "172.18.0.4", family: 4 as const }];
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
+describe("Supermemory connection identity", () => {
+  const cloud = { mode: "cloud" };
+  const identity = (
+    settings: Record<string, string>,
+    apiKey = "sm_test_key",
+    connectionVersion: string | undefined = "connection-1",
+  ) => createSupermemoryProvider(settings, { apiKey }, connectionVersion).connectionIdentity;
+
+  it("lets a failed purge be retried on the same saved connection", () => {
+    expect(identity(cloud)).toEqual(expect.any(String));
+    expect(identity(cloud)).toBe(identity(cloud, "sm_rotated_key"));
+    expect(createSupermemoryProvider(cloud, { apiKey: "sm_test_key" }).connectionIdentity).toBe(
+      undefined,
+    );
+  });
+
+  it("changes when the connection or its endpoint is replaced", () => {
+    expect(identity(cloud, undefined, "connection-2")).not.toBe(identity(cloud));
+    expect(identity({ mode: "local", baseUrl: "http://localhost:6767" })).not.toBe(identity(cloud));
+  });
+});
+
 describe("Supermemory connection setup", () => {
   function setupFetch(deleteStatus: number) {
     return vi.fn(async (url: string | URL | Request, init?: RequestInit) =>
       init?.method === "DELETE"
         ? new Response("{}", { status: deleteStatus })
         : Response.json(
-            { containerTags: [] },
-            { status: String(url).endsWith("/list") ? 200 : 404 },
+            { namespaces: [] },
+            { status: new URL(String(url)).pathname.endsWith("/namespaces") ? 200 : 404 },
           ),
     );
   }
@@ -184,11 +214,11 @@ describe("Supermemory connection setup", () => {
     vi.stubGlobal("fetch", fetchMock);
     await prepareSupermemoryConnection({ mode: "cloud" }, credentials);
     expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, String(url)])).toEqual([
-      ["GET", "https://api.supermemory.ai/v3/container-tags/list"],
+      ["GET", "https://api.supermemory.ai/namespaces?limit=1"],
       [
         "DELETE",
         expect.stringMatching(
-          /^https:\/\/api\.supermemory\.ai\/v3\/container-tags\/rakazo%3Adelete-probe%3A[0-9a-f-]{36}$/,
+          /^https:\/\/api\.supermemory\.ai\/ns\/rakazo%3Adelete-probe%3A[0-9a-f-]{36}$/,
         ),
       ],
     ]);
@@ -216,7 +246,7 @@ describe("Supermemory local base URL", () => {
     );
 
     expect(prepared.settings).toEqual({ mode: "local", baseUrl: "http://127.0.0.1:6767" });
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:6767/v3/container-tags/list");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:6767/namespaces?limit=1");
   });
 
   it.each(["http://10.0.0.8:6767", "http://192.168.1.20:6767", "http://[fd00::1]:6767"])(
@@ -232,7 +262,7 @@ describe("Supermemory local base URL", () => {
       });
 
       expect(prepared.settings.baseUrl).toBe(baseUrl);
-      expect(fetchMock.mock.calls[0]?.[0]).toBe(`${baseUrl}/v3/container-tags/list`);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(`${baseUrl}/namespaces?limit=1`);
     },
   );
 
@@ -249,9 +279,7 @@ describe("Supermemory local base URL", () => {
     );
 
     expect(prepared.settings).toEqual({ mode: "local", baseUrl: "http://supermemory:6767" });
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "http://supermemory:6767/v3/container-tags/list",
-    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://supermemory:6767/namespaces?limit=1");
     expect(resolveHostname).toHaveBeenCalledOnce();
   });
 
@@ -271,7 +299,7 @@ describe("Supermemory local base URL", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "http://host.docker.internal:6767/v3/container-tags/list",
+      "http://host.docker.internal:6767/namespaces?limit=1",
     );
   });
 
@@ -293,7 +321,7 @@ describe("Supermemory local base URL", () => {
       endpointTrust: "public",
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://memory.example.com/v3/container-tags/list",
+      "https://memory.example.com/namespaces?limit=1",
     );
     expect(resolveHostname).toHaveBeenCalledOnce();
   });

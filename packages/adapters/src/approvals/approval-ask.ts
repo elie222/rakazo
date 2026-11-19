@@ -1,6 +1,6 @@
-import type { ToolBatch } from "@rakazo/adapter-kit";
+import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, draftBatchEntry, OutgoingDraft } from "@rakazo/contracts";
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
@@ -53,20 +53,44 @@ function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {
   };
 }
 
+export type ApprovalCardOptions = {
+  reviewReason?: string;
+  summary?: FleetCardSummary;
+  batch?: ToolBatch;
+  /** The approval asks every time, so the card never offers Always allow. */
+  onceOnly?: boolean;
+  outgoingDraft?: ConnectorTool["outgoingDraft"];
+  allowOutgoingDraft?: boolean;
+};
+
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: {
-    reviewReason?: string;
-    summary?: FleetCardSummary;
-    batch?: ToolBatch;
-    /** The approval asks every time, so the card never offers Always allow. */
-    onceOnly?: boolean;
-  },
+  options?: ApprovalCardOptions,
 ): MessageBlock {
   const onceOnly = toolRequiresExplicitApproval(toolName) || Boolean(options?.onceOnly);
+  const draft = options?.allowOutgoingDraft
+    ? outgoingDraftForApproval(options, args, secrets)
+    : undefined;
+  if (draft) {
+    const reviewReason = options?.reviewReason?.trim();
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: draft.source,
+      outgoingDraft: draft,
+      detail: reviewReason
+        ? truncate(redactSecrets(reviewReason, secrets), MAX_APPROVAL_DETAIL_LENGTH)
+        : undefined,
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Send" },
+        { id: "deny", label: "Discard" },
+      ],
+    };
+  }
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
     return {
@@ -185,7 +209,7 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const summary = describeApprovalAction(toolName, args, options?.batch);
+  const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
     args,
@@ -198,10 +222,7 @@ export function buildApprovalAskBlock(
     kind: "ask",
     approvalEffectId: effectId,
     text: truncate(
-      redactSecrets(
-        toolName === "create_space" ? `${summary}?` : `Review before ${summary}`,
-        secrets,
-      ),
+      redactSecrets(toolName === "create_space" ? `${summary}?` : `Allow ${summary}?`, secrets),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
     detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
@@ -235,26 +256,54 @@ function webFetchSite(toolName: string, args: Record<string, unknown>): string |
     : undefined;
 }
 
+/** A batch is named by the actions it runs; "…" stands for an entry that names none. */
+function batchActionNames(
+  args: Record<string, unknown>,
+  batchShape: ToolBatch | undefined,
+  secrets: string[],
+): string | undefined {
+  const batch = batchShape && batchActions(batchShape, args);
+  if (!batch?.actions.length) return undefined;
+  return [
+    ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
+    ...(batch.complete ? [] : ["…"]),
+  ].join(", ");
+}
+
+/**
+ * What an approval is for, in words and without its arguments, for an alert that leaves the card:
+ * a batch call's actions, otherwise the tool itself.
+ */
+export function approvalActionName(
+  toolName: string,
+  args: Record<string, unknown>,
+  batch: ToolBatch | undefined,
+  secrets: string[],
+): string {
+  return (
+    batchActionNames(args, batch, secrets) ?? readableToolName(redactSecrets(toolName, secrets))
+  );
+}
+
 function describeApprovalAction(
   toolName: string,
   args: Record<string, unknown>,
   batchShape: ToolBatch | undefined,
+  secrets: string[],
 ): string {
-  // A batch is named by the actions it runs; "…" stands for an entry that names none.
-  const batch = batchShape && batchActions(batchShape, args);
-  if (batch?.actions.length) {
-    return [...batch.actions, ...(batch.complete ? [] : ["…"])].join(", ");
-  }
+  const batchName = batchActionNames(args, batchShape, secrets);
+  if (batchName) return batchName;
   if (toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
-    return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
+    return name ? `Archive bot (${String(name)})` : "Archive bot";
   }
   if (toolName === "create_space") {
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
   }
   const target = webFetchSite(toolName, args) ?? pickScopeLabel(args);
-  return target ? `${toolName} → ${target}` : toolName;
+  const action = readableToolName(redactSecrets(toolName, secrets));
+  return target ? `${action} → ${target}` : action;
 }
 
 function formatApprovalDetail(
@@ -277,19 +326,45 @@ function formatApprovalDetail(
   const shown = (values: Record<string, unknown>) =>
     argumentLines(
       redactLeaves(values, secrets) as Record<string, unknown>,
+      secrets,
       SITE_SENDING_TOOLS.has(toolName) ? ["url", "method", "body"] : undefined,
     );
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
-    // Every action and its destinations first, then each action's long text.
-    const later: string[] = [];
+    // An entry repeated back to back with the same action and arguments is shown once, with how
+    // many times it runs; entries are compared as sent, since two raw names can read the same.
+    const entries: Array<{
+      key: string;
+      name: string;
+      args: Record<string, unknown>;
+      runs: number;
+    }> = [];
     for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const action = entry[batch.action];
-      const name = (typeof action === "string" && action.trim()) || "…";
-      const { first, last } = shown(objectArguments(entry[batch.arguments]));
-      lines.push(name, ...first);
-      later.push(...last.map((line) => `${name} ${line}`));
+      const raw = typeof action === "string" ? action.trim() : "";
+      const entryArgs = objectArguments(entry[batch.arguments]);
+      // The raw entry, as sent: arguments that cannot be shown all read as none.
+      const key = JSON.stringify(item) ?? "";
+      const previous = entries.at(-1);
+      if (previous?.key === key) previous.runs++;
+      else
+        entries.push({
+          key,
+          name: raw ? readableToolName(redactSecrets(raw, secrets)) : "…",
+          args: entryArgs,
+          runs: 1,
+        });
+    }
+    // The title already names a lone named action that runs once, so its arguments need no heading.
+    // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
+    const single = entries.length === 1 && entries[0]?.runs === 1 && entries[0].name !== "…";
+    // Every action and its destinations first, then each action's long text.
+    const later: string[] = [];
+    for (const { name, args: entryArgs, runs } of entries) {
+      const { first, last } = shown(entryArgs);
+      lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
+      later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
     }
     lines.push(...later);
   } else {
@@ -310,6 +385,7 @@ const SHORT_ARGUMENT_LENGTH = 200;
  */
 function argumentLines(
   values: Record<string, unknown>,
+  secrets: string[],
   keys = Object.keys(values),
 ): { first: string[]; last: string[] } {
   const short: string[] = [];
@@ -319,7 +395,8 @@ function argumentLines(
     const value = values[key];
     const text = argumentText(value);
     if (!text) continue;
-    const line = `${key}: ${text}`;
+    // A key is redacted only as shown, so values are still read by their real keys.
+    const line = `${readableArgumentName(redactSecrets(key, secrets))}: ${text}`;
     if (text.length <= SHORT_ARGUMENT_LENGTH) short.push(line);
     else (typeof value === "string" ? last : structured).push(line);
   }
@@ -329,10 +406,37 @@ function argumentLines(
 function argumentText(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return String(value);
   if (Array.isArray(value) && value.every((item) => item === null || typeof item !== "object"))
     return value.map(String).join(", ");
   return JSON.stringify(value) ?? "";
+}
+
+/**
+ * A tool or action name as words, since the card is read by people who never see tool names:
+ * `GMAIL_FETCH_EMAILS` reads "Gmail fetch emails" and `createIssue` reads "Create issue".
+ */
+export function readableToolName(name: string): string {
+  const words = name
+    // A connected server's tools carry our `mcp__` namespace, which means nothing to the reader.
+    .replace(/^mcp__/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
+  if (words.length === 0) return name;
+  const text = words.join(" ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const UPPERCASE_ARGUMENT_WORDS = new Set(["id", "ids", "url", "urls"]);
+
+/** An argument name as words: `max_results` reads "Max results". */
+function readableArgumentName(key: string): string {
+  return readableToolName(key)
+    .split(" ")
+    .map((word) => (UPPERCASE_ARGUMENT_WORDS.has(word.toLowerCase()) ? word.toUpperCase() : word))
+    .join(" ");
 }
 
 /** Redacts every string inside a value, since JSON escaping could hide a secret from the card. */
@@ -397,4 +501,59 @@ function screenActionLine(value: unknown): string {
     default:
       return `${String(action.kind ?? "action")}${at}`;
   }
+}
+
+function outgoingDraftForApproval(
+  options: { outgoingDraft?: ConnectorTool["outgoingDraft"]; batch?: ToolBatch },
+  args: Record<string, unknown>,
+  secrets: string[],
+) {
+  if (options.outgoingDraft) return previewOutgoingDraft(options.outgoingDraft, args, secrets);
+  const batch = options.batch;
+  if (!batch?.outgoingDrafts) return undefined;
+  const { items, action, arguments: argumentKey } = batch;
+  for (const [operation, descriptor] of Object.entries(batch.outgoingDrafts)) {
+    const path = { items, action, arguments: argumentKey, operation };
+    const entry = draftBatchEntry(args, path);
+    if (entry) {
+      const draft = previewOutgoingDraft(descriptor, entry.args, secrets);
+      return draft && { ...draft, batch: path };
+    }
+  }
+  return undefined;
+}
+
+function previewOutgoingDraft(
+  descriptor: NonNullable<ConnectorTool["outgoingDraft"]>,
+  args: Record<string, unknown>,
+  secrets: string[],
+) {
+  const { kind, source, defaults = {}, recipientAlias } = descriptor;
+  const keys =
+    recipientAlias && !Object.hasOwn(args, descriptor.keys.to)
+      ? { ...descriptor.keys, to: recipientAlias }
+      : descriptor.keys;
+  const editable = new Set(Object.values(keys));
+  // Attachments, extra recipients, formatting and other options stay on the full approval card.
+  if (
+    Object.entries(args).some(
+      ([key, value]) =>
+        !editable.has(key) && (!Object.hasOwn(defaults, key) || value !== defaults[key]),
+    )
+  )
+    return undefined;
+  const values = {
+    kind,
+    to: args[keys.to],
+    body: kind === "email" && !Object.hasOwn(args, keys.body) ? "" : args[keys.body],
+    ...(keys.subject ? { subject: args[keys.subject] } : {}),
+  };
+  // A redacted preview must never stand in for the exact message the person reviews.
+  if (
+    Object.values(values).some(
+      (value) => typeof value === "string" && value !== redactSecrets(value, secrets),
+    )
+  )
+    return undefined;
+  return OutgoingDraft.safeParse({ source, keys, values }).data;
 }

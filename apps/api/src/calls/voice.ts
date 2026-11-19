@@ -6,31 +6,18 @@ import {
   isModelConnectionVoiceSecret,
   isSpeechModelId,
   isVoiceProviderId,
-  listPiCatalog,
-  listVoiceCatalog,
   MAX_SPEAK_CHARS,
   MAX_TRANSCRIBE_BYTES,
   modelConnectionVoiceSecret,
   NoVoiceConfigured,
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   openAiCompatibleVoiceServer,
-  parseModelConnectionVoiceSecret,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
-import type {
-  Actor,
-  SettingsScope,
-  VoiceCatalogEntry,
-  VoiceCredential,
-  VoiceStatus,
-} from "@rakazo/contracts";
-import {
-  ConnectionSetupError,
-  connectionDisplayName,
-  SettingsScopeSchema,
-} from "@rakazo/contracts";
+import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
+import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -41,8 +28,6 @@ import {
   IsolationError,
   isDatabaseUnavailable,
   lockSpaceSettings,
-  modelCredentialProviderFilter,
-  newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
   runAsSystemInTransaction,
@@ -52,7 +37,7 @@ import {
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
@@ -60,6 +45,7 @@ import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
 import { withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
+import { voiceLinkOf } from "./voice-model-connection.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
@@ -82,39 +68,6 @@ export async function voiceProviderFor(deps: VoiceDeps, provider: string) {
   return createVoiceProvider(provider, {
     allowPrivateEndpoint: await voiceMayUsePrivateEndpoint(deps, provider),
   });
-}
-
-/**
- * The catalog as this account sees it. A provider that can use a model connection lists the
- * account's connections to it, or offers its Models sign-in when there are none.
- */
-export async function accountVoiceCatalog(
-  deps: VoiceDeps,
-  actor: Pick<Actor, "userId">,
-): Promise<VoiceCatalogEntry[]> {
-  const catalog = listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint });
-  return Promise.all(
-    catalog.map(async ({ modelConnection, ...entry }) => {
-      if (!modelConnection) return entry;
-      const rows = await deps.prisma.userModelCredential.findMany({
-        where: { userId: actor.userId, provider: modelCredentialProviderFilter(entry.id) },
-        orderBy: newestModelCredentialOrder,
-        select: { id: true, provider: true, label: true },
-      });
-      const models = listPiCatalog().filter((model) => model.provider === entry.id);
-      if (rows.length) {
-        // Named as Models names them, so a connection reads the same in both places.
-        const providerName = models[0]?.providerName ?? entry.name;
-        const modelConnections = rows.map((row) => ({
-          id: row.id,
-          label: connectionDisplayName(row, providerName),
-        }));
-        return { ...entry, modelConnection, modelConnections };
-      }
-      const modelSignIn = models.find((model) => model.signIn)?.oauthLabel;
-      return modelSignIn ? { ...entry, modelSignIn } : entry;
-    }),
-  );
 }
 
 const SPEAK_TIMEOUT_MS = 60_000;
@@ -196,33 +149,6 @@ export async function voiceCredentialServer(
     // Reconnecting replaces an unreadable secret.
     return undefined;
   }
-}
-
-/**
- * Whether a connection stores its own key, or else which model connection it uses. Only a
- * provider that can use the account's model connection opens its secret to tell; one that
- * cannot be read counts as a key.
- */
-export async function voiceCredentialLink(
-  deps: VoiceDeps,
-  actor: Pick<Actor, "userId">,
-  row: { provider: string; secretId: string },
-): Promise<{ hasKey: boolean; modelCredentialId?: string }> {
-  if (!voiceCatalogEntry(row.provider)?.modelConnection) return { hasKey: true };
-  try {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: row.secretId, userId: actor.userId, spaceId: null },
-    });
-    if (!secret) return { hasKey: true };
-    return voiceLinkOf(await deps.secrets.load(secret.ciphertext, secret.id));
-  } catch {
-    return { hasKey: true };
-  }
-}
-
-function voiceLinkOf(plaintext: string): { hasKey: boolean; modelCredentialId?: string } {
-  const link = parseModelConnectionVoiceSecret(plaintext);
-  return link ? { hasKey: false, modelCredentialId: link.credentialId } : { hasKey: true };
 }
 
 /**
@@ -548,7 +474,9 @@ export async function persistVoiceCredential(
   let validVoiceIds: string[] = [];
   if (!voiceId || linked) {
     const voices = await withVoiceConnection(input.provider, linked, () =>
-      provider.listVoices(apiKey, voiceContext(actor, input.signal)),
+      provider.listVoices(apiKey, voiceContext(actor, input.signal), {
+        model: requestedSpeechModel ?? undefined,
+      }),
     );
     validVoiceIds = voices.map((voice) => voice.id);
     if (!validVoiceIds.includes(voiceId)) voiceId = voices[0]?.id ?? "";
@@ -685,12 +613,21 @@ export async function disconnectVoiceCredential(
 export async function updateVoiceSpeechModel(
   deps: VoiceDeps,
   actor: Actor,
-  input: { provider: string; speechModel: string; scope?: SettingsScope },
+  input: { provider: string; speechModel: string; scope?: SettingsScope; signal?: AbortSignal },
 ): Promise<VoiceCredential> {
-  if (!voiceCatalogEntry(input.provider)?.speechModel) {
+  const entry = voiceCatalogEntry(input.provider);
+  if (!entry?.speechModel) {
     throw new ORPCError("BAD_REQUEST", { message: "This voice provider has no speech model." });
   }
   const speechModel = speechModelValue(input.speechModel);
+  // A model has its own voices, so one the new model lacks is replaced in the same save.
+  // The voices only pick a replacement, so a listing that fails does not block saving the model.
+  const modelVoices = entry.speechModels
+    ? await bestEffort(
+        "list the voices of a speech model",
+        voicesOfSpeechModel(deps, actor, input, speechModel),
+      )
+    : undefined;
   return withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
@@ -709,7 +646,14 @@ export async function updateVoiceSpeechModel(
         if (!preference && speechModel === null) {
           return toVoiceCredential({ ...found, isDefault: false, voiceId: "", speechModel: "" });
         }
-        const saved = await saveVoicePreference(tx, target, found.id, { speechModel });
+        const replacement =
+          modelVoices?.length && !modelVoices.some((voice) => voice.id === preference?.voiceId)
+            ? modelVoices[0]?.id
+            : undefined;
+        const saved = await saveVoicePreference(tx, target, found.id, {
+          speechModel,
+          ...(replacement ? { voiceId: replacement } : {}),
+        });
         return toVoiceCredential({
           ...found,
           isDefault: saved.isDefault,
@@ -719,6 +663,22 @@ export async function updateVoiceSpeechModel(
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
+  );
+}
+
+async function voicesOfSpeechModel(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { provider: string; scope?: SettingsScope; signal?: AbortSignal },
+  speechModel: string | null,
+) {
+  const loaded = await loadVoiceCredential(deps, actor, input.provider, input.scope, input.signal);
+  if (!loaded) return undefined;
+  const provider = await voiceProviderFor(deps, input.provider);
+  return withVoiceConnection(input.provider, loaded.linked, () =>
+    provider.listVoices(loaded.apiKey, voiceContext(actor, input.signal), {
+      model: speechModel ?? undefined,
+    }),
   );
 }
 

@@ -256,10 +256,11 @@ export function MessagingSettingsPanel() {
     });
   }
 
-  const botPicker =
+  const botPicker = (size: "sm" | "default") =>
     bots.length > 1 ? (
       <OptionSelect
         aria-label={t`Bot`}
+        size={size}
         value={linkBotId}
         onValueChange={(botId) => {
           if (linkGuard.invalidate(true)) {
@@ -274,7 +275,7 @@ export function MessagingSettingsPanel() {
 
   const memberLinkControls = (
     <>
-      {botPicker}
+      {botPicker("sm")}
       <Button
         size="sm"
         variant="ghost"
@@ -445,7 +446,7 @@ export function MessagingSettingsPanel() {
         ) : null}
         {linkOptions.length ? (
           <div className="flex flex-wrap items-center gap-2">
-            {memberLink ? null : botPicker}
+            {memberLink ? null : botPicker("default")}
             <DropdownMenu>
               <DropdownMenuTrigger
                 disabled={issuingLink || !linkBotId}

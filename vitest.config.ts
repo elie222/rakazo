@@ -62,6 +62,13 @@ export default defineConfig({
           new URL("./packages/testkit/src/lingui-react-macro.ts", import.meta.url),
         ),
       },
+      {
+        // A native view; tests see its Markdown as text.
+        find: /^react-native-enriched-markdown$/,
+        replacement: fileURLToPath(
+          new URL("./packages/chat-ui/src/enriched-markdown-test-stub.tsx", import.meta.url),
+        ),
+      },
       // Native-only transitive deps of the renderer contain uncompiled Flow
       // source; stub them out in tests (they never render anyway).
       ...["react-native-fit-image", "@react-native-vector-icons/material-design-icons"].map(

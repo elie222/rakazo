@@ -161,12 +161,12 @@ describe("sandbox idle", () => {
     }
   });
 
-  it.each(["queued", "leased", "running"])(
-    "keeps a computer awake while a run is %s",
+  it.each(["leased", "running"])(
+    "keeps a computer awake while a run that claimed it is %s",
     async (status) => {
       const harness = idleHarness();
       harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-        where.status.in.includes(status) ? { id: "run" } : null,
+        where.OR[0].status.in.includes(status) ? { id: "run", status } : null,
       );
 
       await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -184,7 +184,9 @@ describe("sandbox idle", () => {
     async (billsWhileRunning) => {
       const harness = idleHarness({ billsWhileRunning });
       harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-        where.status.in.includes("waiting_input") ? { id: "waiting-for-answer" } : null,
+        where.OR[0].status.in.includes("waiting_input")
+          ? { id: "waiting-for-answer", status: "waiting_input" }
+          : null,
       );
 
       await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -246,13 +248,28 @@ describe("sandbox idle", () => {
   });
 
   it("fails closed when the provider cannot inspect background work", async () => {
-    const harness = idleHarness({ backgroundWorkProbeCode: 2 });
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ probeError: new Error("Background work probe failed") });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.sleep_held",
+        reason: "background_work_unknown",
+        phase: "before_checkpoint",
+      }),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.background_work_probe_failed",
+        error: expect.objectContaining({ message: "Background work probe failed" }),
+      }),
+    );
   });
 
   it("fails closed when the provider reports a command failure as exit one", async () => {
@@ -268,7 +285,9 @@ describe("sandbox idle", () => {
   it("does not let an abandoned waiting takeover past its grace prevent idle suspension", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1153,7 +1172,7 @@ describe("maximum active lifetime", () => {
   it("suspends past the limit under a run that is only waiting", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.leaseExpiresAt ? null : { id: "waiting-for-approval" },
+      where.OR[0].leaseExpiresAt ? null : { id: "waiting-for-approval", status: "waiting_input" },
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1210,7 +1229,9 @@ describe("maximum active lifetime", () => {
       takeoverRequestedAt: new Date(now - TAKEOVER_IDLE_GRACE_MS - 1),
     });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting-for-user", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1247,7 +1268,9 @@ describe("maximum active lifetime", () => {
       controlLeaseExpiresAt: new Date(now + 60_000),
     });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting-for-user", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1262,14 +1285,22 @@ describe("maximum active lifetime", () => {
   it("does not pull the computer out from under a run that is executing", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+    harness.prisma.computerExecutionLease.findMany.mockResolvedValue([
+      { runId: "executing", fence: 1 },
+    ]);
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.prisma.run.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ["leased", "running"] },
-          leaseExpiresAt: { gt: new Date(now) },
+          OR: [
+            {
+              status: { in: ["leased", "running"] },
+              id: { in: ["executing"] },
+              leaseExpiresAt: { gt: new Date(now) },
+            },
+          ],
         }),
       }),
     );
@@ -1370,7 +1401,9 @@ describe("maximum active lifetime", () => {
 
       expect(harness.prisma.run.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: { in: ["leased", "running"] } }),
+          where: expect.objectContaining({
+            OR: [expect.objectContaining({ status: { in: ["leased", "running"] } })],
+          }),
         }),
       );
       expect(harness.sandbox.stop).not.toHaveBeenCalled();

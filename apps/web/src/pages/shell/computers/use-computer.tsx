@@ -375,7 +375,8 @@ export function useComputerState({
   useEventListener(viewport, "scroll", syncViewport);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = computerOpen;
+  // The bot panel shows the screen too; only the full window keeps the computer awake.
+  computerVisible.current = computerOpen || panel === "settings";
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 
@@ -420,7 +421,7 @@ export function useComputerState({
     const read = request ?? ++screenRequest.current;
     const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
-      load: () => rpc.computer.screenUrl({ botId: id }),
+      load: () => rpc.computer.screenUrl({ botId: id, preview: !computerOpenRef.current }),
       isCurrent: () =>
         read === screenRequest.current &&
         (activeBotId.current === id || computerBotIdRef.current === id) &&

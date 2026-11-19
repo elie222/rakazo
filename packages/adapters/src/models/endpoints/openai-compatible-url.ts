@@ -11,15 +11,43 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { modelProviderAllowlist } from "../model-provider-allowlist.js";
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
 
+/**
+ * Public hosts still exempt from RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0: unset keeps the
+ * built-in set; set keeps only the hosts of presets the allowlist still offers.
+ */
+function builtInPublicModelHosts(): ReadonlySet<string> {
+  const allowlist = modelProviderAllowlist();
+  if (allowlist === null) return BUILT_IN_PUBLIC_MODEL_HOSTS;
+  return new Set(
+    compatibleEndpointPresetsFor(allowlist).map((preset) =>
+      normalizeHost(new URL(preset.baseUrl).hostname),
+    ),
+  );
+}
+
 /** Hosted compatible services the catalog offers by name. Each one needs a key. */
 export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
-  { name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
 ];
+
+/**
+ * The presets a deployment allowlist still offers. A preset needs the id the list names to
+ * stay; one the list leaves out also loses its host exemption below.
+ */
+export function compatibleEndpointPresetsFor(
+  allowlist: ReadonlySet<string> | null,
+): CompatibleEndpointPreset[] {
+  if (allowlist === null) return COMPATIBLE_ENDPOINT_PRESETS;
+  return COMPATIBLE_ENDPOINT_PRESETS.filter(
+    (preset) => preset.id !== undefined && allowlist.has(preset.id),
+  );
+}
 
 export function compatibleEndpointPreset(baseUrl: string | undefined) {
   return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
@@ -31,7 +59,14 @@ export function openAiCompatAllowPublicHosts(): boolean {
 
 export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
   const normalized = normalizeHost(hostname);
-  if (isLoopbackHost(normalized) || normalized === "host.docker.internal") return true;
+  // mDNS names (`.local`, RFC 6762) name a machine on the local network; as for allowlisted
+  // hostnames, every resolved address is still pinned to a non-public one at request time.
+  if (
+    isLoopbackHost(normalized) ||
+    normalized === "host.docker.internal" ||
+    normalized.endsWith(".local")
+  )
+    return true;
   if (isCloudMetadataHost(normalized)) return false;
   if (ipVersion(normalized) !== 0) return isNonPublicAddress(normalized);
   return (process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS ?? "")
@@ -123,7 +158,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
     return url;
   }
   const builtInPublicHost =
-    url.protocol === "https:" && url.port === "" && BUILT_IN_PUBLIC_MODEL_HOSTS.has(url.hostname);
+    url.protocol === "https:" && url.port === "" && builtInPublicModelHosts().has(url.hostname);
   if (!allowPublic && !builtInPublicHost) {
     throw new ConnectionSetupError("Public model endpoints are disabled on this server.");
   }

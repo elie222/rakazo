@@ -208,14 +208,24 @@ describe("GitHub webhook signatures", () => {
   it("accepts an HMAC over the exact raw request body", () => {
     const raw = '{"ref":"refs/heads/main"}';
     const signature = `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`;
+    expect(hasValidGithubSignature(signature, SECRET, Buffer.from(raw))).toBe(true);
+    expect(hasValidGithubSignature(signature, SECRET, Buffer.from(`${raw}\n`))).toBe(false);
+  });
+
+  it("verifies the bytes even when they are not valid UTF-8", () => {
+    // GitHub signs the octets it sent; decoding first would replace this byte with U+FFFD.
+    const raw = Uint8Array.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]);
+    const signature = `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`;
     expect(hasValidGithubSignature(signature, SECRET, raw)).toBe(true);
-    expect(hasValidGithubSignature(signature, SECRET, `${raw}\n`)).toBe(false);
+    expect(
+      hasValidGithubSignature(signature, SECRET, Buffer.from(new TextDecoder().decode(raw))),
+    ).toBe(false);
   });
 
   it.each([undefined, "sha1=abc", "sha256=not-hex", `sha256=${"a".repeat(63)}`])(
     "rejects malformed signatures without throwing: %s",
     (signature) => {
-      expect(hasValidGithubSignature(signature, SECRET, "{}")).toBe(false);
+      expect(hasValidGithubSignature(signature, SECRET, Buffer.from("{}"))).toBe(false);
     },
   );
 });

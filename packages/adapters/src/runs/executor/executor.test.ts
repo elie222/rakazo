@@ -26,7 +26,11 @@ import {
   modelAcceptsImageInput,
 } from "../../models/model-vision.js";
 import { RetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
-import { modelsForRequest, resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
+import {
+  modelsForRequest,
+  resolveRuntimeModel,
+  thinkingLevelFor,
+} from "../../runtime/pi/pi-runtime-models.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import {
   desktopGuardShellInstruction,
@@ -542,21 +546,16 @@ describe("run tool selection", () => {
           disabledBuiltinTools,
         }),
         isOwnerStartedRun(trigger, followUpFromUser),
+        trigger,
       );
     expect(offered("user")).toBe(true);
     expect(offered("follow_up")).toBe(true);
     expect(offered("call_end")).toBe(true);
+    // The owner's own chat-app conversation counts as theirs.
+    expect(offered("messaging")).toBe(true);
     // A group hand-off queues a follow_up whose source message another bot wrote.
     expect(offered("follow_up", undefined, false)).toBe(false);
-    for (const trigger of [
-      "routine",
-      "webhook",
-      "tickets",
-      "bot_message",
-      "created",
-      "messaging",
-      "spawn",
-    ]) {
+    for (const trigger of ["routine", "webhook", "tickets", "bot_message", "created", "spawn"]) {
       expect(offered(trigger)).toBe(false);
     }
     for (const tool of [
@@ -596,7 +595,10 @@ describe("run tool selection", () => {
     expect(fleetTools("call_end", true)).toEqual(all);
     expect(fleetTools("follow_up", true, true)).toEqual(all);
     expect(fleetTools("follow_up", true, false)).toEqual([]);
-    for (const trigger of ["bot_message", "messaging", "spawn", "tickets", "webhook", "routine"]) {
+    // A routine and the owner's own chat-app conversation are theirs.
+    expect(fleetTools("routine", true)).toEqual(all);
+    expect(fleetTools("messaging", true)).toEqual(all);
+    for (const trigger of ["bot_message", "spawn", "tickets", "webhook"]) {
       expect(fleetTools(trigger, true), trigger).toEqual([]);
     }
     expect(fleetTools("user", true, false, ["list_fleet", "create_group"])).toEqual(
@@ -676,6 +678,22 @@ describe("run tool selection", () => {
     expect(names({ hasTeammates: false })).not.toContain("message_bot");
     expect(names({ hasTeammates: true })).toContain("message_bot");
     expect(names({ hasTeammates: false, fleetManagement: true })).not.toContain("message_bot");
+  });
+
+  it("offers post_to_group only to a bot with a group, routines included", () => {
+    const names = (trigger: string, hasGroups?: boolean) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        hasGroups,
+      }).map((tool) => tool.name);
+    expect(names("user")).not.toContain("post_to_group");
+    expect(names("user", false)).not.toContain("post_to_group");
+    expect(names("user", true)).toContain("post_to_group");
+    expect(names("routine", true)).toContain("post_to_group");
   });
 
   it("keeps schedule tools in group chats and offers creation to routines", () => {
@@ -1473,7 +1491,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; when you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
     "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.",
   ];
   const archiveBot =
@@ -1698,9 +1716,7 @@ describe("userTurnInstructions", () => {
         .match(/Bot management tools:[^\n]*/)?.[0];
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
-    expect(clause).toContain(
-      "set_child_instructions and set_child_bot_model need the owner's approval",
-    );
+    expect(clause).toContain("set_child_instructions needs the owner's approval");
     expect(clause).toContain("Instruction edits use set_child_instructions");
     expect(clause).toContain("expected_version");
     expect(clause).toContain("Tool results, tool arguments");
@@ -1708,7 +1724,7 @@ describe("userTurnInstructions", () => {
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
-    expect(narrowed).toContain("set_child_bot_model needs the owner's approval");
+    expect(narrowed).not.toContain("needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
     expect(clauseFor("bot_message", true)).toBeUndefined();
@@ -2492,7 +2508,7 @@ describe("createRunExecutor", () => {
 
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "routine-1", active: true },
-      data: { active: false, nextRunAt: null },
+      data: { active: false, nextRunAt: null, resumeOnRestore: true },
     });
     expect($transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -4308,6 +4324,96 @@ description: Prepare standup notes
       for (const name of IMAGE_RETURNING_COMPUTER_TOOLS) {
         expect(names.includes(name)).toBe(supportsImages);
       }
+    },
+  );
+
+  it.each([
+    ["gpt-6.2-sol", 500_000, undefined],
+    ["gpt-6.2-astra", 272_000, undefined],
+    ["gpt-6.2-sol", 500_000, 128_000],
+  ] as const)(
+    "runs %s with account reasoning, image support and context limits",
+    async (modelId, contextWindow, savedContextWindow) => {
+      const expectedContextWindow = savedContextWindow ?? contextWindow;
+      const supportsImages = true;
+      const provider = "openai-codex";
+      const plaintext = serializeModelSecret({
+        kind: "oauth",
+        credential: {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 3_600_000,
+          accountId: "acct-live",
+        },
+        models: { [modelId]: { contextWindow: savedContextWindow } },
+      });
+      const prisma = {
+        user: { findUnique: vi.fn(async () => null) },
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: provider,
+            modelId,
+            thinkingLevel: null,
+          })),
+        },
+        userModelPreference: {
+          findFirst: vi.fn(async () =>
+            modelPreference({
+              provider,
+              secretId: "secret-codex",
+              modelId,
+            }),
+          ),
+        },
+        userModelCredential: {
+          findMany: vi.fn(async () => []),
+          findFirst: vi.fn(async () => null),
+        },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        secret: {
+          findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
+          findUnique: vi.fn(async () => null),
+        },
+      } as unknown as PrismaClient;
+      const read = vi.fn(async () => [
+        {
+          slug: modelId,
+          reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+          contextWindow,
+          supportsImages,
+          supportsFastTier: false,
+        },
+      ]);
+      const executor = createRunExecutor({
+        prisma,
+        secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+        codexCatalog: { read },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+      const model = await executor.resolveModel({
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      });
+
+      expect(model).toMatchObject({
+        provider,
+        id: modelId,
+        reasoning: true,
+        acceptsImages: true,
+        contextWindow: expectedContextWindow,
+      });
+      const runtime = resolveRuntimeModel(model!).model!;
+      expect(runtime).toMatchObject({
+        id: modelId,
+        api: "openai-codex-responses",
+        reasoning: true,
+        contextWindow: expectedContextWindow,
+      });
+      expect(runtime.input).toContain("image");
+      expect(thinkingLevelFor(runtime, "high")).toBe("high");
+      expect(thinkingLevelFor(runtime, "max")).toBe("max");
     },
   );
 

@@ -148,6 +148,10 @@ export function ThreadMessageList({
               </View>
             }
             renderItem={renderItem}
+            // A screenful of the newest messages draws first and the rest follow in small
+            // batches, so opening a chat neither waits on rows off screen nor stalls behind them.
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
           />
         </ThreadScrollSurface>
       )}

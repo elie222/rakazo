@@ -45,7 +45,7 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   });
   await openUserSettings(page, "models");
   const mainList = page.getByTestId("model-role-main");
-  await expect(mainList.getByTestId("model-role-default")).toContainText("Choose a model");
+  await expect(mainList.getByTestId("model-role-default")).toContainText("Connect a model");
   const dialog = await openModelConnection(page, "OpenRouter");
   await expect(dialog.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
@@ -61,9 +61,23 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
 
   // Connecting from the empty first slot makes the provider's model the main model.
   await dialog.getByLabel("API key").fill("fake-cleanup-api-key");
+  await expect(dialog.getByText("Zero data retention", { exact: true })).toBeVisible();
+  const retention = dialog.locator("[role='switch']");
+  await expect(retention).toHaveAttribute("aria-checked", "false");
+  await retention.click();
+  await expect(retention).toHaveAttribute("aria-checked", "true");
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-1b-zero-data-retention");
   providerConnected = true;
   await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
   await expect(dialog).toBeHidden();
+  const connected = await rpc<Array<{ provider: string; zeroDataRetention?: boolean }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(connected.find((credential) => credential.provider === "openrouter")).toMatchObject({
+    zeroDataRetention: true,
+  });
   await pickReopenedModel(page);
   const primary = mainList.getByTestId("model-role-row-1");
   await expect(primary).toContainText("OpenRouter");

@@ -10,6 +10,7 @@ import {
   catalogEntryFor,
   connectionModels,
   connectionServesModel,
+  isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
 import {
@@ -152,6 +153,7 @@ export function ModelSettingsOverlay({
   // list shows only then, once one is chosen, or when asked for from the main model's menu.
   const [computerOpened, setComputerOpened] = useState(false);
   const mainRole = useModelRole(me, scope, "main");
+  const firstConnection = isFirstModelConnection(scope, me?.needsModel, credentials.length);
   const computerRole = useModelRole(me, scope, "computer");
   const mainChoice = mainRole?.primary ?? mainRole?.deploymentPrimary ?? null;
   // The server answers as runs do. A model it could not check may not see, so the list shows.
@@ -357,7 +359,7 @@ export function ModelSettingsOverlay({
           {notice}
         </p>
       ) : null}
-      {me ? (
+      {me && !loading ? (
         <>
           <ModelRoleSettings
             userId={me.userId}
@@ -365,7 +367,8 @@ export function ModelSettingsOverlay({
             scope={scope}
             credentials={credentials}
             title={t`Main model`}
-            defaultLabel={t`Choose a model`}
+            hideHeading={firstConnection}
+            defaultLabel={firstConnection ? t`Connect a model` : t`Choose a model`}
             providers={providers}
             providerLabel={providerLabel}
             onConnect={(next, intent) => openConnection(next, intent, null, "main")}
@@ -394,7 +397,7 @@ export function ModelSettingsOverlay({
               )
             }
           />
-          {approvalMode === "auto" ? (
+          {!firstConnection && approvalMode === "auto" ? (
             <ModelRoleSettings
               userId={me.userId}
               spaceId={me.spaceId}
@@ -411,7 +414,7 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "approval" ? panelFor(true) : null}
             />
           ) : null}
-          {showComputer ? (
+          {!firstConnection && showComputer ? (
             <ModelRoleSettings
               userId={me.userId}
               spaceId={me.spaceId}
@@ -430,7 +433,7 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "computer" ? panelFor(true) : null}
             />
           ) : null}
-          {scope === "space" ? null : (
+          {scope === "space" || firstConnection ? null : (
             <ProvidersSection
               credentials={credentials}
               providers={allProviders}

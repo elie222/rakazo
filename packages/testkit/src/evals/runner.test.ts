@@ -1,7 +1,14 @@
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { EvalActor, EvalApp } from "./runner.js";
-import { cleanupActors } from "./runner.js";
+import { cleanupActors, threadOf } from "./runner.js";
+
+describe("threadOf", () => {
+  it("clears the group thread for a group case and the direct chat otherwise", () => {
+    expect(threadOf("bot-1", { id: "group-1" })).toEqual({ groupId: "group-1" });
+    expect(threadOf("bot-1")).toEqual({ botId: "bot-1" });
+  });
+});
 
 const actors: EvalActor[] = [
   {

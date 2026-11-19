@@ -39,6 +39,8 @@ export type AutoReviewChecker = {
   /** The connection the approval choice is pinned to. */
   credentialId?: string;
   creditOfferingId?: string;
+  /** The deployment's operator-funded reviewer, added last so a member's unusable choice still gets a decision. */
+  included?: true;
 };
 
 export type AutoReviewJudgeResult = AutoReviewResult;
@@ -327,6 +329,7 @@ export async function runAutoReviewJudge(
             gatewayId: input.gatewayId,
             projectId: input.projectId,
             region: input.region,
+            zeroDataRetention: input.zeroDataRetention,
             baseUrl: input.baseUrl,
             headers: input.headers,
             allowPrivateEndpoint: input.allowPrivateEndpoint,
@@ -415,6 +418,7 @@ export type LlmAutoReviewOptions = {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;

@@ -60,11 +60,12 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
-import { MODEL_CONNECTION_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { createExperiments } from "../telemetry/experiments.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
+import { readComputerUsage } from "./computer-usage.js";
 import { createPartnerSales } from "./partner-sales.js";
+import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
 import { trialOutcome } from "./trial-outcome.js";
 
@@ -84,6 +85,7 @@ export interface BillingService {
   readonly modelCreditsEnabled: boolean;
   readonly referralsEnabled: boolean;
   status(actor: Actor): Promise<BillingStatus>;
+  computerUsage(actor: Actor): ReturnType<typeof readComputerUsage>;
   selectFunding(
     actor: Actor,
     funding: "byok" | "credits",
@@ -321,10 +323,10 @@ export function createBillingService(deps: {
         });
       }
     if (live && subscriptionStarted(previous, live))
-      // Not in the snapshot's transaction, so a brief queue outage is ridden out here.
-      await bestEffort(
-        "schedule the model connection email",
-        retry(() => remindToConnectModel(previous, live), { attempts: 3 }),
+      await schedulePlanStartEmails(
+        { schedule: deps.scheduleLifecycleEmail, modelCredits, ownerUserId },
+        previous.organizationId,
+        live,
       );
     if (live && hasBillingAccess(live.status))
       await referrals.settle(previous.organizationId, live.cardFingerprint);
@@ -404,29 +406,6 @@ export function createBillingService(deps: {
         : { name: "trial_ended", ...terms, converted: converted === true },
       { id: settled ? `${live.subscriptionId}:settled` : live.subscriptionId, at },
       experiments.tags("plan-layout", previous.organizationId),
-    );
-  }
-
-  /**
-   * An own-key plan runs nothing until its owner connects a model, so a day in they are reminded
-   * if they still have not. Concurrent syncs that both see the start queue the same keyed job.
-   * Without model credits the deployment's own model serves everyone, so nobody is asked.
-   */
-  async function remindToConnectModel(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
-    if (!deps.scheduleLifecycleEmail || !modelCredits) return;
-    if (!live.byokPlan || live.creditAmountCents) return;
-    const userId = await ownerUserId(previous.organizationId);
-    if (!userId) return;
-    // From the plan's own start, so every sync that sees it names the same time. A start
-    // recorded more than a day late still leaves the owner a day.
-    const now = Date.now();
-    const day = MODEL_CONNECTION_EMAIL_DELAY_MS;
-    const fromStart = (live.currentPeriodStartsAt?.getTime() ?? now) + day;
-    const dueAt = new Date(fromStart > now ? fromStart : now + day);
-    await deps.scheduleLifecycleEmail(
-      "model-connection",
-      { organizationId: previous.organizationId, userId },
-      dueAt,
     );
   }
 
@@ -759,6 +738,13 @@ export function createBillingService(deps: {
       }
       await sync(account.customerId);
       return { ok: true };
+    },
+
+    async computerUsage(actor) {
+      const { organizationId, isOwner } = await organization(actor);
+      if (!isOwner) throw new ORPCError("FORBIDDEN");
+      if (!modelCredits || !deps.sandbox) return { computers: [], otherHours: 0 };
+      return readComputerUsage(prisma, deps.sandbox, organizationId, actor.spaceId);
     },
 
     async status(actor) {

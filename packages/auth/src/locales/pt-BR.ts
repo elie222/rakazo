@@ -85,4 +85,16 @@ export const PT_BR_MESSAGES: Record<string, string> = {
     "{inviter} convidou você para participar de {space} no Rakazo.",
   "Join {space}": "Participar de {space}",
   "This invitation expires in 7 days.": "Este convite expira em 7 dias.",
+  "Connect a model to start using Rakazo": "Conecte um modelo para começar a usar o Rakazo",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Seu plano do Rakazo já começou, mas seus bots só podem responder depois que um modelo for conectado.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "Entre com sua assinatura do {subscriptions} ou cole uma chave de API.",
+  "Connect a model": "Conectar um modelo",
+  "Bring your old assistant to Rakazo": "Traga seu assistente antigo para o Rakazo",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "Já configurou um assistente em {assistants}? O Rakazo pode trazer as instruções, a memória, as habilidades e as rotinas dele como um novo bot, para você não começar do zero.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "Também funciona com qualquer outro assistente: envie um prompt e cole a resposta.",
+  "Import an agent": "Importar um agente",
 };

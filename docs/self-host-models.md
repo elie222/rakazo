@@ -168,7 +168,7 @@ own sign-in. Only the deployment model runs on Claude Code; it is not offered as
 
 ## Ollama Cloud
 
-In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too; see [Limiting model providers](#limiting-model-providers).
 
 ## OpenAI-compatible connections
 
@@ -180,17 +180,19 @@ are shown afterwards.
 Public hosts and ordinary hostnames need HTTPS when they receive an API key or custom headers,
 and must resolve only to public addresses. Set `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` on the API
 and worker to block them.
-Literal private IP, loopback, and `host.docker.internal` targets do not, but they are refused
-unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which allows them for every
-user. This is checked on save, on model discovery, and on every run.
+Literal private IP, loopback, mDNS `.local` names, and `host.docker.internal` targets do not,
+but they are refused unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which
+allows them for every user. This is checked on save, on model discovery, and on every run.
 With the Docker images install and the desktop app, a `localhost` or `127.0.0.1` connection
 reaches the computer running Docker (through `host.docker.internal`). On Linux, the model server
 must listen on an address the Docker bridge can reach, not only `127.0.0.1`.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
-(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts ignore
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
+(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. mDNS `.local` names
+name a LAN host by convention, so they need no entry. mDNS resolves where the API and worker run:
+it works on native installs and mDNS-aware hosts, but usually not on container bridge DNS. These
+hosts ignore `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you
@@ -200,6 +202,22 @@ accepts images, enable **Supports images** under **Advanced** when connecting so
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+## Limiting model providers
+
+Set `RAKAZO_MODEL_PROVIDER_ALLOWLIST=provider1,provider2` in the deployment environment for both
+API and worker, then recreate those containers, to limit which model providers users can connect.
+Entries are the model registry's provider ids (for example `openrouter`, `anthropic`, and
+`openai-compatible` for OpenAI-compatible endpoints). The list applies to the model catalog: a
+provider not on it is not offered, a key for it is refused on save and on import, a bot cannot be
+switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
+exactly the behavior without it.
+
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` still allows `ollama.com`, the one built-in public host,
+because the Ollama Cloud preset needs it. To keep OpenAI-compatible endpoints while dropping that
+exemption, list `openai-compatible` and leave the preset's id `ollama-cloud` out: the preset
+disappears and its host is refused like any other public host. List `ollama-cloud` as well to keep
+both.
 
 ## Thinking
 
