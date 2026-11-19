@@ -13,7 +13,7 @@ import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { formatActivityRelativeTime } from "../../lib/home/activity";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { siteHost } from "../../lib/vault/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../../lib/vault/vault";

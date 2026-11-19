@@ -135,7 +135,8 @@ export function RoutineSchedule({
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="h-7 min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
+            size="sm"
+            className="min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
           />
         ) : null}
       </div>

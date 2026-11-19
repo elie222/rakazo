@@ -21,8 +21,8 @@ import {
   formatRoutineEmailPrompt,
   ownerEmailPrompt,
 } from "../messaging/inbound-delivery.prompt.js";
-import type { WebhookDeps } from "../messaging/webhook-inbound.js";
-import { deliverWebhookEvent } from "../messaging/webhook-inbound.js";
+import type { WebhookDeps } from "../webhooks/webhook-inbound.js";
+import { deliverWebhookEvent } from "../webhooks/webhook-inbound.js";
 
 export const INBOUND_EMAIL_PATH = "/api/v1/email/inbound";
 
@@ -225,7 +225,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     ...(email.cc.length ? { cc: listed(email.cc) } : {}),
     subject: email.subject.slice(0, HEADER_MAX_CHARS),
     ...(email.date ? { date: email.date } : {}),
-    text: email.text,
+    text: email.modelText,
     ...(artifacts.length
       ? { files: artifacts.map(({ name, mimeType, size }) => ({ name, mimeType, size })) }
       : {}),
@@ -236,7 +236,19 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   return deliverWebhookEvent(
     deps,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
-    { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
+    {
+      prompt,
+      attachmentBlocks: artifacts.map(({ id, name, mimeType, size }) => ({
+        kind: "file",
+        artifactId: id,
+        name,
+        mimeType,
+        size,
+      })),
+      routines: matched,
+      source: "email",
+      idempotencyKey: email.key,
+    },
   ).catch((error: unknown) => {
     if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
     throw error;
@@ -265,7 +277,14 @@ async function saveToInbox(
   // A copy that did not name the bot is saved without its files; one that has earned them adds them.
   const saved = async (row: { id: string; attachments: unknown }, stored?: InboxFile[]) => {
     const files = storedEmailAttachments(row);
-    if (!options.keepFiles || !files.length || files.some((file) => file.artifactId)) {
+    // Inline-only mail can have a saved empty list. An unreadable list cannot be replaced.
+    const emptyList = Array.isArray(row.attachments) && row.attachments.length === 0;
+    if (
+      !options.keepFiles ||
+      !email.attachments.length ||
+      (!files.length && !emptyList) ||
+      files.some((file) => file.artifactId)
+    ) {
       return { id: row.id, files };
     }
     const kept = stored ?? (await storeAttachments(deps, bot, email, options.standalone));
@@ -286,7 +305,9 @@ async function saveToInbox(
   // Files cost the owner storage, so only a sender who proved their address gets them kept.
   const files = options.keepFiles
     ? await storeAttachments(deps, bot, email, options.standalone)
-    : email.attachments.map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
+    : email.attachments
+        .filter((file) => !file.inline)
+        .map((file) => ({ name: file.name.slice(0, HEADER_MAX_CHARS) }));
   try {
     const row = await deps.prisma.botEmailMessage.create({
       data: {
@@ -323,11 +344,15 @@ async function storeAttachments(
   const keyHash = createHash("sha256").update(email.key).digest("base64url");
   const files: InboxFile[] = [];
   let kept = 0;
-  for (const [index, file] of email.attachments.entries()) {
+  // Retain the original index for storage nonces while giving explicit files first use of slots.
+  const ordered = Array.from(email.attachments.entries()).sort(
+    ([, left], [, right]) => Number(Boolean(left.inline)) - Number(Boolean(right.inline)),
+  );
+  for (const [index, file] of ordered) {
     const name = file.name.slice(0, HEADER_MAX_CHARS);
     // Counts what was kept, so a refused file never takes one of the slots.
     if (!deps.storeAttachment || kept >= ATTACHMENT_MAX_COUNT) {
-      files.push({ name });
+      if (!file.inline) files.push({ name });
       continue;
     }
     try {
@@ -342,7 +367,7 @@ async function storeAttachments(
           fetch: async () => file.bytes,
         },
         clientNonce: `email-attachment:${bot.id}:${keyHash}:${index}`,
-        standalone,
+        standalone: standalone || file.inline === true,
       });
       kept += 1;
       files.push({
@@ -355,6 +380,7 @@ async function storeAttachments(
       // A storage or database failure is temporary: fail the request so the relay retries.
       // Files already stored are found again by their nonces, never stored twice.
       if (!(error instanceof AttachmentValidationError)) throw error;
+      if (file.inline) continue;
       getLogger().warn("email attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
       });

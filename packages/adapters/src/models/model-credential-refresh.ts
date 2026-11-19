@@ -7,6 +7,8 @@ import type {
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { retireModelCredential } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "../locks/advisory-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../locks/refresh-lock.js";
 import { toOAuthCredential } from "../runtime/pi/models/pi-credentials.js";
 import type { ResolveModelOpts } from "../runtime/pi/models/pi-oauth.js";
 import {
@@ -21,8 +23,6 @@ import {
 import type { SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../shared/refresh-lock.js";
 import type { KeptModelSettings, StoredModelSecret } from "./model-secret.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 

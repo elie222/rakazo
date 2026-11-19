@@ -60,7 +60,7 @@ async function loadComponents(gate: Promise<void> = Promise.resolve()) {
   ({ BotOrganizeModal } = await import("../inbox/bot-organize-modal"));
   ({ RunErrorSheetContainer } = await import("../cards/run-error-sheet-container"));
 }
-vi.mock("../../lib/inbox/confirm-delete-section", () => ({
+vi.mock("../../lib/inbox/sections/confirm-delete-section", () => ({
   confirmDeleteSection: (_section: unknown, confirm: () => void) => {
     mocks.confirmDelete();
     confirm();

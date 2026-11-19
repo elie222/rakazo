@@ -9,9 +9,16 @@ import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
+import { Agent } from "undici";
+import { combineSignals } from "../integrations/connector-safety.js";
+import { dispatcherFetch, isNodeFetch } from "../network/undici-fetch.js";
 import { closeMcpResource } from "./mcp-close.js";
+import type { McpCallAsker } from "./mcp-elicitation.js";
+import {
+  callMcpToolAsking,
+  McpElicitationRouter,
+  mcpClientCapabilities,
+} from "./mcp-elicitation.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
@@ -24,6 +31,7 @@ import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.
 import {
   createSafeRemoteFetch,
   listMcpTools,
+  MCP_HTTP_TIMEOUTS,
   MCP_TOOL_MAX_TOTAL_MS,
   MCP_TOOL_TIMEOUT_MS,
 } from "./remote-mcp.js";
@@ -121,6 +129,9 @@ export interface McpClientOptions {
   name?: string;
   version?: string;
   capabilities?: ConstructorParameters<typeof Client>[1];
+  /** Tell the server it may ask the person questions mid-call (form elicitation); a call
+   * passes who to ask. */
+  elicitation?: boolean;
 }
 
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
@@ -162,6 +173,8 @@ export function secureFetch(
   urlPolicy: McpUrlPolicy,
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
+  /** The HTTP client's waits, for a tool call's connection; sign-in keeps the client defaults. */
+  responseTimeouts?: typeof MCP_HTTP_TIMEOUTS,
 ): SafeRemoteFetch {
   // A local hostname is not authorization: the unguarded loopback fetch below
   // needs the deployment-owner private-endpoint escape as well.
@@ -193,9 +206,23 @@ export function secureFetch(
     "cookie",
     "proxy-authorization",
   ]);
-  const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname, {
-    allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
-  });
+  const safeRemoteFetch = createSafeRemoteFetch(
+    network.fetch,
+    network.resolveHostname,
+    { allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint },
+    undefined,
+    responseTimeouts,
+  );
+  // The permitted loopback server gets the same waits as remote ones. A fetch someone installed
+  // in place of Node's own is theirs to call as it is.
+  const localAgent =
+    responseTimeouts && !network.fetch ? new Agent({ ...responseTimeouts }) : undefined;
+  const localFetch: typeof globalThis.fetch = (url, init) => {
+    const base = network.fetch ?? globalThis.fetch;
+    return localAgent && isNodeFetch(base)
+      ? dispatcherFetch(url, { ...init, dispatcher: localAgent } as RequestInit)
+      : base(url, init);
+  };
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
@@ -243,7 +270,7 @@ export function secureFetch(
             : undefined,
     } satisfies RequestInit;
     const response = localHttp
-      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
+      ? await localFetch(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
@@ -252,7 +279,9 @@ export function secureFetch(
     return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
-  result.close = () => safeRemoteFetch.close();
+  result.close = async () => {
+    await Promise.all([safeRemoteFetch.close(), localAgent?.close()]);
+  };
   return result;
 }
 
@@ -360,6 +389,8 @@ export class McpSession {
   private toolList?: { result: ListToolsResult; freshUntil: number };
   /** Bumped by `tools/list_changed`, so a listing already in flight is not cached. */
   private toolListVersion = 0;
+  /** Sends the server's questions to the run whose call is in flight. */
+  private readonly elicitation = new McpElicitationRouter();
 
   constructor(options: McpClientOptions = {}) {
     this.clientOptions = options;
@@ -369,8 +400,11 @@ export class McpSession {
   private newClient(): Client {
     const client = createMcpClient(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
-      this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
+      this.clientOptions.capabilities ?? {
+        capabilities: mcpClientCapabilities(this.clientOptions.elicitation === true),
+      },
     );
+    if (this.clientOptions.elicitation) this.elicitation.install(client);
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
       this.toolList = undefined;
       this.toolListVersion += 1;
@@ -389,6 +423,7 @@ export class McpSession {
       options.urlPolicy ?? {},
       options.headerPolicy,
       options.network,
+      MCP_HTTP_TIMEOUTS,
     );
     this.remoteFetch = safeFetch;
     const originFetch = withEndpointOriginFallback(url.origin, safeFetch);
@@ -504,17 +539,15 @@ export class McpSession {
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
-    options?: { signal?: AbortSignal; timeoutMs?: number },
+    options?: { signal?: AbortSignal; timeoutMs?: number; asker?: McpCallAsker },
   ): Promise<CallToolResult> {
     this.assertConnected();
     const timeout = options?.timeoutMs ?? MCP_TOOL_TIMEOUT_MS;
-    return (await this.client.callTool({ name, arguments: args }, undefined, {
+    return (await callMcpToolAsking(this.client, this.elicitation, name, args, {
       signal: options?.signal,
-      timeout,
-      // A progress handler is what asks the server for progress reports at all.
-      onprogress: () => undefined,
-      resetTimeoutOnProgress: true,
-      maxTotalTimeout: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
+      idleMs: timeout,
+      totalMs: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
+      asker: options?.asker,
     })) as CallToolResult;
   }
 

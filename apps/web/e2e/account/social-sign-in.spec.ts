@@ -83,6 +83,16 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await captureScreenshot(page, testInfo, "sign-in-email-dark");
   await page.emulateMedia({ colorScheme: "light" });
 
+  // Switching to sign up from the email form stays on the form.
+  await page.getByRole("link", { name: "Sign up" }).click();
+  await expect(page).toHaveURL("/sign-up/email");
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-up-email");
+  await back.click();
+  await expect(page).toHaveURL("/sign-in");
+  await expect(emailChoice).toBeVisible();
+
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();

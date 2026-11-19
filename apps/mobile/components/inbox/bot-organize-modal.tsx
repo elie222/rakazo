@@ -23,8 +23,8 @@ import {
 import type { MobileBot, MobileBotSection } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { confirmDeleteSection } from "../../lib/inbox/confirm-delete-section";
 import { SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
+import { confirmDeleteSection } from "../../lib/inbox/sections/confirm-delete-section";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSheet, useNativeSheet } from "../native/native-sheet";

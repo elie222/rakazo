@@ -4,7 +4,13 @@ vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings.join(""),
 }));
 
-import { emptyWatchDraft, watchFromDraft } from "./routine-draft";
+import type { Routine } from "@rakazo/contracts";
+import {
+  draftStateFromRoutine,
+  emptyRoutineDraftState,
+  emptyWatchDraft,
+  watchFromDraft,
+} from "./routine-draft";
 
 describe("watchFromDraft", () => {
   it("splits paths by line and drops blanks", () => {
@@ -75,4 +81,33 @@ it("leaves non-URL watch validation to the server, as other watch kinds do", () 
       }),
     ).toHaveProperty("watch");
   }
+});
+
+it("reads whether a routine runs in the chat", () => {
+  const routine: Routine = {
+    id: "routine-1",
+    botId: "bot-1",
+    name: "Digest",
+    prompt: "Summarize the day.",
+    crons: ["0 9 * * *"],
+    timezone: "UTC",
+    active: true,
+    notify: true,
+    inChat: true,
+    webhookEnabled: false,
+    githubEnabled: false,
+    messageProvider: null,
+    emailSenders: null,
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    watch: null,
+    watchState: null,
+    lastRunAt: null,
+    nextRunAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  expect(emptyRoutineDraftState().inChat).toBe(false);
+  expect(draftStateFromRoutine(routine).inChat).toBe(true);
+  expect(draftStateFromRoutine({ ...routine, inChat: false }).inChat).toBe(false);
 });

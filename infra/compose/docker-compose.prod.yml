@@ -41,6 +41,7 @@ x-app-environment: &app-environment # Runtime
   API_URL:
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
@@ -55,6 +56,13 @@ x-app-environment: &app-environment # Runtime
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
   BOT_EMAIL_SMTP_URL:
+  # Account mail: the API sends sign-in and account messages, the worker the ones queued for later.
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
+  WELCOME_EMAIL_ENABLED:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -109,6 +117,7 @@ x-app-environment: &app-environment # Runtime
   MODEL_STREAM_MAX_RETRIES:
   MODEL_STREAM_TIMEOUT_MS:
   MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_CREDIT_OFFERINGS:
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
@@ -135,6 +144,18 @@ x-app-environment: &app-environment # Runtime
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  MEETING_PROVIDER:
+  MEETING_API_KEY:
+  MEETING_REGION:
+  MEETING_SPACE_IDS:
+  MEETING_WEBHOOK_SECRET:
+  MEETING_WEBHOOK_SIGNATURE:
+  MEETING_SIGNING_KEY:
+  MEETING_PUBLIC_ORIGIN:
+  MEETING_LIVE_VOICE:
+  MEETING_CALENDAR_CLIENT_ID:
+  MEETING_CALENDAR_CLIENT_SECRET:
+  MEETING_CALENDAR_WEBHOOK_SECRET:
   PAID_SERVICES_PROVIDER:
   PAID_SERVICES_API_KEY:
   PAID_SERVICES_BASE_URL:
@@ -304,6 +325,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -517,13 +540,7 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      WELCOME_EMAIL_ENABLED:
       EXPERIMENTS:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -536,6 +553,7 @@ services:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"
@@ -599,6 +617,7 @@ services:
       replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
       # A stopping worker ends the turns it is running before it hands them back, which fits
       # inside stop_grace_period. The deploy starts its replacement first, so nothing waits.

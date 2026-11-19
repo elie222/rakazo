@@ -352,7 +352,7 @@ function ActivityFilters({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-label"
+            className="px-2 text-label"
             data-testid="activity-reset-filters"
             onClick={() => onChange(emptyActivityFilters())}
           >

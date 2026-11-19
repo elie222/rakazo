@@ -14,7 +14,6 @@ import { PAGE_PARAM } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
 import { selectSpace } from "../../lib/query/rpc";
-import type { Panel } from "../../lib/right-panel-state";
 import type { CreateBotDialogInput } from "./bots/create-bot-dialog";
 import { CreateBotDialog } from "./bots/create-bot-dialog";
 import type { CommandPaletteAction } from "./command-palette";
@@ -27,7 +26,8 @@ import {
   NewBotSectionDialog,
   NewSpaceDialog,
   RenameBotSectionDialog,
-} from "./dialogs";
+} from "./create-delete-dialogs";
+import type { Panel } from "./right-panel-state";
 
 type ChatTarget = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 type SectionTarget = { section: BotSection; spaceId: string };

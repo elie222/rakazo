@@ -23,7 +23,7 @@ import {
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v3";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v5";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
@@ -58,7 +58,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             args: request.args,
             userTask: truncateReviewText(
               request.userTask,
-              request.newSite || request.memoryWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
+              request.newSite || request.savedContextWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
             ),
             botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
@@ -67,7 +67,10 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
               matchValue: rule.matchValue,
             })),
             ...(request.newSite ? { newSite: true } : {}),
-            ...(request.memoryWrite ? { memoryWrite: true } : {}),
+            ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
+            ...(request.ownerMessages?.length
+              ? { ownerEarlierMessages: request.ownerMessages }
+              : {}),
           },
           questions: { decision: autoReviewDecisionQuestion(request) },
         },

@@ -1,9 +1,10 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import {
   ipVersion,
   isLocalhostOrLoopbackIp,
   isPrivateNetworkAddress,
 } from "@rakazo/contracts/network-host";
+import { AES_GCM_NONCE_BYTES, openAesGcm, sealAesGcm } from "@rakazo/core/node/aes-gcm";
 
 export const SCREEN_PROXY_TTL_MS = 60 * 60_000;
 export const SCREEN_TARGET_ENDPOINT = "/api/internal/screen-target";
@@ -109,12 +110,12 @@ function seal(
   // A repeatable seal derives its nonce from what it seals, so equal inputs give the same
   // link on every server and different inputs never share a nonce.
   const iv = repeatable
-    ? createHmac("sha256", key).update(`${aad}\0${plaintext}`).digest().subarray(0, 12)
-    : randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
-  cipher.setAAD(Buffer.from(aad));
-  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const token = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
+    ? createHmac("sha256", key)
+        .update(`${aad}\0${plaintext}`)
+        .digest()
+        .subarray(0, AES_GCM_NONCE_BYTES)
+    : undefined;
+  const token = sealAesGcm(Buffer.from(plaintext), key, Buffer.from(aad), iv).toString("base64url");
   const prefix = `/novnc/session/${policy}/${expiresAt}.${token}`;
   const result = new URL(`${prefix}${target.pathname || "/"}`, new URL(origin).origin);
   // noVNC reads these from the browser URL. Keep its socket inside the capability
@@ -186,19 +187,13 @@ export function openScreenCapability(
   const expiresAt = Number(match[2]);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return null;
   try {
-    const sealed = Buffer.from(match[3]!, "base64url");
-    if (sealed.length < 28) return null;
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
+    const plaintext = openAesGcm(
+      Buffer.from(match[3]!, "base64url"),
       createHash("sha256").update(secret).digest(),
-      sealed.subarray(0, 12),
-      { authTagLength: 16 },
+      Buffer.from(`${match[1]}:${expiresAt}`),
     );
-    decipher.setAAD(Buffer.from(`${match[1]}:${expiresAt}`));
-    decipher.setAuthTag(sealed.subarray(12, 28));
-    const payload = JSON.parse(
-      Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]).toString("utf8"),
-    );
+    if (!plaintext) return null;
+    const payload = JSON.parse(plaintext.toString("utf8"));
     if (!isScreenProxyHeaders(payload.headers)) return null;
     const scope = payload.scope as ScreenCapabilityScope;
     if (

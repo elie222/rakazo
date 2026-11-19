@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
+import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -16,6 +17,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "r
 import { LoadingState } from "./components/ai/primitives";
 import { SubscriptionGate } from "./components/billing/SubscriptionGate";
 import { CallLayout } from "./components/call/CallLayout";
+import { VoiceConsentPrompt } from "./components/call/VoiceConsentPrompt";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
@@ -39,11 +41,11 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
 import { syncCallIdentity } from "./lib/calls/call-session";
-import { remoteImagesPreference } from "./lib/chat/remote-images-preference";
-import { desktopBridge } from "./lib/platform/desktop";
+import { analyticsSurface } from "./lib/platform/desktop";
 import { identifyMonitoringUser } from "./lib/platform/monitoring";
 import { markAfterPaint, markOnce } from "./lib/platform/performance";
 import { lazyComponent } from "./lib/platform/preload-recovery";
+import { remoteImagesPreference } from "./lib/preferences/remote-images-preference";
 import { QueryUserProvider, setQueryUser } from "./lib/query/query";
 import { rpc } from "./lib/query/rpc";
 import { IntegrationCallbackPage } from "./pages/integrations/IntegrationCallback";
@@ -144,7 +146,7 @@ function SessionApp() {
     if (lastScreen.current === key) return;
     lastScreen.current = key;
     void Promise.resolve()
-      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
+      .then(() => rpc.analytics.screen({ screen, surface: analyticsSurface() }))
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
@@ -181,6 +183,7 @@ function SessionApp() {
   const user = session.data?.user;
   return (
     <QueryUserProvider value={user?.id ?? null}>
+      <VoiceConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
@@ -231,7 +234,8 @@ function SessionApp() {
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
-                  user ? (
+                  // A sign-in the mobile app started goes back to the app, signed in here or not.
+                  user || mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ? (
                     <McpOAuthCallbackPage />
                   ) : (
                     <Navigate

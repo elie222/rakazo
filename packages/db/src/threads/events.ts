@@ -37,6 +37,7 @@ import {
 } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { cancelRunsInTransaction, conversationRunsWhere } from "../runs/cancel-runs.js";
+import { HOLDS_CHAT } from "../runs/chat-holding-runs.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "../runs/run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "../runs/run-turn-checkpoint.js";
@@ -497,6 +498,7 @@ export async function sendUserMessage(
                 status: {
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
+                ...HOLDS_CHAT,
               },
               select: {
                 id: true,

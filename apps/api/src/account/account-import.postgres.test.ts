@@ -253,6 +253,7 @@ function sourceRecords(): AccountExportRecord[] {
       timezone: "UTC",
       active: true,
       notify: true,
+      inChat: false,
       messageProvider: null,
       modelProvider: null,
       modelId: null,

@@ -22,7 +22,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { assertNameFreeWhereAvailable, lockOwner, NameTakenError } from "../spaces/availability.js";
+import { assertNameFreeWhereAvailable, lockOwner, NameTakenError } from "../spaces/name-claims.js";
 
 export type PluginInstallDeps = {
   prisma: PrismaClient;

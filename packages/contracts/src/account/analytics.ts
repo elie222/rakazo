@@ -5,8 +5,8 @@ import {
   ByokTierSchema,
   PlanLayoutSchema,
 } from "../billing/billing.js";
-import { RUN_ERROR_KINDS, RunTriggerSchema } from "../conversations/runs.js";
-import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "../domain.js";
+import { RUN_ERROR_KINDS, RunTriggerSchema } from "../runs/runs.js";
+import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./me.js";
 import { SignupAttribution } from "./signup-attribution.js";
 
 // Explicitly validated fields only: this is also the final allowlist at the external boundary.
@@ -64,7 +64,40 @@ const modelConnect = {
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
     .optional(),
+  /** Absent only where no app is involved, such as a payment that lands later. */
+  surface: AnalyticsSurface.optional(),
+  /** Which of this person's tries at connecting a model this is, counted from one. */
+  attempt: z.number().int().positive().optional(),
 };
+/** A code typed on the provider's page, or a link whose code comes back to the app. */
+export const AnalyticsModelSignInFlow = z.enum(["device_code", "paste_code"]);
+export const AnalyticsModelSignInStep = z.enum(["page_opened", "code_copied"]);
+/** Why a sign-in that issued a link or code did not connect. */
+export const AnalyticsModelSignInEndReason = z.enum([
+  // The provider said the code ran out.
+  "expired",
+  // The person closed it, went back, started again, or picked another provider.
+  "cancelled",
+  "provider_refused",
+  // The wait for the person ran out.
+  "timed_out",
+  // The provider accepted the sign-in, and saving the connection failed.
+  "save_failed",
+]);
+/** What the provider refused, as a class. Never its message. */
+export const AnalyticsModelSignInErrorClass = z.enum([
+  "denied",
+  "invalid_code",
+  "rejected",
+  "rate_limited",
+  "unavailable",
+  "other",
+]);
+const modelSignIn = { ...modelConnect, flow: AnalyticsModelSignInFlow };
+const durationMs = z.number().int().nonnegative();
+export const AnalyticsModelSignInStepInput = z
+  .object({ loginId: z.string().min(1).max(64), step: AnalyticsModelSignInStep })
+  .strict();
 export const AnalyticsPlan = z.enum(["own_key", "credits"]);
 /** A paid plan and what it bills each period; credits bill monthly and have no tier. */
 const planTerms = {
@@ -73,6 +106,14 @@ const planTerms = {
   interval: ByokIntervalSchema,
   amountCents: z.number().int().positive(),
 };
+/**
+ * The mails of a person's lifecycle sequence. One job sends each, no two within a day of each
+ * other, and each at most once per person.
+ */
+export const LIFECYCLE_EMAIL_KINDS = ["model-connection"] as const;
+export const LifecycleEmailKind = z.enum(LIFECYCLE_EMAIL_KINDS);
+export type LifecycleEmailKind = z.infer<typeof LifecycleEmailKind>;
+
 export const AnalyticsEvent = z.discriminatedUnion("name", [
   SignupAttribution.extend({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
@@ -88,7 +129,29 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
     })
     .strict(),
   z.object({ name: z.literal("model_connect_started"), ...modelConnect }).strict(),
-  z.object({ name: z.literal("model_connected"), ...modelConnect }).strict(),
+  z
+    .object({
+      name: z.literal("model_connected"),
+      ...modelConnect,
+      flow: AnalyticsModelSignInFlow.optional(),
+      /** From the sign-in's link or code to the saved connection. */
+      durationMs: durationMs.optional(),
+    })
+    .strict(),
+  z.object({ name: z.literal("model_connect_code_issued"), ...modelSignIn }).strict(),
+  z.object({ name: z.literal("model_connect_page_opened"), ...modelSignIn }).strict(),
+  z.object({ name: z.literal("model_connect_code_copied"), ...modelSignIn }).strict(),
+  // Every sign-in that issued a link or code and did not connect. One whose person was
+  // still watching and saw an error also sends model_connect_failed, as it always has.
+  z
+    .object({
+      name: z.literal("model_connect_ended"),
+      ...modelSignIn,
+      reason: AnalyticsModelSignInEndReason,
+      errorClass: AnalyticsModelSignInErrorClass.optional(),
+      durationMs,
+    })
+    .strict(),
   z
     .object({
       name: z.literal("model_connect_failed"),
@@ -116,8 +179,11 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
     .strict(),
   z.object({ name: z.literal("checkout_opened"), ...planTerms }).strict(),
   z.object({ name: z.literal("subscription_started"), ...planTerms, trial: z.boolean() }).strict(),
-  // A trial's end: its first payment, or access lost without one.
+  // A trial's end: its first payment, or access lost without one. A failed first charge that is
+  // settled later reports again as converted, so a subscription converted if any report says so.
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
+  // Which lifecycle mail went out; never the address or the person.
+  z.object({ name: z.literal("lifecycle_email_sent"), email: LifecycleEmailKind }).strict(),
   // Only the fixed reason; the comment stays in the database.
   z
     .object({
@@ -133,3 +199,8 @@ export type AnalyticsScreen = z.infer<typeof AnalyticsScreen>;
 export type AnalyticsErrorKind = z.infer<typeof AnalyticsErrorKind>;
 export type AnalyticsBotSetting = z.infer<typeof AnalyticsBotSetting>;
 export type AnalyticsModelConnectMethod = z.infer<typeof AnalyticsModelConnectMethod>;
+export type AnalyticsSurface = z.infer<typeof AnalyticsSurface>;
+export type AnalyticsModelSignInFlow = z.infer<typeof AnalyticsModelSignInFlow>;
+export type AnalyticsModelSignInStep = z.infer<typeof AnalyticsModelSignInStep>;
+export type AnalyticsModelSignInEndReason = z.infer<typeof AnalyticsModelSignInEndReason>;
+export type AnalyticsModelSignInErrorClass = z.infer<typeof AnalyticsModelSignInErrorClass>;

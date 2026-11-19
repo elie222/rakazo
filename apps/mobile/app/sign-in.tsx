@@ -83,8 +83,11 @@ export default function SignIn() {
 
   useEffect(() => {
     setPasswordVisible(false);
-    setEmailStep(false);
   }, [mode, apiBase]);
+
+  useEffect(() => {
+    setEmailStep(false);
+  }, [apiBase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -261,6 +264,8 @@ export default function SignIn() {
   }
 
   const custom = usesCustomApiBase(apiBase);
+  // Inside the card, fields take the page color: the muted fill matches the card.
+  const fieldBackground = presented ? tokens.background : tokens.muted;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
@@ -294,8 +299,7 @@ export default function SignIn() {
                         backgroundColor: tokens.card,
                         borderRadius: 20,
                         paddingHorizontal: 20,
-                        paddingTop: 16,
-                        paddingBottom: 24,
+                        paddingVertical: 24,
                       }
                     : undefined
                 }
@@ -344,17 +348,19 @@ export default function SignIn() {
                 >
                   {resetSent || codeStep
                     ? t`Check your email`
-                    : presented && mode === "in"
-                      ? t`Welcome back`
-                      : presented && mode === "up"
-                        ? t`Create your account`
-                        : mode === "in"
-                          ? t`Sign in to Rakazo`
-                          : mode === "up"
-                            ? t`Sign up for Rakazo`
-                            : t`Reset your password`}
+                    : chooser
+                      ? t`Welcome to Rakazo`
+                      : presented && mode === "in"
+                        ? t`Welcome back`
+                        : presented && mode === "up"
+                          ? t`Create your account`
+                          : mode === "in"
+                            ? t`Sign in to Rakazo`
+                            : mode === "up"
+                              ? t`Sign up for Rakazo`
+                              : t`Reset your password`}
                 </Text>
-                {presented ? (
+                {chooser ? (
                   <Text
                     style={{
                       color: tokens.mutedForeground,
@@ -363,9 +369,7 @@ export default function SignIn() {
                       marginTop: 8,
                     }}
                   >
-                    {mode === "in"
-                      ? t`Sign in to continue to Rakazo`
-                      : t`Persistent AI teammates that do real work`}
+                    {t`Persistent AI teammates that do real work`}
                   </Text>
                 ) : null}
                 {resetSent ? (
@@ -441,7 +445,7 @@ export default function SignIn() {
                           onSubmitEditing={() => void submit()}
                           style={{
                             marginTop: 28,
-                            backgroundColor: tokens.muted,
+                            backgroundColor: fieldBackground,
                             borderRadius: 13,
                             padding: 16,
                             color: tokens.foreground,
@@ -478,9 +482,7 @@ export default function SignIn() {
                             setEmailStep(true);
                           }}
                           onPasskey={
-                            passkeys && mode === "in"
-                              ? () => void externalSignIn(signInWithPasskey)
-                              : undefined
+                            passkeys ? () => void externalSignIn(signInWithPasskey) : undefined
                           }
                           onPress={(providerId) => {
                             const provider = providers.find((item) => item.id === providerId);
@@ -495,36 +497,6 @@ export default function SignIn() {
                             {error}
                           </Text>
                         ) : null}
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            marginTop: 22,
-                          }}
-                        >
-                          <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-                            {mode === "in"
-                              ? t`Don’t have an account?`
-                              : t`Already have an account?`}
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            hitSlop={8}
-                            onPress={() => {
-                              setMode((current) => (current === "in" ? "up" : "in"));
-                              setError(null);
-                              setEmailStep(false);
-                            }}
-                            style={{ marginLeft: 5 }}
-                          >
-                            <Text
-                              style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
-                            >
-                              {mode === "in" ? t`Sign up` : t`Sign in`}
-                            </Text>
-                          </Pressable>
-                        </View>
                       </>
                     ) : reset?.passwordAuth ? (
                       <>
@@ -537,7 +509,7 @@ export default function SignIn() {
                             onChangeText={setName}
                             style={{
                               marginTop: presented ? 20 : 28,
-                              backgroundColor: tokens.muted,
+                              backgroundColor: fieldBackground,
                               borderRadius: 13,
                               padding: 16,
                               color: tokens.foreground,
@@ -558,7 +530,7 @@ export default function SignIn() {
                           onBlur={() => setEmailBlurred(true)}
                           style={{
                             marginTop: mode === "up" ? 12 : presented ? 20 : 28,
-                            backgroundColor: tokens.muted,
+                            backgroundColor: fieldBackground,
                             borderRadius: 13,
                             padding: 16,
                             color: tokens.foreground,
@@ -582,7 +554,7 @@ export default function SignIn() {
                               marginTop: 12,
                               flexDirection: "row",
                               alignItems: "center",
-                              backgroundColor: tokens.muted,
+                              backgroundColor: fieldBackground,
                               borderRadius: 13,
                             }}
                           >

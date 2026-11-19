@@ -1,35 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { rpc } from "../api/api";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt, waitForModelOAuth } from "./model-auth";
 
 vi.mock("../api/api", () => ({ rpc: vi.fn() }));
 
-describe("mobile waitForModelOAuth", () => {
-  const mockRpc = vi.mocked(rpc);
+it("sends the sign-in ID and cancellation signal on the client that began it", async () => {
+  const signal = new AbortController().signal;
+  const call = vi.fn().mockResolvedValue({ status: "ready" });
 
-  beforeEach(() => {
-    mockRpc.mockReset();
-  });
+  await waitForModelOAuth("login-id", signal, call as unknown as typeof rpc);
 
-  it("stops polling when its screen loses focus", async () => {
-    mockRpc.mockResolvedValue({ status: "pending" });
-    const controller = new AbortController();
-    const polling = waitForModelOAuth("login-id", controller.signal);
-
-    await Promise.resolve();
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-    controller.abort();
-
-    await expect(polling).rejects.toBeDefined();
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns readiness normally", async () => {
-    mockRpc.mockResolvedValue({ status: "ready" });
-
-    await expect(waitForModelOAuth("login-id")).resolves.toMatchObject({ status: "ready" });
-    expect(mockRpc).toHaveBeenCalledTimes(1);
-  });
+  expect(call).toHaveBeenCalledExactlyOnceWith(
+    "models/completeOAuth",
+    { loginId: "login-id" },
+    { signal },
+  );
+  expect(rpc).not.toHaveBeenCalled();
 });
 
 describe("mobile OAuth focus lifecycle", () => {

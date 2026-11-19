@@ -14,6 +14,9 @@ import {
   createSafeLookup,
   createSafeRemoteFetch,
   limitRemoteMcpPayload,
+  MCP_HTTP_TIMEOUTS,
+  MCP_TOOL_MAX_TOTAL_MS,
+  MCP_TOOL_TIMEOUT_MS,
   RemoteRequestSentError,
 } from "./remote-mcp.js";
 
@@ -824,6 +827,14 @@ describe("remote MCP tool result", () => {
     });
     expect(audit.outcome).toBe("error");
     expect(audit.error).toContain("Missing permission: updates");
+  });
+});
+
+describe("remote MCP waits", () => {
+  it("lets a gateway's five-minute program finish, and leaves the HTTP client's waits past ours", () => {
+    expect(MCP_TOOL_TIMEOUT_MS).toBeGreaterThan(5 * 60_000);
+    expect(MCP_HTTP_TIMEOUTS.headersTimeout).toBeGreaterThan(MCP_TOOL_MAX_TOTAL_MS);
+    expect(MCP_HTTP_TIMEOUTS.bodyTimeout).toBeGreaterThan(MCP_TOOL_MAX_TOTAL_MS);
   });
 });
 
