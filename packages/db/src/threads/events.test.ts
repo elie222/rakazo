@@ -937,6 +937,35 @@ describe("answerTakeoverRequest", () => {
     expect(publish).toHaveBeenCalledWith("thread:group-thread", JSON.stringify({ cursor: 8 }));
   });
 
+  it("settles its card while keeping a sibling block this release does not know", async () => {
+    const tx = takeoverTx([{ count: 1 }]);
+    const legacyBlock = { kind: "block_from_an_earlier_release", detail: "kept" };
+    tx.message.findMany.mockResolvedValue([
+      {
+        id: "message-1",
+        blocks: [
+          { kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." },
+          legacyBlock,
+        ],
+      },
+    ]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(answerTakeoverRequest(prisma, input)).resolves.toBe(true);
+
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        blocks: [
+          { kind: "computer", state: TAKEOVER_COMPUTER_DONE_STATE, text: "Sign in." },
+          legacyBlock,
+        ],
+      },
+    });
+  });
+
   it("answers a request once: a second Done never stamps the resumed run's next request", async () => {
     const tx = takeoverTx([{ count: 0 }, { count: 1 }]);
     // The first answer settled the card; the run is running again.

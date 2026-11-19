@@ -5,6 +5,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -766,6 +767,25 @@ describe("BoatSandboxProvider", () => {
       ]);
     },
   );
+
+  it("reports a stopped sandbox whose disk fits no machine as too large to start", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.setState(computer.id, "archived");
+    resume.mockRejectedValue(
+      boatError(
+        409,
+        "resume_failed",
+        "This sandbox uses 83.8 GB of disk, which does not fit any available 'default' machine (largest budget: 76.0 GB).",
+      ),
+    );
+
+    await expect(provider.readFile(computer, "kept.txt", context)).rejects.toBeInstanceOf(
+      SandboxDiskTooLargeError,
+    );
+    expect(resume).toHaveBeenCalledOnce();
+  });
 
   it("retries a request that never reached Boat once, whatever the call", async () => {
     const run = vi.spyOn(FakeBoatApi.prototype, "command");
@@ -1797,6 +1817,22 @@ describe("BoatSandboxProvider", () => {
     expect(gaps.slice(0, 6)).toEqual([500, 1_000, 2_000, 4_000, 5_000, 5_000]);
     // Ten minutes at a fixed 500 ms would be 1,200 polls.
     expect(polledAt.length).toBeLessThanOrEqual(125);
+  });
+
+  it("reports a machine that stopped under a running command as unavailable", async () => {
+    vi.spyOn(FakeBoatApi.prototype, "commandStatus").mockRejectedValue(
+      boatError(409, "machine_not_running", "Sandbox is stopped."),
+    );
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachOutdated = true;
+    api.detachedRunMs = 60_000;
+
+    await expect(
+      drain(
+        provider.execute(computer, { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 }, context),
+      ),
+    ).rejects.toBeInstanceOf(SandboxUnavailableError);
   });
 
   it("keeps the sandbox when Boat rejects the credentials", async () => {

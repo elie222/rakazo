@@ -996,6 +996,42 @@ describe("MCP connector session cache", () => {
         { network },
       );
 
+    it("connects an endpoint saved as SSE that now answers Streamable HTTP", async () => {
+      const state = { failNext: false, initializations: 0 };
+      vi.stubGlobal("fetch", mcpFetch(state));
+      const connector = connectorWith({ ...SERVER, transport: "sse" });
+      const error = vi.spyOn(getLogger(), "error");
+      try {
+        const tools = await connector.discoverTools(context);
+        expect(tools).not.toEqual(unavailableOnly());
+        expect(state.initializations).toBe(1);
+        expect(error).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when an SSE endpoint is not an MCP server", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("not found", { status: 404 })),
+      );
+      const connector = connectorWith({ ...SERVER, transport: "sse" });
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("404"),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("warns instead of reporting an error, and waits longer for a reconnect", async () => {
       const requests = vi.fn(async () => new Response("unauthorized", { status: 401 }));
       vi.stubGlobal("fetch", requests);

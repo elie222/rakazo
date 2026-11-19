@@ -1,6 +1,7 @@
 import {
   runContinueJob,
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -164,12 +165,17 @@ describe("retrying a run whose setup failed", () => {
       id: "attempt-1",
     }));
     const priorAttempts = vi.fn(async () => []);
+    const finalizeRun = vi.fn(async (_: { outcome: string; error: string }) => ({
+      continuationRunId: null,
+    }));
     const deps = {
       prisma: {
         run: { updateMany: requeueRun },
         attempt: { update: recordAttempt, findMany: priorAttempts },
+        bot: { findUnique: vi.fn(async () => ({ name: "Chief" })) },
       },
       jobs: { enqueue: vi.fn(async () => undefined) },
+      events: { finalizeRun },
     } as unknown as ExecutorDeps;
     await retryRunSetup(
       deps,
@@ -188,6 +194,7 @@ describe("retrying a run whose setup failed", () => {
       attempt: recordAttempt.mock.calls[0]?.[0].data,
       runError: requeueRun.mock.calls[0]?.[0].data.error,
       priorAttempts,
+      ended: finalizeRun.mock.calls[0]?.[0],
       logged: sink.events.filter((event) => event.message === "run.setup_failed"),
     };
   }
@@ -210,6 +217,18 @@ describe("retrying a run whose setup failed", () => {
   });
 
   it.each([
+    ["whose system is damaged", () => new SandboxDamagedError()],
+    ["too large to start", () => new SandboxDiskTooLargeError()],
+  ])("ends the run at once, with a warning, for a computer %s", async (_name, error) => {
+    const failure = error();
+    const ended = await retry(failure);
+
+    expect(ended.ended).toMatchObject({ outcome: "failed", error: failure.message });
+    expect(ended.runError).toBeUndefined();
+    expect(ended.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it.each([
     ["a computer busy with another run", () => new ComputerBusyError()],
     ["a database outage", databaseDown],
   ])("records no reason, counts nothing and stays quiet for %s", async (_name, error) => {
@@ -224,7 +243,6 @@ describe("retrying a run whose setup failed", () => {
   it.each([
     ["an unexpected failure", () => new Error(`boom ${SECRET}`), true, "error"],
     ["a computer that did not start", () => new SandboxUnavailableError(), true, "warn"],
-    ["a computer whose system is damaged", () => new SandboxDamagedError(), true, "warn"],
     [
       "an unreachable computer provider",
       () => new SandboxUnresponsiveError(`unreachable ${SECRET}`),
