@@ -25,7 +25,7 @@ export type PurchaseApproval = {
   items?: Array<{ name: string; amount: string }>;
 };
 
-// Empty when the check failed and the page is unknown.
+// Empty for a page without a host (about:blank, data:, file:).
 const SITE = /^[\w.[\]:-]{0,253}$/;
 // Zero-width, bidirectional and tag characters would let a page show one thing and be read as another.
 const INVISIBLE = /[\u{E0000}-\u{E007F}​-‏⁠-⁤‪-‮⁦-⁩﻿]/gu;
@@ -90,18 +90,13 @@ export function purchaseApprovalOf(value: unknown): PurchaseApproval | undefined
 
 /** The card for a purchase. The button and total are read from the page, not chosen by the model. */
 export function purchaseCardSummary(purchase: PurchaseApproval): FleetCardSummary {
-  if (!purchase.site) {
-    return {
-      onceOnly: true,
-      title: "Complete a payment on this page?",
-      lines: ["The page could not be checked, so this may complete a payment."],
-    };
-  }
   const items = purchase.items ?? [];
   const listed = items.length > CARD_ITEMS ? items.slice(0, CARD_ITEMS - 1) : items;
   return {
     onceOnly: true,
-    title: `Pay on ${cardName(purchase.site)}?`,
+    title: purchase.site
+      ? `Pay on ${cardName(purchase.site)}?`
+      : "Complete a payment on this page?",
     receipt: {
       ...(purchase.label ? { button: purchase.label } : {}),
       items: listed,
@@ -212,6 +207,12 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
 }
 
 /**
+ * Why a press could not be checked, so nothing is pressed: the page could not be read, or the press
+ * lands on a page the same call opens. Never asked about: a card could only say "maybe a payment".
+ */
+export type UncheckedPress = "unreadable" | "opened";
+
+/**
  * Ask the page browser whether this call's clicks, or its click or key on the screen, would complete
  * a purchase. A browser that cannot tell (an older computer image, no page open) answers none, and
  * browser_act still refuses an unapproved purchase click itself when its browser knows how.
@@ -220,14 +221,13 @@ export async function detectPurchase(
   ctx: RunContext,
   name: string,
   args: Record<string, unknown>,
-): Promise<PurchaseApproval | undefined> {
+): Promise<PurchaseApproval | UncheckedPress | undefined> {
   const probe = purchaseProbe(name, args);
   const { browser } = ctx.providers;
   if (!probe || !browser.purchaseCheck || !ctx.computer.pageBrowserAllowed) return undefined;
   if (ctx.computer.heldForTakeover) return undefined;
-  const unchecked = { steps: [], site: "", label: "", amount: "", amountSource: "page" } as const;
   // A press after the batch opens a URL lands on a page nobody could look at yet.
-  if ("unchecked" in probe && probe.unchecked) return { ...unchecked, steps: [] };
+  if ("unchecked" in probe && probe.unchecked) return "opened";
   let found: Awaited<ReturnType<NonNullable<typeof browser.purchaseCheck>>>["purchase"];
   let computer: Awaited<ReturnType<RunContext["computer"]["get"]>>;
   try {
@@ -245,10 +245,10 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
-    getLogger().warn("purchase check failed, asking", {
+    getLogger().warn("purchase check failed, refusing the press", {
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    found = { ...unchecked, steps: [] };
+    return "unreadable";
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even

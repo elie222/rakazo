@@ -6,6 +6,8 @@ import { prepareToolRequest } from "../runs/tools/run-tool-request.js";
 import type { PurchaseApproval } from "./purchase-gate.js";
 import { detectPurchase, purchaseApprovalOf, purchaseCardSummary } from "./purchase-gate.js";
 
+const UNREADABLE =
+  "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot, then try again.";
 const CHECKED = "The button label and total are read from the page. The bot has not checked them.";
 const found = {
   steps: [],
@@ -30,6 +32,13 @@ function contextWith(
     computer: { pageBrowserAllowed: true, heldForTakeover: false, get: async () => ({ id: "c" }) },
     ...overrides,
   } as unknown as RunContext;
+}
+
+/** The purchase a check found, for a test whose check reads the page. */
+async function foundPurchase(...args: Parameters<typeof detectPurchase>) {
+  const purchase = await detectPurchase(...args);
+  if (typeof purchase === "string") throw new Error(`press refused: ${purchase}`);
+  return purchase;
 }
 
 describe("purchase detection for the page tools", () => {
@@ -190,8 +199,59 @@ describe("purchase detection for the page tools", () => {
     expect(await replay(approval)).toEqual(changed);
     now = null;
     expect(await replay(approval)).toEqual(changed);
-    // A card that named nothing, because the check failed, has nothing to compare.
-    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toBeUndefined();
+    // An older release's card that named nothing is checked too: nothing it approved is shown now.
+    expect(await replay({ steps: [], site: "", label: "", amount: "" })).toEqual(changed);
+    // A page that cannot be read now is never pressed, approved or not.
+    const unreadable = contextWith(
+      vi.fn(async () => {
+        throw new Error("Page browser timed out");
+      }),
+    );
+    expect(
+      await prepareToolRequest(unreadable, {
+        name: "computer_act",
+        nextApprovedTool: "computer_act",
+        args: { actions: [{ kind: "click", x: 1, y: 2 }], purchaseApproval: approval },
+      } as unknown as ToolRequest),
+    ).toEqual({ error: UNREADABLE });
+  });
+
+  it("refuses a press it could not check, without asking", async () => {
+    const check = vi.fn(async (): Promise<{ purchase: null }> => {
+      throw new Error("Page browser timed out");
+    });
+    const ctx = contextWith(check);
+    for (const name of ["browser_act", "computer_act"]) {
+      const request = {
+        name,
+        args: {
+          actions: [
+            name === "browser_act" ? { kind: "click", ref: "e1" } : { kind: "click", x: 1, y: 2 },
+          ],
+        },
+      } as unknown as ToolRequest;
+      expect(await prepareToolRequest(ctx, request)).toEqual({ error: UNREADABLE });
+      expect(request.purchase).toBeUndefined();
+      expect(request.fleetSummary).toBeUndefined();
+    }
+    expect(
+      await detectPurchase(ctx, "computer_act", { actions: [{ kind: "click", x: 1, y: 2 }] }),
+    ).toBe("unreadable");
+    // A press on a page the same call opens is refused before anything is checked.
+    const opened = {
+      name: "computer_act",
+      args: {
+        actions: [
+          { kind: "focus", app: "chromium", uri: "https://shop.example.test/checkout" },
+          { kind: "click", x: 5, y: 6 },
+        ],
+      },
+    } as unknown as ToolRequest;
+    expect(await prepareToolRequest(ctx, opened)).toEqual({
+      error: expect.stringContaining("nothing was pressed"),
+    });
+    expect(opened.fleetSummary).toBeUndefined();
+    expect(check).toHaveBeenCalledTimes(3);
   });
 
   it("shows no card only where this run typed an approved wallet card or token, and still approves the click", async () => {
@@ -224,7 +284,7 @@ describe("purchase detection for the page tools", () => {
       purchase: { ...found, label: "Pay with 4242424242424242", amount: "$5" },
     }));
     const ctx = contextWith(check as never, { secrets: ["4242424242424242"] });
-    const purchase = await detectPurchase(ctx, "browser_act", {
+    const purchase = await foundPurchase(ctx, "browser_act", {
       actions: [{ kind: "click", ref: "e1" }],
     });
     expect(purchase?.label).not.toContain("4242424242424242");
@@ -247,7 +307,7 @@ describe("purchase detection for the page tools", () => {
 
   it("cuts the page's words by characters, so no half of an emoji is stored", async () => {
     const long = { ...found, label: `${"a".repeat(79)}😀tail`, amount: `${"1".repeat(39)}😀` };
-    const purchase = await detectPurchase(
+    const purchase = await foundPurchase(
       contextWith(async () => ({ purchase: long })),
       "computer_act",
       { actions: [{ kind: "click", x: 1, y: 2 }] },
@@ -270,11 +330,10 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
-  it("asks about a press after the batch opens a URL, without looking at the page first", async () => {
+  it("refuses a press after the batch opens a URL, without looking at the page first", async () => {
     const check = vi.fn(async () => ({ purchase: null }));
     const ctx = contextWith(check as never);
     const act = (actions: unknown[]) => detectPurchase(ctx, "computer_act", { actions });
-    const unchecked = { steps: [], site: "", label: "", amount: "", amountSource: "page" };
     const open = { kind: "focus", app: "chromium", uri: "https://shop.example.test/checkout" };
     for (const press of [
       { kind: "click", x: 5, y: 6 },
@@ -282,7 +341,7 @@ describe("purchase detection for the page tools", () => {
       { kind: "key", key: "a", modifiers: ["Return"] },
       { kind: "type", text: "go\n" },
     ]) {
-      expect(await act([open, press])).toEqual(unchecked);
+      expect(await act([open, press])).toBe("opened");
     }
     expect(check).not.toHaveBeenCalled();
     // A focus that opens nothing, or a URL opened after the press, is checked as usual.
@@ -306,12 +365,12 @@ describe("purchase detection for the page tools", () => {
     };
     expect(purchaseApprovalOf(good)).toEqual(good);
     expect(purchaseApprovalOf({ ...good, amountSource: undefined })).toEqual(good);
-    // A check that failed knows no site.
-    expect(purchaseApprovalOf({ ...good, site: "" })).toEqual({ ...good, site: "" });
-    expect(purchaseCardSummary({ ...good, site: "" })).toEqual({
-      onceOnly: true,
+    // A page without a host knows no site; its card still shows what the page says.
+    const hostless = { ...good, site: "", label: "Pay $5", amount: "$5" };
+    expect(purchaseApprovalOf(hostless)).toEqual(hostless);
+    expect(purchaseCardSummary(hostless)).toMatchObject({
       title: "Complete a payment on this page?",
-      lines: ["The page could not be checked, so this may complete a payment."],
+      receipt: { button: "Pay $5", amount: "$5" },
     });
     for (const bad of [
       null,
@@ -454,7 +513,7 @@ describe("purchase detection for the page tools", () => {
     const ctx = contextWith(async () => ({ purchase: { ...found, items } }) as never, {
       secrets: ["4242424242424242", "9".repeat(30)],
     });
-    const purchase = await detectPurchase(ctx, "computer_act", {
+    const purchase = await foundPurchase(ctx, "computer_act", {
       actions: [{ kind: "click", x: 1, y: 2 }],
     });
     expect(JSON.stringify(purchase)).not.toContain("4242424242424242");
