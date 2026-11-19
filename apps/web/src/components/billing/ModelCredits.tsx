@@ -45,7 +45,7 @@ import {
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { cn } from "@rakazo/ui-web/lib/utils";
-import { Check } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSignOut } from "../../lib/auth/sign-out";
 import {
@@ -769,13 +769,13 @@ export function ModelCreditsSettings({
             <Trans>Available credits</Trans>
           </h3>
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
             aria-label={t`Refresh credits`}
             disabled={pending}
             onClick={() => void action(refresh)}
           >
-            <Trans>Refresh</Trans>
+            <RefreshCw />
           </Button>
         </div>
         <p className="mt-2 text-display font-medium tabular-nums">{balance}</p>
