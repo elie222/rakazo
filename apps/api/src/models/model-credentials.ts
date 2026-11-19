@@ -334,7 +334,8 @@ export async function persistModelCredential(
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   // The connection is the account's, so the routines it held are released in every Space.
-  await bestEffort(
+  // Not awaited: the save is done, and an account with many held routines must not wait on them.
+  void bestEffort(
     "release routines held for a refused model account",
     runAsSystem("release routines held for a refused model account", () =>
       releaseRoutineBackoffs(
