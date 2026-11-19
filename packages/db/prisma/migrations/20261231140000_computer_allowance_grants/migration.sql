@@ -13,3 +13,7 @@ CREATE INDEX "computer_allowance_grants_organizationId_createdAt_idx"
 
 ALTER TABLE "computer_allowance_grants" ADD CONSTRAINT "computer_allowance_grants_organizationId_fkey"
     FOREIGN KEY ("organizationId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Operator-only: tenants neither read nor write grants.
+ALTER TABLE "computer_allowance_grants" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "computer_allowance_grants_system" ON "computer_allowance_grants" USING ((SELECT app_rls_bypass()));

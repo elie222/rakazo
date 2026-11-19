@@ -165,6 +165,23 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         new Date("2026-04-10T00:00:00.000Z"),
       );
       expect(next).toMatchObject({ limitCents: 2_000, extraCents: 0 });
+
+      // An operator can still give a cancelled trial hours; the period renews nothing for it.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "trialing",
+          cancelAtPeriodEnd: true,
+          currentPeriodStartsAt: new Date("2026-06-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-06-15T00:00:00.000Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 1_000, createdAt: new Date("2026-06-03T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-06-05T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000, extraCents: 1_000, resetsAt: null });
     } finally {
       await prisma.billingAccount.deleteMany({ where: { organizationId } });
       if (settings)

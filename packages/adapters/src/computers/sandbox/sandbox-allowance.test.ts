@@ -135,7 +135,7 @@ describe("computer allowance", () => {
     });
     expect((await sandboxAllowance(deps, "organization", now))?.limitMicros).toBe(35_000_000);
     expect(prisma.computerAllowanceGrant.aggregate).toHaveBeenCalledWith({
-      where: { organizationId: "organization", createdAt: { gte: periodStart, lte: now } },
+      where: { organizationId: "organization", createdAt: { gte: periodStart } },
       _sum: { amountCents: true },
     });
   });

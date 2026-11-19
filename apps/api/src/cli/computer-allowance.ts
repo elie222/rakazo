@@ -49,12 +49,16 @@ try {
       select: { id: true },
     });
     if (!organization) throw new Error("No organization has that id");
-    if (action === "grant") await grantComputerAllowance(prisma, organizationId, amountCents!);
-    const now = new Date();
-    const plan = await sandboxAllowancePlan(prisma, organizationId, now);
+    let now = new Date();
+    let plan = await sandboxAllowancePlan(prisma, organizationId, now);
     if (!plan) {
       process.stdout.write("Computers are not limited on this deployment.\n");
       return;
+    }
+    if (action === "grant") {
+      await grantComputerAllowance(prisma, organizationId, amountCents!);
+      now = new Date();
+      plan = (await sandboxAllowancePlan(prisma, organizationId, now))!;
     }
     // Counts every run off the user's own machine; providers that do not bill may count less.
     const runs = await sandboxRunHours(prisma, organizationId, plan.since, now);
