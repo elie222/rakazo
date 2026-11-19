@@ -280,6 +280,7 @@ function LayoutContent() {
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
   const canInvite = Boolean(useReferral());
+  const router = useRouter();
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNavigatorMounted(ready);
@@ -576,7 +577,12 @@ function LayoutContent() {
                         options={({ route }) => ({
                           title: t`Group`,
                           animation: chatAnimation,
-                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                          ...chatRouteHeader(
+                            route,
+                            { split, inboxHidden, foldActive },
+                            router,
+                            canInvite,
+                          ),
                         })}
                       />
                       <Stack.Screen
@@ -612,7 +618,12 @@ function LayoutContent() {
                         options={({ route }) => ({
                           title: t`Thread`,
                           animation: chatAnimation,
-                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                          ...chatRouteHeader(
+                            route,
+                            { split, inboxHidden, foldActive },
+                            router,
+                            canInvite,
+                          ),
                         })}
                       />
                       <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
