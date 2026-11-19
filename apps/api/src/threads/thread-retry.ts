@@ -1,6 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ClientError, canRetryRun } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, canRetryRun, isTerminal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   IsolationError,
@@ -39,6 +39,8 @@ export async function retryThreadRun(
     if (existing && (existing.threadId !== target.threadId || existing.userId !== actor.userId)) {
       throw new IsolationError();
     }
+    // A retry that already ended, or was cancelled by a newer message, is not run again.
+    if (existing && isTerminal(existing.status)) throw new StaleRetryError();
     return existing;
   };
   // A repeat wakes the existing retry again, in case the first wake was lost.

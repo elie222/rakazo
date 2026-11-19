@@ -153,6 +153,11 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(await system.run.count({ where: { threadId, retryOfRunId: run.id } })).toBe(1);
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
+
+    // Once a newer message cancels the retry, the original failure is no longer retried.
+    await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
+    expect((await retry(run.id)).status).toBe(409);
+    expect(enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("retries a reply the sender followed up on while it ran, more than once", async () => {
