@@ -532,4 +532,21 @@ describe("approval card arguments", () => {
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail?.split("\n")).toEqual(["…", "ID: 1"]);
   });
+
+  it("keeps entries apart when their unreadable arguments differ", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "MULTI_EXECUTE",
+      {
+        tools: [
+          { tool_slug: "SEND_NOTE", arguments: "not json" },
+          { tool_slug: "SEND_NOTE", arguments: "[1]" },
+        ],
+      },
+      [],
+      { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail?.split("\n")).toEqual(["Send note", "Send note"]);
+  });
 });

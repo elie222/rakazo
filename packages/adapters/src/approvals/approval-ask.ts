@@ -304,7 +304,7 @@ function formatApprovalDetail(
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
     // An entry repeated back to back with the same action and arguments is shown once, with how
-    // many times it runs; the key is the raw action, since two raw names can read the same.
+    // many times it runs; entries are compared as sent, since two raw names can read the same.
     const entries: Array<{
       key: string;
       name: string;
@@ -316,7 +316,8 @@ function formatApprovalDetail(
       const action = entry[batch.action];
       const raw = typeof action === "string" ? action.trim() : "";
       const entryArgs = objectArguments(entry[batch.arguments]);
-      const key = `${raw}\n${JSON.stringify(entryArgs)}`;
+      // The raw entry, as sent: arguments that cannot be shown all read as none.
+      const key = JSON.stringify(item) ?? "";
       const previous = entries.at(-1);
       if (previous?.key === key) previous.runs++;
       else entries.push({ key, name: raw ? readableToolName(raw) : "…", args: entryArgs, runs: 1 });
