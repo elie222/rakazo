@@ -268,6 +268,14 @@ describe("remote-content isolation", () => {
     expect(safeExternalUrl("mailto:person@example.com")).toBeNull();
     expect(safeExternalUrl("file:///etc/passwd")).toBeNull();
   });
+
+  it("hands listed app links to the OS", () => {
+    expect(safeExternalUrl("obsidian://open?vault=Notes&file=Prep.md")).toBe(
+      "obsidian://open?vault=Notes&file=Prep.md",
+    );
+    expect(safeExternalUrl("obsidian://new?vault=Notes&content=x")).toBeNull();
+    expect(safeExternalUrl("vscode://file/etc/passwd")).toBeNull();
+  });
 });
 
 describe("Rakazo health response", () => {

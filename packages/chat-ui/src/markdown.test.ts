@@ -145,6 +145,13 @@ describe("sanitizeMarkdownUrl", () => {
     expect(sanitizeMarkdownUrl("#section", true)).toBe("#section");
   });
 
+  it("allows listed app links and keeps other app schemes out", () => {
+    const note = "obsidian://open?vault=Notes&file=Clients%2FPrep.md";
+    expect(sanitizeMarkdownUrl(note)).toBe(note);
+    expect(sanitizeMarkdownUrl("obsidian://new?vault=Notes&content=x")).toBeUndefined();
+    expect(sanitizeMarkdownUrl("vscode://file/etc/passwd")).toBeUndefined();
+  });
+
   it("rejects executable and embedded-data URLs", () => {
     expect(sanitizeMarkdownUrl("javascript:alert(1)", true)).toBeUndefined();
     expect(sanitizeMarkdownUrl("data:text/html,<script>alert(1)</script>", true)).toBeUndefined();

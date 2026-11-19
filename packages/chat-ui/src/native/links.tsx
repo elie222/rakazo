@@ -1,3 +1,5 @@
+import { appLinkUrl } from "@rakazo/contracts/app-links";
+import { bestEffort } from "@rakazo/logging";
 import { useCallback, useContext } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Alert, Image, Linking, View } from "react-native";
@@ -25,7 +27,14 @@ export const POP_ISOLATE = "\u2069";
 async function openSafeLink(url: string) {
   const safeUrl = sanitizeMarkdownUrl(url);
   if (!safeUrl) return;
-  if (await Linking.canOpenURL(safeUrl)) await Linking.openURL(safeUrl);
+  // iOS answers canOpenURL only for schemes the app declares, so an app link opens directly and
+  // the system refuses it when the app is not installed.
+  if (appLinkUrl(safeUrl) || (await Linking.canOpenURL(safeUrl))) {
+    await bestEffort(
+      "open link",
+      Promise.resolve().then(() => Linking.openURL(safeUrl)),
+    );
+  }
 }
 
 /** Opens a link the way a chat link opens: through the prompt unless it is in-app or trusted. */

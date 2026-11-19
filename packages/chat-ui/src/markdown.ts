@@ -1,6 +1,7 @@
 /// <reference path="./linkify-it.d.ts" />
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { appLinkUrl } from "@rakazo/contracts/app-links";
 import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
@@ -279,7 +280,7 @@ export function sanitizeMarkdownUrl(url: string, allowRelative = false): string 
   const value = url.trim();
   const protocol = value.match(protocolPattern)?.[1]?.toLowerCase();
 
-  if (protocol) return safeProtocols.has(protocol) ? value : undefined;
+  if (protocol) return safeProtocols.has(protocol) ? value : appLinkUrl(value);
   if (
     allowRelative &&
     (value.startsWith("/") ||
