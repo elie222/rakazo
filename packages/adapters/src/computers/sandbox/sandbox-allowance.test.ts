@@ -24,7 +24,7 @@ function allowanceDeps(input: {
     byokTier?: ByokTier | null;
     byokPriceCents?: number | null;
   };
-  hours?: Array<{ kind: string; hours: number }>;
+  hours?: Array<{ kind: string; hours: number; size?: string | null }>;
   sandbox?: Partial<SandboxProvider>;
   granted?: { creditCents: number; since: Date };
 }) {
@@ -85,6 +85,20 @@ describe("computer allowance", () => {
       usedMicros: 2.5 * SANDBOX_HOURLY_COST_MICROS,
       resetsAt: new Date("2026-04-01T00:00:00Z"),
     });
+  });
+
+  it("charges each confirmed size its own rate and keeps the rate for historical usage", async () => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      hours: [
+        { kind: "boat", size: "standard", hours: 1 },
+        { kind: "boat", size: "large", hours: 1 },
+        { kind: "boat", size: "xlarge", hours: 1 },
+        { kind: "boat", size: null, hours: 1 },
+      ],
+    });
+    expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(550_000);
   });
 
   it("gives a live own-key subscription its tier's allowance", async () => {
@@ -465,11 +479,13 @@ describe("plan computer size", () => {
   function sizeFor(
     mode: string | null,
     billing: { status: string | null; byokTier: string | null; byokPriceCents?: number } | null,
+    computerSize = "standard",
   ) {
     const prisma = {
       space: {
         findUnique: vi.fn().mockResolvedValue({
           organization: {
+            computerSize,
             modelCredits: mode ? { mode } : null,
             billing: billing && { byokPriceCents: null, ...billing },
           },
@@ -479,12 +495,19 @@ describe("plan computer size", () => {
     return planComputerSize(prisma as unknown as PrismaClient, "space");
   }
 
-  it("starts computers at a live own-key tier's size", async () => {
-    expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("large");
-    expect(await sizeFor("byok", { status: "trialing", byokTier: "max" })).toBe("xlarge");
+  it("defaults to Standard, and honors an explicit choice within the plan's size limit", async () => {
+    expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("standard");
+    expect(await sizeFor("byok", { status: "active", byokTier: "max" })).toBe("standard");
+    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "large")).toBe("large");
+    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "xlarge")).toBe("standard");
+    expect(await sizeFor("byok", { status: "trialing", byokTier: "max" }, "xlarge")).toBe("xlarge");
     expect(await sizeFor("byok", { status: "active", byokTier: "standard" })).toBe("standard");
     expect(
-      await sizeFor("credits", { status: "active", byokTier: "max", byokPriceCents: 9900 }),
+      await sizeFor(
+        "credits",
+        { status: "active", byokTier: "max", byokPriceCents: 9900 },
+        "xlarge",
+      ),
     ).toBe("xlarge");
   });
 

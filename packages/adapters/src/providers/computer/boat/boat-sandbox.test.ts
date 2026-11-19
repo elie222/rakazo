@@ -206,7 +206,9 @@ describe("BoatSandboxProvider", () => {
     it("creates a new computer on the machine type for its size", async () => {
       const api = new FakeBoatApi();
       const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
-      await provider.provision({ botId: "bot-a", homePath: "/unused", size: "large" }, context);
+      await expect(
+        provider.provision({ botId: "bot-a", homePath: "/unused", size: "large" }, context),
+      ).resolves.toMatchObject({ size: "large" });
       expect(api.creates.at(-1)?.type).toBe("large");
       await provider.provision({ botId: "bot-b", homePath: "/unused" }, context);
       expect(api.creates.at(-1)?.type).toBeUndefined();
@@ -226,12 +228,14 @@ describe("BoatSandboxProvider", () => {
 
       await expect(provider.provision(request, context)).resolves.toMatchObject({
         started: false,
+        size: "standard",
       });
       expect(resume).not.toHaveBeenCalled();
 
       api.setState(computer.id, "archived");
       await expect(provider.provision(request, context)).resolves.toMatchObject({
         started: true,
+        size: "xlarge",
       });
       expect(resume).toHaveBeenCalledWith(
         {

@@ -1,8 +1,32 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { sandboxHourlyCostMicros } from "@rakazo/adapters";
-import { SANDBOX_HOURLY_COST_MICROS } from "@rakazo/contracts";
+import { sandboxDisplayedHourMicros, sandboxHourlyCostMicros } from "@rakazo/adapters";
+import type { ComputerSize } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { sandboxAllowancePlan, sandboxRunHoursByComputer } from "@rakazo/db";
+import { computerSizeSettings, sandboxAllowancePlan, sandboxRunHoursByComputer } from "@rakazo/db";
+
+export async function saveComputerSize(
+  prisma: PrismaClient,
+  organizationId: string,
+  size: ComputerSize,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // Billing sync locks this row before it clears a size the new plan cannot use.
+    await tx.$queryRaw`SELECT "organizationId" FROM "billing_accounts"
+      WHERE "organizationId" = ${organizationId} FOR SHARE`;
+    const current = await tx.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        computerSize: true,
+        modelCredits: { select: { mode: true } },
+        billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+      },
+    });
+    if (!current || !computerSizeSettings(current).available.includes(size))
+      throw new ClientError("BAD_REQUEST", "Your plan does not include this computer size");
+    await tx.organization.update({ where: { id: organizationId }, data: { computerSize: size } });
+  });
+}
 
 export async function readComputerUsage(
   prisma: PrismaClient,
@@ -16,8 +40,10 @@ export async function readComputerUsage(
 
   const runs = await sandboxRunHoursByComputer(prisma, organizationId, plan.since, now);
   const hoursByComputer = new Map<string, number>();
-  for (const { computerId, hours, kind } of runs) {
-    const used = (hours * sandboxHourlyCostMicros(sandbox, { kind })) / SANDBOX_HOURLY_COST_MICROS;
+  const unit = sandboxDisplayedHourMicros(sandbox);
+  for (const run of runs) {
+    const { computerId, hours } = run;
+    const used = (hours * sandboxHourlyCostMicros(sandbox, run)) / unit;
     if (used > 0) hoursByComputer.set(computerId, (hoursByComputer.get(computerId) ?? 0) + used);
   }
   const visible = await prisma.computer.findMany({

@@ -95,6 +95,7 @@ import {
   createBoatClient,
   nextPoll,
 } from "./boat-client.js";
+import { BOAT_MACHINE_TYPES, boatComputerSize } from "./boat-computer.js";
 import { BoatApiError, boatResumeInProgress, boatSdk } from "./boat-errors.js";
 import { readBoatStoppedFile } from "./boat-stopped-file.js";
 
@@ -121,13 +122,6 @@ const BOAT_ARTIFACT_MAX_BYTES = 50 * 1024 * 1024;
 const BOAT_TRANSFER_TIMEOUT_MS = 5 * 60_000;
 /** Boat archives an abandoned build sandbox soon after a crashed build. */
 const BOAT_SNAPSHOT_BUILD_TTL_SECONDS = 30 * 60;
-
-/** Boat's machine type for each computer size: 4, 8 and 16 vCPUs with 8, 16 and 32 GB. */
-const BOAT_MACHINE_TYPES: Record<ComputerSize, SandboxTypeEnum> = {
-  standard: "default",
-  large: "large",
-  xlarge: "xlarge",
-};
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
 const BOAT_NOT_RUNNING_CODES = new Set([
@@ -292,11 +286,11 @@ export class BoatSandboxProvider implements SandboxProvider {
     const type = request.size ? BOAT_MACHINE_TYPES[request.size] : undefined;
     if (request.providerRef && request.providerKind === "boat") {
       try {
-        const started = await this.ensureRunnable(request.providerRef, context.signal, {
+        const running = await this.ensureRunnable(request.providerRef, context.signal, {
           savedAt: request.savedAt,
           type,
         });
-        return { ...this.ref(request.providerRef, request.botId, false), started };
+        return { ...this.ref(request.providerRef, request.botId, false), ...running };
       } catch (error) {
         if (!isSandboxGoneError(error)) throw error;
         this.forget(request.providerRef);
@@ -333,7 +327,10 @@ export class BoatSandboxProvider implements SandboxProvider {
         throw boatSizeError(failure);
       });
     }
-    return this.ref(created.sandbox.id, request.botId, true);
+    return {
+      ...this.ref(created.sandbox.id, request.botId, true),
+      size: boatComputerSize(created.sandbox.type),
+    };
   }
 
   /**
@@ -832,7 +829,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   /**
    * Waits until the sandbox can run commands, resuming or recovering it on the way. Throws a
    * gone error when Boat cannot bring it back, so the caller replaces it from its checkpoint.
-   * Returns whether this call started it.
+   * Returns the confirmed size and whether this call started it.
    *
    * A sandbox in `error` follows Boat's documented order: recover it and wait for it to answer;
    * if it still does not, force-stop it to its last good snapshot and resume that. It is gone
@@ -845,7 +842,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     id: string,
     signal?: AbortSignal,
     reconnect?: { savedAt?: Date; type?: SandboxTypeEnum },
-  ): Promise<boolean> {
+  ): Promise<{ started: boolean; size?: ComputerSize }> {
     const logWait = sandboxWaitLog(id, "start");
     const gone = (sandbox: BoatMachine, reason: string) => {
       logRecovery("gone", reason);
@@ -866,7 +863,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       if (RUNNABLE_STATES.has(sandbox.state)) {
         logWait(sandbox, "completed");
         if (recovering) logRecovery(forced ? "resumed" : "answered");
-        return started;
+        return { started, size: boatComputerSize(sandbox.type) };
       }
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
       if (sandbox.state === "cancelled" || sandbox.dataExpiredAt)

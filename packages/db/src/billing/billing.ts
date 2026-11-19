@@ -1,5 +1,5 @@
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
-import { BYOK_TIERS } from "@rakazo/contracts";
+import { BYOK_TIERS, computerSizesUpTo } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
@@ -318,27 +318,39 @@ export async function syncBillingSnapshot(
     Prisma.sql`SELECT clock_timestamp() AS "startedAt"`,
   );
   const snapshot = await load();
-  const written = await prisma.billingAccount.updateMany({
-    where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
-    data: {
-      creditAmountCents: snapshot?.creditAmountCents ?? null,
-      byokPriceCents: snapshot?.byokPriceCents ?? null,
-      byokInterval: snapshot?.byokInterval ?? null,
-      byokTier: snapshot?.byokTier ?? null,
-      subscriptionId: snapshot?.subscriptionId ?? null,
-      subscriptionItemId: snapshot?.subscriptionItemId ?? null,
-      priceId: snapshot?.priceId ?? null,
-      status: snapshot?.status ?? null,
-      seats: snapshot?.seats ?? null,
-      trialEndsAt: snapshot?.trialEndsAt ?? null,
-      currentPeriodStartsAt: snapshot?.currentPeriodStartsAt ?? null,
-      currentPeriodEndsAt: snapshot?.currentPeriodEndsAt ?? null,
-      cancelAtPeriodEnd: snapshot?.cancelAtPeriodEnd ?? false,
-      endedAt: snapshot?.endedAt ?? null,
-      cancellationReason: snapshot?.cancellationReason ?? null,
-      cancellationComment: snapshot?.cancellationComment ?? null,
-      syncedAt: startedAt,
-    },
+  const written = await prisma.$transaction(async (tx) => {
+    const updated = await tx.billingAccount.updateMany({
+      where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
+      data: {
+        creditAmountCents: snapshot?.creditAmountCents ?? null,
+        byokPriceCents: snapshot?.byokPriceCents ?? null,
+        byokInterval: snapshot?.byokInterval ?? null,
+        byokTier: snapshot?.byokTier ?? null,
+        subscriptionId: snapshot?.subscriptionId ?? null,
+        subscriptionItemId: snapshot?.subscriptionItemId ?? null,
+        priceId: snapshot?.priceId ?? null,
+        status: snapshot?.status ?? null,
+        seats: snapshot?.seats ?? null,
+        trialEndsAt: snapshot?.trialEndsAt ?? null,
+        currentPeriodStartsAt: snapshot?.currentPeriodStartsAt ?? null,
+        currentPeriodEndsAt: snapshot?.currentPeriodEndsAt ?? null,
+        cancelAtPeriodEnd: snapshot?.cancelAtPeriodEnd ?? false,
+        endedAt: snapshot?.endedAt ?? null,
+        cancellationReason: snapshot?.cancellationReason ?? null,
+        cancellationComment: snapshot?.cancellationComment ?? null,
+        syncedAt: startedAt,
+      },
+    });
+    if (updated.count > 0) {
+      const tier =
+        snapshot?.byokPlan && hasBillingAccess(snapshot.status) ? snapshot.byokTier : null;
+      const allowedSizes = computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
+      await tx.organization.updateMany({
+        where: { billing: { customerId }, computerSize: { notIn: allowedSizes } },
+        data: { computerSize: "standard" },
+      });
+    }
+    return updated;
   });
   if (snapshot) {
     await prisma.billingAccount.updateMany({
