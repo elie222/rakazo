@@ -1,7 +1,11 @@
 import type { AdapterContext, AutoReviewRequest, DecisionRequest } from "@rakazo/adapter-kit";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { outsideTargetAsk } from "./auto-review.prompt.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
+import { decisionModel } from "./decision-models.js";
+import type { DecisionCalibration } from "./model-descriptor.js";
+
+const calibration: DecisionCalibration = { confidenceScale: "linear", minPassProbability: 0.75 };
 
 const context: AdapterContext = {
   operationId: "auto-review",
@@ -34,6 +38,7 @@ it("asks the checker one question, with criteria for the kind of action", async 
     },
     providerId: "decisions",
     model: "checker",
+    calibration,
   });
   await provider.review(request, context);
   await provider.review({ ...request, newSite: true }, context);
@@ -76,6 +81,7 @@ it("gives the checker the owner's earlier messages, and says what they are", asy
     },
     providerId: "decisions",
     model: "checker",
+    calibration,
   });
   await provider.review({ ...request, ownerMessages: ["Draft it to Ana"] }, context);
   await provider.review(request, context);
@@ -103,6 +109,7 @@ it("gives the checker targets only outside content named, with the ask they add"
     },
     providerId: "decisions",
     model: "checker",
+    calibration,
   });
   await provider.review({ ...request, outsideOnlyTargets: ["audit@ledger.test"] }, context);
   await provider.review(request, context);
@@ -113,4 +120,54 @@ it("gives the checker targets only outside content named, with the ask they add"
   );
   expect(sent[1]!.state).not.toHaveProperty("outsideOnlyTargets");
   expect(sent[1]!.questions.decision!.criteria!.ask).not.toContain("outsideOnlyTargets");
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+function answering(confidence: number, model: { provider: string; id: string }) {
+  const descriptor = decisionModel(model.provider, model.id)!;
+  return new DecisionAutoReviewProvider({
+    provider: {
+      decide: async () => ({
+        model: model.id,
+        answers: { decision: { type: "choice", choice: "pass", confidence } },
+      }),
+    },
+    providerId: model.provider,
+    model: model.id,
+    calibration: descriptor.calibration,
+  });
+}
+
+it.each([
+  ["openrouter", "typesafe/jev-1.14"],
+  ["typesafe", "jev-1.14"],
+])(
+  "keeps %s/%s passing from confidence 0.5 (p 0.75), as before calibration",
+  async (provider, id) => {
+    vi.stubEnv("RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE", "");
+    const decide = async (confidence: number) =>
+      (await answering(confidence, { provider, id }).review(request, context)).decision;
+    expect(await decide(0.5)).toBe("pass");
+    expect(await decide(0.9)).toBe("pass");
+    expect(await decide(0.4999999)).toBe("ask");
+    expect(await decide(0)).toBe("ask");
+  },
+);
+
+it("passes each model at its own pass probability, read through its confidence scale", async () => {
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE", "");
+  const model = { provider: "openrouter", id: "microsoft/microsoft-decision-1.1" };
+  const { minPassProbability } = decisionModel(model.provider, model.id)!.calibration;
+  const decide = async (p: number) =>
+    (await answering(2 * p - 1, model).review(request, context)).decision;
+  expect(await decide(minPassProbability)).toBe("pass");
+  expect(await decide(minPassProbability - 0.001)).toBe("ask");
+});
+
+it("lets the operator's confidence floor replace every model's calibration", async () => {
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE", "0.8");
+  const model = { provider: "openrouter", id: "microsoft/microsoft-decision-1.1" };
+  expect((await answering(0.79, model).review(request, context)).decision).toBe("ask");
+  expect((await answering(0.8, model).review(request, context)).decision).toBe("pass");
 });

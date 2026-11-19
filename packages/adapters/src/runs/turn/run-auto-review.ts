@@ -150,6 +150,7 @@ export async function autoReviewCheckerProvider(
       }),
       providerId: checker.provider,
       model: checker.model,
+      calibration: decision.calibration,
     });
   if (!judgeKey) throw new CheckerConnectionUnavailableError();
   return createAutoReviewProvider("llm", {

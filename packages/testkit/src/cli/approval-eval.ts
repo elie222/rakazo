@@ -372,6 +372,11 @@ export async function runApprovalSuite(
         ),
         providerId: connection.provider,
         model: connection.modelId,
+        // A model not in the catalog yet is gated as Jev is (confidence 2p - 1, pass at p >= 0.75).
+        calibration: catalog?.calibration ?? {
+          confidenceScale: "linear",
+          minPassProbability: 0.75,
+        },
       });
     } else {
       const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");

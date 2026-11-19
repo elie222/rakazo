@@ -1,9 +1,16 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
-import { openRouterDecisionModel } from "../providers/decision/openrouter/decision-model.js";
+import {
+  openRouterDecisionModel,
+  openRouterMicrosoftDecisionModel,
+} from "../providers/decision/openrouter/decision-model.js";
 import { typesafeDecisionModel } from "../providers/decision/typesafe/decision-model.js";
-import type { DecisionModelDescriptor } from "./model-descriptor.js";
+import type { DecisionCalibration, DecisionModelDescriptor } from "./model-descriptor.js";
 
-const models: readonly DecisionModelDescriptor[] = [openRouterDecisionModel, typesafeDecisionModel];
+const models: readonly DecisionModelDescriptor[] = [
+  openRouterDecisionModel,
+  openRouterMicrosoftDecisionModel,
+  typesafeDecisionModel,
+];
 
 export function decisionModel(provider: string, id: string) {
   return models.find(
@@ -25,4 +32,9 @@ export function decisionInputCost(
   tokens: number,
 ) {
   return (tokens * pricing.inputUsdPerMillion) / 1_000_000;
+}
+
+/** The model's own confidence that matches its pass probability floor, so the gate compares like with like. */
+export function passConfidenceFloor(calibration: DecisionCalibration): number {
+  return 2 * calibration.minPassProbability - 1;
 }
