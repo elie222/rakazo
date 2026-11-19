@@ -28,6 +28,7 @@ export const openRouterDecisionModel: DecisionModelDescriptor = {
 export const openRouterMicrosoftDecisionModel: DecisionModelDescriptor = {
   create: (options) => new HttpDecisionProvider("openrouter", options),
   deploymentApiKey,
+  dataRetentionControl: true,
   provider: "openrouter",
   id: "microsoft/microsoft-decision-1.1",
   inputUsdPerMillion: 0.042,

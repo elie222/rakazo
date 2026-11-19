@@ -28,6 +28,7 @@ it("keeps protocol IDs provider-scoped and publishes only declared catalog entri
       provider: "openrouter",
       id: "microsoft/microsoft-decision-1.1",
       protocol: "decisions",
+      dataRetentionControl: true,
     }),
   ]);
 });
