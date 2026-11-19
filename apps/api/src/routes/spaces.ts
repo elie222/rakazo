@@ -188,6 +188,7 @@ export function spacesRoutes(ctx: RouterContext) {
               deps,
               { spaceId: input.spaceId, userId: context.actor.userId },
               departure,
+              input.userId,
             );
             return { ok: true as const };
           }),

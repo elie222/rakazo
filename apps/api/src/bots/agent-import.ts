@@ -36,6 +36,7 @@ import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   agentImportLeftoverMessages,
   combineImportedInstructions,
+  looksLikeCredential,
   messagingProviderName,
   parseAgentImport,
   readAgentImportFolder,
@@ -228,7 +229,19 @@ async function buildPlan(
     model = { id: "model", title, provider, providerName, modelId, status };
   }
 
-  const skipped = [...plan.skipped, ...settings.skipped];
+  const found = [...plan.skipped, ...settings.skipped];
+  // An app to connect again is something the new bot can help with, so it goes to its chat.
+  const skipped = found.filter((entry) => entry.reason !== "reconnect");
+  const appLeftovers = found
+    .filter((entry) => entry.reason === "reconnect")
+    .map((entry, index) => ({
+      id: `leftover:app:${index}`,
+      title: entry.path
+        .replace(/^apps: /, "")
+        .replace(/\s+/g, " ")
+        .slice(0, 80),
+      content: "A connected app. Connect it again.",
+    }));
   const apiKeys: AgentImportPlan["apiKeys"] = [];
   for (const key of settings.apiKeys) {
     if (await services.hasModelConnection(actor, key.provider)) {
@@ -302,11 +315,24 @@ async function buildPlan(
 
   // Shown with the names its skills are saved under, as the chat will show it; the write
   // renames the text as read, under the creation lock.
-  const leftoverInputs = new Map(plan.leftovers.map((item) => [item.id, item]));
-  const leftovers = plan.leftovers.map((item) => ({
-    ...item,
-    content: renameRoutineSkillMentions(item.content, previewSkillNames),
-  }));
+  // A leftover has no box to tick, so one that looks like it holds a key is never handed to
+  // the chat: it is listed as not imported instead.
+  const handable = plan.leftovers.filter((item) => !item.containsKey);
+  for (const item of plan.leftovers) {
+    if (!item.containsKey) continue;
+    skipped.push({
+      path: `routines: ${looksLikeCredential(item.title) ? "Routine" : item.title}`,
+      reason: "contains_key",
+    });
+  }
+  const leftoverInputs = new Map([...handable, ...appLeftovers].map((item) => [item.id, item]));
+  const leftovers = [
+    ...handable.map((item) => ({
+      ...item,
+      content: renameRoutineSkillMentions(item.content, previewSkillNames),
+    })),
+    ...appLeftovers,
+  ];
 
   return {
     plan: { ...plan, model, mcpServers, routines, apiKeys, leftovers, skipped },

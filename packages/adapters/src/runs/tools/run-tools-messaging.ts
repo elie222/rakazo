@@ -13,6 +13,7 @@ import {
   respondAgentConnection,
 } from "../../bots/agent-connections.js";
 import { handoffToGroupBot } from "../../bots/group-handoff.js";
+import { findPostableGroup, postToGroup } from "../../bots/group-post.js";
 import { endCallFromTool, requestUserCall } from "../../calls/call-request.js";
 import {
   normalizeWorkspacePath,
@@ -49,24 +50,16 @@ type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[]; recipientId?
 /**
  * Files a bot passes by path to another bot. A recipient on the same computer reads them
  * where they are. One elsewhere, or one that cannot be told apart, gets saved copies, filed
- * under the chat that shows them: its own, or the group's for a handoff. Every file is read
- * before any is saved, so a bad path leaves nothing behind.
+ * under the chat that shows them: its own, or the group's for a handoff.
  */
 async function prepareSentFiles(
   ctx: RunContext,
   call: ToolCall,
   recipient: { botId?: string; name?: string; groupId?: string },
 ): Promise<{ error: string } | SentFiles> {
-  const raw = call.args.files;
-  if (raw === undefined || raw === null) return { files: [], sharedPaths: [] };
-  if (!Array.isArray(raw) || raw.some((path) => typeof path !== "string" || !path.trim())) {
-    return { error: "files must be a list of file paths" };
-  }
-  const paths = [...new Set(raw.map((path: string) => path.trim()))];
+  const paths = filePaths(call);
+  if ("error" in paths) return paths;
   if (!paths.length) return { files: [], sharedPaths: [] };
-  if (paths.length > ATTACHMENT_MAX_COUNT) {
-    return { error: `send at most ${ATTACHMENT_MAX_COUNT} files; zip the rest into one file` };
-  }
   const target = await findRecipient(ctx, recipient);
   if (!target) return { error: "no bot found with that id or name. Nothing was sent." };
   const { bot } = ctx;
@@ -77,19 +70,45 @@ async function prepareSentFiles(
     target.computerId === bot.computerId
   )
     return withRecipient(await sharedFiles(ctx, call, paths), target.id);
+  const owner = recipient.groupId
+    ? { botId: bot.id, groupId: recipient.groupId }
+    : { botId: target.id };
+  const copies = await savedCopies(ctx, call, paths, owner);
+  if ("error" in copies) return copies;
+  return { files: copies, sharedPaths: [], recipientId: target.id };
+}
+
+/** The `files` argument as distinct paths, or why it can't be used. */
+function filePaths(call: ToolCall): { error: string } | string[] {
+  const raw = call.args.files;
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.some((path) => typeof path !== "string" || !path.trim())) {
+    return { error: "files must be a list of file paths" };
+  }
+  const paths = [...new Set(raw.map((path: string) => path.trim()))];
+  if (paths.length > ATTACHMENT_MAX_COUNT) {
+    return { error: `send at most ${ATTACHMENT_MAX_COUNT} files; zip the rest into one file` };
+  }
+  return paths;
+}
+
+/** Saved copies of the files, all read before any is saved so a bad path leaves nothing behind. */
+async function savedCopies(
+  ctx: RunContext,
+  call: ToolCall,
+  paths: string[],
+  owner: { botId: string; groupId?: string },
+): Promise<{ error: string } | AttachmentBlock[]> {
   const read: Array<{ path: string; bytes: Uint8Array }> = [];
   for (const path of paths) {
     const file = await readWorkspaceFile(ctx, call, path);
     if ("error" in file) {
-      // The recipient has its own computer, so a folder or raw source file has to travel zipped.
+      // A saved copy travels alone, so a folder or raw source file has to be zipped.
       const hint = ZIP_HELPS.has(file.error) ? "; zip it and send the zip" : "";
       return { error: `${path}: ${file.error}${hint}. Nothing was sent.` };
     }
     read.push({ path, bytes: file.bytes });
   }
-  const owner = recipient.groupId
-    ? { botId: bot.id, groupId: recipient.groupId }
-    : { botId: target.id };
   const files: AttachmentBlock[] = [];
   for (const file of read) {
     try {
@@ -99,7 +118,7 @@ async function prepareSentFiles(
       return { error: `${file.path}: ${reason}. Nothing was sent.` };
     }
   }
-  return { files, sharedPaths: [], recipientId: target.id };
+  return files;
 }
 
 function withRecipient(prepared: { error: string } | SentFiles, recipientId: string) {
@@ -406,6 +425,35 @@ export const messagingTools: ToolHandlers = {
       files: stored.files,
     });
     if ("ok" in result && result.ok && thread.groupId) ctx.state.handedOff = true;
+    return call.finish(result);
+  },
+  async post_to_group(ctx, call) {
+    const { deps, run } = ctx;
+    const { args, effectKey } = call;
+    const invalid = messageError(ctx, args.message);
+    if (invalid) return call.finish({ error: invalid });
+    const group = await findPostableGroup(deps.prisma, run, {
+      groupId: args.group_id ? String(args.group_id).trim() : undefined,
+      groupName: args.group_name ? String(args.group_name).trim() : undefined,
+    });
+    if ("error" in group) return call.finish({ error: `${group.error}. Nothing was posted.` });
+    const paths = filePaths(call);
+    if ("error" in paths) return call.finish({ error: paths.error });
+    // A copy keeps its file name, which every member sees, so one holding a secret is refused.
+    if (paths.some((path) => redactSecrets(path, ctx.secrets) !== path)) {
+      return call.finish({ error: "one of the paths can't be shared. Nothing was posted." });
+    }
+    // Copies filed under the group, so everyone in it can open them.
+    const files = paths.length
+      ? await savedCopies(ctx, call, paths, { botId: ctx.bot.id, groupId: group.id })
+      : [];
+    if ("error" in files) return call.finish({ error: files.error });
+    const result = await postToGroup(deps, run, group, {
+      message: redactSecrets(String(args.message ?? ""), ctx.secrets),
+      deliveryKey: effectKey,
+      files,
+    });
+    if ("error" in result) return call.finish({ error: `${result.error}. Nothing was posted.` });
     return call.finish(result);
   },
 };

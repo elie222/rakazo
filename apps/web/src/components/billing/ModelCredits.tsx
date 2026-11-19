@@ -234,10 +234,8 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className={cn(
-          "w-full",
-          !compact && "rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12",
-        )}
+        size={compact ? "default" : "xl"}
+        className="w-full"
       >
         <SelectValue />
       </SelectTrigger>

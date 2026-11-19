@@ -11,6 +11,7 @@ import { ThreadSnapshotSchema } from "../threads/thread.js";
 import { AvatarStyleSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
+  meetingsEnabled: z.boolean().optional(),
   maxUploadSizeBytes: z.number().int().positive().optional(),
   maxAttachmentsPerMessage: z.number().int().positive().optional(),
   /** Labs features this account turned on. Absent from servers that predate Labs. */

@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AvatarViewport } from "../../lib/bots/avatar-life";
 import type { InboxSignal } from "../../lib/inbox/offscreen-unreads";
 import { offscreenUnreads } from "../../lib/inbox/offscreen-unreads";
-import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
+import { useFloatingHeaderInset, useTopBarInset } from "../../lib/layout/floating-header";
 import { native } from "../../lib/native/native";
 import { canScrollNativeList, scrollNativeListToRow } from "../../lib/native/native-list-scroll";
 import { NativeInsetList } from "../native/native-inset-list";
@@ -109,18 +109,24 @@ export function NativeInboxList<Item>({
   footer,
   gutters,
   column,
+  width,
   avatarViewport,
   onRefresh,
   signals,
   showJumpPills,
 }: NativeInboxListProps<Item>) {
   const hostRef = useRef(null);
-  const headerInset = useFloatingHeaderInset();
-  const { bottom } = useSafeAreaInsets();
+  const floatingHeader = useFloatingHeaderInset() > 0;
+  const headerInset = useTopBarInset();
+  const { bottom, left, right } = useSafeAreaInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
-  // the last spacer, which fills its row.
-  const [rowWidth, setRowWidth] = useState<number>();
+  // the last spacer, which fills its row. That spacer reports only while it is on screen, so a
+  // resize after it scrolls away (dragging the split divider) moves the measured width by the
+  // change in the room the rows get.
+  const room = width - left - right - gutters.left - gutters.right;
+  const [measured, setMeasured] = useState<{ row: number; room: number }>();
+  const rowWidth = measured && measured.row + room - measured.room;
   const rowInsets = listRowInsets({
     top: 0,
     leading: gutters.left,
@@ -187,9 +193,14 @@ export function NativeInboxList<Item>({
       )}
       {spacer(
         "bottom",
-        headerInset > 0 ? bottom + 32 : 32,
-        onGeometryChange(({ width }) => {
-          if (width > 0) setRowWidth((current) => (current === width ? current : width));
+        floatingHeader ? bottom + 32 : 32,
+        onGeometryChange((frame) => {
+          if (frame.width > 0)
+            setMeasured((current) =>
+              current?.row === frame.width && current.room === room
+                ? current
+                : { row: frame.width, room },
+            );
         }),
       )}
     </NativeInsetList>

@@ -106,7 +106,9 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
     return { organizationId, actor };
   }
 
-  function deletionDeps(billing: ReturnType<typeof createBillingService>) {
+  function deletionDeps(
+    billing: Pick<ReturnType<typeof createBillingService>, "cancelForDeletedUser">,
+  ) {
     return {
       prisma,
       sandbox: { destroy: vi.fn() },
@@ -117,7 +119,7 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       billing,
       events: createThreadEvents(prisma),
     } as unknown as SpaceDeletionDeps & {
-      billing: ReturnType<typeof createBillingService>;
+      billing: typeof billing;
       events: ThreadEvents;
     };
   }
@@ -132,6 +134,49 @@ describePostgres("account deletion billing ordering (PostgreSQL)", () => {
       SELECT count(*) AS rows FROM "leases" WHERE "key" = ${leaseKey}`;
     return Number(row!.rows);
   };
+
+  it("leaves the account's billing and Space intact when calendar cleanup fails", async () => {
+    const { actor, organizationId } = await organization("linked-calendar");
+    const system = asSystem(prisma);
+    const calendarId = `acct-calendar-${stamp}`;
+    await system.meetingCalendarConnection.create({
+      data: {
+        id: calendarId,
+        spaceId: actor.spaceId,
+        userId,
+        provider: "offline-provider",
+        externalCalendarId: "offline-calendar",
+      },
+    });
+    const outage = new Error("calendar provider unavailable");
+    const disconnectUser = vi.fn().mockRejectedValue(outage);
+    const cancelForDeletedUser = vi.fn();
+    try {
+      await expect(
+        runAsSystem("account deletion calendar test", () =>
+          deleteAccountContent(
+            {
+              ...deletionDeps({ cancelForDeletedUser }),
+              meetingCalendar: {
+                disconnectUser,
+                disconnectSpace: vi.fn(),
+                disconnectOwner: vi.fn(),
+              },
+            },
+            userId,
+          ),
+        ),
+      ).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: outage });
+      expect(disconnectUser).toHaveBeenCalledWith(userId);
+      expect(cancelForDeletedUser).not.toHaveBeenCalled();
+      await expect(
+        prisma.space.findUnique({ where: { id: actor.spaceId } }),
+      ).resolves.toMatchObject({ deletionClaimId: null });
+    } finally {
+      await system.meetingCalendarConnection.deleteMany({ where: { id: calendarId } });
+      await prisma.organization.deleteMany({ where: { id: organizationId } });
+    }
+  });
 
   it("refuses a checkout opened while the account's billing cancellation is still running", async () => {
     const second = await organization("second");

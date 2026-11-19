@@ -5,6 +5,7 @@ import {
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
+  meetingCalendarScope,
   PushSessionEndedError,
   settleCallRequest,
   validateCreditOfferingChoice,
@@ -409,14 +410,17 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
+          calendar = false,
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
-          if (!followSpaceChanges) return;
+          if (!followSpaceChanges || (calendar && !deps.meetingCalendar)) return;
+          const scope = calendar ? meetingCalendarScope(spaceId, userId) : spaceId;
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
-            for await (const spaceChange of followSpaceChanges(spaceId, signal))
-              yield { spaceChange };
+            for await (const spaceChange of followSpaceChanges(scope, signal)) {
+              if ((spaceChange === "meetingCalendar") === calendar) yield { spaceChange };
+            }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
             throw error;
@@ -439,6 +443,7 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
+            spaceChanges(signal, true),
             organizationChanges(signal),
           ),
         );
