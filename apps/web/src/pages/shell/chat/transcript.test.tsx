@@ -520,3 +520,21 @@ it("lets a tap at a held reply near the end resume following", () => {
   });
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 3_000, behavior: "auto" });
 });
+
+it("holds the new reply, not older history that loads after the send", () => {
+  const sent = history();
+  render(baseProps(sent));
+  render({ ...baseProps(sent), followRequest: 1 });
+  const { transcript, size, scrollTo } = measuredTranscript({ m0: -500, m5: 200 });
+  transcript.scrollTop = 700;
+  size.content = 2_000;
+  render({
+    ...baseProps([
+      textMessage("m0", "bot", "An older answer"),
+      ...sent,
+      textMessage("m5", "bot", "Here are three cabins"),
+    ]),
+    followRequest: 1,
+  });
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 900, behavior: "auto" });
+});

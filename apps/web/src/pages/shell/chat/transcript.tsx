@@ -178,8 +178,8 @@ export const Transcript = memo(function Transcript({
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
   const following = useRef(true);
-  // The rows shown when the reader last sent: following stops at the first reply row after them.
-  const rowsBeforeReply = useRef<ReadonlySet<string> | null>(null);
+  // The messages loaded when the reader last sent: following stops at the first reply row after them.
+  const messagesBeforeReply = useRef<ReadonlySet<string> | null>(null);
   // Where a reply's start is held. Its own scroll may land near the end and must not re-follow.
   const heldAt = useRef<number | null>(null);
   const jumpScrolling = useRef(false);
@@ -436,7 +436,7 @@ export const Transcript = memo(function Transcript({
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     following.current = true;
-    rowsBeforeReply.current = null;
+    messagesBeforeReply.current = null;
     heldAt.current = null;
     autoScrolling.current = !reducedMotion;
     setAtEnd(true);
@@ -477,7 +477,7 @@ export const Transcript = memo(function Transcript({
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
     following.current = false;
-    rowsBeforeReply.current = null;
+    messagesBeforeReply.current = null;
     autoScrolling.current = false;
     jumpScrolling.current = true;
     setJumpScroll(scrollRequest.nonce);
@@ -501,24 +501,16 @@ export const Transcript = memo(function Transcript({
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
     followedRequest.current = followRequest;
-    const element = scrollRef.current;
-    rowsBeforeReply.current = element
-      ? new Set(
-          Array.from(
-            element.querySelectorAll<HTMLElement>("[data-message-id]"),
-            (row) => row.dataset.messageId ?? "",
-          ),
-        )
-      : null;
+    messagesBeforeReply.current = new Set(messages.map((message) => message.id));
     heldAt.current = null;
     snapToEnd();
-  }, [followRequest, snapToEnd]);
+  }, [followRequest, messages, snapToEnd]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
     const replyRow =
       element && following.current
-        ? firstReplyRow(element, messages, rowsBeforeReply.current)
+        ? firstReplyRow(element, messages, messagesBeforeReply.current)
         : null;
     const replyTop =
       element && replyRow
@@ -531,7 +523,7 @@ export const Transcript = memo(function Transcript({
     if (element && replyTop !== null) {
       // The reply no longer fits: hold its first line at the top and let the reader scroll on.
       following.current = false;
-      rowsBeforeReply.current = null;
+      messagesBeforeReply.current = null;
       autoScrolling.current = false;
       setAtEnd(false);
       element.scrollTo({ top: replyTop, behavior: "auto" });
@@ -539,10 +531,12 @@ export const Transcript = memo(function Transcript({
     } else if (following.current) {
       snapToEnd();
       // A finished reply that fit leaves later messages to follow to the end as before.
-      if (replyRow && !running) rowsBeforeReply.current = null;
+      if (replyRow && !running) messagesBeforeReply.current = null;
     }
     // Content can grow below a reader who is not following without any scroll event.
-    else if (element) setAtEnd(transcriptIsNearEnd(element));
+    else if (element) {
+      setAtEnd(transcriptIsNearEnd(element) && !isHeld(element, heldAt.current));
+    }
   }, [messages, running, showTail, scrollRef, snapToEnd]);
 
   useLayoutEffect(() => {
@@ -578,14 +572,14 @@ export const Transcript = memo(function Transcript({
           lastScrollTop.current = event.currentTarget.scrollTop;
           autoScrolling.current = false;
           following.current = false;
-          rowsBeforeReply.current = null;
+          messagesBeforeReply.current = null;
           heldAt.current = null;
         }}
         onTouchStart={(event) => {
           lastScrollTop.current = event.currentTarget.scrollTop;
           autoScrolling.current = false;
           following.current = false;
-          rowsBeforeReply.current = null;
+          messagesBeforeReply.current = null;
           heldAt.current = null;
         }}
         onScrollEnd={() => {
@@ -597,7 +591,7 @@ export const Transcript = memo(function Transcript({
             lastScrollTop.current = event.currentTarget.scrollTop;
             autoScrolling.current = false;
             following.current = false;
-            rowsBeforeReply.current = null;
+            messagesBeforeReply.current = null;
             heldAt.current = null;
           }
         }}
@@ -608,10 +602,11 @@ export const Transcript = memo(function Transcript({
           );
           lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
-          setAtEnd(nearEnd);
+          const held = isHeld(event.currentTarget, heldAt.current);
+          setAtEnd(nearEnd && !held);
           // A jump scroll owns the viewport until its animation settles; its
           // own near-end crossings must not re-arm tail-following.
-          if (jumpScrolling.current || isHeld(event.currentTarget, heldAt.current)) return;
+          if (jumpScrolling.current || held) return;
           if (nearEnd) {
             if (scrolledDown) following.current = true;
             if (autoScrolling.current) {
@@ -813,15 +808,16 @@ export const Transcript = memo(function Transcript({
   );
 });
 
-/** The first reply row shown after the rows in `before`. */
+/** The first reply row shown after the last of the messages in `before`; older history never counts. */
 function firstReplyRow(
   element: HTMLElement,
   messages: ThreadMessage[],
   before: ReadonlySet<string> | null,
 ): HTMLElement | null {
   if (!before) return null;
-  for (const message of messages) {
-    if (message.role === "user" || before.has(message.id)) continue;
+  const start = messages.findLastIndex((message) => before.has(message.id)) + 1;
+  for (const message of messages.slice(start)) {
+    if (message.role === "user") continue;
     const row = element.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(message.id)}"]`);
     if (row) return row;
   }
