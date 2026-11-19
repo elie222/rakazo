@@ -22,6 +22,14 @@ it("opens a web page the system refuses in the in-app browser", async () => {
   expect(mocks.openBrowserAsync).toHaveBeenCalledWith("https://example.test/terms/");
 });
 
+it("falls back when the system opener throws instead of rejecting", async () => {
+  mocks.openURL.mockImplementation(() => {
+    throw new Error("Could not open URL");
+  });
+  await openExternalUrl("https://example.test/terms/");
+  expect(mocks.openBrowserAsync).toHaveBeenCalledWith("https://example.test/terms/");
+});
+
 it("settles without a browser fallback when nothing can open the link", async () => {
   mocks.openURL.mockRejectedValue(new Error("No Activity found to handle Intent"));
   await expect(openExternalUrl("example")).resolves.toBeUndefined();

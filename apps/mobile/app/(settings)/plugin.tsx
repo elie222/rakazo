@@ -7,7 +7,6 @@ import {
   connectCatalogItem,
   installedPluginParts,
   isCatalogItemConnected,
-  pluginSourceHref,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -37,6 +36,7 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
+import { sourceHref } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
@@ -223,7 +223,7 @@ function PluginScreen() {
   const busy = Boolean(pending);
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
-  const sourceHref = pluginSourceHref(params.installedSource, detail?.resolvedSha);
+  const source = sourceHref(params.installedSource, detail?.resolvedSha);
   // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
   // a built-in one says why, since the user still has that skill.
   const notAdded = [
@@ -308,11 +308,11 @@ function PluginScreen() {
             <Text numberOfLines={2} style={styles.name}>
               {params.name}
             </Text>
-            {sourceHref ? (
+            {source ? (
               <Pressable
                 accessibilityRole="link"
                 hitSlop={8}
-                onPress={() => void openExternalUrl(sourceHref)}
+                onPress={() => void openExternalUrl(source)}
                 style={styles.sourceLink}
               >
                 <Text style={styles.secondary}>{t`View source`}</Text>

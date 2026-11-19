@@ -8,7 +8,7 @@ import type {
   PluginPreview,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts, pluginSite, pluginSourceHref } from "@rakazo/core";
+import { installedPluginParts, pluginSite } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -116,6 +116,11 @@ export function PluginRow({
   );
 }
 
+function sourceHref(source: string, sha: string | undefined) {
+  const [repo, subdir] = source.split("#");
+  return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
+}
+
 const SKILLS_SHOWN = 5;
 
 /** The managed app a plugin page connects instead of the plugin's own connector. */
@@ -182,7 +187,6 @@ export function PluginDetail({
       : [];
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
-  const sourceHref = pluginSourceHref(selection.installedSource, detail?.resolvedSha);
   const installed = Boolean(install);
 
   useEffect(() => {
@@ -403,18 +407,16 @@ export function PluginDetail({
           <h2 className="truncate text-heading2 font-semibold text-foreground">
             {managed?.name ?? selection.name}
           </h2>
-          {sourceHref ? (
-            <a
-              href={sourceHref}
-              target="_blank"
-              rel="noreferrer"
-              title={detail ? `${selection.installedSource}@${detail.resolvedSha}` : undefined}
-              className="inline-flex items-center gap-1 text-body text-muted-foreground hover:text-foreground"
-            >
-              <Trans>View source</Trans>
-              <ArrowUpRight size={14} />
-            </a>
-          ) : null}
+          <a
+            href={sourceHref(selection.installedSource, detail?.resolvedSha)}
+            target="_blank"
+            rel="noreferrer"
+            title={detail ? `${selection.installedSource}@${detail.resolvedSha}` : undefined}
+            className="inline-flex items-center gap-1 text-body text-muted-foreground hover:text-foreground"
+          >
+            <Trans>View source</Trans>
+            <ArrowUpRight size={14} />
+          </a>
         </div>
         <div className="flex shrink-0 gap-2 pt-2">{headerAction()}</div>
       </div>

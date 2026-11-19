@@ -273,16 +273,6 @@ export function pluginSite(
   }
 }
 
-/**
- * Where a plugin's source can be read: its repository, or the pinned subfolder in it. Null when
- * the source is not a web address, such as a bare name, so there is nothing to open.
- */
-export function pluginSourceHref(source: string, sha: string | undefined): string | null {
-  const [repo = "", subdir] = source.split("#");
-  if (!/^https?:\/\//i.test(repo)) return null;
-  return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
-}
-
 /** Installs from before parts could be chosen added everything they had. */
 export function installedPluginParts(config: Record<string, unknown>): PluginPart[] {
   const parsed = PluginPartSchema.array().safeParse(config.parts);

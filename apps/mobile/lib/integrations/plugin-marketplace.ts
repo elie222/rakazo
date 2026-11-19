@@ -111,3 +111,13 @@ export function pluginSkillCount(install: CapabilityInstall): number {
 export function hasPluginConnector(install: CapabilityInstall): boolean {
   return installedPluginParts(install.config).includes("connector");
 }
+
+/**
+ * Where a plugin's source can be read: its repository, or the pinned subfolder in it. Null when
+ * the source is not a web address, such as a bare name, so there is nothing to open.
+ */
+export function sourceHref(source: string, sha: string | undefined): string | null {
+  const [repo = "", subdir] = source.split("#");
+  if (!/^https?:\/\//i.test(repo)) return null;
+  return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
+}

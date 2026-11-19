@@ -8,7 +8,8 @@ import { Linking } from "react-native";
 export async function openExternalUrl(url: string): Promise<void> {
   const opened = await bestEffort(
     "open link",
-    Linking.openURL(url).then(() => true),
+    // The executor turns an opener that throws synchronously into a rejection.
+    new Promise((resolve) => resolve(Linking.openURL(url))).then(() => true),
   );
   if (opened || !/^https?:\/\//i.test(url)) return;
   await bestEffort(
