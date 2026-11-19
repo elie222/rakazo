@@ -159,6 +159,12 @@ export async function openBotComputer(page: Page) {
   await page.getByTestId("bot-tab-computer").click();
 }
 
+/** Opens the bot panel and switches to its Library tab (pages and files). */
+export async function openBotLibrary(page: Page) {
+  await openBotPanel(page);
+  await page.getByTestId("bot-tab-library").click();
+}
+
 /** Waits for fold-outs to settle before clicking or dragging their contents. */
 async function waitForTransitions(element: Locator) {
   // Base UI starts a fold a frame after the toggle.
