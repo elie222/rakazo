@@ -6,10 +6,14 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 const host = vi.hoisted(() => ({
-  server: { visibility: "private" as "private" | "link", shareUrl: null as string | null },
+  server: {
+    visibility: "private" as "private" | "link" | "people",
+    shareUrl: null as string | null,
+  },
   /** The server makes the change, then the connection drops before its answer arrives. */
   loseAnswer: false,
   readFails: false,
+  grantsFail: false,
   owner: { name: "RJ", image: null as string | null },
   sent: [] as string[],
 }));
@@ -102,7 +106,10 @@ vi.mock("../api/api", () => ({
       if (host.loseAnswer) throw new TypeError("Network request failed");
       return { ...host.server };
     }
-    if (proc === "pageReviews/grants") return [];
+    if (proc === "pageReviews/grants") {
+      if (host.grantsFail) throw new Error("Could not load reviewers.");
+      return [];
+    }
     throw new Error(`unexpected ${proc}`);
   }),
 }));
@@ -189,6 +196,24 @@ it("names an unnamed owner You and shows the account name when present", async (
   expect(second.text()).toContain("🦊 kit");
   await act(async () => second.root.unmount());
   host.owner = { name: "RJ", image: null };
+});
+
+it("clears a reviewer load error when the owner leaves Specific people", async () => {
+  host.server = { visibility: "people", shareUrl: null };
+  host.grantsFail = true;
+  const { root, press, checked, text } = await sheet();
+  try {
+    await vi.waitFor(async () => {
+      await act(flush);
+      expect(text()).toContain("Could not load reviewers.");
+    });
+    await press("Only you");
+    expect(checked()).toEqual(["Only you"]);
+    expect(text()).not.toContain("Could not load reviewers.");
+  } finally {
+    await act(async () => root.unmount());
+    host.grantsFail = false;
+  }
 });
 
 it("drops the copied mark once the link is turned off, since turning it on issues a new one", async () => {

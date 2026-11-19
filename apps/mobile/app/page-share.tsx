@@ -82,6 +82,7 @@ export default function PageShareScreen() {
     );
   }
   const shown = page.isError || (save.error && page.isFetching) ? null : page.data.visibility;
+  const grantsError = shown === "people" ? grants.error : null;
   const link = !save.pending && shown ? page.data.shareUrl : null;
   const owner = accountDisplay(page.data.owner, t`You`);
   const options = [
@@ -189,12 +190,12 @@ export default function PageShareScreen() {
               ))}
         </SettingsGroup>
       ) : null}
-      {save.error || linkProblem || grants.error ? (
+      {save.error || linkProblem || grantsError ? (
         <Text accessibilityRole="alert" style={[styles.error, { color: tokens.destructive }]}>
           {linkProblem ??
             (save.error && save.input?.kind === "visibility"
               ? t`Could not change who can view this page. Try again.`
-              : errorText(save.error ?? grants.error))}
+              : errorText(save.error ?? grantsError))}
         </Text>
       ) : null}
       {link &&

@@ -34,7 +34,7 @@ account after you add their address, add it again to give them access.
 ### Review a page
 
 Open **Comments**, choose a section and post your comment. Each comment stays attached to the
-revision you read. Open its revision to see the original section. The author and the person
+revision you read. Open its revision to see the original section. The page owner or the person
 who posted the comment can resolve or reopen it.
 
 Use **Ask bot to revise** on an open comment on the latest revision to request a draft. The
