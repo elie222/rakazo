@@ -629,7 +629,9 @@ export async function sleepComputerIfIdle(
     ) {
       // The provider's disk is the source of truth and survives the stop; this save is only a
       // backup, and the next start prefers the newer disk over the older backup. Retrying a save
-      // the disk itself failed would fail the same way every idle window.
+      // the disk itself failed would fail the same way every idle window. A disk that fails reads
+      // can fail the provider's own save on stop too, so it stops like a damaged computer.
+      damaged = error instanceof WorkspaceSaveFailedError && error.reason === "disk_error";
       getLogger().warn("computer.checkpoint_skipped", {
         "computer.id": computerId,
         provider: computer.kind,

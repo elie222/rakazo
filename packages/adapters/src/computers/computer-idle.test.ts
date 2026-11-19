@@ -727,7 +727,11 @@ describe("sandbox idle", () => {
 
       await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
 
-      expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+      expect(harness.sandbox.stop).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        reason === "disk_error" ? { discardUnsaved: true } : undefined,
+      );
       expect(harness.computer.state).toBe("suspended");
       expect(harness.computer.homeRevision).toBe("rev-before");
       expect(sink.events).toContainEqual(
