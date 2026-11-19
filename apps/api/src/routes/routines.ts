@@ -41,14 +41,17 @@ import type { RouterContext } from "./context.js";
 async function assertRoutineWatch(
   watch: RoutineWatch,
   actor: Actor,
-  bot: { id: string; computer?: { scope: string } | null },
+  bot: { id: string; workspacePath?: string | null; computer?: { scope: string } | null },
 ): Promise<void> {
-  await validateRoutineWatch({}, watch, { ...actor, botId: bot.id }, bot.computer).catch(
-    (error: unknown) => {
-      if (error instanceof RoutineWatchError) throw new ClientError("BAD_REQUEST", error.message);
-      throw error;
-    },
-  );
+  await validateRoutineWatch(
+    {},
+    watch,
+    { ...actor, botId: bot.id, workspacePath: bot.workspacePath },
+    bot.computer,
+  ).catch((error: unknown) => {
+    if (error instanceof RoutineWatchError) throw new ClientError("BAD_REQUEST", error.message);
+    throw error;
+  });
 }
 
 export function routinesRoutes(ctx: RouterContext) {

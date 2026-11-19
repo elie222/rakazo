@@ -35,6 +35,7 @@ function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
   return {
     botId: ctx.bot.id,
     computerMode: ctx.computer.mode,
+    workspacePath: ctx.bot.workspacePath,
     computer: () => ctx.computer.get("tool", call.name),
     markDirty: () => ctx.computer.checkpoint.markDirty(),
     context: ctx.context,

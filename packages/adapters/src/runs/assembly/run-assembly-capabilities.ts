@@ -26,7 +26,11 @@ import {
 import { resolveComputerRunModel } from "../../computers/computer-model-settings.js";
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
-import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
+import { botWorkspaceDirectory } from "../../computers/screens/computer-support.js";
+import {
+  customWorkspaceInstruction,
+  teamWorkspaceInstruction,
+} from "../../computers/screens/computer-support.prompt.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { selectConfiguredModel } from "../../models/model-roles.js";
@@ -251,6 +255,7 @@ export async function prepareRunComputer(
   const recentFilesInput = {
     context,
     computerMode,
+    workspacePath: bot.workspacePath,
     skipMessageId: currentTurnMessage?.id,
     maxTurns: RECENT_TURN_IMAGE_TURNS,
   };
@@ -273,7 +278,9 @@ export async function prepareRunComputer(
         context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
       }
       getLogger().info("computer.requested");
-      const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+      const computer = await provisionComputer(deps, storedComputer.id, context, "bot", undefined, {
+        workspacePath: bot.workspacePath,
+      });
       earlierFiles.computerStarted();
       computerUse.screenRelease = { computer, context, keepWarm: false };
       recordComputerDisk(deps, storedComputer.id, computer, context);
@@ -329,6 +336,7 @@ export async function prepareRunComputer(
                   context,
                   computer: async () => computer,
                   computerMode,
+                  workspacePath: bot.workspacePath,
                   markWorkspaceDirty: workspaceCheckpoint.markDirty,
                 },
               );
@@ -344,6 +352,7 @@ export async function prepareRunComputer(
                   context,
                   computer: async () => computer,
                   computerMode,
+                  workspacePath: bot.workspacePath,
                   markWorkspaceDirty: workspaceCheckpoint.markDirty,
                 }),
               );
@@ -898,8 +907,14 @@ export async function loadComputerInstructions(
   ]
     .filter(Boolean)
     .join(" ");
-  const workspaceInstruction =
-    computerMode === "team" ? teamWorkspaceInstruction(bot.id) : PRIVATE_WORKSPACE_INSTRUCTION;
+  const workspaceInstruction = bot.workspacePath
+    ? customWorkspaceInstruction(
+        computerMode,
+        botWorkspaceDirectory(computerMode, bot.id, bot.workspacePath),
+      )
+    : computerMode === "team"
+      ? teamWorkspaceInstruction(bot.id)
+      : PRIVATE_WORKSPACE_INSTRUCTION;
   return { hostEnvironment, computerInstruction, workspaceInstruction };
 }
 

@@ -8,9 +8,9 @@ import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
 import {
+  botWorkspaceDirectory,
   displayBotWorkspacePath,
   resolveBotWorkspacePath,
-  teamBotWorkspaceDirectory,
 } from "../computers/screens/computer-support.js";
 import { publishMessage } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
@@ -28,6 +28,8 @@ import {
 export type RunWorkspace = {
   botId: string;
   computerMode: ComputerMode;
+  /** The bot's own folder; unset uses the default (bots/<id> on a Team Computer). */
+  workspacePath?: string | null;
   computer: () => Promise<ComputerRef>;
   markDirty: () => void;
   context: AdapterContext;
@@ -35,10 +37,13 @@ export type RunWorkspace = {
 };
 
 /** Names the file as the shell sees it: on a Team Computer the shell starts in the bot's home, not the Team root. */
-function fileTooLarge(computerMode: ComputerMode, botId: string, storedPath: string) {
+function fileTooLarge(computerMode: ComputerMode, workspace: RunWorkspace, storedPath: string) {
   const shellPath =
     computerMode === "team"
-      ? path.posix.relative(teamBotWorkspaceDirectory(botId), storedPath)
+      ? path.posix.relative(
+          botWorkspaceDirectory(computerMode, workspace.botId, workspace.workspacePath),
+          storedPath,
+        )
       : storedPath;
   return `file is over ${READ_FILE_MAX_KB} KB; read parts of ${shellPath} with shell (grep, sed -n, tail)`;
 }
@@ -175,7 +180,7 @@ export async function listFilesFromTool(
   const requestedPath = String(args.path ?? "");
   const entries = await sandbox.listFiles(
     await computer(),
-    resolveBotWorkspacePath(computerMode, botId, requestedPath),
+    resolveBotWorkspacePath(computerMode, botId, requestedPath, workspace.workspacePath),
     context,
   );
   return {
@@ -184,7 +189,13 @@ export async function listFilesFromTool(
       ...entry,
       // A file name can carry a value an earlier command or page wrote.
       path: redactSecrets(
-        displayBotWorkspacePath(computerMode, botId, requestedPath, entry.path),
+        displayBotWorkspacePath(
+          computerMode,
+          botId,
+          requestedPath,
+          entry.path,
+          workspace.workspacePath,
+        ),
         runSecrets,
       ),
     })),
@@ -199,7 +210,12 @@ export async function readFileFromTool(
 ) {
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const filePath = String(args.path ?? "");
-  const storedPath = resolveBotWorkspacePath(computerMode, botId, filePath);
+  const storedPath = resolveBotWorkspacePath(
+    computerMode,
+    botId,
+    filePath,
+    workspace.workspacePath,
+  );
   let bytes: Uint8Array;
   try {
     bytes =
@@ -209,13 +225,13 @@ export async function readFileFromTool(
       }));
   } catch (error) {
     if (error instanceof SandboxFileTooLargeError) {
-      return { error: fileTooLarge(computerMode, botId, storedPath), path: filePath };
+      return { error: fileTooLarge(computerMode, workspace, storedPath), path: filePath };
     }
     throw error;
   }
   if (bytes.byteLength > READ_FILE_MAX_BYTES) {
     return {
-      error: fileTooLarge(computerMode, botId, storedPath),
+      error: fileTooLarge(computerMode, workspace, storedPath),
       path: filePath,
       size: bytes.byteLength,
     };
@@ -271,7 +287,7 @@ export async function renderPlotFromTool(
     if (!rows && dataPath) {
       const bytes = await deps.sandbox.readFile(
         await computer(),
-        resolveBotWorkspacePath(computerMode, botId, dataPath),
+        resolveBotWorkspacePath(computerMode, botId, dataPath, workspace.workspacePath),
         context,
         { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
       );
@@ -289,7 +305,7 @@ export async function renderPlotFromTool(
     await deps.sandbox.writeFile(
       await computer(),
       {
-        path: resolveBotWorkspacePath(computerMode, botId, outPath),
+        path: resolveBotWorkspacePath(computerMode, botId, outPath, workspace.workspacePath),
         content: png,
       },
       context,

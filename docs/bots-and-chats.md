@@ -64,7 +64,8 @@ Click the bot's name at the top of the chat to open its settings.
 Under **Advanced**:
 
 - **Model** and **Thinking**: override the [model](./models.md) for this bot.
-- **Computer**: **Team** or **Private**. See [The bot's computer](./computer.md).
+- **Computer**: **Team** or **Private**, plus the bot's **Workspace folder**. See
+  [The bot's computer](./computer.md).
 - **Voice**: **Read replies aloud** and the bot's voice.
 - **Permissions**: **Allow cross-space bot communication** (for bots linked to chat apps only) and
   [**Manage other bots**](./fleet-management.md).

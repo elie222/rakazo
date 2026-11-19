@@ -225,6 +225,8 @@ export async function provisionComputer(
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
+  /** The requesting bot's own folder; unset lays out its default. */
+  layout?: { workspacePath?: string | null },
 ): Promise<ComputerRef> {
   const started = performance.now();
   let providerReadyMs = 0;
@@ -313,7 +315,7 @@ export async function provisionComputer(
           deps.sandbox,
           ref,
           parseComputerMode(existing.scope),
-          context.botId,
+          context.botId ? { id: context.botId, workspacePath: layout?.workspacePath } : undefined,
           context,
         );
         logProvisioned(ref, "reuse");
@@ -575,7 +577,7 @@ export async function provisionComputer(
       deps.sandbox,
       ref,
       parseComputerMode(existing.scope),
-      context.botId,
+      context.botId ? { id: context.botId, workspacePath: layout?.workspacePath } : undefined,
       context,
     );
     // Bots deleted while this computer was not running could not remove their folders then.

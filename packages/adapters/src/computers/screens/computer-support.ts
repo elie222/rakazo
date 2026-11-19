@@ -111,34 +111,78 @@ export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
 }
 
+/**
+ * Write-time validation keeps the setting relative and free of ".."; normalize again here
+ * so a hand-edited row cannot smuggle an escape into a path join.
+ */
+function customWorkspaceBase(workspacePath: string | null | undefined): string | undefined {
+  if (!workspacePath) return undefined;
+  return normalizeWorkspacePath(workspacePath);
+}
+
+/**
+ * The directory a bot's relative paths and command working directories start in: its custom
+ * workspace folder when set, else bots/<botId> on a Team Computer and the workspace root
+ * (the empty path) on a private one.
+ */
+export function botWorkspaceDirectory(
+  scope: ComputerMode,
+  botId: string,
+  workspacePath?: string | null,
+): string {
+  return (
+    customWorkspaceBase(workspacePath) ?? (scope === "team" ? teamBotWorkspaceDirectory(botId) : "")
+  );
+}
+
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
   rawPath: string,
+  workspacePath?: string | null,
 ): string {
   const requestedPath = expandHomePrefix(rawPath);
-  if (scope !== "team") return requestedPath;
+  if (scope !== "team") {
+    const base = customWorkspaceBase(workspacePath);
+    if (!base) return requestedPath;
+    if (!requestedPath || requestedPath === ".") return base;
+    // An explicit root or home alias is honored outside the bot's folder, as without a base.
+    if (stripVirtualWorkspaceRoot(requestedPath) !== null) return requestedPath;
+    if (path.win32.isAbsolute(requestedPath)) return requestedPath;
+    return path.posix.join(base, normalizeWorkspacePath(requestedPath));
+  }
+  const base = customWorkspaceBase(workspacePath) ?? teamBotWorkspaceDirectory(botId);
   const explicitRootPath = stripVirtualWorkspaceRoot(requestedPath);
   const normalized = normalizeWorkspacePath(explicitRootPath ?? requestedPath);
   if (explicitRootPath !== null || isTeamRootPath(normalized)) return normalized;
-  return path.posix.join(teamBotWorkspaceDirectory(botId), normalized);
+  return path.posix.join(base, normalized);
 }
 
 export function resolveBotWorkspaceCwd(
   scope: ComputerMode,
   botId: string,
   requestedCwd: string | undefined,
+  workspacePath?: string | null,
 ): string | undefined {
   if (scope !== "team") {
+    const base = customWorkspaceBase(workspacePath);
+    if (base) {
+      if (requestedCwd === undefined || requestedCwd === ".") return base;
+      const expanded = expandHomePrefix(requestedCwd);
+      if (expanded !== requestedCwd) return stripVirtualWorkspaceRoot(expanded) || undefined;
+      if (path.posix.isAbsolute(expanded) || path.win32.isAbsolute(expanded)) return expanded;
+      return path.posix.join(base, normalizeWorkspacePath(expanded));
+    }
     if (requestedCwd === undefined) return undefined;
     const expanded = expandHomePrefix(requestedCwd);
     if (expanded === requestedCwd) return requestedCwd;
     return stripVirtualWorkspaceRoot(expanded) || undefined;
   }
-  if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
+  const base = customWorkspaceBase(workspacePath) ?? teamBotWorkspaceDirectory(botId);
+  if (!requestedCwd || requestedCwd === ".") return base;
   if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
     return requestedCwd;
-  return resolveBotWorkspacePath(scope, botId, requestedCwd);
+  return resolveBotWorkspacePath(scope, botId, requestedCwd, workspacePath);
 }
 
 /** Paths a user may write while controlling this bot: its home, or shared/. */
@@ -146,11 +190,12 @@ export function resolveBotUploadPath(
   scope: ComputerMode,
   botId: string,
   requestedPath: string,
+  workspacePath?: string | null,
 ): string {
-  const stored = resolveBotWorkspacePath(scope, botId, requestedPath);
+  const stored = resolveBotWorkspacePath(scope, botId, requestedPath, workspacePath);
   if (scope !== "team") return normalizeWorkspacePath(stored);
   const normalized = normalizeWorkspacePath(stored);
-  const botDirectory = teamBotWorkspaceDirectory(botId);
+  const botDirectory = customWorkspaceBase(workspacePath) ?? teamBotWorkspaceDirectory(botId);
   if (
     normalized === botDirectory ||
     normalized.startsWith(`${botDirectory}/`) ||
@@ -167,10 +212,11 @@ export function displayBotWorkspacePath(
   botId: string,
   requestedPath: string,
   storedPath: string,
+  workspacePath?: string | null,
 ): string {
   if (scope !== "team" || !isBotRelativeRequest(requestedPath)) return storedPath;
   const normalized = normalizeWorkspacePath(storedPath);
-  const botDirectory = teamBotWorkspaceDirectory(botId);
+  const botDirectory = customWorkspaceBase(workspacePath) ?? teamBotWorkspaceDirectory(botId);
   if (normalized === botDirectory) return "";
   return normalized.startsWith(`${botDirectory}/`)
     ? normalized.slice(botDirectory.length + 1)

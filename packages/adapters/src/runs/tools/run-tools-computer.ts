@@ -26,11 +26,11 @@ import {
   SHELL_STILL_RUNNING_NOTICE,
 } from "../../computers/sandbox/shell-command-stream.js";
 import {
+  botWorkspaceDirectory,
   displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
-  teamBotWorkspaceDirectory,
 } from "../../computers/screens/computer-support.js";
 import {
   advanceUnchangedVisualGuard,
@@ -236,9 +236,9 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   // A file the page downloads goes to the bot's own Downloads folder. Its name is redacted like any
   // page text, so one that echoes a secret is listed under another name than it has on disk.
   const downloads = {
-    folder: resolveBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads"),
+    folder: resolveBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads", bot.workspacePath),
     botPath: (path: string) =>
-      displayBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads", path),
+      displayBotWorkspacePath(ctx.computer.mode, bot.id, "Downloads", path, bot.workspacePath),
   };
   const tool =
     name === "browser_navigate"
@@ -289,11 +289,11 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
             // private computer's helper already confines uploads to its home folder.
             uploadRoots:
               ctx.computer.mode === "team"
-                ? [teamBotWorkspaceDirectory(bot.id), "shared"]
+                ? [botWorkspaceDirectory("team", bot.id, bot.workspacePath), "shared"]
                 : undefined,
             resolveUploadPath: (path) =>
               ctx.computer.mode === "team"
-                ? resolveBotUploadPath(ctx.computer.mode, bot.id, path)
+                ? resolveBotUploadPath(ctx.computer.mode, bot.id, path, bot.workspacePath)
                 : path,
             resolveSecretFill: async (step, index) => {
               const resolved = await resolveLoginFill({
@@ -536,6 +536,7 @@ export const computerTools: ToolHandlers = {
       ctx.computer.mode,
       bot.id,
       args.cwd ? String(args.cwd) : undefined,
+      bot.workspacePath,
     );
     // Loaded per command so a command variable added, replaced, or removed mid-run
     // applies to the next command. Registered for redaction before anything runs.
@@ -699,7 +700,12 @@ export const computerTools: ToolHandlers = {
                 kind: "open",
                 path: /^https?:\/\//i.test(requestedPath)
                   ? requestedPath
-                  : resolveBotWorkspacePath(ctx.computer.mode, bot.id, requestedPath),
+                  : resolveBotWorkspacePath(
+                      ctx.computer.mode,
+                      bot.id,
+                      requestedPath,
+                      bot.workspacePath,
+                    ),
               },
             ],
             observe: true,

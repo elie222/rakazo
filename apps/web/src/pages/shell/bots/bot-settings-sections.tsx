@@ -4,11 +4,21 @@ import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
   BUILTIN_TOOL_NAMES,
+  normalizeBotWorkspacePath,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { Button, OptionSelect, SectionHeading, Switch, Textarea, Toggle } from "@rakazo/ui-web";
+import {
+  Button,
+  Input,
+  OptionSelect,
+  SectionHeading,
+  Switch,
+  Textarea,
+  Toggle,
+} from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { thinkingLevelLabel } from "../../../lib/models/model-catalog";
 import { ChatModelPicker } from "../chat/chat-model-picker";
 
@@ -267,5 +277,83 @@ export function ToolsGroup({
         </div>
       </section>
     </PanelSection>
+  );
+}
+
+/**
+ * The bot's workspace folder on its computer: commits on Enter or blur, restoring the
+ * default when emptied; an invalid path stays in place with its reason shown.
+ */
+export function WorkspacePathRow({
+  id,
+  value,
+  disabled,
+  onCommit,
+}: {
+  id: string;
+  /** The saved folder, "" for the default. */
+  value: string;
+  disabled?: boolean;
+  onCommit: (workspacePath: string | null) => void;
+}) {
+  const { t } = useLingui();
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // Follow a save confirmed elsewhere while the row is idle; a rejected edit keeps its
+  // draft and its reason instead.
+  useEffect(() => {
+    if (!editing && !error) setDraft(value);
+  }, [value, editing, error]);
+  function commit() {
+    setEditing(false);
+    const trimmed = draftRef.current.trim();
+    if (!trimmed) {
+      setError(null);
+      if (value) onCommit(null);
+      return;
+    }
+    const normalized = normalizeBotWorkspacePath(trimmed);
+    if (!normalized) {
+      setError(t`Use a relative folder path without ".." segments.`);
+      return;
+    }
+    setError(null);
+    setDraft(normalized);
+    if (normalized !== value) onCommit(normalized);
+  }
+  return (
+    <div className="flex flex-col gap-1.5 py-3">
+      <label htmlFor={id} className="text-body text-foreground">
+        <Trans>Workspace folder</Trans>
+      </label>
+      <Input
+        id={id}
+        data-testid="bot-workspace-path"
+        value={draft}
+        disabled={disabled}
+        placeholder={t`projects/website`}
+        aria-label={t`Workspace folder`}
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onFocus={() => setEditing(true)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <p className="text-body-sm text-muted-foreground">
+        <Trans>The bot's commands and files start here. Leave empty for the default folder.</Trans>
+      </p>
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+    </div>
   );
 }

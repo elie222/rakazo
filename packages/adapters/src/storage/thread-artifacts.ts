@@ -195,6 +195,8 @@ export async function materializeCurrentTurnFiles(
     /** Starts the computer; called only when there is a file to copy onto it. */
     computer: () => Promise<ComputerRef>;
     computerMode: ComputerMode;
+    /** The bot's own folder; unset uses the default (bots/<id> on a Team Computer). */
+    workspacePath?: string | null;
     markWorkspaceDirty?: () => void;
   },
 ): Promise<MaterializedThreadFile[]> {
@@ -218,13 +220,14 @@ async function materializeThreadFiles(
     const row = byId.get(block.artifactId);
     if (!row) throw new Error(`Attached file is unavailable: ${block.name}`);
     const metadata = threadFileMetadata(row);
-    const workspacePath = resolveBotWorkspacePath(
+    const storedPath = resolveBotWorkspacePath(
       input.computerMode,
       input.context.botId,
       metadata.path,
+      input.workspacePath,
     );
     const exists = preserveExisting
-      ? await deps.sandbox.readFile(await input.computer(), workspacePath, input.context).then(
+      ? await deps.sandbox.readFile(await input.computer(), storedPath, input.context).then(
           () => true,
           () => false,
         )
@@ -239,7 +242,7 @@ async function materializeThreadFiles(
       input.markWorkspaceDirty?.();
       await deps.sandbox.writeFile(
         await input.computer(),
-        { path: workspacePath, content: bytes },
+        { path: storedPath, content: bytes },
         input.context,
       );
     }

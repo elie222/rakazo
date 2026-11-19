@@ -160,7 +160,9 @@ async function sharedFiles(
   for (const path of paths) {
     let stored: string;
     try {
-      stored = normalizeWorkspacePath(resolveBotWorkspacePath(ctx.computer.mode, ctx.bot.id, path));
+      stored = normalizeWorkspacePath(
+        resolveBotWorkspacePath(ctx.computer.mode, ctx.bot.id, path, ctx.bot.workspacePath),
+      );
     } catch {
       return { error: `${path}: path is outside the computer. Nothing was sent.` };
     }

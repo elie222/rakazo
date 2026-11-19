@@ -87,7 +87,7 @@ export function computerRoutes(ctx: RouterContext) {
               deps.sandbox,
               toComputerRef(bot.computer),
               parseComputerMode(bot.computer.scope),
-              bot.id,
+              bot,
               computerContext(context.actor, bot.id, "boot"),
             );
             scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -106,10 +106,17 @@ export function computerRoutes(ctx: RouterContext) {
         const computerId = bot.computer.id;
         try {
           await getLogger().withContext({ reason: "manual" }, () =>
-            provisionComputer(deps, computerId, {
-              ...ctx,
-              screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-            }),
+            provisionComputer(
+              deps,
+              computerId,
+              {
+                ...ctx,
+                screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+              },
+              "none",
+              undefined,
+              { workspacePath: bot.workspacePath },
+            ),
           );
           scheduleComputerSleep(deps.jobs, bot.computer.id);
         } catch (error) {
@@ -442,7 +449,12 @@ export function computerRoutes(ctx: RouterContext) {
         const computer = bot.computer;
         const computerMode = parseComputerMode(computer.scope);
         const ctx = computerContext(context.actor, bot.id, "files");
-        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        const storedPath = resolveBotWorkspacePath(
+          computerMode,
+          bot.id,
+          input.path,
+          bot.workspacePath,
+        );
         let entries: Awaited<ReturnType<SandboxProvider["listFiles"]>>;
         if (computer.state === "running" && computer.providerRef) {
           await deps.prisma.computer.updateMany({
@@ -451,14 +463,20 @@ export function computerRoutes(ctx: RouterContext) {
           });
           scheduleComputerSleep(deps.jobs, computer.id);
           const ref = toComputerRef(computer);
-          await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
+          await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot, ctx);
           entries = await deps.sandbox.listFiles(ref, storedPath, ctx);
         } else {
           entries = await deps.home.list(computer.homeKey, storedPath, ctx);
         }
         return entries.map((entry) => ({
           ...entry,
-          path: displayBotWorkspacePath(computerMode, bot.id, input.path, entry.path),
+          path: displayBotWorkspacePath(
+            computerMode,
+            bot.id,
+            input.path,
+            entry.path,
+            bot.workspacePath,
+          ),
         }));
       }),
       readFile: authed.computer.readFile.handler(async ({ context, input }) => {
@@ -466,7 +484,12 @@ export function computerRoutes(ctx: RouterContext) {
         if (!bot.computer) throw new IsolationError();
         const computerMode = parseComputerMode(bot.computer.scope);
         const ctx = computerContext(context.actor, bot.id, "read");
-        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        const storedPath = resolveBotWorkspacePath(
+          computerMode,
+          bot.id,
+          input.path,
+          bot.workspacePath,
+        );
         let content: string;
         if (bot.computer.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
@@ -521,6 +544,7 @@ export function computerRoutes(ctx: RouterContext) {
           parseComputerMode(computer.scope),
           bot.id,
           input.path,
+          bot.workspacePath,
         );
         const bytes = await deps.sandbox
           .readFile(
@@ -568,7 +592,12 @@ export function computerRoutes(ctx: RouterContext) {
         await keepComputerAwake(deps, computer.id);
         let storedPath: string;
         try {
-          storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
+          storedPath = resolveBotUploadPath(
+            parseComputerMode(computer.scope),
+            bot.id,
+            input.path,
+            bot.workspacePath,
+          );
         } catch (error) {
           // This path is the caller's own, so leaving the workspace is theirs to fix.
           if (error instanceof WorkspacePathError)
@@ -622,7 +651,12 @@ export function computerRoutes(ctx: RouterContext) {
             toComputerRef(computer),
             {
               controlToken: computer.controlLeaseId,
-              cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
+              cwd: resolveBotWorkspaceCwd(
+                parseComputerMode(computer.scope),
+                bot.id,
+                undefined,
+                bot.workspacePath,
+              ),
             },
             await computerScreenContext(
               deps.prisma,

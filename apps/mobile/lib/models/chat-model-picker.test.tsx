@@ -474,6 +474,8 @@ vi.mock("../../components/settings/settings-group", () => ({
       children,
       footer,
     ),
+  SettingsInputRow: (props: { value?: string; placeholder?: string }) =>
+    createElement("input", props),
   SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
   SettingsSwitch: ({ label }: { label: string }) =>
     createElement("button", { type: "button", role: "switch" }, label),

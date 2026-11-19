@@ -109,6 +109,7 @@ function fakeBot(id: string, name: string): Bot {
     webhookConfigured: false,
     fleetManagement: false,
     replyMode: "chat",
+    workspacePath: null,
     spawnKey: null,
   };
 }

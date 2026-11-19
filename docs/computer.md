@@ -34,6 +34,14 @@ In the bot's settings under **Advanced**, **Computer** is **Team** or **Private*
 - **Private**: the bot gets a computer of its own. Use it when files or sign-ins must not be shared
   with other bots.
 
+## Workspace folder
+
+By default a bot's commands and relative paths start in its own folder (`bots/<bot>` on a Team
+Computer, the root of a Private one). **Workspace folder** on the bot panel's **Computer** tab
+points it at a folder you pick instead, such as `projects/website`; leave it empty for the
+default. The folder is created when the bot next needs the computer. Files already elsewhere
+stay put — the bot can move them if you ask.
+
 ## Files
 
 Bots save their work on the computer and send you the results as files in the chat. Every file a bot

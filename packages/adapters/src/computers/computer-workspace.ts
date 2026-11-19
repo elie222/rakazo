@@ -24,7 +24,7 @@ import {
 } from "../storage/workspace-save-policy.js";
 import { isSandboxDamagedError } from "./sandbox/sandbox-errors.js";
 import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
-import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./screens/computer-support.js";
+import { botWorkspaceDirectory, normalizeWorkspacePath } from "./screens/computer-support.js";
 
 export {
   shouldSkipPortableWorkspaceFile,
@@ -108,14 +108,16 @@ export async function ensureComputerWorkspaceLayout(
   sandbox: SandboxProvider,
   computer: ComputerRef,
   scope: ComputerMode,
-  botId: string | undefined,
+  bot: { id: string; workspacePath?: string | null } | undefined,
   context: AdapterContext,
 ): Promise<void> {
-  if (scope !== "team" || !botId) return;
+  if (!bot) return;
+  const base = botWorkspaceDirectory(scope, bot.id, bot.workspacePath);
+  if (!base) return;
   await manageComputerWorkspaceDirectories(
     sandbox,
     computer,
-    { action: "ensure", paths: ["shared", teamBotWorkspaceDirectory(botId)] },
+    { action: "ensure", paths: scope === "team" ? ["shared", base] : [base] },
     context,
   );
 }

@@ -2,8 +2,8 @@ import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import {
+  botWorkspaceDirectory,
   normalizeWorkspacePath,
-  teamBotWorkspaceDirectory,
   toComputerRef,
 } from "../../computers/screens/computer-support.js";
 import type { RunContext } from "../assembly/run-context.js";
@@ -26,7 +26,7 @@ export async function readStoppedRunFile(ctx: RunContext, storedPath: string, ma
     !path ||
     path.split("/").includes("attachments") ||
     (computer.mode === "team" &&
-      !path.startsWith(`${teamBotWorkspaceDirectory(bot.id)}/`) &&
+      !path.startsWith(`${botWorkspaceDirectory("team", bot.id, bot.workspacePath)}/`) &&
       !path.startsWith("shared/"))
   )
     return undefined;

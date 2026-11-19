@@ -154,6 +154,7 @@ async function runRoutine(
         modelProvider: null,
         modelId: null,
         thinkingLevel: null,
+        workspacePath: null,
         computerId: "computer-1",
         computerSwitching: false,
         memoryScope: null,
@@ -563,6 +564,8 @@ describe("run computer provisioning", () => {
       "computer-1",
       expect.objectContaining({ runId: "run-1" }),
       "bot",
+      undefined,
+      { workspacePath: null },
     );
     expect(sandbox.listFiles).toHaveBeenCalledTimes(2);
     expect(sandbox.listFiles).toHaveBeenCalledWith(COMPUTER, expect.any(String), expect.anything());

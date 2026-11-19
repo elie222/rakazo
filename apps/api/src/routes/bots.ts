@@ -5,6 +5,7 @@ import {
   checkpointAndStopComputer,
   defaultVaultItemTitle,
   endTeachingWithLease,
+  ensureComputerWorkspaceLayout,
   forgetBotSecret,
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
@@ -56,13 +57,14 @@ import {
   expireComputerExecutionLeases,
   IsolationError,
   isRecordNotFound,
+  parseComputerMode,
   recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { managedAppCatalog } from "../account/onboarding.js";
 import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import type { AgentImportServices } from "../bots/agent-import.js";
@@ -395,6 +397,7 @@ export function botsRoutes(ctx: RouterContext) {
           ...carriedBotModelPin(source),
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
+          workspacePath: source.workspacePath,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -500,6 +503,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
+            ...(input.workspacePath !== undefined ? { workspacePath: input.workspacePath } : {}),
           },
         }).catch((error) => {
           if (input.expectedSettings && isRecordNotFound(error))
@@ -509,6 +513,24 @@ export function botsRoutes(ctx: RouterContext) {
             );
           throw error;
         });
+        // A command run into a folder that does not exist yet fails, so create the new one
+        // right away on a running computer instead of waiting for its next boot.
+        if (
+          input.workspacePath &&
+          existing.computer?.state === "running" &&
+          existing.computer.providerRef
+        ) {
+          bestEffort(
+            "ensure the bot's workspace folder after its settings save",
+            ensureComputerWorkspaceLayout(
+              deps.sandbox,
+              toComputerRef(existing.computer),
+              parseComputerMode(existing.computer.scope),
+              { id: existing.id, workspacePath: input.workspacePath },
+              computerContext(context.actor, existing.id, "settings.workspace"),
+            ),
+          );
+        }
         for (const setting of changedBotSettings(existing, input)) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }

@@ -104,6 +104,7 @@ function mapBot(
     fleetManagement?: boolean;
     replyMode?: string;
     disabledBuiltinTools?: string[];
+    workspacePath?: string | null;
     webhookSecretId?: string | null;
     spawnKey?: string | null;
   },
@@ -154,6 +155,7 @@ function mapBot(
     replyMode: bot.replyMode === "messages" ? "messages" : "chat",
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
+    workspacePath: bot.workspacePath ?? null,
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,
@@ -448,6 +450,7 @@ export function createRepos(
         modelId?: string | null;
         thinkingLevel?: string | null;
         disabledBuiltinTools?: string[];
+        workspacePath?: string | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -559,6 +562,7 @@ export function createRepos(
               modelId,
               thinkingLevel,
               disabledBuiltinTools,
+              ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
             },
           });
           const thread = await tx.thread.create({

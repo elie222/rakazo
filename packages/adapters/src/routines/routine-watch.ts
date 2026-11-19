@@ -33,8 +33,8 @@ import { ComputerBusyError, provisionComputer } from "../computers/computer-life
 import { nativeShellCommandArgv } from "../computers/host/native-shell.js";
 import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import {
+  botWorkspaceDirectory,
   resolveBotWorkspaceCwd,
-  teamBotWorkspaceDirectory,
 } from "../computers/screens/computer-support.js";
 import { connectedContext, selectRunConnections } from "../integrations/connection-context.js";
 import { isEgressRefused } from "../network/network-address.js";
@@ -502,8 +502,13 @@ done
 exit "$status"`;
 
 /** Team file checks stay in this bot's folder, including absolute paths. */
-export function resolveWatchPath(mode: ComputerMode, botId: string, path: string): string {
-  const folder = watchFolder(mode, botId);
+export function resolveWatchPath(
+  mode: ComputerMode,
+  botId: string,
+  path: string,
+  workspacePath?: string | null,
+): string {
+  const folder = watchFolder(mode, botId, workspacePath);
   const resolved = posix.resolve(folder, path);
   if (mode === "team" && resolved !== folder && !resolved.startsWith(`${folder}/`)) {
     throw new RoutineWatchError("The watched path must stay inside the bot's folder.");
@@ -512,8 +517,13 @@ export function resolveWatchPath(mode: ComputerMode, botId: string, path: string
 }
 
 /** Where a bot's relative paths and commands start. */
-export function watchFolder(mode: ComputerMode, botId: string): string {
-  return mode === "team" ? `${WORKSPACE}/${teamBotWorkspaceDirectory(botId)}` : WORKSPACE;
+export function watchFolder(
+  mode: ComputerMode,
+  botId: string,
+  workspacePath?: string | null,
+): string {
+  const base = botWorkspaceDirectory(mode, botId, workspacePath);
+  return base ? `${WORKSPACE}/${base}` : WORKSPACE;
 }
 
 async function readComputer(
@@ -564,10 +574,17 @@ async function readComputer(
   let computer: Awaited<ReturnType<typeof provisionComputer>>;
   try {
     computer = await getLogger().withContext({ reason: "watch", watchKind: watch.kind }, () =>
-      provisionComputer(deps, computerId, {
-        ...ctx,
-        signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
-      }),
+      provisionComputer(
+        deps,
+        computerId,
+        {
+          ...ctx,
+          signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
+        },
+        "none",
+        undefined,
+        { workspacePath: bot.workspacePath },
+      ),
     );
   } catch (error) {
     if (
@@ -580,8 +597,8 @@ async function readComputer(
   }
   scheduleComputerSleep(deps.jobs, bot.computer.id);
   // The check's own time budget starts once the computer is up.
-  const botFolder = watchFolder(mode, bot.id);
-  const cwd = resolveBotWorkspaceCwd(mode, bot.id, undefined);
+  const botFolder = watchFolder(mode, bot.id, bot.workspacePath);
+  const cwd = resolveBotWorkspaceCwd(mode, bot.id, undefined, bot.workspacePath);
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
 
   if (watch.kind === "command") {
@@ -632,7 +649,7 @@ async function readComputer(
   }
 
   const paths = (watch.paths ?? []).map((path) => {
-    const resolved = resolveWatchPath(mode, bot.id, path);
+    const resolved = resolveWatchPath(mode, bot.id, path, bot.workspacePath);
     const relative = posix.relative(botFolder, resolved);
     // Inside the workspace, pass the path relative to the provider's working
     // directory so a desktop computer resolves it under its own home.
@@ -1007,12 +1024,12 @@ export function assertWatchToolReadOnly(tool: string, readOnly: boolean | undefi
 export async function validateRoutineWatch(
   deps: { connector?: ConnectorProvider; prisma?: PrismaClient },
   watch: RoutineWatch,
-  target: { spaceId: string; userId: string; botId: string },
+  target: { spaceId: string; userId: string; botId: string; workspacePath?: string | null },
   computer?: { scope: string } | null,
 ): Promise<void> {
   if (watch.kind === "files" && computer) {
     for (const path of watch.paths ?? [])
-      resolveWatchPath(parseComputerMode(computer.scope), target.botId, path);
+      resolveWatchPath(parseComputerMode(computer.scope), target.botId, path, target.workspacePath);
   }
   // The API composition root has a registry, not the run's authorized connector.
   // Without that provider, tool metadata must be checked by readTool at runtime.

@@ -5,6 +5,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
+  normalizeBotWorkspacePath,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
@@ -33,6 +34,7 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { NativeSymbol } from "../components/native/native-symbol";
 import {
   SettingsGroup,
+  SettingsInputRow,
   SettingsLabel,
   SettingsRow,
   SettingsSwitch,
@@ -78,6 +80,7 @@ export default function BotSettingsScreen() {
   const [instructions, setInstructions] = useState("");
   const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [workspacePath, setWorkspacePath] = useState("");
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
@@ -201,6 +204,7 @@ export default function BotSettingsScreen() {
         setColor(next.color);
         setAvatarSet(resolveBotAvatarSet(next.avatarSet));
         setComputerMode(next.computerMode);
+        setWorkspacePath(next.workspacePath ?? "");
         setModelKey(
           next.modelProvider && next.modelId
             ? modelOptionKey(next.modelProvider, next.modelId)
@@ -416,7 +420,20 @@ export default function BotSettingsScreen() {
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
+        workspacePath?: string | null;
       } = { botId };
+      const rawWorkspacePath = workspacePath.trim();
+      const nextWorkspacePath = rawWorkspacePath
+        ? normalizeBotWorkspacePath(rawWorkspacePath)
+        : null;
+      if (rawWorkspacePath && !nextWorkspacePath) {
+        setError(t`Workspace folder must be a relative path without ".." segments.`);
+        pendingRef.current = false;
+        setPending(false);
+        return;
+      }
+      if (nextWorkspacePath !== (bot.workspacePath ?? null))
+        input.workspacePath = nextWorkspacePath;
       if (profile.description !== (bot.description ?? "")) {
         input.description = profile.description;
       }
@@ -479,6 +496,8 @@ export default function BotSettingsScreen() {
       color !== bot.color ||
       avatarSet !== resolveBotAvatarSet(bot.avatarSet) ||
       computerMode !== bot.computerMode ||
+      (workspacePath.trim() ? normalizeBotWorkspacePath(workspacePath.trim()) : null) !==
+        (bot.workspacePath ?? null) ||
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
@@ -653,6 +672,16 @@ export default function BotSettingsScreen() {
                 onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
               />
               {computerMaintenanceRows}
+            </SettingsGroup>
+            <SettingsGroup label={t`Workspace folder`}>
+              <SettingsInputRow
+                accessibilityLabel={t`Workspace folder`}
+                placeholder={t`projects/website`}
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={workspacePath}
+                onChangeText={setWorkspacePath}
+              />
             </SettingsGroup>
             {changed?.readAloud || deviceVoiceEnabled ? (
               <SettingsGroup label={t`Voice`}>

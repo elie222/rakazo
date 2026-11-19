@@ -1028,6 +1028,9 @@ model Bot {
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
+  /// The bot's own folder on its computer; null uses the default (bots/<id> on a Team Computer,
+  /// the home root on a private one).
+  workspacePath     String?
   voiceId           String?
   autoSpeak         Boolean           @default(false)
   modelProvider     String?

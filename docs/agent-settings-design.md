@@ -1,19 +1,19 @@
-# Agent 详细设置功能设计（设计草案）
+# Agent 详细设置功能设计
 
-状态：草案，未实现。逐项对照"agent 设置"期望的六项能力：头像、名称、电脑选择（云上
-/ 本地）、专属工作区 / 文件夹、权限设置、线程（多线程）数。每一项给出现状（含代码
-依据）、差距、功能设计与验收口径。
+状态：2.3 专属工作区已实现（P1）；其余为草案。逐项对照"agent 设置"期望的六项能力：头像、
+名称、电脑选择（云上 / 本地）、专属工作区 / 文件夹、权限设置、线程（多线程）数。每一项
+给出现状（含代码依据）、差距、功能设计与验收口径。
 
 ## 1. 现状盘点
 
-| 能力 | 现状 | 依据 |
-| --- | --- | --- |
-| 名称 / 头像 | 已实现（无需新工作） | `Bot.name`、`Bot.color`、`Bot.avatarSet`（`packages/db/prisma/schema.prisma`）；创建与更新走 `CreateBotInput` / `UpdateBotInput`（`packages/contracts/src/bots/bot.ts`）；设置页已有"Name and avatar: pick a shape and color, or upload an image"（`docs/bots-and-chats.md`） |
-| 电脑模式 | 只有云上两档：team / dedicated | `ComputerModeSchema = z.enum(["team", "dedicated"])`（`packages/contracts/src/computers/computer.ts:6`），RPC `bots.setComputer`（`packages/contracts/src/bots/bots-rpc.ts:77`） |
-| 本地电脑 | 账号级配对授权，无 per-bot 指派 | `UserDeviceGateway`（`packages/adapters/src/computers/host/user-device-protocol.ts`）按 `userId` 取设备，省略 `deviceId` 时用"最早已配对且在线"的一台；本地 server 的 "Use this Mac" 是 deployment 级开关（`computerHost`，见 `host-computer-device.ts`） |
-| 专属工作区 / 文件夹 | 默认目录存在，不可配置 | team 模式固定 `bots/<botId>`，dedicated 为整机 home；解析在 `resolveBotWorkspaceCwd` / `resolveBotUploadPath`（`packages/adapters/src/computers/screens/computer-support.ts:114`） |
-| 权限 | 审批模式是 Space 级；per-bot 仅有零散开关 | `ApprovalModeSchema` 注释"How much a space asks before acting"（`packages/contracts/src/integrations/approvals.ts:14`）；Allow/Block 规则按用户存（`UserActionApprovalRule`）；per-bot 现有 `crossSpaceCommunication`、`fleetManagement`、`disabledBuiltinTools`、`dailyCheckIns` |
-| 线程 / 多线程 | 一个 bot 一条主会话 + 运行中消息 steering + 后台 helper；无任何并发上限字段 | `Thread.botId @unique`（schema.prisma）；`Bot.helperThreads`；"A bot uses its computer for one run at a time. A message sent while a run is going steers that run instead of waiting."（`docs/run-execution.md`） |
+| 能力                | 现状                                                                        | 依据                                                                                                                                                                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名称 / 头像         | 已实现（无需新工作）                                                        | `Bot.name`、`Bot.color`、`Bot.avatarSet`（`packages/db/prisma/schema.prisma`）；创建与更新走 `CreateBotInput` / `UpdateBotInput`（`packages/contracts/src/bots/bot.ts`）；设置页已有"Name and avatar: pick a shape and color, or upload an image"（`docs/bots-and-chats.md`）     |
+| 电脑模式            | 只有云上两档：team / dedicated                                              | `ComputerModeSchema = z.enum(["team", "dedicated"])`（`packages/contracts/src/computers/computer.ts:6`），RPC `bots.setComputer`（`packages/contracts/src/bots/bots-rpc.ts:77`）                                                                                                  |
+| 本地电脑            | 账号级配对授权，无 per-bot 指派                                             | `UserDeviceGateway`（`packages/adapters/src/computers/host/user-device-protocol.ts`）按 `userId` 取设备，省略 `deviceId` 时用"最早已配对且在线"的一台；本地 server 的 "Use this Mac" 是 deployment 级开关（`computerHost`，见 `host-computer-device.ts`）                         |
+| 专属工作区 / 文件夹 | 默认目录存在，不可配置                                                      | team 模式固定 `bots/<botId>`，dedicated 为整机 home；解析在 `resolveBotWorkspaceCwd` / `resolveBotUploadPath`（`packages/adapters/src/computers/screens/computer-support.ts:114`）                                                                                                |
+| 权限                | 审批模式是 Space 级；per-bot 仅有零散开关                                   | `ApprovalModeSchema` 注释"How much a space asks before acting"（`packages/contracts/src/integrations/approvals.ts:14`）；Allow/Block 规则按用户存（`UserActionApprovalRule`）；per-bot 现有 `crossSpaceCommunication`、`fleetManagement`、`disabledBuiltinTools`、`dailyCheckIns` |
+| 线程 / 多线程       | 一个 bot 一条主会话 + 运行中消息 steering + 后台 helper；无任何并发上限字段 | `Thread.botId @unique`（schema.prisma）；`Bot.helperThreads`；"A bot uses its computer for one run at a time. A message sent while a run is going steers that run instead of waiting."（`docs/run-execution.md`）                                                                 |
 
 两条硬约束贯穿全部设计：
 
@@ -78,10 +78,14 @@ Team（默认）、云上 Private（dedicated）、或"我的某台已配对电�
 
 **工作量**：中（契约 + 迁移 + executor 路由 + web 设置页 + 状态显示），约 0.5–1 天。
 
-### 2.3 专属工作区 / 工作目录
+### 2.3 专属工作区 / 工作目录（已实现）
 
 **目标**：每个 bot 可配一个"工作目录"，它的命令默认在此 cwd 下执行；用户控制时
 的允许写目录也随之限定。
+
+> 实现注记：按本节落地，另有两点超出草案描述——账号导出 / 导入会随 bot 记录往返
+> 该设置；设置保存后在运行中的电脑上立即建目录（不等下次启动），提示语在 bot 下次
+> run 起生效。
 
 **数据模型 / 契约**：
 
@@ -171,7 +175,8 @@ subagent / helper thread）的数量上限，默认 3**。它与现有模型同�
 
 - **P0（纯前端，0.5 天）**：设置页收拢——名称/头像保持现状；权限区块按 2.4 的分
   组先把三个既有开关归位，不加新能力。
-- **P1（约 0.5 天）**：2.3 专属工作区。
+- **P1（约 0.5 天，已完成）**：2.3 专属工作区——契约 + 迁移 + 路径解析 + web / 移动设
+  置页 + 账号导出导入往返。
 - **P2（约 0.5–1 天）**：2.2 本机电脑指派（依赖 P1 的本机路径校验）。
 - **P3（约 0.5 天）**：2.4 的审批模式覆盖。
 - **P4（产品定义后约 1 天）**：2.5 并行 helper 上限。

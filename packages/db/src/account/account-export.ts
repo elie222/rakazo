@@ -16,7 +16,9 @@ export interface AccountExportSpace {
    */
   artifacts(): AsyncGenerator<{ id: string; storageKey: string }>;
   /** Bots in `records()` that have a computer, whose workspace files go in the archive. */
-  homes(): Promise<Array<{ botId: string; homeKey: string; computerScope: string }>>;
+  homes(): Promise<
+    Array<{ botId: string; homeKey: string; computerScope: string; workspacePath: string | null }>
+  >;
 }
 
 export interface AccountExportSource {
@@ -87,13 +89,18 @@ export async function readAccountExport(
             const bots = await prisma.bot.findMany({
               where: { ...tenant, id: { in: written.botIds }, computerId: { not: null } },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-              select: { id: true, computer: { select: { homeKey: true, scope: true } } },
+              select: {
+                id: true,
+                workspacePath: true,
+                computer: { select: { homeKey: true, scope: true } },
+              },
             });
             return bots.flatMap((bot) =>
               bot.computer
                 ? [
                     {
                       botId: bot.id,
+                      workspacePath: bot.workspacePath,
                       homeKey: bot.computer.homeKey,
                       computerScope: bot.computer.scope,
                     },
@@ -168,6 +175,7 @@ async function* spaceRecords(
       dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
       replyMode: bot.replyMode === "messages" ? "messages" : "chat",
+      workspacePath: bot.workspacePath,
       createdAt: iso(bot.createdAt),
     };
 

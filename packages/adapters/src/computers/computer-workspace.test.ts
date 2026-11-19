@@ -146,13 +146,53 @@ describe("provider-neutral computer workspace", () => {
     );
     const execute = vi.spyOn(provider, "execute");
 
-    await ensureComputerWorkspaceLayout(provider, computer, "team", "bot-1", context);
+    await ensureComputerWorkspaceLayout(provider, computer, "team", { id: "bot-1" }, context);
 
     expect(execute).toHaveBeenCalledWith(
       computer,
       { argv: ["mkdir", "-p", "shared", "bots/bot-1"] },
       context,
     );
+  });
+
+  it("prepares a bot's own folder when it picked one, on both computer kinds", async () => {
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "team-workspace", homePath: "/ignored" },
+      context,
+    );
+    const execute = vi.spyOn(provider, "execute");
+
+    await ensureComputerWorkspaceLayout(
+      provider,
+      computer,
+      "team",
+      { id: "bot-1", workspacePath: "acme/research" },
+      context,
+    );
+    await ensureComputerWorkspaceLayout(
+      provider,
+      computer,
+      "dedicated",
+      { id: "bot-1", workspacePath: "acme/research" },
+      context,
+    );
+    await ensureComputerWorkspaceLayout(provider, computer, "dedicated", { id: "bot-1" }, context);
+
+    expect(execute).toHaveBeenNthCalledWith(
+      1,
+      computer,
+      { argv: ["mkdir", "-p", "shared", "acme/research"] },
+      context,
+    );
+    expect(execute).toHaveBeenNthCalledWith(
+      2,
+      computer,
+      { argv: ["mkdir", "-p", "acme/research"] },
+      context,
+    );
+    // A private computer's default home always exists; nothing is made for it.
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("leaves deleted bots' folders and browser profiles out of a Team Computer checkpoint", async () => {

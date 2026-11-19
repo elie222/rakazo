@@ -915,6 +915,7 @@ class AccountImporter implements ArchiveSink {
             crossSpaceCommunication: record.crossSpaceCommunication,
             dailyCheckIns: record.dailyCheckIns,
             replyMode: record.replyMode,
+            workspacePath: record.workspacePath,
             createdAt: new Date(record.createdAt),
           },
         });
@@ -933,7 +934,12 @@ class AccountImporter implements ArchiveSink {
       id: bot.id,
       threadId: thread.id,
       homeKey: computer.homeKey,
-      directory: resolveBotWorkspacePath(parseComputerMode(computer.scope), bot.id, ""),
+      directory: resolveBotWorkspacePath(
+        parseComputerMode(computer.scope),
+        bot.id,
+        "",
+        record.workspacePath,
+      ),
     });
     if (record.parentBotId)
       space.parentLinks.push({ botId: bot.id, parentBotId: record.parentBotId });

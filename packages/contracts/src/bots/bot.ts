@@ -6,6 +6,7 @@ import { BotSettingsValuesSchema } from "../threads/message-blocks.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { MemoryScopeSchema } from "./bot-memory.js";
+import { BotWorkspacePathSchema } from "./bot-workspace.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 
 export const AgentSecretSchema = z.object({
@@ -62,6 +63,8 @@ export const BotSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
+  /** The bot's own folder on its computer; null uses the default. Absent from older servers. */
+  workspacePath: z.string().nullable().default(null),
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   crossSpaceCommunication: z.boolean().optional(),
@@ -165,6 +168,8 @@ export const UpdateBotInput = z
     modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
     modelId: z.string().trim().min(1).max(200).nullable().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+    /** Set the bot's workspace folder; null restores the default. */
+    workspacePath: BotWorkspacePathSchema.nullable().optional(),
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),

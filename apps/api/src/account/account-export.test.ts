@@ -67,6 +67,7 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   dailyCheckIns: false,
   fleetManagement: true,
   replyMode: "chat",
+  workspacePath: null,
   createdAt,
 });
 
@@ -86,7 +87,12 @@ function source(): AccountExportSource {
         artifacts.map((artifactId) => ({ id: artifactId, storageKey: `key-${artifactId}` })),
       ),
     homes: async () =>
-      bots.map((botId) => ({ botId, homeKey: `home-${botId}`, computerScope: "dedicated" })),
+      bots.map((botId) => ({
+        botId,
+        homeKey: `home-${botId}`,
+        computerScope: "dedicated",
+        workspacePath: null,
+      })),
   });
   return {
     userId: "user-1",

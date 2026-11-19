@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  botWorkspaceDirectory,
   displayBotWorkspacePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
@@ -8,7 +9,7 @@ import {
   teamBotWorkspaceDirectory,
   workspaceCwd,
 } from "./computer-support.js";
-import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
+import { customWorkspaceInstruction, teamWorkspaceInstruction } from "./computer-support.prompt.js";
 
 describe("workspaceCwd", () => {
   const root = "/home/user/rakazo-home";
@@ -184,5 +185,80 @@ describe("resolveBotUploadPath", () => {
     expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt")).toThrow(
       /escapes the bot workspace/,
     );
+  });
+});
+
+describe("custom workspace folder", () => {
+  it("anchors a Team Computer bot's relative paths and cwd at its folder", () => {
+    const base = "acme/research";
+    expect(botWorkspaceDirectory("team", "bot-1", base)).toBe(base);
+    expect(resolveBotWorkspacePath("team", "bot-1", "notes/result.txt", base)).toBe(
+      "acme/research/notes/result.txt",
+    );
+    expect(resolveBotWorkspacePath("team", "bot-1", "", base)).toBe("acme/research");
+    expect(resolveBotWorkspacePath("team", "bot-1", "shared/report.xlsx", base)).toBe(
+      "shared/report.xlsx",
+    );
+    expect(resolveBotWorkspacePath("team", "bot-1", "/shared/report.xlsx", base)).toBe(
+      "shared/report.xlsx",
+    );
+    expect(resolveBotWorkspaceCwd("team", "bot-1", undefined, base)).toBe("acme/research");
+    expect(resolveBotWorkspaceCwd("team", "bot-1", ".", base)).toBe("acme/research");
+    expect(resolveBotWorkspaceCwd("team", "bot-1", "sub/dir", base)).toBe("acme/research/sub/dir");
+    expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project", base)).toBe(
+      "/Users/me/project",
+    );
+  });
+
+  it("keeps a Team Computer bot's uploads listed for its folder and shared", () => {
+    const base = "acme/research";
+    expect(resolveBotUploadPath("team", "bot-1", "notes.txt", base)).toBe(
+      "acme/research/notes.txt",
+    );
+    expect(resolveBotUploadPath("team", "bot-1", "shared/brief.md", base)).toBe("shared/brief.md");
+    expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt", base)).toThrow(
+      /escapes the bot workspace/,
+    );
+  });
+
+  it("shows a Team Computer bot's folder-relative listing against its folder", () => {
+    const base = "acme/research";
+    expect(
+      displayBotWorkspacePath("team", "bot-1", "notes", "acme/research/notes/result.txt", base),
+    ).toBe("notes/result.txt");
+    expect(displayBotWorkspacePath("team", "bot-1", "shared", "shared/brief.md", base)).toBe(
+      "shared/brief.md",
+    );
+  });
+
+  it("anchors a Private Computer bot's relative paths and cwd at its folder", () => {
+    const base = "projects";
+    expect(botWorkspaceDirectory("dedicated", "bot-1", base)).toBe(base);
+    expect(resolveBotWorkspacePath("dedicated", "bot-1", "notes/x.md", base)).toBe(
+      "projects/notes/x.md",
+    );
+    expect(resolveBotWorkspacePath("dedicated", "bot-1", "", base)).toBe("projects");
+    expect(resolveBotWorkspacePath("dedicated", "bot-1", "/abs/x", base)).toBe("/abs/x");
+    expect(resolveBotWorkspacePath("dedicated", "bot-1", "~/x", base)).toBe("/x");
+    expect(resolveBotWorkspaceCwd("dedicated", "bot-1", undefined, base)).toBe("projects");
+    expect(resolveBotWorkspaceCwd("dedicated", "bot-1", "notes", base)).toBe("projects/notes");
+    expect(resolveBotWorkspaceCwd("dedicated", "bot-1", "/abs", base)).toBe("/abs");
+    expect(resolveBotWorkspaceCwd("dedicated", "bot-1", "~", base)).toBeUndefined();
+    expect(resolveBotWorkspaceCwd("dedicated", "bot-1", "~/src", base)).toBe("src");
+    expect(resolveBotUploadPath("dedicated", "bot-1", "notes.txt", base)).toBe(
+      "projects/notes.txt",
+    );
+  });
+
+  it("re-checks a hand-edited value even after write-time validation", () => {
+    expect(() => resolveBotWorkspaceCwd("team", "bot-1", undefined, "../outside")).toThrow(
+      "Path escapes the computer workspace",
+    );
+  });
+
+  it("tells the bot the folder it works in", () => {
+    expect(customWorkspaceInstruction("team", "acme/research")).toContain("acme/research");
+    expect(customWorkspaceInstruction("team", "acme/research")).toContain("../../shared/");
+    expect(customWorkspaceInstruction("dedicated", "projects")).toContain("projects");
   });
 });

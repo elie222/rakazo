@@ -140,10 +140,17 @@ async function ensureGraphicalComputer(
     const computerId = bot.computer.id;
     try {
       await getLogger().withContext({ reason: "teaching" }, () =>
-        provisionComputer(deps, computerId, {
-          ...ctx,
-          screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-        }),
+        provisionComputer(
+          deps,
+          computerId,
+          {
+            ...ctx,
+            screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+          },
+          "none",
+          undefined,
+          { workspacePath: bot.workspacePath },
+        ),
       );
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);

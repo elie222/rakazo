@@ -59,6 +59,7 @@ function sourceRecords(): AccountExportRecord[] {
       dailyCheckIns: false,
       fleetManagement: false,
       replyMode: "messages",
+      workspacePath: null,
       createdAt: at,
     },
     {
@@ -88,6 +89,7 @@ function sourceRecords(): AccountExportRecord[] {
       dailyCheckIns: false,
       fleetManagement: true,
       replyMode: "chat",
+      workspacePath: null,
       createdAt: at,
     },
     {

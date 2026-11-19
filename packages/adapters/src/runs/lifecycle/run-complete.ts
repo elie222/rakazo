@@ -212,7 +212,7 @@ async function applyScriptedTurns(ctx: RunContext) {
       await deps.sandbox.writeFile(
         await ctx.computer.get("script"),
         {
-          path: resolveBotWorkspacePath(ctx.computer.mode, bot.id, file.path),
+          path: resolveBotWorkspacePath(ctx.computer.mode, bot.id, file.path, bot.workspacePath),
           content: new TextEncoder().encode(file.content),
         },
         context,
