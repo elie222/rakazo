@@ -1,12 +1,19 @@
-import { clearInactiveUserComputerControl, expireComputerControl } from "@rakazo/adapters";
+import {
+  acquireComputerExecutionLease,
+  ComputerBusyError,
+  clearInactiveUserComputerControl,
+  expireComputerControl,
+} from "@rakazo/adapters";
+import type { PrismaClient } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
-import { expireStaleComputerControl } from "./computer-control.js";
+import { acquireBootLease, expireStaleComputerControl } from "./computer-control.js";
 
 vi.mock("@rakazo/adapters", async (original) => ({
   ...(await original<typeof import("@rakazo/adapters")>()),
+  acquireComputerExecutionLease: vi.fn(),
   expireComputerControl: vi.fn(),
   clearInactiveUserComputerControl: vi.fn(),
 }));
@@ -79,5 +86,58 @@ describe("expireStaleComputerControl", () => {
     await expect(
       expireStaleComputerControl(deps, { ...lapsed, controlLeaseId: null }),
     ).rejects.toThrow("database unavailable");
+  });
+});
+
+describe("acquireBootLease", () => {
+  const leaseHeld = {
+    computerExecutionLease: {
+      findUnique: vi.fn(async () => ({
+        runId: "run-1",
+        expiresAt: new Date(Date.now() + 60_000),
+      })),
+    },
+    run: { findUnique: vi.fn(async () => ({ status: "completed" })) },
+  } as unknown as PrismaClient;
+
+  beforeEach(() => {
+    vi.mocked(acquireComputerExecutionLease).mockReset();
+  });
+
+  it("does not start a boot whose request is already gone", async () => {
+    await expect(
+      acquireBootLease(leaseHeld, {
+        computerId: "computer-1",
+        runId: "boot:1",
+        botId: "bot-1",
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toThrow();
+    expect(acquireComputerExecutionLease).not.toHaveBeenCalled();
+  });
+
+  it("stops retrying when the request ends while a finished run lets go", async () => {
+    const controller = new AbortController();
+    vi.mocked(acquireComputerExecutionLease).mockRejectedValue(new ComputerBusyError());
+    const prisma = {
+      computerExecutionLease: {
+        findUnique: vi.fn(async () => {
+          // The person closed the panel while this boot waited on the previous run.
+          controller.abort();
+          return { runId: "run-1", expiresAt: new Date(Date.now() + 60_000) };
+        }),
+      },
+      run: { findUnique: vi.fn(async () => ({ status: "completed" })) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      acquireBootLease(prisma, {
+        computerId: "computer-1",
+        runId: "boot:1",
+        botId: "bot-1",
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+    expect(acquireComputerExecutionLease).toHaveBeenCalledOnce();
   });
 });

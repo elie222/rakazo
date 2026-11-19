@@ -132,6 +132,7 @@ export function computerRoutes(ctx: RouterContext) {
           computerId: bot.computer.id,
           runId: manualRunId,
           botId: bot.id,
+          signal: context.signal,
         });
         const computerId = bot.computer.id;
         try {
