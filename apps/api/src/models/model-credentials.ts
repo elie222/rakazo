@@ -7,6 +7,7 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveListsModel,
   compatibleThinkingLevels,
+  dataRetentionForConnect,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   keptModelSettings,
@@ -473,6 +474,8 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     // Before the submitted endpoint is contacted, not after: a blocked provider is not
     // probed, and its refusal is not replaced by whatever the probe would have said.
     assertModelProviderAllowed(input.provider);
+    // Refused before the checks below, whose catch would turn it into a code-less error.
+    dataRetentionForConnect(input);
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
     let expectedSecret: ModelCredentialInput["expectedSecret"];

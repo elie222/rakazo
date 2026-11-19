@@ -65,6 +65,7 @@ export type PiCatalogEntry = {
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
   routingFields?: ModelRoutingField[];
+  dataRetentionControl?: true;
   endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
@@ -307,6 +308,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
             }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
+        ...(definition?.dataRetentionControl ? { dataRetentionControl: true as const } : {}),
       });
     }
   }
@@ -329,6 +331,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
       reasoning: true,
       thinkingLevels: ["off", "minimal", "low", "medium", "high"],
       ...(catalogProbeBaseUrls.has("openrouter") ? { catalogProbe: true } : {}),
+      ...(modelProviderDefinition("openrouter")?.dataRetentionControl
+        ? { dataRetentionControl: true as const }
+        : {}),
     });
   }
 
