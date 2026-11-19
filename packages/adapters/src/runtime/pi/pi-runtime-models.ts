@@ -11,6 +11,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "../../models/deployment-model.js";
+import { withDataRetention } from "../../models/endpoints/data-retention.js";
 import { withVertexRouting } from "../../models/endpoints/google-vertex-routing.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./models/pi-credentials.js";
 import {
@@ -137,6 +138,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
         (modelConfig.apiKey ??
         (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
   if (model) model = withVertexRouting(model, modelConfig);
+  if (model) model = withDataRetention(model, modelConfig);
   return { provider, modelId, models, model, apiKey, credentials };
 }
 

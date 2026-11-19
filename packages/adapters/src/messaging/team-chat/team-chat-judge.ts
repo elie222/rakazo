@@ -354,6 +354,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         apiKey: auth.apiKey,
         projectId: parsed.projectId,
         region: parsed.region,
+        zeroDataRetention: parsed.zeroDataRetention,
         ...limit,
         ...context,
       },

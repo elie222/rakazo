@@ -6,6 +6,7 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveListsModel,
   compatibleThinkingLevels,
+  dataRetentionForConnect,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   keptModelSettings,
@@ -468,6 +469,8 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
   ) => {
+    // Refused before the checks below, whose catch would turn it into a code-less error.
+    dataRetentionForConnect(input);
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
     let plaintext: string;
     let expectedSecret: ModelCredentialInput["expectedSecret"];
