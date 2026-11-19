@@ -45,12 +45,14 @@ export function PageReviewComments({
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const [section, setSection] = useState("");
+  const [sectionName, setSectionName] = useState("");
   const [body, setBody] = useState("");
   const lastSubmission = useRef<PageCommentSubmission>(undefined);
   const [composingVersion, setComposingVersion] = useState(page.version);
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
+    setSectionName("");
     setBody("");
   }
   const comments = useInfiniteQuery(
@@ -98,7 +100,7 @@ export function PageReviewComments({
   const current = page.currentVersion === page.version;
   const choices = pageSectionChoices(sections);
   const selected = choices.find(({ value }) => value === section);
-  const anchor = choices.length ? selected?.anchor : { section };
+  const anchor = choices.length ? selected?.anchor : { section: sectionName };
   const canPost = !save.pending && Boolean(anchor?.section.trim() && body.trim());
   const rows = comments.isError ? [] : (comments.data?.pages.flatMap(({ items }) => items) ?? []);
   const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -131,9 +133,9 @@ export function PageReviewComments({
               aria-label={t`Section`}
               placeholder={t`Section name`}
               maxLength={200}
-              value={section}
+              value={sectionName}
               readOnly={save.pending}
-              onChange={(event) => setSection(event.target.value)}
+              onChange={(event) => setSectionName(event.target.value)}
             />
           )}
           <Textarea

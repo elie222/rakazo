@@ -11,6 +11,7 @@ import {
   SettingsInputRow,
   SettingsRow,
 } from "../../components/settings/settings-group";
+import { MenuPicker } from "../../components/ui/menu-picker";
 import { errorText } from "../api/user-error";
 import { useMobileTokens } from "../native/native";
 import { targetRpcQuery, useSave } from "../query/query";
@@ -39,15 +40,15 @@ export function PageReviewComments({
   const tokens = useMobileTokens();
   const [cursor, setCursor] = useState<string>();
   const [section, setSection] = useState("");
+  const [sectionName, setSectionName] = useState("");
   const [body, setBody] = useState("");
   const lastSubmission = useRef<PageCommentSubmission>(undefined);
-  const [choosingSection, setChoosingSection] = useState(false);
   const [composingVersion, setComposingVersion] = useState(page.version);
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
+    setSectionName("");
     setBody("");
-    setChoosingSection(false);
   }
   const pageId = page.id;
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/comments", { pageId, cursor });
@@ -92,39 +93,21 @@ export function PageReviewComments({
   const failure = save.error ?? comments.error;
   const choices = pageSectionChoices(sections);
   const selected = choices.find(({ value }) => value === section);
-  const anchor = choices.length ? selected?.anchor : { section };
+  const anchor = choices.length ? selected?.anchor : { section: sectionName };
   const canPost = !save.pending && Boolean(anchor?.section.trim() && body.trim());
-  if (choosingSection)
-    return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <SettingsGroup label={t`Section`}>
-          {choices.map(({ value, label }) => (
-            <SettingsRow
-              key={value}
-              title={label}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: section === value }}
-              onPress={() => {
-                setSection(value);
-                setChoosingSection(false);
-              }}
-            />
-          ))}
-        </SettingsGroup>
-      </ScrollView>
-    );
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       {current ? (
         <SettingsGroup>
           {sections.length ? (
-            <SettingsRow
+            <MenuPicker
               key="section"
-              title={t`Section`}
-              value={selected?.label}
-              chevron="right"
+              label={t`Section`}
+              placeholder={t`Choose a section`}
+              choices={choices.map(({ value, label }) => ({ key: value, label }))}
+              value={section}
               disabled={save.pending}
-              onPress={() => setChoosingSection(true)}
+              onChange={setSection}
             />
           ) : (
             <SettingsInputRow
@@ -132,9 +115,9 @@ export function PageReviewComments({
               accessibilityLabel={t`Section name`}
               placeholder={t`Section name`}
               maxLength={200}
-              value={section}
+              value={sectionName}
               editable={!save.pending}
-              onChangeText={setSection}
+              onChangeText={setSectionName}
             />
           )}
           <SettingsInputRow

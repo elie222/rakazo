@@ -42,7 +42,16 @@ name: Pages
 - extendedWaitUntil:
     visible: "Post comment"
     timeout: 10000
+- extendedWaitUntil:
+    visible: "Section"
+    timeout: 10000
 - takeScreenshot: 04-page-review
+- tapOn: "Section"
+- extendedWaitUntil:
+    visible: "Launch dashboard"
+    timeout: 10000
+- takeScreenshot: 04-page-review-sections
+- tapOn: "Launch dashboard"
 - openLink: "rakazo:///pages?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
     visible: "Launch dashboard"

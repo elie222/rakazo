@@ -98,6 +98,7 @@ export function MenuPicker({
   label,
   choices,
   value,
+  placeholder,
   onChange,
   onPress,
   divider = false,
@@ -108,6 +109,7 @@ export function MenuPicker({
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
+  placeholder?: string;
   onChange: (key: string) => void;
   onPress?: () => void;
   divider?: boolean;
@@ -118,7 +120,8 @@ export function MenuPicker({
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
   const rowStyle = [styles.row, plain && { paddingHorizontal: 0, minHeight: 44 }];
-  const current = choices.find((choice) => choice.key === value)?.label ?? choices[0]?.label ?? "";
+  const current =
+    choices.find((choice) => choice.key === value)?.label ?? placeholder ?? choices[0]?.label ?? "";
   const row = {
     accessibilityLabel: label,
     accessibilityRole: "button",
