@@ -38,6 +38,10 @@ export const PL_MESSAGES: Record<string, string> = {
   "Bring All to Front": "Przenieś wszystkie na wierzch",
 
   // Updates
+  "Checking for Updates…": "Sprawdzanie aktualizacji…",
+  "Downloading Update…": "Pobieranie aktualizacji…",
+  "Restart to Update…": "Uruchom ponownie, aby zaktualizować…",
+  "Downloading Rakazo {version}…": "Pobieranie Rakazo {version}…",
   "Rakazo {version} is ready to install.": "Rakazo {version} jest gotowe do zainstalowania.",
   Restart: "Uruchom ponownie",
   Later: "Później",

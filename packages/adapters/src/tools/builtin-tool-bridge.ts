@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { READ_MEETING_TRANSCRIPT } from "../meetings/meeting-chat.tool-definition.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../runs/tools/run-tool-selection.js";
 import { bridgeToolDefinitions } from "./builtin.tool-definition.js";
 import type { CatalogEntry } from "./lazy-tool-catalog.js";
@@ -19,6 +20,7 @@ const FIND_TOOL_LIMIT = 3;
  */
 export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "shell",
+  "user_computer_list",
   "user_computer_shell",
   "read_file",
   "write_file",
@@ -51,6 +53,7 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "schedule_list",
   "search_history",
   "read_history",
+  READ_MEETING_TRANSCRIPT,
   "read_email",
   "send_email",
   "end_call",
@@ -60,7 +63,7 @@ const FLEET_NAMES: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
 
 const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
   ["secrets", (name) => name.includes("secret")],
-  ["bots", (name) => FLEET_NAMES.has(name) || name.endsWith("_bot")],
+  ["bots", (name) => FLEET_NAMES.has(name) || name.endsWith("_bot") || name === "post_to_group"],
   [
     "tasks",
     (name) =>

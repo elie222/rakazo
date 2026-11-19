@@ -7,6 +7,8 @@ export const EXAMPLE_SUPERVISOR_TOKEN_PLACEHOLDER =
 export const EXAMPLE_SCREEN_PROXY_SECRET_PLACEHOLDER =
   "replace-with-32-plus-character-screen-proxy-secret";
 
+const DEV_MEETING_SIGNING_KEY = "test-only-meeting-signing-key-change-before-production";
+
 const EXAMPLE_ENCRYPTION_KEY_PLACEHOLDER = "replace-with-64-random-hex-characters";
 
 const RUNTIME_SECRETS_ERROR =
@@ -15,6 +17,7 @@ const RUNTIME_SECRETS_ERROR =
 const DEDICATED_SECRET_PLACEHOLDERS = new Set([
   DEV_SUPERVISOR_TOKEN_PLACEHOLDER,
   DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
+  DEV_MEETING_SIGNING_KEY,
   EXAMPLE_SUPERVISOR_TOKEN_PLACEHOLDER,
   EXAMPLE_SCREEN_PROXY_SECRET_PLACEHOLDER,
 ]);
@@ -172,4 +175,14 @@ export function hasValidBearerToken(authorization: string | undefined, expectedT
   const supplied =
     authorization?.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7) : "";
   return timingSafeStringEqual(supplied, expectedToken);
+}
+
+export function resolveMeetingSigningKey(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveDedicatedSecret(env, {
+    name: "MEETING_SIGNING_KEY",
+    conflicts: ["BETTER_AUTH_SECRET", "ENCRYPTION_KEY"],
+    missingMessage: "Set MEETING_SIGNING_KEY to a dedicated random key for meeting grants.",
+    conflictMessage: "MEETING_SIGNING_KEY must differ from BETTER_AUTH_SECRET and ENCRYPTION_KEY.",
+    developmentFallback: DEV_MEETING_SIGNING_KEY,
+  });
 }

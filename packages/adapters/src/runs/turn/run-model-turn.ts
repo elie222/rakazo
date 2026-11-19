@@ -228,7 +228,7 @@ function modelTurnRequest(
             )
           : disabledBuiltinTools,
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
-      followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun),
+      followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun, run.trigger),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
         trigger: run.trigger,
       }),

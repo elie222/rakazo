@@ -77,6 +77,7 @@ describe("SubagentCard", () => {
     expect(card.get("subagent-chevron")?.getAttribute("class")).toContain("rotate-180");
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("true");
     expect(card.get("subagent-task")?.className).not.toContain("truncate");
+    expect(card.get("subagent-task")?.className).toContain("wrap-anywhere");
     expect(card.get("subagent-body")?.textContent).toBe("A long report");
 
     card.click();

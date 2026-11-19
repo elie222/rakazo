@@ -241,10 +241,19 @@ export function createRunRuntime(
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
     /** Answers the lifecycle-mail job where account mail is configured. */
+    meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
+    meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
     lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
+  const {
+    messaging,
+    isMessagingInstallationActive,
+    lifecycleEmail,
+    meetingWork,
+    meetingCalendarSync,
+    ...executorDeps
+  } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -340,6 +349,8 @@ export function createRunRuntime(
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     lifecycleEmail,
+    meetingWork,
+    meetingCalendarSync,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }

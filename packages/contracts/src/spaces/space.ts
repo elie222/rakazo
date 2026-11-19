@@ -132,5 +132,12 @@ export const SpaceMemoryConfigSchema = z.object({
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
 /** What a Space change signal tells apps to read again; each is a `notifications.subscribe` frame. */
-export const SpaceChangeKind = z.enum(["computerUpdates", "runs", "routines"]);
+export const SpaceChangeKind = z.enum([
+  "computerUpdates",
+  "runs",
+  "routines",
+  "meetings",
+  "artifacts",
+  "meetingCalendar",
+]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;

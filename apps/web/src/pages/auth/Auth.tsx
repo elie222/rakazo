@@ -33,10 +33,9 @@ import { authErrorText, credentialIssueText } from "../../lib/query/user-error";
 
 type AuthMode = "in" | "up" | "forgot";
 
-// off-scale: 16px below md stops iOS Safari zooming into a focused field.
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
+const fieldClass = "mt-2";
 const CODE_LENGTH = 6;
-export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
+export const submitClass = "mt-3 w-full";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -61,14 +60,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   });
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
-  const passkey = usePasskeySignIn({
-    // A passkey only signs in to an existing account, so it skips new-account onboarding.
-    onSignedIn: () => {
-      if (mode === "up") navigate(`/sign-in${nextQuery}`, { replace: true });
-      enterApp();
-    },
-    onError: setError,
-  });
+  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError });
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
@@ -93,8 +85,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const title =
     sent || codeStep ? (
       <Trans>Check your email</Trans>
-    ) : chooser ? (
-      <Trans>Welcome to Rakazo</Trans>
     ) : presented && mode === "in" ? (
       <Trans>Welcome back</Trans>
     ) : mode === "in" ? (
@@ -356,7 +346,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   setError(null);
                   navigate(`${chooserPath}/email${nextQuery}`, { state: { authChooser: true } });
                 }}
-                onPasskey={passkey.supported ? passkey.start : undefined}
+                onPasskey={mode === "in" && passkey.supported ? passkey.start : undefined}
               />
               {error ? (
                 <p
@@ -366,6 +356,23 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
+              <p className="mt-8 text-center text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                )}
+              </p>
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (
@@ -382,6 +389,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t`Your name`}
+                    size="xl"
                     className={fieldClass}
                   />
                 </div>
@@ -428,6 +436,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     placeholder={t`Your email address`}
                     type="email"
                     required
+                    size="xl"
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
@@ -463,6 +472,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     required={!useCode}
                     minLength={mode === "up" ? MIN_PASSWORD_LENGTH : undefined}
                     maxLength={MAX_PASSWORD_LENGTH}
+                    size="xl"
                     className={fieldClass}
                   />
                   {mode === "in" && reset?.passwordReset ? (
@@ -481,7 +491,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               ) : null}
               <Button
                 type="submit"
-                size="lg"
+                size="xl"
                 disabled={pending || (codeStep && code.length < CODE_LENGTH)}
                 className={submitClass}
               >
@@ -510,7 +520,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 <Button
                   type="button"
                   variant="outline"
-                  size="lg"
+                  size="xl"
                   disabled={pending}
                   className={submitClass}
                   onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
@@ -639,7 +649,7 @@ export function PasswordResetPage() {
           ) : null}
           <Button
             type="submit"
-            size="lg"
+            size="xl"
             disabled={pending || !params.get("token")}
             className={submitClass}
           >
@@ -745,6 +755,7 @@ function PasswordField({
         maxLength={MAX_PASSWORD_LENGTH}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        size="xl"
         className={fieldClass}
       />
     </div>

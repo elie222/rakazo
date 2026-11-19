@@ -17,6 +17,7 @@ import {
   useGlobalSearchParams,
   usePathname,
   useRouter,
+  useSegments,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -134,6 +135,7 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const segments = useSegments();
   const router = useRouter();
   const params = useGlobalSearchParams();
   const routeKey = JSON.stringify([pathname, params]);
@@ -148,7 +150,11 @@ function SplitFrame({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (home) setInboxHidden(false);
   }, [home]);
-  const showsInbox = split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname);
+  // iOS presents settings as a sheet over the window; Android pushes them as a page, which
+  // takes the whole window rather than sitting beside the chat list.
+  const settingsPage = Platform.OS !== "ios" && segments[0] === "(settings)";
+  const showsInbox =
+    split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname) && !settingsPage;
   // Dragging resizes the list natively; the width is kept when the finger lifts.
   const paneWidth = useSharedValue(inboxWidth);
   const dragStart = useRef(inboxWidth);
@@ -595,6 +601,15 @@ function LayoutContent() {
                         options={glassHeaderOptions(t`Group settings`)}
                       />
                       <Stack.Screen name="bot-profile" options={glassHeaderOptions(t`Profile`)} />
+                      <Stack.Screen name="meetings" options={glassHeaderOptions(t`Meetings`)} />
+                      <Stack.Screen
+                        name="meeting-calendar"
+                        options={glassHeaderOptions(t`Auto-join`)}
+                      />
+                      <Stack.Screen
+                        name="meeting-transcript"
+                        options={glassHeaderOptions(t`Transcript`)}
+                      />
                       <Stack.Screen
                         name="bot-settings"
                         options={glassHeaderOptions(t`Chat settings`)}

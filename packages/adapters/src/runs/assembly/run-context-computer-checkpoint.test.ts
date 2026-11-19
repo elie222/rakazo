@@ -92,6 +92,22 @@ it("keeps canonical wire names and saved effect occurrences unchanged", () => {
   expect(nextMutatingEffectOccurrence(ctx, "destination.write", {}, "later")).toBe(4);
   expect(ctx.state.effects.occurrences[0]).toEqual(saved.effectOccurrences[0]);
 });
+it("reserves the original occurrence when an edited approval replays without a checkpoint", () => {
+  const ctx = fixture();
+  const toolName = "destination.write";
+  const original = { body: "Original" };
+  const edited = { body: "Edited" };
+  const originalKey = toolEffectIdempotencyKey(ctx.runId, toolName, original, 2);
+  expect(nextMutatingEffectOccurrence(ctx, toolName, edited, "approved", originalKey)).toBe(0);
+  expect(ctx.state.effects.occurrences[0]).toMatchObject({
+    fingerprint: toolEffectIdempotencyKey(ctx.runId, toolName, original),
+    occurrence: 2,
+  });
+  const next = nextMutatingEffectOccurrence(ctx, toolName, original, "later");
+  expect(next).toBe(3);
+  expect(toolEffectIdempotencyKey(ctx.runId, toolName, original, next)).not.toBe(originalKey);
+});
+
 it("reports a pinned turn whose pending tool is offline as unavailable, not incompatible", () => {
   expect(() =>
     restoreTurnCheckpointEffects(
