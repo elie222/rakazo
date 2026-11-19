@@ -1,11 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { PageComment, PageReview } from "@rakazo/contracts";
+import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import type { PageCommentSubmission } from "@rakazo/core";
 import {
-  canPostPageComment,
   ensureAiDataConsent,
   pageCommentActions,
   pageCommentSubmission,
+  pageSectionChoices,
 } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import {
@@ -38,8 +38,8 @@ export function PageReviewComments({
   onDraft,
 }: {
   page: PageReview;
-  sections: string[];
-  onRevision: (version: number, section: string) => void;
+  sections: PageSectionAnchor[];
+  onRevision: (version: number, anchor: PageSectionAnchor) => void;
   onDraft: (id: string) => void;
 }) {
   const { t } = useLingui();
@@ -83,6 +83,7 @@ export function PageReviewComments({
         submissionId: action.submissionId,
         version: action.version,
         section: action.section,
+        sectionOccurrence: action.sectionOccurrence,
         body: action.body,
       });
     },
@@ -95,7 +96,10 @@ export function PageReviewComments({
     },
   });
   const current = page.currentVersion === page.version;
-  const canPost = !save.pending && canPostPageComment(sections, section, body);
+  const choices = pageSectionChoices(sections);
+  const selected = choices.find(({ value }) => value === section);
+  const anchor = choices.length ? selected?.anchor : { section };
+  const canPost = !save.pending && Boolean(anchor?.section.trim() && body.trim());
   const rows = comments.isError ? [] : (comments.data?.pages.flatMap(({ items }) => items) ?? []);
   const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
   return (
@@ -105,9 +109,9 @@ export function PageReviewComments({
           className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!canPost) return;
+            if (!canPost || !anchor) return;
             const submission = pageCommentSubmission(
-              { version: page.version, section, body },
+              { version: page.version, ...anchor, body },
               lastSubmission.current,
             );
             lastSubmission.current = submission;
@@ -117,11 +121,8 @@ export function PageReviewComments({
           {sections.length ? (
             <OptionSelect
               aria-label={t`Section`}
-              options={[
-                { value: "", label: t`Choose a section`, disabled: true },
-                ...sections.map((value) => ({ value, label: value })),
-              ]}
-              value={sections.includes(section) ? section : ""}
+              options={[{ value: "", label: t`Choose a section`, disabled: true }, ...choices]}
+              value={selected?.value ?? ""}
               onValueChange={setSection}
               disabled={save.pending}
             />
@@ -223,7 +224,12 @@ export function PageReviewComments({
                     variant="text"
                     size="xs"
                     className="min-w-0 max-w-full justify-start gap-2"
-                    onClick={() => onRevision(comment.version, comment.section)}
+                    onClick={() =>
+                      onRevision(comment.version, {
+                        section: comment.section,
+                        sectionOccurrence: comment.sectionOccurrence,
+                      })
+                    }
                   >
                     <span className="truncate">{comment.section}</span>
                     <span className="shrink-0 font-normal">

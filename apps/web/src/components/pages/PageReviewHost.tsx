@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { PageReview } from "@rakazo/contracts";
+import type { PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import { pageReviewPath } from "@rakazo/contracts";
 import {
   Button,
@@ -56,11 +56,11 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const compact = useMedia("(pointer: coarse)");
-  const [revision, setRevision] = useState<{ version: number; section: string }>();
+  const [revision, setRevision] = useState<{ version: number; anchor: PageSectionAnchor }>();
   const version = revision?.version;
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draftId, setDraftId] = useState<string>();
-  const [anchors, setAnchors] = useState<{ version: number; sections: string[] }>();
+  const [anchors, setAnchors] = useState<{ version: number; sections: PageSectionAnchor[] }>();
   const read = queries.pageReviews.get.queryOptions({ input: { pageId, version } });
   const review = useQuery({ ...read, refetchOnMount: "always", refetchOnWindowFocus: "always" });
   const page = review.isError ? undefined : review.data;
@@ -70,7 +70,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     gcTime: 0,
   });
   const code = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
-  const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.section);
+  const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.anchor);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
     stale: [
@@ -121,9 +121,9 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               open={commentsOpen}
               setOpen={setCommentsOpen}
               sections={anchors?.version === page.version ? anchors.sections : []}
-              onVersion={(version, section) => {
+              onVersion={(version, anchor) => {
                 setAnchors(undefined);
-                setRevision(version !== undefined && section ? { version, section } : undefined);
+                setRevision(version !== undefined && anchor ? { version, anchor } : undefined);
               }}
               onDraft={setDraftId}
             />
@@ -169,8 +169,8 @@ function ReviewControls({
   page: PageReview;
   open: boolean;
   setOpen: (open: boolean) => void;
-  sections: string[];
-  onVersion: (next?: number, section?: string) => void;
+  sections: PageSectionAnchor[];
+  onVersion: (next?: number, anchor?: PageSectionAnchor) => void;
   onDraft: (id: string) => void;
 }) {
   const { t } = useLingui();

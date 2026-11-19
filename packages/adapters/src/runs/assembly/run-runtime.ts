@@ -332,7 +332,6 @@ export function createRunRuntime(
     prisma: deps.prisma,
     events: deps.events,
     jobs: deps.jobs,
-    billingEnabled: deps.billingEnabled,
     runtime: cliModelRuntime(env, pageRevisionRuntime, deps),
     resolveModel: executor.resolveModel,
   });

@@ -1,8 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { PageComment, PageReview } from "@rakazo/contracts";
+import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import type { PageCommentSubmission } from "@rakazo/core";
-import { canPostPageComment, pageCommentActions, pageCommentSubmission } from "@rakazo/core";
+import { pageCommentActions, pageCommentSubmission, pageSectionChoices } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -30,8 +30,8 @@ export function PageReviewComments({
   onDraft,
 }: {
   page: PageReview;
-  sections: string[];
-  onRevision: (version: number, section: string) => void;
+  sections: PageSectionAnchor[];
+  onRevision: (version: number, anchor: PageSectionAnchor) => void;
   onLatest: () => void;
   onDraft: (commentId: string) => void;
 }) {
@@ -72,6 +72,7 @@ export function PageReviewComments({
         submissionId: action.submissionId,
         body: action.body,
         section: action.section,
+        sectionOccurrence: action.sectionOccurrence,
         version: action.version,
       });
     },
@@ -89,18 +90,22 @@ export function PageReviewComments({
   const next = comments.isError ? null : comments.data?.nextCursor;
   const rows = comments.isError ? [] : (comments.data?.items ?? []);
   const failure = save.error ?? comments.error;
+  const choices = pageSectionChoices(sections);
+  const selected = choices.find(({ value }) => value === section);
+  const anchor = choices.length ? selected?.anchor : { section };
+  const canPost = !save.pending && Boolean(anchor?.section.trim() && body.trim());
   if (choosingSection)
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
         <SettingsGroup label={t`Section`}>
-          {sections.map((label) => (
+          {choices.map(({ value, label }) => (
             <SettingsRow
-              key={label}
+              key={value}
               title={label}
               accessibilityRole="radio"
-              accessibilityState={{ checked: section === label }}
+              accessibilityState={{ checked: section === value }}
               onPress={() => {
-                setSection(label);
+                setSection(value);
                 setChoosingSection(false);
               }}
             />
@@ -116,7 +121,7 @@ export function PageReviewComments({
             <SettingsRow
               key="section"
               title={t`Section`}
-              value={sections.includes(section) ? section : undefined}
+              value={selected?.label}
               chevron="right"
               disabled={save.pending}
               onPress={() => setChoosingSection(true)}
@@ -146,10 +151,11 @@ export function PageReviewComments({
             key="post"
             title={t`Post comment`}
             prominent
-            disabled={save.pending || !canPostPageComment(sections, section, body)}
+            disabled={!canPost}
             onPress={() => {
+              if (!canPost || !anchor) return;
               const submission = pageCommentSubmission(
-                { version: page.version, section, body },
+                { version: page.version, ...anchor, body },
                 lastSubmission.current,
               );
               lastSubmission.current = submission;
@@ -194,7 +200,12 @@ export function PageReviewComments({
               key="version"
               title={t`Revision ${ph({ version })}`}
               chevron="right"
-              onPress={() => onRevision(version, comment.section)}
+              onPress={() =>
+                onRevision(version, {
+                  section: comment.section,
+                  sectionOccurrence: comment.sectionOccurrence,
+                })
+              }
             />
             {draftId ? (
               <SettingsRow

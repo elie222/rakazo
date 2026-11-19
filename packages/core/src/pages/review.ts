@@ -1,19 +1,24 @@
-import type { PageComment, PageReview } from "@rakazo/contracts";
+import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import { newClientId } from "../primitives/client-id.js";
 
-type PageCommentDraft = Pick<PageComment, "version" | "section" | "body">;
+type PageCommentDraft = Pick<PageComment, "version" | "body"> & PageSectionAnchor;
 export type PageCommentSubmission = PageCommentDraft & { submissionId: string };
 
 export function pageCommentSubmission(
   draft: PageCommentDraft,
   previous?: PageCommentSubmission,
 ): PageCommentSubmission {
-  const { version } = draft;
+  const { version, sectionOccurrence } = draft;
   const section = draft.section.trim();
   const body = draft.body.trim();
-  if (previous?.version === version && previous.section === section && previous.body === body)
+  if (
+    previous?.version === version &&
+    previous.section === section &&
+    previous.sectionOccurrence === sectionOccurrence &&
+    previous.body === body
+  )
     return previous;
-  return { version, section, body, submissionId: newClientId() };
+  return { version, section, sectionOccurrence, body, submissionId: newClientId() };
 }
 
 export function pageCommentActions(page: PageReview, comment: PageComment) {
@@ -34,6 +39,15 @@ export function pageCommentActions(page: PageReview, comment: PageComment) {
   };
 }
 
-export function canPostPageComment(sections: readonly string[], section: string, body: string) {
-  return Boolean(body.trim() && (sections.length ? sections.includes(section) : section.trim()));
+export function pageSectionChoices(sections: readonly PageSectionAnchor[]) {
+  const repeated = new Set(
+    sections.filter(({ sectionOccurrence }) => (sectionOccurrence ?? 0) > 0).map((s) => s.section),
+  );
+  return sections.map((anchor) => ({
+    value: JSON.stringify([anchor.section, anchor.sectionOccurrence]),
+    label: repeated.has(anchor.section)
+      ? `${anchor.section} (${(anchor.sectionOccurrence ?? 0) + 1})`
+      : anchor.section,
+    anchor,
+  }));
 }

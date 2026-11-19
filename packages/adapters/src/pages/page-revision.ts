@@ -26,6 +26,7 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import { aiRecipient } from "../models/ai-consent.js";
+import { modelCreditBillingEnabled } from "../runs/turn/run-model.js";
 import { PAGE_REVISION_INSTRUCTIONS, pageRevisionPrompt } from "./page-revision.prompt.js";
 
 const MODEL_TIMEOUT = 90_000;
@@ -57,6 +58,7 @@ const requestSelect = {
     select: {
       version: true,
       section: true,
+      sectionOccurrence: true,
       body: true,
       resolvedAt: true,
       page: {
@@ -121,7 +123,6 @@ type Dependencies = {
     userId: string;
     botId: string;
   }) => Promise<AgentRunRequest["model"]>;
-  billingEnabled?: boolean;
 };
 
 export function createPageRevisions(deps: Dependencies) {
@@ -265,12 +266,16 @@ async function generateDraft(
   scope: { spaceId: string; userId: string; botId: string },
   requestId: string,
   source: string,
-  comment: { section: string; body: string },
+  comment: { section: string; sectionOccurrence: number | null; body: string },
   parentSignal: AbortSignal,
   authorized: (model: AgentRunRequest["model"]) => Promise<boolean>,
 ) {
   const signal = deadlineSignal(MODEL_TIMEOUT, parentSignal);
-  if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, scope))) return;
+  if (
+    (await modelCreditBillingEnabled({ prisma: deps.prisma })) &&
+    !(await memberHasModelAccess(deps.prisma, scope))
+  )
+    return;
   const model = await withAbort(deps.resolveModel(scope), signal);
   if (!(await authorized(model))) return;
   signal.throwIfAborted();
@@ -286,7 +291,7 @@ async function generateDraft(
       runId: id,
       model,
       instructions: PAGE_REVISION_INSTRUCTIONS,
-      prompt: pageRevisionPrompt(source, comment.section, comment.body),
+      prompt: pageRevisionPrompt(source, comment.section, comment.body, comment.sectionOccurrence),
       history: [],
       tools: [],
       allowSilentEmpty: true,

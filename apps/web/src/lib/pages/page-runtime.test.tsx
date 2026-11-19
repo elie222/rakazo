@@ -64,23 +64,26 @@ it("rebuilds the review document when only its section changes", async () => {
   }));
   vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
   let shown: string | null = null;
-  function Page({ anchor }: { anchor: string }) {
-    shown = usePageDocument("export default () => null;", "card", false, 0, true, anchor).document;
+  function Page({ occurrence }: { occurrence: number }) {
+    shown = usePageDocument("export default () => null;", "card", false, 0, true, {
+      section: "Summary",
+      sectionOccurrence: occurrence,
+    }).document;
     return null;
   }
   const root = createRoot(document.body.appendChild(document.createElement("div")));
-  const show = (anchor: string) =>
+  const show = (occurrence: number) =>
     act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Page anchor={anchor} />
+          <Page occurrence={occurrence} />
         </QueryClientProvider>,
       );
     });
-  await show("First section");
+  await show(0);
   await act(flush);
-  expect(shown).toContain('"reviewAnchor":"First section"');
-  await show("Second section");
-  expect(shown).toContain('"reviewAnchor":"Second section"');
+  expect(shown).toContain('"reviewAnchor":"Summary","reviewAnchorOccurrence":0');
+  await show(1);
+  expect(shown).toContain('"reviewAnchor":"Summary","reviewAnchorOccurrence":1');
   await act(async () => root.unmount());
 });

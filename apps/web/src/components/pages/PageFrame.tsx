@@ -1,4 +1,5 @@
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
+import type { PageSectionAnchor } from "@rakazo/contracts";
 import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReviewSections } from "@rakazo/core";
 import type { CSSProperties } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -28,7 +29,7 @@ export function PageFrame({
   onHeight?: (height: number) => void;
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
-  onSections?: (sections: string[]) => void;
+  onSections?: (sections: PageSectionAnchor[]) => void;
 }) {
   const { open, dialog } = useExternalLinkOpener();
   const box = useRef<HTMLDivElement>(null);

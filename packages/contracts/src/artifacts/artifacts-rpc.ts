@@ -29,6 +29,7 @@ import {
   PageGrantSchema,
   PageReviewSchema,
   PageSection,
+  PageSectionOccurrence,
   PageVersionNumber,
 } from "./page-collaboration.js";
 import {
@@ -117,6 +118,7 @@ export const artifactsRpc = {
           submissionId: z.uuid(),
           version: PageVersionNumber,
           section: PageSection,
+          sectionOccurrence: PageSectionOccurrence.optional(),
           body: PageCommentBody,
         }),
       )

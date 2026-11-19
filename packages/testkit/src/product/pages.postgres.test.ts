@@ -151,6 +151,7 @@ describePages("pages", () => {
       submissionId,
       version: 2,
       section: "Ready for review",
+      sectionOccurrence: 0,
       body: feedback,
     };
 
@@ -237,6 +238,10 @@ describePages("pages", () => {
       comment,
     );
     expect(await rpc(app, reviewer, "pageReviews/comment", comment)).toEqual({ id: commentId });
+    expect(
+      (await raw(app, reviewer, "pageReviews/comment", { ...comment, sectionOccurrence: 1 }))
+        .status,
+    ).toBe(409);
     expect(revisionCalls).not.toHaveBeenCalled();
     expect(await rpc(app, owner, "pageReviews/comments", input)).toMatchObject({
       items: [
@@ -244,6 +249,7 @@ describePages("pages", () => {
           id: commentId,
           body: feedback,
           section: comment.section,
+          sectionOccurrence: 0,
           version: 2,
         }),
       ],
@@ -288,6 +294,7 @@ describePages("pages", () => {
     expect(JSON.parse(request.prompt)).toEqual({
       source: page("Ready for review"),
       reviewedSection: comment.section,
+      reviewedSectionOccurrence: 1,
       reviewerFeedback: feedback,
     });
     expect((await raw(app, reviewer, "pageReviews/draft", reviewedDraft)).status).toBe(404);
@@ -454,6 +461,48 @@ describePages("pages", () => {
     expect(revisionCalls).toHaveBeenCalledTimes(dispatched);
 
     await allow(reviewer);
+    const { id: creditCommentId } = await rpc<{ id: string }>(
+      app,
+      reviewer,
+      "pageReviews/comment",
+      {
+        pageId,
+        submissionId: randomUUID(),
+        version: 1,
+        section: "Consent fixture",
+        body: "Check the timing.",
+      },
+    );
+    const creditRequest = await db().pageRevisionRequest.create({
+      data: {
+        commentId: creditCommentId,
+        requesterId: reviewerId,
+        consentSpaceId: stored.spaceId,
+        grantId: grant.id,
+      },
+    });
+    const { modelCreditsEnabled } = await db().deploymentSettings.findUniqueOrThrow({
+      where: { id: "default" },
+    });
+    try {
+      await db().deploymentSettings.update({
+        where: { id: "default" },
+        data: { modelCreditsEnabled: true },
+      });
+      await jobs.enqueue(pageRevisionJob(creditRequest.id));
+      await vi.waitFor(async () => {
+        const row = await db().pageRevisionRequest.findUniqueOrThrow({
+          where: { id: creditRequest.id },
+        });
+        expect(row.status).toBe("failed");
+      });
+      expect(revisionCalls).toHaveBeenCalledTimes(dispatched);
+    } finally {
+      await db().deploymentSettings.update({
+        where: { id: "default" },
+        data: { modelCreditsEnabled },
+      });
+    }
     revisionCalls.mockResolvedValueOnce(page("Consented revision"));
     expect(
       (

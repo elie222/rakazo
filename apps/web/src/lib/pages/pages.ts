@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, PageSectionAnchor } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -71,7 +71,7 @@ export function usePageDocument(
   /** Pixels a composer docked over the page's bottom covers. */
   bottomInset = 0,
   review = false,
-  reviewAnchor?: string,
+  reviewAnchor?: PageSectionAnchor,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -95,7 +95,8 @@ export function usePageDocument(
             reply,
             bottomInset,
             review,
-            reviewAnchor,
+            reviewAnchor: reviewAnchor?.section,
+            reviewAnchorOccurrence: reviewAnchor?.sectionOccurrence,
             lang: i18n.locale,
           }),
     [

@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import type { PageSectionAnchor } from "@rakazo/contracts";
 import { pageReviewSections } from "@rakazo/core";
 import { queryOptions } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
@@ -28,11 +29,11 @@ function Review({ pageId }: { pageId: string }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
-  const [revision, setRevision] = useState<{ version: number; section: string }>();
+  const [revision, setRevision] = useState<{ version: number; anchor: PageSectionAnchor }>();
   const version = revision?.version;
   const [showComments, setShowComments] = useState(false);
   const [draftId, setDraftId] = useState<string>();
-  const [anchors, setAnchors] = useState<{ version: number; sections: string[] }>();
+  const [anchors, setAnchors] = useState<{ version: number; sections: PageSectionAnchor[] }>();
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/get", { pageId, version });
   const review = useScreenQuery(read);
   const page = review.isError ? undefined : review.data;
@@ -54,14 +55,15 @@ function Review({ pageId }: { pageId: string }) {
           theme,
           !draftId,
           runtimeError,
-          revision?.section,
+          revision?.anchor,
         ],
       }).queryKey,
       gcTime: 0,
       queryFn: () =>
         pageDocument(apiBase, source!, theme, runtimeError, {
           review: !draftId,
-          reviewAnchor: revision?.section,
+          reviewAnchor: revision?.anchor.section,
+          reviewAnchorOccurrence: revision?.anchor.sectionOccurrence,
         }),
     },
     { enabled: source !== undefined && !showComments },
@@ -127,8 +129,8 @@ function Review({ pageId }: { pageId: string }) {
       <PageReviewComments
         page={page}
         sections={anchors?.version === page.version ? anchors.sections : []}
-        onRevision={(version, section) => {
-          setRevision({ version, section });
+        onRevision={(version, anchor) => {
+          setRevision({ version, anchor });
           setShowComments(false);
         }}
         onLatest={() => {

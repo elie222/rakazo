@@ -257,6 +257,7 @@ export function pageComments(
         authorId: true,
         version: true,
         section: true,
+        sectionOccurrence: true,
         body: true,
         createdAt: true,
         resolvedAt: true,
@@ -287,6 +288,7 @@ export function pageComments(
         mine: row.authorId === actor.userId,
         version: row.version,
         section: row.section,
+        sectionOccurrence: row.sectionOccurrence ?? undefined,
         body: row.body,
         createdAt: row.createdAt.toISOString(),
         resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -324,12 +326,14 @@ export async function addPageComment(
     submissionId,
     version,
     section,
+    sectionOccurrence,
     body,
   }: {
     pageId: string;
     submissionId: string;
     version: number;
     section: string;
+    sectionOccurrence?: number;
     body: string;
   },
 ) {
@@ -339,10 +343,15 @@ export async function addPageComment(
   const added = await writePageReview(prisma, actor, pageId, async (tx, { page, owner }) => {
     const existing = await tx.pageComment.findUnique({
       where: { id },
-      select: { version: true, section: true, body: true },
+      select: { version: true, section: true, sectionOccurrence: true, body: true },
     });
     if (existing) {
-      if (existing.version === version && existing.section === section && existing.body === body)
+      if (
+        existing.version === version &&
+        existing.section === section &&
+        existing.sectionOccurrence === (sectionOccurrence ?? null) &&
+        existing.body === body
+      )
         return false;
       throw new ClientError("CONFLICT", "This review comment was already posted");
     }
@@ -362,7 +371,7 @@ export async function addPageComment(
         );
     }
     await tx.pageComment.create({
-      data: { id, pageId, authorId: actor.userId, version, section, body },
+      data: { id, pageId, authorId: actor.userId, version, section, sectionOccurrence, body },
     });
     return true;
   });

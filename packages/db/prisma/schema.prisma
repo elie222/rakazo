@@ -2091,6 +2091,7 @@ model PageComment {
   author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
   version    Int
   section    String
+  sectionOccurrence Int?
   body       String
   createdAt  DateTime @default(now())
   resolvedAt DateTime?

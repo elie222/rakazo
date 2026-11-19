@@ -166,7 +166,12 @@ export async function pageDocument(
   code: string,
   theme: "light" | "dark",
   errorTitle: string,
-  options: { reply?: boolean; review?: boolean; reviewAnchor?: string } = {},
+  options: {
+    reply?: boolean;
+    review?: boolean;
+    reviewAnchor?: string;
+    reviewAnchorOccurrence?: number;
+  } = {},
 ): Promise<string> {
   const runtime = await loadPageRuntime(apiBase);
   return pageViewerDocument({
