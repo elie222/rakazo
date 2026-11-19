@@ -32,6 +32,7 @@ import {
   packHome,
   unpackHome,
 } from "./home-archive.js";
+import { ObjectStorageUnavailableError } from "./object-storage-common.js";
 import { workspaceSaveLimits } from "./workspace-save-policy.js";
 
 const HOMES_PREFIX = "homes/";
@@ -451,9 +452,11 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       throw new HomeSaveConflictError();
     }
     if (base)
-      await this.storage
-        .delete([objectKey(stored.storageId, base)])
-        .catch((error) => getLogger().error("previous home revision removal failed", error));
+      await this.storage.delete([objectKey(stored.storageId, base)]).catch((error) => {
+        // An outage was already logged as a warning where the store failed.
+        if (!(error instanceof ObjectStorageUnavailableError))
+          getLogger().error("previous home revision removal failed", error);
+      });
     return { revision };
   }
 

@@ -88,7 +88,15 @@ const PASSING_NAMES = new Set([
   "InternalError",
   "RequestTimeout",
 ]);
-const PASSING_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "EPIPE", "ECONNREFUSED", "EAI_AGAIN"]);
+const PASSING_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "ECONNREFUSED",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
 
 /** A failure that outlasted the SDK's own retries but says the store, not the request, is at fault. */
 export function isPassingStorageFailure(error: unknown): boolean {

@@ -12,7 +12,7 @@ import { ComputerRecoveryRequiredError } from "@rakazo/adapters";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { databaseOutage, IsolationError, ProviderTransactionBusyError } from "@rakazo/db";
-import { enrichLogContext, getLogContext, getLogger } from "@rakazo/logging";
+import { enrichLogContext, getLogContext, getLogger, wasReportedError } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -79,7 +79,8 @@ export function handleRpcError(
       cause: error,
     });
     // An outage the caller is told to wait out is still reported, unless its thrower logged it.
-    logUnexpectedRpcError(answer, path);
+    if (wasReportedError(error)) markExpectedFailure();
+    else logUnexpectedRpcError(answer, path);
     throw answer;
   }
   // What the person entered for a connection, or how their server answered its check.

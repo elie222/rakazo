@@ -11,7 +11,14 @@ import {
 import { ThreadMessagePageSchema } from "@rakazo/contracts";
 import { ClientError, MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { IsolationError, SpaceDeletionInProgressError } from "@rakazo/db";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import {
+  createLogger,
+  createTestSink,
+  getLogContext,
+  installLogger,
+  runWithLogContext,
+  warnExpectedFailure,
+} from "@rakazo/logging";
 import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
@@ -422,5 +429,39 @@ describe("logUnexpectedRpcError", () => {
     expect(sink.events.map((event) => [event.level, event.message])).toEqual([
       ["warn", "rpc read not found"],
     ]);
+  });
+});
+
+describe("handleRpcError with a client error its thrower already logged", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("answers the outage as expected without reporting it again", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const outage = new ClientError("SERVICE_UNAVAILABLE", "Try again in a moment.");
+    runWithLogContext({}, () => {
+      warnExpectedFailure("store unavailable", outage);
+      expect(() => handleRpcError(outage, ["artifacts", "create"])).toThrow(ORPCError);
+      expect(getLogContext()["error.expected"]).toBe(true);
+    });
+    expect(sink.events.map(({ level, message }) => ({ level, message }))).toEqual([
+      { level: "warn", message: "store unavailable" },
+    ]);
+  });
+
+  it("still reports a different failure after an outage was logged", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    runWithLogContext({}, () => {
+      warnExpectedFailure("store unavailable", new ClientError("SERVICE_UNAVAILABLE", "Later."));
+      const other = new ClientError("SERVICE_UNAVAILABLE", "Verification failed.");
+      expect(() => handleRpcError(other, ["computer", "save"])).toThrow(ORPCError);
+    });
+    expect(sink.events.at(-1)).toMatchObject({
+      level: "error",
+      message: "rpc computer/save failed",
+    });
   });
 });
