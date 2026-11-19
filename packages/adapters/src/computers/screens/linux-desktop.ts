@@ -460,6 +460,9 @@ function focusOrLaunchActionCommand(
   ].join("\n");
 }
 
+/** Fits within the preparation command's own timeout. */
+const APT_LOCK_WAIT_SECONDS = 60;
+
 /** Install the same X11 tools in minimal Ubuntu sandboxes, only if their image lacks them. */
 const FIND_MISSING_DESKTOP_TOOLS = [
   'missing=""',
@@ -495,20 +498,22 @@ export const PREPARE_LINUX_DESKTOP = [
   "set -eu",
   ...FIND_MISSING_DESKTOP_TOOLS,
   'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
+  // Another preparation, or the image's own updates, may hold the package lock for a moment.
+  `lock="-o DPkg::Lock::Timeout=${APT_LOCK_WAIT_SECONDS}"`,
   'if [ -n "$missing" ]; then',
   // Separate commands: set -e ignores a failure on the left of &&.
-  "  $root apt-get update -qq",
-  "  if ! $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing; then",
+  "  $root apt-get update -qq $lock",
+  "  if ! $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $lock --no-remove $missing; then",
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
-  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --fix-broken --no-remove",
-  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing",
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $lock --fix-broken --no-remove",
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $lock --no-remove $missing",
   "  fi",
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.
   "if [ ! -e /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf ]; then",
-  '  { $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2',
+  '  { $root apt-get update -qq $lock && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $lock fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2',
   "fi",
   `policy=${shellQuote(BROWSER_POLICY)}`,
   `for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
@@ -525,7 +530,7 @@ export const INSTALL_LINUX_BROWSER = [
   "  package=$(mktemp /tmp/rakazo-chrome-XXXXXX.deb)",
   "  trap 'rm -f \"$package\"' EXIT",
   '  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "$package"',
-  '  $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package"',
+  `  $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o DPkg::Lock::Timeout=${APT_LOCK_WAIT_SECONDS} "$package"`,
   "fi",
 ].join("\n");
 

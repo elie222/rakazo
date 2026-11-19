@@ -445,7 +445,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         180_000,
         context.signal,
       );
-      if (runtime.exitCode !== 0 || runtime.timedOut)
+      if (runtime.timedOut)
+        throw new SandboxUnresponsiveError("could not prepare computer desktop tools (timed out)");
+      if (runtime.exitCode !== 0)
         throw new Error("could not prepare computer desktop tools", {
           cause: new Error(commandFailure(runtime)),
         });
@@ -1487,10 +1489,11 @@ function commandFailure(result: BoatCommandResult): string {
 /**
  * Boat's runner starts each command with `systemd-run` and sources the machine's environment
  * before our command line runs. These failures come from that, so the machine's system files are
- * missing or broken; the command itself never started.
+ * missing or broken; the command itself never started. A machine whose user is missing from
+ * `/etc/passwd` has lost its system files the same way.
  */
 const BOAT_SYSTEM_DAMAGED =
-  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found)$/m;
+  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found|sudo: you do not exist in the passwd database)$/m;
 
 function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);
