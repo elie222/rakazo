@@ -911,7 +911,7 @@ export function createUpdaterApp(
   ) {
     const result =
       step.id === SNAPSHOT_STEP_ID
-        ? await snapshotDatabase(config, composeTarget, record.fromTag ?? "unknown", run)
+        ? await snapshotDatabase(config, composeTarget, record, run)
         : await run(step.command, step.args, {
             cwd: config.deployDir,
             timeoutMs: STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS,

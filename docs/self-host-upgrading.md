@@ -398,8 +398,9 @@ takes none either.
 
 A failed update that is tried again is snapshotted again, and by then the failed attempt's
 migrations may already have run. The first attempt's file is therefore never replaced: a retry
-saves `<time>-<outgoing tag>.retry.dump` beside it, with the first attempt's time, and each
-further retry replaces only that retry file. Once the update succeeds, the next update starts a
+saves `<time>-<outgoing tag>+retry.dump` beside it, with the first attempt's time, and each
+further retry replaces only that retry file. Once the update succeeds, or the next attempt targets
+another release, the next update starts a
 new pair. The setting counts updates, so each kept update holds one or two files.
 
 The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
@@ -413,18 +414,19 @@ details included, unencrypted: protect the directory as you would a backup.
 To go back after a bad update, restore the database first and roll back the image second: the
 previous release cannot start on the newer schema. Pause scheduling, stop everything that uses
 the database, and restore this update's snapshot. Choose the newest `<time>-<outgoing tag>.dump`
-for the release you are going back to; a `.retry.dump` beside it is newer, but restore it only
+for the release you are going back to; a `+retry.dump` beside it is newer, but restore it only
 if you know the earlier attempts never reached their migrations. Use your own Compose files in
 place of `docker-compose.images.yml`, the ones the updater runs:
 
 ```bash
 COMPOSE="docker compose --env-file .env -f docker-compose.images.yml"
-$COMPOSE stop api worker web
+$COMPOSE stop api worker web migrate
 sudo cat "backups/pre-update/<time>-<outgoing tag>.dump" | $COMPOSE exec -T postgres sh -c \
   'pg_restore --clean --if-exists --create --exit-on-error -U "$POSTGRES_USER" -d postgres'
 ```
 
-The files belong to root, hence `sudo cat`.
+The files belong to root, hence `sudo cat`. `migrate` is stopped too: after a recreate that timed
+out it may still be connected.
 
 `--create` drops the database and creates it again from the snapshot, so tables the failed
 update added do not survive, and grants and revocations return as they were. It refuses while

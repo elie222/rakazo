@@ -11,9 +11,10 @@ export const SNAPSHOT_STEP_ID = "snapshot";
 export const SNAPSHOT_DIRECTORY = "backups/pre-update";
 const DATABASE_SERVICE = "postgres";
 const CONTAINER_DUMP = "/tmp/rakazo-pre-update.dump";
-const SNAPSHOT_FILE = /^\d{8}T\d{6}Z-[A-Za-z0-9_.-]+\.dump$/;
+const SNAPSHOT_FILE = /^\d{8}T\d{6}Z-[A-Za-z0-9_.-]+(\+retry)?\.dump$/;
 const STAMP_LENGTH = "20260101T000000Z".length;
-const RETRY_SUFFIX = ".retry";
+// An image tag cannot contain "+", so no release's first snapshot can be taken for a retry.
+const RETRY_SUFFIX = "+retry";
 // Neither name can match SNAPSHOT_FILE, so neither is ever counted or pruned as a snapshot.
 const CYCLE_MARKER = ".in-progress";
 const PARTIAL_FILE = ".partial";
@@ -62,19 +63,33 @@ function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
 }
 
-/** The update in progress: the name, without `.dump`, of the snapshot its first attempt saved. */
-async function readCycle(directory: string, fromTag: string): Promise<string | null> {
-  let cycle: string;
+interface SnapshotUpdate {
+  fromTag: string | null;
+  toTag: string | null;
+}
+
+/** The marker's two lines: the unfinished update's first snapshot, without `.dump`, and its target. */
+function cycleMarker(cycle: string, update: SnapshotUpdate): string {
+  return `${cycle}\n${update.toTag ?? ""}\n`;
+}
+
+/** The first snapshot's name if this same update, between the same two releases, was tried before. */
+async function readCycle(directory: string, update: SnapshotUpdate): Promise<string | null> {
+  let marker: string;
   try {
-    cycle = (await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8")).trim();
+    marker = await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8");
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;
   }
-  // A marker left by an update from another release describes a cycle that is over.
-  if (!SNAPSHOT_FILE.test(`${cycle}.dump`) || cycle.slice(STAMP_LENGTH + 1) !== fromTag)
-    return null;
-  return cycle;
+  const cycle = marker.split("\n")[0] ?? "";
+  // A marker from an update between other releases describes a different update, not a retry.
+  const same =
+    SNAPSHOT_FILE.test(`${cycle}.dump`) &&
+    !cycle.endsWith(RETRY_SUFFIX) &&
+    cycle.slice(STAMP_LENGTH + 1) === update.fromTag &&
+    marker === cycleMarker(cycle, update);
+  return same ? cycle : null;
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -93,7 +108,7 @@ async function exists(file: string): Promise<boolean> {
  *
  * One update is one cycle, however often it is retried. Its first attempt saves
  * `<time>-<tag>.dump`, which no later attempt replaces: a failed attempt's migrations may already
- * have run, so only that file is certain to predate them. A retry saves `<time>-<tag>.retry.dump`
+ * have run, so only that file is certain to predate them. A retry saves `<time>-<tag>+retry.dump`
  * beside it, replacing the previous retry's, so a cycle never holds more than two files. The cycle
  * ends when the update succeeds ({@link endSnapshotCycle}); files of the last
  * `config.databaseSnapshots` cycles are kept. A failure is returned, not thrown, and happens
@@ -102,7 +117,7 @@ async function exists(file: string): Promise<boolean> {
 export async function snapshotDatabase(
   config: UpdaterConfig,
   target: ComposeTarget,
-  fromTag: string,
+  update: SnapshotUpdate,
   run: UpdaterCommandRunner,
   now = new Date(),
 ): Promise<CommandResult> {
@@ -121,13 +136,16 @@ export async function snapshotDatabase(
     const copied = await run(copy.command, copy.args, options);
     if (!copied.ok) return copied;
     await chmod(partial, 0o600);
-    const cycle = (await readCycle(directory, fromTag)) ?? snapshotName(fromTag, now);
+    const cycle =
+      (await readCycle(directory, update)) ?? snapshotName(update.fromTag ?? "unknown", now);
     const first = path.posix.join(directory, `${cycle}.dump`);
     // Also true for a new cycle that lands on an existing name: the earlier file is never replaced.
     const retry = await exists(first);
     const file = retry ? path.posix.join(directory, `${cycle}${RETRY_SUFFIX}.dump`) : first;
     await rename(partial, file);
-    await writeFile(path.posix.join(directory, CYCLE_MARKER), `${cycle}\n`, { mode: 0o600 });
+    await writeFile(path.posix.join(directory, CYCLE_MARKER), cycleMarker(cycle, update), {
+      mode: 0o600,
+    });
     await prune(directory, config.databaseSnapshots);
     const output = retry
       ? `Saved ${file}. This update was tried before: ${first} is the copy from before that attempt.`
@@ -153,7 +171,7 @@ export async function endSnapshotCycle(config: UpdaterConfig): Promise<void> {
 /** Keeps the files of the newest `keep` cycles. Only files this module named are ever removed. */
 async function prune(directory: string, keep: number) {
   const names = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name));
-  const cycleOf = (name: string) => name.replace(/(\.retry)?\.dump$/, "");
+  const cycleOf = (name: string) => name.replace(/(\+retry)?\.dump$/, "");
   // Stamps sort by time.
   const kept = new Set([...new Set(names.map(cycleOf))].sort().slice(-keep));
   for (const name of names) {
