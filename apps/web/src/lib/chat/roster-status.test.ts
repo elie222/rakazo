@@ -21,7 +21,15 @@ describe("rosterWorkStatusLabel", () => {
   it("names queued, leased, and running work for the sidebar", () => {
     expect(rosterWorkStatusLabel("queued")).toBe("Waiting in line…");
     expect(rosterWorkStatusLabel("leased")).toBe("Starting…");
-    expect(rosterWorkStatusLabel("running")).toBe("Working…");
+    expect(rosterWorkStatusLabel("running")).toBe("Thinking…");
+  });
+
+  it("says what a running bot is doing", () => {
+    expect(rosterWorkStatusLabel("running", { kind: "step", text: "Reading q3-report.pdf" })).toBe(
+      "Reading q3-report.pdf",
+    );
+    expect(rosterWorkStatusLabel("running", { kind: "writing" })).toBe("Writing a reply…");
+    expect(rosterWorkStatusLabel("queued", { kind: "writing" })).toBe("Waiting in line…");
   });
 
   it("leaves other statuses to the message preview", () => {
@@ -39,7 +47,8 @@ describe("compactRosterStatusLabel", () => {
   it("keeps work, human-wait, and error states visible without a preview", () => {
     expect(compactRosterStatusLabel("queued")).toBe("Waiting in line…");
     expect(compactRosterStatusLabel("leased")).toBe("Starting…");
-    expect(compactRosterStatusLabel("running")).toBe("Working…");
+    expect(compactRosterStatusLabel("running")).toBe("Thinking…");
+    expect(compactRosterStatusLabel("running", { kind: "writing" })).toBe("Writing a reply…");
     expect(compactRosterStatusLabel("waiting_input")).toBe("Needs an answer");
     expect(compactRosterStatusLabel("waiting_takeover")).toBe("Needs you");
     expect(compactRosterStatusLabel("failed")).toBe("Error");

@@ -2,6 +2,7 @@ import type { BotAvatarSet } from "@rakazo/contracts";
 import { splitPeerLabel } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { BotAvatar, GroupAvatar } from "@rakazo/ui-web";
+import { LiveStatusText } from "./LiveStatusText";
 
 export function CollaborationMarker({
   color,
@@ -46,9 +47,7 @@ export function ActiveBotGlyph({ bots, label }: { bots: GroupAvatarMember[]; lab
   return (
     <div role="status" className="flex min-h-10 min-w-0 items-center gap-2.5 px-1">
       <GroupAvatar members={bots} size={28} />
-      <span dir="auto" className="min-w-0 truncate text-body-lg text-muted-foreground text-shimmer">
-        {label}
-      </span>
+      <LiveStatusText text={label} className="text-body-lg text-muted-foreground" />
     </div>
   );
 }

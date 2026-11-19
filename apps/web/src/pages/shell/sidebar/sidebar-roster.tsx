@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection, Group, Me, Space, ThreadSnapshot } from "@rakazo/contracts";
+import { activeThreadRuns, liveActivity } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -28,6 +29,7 @@ import {
   Users,
 } from "lucide-react";
 import type { RefObject } from "react";
+import { LiveStatusText } from "../../../components/ai/LiveStatusText";
 import {
   compactRosterStatusLabel,
   rosterHasUndismissedRunError,
@@ -101,6 +103,11 @@ export function SidebarRoster({
 }) {
   useRedrawAtMidnight();
   const { t } = useLingui();
+  const openChatRunning =
+    !inGroup && activeThreadRuns(activeSnapshot).some((run) => run.status === "running");
+  const openChatActivity = openChatRunning
+    ? liveActivity(activeSnapshot?.messages ?? [])
+    : undefined;
   return (
     <>
       {sidebarGroups.map((group, groupIndex) => {
@@ -282,8 +289,14 @@ export function SidebarRoster({
                   (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                   (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id);
                 const compact = botsSidebarDensity === "compact";
+                const rowActivity =
+                  item.kind !== "bot"
+                    ? undefined
+                    : openChatRunning && active?.id === item.chat.id
+                      ? openChatActivity
+                      : item.chat.liveActivity;
                 const workStatusLabel =
-                  item.kind === "bot" ? rosterWorkStatusLabel(item.chat.status) : null;
+                  item.kind === "bot" ? rosterWorkStatusLabel(item.chat.status, rowActivity) : null;
                 const rowError =
                   item.kind === "bot" &&
                   (rosterHasUndismissedRunError(item.chat.runErrorId, dismissedRunErrorIds) ||
@@ -292,7 +305,7 @@ export function SidebarRoster({
                   (compact || mini) && item.kind === "bot"
                     ? rowError
                       ? t`Error`
-                      : compactRosterStatusLabel(item.chat.status)
+                      : compactRosterStatusLabel(item.chat.status, rowActivity)
                     : null;
                 const previewLine =
                   workStatusLabel ??
@@ -508,16 +521,20 @@ export function SidebarRoster({
                                     ? item.chat.status
                                     : undefined
                               }
-                              className={`mt-0.5 flex items-center gap-1 text-label ${
+                              className={`mt-0.5 flex items-center gap-1 text-label font-medium ${
                                 rowError
-                                  ? "font-medium text-destructive"
+                                  ? "text-destructive"
                                   : workStatusLabel
-                                    ? "font-semibold text-status-working"
-                                    : "font-medium text-foreground/75"
+                                    ? "text-muted-foreground"
+                                    : "text-foreground/75"
                               }`}
                             >
                               {rowError ? <CircleAlert size={12} aria-hidden="true" /> : null}
-                              <span>{compactStatusLabel}</span>
+                              {workStatusLabel && !rowError ? (
+                                <LiveStatusText text={workStatusLabel} />
+                              ) : (
+                                <span>{compactStatusLabel}</span>
+                              )}
                             </div>
                           ) : null
                         ) : (
@@ -526,13 +543,17 @@ export function SidebarRoster({
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
                             className={`mt-1 truncate text-label ${
                               workStatusLabel
-                                ? "font-semibold text-status-working"
+                                ? "font-medium text-muted-foreground"
                                 : item.chat.unread
                                   ? "font-medium text-foreground/75"
                                   : "text-muted-foreground"
                             }`}
                           >
-                            {rosterLine}
+                            {workStatusLabel ? (
+                              <LiveStatusText text={workStatusLabel} />
+                            ) : (
+                              rosterLine
+                            )}
                           </div>
                         )}
                       </div>
@@ -587,7 +608,7 @@ export function SidebarRoster({
                                   rowError
                                     ? "text-destructive"
                                     : workStatusLabel
-                                      ? "font-medium text-status-working"
+                                      ? "font-medium text-muted-foreground"
                                       : compactStatusLabel
                                         ? "font-medium text-foreground"
                                         : "text-muted-foreground"

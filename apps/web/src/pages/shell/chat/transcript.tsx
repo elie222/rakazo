@@ -272,7 +272,7 @@ export const Transcript = memo(function Transcript({
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
   const workingLabel =
-    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Thinking…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;

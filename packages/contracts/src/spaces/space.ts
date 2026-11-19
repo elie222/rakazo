@@ -27,6 +27,7 @@ export const SpaceBotSchema = BotSchema.pick({
   preview: true,
   status: true,
   threadStatus: true,
+  liveActivity: true,
   runErrorId: true,
   updatedAt: true,
 });

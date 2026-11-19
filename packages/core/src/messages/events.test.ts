@@ -11,6 +11,7 @@ import {
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
+  liveActivity,
   liveActivityLine,
   normalizeResponseStreamingPreference,
   noteLastToolStep,
@@ -1192,6 +1193,44 @@ describe("liveActivityLine", () => {
     expect(
       liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     ).toBeUndefined();
+  });
+});
+
+describe("liveActivity", () => {
+  it("names the step the live message is showing", () => {
+    expect(
+      liveActivity([
+        {
+          id: "progress:run-1",
+          blocks: [{ kind: "progress", text: " Reading q3-report.pdf ", activity: true }],
+        },
+      ]),
+    ).toEqual({ kind: "step", text: "Reading q3-report.pdf" });
+  });
+
+  it("says the bot is writing once reply text streams in", () => {
+    expect(
+      liveActivity([
+        { id: "progress:run-1", blocks: [{ kind: "progress", text: "Q3 sales rose" }] },
+      ]),
+    ).toEqual({ kind: "writing" });
+  });
+
+  it("is empty while the bot thinks: a cleared step, a tool queued after text, or no live message", () => {
+    expect(
+      liveActivity([
+        { id: "progress:run-1", blocks: [{ kind: "progress", text: "", activity: true }] },
+      ]),
+    ).toBeUndefined();
+    expect(
+      liveActivity([
+        {
+          id: "progress:run-1",
+          blocks: [{ kind: "progress", text: "Let me check", pendingToolNames: ["read"] }],
+        },
+      ]),
+    ).toBeUndefined();
+    expect(liveActivity([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }])).toBeUndefined();
   });
 });
 

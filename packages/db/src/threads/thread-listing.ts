@@ -23,7 +23,7 @@ export const activeRunSelection = {
     trigger: { notIn: statusHiddenRunTriggers },
   },
   orderBy: { createdAt: "desc" as const },
-  select: { status: true, threadId: true },
+  select: { id: true, status: true, threadId: true },
 } as const;
 
 /** Waiting, running, then leased work wins over queued work, regardless of creation order. */

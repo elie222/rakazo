@@ -480,6 +480,7 @@ async function memberSpaceNavigation(
           preview: bot.preview,
           status: bot.status,
           threadStatus: bot.threadStatus,
+          liveActivity: bot.liveActivity,
           runErrorId: bot.runErrorId,
           updatedAt: bot.updatedAt,
         })),

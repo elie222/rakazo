@@ -541,7 +541,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       }))}
       atBottom={!scroll.state.detached}
       label={
-        activityLine ?? (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Working…`)
+        activityLine ??
+        (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Thinking…`)
       }
     />
   );

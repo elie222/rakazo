@@ -471,6 +471,31 @@ describe("createRepos.listBots", () => {
       expect.objectContaining({ updatedAt: "2026-08-19T00:00:00.000Z" }),
     ]);
   });
+
+  it("shows what a bot running in its chat is doing", async () => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          { ...baseBot, runs: [{ id: "run-1", status: "running", threadId: "thread-1" }] },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => []) },
+      event: {
+        findFirst: vi.fn(async () => ({
+          id: "event-1",
+          payload: { text: "Reading q3-report.pdf", activity: true },
+        })),
+      },
+      $queryRaw: vi.fn(async () => []),
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({
+        status: "running",
+        liveActivity: { kind: "step", text: "Reading q3-report.pdf" },
+      }),
+    ]);
+  });
 });
 
 describe("createRepos.listSpaceBotsForSpaces", () => {

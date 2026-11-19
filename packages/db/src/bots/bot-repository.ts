@@ -29,6 +29,7 @@ import { withTransactionRetry } from "../database/transaction-retry.js";
 import { lockSpaceForContentCreation } from "../spaces/spaces.js";
 import { createThreadMessageInTransaction } from "../threads/messages.js";
 import { withNewestThreadMessages } from "../threads/preview-messages.js";
+import { threadLiveActivity } from "../threads/run-live-activity.js";
 import {
   activeRunSelection,
   previewFromBlocks,
@@ -206,29 +207,33 @@ export function createRepos(
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
     const bots = await withNewestThreadMessages(prisma, await withLatestBotRuns(prisma, rows), 1);
-    return bots.map((bot) => {
-      if (!bot.thread) throw new IsolationError("Bot is missing its thread");
-      const activeRun = primaryActiveRun(bot.runs);
-      return {
-        id: bot.id,
-        spaceId: bot.spaceId,
-        name: bot.name,
-        title: "",
-        color: bot.color,
-        avatarSet: resolveBotAvatarSet(bot.avatarSet),
-        notifyOnFinish: bot.notifyOnFinish,
-        pinned: bot.pinned,
-        sectionId: bot.sectionId,
-        unread: unreadFor(bot.thread),
-        snoozedUntil: snoozedUntilFor(bot.thread),
-        parentBotId: bot.parentBotId,
-        preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: activeRun?.status ?? "idle",
-        threadStatus: threadRunStatus(bot.runs, bot.thread.id),
-        runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
-        updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
-      };
-    });
+    return Promise.all(
+      bots.map(async (bot) => {
+        if (!bot.thread) throw new IsolationError("Bot is missing its thread");
+        const activeRun = primaryActiveRun(bot.runs);
+        const liveActivity = await threadLiveActivity(prisma, bot.runs, bot.thread.id);
+        return {
+          id: bot.id,
+          spaceId: bot.spaceId,
+          name: bot.name,
+          title: "",
+          color: bot.color,
+          avatarSet: resolveBotAvatarSet(bot.avatarSet),
+          notifyOnFinish: bot.notifyOnFinish,
+          pinned: bot.pinned,
+          sectionId: bot.sectionId,
+          unread: unreadFor(bot.thread),
+          snoozedUntil: snoozedUntilFor(bot.thread),
+          parentBotId: bot.parentBotId,
+          preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
+          status: activeRun?.status ?? "idle",
+          threadStatus: threadRunStatus(bot.runs, bot.thread.id),
+          ...(liveActivity ? { liveActivity } : {}),
+          runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
+          updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
+        };
+      }),
+    );
   }
 
   return {
@@ -393,21 +398,28 @@ export function createRepos(
           : [];
       const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
       const { previews, newestAt } = await botThreadPreviews(prisma, threadIds);
-      return bots.map((bot) => {
-        const threadId = bot.thread?.id;
-        const activeRun = primaryActiveRun(bot.runs);
-        const mapped = mapBot(
-          bot,
-          (threadId && previews.get(threadId)) || "",
-          activeRun?.status ?? "idle",
-          rosterRunErrorId(bot.thread?.runs[0], activeRun),
-          (threadId && newestAt.get(threadId)) || bot.updatedAt,
-          ringingCall(
-            threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : [],
-          ),
-        );
-        return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
-      });
+      return Promise.all(
+        bots.map(async (bot) => {
+          const threadId = bot.thread?.id;
+          const activeRun = primaryActiveRun(bot.runs);
+          const mapped = mapBot(
+            bot,
+            (threadId && previews.get(threadId)) || "",
+            activeRun?.status ?? "idle",
+            rosterRunErrorId(bot.thread?.runs[0], activeRun),
+            (threadId && newestAt.get(threadId)) || bot.updatedAt,
+            ringingCall(
+              threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : [],
+            ),
+          );
+          const liveActivity = await threadLiveActivity(prisma, bot.runs, threadId);
+          return {
+            ...mapped,
+            threadStatus: threadRunStatus(bot.runs, mapped.threadId),
+            ...(liveActivity ? { liveActivity } : {}),
+          };
+        }),
+      );
     },
 
     listSpaceBotsForSpaces,

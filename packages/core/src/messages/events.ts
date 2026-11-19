@@ -1,4 +1,5 @@
 import type {
+  BotLiveActivity,
   HistoryToolStep,
   MessageBlock,
   ThreadMessage,
@@ -384,13 +385,23 @@ export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
   );
 }
 
+export function liveActivity(
+  messages: readonly { id: string; blocks: readonly MessageBlock[] }[],
+): BotLiveActivity | undefined {
+  const live = messages.findLast((message) => message.id.startsWith("progress:"));
+  if (!live) return undefined;
+  if (liveMessageComposing(live.blocks)) return { kind: "writing" };
+  const tail = live.blocks.at(-1);
+  const text = tail?.kind === "progress" && tail.activity ? tail.text.trim() : "";
+  return text ? { kind: "step", text } : undefined;
+}
+
 /** The tool status line the newest live message is showing ("Searching the web: …"), if any. */
 export function liveActivityLine(
   messages: readonly { id: string; blocks: readonly MessageBlock[] }[],
 ): string | undefined {
-  const live = messages.findLast((message) => message.id.startsWith("progress:"));
-  const tail = live?.blocks.at(-1);
-  return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
+  const activity = liveActivity(messages);
+  return activity?.kind === "step" ? activity.text : undefined;
 }
 
 export type ToolStepOutcome = "succeeded" | "failed" | "stopped";
