@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ModelSettings } from "@rakazo/contracts";
+import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
@@ -12,6 +12,7 @@ import {
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
 } from "@rakazo/core";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -29,8 +30,10 @@ import { LimitField } from "../../components/models/model-connection-fields";
 import { createModelsStyles } from "../../components/models/model-connection-styles";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSwitch } from "../../components/native/native-switch";
+import { MenuPicker } from "../../components/ui/menu-picker";
 import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
+import { thinkingLevelLabel } from "../../lib/models/thinking-level";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
@@ -240,15 +243,18 @@ function ModelSettingsForm(route: ModelRoute) {
                 disabled={pending}
               />
             </View>
-            <View style={[styles.modelRow, styles.singleRow]}>
-              <Text style={styles.modelLabel}>{t`Supports thinking`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Supports thinking`}
-                value={fields.reasoning}
-                onValueChange={(reasoning) => update({ reasoning })}
-                disabled={pending}
-              />
-            </View>
+            <MenuPicker
+              label={t`Thinking`}
+              choices={modelSettingsThinkingLevels(credential, entry).map((level) => ({
+                key: level,
+                label: thinkingLevelLabel(level),
+              }))}
+              value={fields.thinkingLevel}
+              onChange={(thinkingLevel) =>
+                update({ thinkingLevel: thinkingLevel as ThinkingLevel })
+              }
+              disabled={pending}
+            />
           </View>
         ) : null}
         {fields.images ? (

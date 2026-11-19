@@ -9,7 +9,7 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
+import { canonicalPiProviderId, DEFAULT_THINKING_LEVEL, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "../../models/deployment-model.js";
 import { withDataRetention } from "../../models/endpoints/data-retention.js";
 import { withVertexRouting } from "../../models/endpoints/google-vertex-routing.js";
@@ -52,14 +52,13 @@ function catalogModels(): Models {
 // that to reasoning.effort "none", which 400s on endpoints that mandate
 // reasoning (e.g. google/gemini-3.7-flash). Keep a real level when model.reasoning
 // is set; plain models stay off.
-const REASONING_MODEL_THINKING_LEVEL: ModelThinkingLevel = "medium";
 export function thinkingLevelFor(
   model: Model<Api>,
   preferred?: ModelThinkingLevel | null,
 ): ModelThinkingLevel {
   if (!model.reasoning) return "off";
   if (preferred) return clampThinkingLevel(model, preferred);
-  return clampThinkingLevel(model, REASONING_MODEL_THINKING_LEVEL);
+  return clampThinkingLevel(model, DEFAULT_THINKING_LEVEL);
 }
 
 function configuredOpenRouterModel(

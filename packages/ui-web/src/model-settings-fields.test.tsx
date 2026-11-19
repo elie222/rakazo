@@ -46,15 +46,22 @@ it("shows image and thinking settings only where the model's capabilities are co
   const capabilities = {
     onImagesChange: () => {},
     imagesLabel: "Supports images",
-    onReasoningChange: () => {},
-    reasoningLabel: "Supports thinking",
+    thinkingLevel: "max",
+    thinkingLevels: [
+      { value: "off", label: "Off" },
+      { value: "high", label: "High" },
+      { value: "max", label: "Max" },
+    ],
+    onThinkingLevelChange: () => {},
+    thinkingLabel: "Thinking",
   };
   expect(render(<ModelSettingsFields {...limits} {...capabilities} />).textContent).not.toContain(
     "Supports images",
   );
   const configurable = render(<ModelSettingsFields {...limits} {...capabilities} capabilities />);
   expect(configurable.textContent).toContain("Supports images");
-  expect(configurable.textContent).toContain("Supports thinking");
+  expect(configurable.textContent).toContain("Thinking");
+  expect(configurable.querySelector("button[role=combobox]")?.textContent).toBe("Max");
 });
 
 it("offers an image limit whenever the model reads images", () => {

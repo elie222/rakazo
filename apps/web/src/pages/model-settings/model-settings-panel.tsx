@@ -9,12 +9,14 @@ import {
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { thinkingLevelLabel } from "../../lib/models/model-catalog";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 
@@ -124,9 +126,13 @@ export function ModelSettingsPanel({
         maxImagesPerPrompt={fields.maxImagesPerPrompt}
         onMaxImagesPerPromptChange={(maxImagesPerPrompt) => update({ maxImagesPerPrompt })}
         maxImagesLabel={t`Maximum images per request`}
-        reasoning={fields.reasoning}
-        onReasoningChange={(reasoning) => update({ reasoning })}
-        reasoningLabel={t`Supports thinking`}
+        thinkingLevel={fields.thinkingLevel}
+        thinkingLevels={modelSettingsThinkingLevels(credential, entry).map((level) => ({
+          value: level,
+          label: thinkingLevelLabel(level),
+        }))}
+        onThinkingLevelChange={(thinkingLevel) => update({ thinkingLevel })}
+        thinkingLabel={t`Thinking`}
       />
       {dirty || customized ? (
         <div className="mt-4 flex items-center gap-2">

@@ -8,6 +8,7 @@ import {
   canonicalPiProviderId,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  DEFAULT_THINKING_LEVEL,
   modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseModelContextWindow,
@@ -34,7 +35,8 @@ export type ModelSettingsFields = {
   maxTokens: string;
   images: boolean;
   maxImagesPerPrompt: string;
-  reasoning: boolean;
+  /** "off" when the model does not think. */
+  thinkingLevel: ThinkingLevel;
 };
 
 /** A field whose number is out of range; each app words the message. */
@@ -238,20 +240,43 @@ export function modelThinkingLevels(
 }
 
 /**
+ * The levels a model's settings may pick for it to think at, "off" first: an OpenAI-compatible
+ * model's endpoint's, or the ones a listed model borrows from the catalog.
+ */
+export function modelSettingsThinkingLevels(
+  credential: Pick<ModelCredential, "apiProtocol">,
+  entry: Pick<ModelCatalogEntry, "defaultCapabilities"> | undefined,
+): ThinkingLevel[] {
+  const levels =
+    entry?.defaultCapabilities?.thinkingLevels ?? compatibleThinkingLevels(credential.apiProtocol);
+  return ["off", ...levels.filter((level) => level !== "off")];
+}
+
+/** The level a model thinks at when no chat, bot or role picks one. */
+export function modelDefaultThinkingLevel(
+  credential: (SettingsCredential & Pick<ModelCredential, "thinkingLevel">) | undefined,
+  modelId: string | null | undefined,
+): ThinkingLevel {
+  const own = credential && modelId ? credentialModelSettings(credential, modelId) : undefined;
+  return own?.thinkingLevel ?? credential?.thinkingLevel ?? DEFAULT_THINKING_LEVEL;
+}
+
+/**
  * The fields for a model's settings. Without its own answer for image input or thinking, a
- * switch shows what the model already does, so saving a limit never turns either off.
+ * field shows what the model already does, so saving a limit never turns either off.
  */
 export function modelSettingsFields(
   settings: ModelSettings,
   entry?: Pick<ModelCatalogEntry, "images" | "reasoning" | "defaultCapabilities">,
 ): ModelSettingsFields {
+  const reasoning = settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false;
   return {
     contextWindow: settings.contextWindow !== undefined ? String(settings.contextWindow) : "",
     maxTokens: settings.maxTokens !== undefined ? String(settings.maxTokens) : "",
     images: settings.images ?? (entry?.defaultCapabilities ?? entry)?.images ?? false,
     maxImagesPerPrompt:
       settings.maxImagesPerPrompt !== undefined ? String(settings.maxImagesPerPrompt) : "",
-    reasoning: settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false,
+    thinkingLevel: reasoning ? (settings.thinkingLevel ?? DEFAULT_THINKING_LEVEL) : "off",
   };
 }
 
@@ -288,7 +313,8 @@ export function modelSettingsRequest(input: {
     return { status: "invalid", field: "outputRoom" };
   if (modelCapabilitiesConfigurable(provider, entry)) {
     settings.images = fields.images;
-    settings.reasoning = fields.reasoning;
+    settings.reasoning = fields.thinkingLevel !== "off";
+    if (settings.reasoning) settings.thinkingLevel = fields.thinkingLevel;
   }
   if (fields.images && fields.maxImagesPerPrompt.trim()) {
     const maxImagesPerPrompt = parseModelMaxImagesPerPrompt(fields.maxImagesPerPrompt.trim());

@@ -7,7 +7,7 @@ type LegacyCredential = { supportsImages?: boolean | null; defaultModel?: string
 /**
  * The settings a model on this connection runs with. A model's own saved settings replace
  * everything; until it has some, values saved for the whole connection still apply to it.
- * Image input and thinking stay the catalog's answer for models it knows.
+ * Image input and thinking, with its level, stay the catalog's answer for models it knows.
  */
 export function connectionModelSettings(
   secret: StoredModelSecret,
@@ -17,7 +17,7 @@ export function connectionModelSettings(
 ): ModelSettings {
   const settings = savedModelSettings(secret, modelId, credential);
   if (!catalogKnowsModel(provider, modelId)) return settings;
-  const { images: _images, reasoning: _reasoning, ...limits } = settings;
+  const { images: _images, reasoning: _reasoning, thinkingLevel: _level, ...limits } = settings;
   return limits;
 }
 
