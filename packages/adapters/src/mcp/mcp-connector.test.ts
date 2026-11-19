@@ -2401,6 +2401,42 @@ describe("MCP connector session cache", () => {
     },
   );
 
+  it("still reports a server whose current secret record cannot be read", async () => {
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+    const connector = new McpConnector(
+      {
+        botMcpServer: { findMany: vi.fn(async () => [assignment]) },
+        mcpServer: {
+          ...NO_SHARED_SERVERS,
+          findFirst: vi.fn(async () => ({ secretId: "new" })),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        secret: { findFirst: vi.fn(async () => null) },
+      } as never,
+      { load: vi.fn() } as never,
+      { network: TEST_NETWORK },
+    );
+    const error = vi.spyOn(getLogger(), "error");
+    try {
+      expect(
+        await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        } as never),
+      ).toEqual(unavailableOnly());
+      expect(error).toHaveBeenCalledWith(
+        "mcp.discovery.failed",
+        expect.anything(),
+        expect.anything(),
+      );
+    } finally {
+      error.mockRestore();
+      await connector.close();
+    }
+  });
+
   it("reconnects with the rotated secret when a session expires during refresh", async () => {
     const state = {
       failNext: false,

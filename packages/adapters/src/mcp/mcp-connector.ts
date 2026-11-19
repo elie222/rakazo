@@ -96,7 +96,8 @@ type SessionEntry = {
   launchSecrets?: string[];
 };
 class McpSecretChangedError extends Error {
-  constructor() {
+  /** `missing`: the server's current secret record could not be read, which a retry rarely fixes. */
+  constructor(readonly missing = false) {
     super("Secret changed during MCP connection; retry");
   }
 }
@@ -159,7 +160,10 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
   // The credential changed again after the one reconnect; the next try reads the new one.
-  if (error instanceof McpDiscoveryTimeoutError || error instanceof McpSecretChangedError)
+  if (
+    error instanceof McpDiscoveryTimeoutError ||
+    (error instanceof McpSecretChangedError && !error.missing)
+  )
     return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
@@ -1176,7 +1180,7 @@ export class McpConnector implements ConnectorProvider {
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new McpSecretChangedError();
+        if (!secret) throw new McpSecretChangedError(true);
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
