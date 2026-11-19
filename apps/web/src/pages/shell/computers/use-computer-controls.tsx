@@ -518,6 +518,7 @@ export function useComputerControls({
     showingRecoveryHint,
     embeddedScreenUrl,
     hasControl,
+    computerFailed: computerFailure !== null,
     computerScreenError,
     computerBooting,
   };

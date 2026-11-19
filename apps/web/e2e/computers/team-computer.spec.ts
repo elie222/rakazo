@@ -4,7 +4,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openBotPanel,
+  openBotComputer,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -106,7 +106,7 @@ test("a person can take control while a Team bot works", async ({ page }, testIn
     .not.toBeNull();
 
   // A person can take control while the bot works; the bot's screen actions wait or are refused.
-  await openBotPanel(page);
+  await openBotComputer(page);
   const sidePanel = page.getByTestId("side-panel");
   await page.getByTestId("computer-preview").hover();
   await sidePanel.getByTestId("computer-preview-open").click();
@@ -132,7 +132,7 @@ test("a person can take control while a Team bot works", async ({ page }, testIn
 });
 
 async function openComputerPanel(page: Page) {
-  await openBotPanel(page);
+  await openBotComputer(page);
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await expect(page.getByTestId("computer-preview-open")).toHaveCount(1);
 }

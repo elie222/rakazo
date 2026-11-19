@@ -124,7 +124,8 @@ export async function openIntegrationsAdd(page: Page, item: string) {
 
 /**
  * Opens the bot panel from the header pill on the panel itself (profile, computer, routines,
- * pages), leaving an open routine editor or one of the panel's whole lists.
+ * pages), leaving an open routine editor or one of the panel's whole lists. It opens on its
+ * first tab (Details); openBotSettings/openBotComputer switch to another one.
  */
 export async function openBotPanel(page: Page) {
   const pill = page.getByTestId("bot-settings-trigger");
@@ -144,12 +145,16 @@ export async function openBotPanel(page: Page) {
   }).toPass({ timeout: 20_000 });
 }
 
-/** Opens the bot panel and unfolds its Settings (model, switches, instructions, memory). */
+/** Opens the bot panel and switches to its Settings tab (model, switches, description, tools). */
 export async function openBotSettings(page: Page) {
   await openBotPanel(page);
-  const toggle = page.getByTestId("bot-settings-advanced").locator("button[aria-expanded]").first();
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await page.getByTestId("bot-tab-settings").click();
+}
+
+/** Opens the bot panel and switches to its Computer tab (preview, recovery, own computer). */
+export async function openBotComputer(page: Page) {
+  await openBotPanel(page);
+  await page.getByTestId("bot-tab-computer").click();
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */

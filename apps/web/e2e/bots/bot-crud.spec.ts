@@ -160,11 +160,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const modelRow = settings.getByRole("button", { name: /^Model/ });
   const openWork = settings.getByTestId("bot-scratchpad");
   const notifications = settings.getByRole("switch", { name: "Notifications", exact: true });
-  // Settings fold away by default; the panel itself shows the profile, computer and routines.
+  // The panel opens on Details; the model row and switches live one tab over, in Settings.
   await page.getByRole("button", { name: "Close panel" }).click();
   await openBotPanel(page);
-  await expect(notifications).toHaveCount(0);
-  await expect(modelRow).toHaveCount(0);
+  await expect(notifications).toBeHidden();
+  await expect(modelRow).toBeHidden();
+  await expect(openWork).toBeVisible();
   await settings.getByRole("button", { name: "More actions", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Export", exact: true })).toBeVisible();
   await expect(
@@ -173,9 +174,11 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page.keyboard.press("Escape");
   await openBotSettings(page);
   await expect(notifications).toBeVisible();
-  await expect(openWork).toHaveCount(0);
+  await expect(openWork).toBeHidden();
   await expect(modelRow).toBeVisible();
+  await page.getByTestId("bot-tab-computer").click();
   await expect(settings.getByRole("switch", { name: "Own computer", exact: true })).toBeVisible();
+  await page.getByTestId("bot-tab-settings").click();
   // Rarely changed settings show only once the bot has them changed from the default.
   for (const name of [
     "Read replies aloud",
@@ -191,7 +194,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     title: "First fixture task",
   });
   await page.getByRole("button", { name: "Close panel" }).click();
-  await openBotSettings(page);
+  await openBotPanel(page);
   await expect(openWork.getByText("First fixture task", { exact: true })).toBeVisible();
   await openWork.getByRole("button", { name: "Add open work" }).click();
   await openWork.getByRole("textbox", { name: "New open-work item" }).fill("Second fixture task");

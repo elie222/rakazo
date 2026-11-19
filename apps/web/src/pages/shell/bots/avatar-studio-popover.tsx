@@ -168,6 +168,8 @@ export interface AvatarStudioPopoverProps {
   size?: number;
   onChange: (value: string, avatarSet?: BotAvatarSet) => void;
   disabled?: boolean;
+  /** The trigger's test id, distinct wherever a second avatar editor shares the page. */
+  triggerTestId?: string;
 }
 
 export function AvatarStudioPopover({
@@ -178,6 +180,7 @@ export function AvatarStudioPopover({
   size = 72,
   onChange,
   disabled = false,
+  triggerTestId = "avatar-studio-trigger",
 }: AvatarStudioPopoverProps) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"bot" | "upload">("bot");
@@ -250,7 +253,7 @@ export function AvatarStudioPopover({
         onClick={() => setOpen(true)}
         className="group relative cursor-pointer rounded-2xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={t`Customize bot avatar`}
-        data-testid="avatar-studio-trigger"
+        data-testid={triggerTestId}
       >
         <BotAvatar
           color={value}

@@ -1,6 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "../helpers/helpers";
+import { captureScreenshot, completeOnboarding, openBotComputer, signup } from "../helpers/helpers";
 
 async function patchJson(route: Route, patch: (body: { json?: Record<string, unknown> }) => void) {
   const response = await route.fetch();
@@ -57,7 +57,7 @@ test("unavailable computers say so plainly and link setup help", async ({ page }
   );
   await page.reload();
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   const hint = preview.getByTestId("computers-unavailable-hint");
   await expect(hint.getByText("Computers are off on this server.", { exact: true })).toBeVisible();

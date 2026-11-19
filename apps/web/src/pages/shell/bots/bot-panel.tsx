@@ -15,10 +15,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
-  SectionHeading,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
@@ -30,6 +33,7 @@ import { useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 import { ROUTINE_PREVIEW_COUNT, RoutineList } from "../../routines/RoutineList";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
+import { BotLibrary } from "./bot-library";
 import {
   DescriptionGroup,
   ModelRow,
@@ -63,9 +67,12 @@ function advancedValues(bot: Bot) {
 /** The panel itself, or one of its whole lists. */
 export type BotPanelView = "settings" | "routines" | "pages";
 
+/** The panel's one page at a time: the bot at a glance, then one tab per part of it. */
+export type BotPanelTab = "details" | "computer" | "library" | "memory" | "settings";
+
 /**
- * A bot's panel: its profile, then its computer, routines and pages, then its settings, with the
- * rarely changed ones folded away.
+ * A bot's panel: its profile above five tabs (details, computer, library, memory, settings),
+ * with whole lists for routines and pages pushing over it.
  */
 export function BotSettings({
   bot,
@@ -73,6 +80,8 @@ export function BotSettings({
   onViewChange,
   onClose,
   computer,
+  computerAttention = false,
+  onOpenMemorySettings,
   routines,
   onSave,
   onExport,
@@ -84,6 +93,10 @@ export function BotSettings({
   onViewChange?: (view: BotPanelView) => void;
   onClose?: () => void;
   computer?: ReactNode;
+  /** The computer needs the user's action: mark its tab from any other tab. */
+  computerAttention?: boolean;
+  /** Opens the space's shared-memory settings, from the memory tab's link row. */
+  onOpenMemorySettings?: () => void;
   routines?: Omit<ComponentProps<typeof RoutineList>, "preview">;
   focusModel?: number;
   onSave: (patch: {
@@ -110,13 +123,15 @@ export function BotSettings({
   const { t } = useLingui();
   const ids = useId();
   const modelRef = useRef<HTMLDivElement>(null);
+  /** The page under the profile; whole lists (routines, pages) push over it. */
+  const [tab, setTab] = useState<BotPanelTab>("details");
   // A model deep link opens Settings, then focuses the model once Settings is shown: a control
   // inside a hidden section cannot take focus.
   const modelFocusPending = useRef(false);
   useEffect(() => {
     if (focusModel && view === "settings") {
       modelFocusPending.current = true;
-      setSettingsOpen(true);
+      setTab("settings");
     }
   }, [view, focusModel]);
   const [name, setName] = useState(bot.name);
@@ -172,13 +187,12 @@ export function BotSettings({
     Object.entries(changed).some(([key, on]) => on !== changedBefore[key as keyof typeof changed])
   )
     setChangedBefore(changed);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
-    if (!settingsOpen || !modelFocusPending.current) return;
+    if (!modelFocusPending.current || tab !== "settings") return;
     modelFocusPending.current = false;
     modelRef.current?.scrollIntoView?.({ block: "nearest" });
     modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
-  }, [settingsOpen, view, focusModel]);
+  }, [tab, view, focusModel]);
   const [claimingEmail, setClaimingEmail] = useState(false);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
@@ -498,6 +512,21 @@ export function BotSettings({
     </Button>
   );
 
+  function commitName(value: string) {
+    if (!value.trim()) return;
+    setName(value.trim());
+    void enqueueSave({ name: value });
+  }
+
+  function changeAvatar(newColor: string, nextAvatarSet?: BotAvatarSet) {
+    setColor(newColor);
+    if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
+    void enqueueSave({
+      color: newColor,
+      ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
+    });
+  }
+
   return (
     <div data-testid="bot-settings">
       {view !== "settings" ? (
@@ -567,14 +596,7 @@ export function BotSettings({
               status={bot.status}
               size={76}
               avatarSet={avatarSet}
-              onChange={(newColor, nextAvatarSet) => {
-                setColor(newColor);
-                if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
-                void enqueueSave({
-                  color: newColor,
-                  ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
-                });
-              }}
+              onChange={changeAvatar}
             />
           </div>
           <InlineProfileField
@@ -583,11 +605,7 @@ export function BotSettings({
             value={name}
             maxLength={BOT_NAME_MAX_LENGTH}
             className="text-heading2 font-semibold"
-            onCommit={(value) => {
-              if (!value.trim()) return;
-              setName(value.trim());
-              void enqueueSave({ name: value });
-            }}
+            onCommit={commitName}
           />
           {email && (email.address || claimingEmail) ? (
             <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
@@ -599,68 +617,160 @@ export function BotSettings({
             </div>
           ) : null}
         </div>
-        <div className="space-y-6">
-          {computer ? (
-            <PanelSection label={<Trans>Computer</Trans>}>{computer}</PanelSection>
-          ) : null}
-          {routines ? (
-            <PanelSection
-              label={
-                routineCount > ROUTINE_PREVIEW_COUNT ? (
-                  <button
-                    type="button"
-                    onClick={() => onViewChange?.("routines")}
-                    className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Trans>Routines</Trans>
-                    <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
-                  </button>
-                ) : (
-                  <Trans>Routines</Trans>
-                )
-              }
-              action={
-                routineCount > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    data-testid="routine-create-button"
-                    aria-label={t`Create routine`}
-                    onClick={routines.onCreate}
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                ) : null
-              }
+        <Tabs value={tab} onValueChange={(value) => setTab(value as BotPanelTab)}>
+          <TabsList className="mx-auto max-w-full overflow-x-auto">
+            <TabsTrigger value="details" data-testid="bot-tab-details">
+              <Trans>Details</Trans>
+            </TabsTrigger>
+            <TabsTrigger
+              value="computer"
+              data-testid="bot-tab-computer"
+              aria-label={computerAttention ? t`Computer, needs attention` : undefined}
             >
-              <RoutineList {...routines} preview />
-            </PanelSection>
-          ) : null}
-          <PagesList botId={bot.id} preview={{ onOpenAll: () => onViewChange?.("pages") }} />
-        </div>
-        <ErrorBoundary fallback={<SectionLoadFailed />}>
-          <Suspense fallback={null}>
-            <ScratchpadSection botId={bot.id} />
-          </Suspense>
-        </ErrorBoundary>
-        <div className="mt-6" data-testid="bot-settings-advanced">
-          <SectionHeading variant="label" className="flex min-h-6 items-center">
-            <button
-              type="button"
-              aria-expanded={settingsOpen}
-              aria-controls={`${ids}-settings`}
-              onClick={() => setSettingsOpen((open) => !open)}
-              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
+              <Trans>Computer</Trans>
+              {computerAttention ? (
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full bg-destructive"
+                  data-testid="computer-attention"
+                />
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="library" data-testid="bot-tab-library">
+              <Trans>Library</Trans>
+            </TabsTrigger>
+            <TabsTrigger value="memory" data-testid="bot-tab-memory">
+              <Trans>Memory</Trans>
+            </TabsTrigger>
+            <TabsTrigger value="settings" data-testid="bot-tab-settings">
               <Trans>Settings</Trans>
-              <ChevronDown
-                aria-hidden="true"
-                className={`size-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`}
+            </TabsTrigger>
+          </TabsList>
+          {/* Stays mounted once visited, so a draft or an open list survives switching tabs. */}
+          <TabsContent keepMounted value="details" className="space-y-6 pt-4">
+            <InstructionSettings key={bot.id} bot={bot} />
+            {routines ? (
+              <PanelSection
+                label={
+                  routineCount > ROUTINE_PREVIEW_COUNT ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewChange?.("routines")}
+                      className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Trans>Routines</Trans>
+                      <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
+                    </button>
+                  ) : (
+                    <Trans>Routines</Trans>
+                  )
+                }
+                action={
+                  routineCount > 0 ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      data-testid="routine-create-button"
+                      aria-label={t`Create routine`}
+                      onClick={routines.onCreate}
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  ) : null
+                }
+              >
+                <RoutineList {...routines} preview />
+              </PanelSection>
+            ) : null}
+            <ErrorBoundary fallback={<SectionLoadFailed />}>
+              <Suspense fallback={null}>
+                <ScratchpadSection botId={bot.id} />
+              </Suspense>
+            </ErrorBoundary>
+          </TabsContent>
+          <TabsContent keepMounted value="computer" className="space-y-6 pt-4">
+            {computer}
+            <SettingsCard>
+              <SwitchRow
+                id={`${ids}-own-computer`}
+                label={<Trans>Own computer</Trans>}
+                checked={computerMode === "dedicated"}
+                disabled={saving}
+                onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
-            </button>
-          </SectionHeading>
-          {/* Stays mounted so an instructions or description draft survives folding it away. */}
-          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-2">
+            </SettingsCard>
+          </TabsContent>
+          <TabsContent keepMounted value="library" className="space-y-6 pt-4">
+            <BotLibrary
+              botId={bot.id}
+              botName={bot.name}
+              onOpenAllPages={() => onViewChange?.("pages")}
+            />
+          </TabsContent>
+          <TabsContent keepMounted value="memory" className="space-y-6 pt-4">
+            <PanelSection label={<Trans>Memory</Trans>}>
+              <ErrorBoundary fallback={<SectionLoadFailed />}>
+                <Suspense fallback={null}>
+                  <KnowledgeSection botId={bot.id} full />
+                </Suspense>
+              </ErrorBoundary>
+            </PanelSection>
+            {onOpenMemorySettings ? (
+              <div className="rounded-xl bg-muted/50 px-4 py-3">
+                <button
+                  type="button"
+                  data-testid="bot-shared-memory-link"
+                  onClick={onOpenMemorySettings}
+                  className="flex w-full items-center justify-between gap-3 rounded-sm text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-body">
+                      <Trans>Shared memory</Trans>
+                    </span>
+                    <span className="block text-body-sm text-muted-foreground">
+                      <Trans>
+                        Every bot in this space reads these notes and keeps them up to date.
+                      </Trans>
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
+                  />
+                </button>
+              </div>
+            ) : null}
+          </TabsContent>
+          <TabsContent
+            keepMounted
+            value="settings"
+            data-testid="bot-settings-advanced"
+            className="space-y-6 pt-4"
+          >
+            <PanelSection label={<Trans>Profile</Trans>}>
+              <div
+                data-testid="bot-profile-settings"
+                className="flex items-center gap-4 rounded-xl bg-muted/50 px-4 py-3"
+              >
+                <AvatarStudioPopover
+                  value={color}
+                  identity={bot.id}
+                  status={bot.status}
+                  size={44}
+                  avatarSet={avatarSet}
+                  onChange={changeAvatar}
+                  triggerTestId="avatar-studio-trigger-profile"
+                />
+                <InlineProfileField
+                  label={t`Name`}
+                  editLabel={t`Edit name`}
+                  value={name}
+                  maxLength={BOT_NAME_MAX_LENGTH}
+                  className="text-body-lg font-medium"
+                  onCommit={commitName}
+                />
+              </div>
+            </PanelSection>
             <SettingsCard>
               <ModelRow
                 ids={ids}
@@ -684,13 +794,6 @@ export function BotSettings({
                   setNotifyOnFinish(checked);
                   void enqueueSave({ notifyOnFinish: checked });
                 }}
-              />
-              <SwitchRow
-                id={`${ids}-own-computer`}
-                label={<Trans>Own computer</Trans>}
-                checked={computerMode === "dedicated"}
-                disabled={saving}
-                onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
               {changed.readAloud ? (
                 <SwitchRow
@@ -720,37 +823,37 @@ export function BotSettings({
                   }}
                 />
               ) : null}
-              {changed.crossSpaceCommunication ? (
-                <SwitchRow
-                  id={`${ids}-cross-space`}
-                  label={<Trans>Allow cross-space bot communication</Trans>}
-                  checked={crossSpaceCommunication}
-                  disabled={saving}
-                  onChange={(checked) => {
-                    setCrossSpaceCommunication(checked);
-                    void enqueueSave({ crossSpaceCommunication: checked });
-                  }}
-                />
-              ) : null}
-              {changed.fleetManagement ? (
-                <SwitchRow
-                  id={`${ids}-fleet-management`}
-                  label={<Trans>Manage other bots</Trans>}
-                  checked={fleetManagement}
-                  disabled={saving}
-                  onChange={(checked) => {
-                    setFleetManagement(checked);
-                    void enqueueSave({ fleetManagement: checked });
-                  }}
-                />
-              ) : null}
             </SettingsCard>
-            <InstructionSettings key={bot.id} bot={bot} />
-            <ErrorBoundary fallback={<SectionLoadFailed />}>
-              <Suspense fallback={null}>
-                <KnowledgeSection botId={bot.id} />
-              </Suspense>
-            </ErrorBoundary>
+            {changed.crossSpaceCommunication || changed.fleetManagement ? (
+              <PanelSection label={<Trans>Permissions</Trans>}>
+                <SettingsCard>
+                  {changed.crossSpaceCommunication ? (
+                    <SwitchRow
+                      id={`${ids}-cross-space`}
+                      label={<Trans>Allow cross-space bot communication</Trans>}
+                      checked={crossSpaceCommunication}
+                      disabled={saving}
+                      onChange={(checked) => {
+                        setCrossSpaceCommunication(checked);
+                        void enqueueSave({ crossSpaceCommunication: checked });
+                      }}
+                    />
+                  ) : null}
+                  {changed.fleetManagement ? (
+                    <SwitchRow
+                      id={`${ids}-fleet-management`}
+                      label={<Trans>Manage other bots</Trans>}
+                      checked={fleetManagement}
+                      disabled={saving}
+                      onChange={(checked) => {
+                        setFleetManagement(checked);
+                        void enqueueSave({ fleetManagement: checked });
+                      }}
+                    />
+                  ) : null}
+                </SettingsCard>
+              </PanelSection>
+            ) : null}
             <DescriptionGroup
               ids={ids}
               description={description}
@@ -769,8 +872,8 @@ export function BotSettings({
                 }}
               />
             ) : null}
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
         {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
       </div>
     </div>

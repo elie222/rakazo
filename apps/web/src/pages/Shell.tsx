@@ -1376,6 +1376,8 @@ function SpaceShell() {
             />
           ) : null
         }
+        computerAttention={computerControls.computerFailed}
+        onOpenMemorySettings={() => openSettings("memory")}
         routineList={{
           routines: activeRoutines,
           loaded: routinesLoaded,
