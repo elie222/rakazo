@@ -43,6 +43,8 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       reply: (message) => rowActionsRef.current.reply(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
+      startSelection: (message) => rowActionsRef.current.startSelection(message),
+      toggleSelection: (message) => rowActionsRef.current.toggleSelection(message),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
@@ -81,6 +83,7 @@ export function useThreadRows({
   readSeq,
   markedUnreadMessageId,
   highlightedMessageId,
+  selectedIds,
 }: {
   snap: MobileSnapshot | null;
   userId: string;
@@ -101,6 +104,8 @@ export function useThreadRows({
   readSeq: number | null;
   markedUnreadMessageId?: string;
   highlightedMessageId: string | null;
+  /** The messages chosen to copy together; null while not choosing. */
+  selectedIds: ReadonlySet<string> | null;
 }) {
   const { t } = useLingui();
   const locale = useUiLocale();
@@ -190,6 +195,8 @@ export function useThreadRows({
           columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
           index={options?.index ?? 0}
+          selecting={selectedIds !== null}
+          selected={selectedIds?.has(message.id) ?? false}
         />
       );
     },
@@ -216,6 +223,7 @@ export function useThreadRows({
       answerableAskIds,
       dismissableAskIds,
       highlightedMessageId,
+      selectedIds,
       separatorIds,
       visibleMessages[0]?.id,
       unreadDividerId,
@@ -246,12 +254,25 @@ export function useThreadRows({
               afterSeparator={Boolean(item.messages[0] && separatorIds.has(item.messages[0].id))}
             />
           ) : null}
-          <VoiceChatCard group={item} />
+          <VoiceChatCard
+            group={item}
+            selectedIds={selectedIds}
+            onToggleSelection={rowActions.toggleSelection}
+            onStartSelection={rowActions.startSelection}
+          />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadDividerId, visibleMessages[0]?.id],
+    [
+      renderMessageRow,
+      rowActions.startSelection,
+      rowActions.toggleSelection,
+      selectedIds,
+      separatorIds,
+      unreadDividerId,
+      visibleMessages[0]?.id,
+    ],
   );
 
   return { liveItems, renderMessageRow, renderItem };

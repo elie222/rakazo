@@ -9,6 +9,7 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { AgentImportSetupItemSchema } from "../integrations/agent-import-setup.js";
 import { McpTransportSchema } from "../integrations/mcp.js";
 import { McpAppCspSchema } from "../integrations/mcp-app.js";
+import { OutgoingDraft } from "../integrations/outgoing-draft.js";
 import { ToolQuestionSchema } from "../integrations/tool-question.js";
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
@@ -89,6 +90,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
+    outgoingDraft: OutgoingDraft.optional(),
     instructionUpdate: z
       .object({
         botId: Id,
@@ -129,6 +131,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answerMessageId: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** An approval nobody answered before an unattended run's card expired; it was not done. */
+    expired: z.literal(true).optional(),
     /** A login the user used for this run only instead of saving it. */
     remembered: z.literal(false).optional(),
     actions: z

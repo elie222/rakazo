@@ -32,10 +32,16 @@ const responseSchema = z.object({
     .optional(),
 });
 
+/** The hosts that serve the decision protocol. */
+export const DECISION_HOSTS = ["openrouter", "typesafe"] as const;
+export type DecisionHost = (typeof DECISION_HOSTS)[number];
+export const isDecisionHost = (value: string): value is DecisionHost =>
+  (DECISION_HOSTS as readonly string[]).includes(value);
+
 /** Two implementations of the same decision protocol; endpoint and auth never come from model output. */
 export class HttpDecisionProvider implements DecisionProvider {
   constructor(
-    private readonly provider: "openrouter" | "typesafe",
+    private readonly provider: DecisionHost,
     private readonly options: DecisionProviderOptions,
   ) {
     if (!options.apiKey.trim()) throw new DecisionProviderError("authentication");

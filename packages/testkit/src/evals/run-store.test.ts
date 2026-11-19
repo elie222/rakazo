@@ -97,6 +97,11 @@ describe("run fingerprint", () => {
       fingerprint({ scenario: { ...scenario, steps: [{ ask: "Remind me on Friday" }] } })
         ? base
         : "differs",
+      // A date planted in a case's content is the case's own, so it is not normalized away.
+      fingerprint({ scenario: { ...scenario, fixtureData: { body: "Due 2026-11-20" } } }) ===
+      fingerprint({ scenario: { ...scenario, fixtureData: { body: "Due 2026-11-27" } } })
+        ? base
+        : "differs",
       fingerprint({ strategy: "retrieval" }),
       fingerprint({ replyMode: "messages" }),
       fingerprint({ maxToolCalls: 8 }),

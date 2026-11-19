@@ -31,7 +31,14 @@ export function openAiCompatAllowPublicHosts(): boolean {
 
 export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
   const normalized = normalizeHost(hostname);
-  if (isLoopbackHost(normalized) || normalized === "host.docker.internal") return true;
+  // mDNS names (`.local`, RFC 6762) name a machine on the local network; as for allowlisted
+  // hostnames, every resolved address is still pinned to a non-public one at request time.
+  if (
+    isLoopbackHost(normalized) ||
+    normalized === "host.docker.internal" ||
+    normalized.endsWith(".local")
+  )
+    return true;
   if (isCloudMetadataHost(normalized)) return false;
   if (ipVersion(normalized) !== 0) return isNonPublicAddress(normalized);
   return (process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS ?? "")

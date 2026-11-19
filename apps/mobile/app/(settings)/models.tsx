@@ -5,7 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
-import { popularModelProvidersFirst } from "@rakazo/core";
+import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
@@ -252,7 +252,10 @@ export default function Models() {
   }
 
   // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
-  if (!me && !loadError) {
+  if (
+    (!me || (me.needsModel && target.scope === "account" && credentials === noCredentials)) &&
+    !loadError
+  ) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
         <ActivityIndicator color={native.secondaryLabel} />
@@ -262,6 +265,7 @@ export default function Models() {
 
   const failure = error ?? loadError;
   const shownError = error ?? (me ? loadError : null);
+  const firstConnection = isFirstModelConnection(target.scope, me?.needsModel, credentials.length);
   const shared = {
     credentials,
     providers,
@@ -300,27 +304,32 @@ export default function Models() {
             <ModelRoleSettings
               {...shared}
               modelRole="main"
-              title={t`Main model`}
-              defaultLabel={t`Choose a model`}
+              title={firstConnection ? t`Connect a model` : t`Main model`}
+              hideHeading={firstConnection}
+              defaultLabel={firstConnection ? t`Connect a model` : t`Choose a model`}
               onChanged={() => void load()}
             />
             {me.needsModel ? null : (
               <SpaceBotsModel bots={bots} spaceId={spaceId} onSwitched={() => load()} />
             )}
-            <ModelRoleSettings
-              {...shared}
-              modelRole="approval"
-              title={t`Approval model`}
-              defaultLabel={t`Choose a model`}
-            />
-            <ModelRoleSettings
-              {...shared}
-              modelRole="computer"
-              title={t`Computer-use model`}
-              defaultLabel={t`Same as main model`}
-            />
+            {firstConnection ? null : (
+              <ModelRoleSettings
+                {...shared}
+                modelRole="approval"
+                title={t`Approval model`}
+                defaultLabel={t`Choose a model`}
+              />
+            )}
+            {firstConnection ? null : (
+              <ModelRoleSettings
+                {...shared}
+                modelRole="computer"
+                title={t`Computer-use model`}
+                defaultLabel={t`Same as main model`}
+              />
+            )}
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
-            {target.scope === "account" ? (
+            {target.scope === "account" && !firstConnection ? (
               <ModelProviders
                 catalog={catalog}
                 credentials={credentials}

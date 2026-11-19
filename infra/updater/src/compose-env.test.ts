@@ -103,6 +103,7 @@ const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
+    "MEETING_SIGNING_KEY",
     // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",

@@ -23,7 +23,13 @@ export const TOOL_QUESTION_WAIT_MS = 10 * 60_000;
  * nobody to ask, so their questions are declined.
  */
 export function toolAskFor(ctx: RunContext): ToolAsk | undefined {
-  if (!ctx.source?.ownerStartedRun || ctx.source.messagingChannelRun) return undefined;
+  if (
+    !ctx.source?.ownerStartedRun ||
+    ctx.source.messagingChannelRun ||
+    ctx.run.trigger === "routine" ||
+    ctx.run.trigger === "messaging"
+  )
+    return undefined;
   return (question, signal) => askInRun(ctx, question, signal);
 }
 

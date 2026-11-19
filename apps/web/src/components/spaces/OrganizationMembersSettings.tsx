@@ -107,6 +107,7 @@ export function OrganizationMembersSettings({
           }}
         >
           <Input
+            size="lg"
             type="email"
             required
             aria-label={t`Email`}

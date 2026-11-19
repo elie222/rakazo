@@ -14,7 +14,6 @@ import {
 import { z } from "zod";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { isRunTainted, refuseOwnerSettingsChange } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -248,15 +247,6 @@ async function claimEmailAddress(ctx: RunContext, call: ToolCall) {
   const domain = deps.inboundEmailDomain;
   if (!domain) return call.finish({ error: "This server doesn't receive email." });
   if (run.userId !== bot.userId) return call.finish({ error: "Only the bot's owner can do that." });
-  // Permanent: without the owner's own approval of this call, text the bot read cannot pick it.
-  if (call.nextApprovedTool !== "claim_email_address" && (await isRunTainted(ctx))) {
-    return call.finish(
-      refuseOwnerSettingsChange(
-        ctx,
-        "An email address can't be claimed in this run because it read outside content. Ask your owner to request it again.",
-      ),
-    );
-  }
   const parsed = BotEmailNameSchema.safeParse(call.args.name);
   if (!parsed.success) {
     return call.finish({ error: parsed.error.issues[0]?.message ?? "Choose another name." });

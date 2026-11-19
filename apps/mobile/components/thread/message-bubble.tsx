@@ -48,6 +48,7 @@ import { ComputerCard } from "../cards/ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
+import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { AudioAttachment } from "../media/audio-attachment";
 import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
@@ -462,12 +463,20 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
             borderRadius: 18,
-            backgroundColor: tokens.card,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
+            backgroundColor: askBlock.outgoingDraft ? undefined : tokens.card,
+            paddingHorizontal: askBlock.outgoingDraft ? 0 : 16,
+            paddingVertical: askBlock.outgoingDraft ? 0 : 14,
           }}
         >
-          {isUndoableChange(askBlock) ? (
+          {askBlock.outgoingDraft ? (
+            <OutgoingDraftCard
+              block={askBlock}
+              messageId={message.id}
+              runId={message.runId}
+              target={artifactTarget}
+              canAnswer={canAnswer}
+            />
+          ) : isUndoableChange(askBlock) ? (
             <ChangeUndo block={askBlock} />
           ) : (
             <>
@@ -530,15 +539,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     fontWeight: fontWeight.medium,
                   }}
                 >
-                  {askBlock.instructionUpdate
-                    ? askBlock.answer === "deny"
-                      ? t`Dismissed`
-                      : t`Allowed once`
-                    : formatApprovalAnswer(
-                        askBlock.answer,
-                        askBlock.actions,
-                        isApprovalAskBlock(askBlock),
-                      )}
+                  {askBlock.expired
+                    ? t`Expired`
+                    : askBlock.instructionUpdate
+                      ? askBlock.answer === "deny"
+                        ? t`Dismissed`
+                        : t`Allowed once`
+                      : formatApprovalAnswer(
+                          askBlock.answer,
+                          askBlock.actions,
+                          isApprovalAskBlock(askBlock),
+                        )}
                 </Text>
               ) : question && canAnswer ? null : canAnswer && onAnswer ? (
                 <AskActions

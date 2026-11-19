@@ -8,7 +8,6 @@ import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
 import { CreateGroupForm, GroupSettings } from "../space/GroupPanel";
-import { AgentImportForm } from "./bots/agent-import";
 import { BotSettings } from "./bots/bot-panel";
 import { ResizableSidePanel } from "./resizable-side-panel";
 import type { Panel } from "./right-panel-state";
@@ -33,7 +32,6 @@ export function ShellSidePanel({
   routineList,
   routineEditorProps,
   openBot,
-  openCreatedBot,
   modelFocusRequest,
   onClearBot,
   discardChatAttachments,
@@ -55,14 +53,13 @@ export function ShellSidePanel({
   routineList: Omit<ComponentProps<typeof RoutineList>, "preview">;
   routineEditorProps: ComponentProps<typeof RoutineEditor> | null;
   openBot: (botId: string) => void;
-  openCreatedBot: (bot: Bot) => void;
   modelFocusRequest: number;
   onClearBot: (bot: Bot) => void;
   /** Drops a deleted chat's pending attachments with their previews. */
   discardChatAttachments: (threadKey: string) => void;
 }) {
   const { t } = useLingui();
-  const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
+  const open = Boolean(panel && (active || activeGroup));
   const botView = panel === "routines" || panel === "pages" || panel === "settings" ? panel : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
@@ -82,8 +79,7 @@ export function ShellSidePanel({
           {!(botView && active) &&
           panel !== "routine" &&
           panel !== "create-group" &&
-          panel !== "group-settings" &&
-          panel !== "import-agent" ? (
+          panel !== "group-settings" ? (
             <div className="mb-4 flex items-center justify-between">
               {!active && panel !== "settings" ? (
                 <span className="text-body text-muted-foreground">
@@ -140,15 +136,6 @@ export function ShellSidePanel({
               onClose={() => setPanel(null)}
               onOpenBot={openBot}
               covered={computerOpen}
-            />
-          ) : null}
-          {panel === "import-agent" ? (
-            <AgentImportForm
-              onClose={() => setPanel(null)}
-              onCreated={(bot) => {
-                openCreatedBot(bot);
-                void refreshBots().catch(() => undefined);
-              }}
             />
           ) : null}
           {botView && active ? (

@@ -109,6 +109,56 @@ describePostgres("space deletion lease (PostgreSQL)", () => {
       deleteSpaceWithContent(deps(sandbox), actor, spaceId),
     );
 
+  it("preserves a linked Space when its calendar provider is unavailable", async () => {
+    const person = await owner();
+    await system.meetingCalendarConnection.create({
+      data: {
+        id: `calendar-${person.spaceId}`,
+        spaceId: person.spaceId,
+        userId: person.userId,
+        provider: "offline-provider",
+        externalCalendarId: "offline-calendar",
+      },
+    });
+    const sandbox = { destroy: vi.fn() };
+    try {
+      await expect(remove(sandbox, person, person.spaceId)).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+      });
+      const disconnectSpace = vi.fn(async () => {
+        throw new Error("fixture calendar provider unavailable");
+      });
+      await expect(
+        runAsTenant(person, () =>
+          deleteSpaceWithContent(
+            {
+              ...deps(sandbox),
+              meetingCalendar: {
+                disconnectSpace,
+                disconnectOwner: vi.fn(),
+                disconnectUser: vi.fn(),
+              },
+            },
+            person,
+            person.spaceId,
+          ),
+        ),
+      ).rejects.toMatchObject({
+        kind: "SERVICE_UNAVAILABLE",
+        message: "Disconnect meeting calendars before deleting.",
+        cause: expect.objectContaining({ message: "fixture calendar provider unavailable" }),
+      });
+      expect(disconnectSpace).toHaveBeenCalledOnce();
+      expect(sandbox.destroy).not.toHaveBeenCalled();
+      expect(await system.space.findUnique({ where: { id: person.spaceId } })).toMatchObject({
+        deletionClaimId: null,
+      });
+    } finally {
+      await system.meetingCalendarConnection.deleteMany({ where: { spaceId: person.spaceId } });
+    }
+    await expect(remove(sandbox, person, person.spaceId)).resolves.toBeTruthy();
+  });
+
   /** Starts deleting the person's Space and holds it in its sandbox teardown. */
   async function deletionHeldInTeardown(person: Owner) {
     const providerRef = `sb-held-${++sequence}-${suffix}`;

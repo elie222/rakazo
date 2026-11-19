@@ -37,6 +37,7 @@ vi.mock("../messages/message-context-menu", () => ({
   MessageContextMenu: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./reply-line", () => ({ ReplyLine: () => null }));
 vi.mock("./time-separator", () => ({ TimeSeparator: () => null }));
 vi.mock("./unread-divider", () => ({ UnreadDivider: () => null }));
