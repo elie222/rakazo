@@ -28,12 +28,13 @@ const routine: Routine = {
 };
 
 describe("routineSaveRequest", () => {
-  it("creates a paused copy that keeps the triggers and model it can't show", () => {
+  it("creates a paused copy that keeps the triggers it can't show, but not the model", () => {
     const hooked = {
       ...routine,
       crons: [],
       webhookEnabled: true,
       inChat: true,
+      notify: false,
       modelProvider: "openai-compatible",
       modelId: "model-1",
     };
@@ -45,10 +46,12 @@ describe("routineSaveRequest", () => {
         crons: [],
         webhookEnabled: true,
         inChat: true,
-        modelProvider: "openai-compatible",
-        modelId: "model-1",
+        notify: false,
       }),
     });
+    expect(
+      routineSaveRequest(draftFromRoutine(copy), null, "bot-1", "UTC", copy),
+    ).not.toHaveProperty("create.modelId");
     // Removing the only trigger still asks for one.
     const unhooked = { ...draftFromRoutine(copy), webhookEnabled: false };
     expect(routineSaveRequest(unhooked, null, "bot-1", "UTC", copy)).toEqual({ error: "trigger" });

@@ -76,7 +76,10 @@ export function routineSaveRequest(
   routine: Routine | null,
   botId: string,
   timezone: string,
-  /** For a new routine started as a copy: the triggers and settings it keeps from it. */
+  /**
+   * For a new routine started as a copy: the triggers and settings it keeps from it. Not its model,
+   * which this editor can't change and the copier may not have connected.
+   */
   copyOf: Routine | null = null,
 ): RoutineSaveRequest {
   const name = draft.name.trim();
@@ -100,7 +103,7 @@ export function routineSaveRequest(
         crons,
         timezone,
         active: draft.active,
-        notify: true,
+        notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
         ...(kept
           ? {
@@ -109,9 +112,6 @@ export function routineSaveRequest(
               messageProvider: kept.messageProvider,
               watch: kept.watch,
               inChat: kept.inChat,
-              modelProvider: kept.modelProvider,
-              modelId: kept.modelId,
-              thinkingLevel: kept.thinkingLevel,
             }
           : {}),
       },
