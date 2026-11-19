@@ -11,6 +11,7 @@ import { NL_MESSAGES } from "./locales/nl.js";
 import { PL_MESSAGES } from "./locales/pl.js";
 import { PT_BR_MESSAGES } from "./locales/pt-BR.js";
 import { RU_MESSAGES } from "./locales/ru.js";
+import { TH_MESSAGES } from "./locales/th.js";
 import { TR_MESSAGES } from "./locales/tr.js";
 import { ZH_CN_MESSAGES } from "./locales/zh-CN.js";
 import { ZH_TW_MESSAGES } from "./locales/zh-TW.js";
@@ -28,6 +29,7 @@ export const CATALOGS = {
   pl: PL_MESSAGES,
   "pt-BR": PT_BR_MESSAGES,
   ru: RU_MESSAGES,
+  th: TH_MESSAGES,
   tr: TR_MESSAGES,
   "zh-CN": ZH_CN_MESSAGES,
   "zh-TW": ZH_TW_MESSAGES,
