@@ -122,7 +122,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     AlertDialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
     AlertDialogAction: ({
       variant: _variant,
-      autoFocus: _autoFocus,
       ...props
     }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
   };
@@ -559,6 +558,8 @@ describe("BotSettings model autosave", () => {
     expect(answer("Start empty").disabled).toBe(false);
     await act(async () => lookup.reject(new Error("offline")));
     await vi.waitFor(() => expect(answer("Bring files").disabled).toBe(false));
+    // The default answer has the focus once it can be pressed, so Enter brings the files.
+    expect(document.activeElement).toBe(answer("Bring files"));
     expect(moveDialog()?.querySelector("p")?.textContent).toBe(
       "They replace the older files on its own computer.",
     );

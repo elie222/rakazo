@@ -256,6 +256,30 @@ describe("bringing a bot's files to the computer it moved to", () => {
     await expect(own.read("project/notes.md")).resolves.toBe("kept");
   });
 
+  it("puts back entries a gathering cut short had moved, and removes none", async () => {
+    const home = await savedHomes({ "team-home/bots/bot1/project/notes.md": "newer" });
+    const own = await localComputer({
+      ".rakazo-replaced.tmp/moved.md": "older",
+      "not-moved-yet.md": "older",
+    });
+    own.sandbox.importWorkspace = async () => {
+      throw new Error("connection reset");
+    };
+
+    await expect(
+      bringBotFiles(
+        { home, sandbox: own.sandbox },
+        { botId: "bot1", from: TEAM, to: { computer: own.computer, scope: "dedicated" } },
+        context,
+      ),
+    ).rejects.toThrow("connection reset");
+
+    await expect(own.read("moved.md")).resolves.toBe("older");
+    await expect(own.read("not-moved-yet.md")).resolves.toBe("older");
+    await own.missing(".rakazo-replaced.tmp");
+    await own.missing(".rakazo-replaced");
+  });
+
   it("keeps the older files when the saved home turns out empty at the export", async () => {
     const home = await savedHomes({ "team-home/bots/bot1/project/notes.md": "newer" });
     const own = await localComputer({ "project/notes.md": "older" });

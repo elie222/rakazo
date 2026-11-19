@@ -112,7 +112,7 @@ export async function bringFilesToComputer(
       screenLeaseId: screenLeaseIdForRun(lease, runId),
     });
     started = true;
-    await retry(
+    return await retry(
       () =>
         bringBotFiles(
           deps,
@@ -121,7 +121,6 @@ export async function bringFilesToComputer(
         ),
       { attempts: COPY_ATTEMPTS, signal: context.signal },
     );
-    return true;
   } finally {
     clearInterval(heartbeat);
     // Also after a failed copy: the bot goes back, and the computer it started must not stay up.

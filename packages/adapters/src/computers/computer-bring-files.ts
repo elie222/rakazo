@@ -82,7 +82,16 @@ const REPLACE_VISIBLE_ENTRIES = [
   "  fi",
   '  rm -rf -- "$1"',
   "}",
+  // Entries are gathered under a second name and only then set aside in one rename, so a
+  // gathering cut short is told apart from a finished one: its entries go back beside the ones
+  // never moved, and nothing visible is removed.
+  "undo_gathering() {",
+  '  if [ -L "$aside.tmp" ] || [ ! -d "$aside.tmp" ]; then return 0; fi',
+  '  for entry in "$aside.tmp"/*; do mv -- "$entry" .; done',
+  '  rmdir -- "$aside.tmp"',
+  "}",
   "put_back() {",
+  "  undo_gathering",
   '  if [ -L "$aside" ] || [ ! -d "$aside" ]; then return 0; fi',
   "  remove_visible",
   '  for entry in "$aside"/*; do mv -- "$entry" .; done',
@@ -94,12 +103,13 @@ const REPLACE_VISIBLE_ENTRIES = [
   '    drop "$aside.done"',
   "    put_back",
   '    drop "$aside"',
-  '    mkdir -- "$aside"',
+  '    mkdir -- "$aside.tmp"',
   // A folder that is itself read-only cannot be moved until it is opened up.
   "    for entry in *; do",
   '      if [ -d "$entry" ] && [ ! -L "$entry" ]; then chmod u+w -- "$entry" 2>/dev/null || true; fi',
-  '      mv -- "$entry" "$aside"/',
+  '      mv -- "$entry" "$aside.tmp"/ || { undo_gathering; exit 1; }',
   "    done",
+  '    mv -- "$aside.tmp" "$aside"',
   "    ;;",
   "  back) put_back ;;",
   // Renamed first, so a removal cut short is never taken for files to put back.
@@ -162,7 +172,6 @@ export async function bringBotFiles(
   if (to.scope === "team") {
     await ensureComputerWorkspaceLayout(deps.sandbox, to.computer, "team", botId, context);
   }
-  if (setsAside) await replaceVisibleEntries(deps.sandbox, to.computer, "aside", folder, context);
   let brought = 0;
   async function* placed(): AsyncIterable<PortableFile> {
     for await (const file of savedBotFiles(deps.home, from, botId, context)) {
@@ -179,6 +188,7 @@ export async function bringBotFiles(
     );
   };
   try {
+    if (setsAside) await replaceVisibleEntries(deps.sandbox, to.computer, "aside", folder, context);
     await deps.sandbox.importWorkspace(to.computer, placed(), context);
   } catch (error) {
     await putBack();

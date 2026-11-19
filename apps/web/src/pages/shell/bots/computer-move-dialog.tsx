@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { useSpaceQueries } from "../../../lib/query/query";
 
 /**
@@ -39,6 +40,12 @@ export function ComputerMoveDialog({
   });
   // Until the answer is in, the files cannot be brought; without one, assume they replace some.
   const replaces = move.data?.replacesFiles ?? move.isError;
+  // Bring files is the default answer, so it takes the focus as soon as it can be pressed.
+  const bring = useRef<HTMLButtonElement>(null);
+  const ready = !move.isPending;
+  useEffect(() => {
+    if (ready) bring.current?.focus();
+  }, [ready]);
   return (
     <AlertDialog
       open
@@ -69,7 +76,7 @@ export function ComputerMoveDialog({
           <AlertDialogAction variant="outline" onClick={() => onChoose("leave")}>
             <Trans>Start empty</Trans>
           </AlertDialogAction>
-          <AlertDialogAction autoFocus disabled={move.isPending} onClick={() => onChoose("bring")}>
+          <AlertDialogAction ref={bring} disabled={!ready} onClick={() => onChoose("bring")}>
             <Trans>Bring files</Trans>
           </AlertDialogAction>
         </AlertDialogFooter>
