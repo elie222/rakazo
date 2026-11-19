@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   defaultProvider: "provider-a",
   connected: ["provider-a", "provider-b"],
   save: vi.fn(),
+  status: vi.fn(),
   speak: vi.fn(),
   stop: vi.fn(),
 }));
@@ -68,6 +69,7 @@ vi.mock("../api/api", () => ({
         { id: "custom", label: "Custom voice" },
       ];
     if (proc === "voice/status") {
+      await state.status(input);
       const provider = input?.botId
         ? (state.bot.voiceProvider ?? state.defaultProvider)
         : state.defaultProvider;
@@ -165,6 +167,7 @@ beforeEach(() => {
   state.defaultProvider = "provider-a";
   state.connected = ["provider-a", "provider-b"];
   state.save.mockResolvedValue(undefined);
+  state.status.mockResolvedValue(undefined);
   state.speak.mockResolvedValue(true);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -225,6 +228,29 @@ it("keeps inherited choices null while Settings defaults update live", async () 
   expect(state.save).not.toHaveBeenCalled();
 });
 
+it("previews the fresh Settings default while the profile status remains cached", async () => {
+  await open();
+  const statusKey = rpcQuery("voice/status", { botId: "bot-a" }).queryKey;
+  expect(queryClient.getQueryData(statusKey)).toMatchObject({
+    provider: "provider-a",
+    voiceId: "a-default",
+  });
+  state.defaultProvider = "provider-b";
+  await act(async () => button("Hear a sample").click());
+  expect(state.status).toHaveBeenLastCalledWith({ botId: "bot-a" });
+  expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
+    botId: "bot-a",
+    provider: "provider-b",
+    voiceId: "b-default",
+    owner: expect.any(Symbol),
+  });
+  expect(queryClient.getQueryData(statusKey)).toMatchObject({
+    provider: "provider-a",
+    voiceId: "a-default",
+  });
+  expect(state.save).not.toHaveBeenCalled();
+});
+
 it("plays only an explicit sample with the saved effective provider and voice, and stops on leave", async () => {
   state.bot.voiceProvider = "provider-b";
   state.bot.voiceId = "custom";
@@ -246,6 +272,43 @@ it("plays only an explicit sample with the saved effective provider and voice, a
   expect(container.textContent).not.toContain("Could not play that sample.");
   await act(async () => root.render(null));
   expect(state.stop).toHaveBeenCalledWith(owner);
+});
+
+it.each(["stop", "leave"])(
+  "does not start a late sample after %s during readiness",
+  async (action) => {
+    await open();
+    const readiness = deferred();
+    state.status.mockReturnValueOnce(readiness.promise);
+    await act(async () => button("Hear a sample").click());
+    expect(state.speak).not.toHaveBeenCalled();
+    if (action === "stop") {
+      await act(async () => button("Stop").click());
+    } else {
+      await act(async () => root.render(null));
+    }
+    expect(state.stop).toHaveBeenCalledWith(expect.any(Symbol));
+    await act(async () => readiness.resolve());
+    expect(state.speak).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Could not play that sample.");
+  },
+);
+
+it("reports a sample that fails to play", async () => {
+  await open();
+  state.speak.mockResolvedValueOnce(false);
+  await act(async () => button("Hear a sample").click());
+  expect(container.textContent).toContain("Could not play that sample.");
+  expect(button("Hear a sample").disabled).toBe(false);
+});
+
+it("reports a failed readiness lookup without starting a sample", async () => {
+  await open();
+  state.status.mockRejectedValueOnce(new Error("Could not check voice"));
+  await act(async () => button("Hear a sample").click());
+  expect(state.speak).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Could not check voice");
+  expect(button("Hear a sample").disabled).toBe(false);
 });
 
 it("pins a custom voice chosen under Default and resumes inheritance when reset", async () => {
@@ -361,4 +424,33 @@ it("explains a disconnected saved provider instead of offering a stale ready pre
   await open();
   expect(container.textContent).toContain("Reconnect this provider in Settings → Voice.");
   expect(button("Hear a sample").disabled).toBe(true);
+});
+
+it("labels unavailable saved choices without displaying their IDs", async () => {
+  state.bot.voiceProvider = "missing-provider";
+  state.bot.voiceId = "missing-voice";
+  await open();
+  const unavailable = [...container.querySelectorAll("button")].filter(
+    (entry) => entry.textContent === "Unavailable",
+  );
+  expect(unavailable).toHaveLength(2);
+  for (const choice of unavailable) expect(choice.getAttribute("aria-pressed")).toBe("true");
+  expect(container.textContent).not.toContain("missing-provider");
+  expect(container.textContent).not.toContain("missing-voice");
+});
+
+it("keeps an unknown default voice out of the Default label", async () => {
+  await open();
+  await act(async () => {
+    queryClient.setQueryData(rpcQuery("voice/credentials").queryKey, (current) =>
+      current?.map((credential) =>
+        credential.provider === "provider-a"
+          ? { ...credential, voiceId: "missing-default" }
+          : credential,
+      ),
+    );
+  });
+  expect(button("Default").getAttribute("aria-pressed")).toBe("true");
+  expect(container.textContent).not.toContain("missing-default");
+  expect(container.textContent).not.toContain("Default (Unavailable)");
 });

@@ -16,7 +16,12 @@ const catalog = [
 ];
 
 it("offers connected providers in connection order and follows the live default", () => {
-  const inherited = botVoiceProviderChoices({ credentials, catalog, provider: null });
+  const inherited = botVoiceProviderChoices({
+    credentials,
+    catalog,
+    provider: null,
+    unavailableLabel: "Unavailable",
+  });
   expect(inherited.options).toEqual([
     { value: "speech-b", label: "Speech B" },
     { value: "speech-a", label: "Speech A" },
@@ -28,39 +33,86 @@ it("offers connected providers in connection order and follows the live default"
     isDefault: entry.provider === "speech-b",
   }));
   expect(
-    botVoiceProviderChoices({ credentials: changed, catalog, provider: null }).connection?.provider,
+    botVoiceProviderChoices({
+      credentials: changed,
+      catalog,
+      provider: null,
+      unavailableLabel: "Unavailable",
+    }).connection?.provider,
   ).toBe("speech-b");
   expect(
-    botVoiceProviderChoices({ credentials: changed, catalog, provider: "speech-a" }).connection
-      ?.provider,
+    botVoiceProviderChoices({
+      credentials: changed,
+      catalog,
+      provider: "speech-a",
+      unavailableLabel: "Unavailable",
+    }).connection?.provider,
   ).toBe("speech-a");
 });
 
 it("keeps disconnected and unknown selections without falling back to another connection", () => {
-  const disconnected = botVoiceProviderChoices({ credentials, catalog, provider: "unconnected" });
+  const disconnected = botVoiceProviderChoices({
+    credentials,
+    catalog,
+    provider: "unconnected",
+    unavailableLabel: "Unavailable",
+  });
   expect(disconnected.connection).toBeUndefined();
   expect(disconnected.options.at(-1)).toEqual({ value: "unconnected", label: "Unconnected" });
-  expect(botVoiceProviderChoices({ provider: "missing" }).options).toEqual([
-    { value: "missing", label: "missing" },
+  expect(
+    botVoiceProviderChoices({ provider: "missing", unavailableLabel: "Unavailable" }).options,
+  ).toEqual([{ value: "missing", label: "Unavailable" }]);
+  expect(botVoiceProviderChoices({ unavailableLabel: "Unavailable" }).defaultLabel).toBeUndefined();
+  const withoutCatalog = botVoiceProviderChoices({ credentials, unavailableLabel: "Unavailable" });
+  expect(withoutCatalog.options).toEqual([
+    { value: "speech-b", label: "Unavailable" },
+    { value: "speech-a", label: "Unavailable" },
   ]);
-  expect(botVoiceProviderChoices({}).defaultLabel).toBeUndefined();
+  expect(withoutCatalog.defaultLabel).toBe("Unavailable");
 });
 
 it("labels the Settings voice and preserves a saved voice missing from the catalog", () => {
   const voices = [{ id: "calm", label: "Calm" }];
-  expect(botVoiceChoices({ voices, defaultVoiceId: "calm", voiceId: "retired" })).toEqual({
+  expect(
+    botVoiceChoices({
+      voices,
+      defaultVoiceId: "calm",
+      voiceId: "retired",
+      unavailableLabel: "Unavailable",
+    }),
+  ).toEqual({
     options: [
       { value: "calm", label: "Calm" },
-      { value: "retired", label: "retired" },
+      { value: "retired", label: "Unavailable" },
     ],
     defaultLabel: "Calm",
   });
   expect(voices).toEqual([{ id: "calm", label: "Calm" }]);
-  expect(botVoiceChoices({ voices, defaultVoiceId: "missing", voiceId: "calm" })).toEqual({
+  expect(
+    botVoiceChoices({
+      voices,
+      defaultVoiceId: "missing",
+      voiceId: "calm",
+      unavailableLabel: "Unavailable",
+    }),
+  ).toEqual({
     options: [{ value: "calm", label: "Calm" }],
-    defaultLabel: "missing",
+    defaultLabel: undefined,
   });
-  expect(botVoiceChoices({})).toEqual({ options: [], defaultLabel: undefined });
+  expect(
+    botVoiceChoices({
+      voiceId: "retired",
+      defaultVoiceId: "missing",
+      unavailableLabel: "Unavailable",
+    }),
+  ).toEqual({
+    options: [{ value: "retired", label: "Unavailable" }],
+    defaultLabel: undefined,
+  });
+  expect(botVoiceChoices({ unavailableLabel: "Unavailable" })).toEqual({
+    options: [],
+    defaultLabel: undefined,
+  });
 });
 
 it("binds custom voices to their selected provider before falling back to Settings", () => {

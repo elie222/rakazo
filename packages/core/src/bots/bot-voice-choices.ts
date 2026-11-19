@@ -2,11 +2,13 @@ import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo } from "@rakazo/cont
 
 /** Connected choices plus the saved provider, even when it has been disconnected. */
 export function botVoiceProviderChoices(input: {
+  unavailableLabel: string;
   provider?: string | null;
   credentials?: readonly Pick<VoiceCredential, "provider" | "voiceId" | "isDefault">[];
   catalog?: readonly Pick<VoiceCatalogEntry, "id" | "name">[];
 }) {
-  const name = (id: string) => input.catalog?.find((entry) => entry.id === id)?.name ?? id;
+  const name = (id: string) =>
+    input.catalog?.find((entry) => entry.id === id)?.name ?? input.unavailableLabel;
   const defaultConnection = input.credentials?.find((entry) => entry.isDefault);
   const connection = input.provider
     ? input.credentials?.find((entry) => entry.provider === input.provider)
@@ -26,22 +28,21 @@ export function botVoiceProviderChoices(input: {
   };
 }
 
-/** Labels stay untranslated here; each platform owns its localized Default option. */
+/** Each platform supplies localized fallback and Default labels. */
 export function botVoiceChoices(input: {
+  unavailableLabel: string;
   voices?: readonly VoiceInfo[];
   voiceId?: string | null;
   defaultVoiceId?: string;
 }) {
   const options = input.voices?.map((voice) => ({ value: voice.id, label: voice.label })) ?? [];
   if (input.voiceId && !options.some((entry) => entry.value === input.voiceId)) {
-    options.push({ value: input.voiceId, label: input.voiceId });
+    options.push({ value: input.voiceId, label: input.unavailableLabel });
   }
   return {
     options,
     defaultLabel:
-      input.voices?.find((voice) => voice.id === input.defaultVoiceId)?.label ||
-      input.defaultVoiceId ||
-      undefined,
+      input.voices?.find((voice) => voice.id === input.defaultVoiceId)?.label || undefined,
   };
 }
 

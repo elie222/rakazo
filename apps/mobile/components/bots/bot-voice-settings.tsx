@@ -39,6 +39,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     provider: bot?.voiceProvider,
     credentials: credentials.data,
     catalog: catalog.data,
+    unavailableLabel: t`Unavailable`,
   });
   const provider = bot?.voiceProvider ?? providers.connection?.provider ?? "";
   const voices = useScreenQuery(rpcQuery("voice/voices", { provider }), {
@@ -52,10 +53,11 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     stale: [statusRead.queryKey],
   });
   const sample = useSave({
-    save: async () => {
+    save: async (_, send) => {
       cancelled.current = false;
-      const target = status.data;
-      if (!target?.ready || !target.provider) throw new Error(t`Choose a voice in Settings first.`);
+      const target = await send("voice/status", { botId });
+      if (cancelled.current) return;
+      if (!target.ready || !target.provider) throw new Error(t`Choose a voice in Settings first.`);
       const name = bot?.name.trim();
       const spoken = await speakText(
         name ? t`Hi, I'm ${ph({ name })}.` : t`Hi, this is how I'll sound.`,
@@ -77,6 +79,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     voices: voices.data,
     voiceId: bot?.voiceId,
     defaultVoiceId: providers.connection?.voiceId,
+    unavailableLabel: t`Unavailable`,
   });
   const voiceDefault = voiceChoices.defaultLabel
     ? t`Default (${voiceChoices.defaultLabel})`

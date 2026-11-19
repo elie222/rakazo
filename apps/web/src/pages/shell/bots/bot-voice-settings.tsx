@@ -25,6 +25,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const current = botQuery.data ?? bot;
   const selectedProvider = current.voiceProvider ?? "";
   const providers = botVoiceProviderChoices({
+    unavailableLabel: t`Unavailable`,
     provider: current.voiceProvider,
     credentials: credentials.data,
     catalog: catalog.data,
@@ -61,6 +62,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     ? t`Default (${providers.defaultLabel})`
     : t`Default`;
   const voiceChoices = botVoiceChoices({
+    unavailableLabel: t`Unavailable`,
     voices: voices.data,
     voiceId: current.voiceId,
     defaultVoiceId: connection?.voiceId,
