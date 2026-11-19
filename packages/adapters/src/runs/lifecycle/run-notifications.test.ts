@@ -34,6 +34,7 @@ const message: NotificationMessage = {
 
 function deps({
   notifyOnFinish = true,
+  notifyOnReply = true,
   groupId = null as string | null,
   publish = vi.fn(async () => undefined),
   members = ["user-1"],
@@ -47,7 +48,14 @@ function deps({
       },
       thread: {
         findFirst: async () => ({
-          bot: { id: "bot-1", name: "Scout", color: "#000000", avatarSet: "", notifyOnFinish },
+          bot: {
+            id: "bot-1",
+            name: "Scout",
+            color: "#000000",
+            avatarSet: "",
+            notifyOnFinish,
+            notifyOnReply,
+          },
           group: null,
           groupId,
         }),
@@ -56,7 +64,14 @@ function deps({
       routine: { findUnique: async () => null },
       run: {
         findFirst: async () => ({
-          bot: { id: "bot-1", name: "Scout", color: "#000000", avatarSet: "", notifyOnFinish },
+          bot: {
+            id: "bot-1",
+            name: "Scout",
+            color: "#000000",
+            avatarSet: "",
+            notifyOnFinish,
+            notifyOnReply,
+          },
           thread: { groupId },
         }),
       },
@@ -93,6 +108,14 @@ describe("notifyRun chat alerts", () => {
     await notifyRun(value, run, message);
     expect(publish).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("asks for help in a chat whose replies are muted, but sends no reply", async () => {
+    const { value, send } = deps({ notifyOnReply: false });
+    await notifyRun(value, run, message);
+    expect(send).not.toHaveBeenCalled();
+    await notifyRun(value, run, { ...message, kind: "help", title: "Scout needs input" });
+    expect(send).toHaveBeenCalledOnce();
   });
 
   it("never holds up or blocks the push", async () => {

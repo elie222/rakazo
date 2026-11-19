@@ -837,7 +837,7 @@ export function ThreadComposer({
                     backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
                   }}
                 >
-                  {dictation.status === "transcribing" ? (
+                  {dictation.status === "preparing" || dictation.status === "transcribing" ? (
                     <ActivityIndicator size="small" color={tokens.background} />
                   ) : (
                     <NativeSymbol

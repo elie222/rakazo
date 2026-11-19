@@ -83,6 +83,7 @@ function mapBot(
     color: string;
     avatarSet?: string;
     notifyOnFinish: boolean;
+    notifyOnReply: boolean;
     pinned: boolean;
     sectionId: string | null;
     archivedAt: Date | null;
@@ -127,6 +128,7 @@ function mapBot(
     color: bot.color,
     avatarSet: resolveBotAvatarSet(bot.avatarSet),
     notifyOnFinish: bot.notifyOnFinish,
+    notifyOnReply: bot.notifyOnReply,
     pinned: bot.pinned,
     sectionId: bot.sectionId,
     archivedAt: bot.archivedAt?.toISOString() ?? null,

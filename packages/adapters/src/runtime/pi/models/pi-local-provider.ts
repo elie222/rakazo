@@ -8,7 +8,12 @@ import { declaredVisionModelIds, inputModalities } from "../../../models/model-m
 import { fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "../pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
-import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";
+import {
+  LOCAL_PROVIDER_ID,
+  localModelIds,
+  localModelsApiKey,
+  localProviderName,
+} from "./pi-local-provider-id.js";
 
 /** Reasoning effort names for an OpenAI-style chat completions server that accepts them. */
 export const REASONING_THINKING_LEVELS: Model<"openai-completions">["thinkingLevelMap"] = {
@@ -125,7 +130,7 @@ export function localProvider(): Provider | undefined {
   pacerTokensPerMinute(LOCAL_PROVIDER_ID);
   return createProvider({
     id: LOCAL_PROVIDER_ID,
-    name: "Local (Ollama / LM Studio)",
+    name: localProviderName(),
     baseUrl: localBaseUrl(),
     auth: {
       apiKey: {

@@ -183,6 +183,7 @@ async function runWithModel(
           color: "blue",
           avatarSet: "default",
           notifyOnFinish: true,
+          notifyOnReply: true,
         },
         thread: { groupId: null },
       })),

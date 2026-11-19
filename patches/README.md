@@ -30,3 +30,14 @@ decompression is untouched. Drop once fflate ships the fix — re-verify an
 export containing a file that starts with zero bytes.
 
 Introduced in #3694, which also carries the regression test.
+
+## `@react-native-ai__apple@0.12.0.patch`
+
+iOS on-device dictation (SpeechAnalyzer): `transcribe` resolved before the task
+collecting final segments finished, so the last words of a dictation could be
+lost, and it built its transcriber from the raw language tag rather than the
+locale `prepare` installed. The patch awaits the collector, returns the
+supported locale from `prepare`, and cleans up the temporary audio file on every
+path. Ported from T3 Code's patch for the same release. Drop only once an
+upgrade both awaits the results collector and returns the supported locale
+from `prepare`.

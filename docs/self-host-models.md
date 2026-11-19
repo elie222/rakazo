@@ -74,6 +74,8 @@ RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 # Optional: key for a server that requires one, sent as the bearer token.
 RAKAZO_LOCAL_MODELS_API_KEY=
+# Optional: name the model pickers show instead of "Local (Ollama / LM Studio)".
+RAKAZO_LOCAL_MODELS_NAME=
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 # Optional: model ids on this endpoint that accept images (screenshot computer tools).

@@ -11,6 +11,7 @@ function bot(id = "bot-1"): Bot {
     title: "",
     color: "gray",
     notifyOnFinish: true,
+    notifyOnReply: true,
     threadId: `thread-${id}`,
     pinned: false,
     status: "idle",

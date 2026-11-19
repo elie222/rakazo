@@ -163,6 +163,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     instructions: longInstructions,
     color: "ink",
     notifyOnFinish: true,
+    notifyOnReply: true,
     pinned: false,
     sectionId: null,
     archivedAt: null,

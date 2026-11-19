@@ -1005,6 +1005,8 @@ model Bot {
   /// True once the owner picks this bot a set other than their default; the default no longer moves it.
   avatarSetPinned   Boolean           @default(false)
   notifyOnFinish    Boolean           @default(true)
+  /// Off stops reply notifications; questions, approvals and failures still notify.
+  notifyOnReply     Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
   sectionId         String?

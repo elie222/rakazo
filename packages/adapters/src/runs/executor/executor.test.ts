@@ -1447,7 +1447,14 @@ describe("run notification preference", () => {
       },
       select: {
         bot: {
-          select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true },
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            avatarSet: true,
+            notifyOnFinish: true,
+            notifyOnReply: true,
+          },
         },
         thread: { select: { groupId: true } },
       },

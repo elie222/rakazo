@@ -85,6 +85,7 @@ function fakeBot(id: string, name: string): Bot {
     instructions: "",
     color: "blue",
     notifyOnFinish: true,
+    notifyOnReply: true,
     pinned: false,
     sectionId: null,
     archivedAt: null,

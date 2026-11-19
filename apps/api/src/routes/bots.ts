@@ -473,6 +473,7 @@ export function botsRoutes(ctx: RouterContext) {
             description: input.description,
             instructions: input.instructions,
             notifyOnFinish: input.notifyOnFinish,
+            notifyOnReply: input.notifyOnReply,
             color: input.color,
             avatarSet: input.avatarSet,
             avatarSetPinned,

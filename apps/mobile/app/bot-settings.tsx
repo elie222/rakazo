@@ -58,6 +58,8 @@ import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/vo
 import { loadDeviceVoiceEnabled } from "../lib/voice/device-voice";
 import { stopVoicePlayback } from "../lib/voice/voice";
 
+type BotToggle = "crossSpaceCommunication" | "dailyCheckIns" | "notifyOnReply" | "fleetManagement";
+
 export default function BotSettingsScreen() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
@@ -84,6 +86,7 @@ export default function BotSettingsScreen() {
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
+  const [notifyOnReply, setNotifyOnReply] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
@@ -113,39 +116,33 @@ export default function BotSettingsScreen() {
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
 
-  const crossSpaceSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(false, {
+  // One queued save per on/off setting, each sending only its own field.
+  const toggleSave = useCallback(
+    (initial: boolean, field: BotToggle, onChange: (value: boolean) => void) =>
+      createQueuedSave<boolean>(initial, {
         save: async (value) => {
-          await rpc("bots/update", { botId, crossSpaceCommunication: value });
+          await rpc("bots/update", { botId, [field]: value });
         },
-        onChange: setCrossSpaceCommunication,
+        onChange,
         onError: (err) => setError(errorText(err, t`Could not save bot`)),
       }),
     [botId, t],
+  );
+  const crossSpaceSave = useMemo(
+    () => toggleSave(false, "crossSpaceCommunication", setCrossSpaceCommunication),
+    [toggleSave],
   );
   const dailyCheckInsSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(true, {
-        save: async (value) => {
-          await rpc("bots/update", { botId, dailyCheckIns: value });
-        },
-        onChange: setDailyCheckIns,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
+    () => toggleSave(true, "dailyCheckIns", setDailyCheckIns),
+    [toggleSave],
   );
-
+  const replySave = useMemo(
+    () => toggleSave(true, "notifyOnReply", setNotifyOnReply),
+    [toggleSave],
+  );
   const fleetSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(false, {
-        save: async (value) => {
-          await rpc("bots/update", { botId, fleetManagement: value });
-        },
-        onChange: setFleetManagement,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
+    () => toggleSave(false, "fleetManagement", setFleetManagement),
+    [toggleSave],
   );
 
   const notifySave = useMemo(
@@ -196,6 +193,7 @@ export default function BotSettingsScreen() {
         setName(next.name);
         nameSave.reset(next.name);
         notifySave.reset(next.notifyOnFinish ?? true);
+        replySave.reset(next.notifyOnReply);
         setDescription(next.description ?? "");
         setInstructions(next.instructions ?? "");
         setColor(next.color);
@@ -209,6 +207,7 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setNotifyOnFinish(next.notifyOnFinish ?? true);
+        setNotifyOnReply(next.notifyOnReply);
         setDailyCheckIns(next.dailyCheckIns ?? true);
         dailyCheckInsSave.reset(next.dailyCheckIns ?? true);
         setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
@@ -227,7 +226,7 @@ export default function BotSettingsScreen() {
         );
       })
       .catch((err) => setError(errorText(err, t`Could not load bot`)));
-  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
+  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, replySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -461,6 +460,7 @@ export default function BotSettingsScreen() {
         crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),
+        replySave.flush(),
         nameSave.flush(),
       ]);
       router.back();
@@ -583,10 +583,17 @@ export default function BotSettingsScreen() {
         <View style={{ marginTop: 24 }}>
           <SettingsGroup label={t`Notifications`}>
             <SettingsSwitch
-              label={t`When it finishes or needs input`}
+              label={t`When it needs input`}
               value={notifyOnFinish}
               onChange={(value) => notifySave.update(value)}
             />
+            {notifyOnFinish ? (
+              <SettingsSwitch
+                label={t`When it finishes`}
+                value={notifyOnReply}
+                onChange={(value) => replySave.update(value)}
+              />
+            ) : null}
           </SettingsGroup>
         </View>
         {botId ? <BotContextCards key={`${botId}-work`} botId={botId} section="work" /> : null}

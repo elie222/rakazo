@@ -19,7 +19,7 @@ let expiry: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 
 /** The app group in app.json where the iOS share extension copies shared files. */
-export const IOS_SHARE_APP_GROUP = "group.com.rakazo.app";
+export const IOS_SHARE_APP_GROUP = "group.com.sowinghope.rakazo";
 
 /** Only iOS builds that include the share extension have its container. */
 function iosShareContainer(): Directory | null {

@@ -10,6 +10,7 @@ import {
 const ENV_KEYS = [
   "RAKAZO_LOCAL_MODELS",
   "RAKAZO_LOCAL_MODELS_URL",
+  "RAKAZO_LOCAL_MODELS_NAME",
   "RAKAZO_LOCAL_CONTEXT_WINDOW",
   "RAKAZO_LOCAL_MAX_TOKENS",
   "RAKAZO_LOCAL_TOKENS_PER_MINUTE",
@@ -49,6 +50,14 @@ describe("local model provider", () => {
     const provider = localProvider();
     expect(provider?.id).toBe(LOCAL_PROVIDER_ID);
     expect(provider?.getModels().map((model) => model.id)).toEqual(["qwen3:4b", "llama3.1:8b"]);
+  });
+
+  it("names the server as the operator does, or generically", () => {
+    setModels("qwen3:4b");
+    delete process.env.RAKAZO_LOCAL_MODELS_NAME;
+    expect(localProvider()?.name).toBe("Local (Ollama / LM Studio)");
+    process.env.RAKAZO_LOCAL_MODELS_NAME = "ai-pool";
+    expect(localProvider()?.name).toBe("ai-pool");
   });
 
   it("bills nothing, because the model runs on the operator's own hardware", () => {

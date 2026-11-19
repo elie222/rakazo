@@ -450,7 +450,7 @@ describe("bot settings device voice menu", () => {
         gap: 7,
       });
       expect(
-        container.querySelector('[role="switch"][aria-label="When it finishes or needs input"]'),
+        container.querySelector('[role="switch"][aria-label="When it needs input"]'),
       ).not.toBeNull();
       await expand();
       expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -885,7 +885,7 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="When it finishes or needs input"]',
+      '[aria-label="When it needs input"]',
     )!;
     await act(async () => toggle.click());
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
@@ -942,7 +942,7 @@ describe("bot settings device voice menu", () => {
     ] as never);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="When it finishes or needs input"]',
+      '[aria-label="When it needs input"]',
     )!;
     await act(async () => toggle.click());
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
@@ -964,7 +964,7 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="When it finishes or needs input"]',
+      '[aria-label="When it needs input"]',
     )!;
     await act(async () => toggle.click());
     expect(toggle.getAttribute("aria-checked")).toBe("true");
@@ -978,7 +978,7 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="When it finishes or needs input"]',
+      '[aria-label="When it needs input"]',
     )!;
     await act(async () => toggle.click());
     await act(async () => toggle.click());

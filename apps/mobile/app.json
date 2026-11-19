@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rakazo",
     "slug": "rakazo",
-    "owner": "inbox-zero",
+    "owner": "mchisolm0",
     "scheme": "rakazo",
     "version": "1.0.15",
     "orientation": "default",
@@ -59,7 +59,7 @@
         {
           "ios": {
             "enabled": true,
-            "appGroupId": "group.com.rakazo.app",
+            "appGroupId": "group.com.sowinghope.rakazo",
             "activationRule": {
               "supportsText": true,
               "supportsWebUrlWithMaxCount": 1,
@@ -102,7 +102,7 @@
       "pl": "./locales/pl.json"
     },
     "ios": {
-      "bundleIdentifier": "com.rakazo.app",
+      "bundleIdentifier": "com.sowinghope.rakazo",
       "buildNumber": "1",
       "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
@@ -142,29 +142,29 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e",
+        "projectId": "4f67f9ba-253b-49ff-956c-90af5bf3dd77",
         "build": {
           "experimental": {
             "ios": {
               "appExtensions": [
                 {
                   "targetName": "RakazoWatch",
-                  "bundleIdentifier": "com.rakazo.app.watchkitapp"
+                  "bundleIdentifier": "com.sowinghope.rakazo.watchkitapp"
                 },
                 {
                   "targetName": "RakazoWidgets",
-                  "bundleIdentifier": "com.rakazo.app.widgets"
+                  "bundleIdentifier": "com.sowinghope.rakazo.widgets"
                 },
                 {
                   "targetName": "expo-sharing-extension",
-                  "bundleIdentifier": "com.rakazo.app.expo-sharing-extension",
+                  "bundleIdentifier": "com.sowinghope.rakazo.expo-sharing-extension",
                   "entitlements": {
-                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                    "com.apple.security.application-groups": ["group.com.sowinghope.rakazo"]
                   }
                 },
                 {
                   "targetName": "AgentNotifications",
-                  "bundleIdentifier": "com.rakazo.app.notifications",
+                  "bundleIdentifier": "com.sowinghope.rakazo.notifications",
                   "entitlements": {
                     "com.apple.developer.usernotifications.communication": true
                   }
@@ -179,7 +179,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e"
+      "url": "https://u.expo.dev/4f67f9ba-253b-49ff-956c-90af5bf3dd77"
     }
   }
 }

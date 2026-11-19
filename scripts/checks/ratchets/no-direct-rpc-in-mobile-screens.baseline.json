@@ -10,7 +10,7 @@
   "apps/mobile/app/artifacts.tsx": 1,
   "apps/mobile/app/board.tsx": 2,
   "apps/mobile/app/bot-profile.tsx": 3,
-  "apps/mobile/app/bot-settings.tsx": 14,
+  "apps/mobile/app/bot-settings.tsx": 12,
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
   "apps/mobile/app/routine.tsx": 1,

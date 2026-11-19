@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ADD COLUMN "notifyOnReply" BOOLEAN NOT NULL DEFAULT true;

@@ -43,12 +43,14 @@
     "@rakazo/i18n": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
+    "@react-native-ai/apple": "0.12.0",
     "@react-native-vector-icons/ionicons": "13.1.4",
     "@react-native-vector-icons/material-design-icons": "13.1.4",
     "@ronradtke/react-native-markdown-display": "9.0.3",
     "@sentry/react-native": "8.28.0",
     "@tanstack/react-query": "5.107.1",
     "expo": "58.0.23",
+    "expo-apple-authentication": "58.0.3",
     "expo-application": "58.1.2",
     "expo-audio": "58.0.11",
     "expo-clipboard": "58.0.4",
@@ -88,8 +90,7 @@
     "react-native-svg": "15.16.0",
     "react-native-web": "0.21.4",
     "react-native-webview": "14.0.1",
-    "react-native-worklets": "0.13.0",
-    "expo-apple-authentication": "58.0.3"
+    "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
     "@lingui/babel-plugin-lingui-macro": "6.12.0",

@@ -32,6 +32,8 @@ async function runNotice(
   routineId?: string | null,
 ): Promise<{
   enabled: boolean;
+  /** The bot's owner still wants its replies, not only what needs them. */
+  replies: boolean;
   groupId: string | null;
   bot?: { id: string; name: string; color: string; avatarSet: string };
 }> {
@@ -47,13 +49,23 @@ async function runNotice(
       userId: run.userId,
     },
     select: {
-      bot: { select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true } },
+      bot: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          avatarSet: true,
+          notifyOnFinish: true,
+          notifyOnReply: true,
+        },
+      },
       thread: { select: { groupId: true } },
     },
   });
-  if (!source) return { enabled: false, groupId: null };
+  if (!source) return { enabled: false, replies: false, groupId: null };
   return {
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
+    replies: Boolean(source.thread.groupId || source.bot.notifyOnReply),
     groupId: source.thread.groupId,
     bot: source.bot,
   };
@@ -93,7 +105,7 @@ export async function notifyRun(
     getLogger().error("notification preference lookup", error);
     return null;
   });
-  if (!notice?.enabled) return;
+  if (!notice?.enabled || (message.kind === "completion" && !notice.replies)) return;
   // A reply is news to everyone in the Space. Only the person whose run it is can answer its
   // questions, take its screen, or fix what made it fail, and a reply to another bot is theirs.
   const recipients =
@@ -132,7 +144,14 @@ export async function notifyMemberMessage(
       where: { id: input.threadId, spaceId: input.spaceId, externalConversationId: null },
       select: {
         bot: {
-          select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true },
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            avatarSet: true,
+            notifyOnFinish: true,
+            notifyOnReply: true,
+          },
         },
         group: {
           select: {
@@ -150,7 +169,12 @@ export async function notifyMemberMessage(
     deps.prisma.user.findUnique({ where: { id: input.authorUserId }, select: { name: true } }),
   ]);
   const botId = thread?.bot?.id ?? thread?.group?.members[0]?.botId;
-  if (!thread || !botId || (!thread.groupId && !thread.bot?.notifyOnFinish)) return;
+  if (
+    !thread ||
+    !botId ||
+    (!thread.groupId && !(thread.bot?.notifyOnFinish && thread.bot.notifyOnReply))
+  )
+    return;
   const chatName = thread.group?.name ?? thread.bot?.name ?? "";
   const authorName = displayName(author?.name ?? "", "Someone");
   await deliverChatNotice(deps, {

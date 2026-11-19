@@ -960,6 +960,20 @@ export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
 ): Promise<CallClip | null> {
+  const audio = await recordAudio(signal, until);
+  if (!audio) return null;
+  try {
+    return { base64: await new File(audio.uri).base64(), mimeType: audio.mimeType };
+  } finally {
+    deleteQuietly(audio.uri);
+  }
+}
+
+/** Like `recordClip`, but leaves the recording on disk for the caller to read and delete. */
+export async function recordAudio(
+  signal: AbortSignal,
+  until?: AbortSignal,
+): Promise<{ uri: string; mimeType: string } | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
@@ -1033,11 +1047,8 @@ export async function recordClip(
       deleteQuietly(uri);
       return null;
     }
-    const file = new File(uri);
-    const base64 = await file.base64();
-    deleteQuietly(uri);
     return {
-      base64,
+      uri,
       mimeType: Platform.OS === "web" ? (preset.web.mimeType ?? "audio/webm") : "audio/m4a",
     };
   } finally {
@@ -1049,7 +1060,7 @@ export async function recordClip(
   }
 }
 
-function deleteQuietly(uri: string | null): void {
+export function deleteQuietly(uri: string | null): void {
   if (!uri) return;
   try {
     new File(uri).delete();

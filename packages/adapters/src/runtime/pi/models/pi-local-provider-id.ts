@@ -25,6 +25,11 @@ export function localModelIds(env: NodeJS.ProcessEnv = process.env): string[] {
     .filter((id) => id.length > 0);
 }
 
+/** Name the model pickers show for the server, such as the proxy it really is. */
+export function localProviderName(env: NodeJS.ProcessEnv = process.env): string {
+  return env.RAKAZO_LOCAL_MODELS_NAME?.trim() || "Local (Ollama / LM Studio)";
+}
+
 /** Bearer key for a local server that requires one; unset sends the placeholder `local`. */
 export function localModelsApiKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
   return env.RAKAZO_LOCAL_MODELS_API_KEY?.trim() || undefined;
