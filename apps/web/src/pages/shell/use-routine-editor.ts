@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone } from "@rakazo/core";
+import { cronFromPreset, localTimezone, routineCopy } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -342,7 +342,8 @@ export function useRoutineEditor({
         onSetActive: async (on) => {
           const targetBotId = active.id;
           const targetRoutine = editingRoutine;
-          if (!targetRoutine || routineSavePending.current) return;
+          if (!targetRoutine || targetRoutine.botId !== targetBotId) return;
+          if (routineSavePending.current) return;
           const saveRequest = ++routineSaveRequest.current;
           routineSavePending.current = true;
           setSavingRoutine(true);
@@ -370,12 +371,9 @@ export function useRoutineEditor({
         onCopy: () => {
           if (!editingRoutine) return;
           const name = editingRoutine.name;
-          // Off until the person saves and turns it on, so it never runs twice alongside the original.
-          setRoutineDraft({
-            ...draftStateFromRoutine(editingRoutine),
-            name: t`${name} (copy)`,
-            active: false,
-          });
+          const copy = routineCopy(editingRoutine, t`${name} (copy)`);
+          if (!copy) return;
+          setRoutineDraft(draftStateFromRoutine(copy));
           setEditingRoutine(null);
           setRoutineError(null);
         },

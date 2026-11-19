@@ -2,7 +2,13 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import {
+  defaultCronPreset,
+  draftFromRoutine,
+  emptyRoutineDraft,
+  isOneShotRoutineCrons,
+  routineCopy,
+} from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
@@ -74,9 +80,13 @@ export default function RoutineDetail() {
     failedSinceShown,
   } = useBotRoutines(botId ?? "");
   const [editing, setEditing] = useState(false);
-  const creating = Boolean(botId) && !routineId;
   const routine = routines?.find((item) => item.id === routineId) ?? null;
-  const template = (creating && routines?.find((item) => item.id === copyOf)) || null;
+  const copySource = (copyOf && routines?.find((item) => item.id === copyOf)) || null;
+  const template = copySource
+    ? routineCopy(copySource, t`${ph({ name: copySource.name })} (copy)`)
+    : null;
+  // A copy waits for the routine it copies, so its form never starts empty.
+  const creating = Boolean(botId) && !routineId && (!copyOf || template !== null);
   const error = !botId
     ? t`Routine link is incomplete`
     : creating || routine
@@ -287,8 +297,8 @@ function RoutineView({
           />
         ) : null}
       </SettingsGroup>
-      <SettingsGroup>
-        {editable ? (
+      {editable ? (
+        <SettingsGroup>
           <SettingsRow
             key="edit"
             accessibilityRole="button"
@@ -296,7 +306,10 @@ function RoutineView({
             title={t`Edit routine`}
             onPress={onEdit}
           />
-        ) : (
+        </SettingsGroup>
+      ) : isOneShotRoutineCrons(routine.crons) ? null : (
+        // A one-time routine is set up from chat, so it has no copy here.
+        <SettingsGroup>
           <SettingsRow
             key="copy"
             accessibilityRole="button"
@@ -304,8 +317,8 @@ function RoutineView({
             title={t`Make a copy`}
             onPress={onCopy}
           />
-        )}
-      </SettingsGroup>
+        </SettingsGroup>
+      )}
     </>
   );
 }
@@ -334,16 +347,7 @@ function RoutineEditor({
   // The routine as it was when Edit opened; a save sends only what changed since.
   const [base] = useState(routine);
   const [draft, setDraft] = useState<MobileRoutineDraft>(() =>
-    base
-      ? draftFromRoutine(base)
-      : template
-        ? // Off until saved and turned on, so it never runs twice alongside the original.
-          {
-            ...draftFromRoutine(template),
-            name: t`${ph({ name: template.name })} (copy)`,
-            active: false,
-          }
-        : emptyRoutineDraft(),
+    base ? draftFromRoutine(base) : template ? draftFromRoutine(template) : emptyRoutineDraft(),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -352,7 +356,8 @@ function RoutineEditor({
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
   // Triggers set up on web stay listed here so the person sees them and can remove them.
-  const kept = base ? routineWithDraftTriggers(base, draft) : null;
+  const source = base ?? template;
+  const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
@@ -373,7 +378,7 @@ function RoutineEditor({
   async function save() {
     if (busy.current) return;
     const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
-    const request = routineSaveRequest(draft, base, botId, timezone);
+    const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(
         request.error === "name"

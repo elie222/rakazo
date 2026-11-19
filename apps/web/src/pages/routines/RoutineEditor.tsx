@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset } from "@rakazo/core";
+import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
@@ -303,9 +303,12 @@ export function RoutineEditor({
 
       <div className="mt-5">
         {readOnly ? (
-          <Button variant="secondary" disabled={saving || running} onClick={onCopy}>
-            <Trans>Make a copy</Trans>
-          </Button>
+          // A one-time routine is set up from chat, so it has no copy here.
+          isOneShotRoutineCrons(editing.crons) ? null : (
+            <Button variant="secondary" disabled={saving || running} onClick={onCopy}>
+              <Trans>Make a copy</Trans>
+            </Button>
+          )
         ) : (
           <Button disabled={saving || running || !hasTriggers} onClick={onSave}>
             {saving ? t`Saving…` : t`Save`}

@@ -1,5 +1,5 @@
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft, routineCopy } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { routineDraftChanged, routineSaveRequest } from "./routine-draft";
 
@@ -28,6 +28,34 @@ const routine: Routine = {
 };
 
 describe("routineSaveRequest", () => {
+  it("creates a paused copy that keeps the triggers and model it can't show", () => {
+    const hooked = {
+      ...routine,
+      crons: [],
+      webhookEnabled: true,
+      inChat: true,
+      modelProvider: "openai-compatible",
+      modelId: "model-1",
+    };
+    const copy = routineCopy(hooked, "Inbox (copy)")!;
+    expect(routineSaveRequest(draftFromRoutine(copy), null, "bot-1", "UTC", copy)).toEqual({
+      create: expect.objectContaining({
+        name: "Inbox (copy)",
+        active: false,
+        crons: [],
+        webhookEnabled: true,
+        inChat: true,
+        modelProvider: "openai-compatible",
+        modelId: "model-1",
+      }),
+    });
+    // Removing the only trigger still asks for one.
+    const unhooked = { ...draftFromRoutine(copy), webhookEnabled: false };
+    expect(routineSaveRequest(unhooked, null, "bot-1", "UTC", copy)).toEqual({ error: "trigger" });
+    // A one-time routine is only set up from chat, so it has no copy.
+    expect(routineCopy({ ...routine, crons: ["@once"] }, "Once (copy)")).toBeNull();
+  });
+
   it("creates a routine with the device zone and its schedules", () => {
     const draft = {
       ...emptyRoutineDraft(),
