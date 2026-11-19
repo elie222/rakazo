@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActionApprovalRule, ApprovalMode } from "./action-approval.js";
 import {
   applyJudgeDecision,
+  approvalCardExpires,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   approvalRuleApplies,
@@ -15,7 +16,6 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
-  newSiteOutcome,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   planActionGate,
@@ -24,7 +24,7 @@ import {
   resolveActionApproval,
   resolveActionApprovalDetail,
   resolveActionApprovalForTools,
-  savedContextWriteNeedsApproval,
+  savedContextWriteNeedsReview,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -71,7 +71,7 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);
-    expect(toolRequiresExplicitApproval("create_space")).toBe(true);
+    expect(toolRequiresExplicitApproval("create_space")).toBe(false);
     // The wallet owner approves every purchase on the provider's side.
     expect(toolRequiresApproval("request_purchase", false)).toBe(false);
     expect(toolRequiresApproval("purchase_status", false)).toBe(false);
@@ -95,16 +95,19 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before bot management writes that cost money or rewrite a bot", () => {
-    for (const name of ["set_child_instructions", "set_child_bot_model"]) {
-      expect(toolRequiresApproval(name, false)).toBe(true);
-      expect(toolRequiresExplicitApproval(name)).toBe(true);
-    }
+  it("always asks a person before rewriting another bot's instructions", () => {
+    expect(toolRequiresApproval("set_child_instructions", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("set_child_instructions")).toBe(true);
   });
 
-  it("treats grouping and scheduling other bots as ordinary approvals that Never ask skips", () => {
-    for (const name of ["create_group", "update_group", "create_child_routine"]) {
-      expect(toolRequiresApproval(name, false)).toBe(true);
+  it("treats a child bot's model as an ordinary approval", () => {
+    expect(toolRequiresApproval("set_child_bot_model", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("set_child_bot_model")).toBe(false);
+  });
+
+  it("does not ask before grouping or scheduling other bots, like spawning one", () => {
+    for (const name of ["create_group", "update_group", "create_child_routine", "spawn_bot"]) {
+      expect(toolRequiresApproval(name, false)).toBe(false);
       expect(toolRequiresExplicitApproval(name)).toBe(false);
     }
   });
@@ -210,16 +213,35 @@ describe("isOwnerStartedRun", () => {
     ["call_end", false, true],
     ["follow_up", true, true],
     ["follow_up", false, false],
+    ["routine", false, true],
+    ["messaging", false, true],
     ["bot_message", true, false],
-    ["messaging", true, false],
     ["spawn", true, false],
     ["tickets", true, false],
     ["webhook", true, false],
-    ["routine", true, false],
     ["resume", true, false],
     ["unknown", true, false],
   ])("treats %s (follow-up from user: %s) as owner-started: %s", (trigger, fromUser, expected) => {
     expect(isOwnerStartedRun(trigger, fromUser)).toBe(expected);
+  });
+
+  it("does not count a chat-app message from someone else", () => {
+    expect(isOwnerStartedRun("messaging", false, true)).toBe(false);
+  });
+});
+
+describe("approvalCardExpires", () => {
+  it.each([
+    ["routine", true],
+    ["webhook", true],
+    ["bot_message", true],
+    ["spawn", true],
+    ["tickets", true],
+    ["user", false],
+    ["messaging", false],
+    ["follow_up", false],
+  ])("expires a card from a %s run: %s", (trigger, expected) => {
+    expect(approvalCardExpires(trigger)).toBe(expected);
   });
 });
 
@@ -484,13 +506,17 @@ describe("planActionGate", () => {
     }
   });
 
-  it("asks for a purchase in every mode, past an allow rule, and still refuses a block", () => {
-    for (const mode of ["never", "auto", "ask"] as const) {
+  it("asks for a purchase in Auto and Ask, past an allow rule, and still refuses a block", () => {
+    for (const mode of ["auto", "ask"] as const) {
       expect(gate(mode, { purchase: true, consequential: false })).toBe("ask");
       expect(gate(mode, { purchase: true, resolved: allowed })).toBe("ask");
-      expect(gate(mode, { purchase: true, mandatory: true, steerable: true })).toBe("ask");
       expect(gate(mode, { purchase: true, resolved: blocked })).toBe("deny");
     }
+  });
+
+  it("runs a purchase in Never ask, where only a block or the spending limit stops it", () => {
+    expect(gate("never", { purchase: true, consequential: false })).toBe("allow");
+    expect(gate("never", { purchase: true, resolved: blocked })).toBe("deny");
   });
 
   it("runs reads in every mode", () => {
@@ -820,24 +846,6 @@ describe("applyJudgeDecision", () => {
   });
 });
 
-describe("newSiteOutcome", () => {
-  it("allows a new site Auto Review passed, in any run", () => {
-    for (const trigger of ["user", "routine", "webhook"]) {
-      expect(newSiteOutcome({ trigger, decision: "allow" })).toBe("allow");
-    }
-  });
-
-  it("asks a person about a new site that was not passed", () => {
-    for (const trigger of ["user", "follow_up", "routine", "messaging"]) {
-      expect(newSiteOutcome({ trigger, decision: "ask" })).toBe("ask");
-    }
-  });
-
-  it("refuses it in a webhook run, which has nobody to ask", () => {
-    expect(newSiteOutcome({ trigger: "webhook", decision: "ask" })).toBe("deny");
-  });
-});
-
 describe("watchToolRefusal", () => {
   const rule = (matchKind: string, matchValue: string, effect = "require_approval") =>
     ({ effect, matchKind, matchValue }) as Parameters<typeof watchToolRefusal>[0]["rules"][number];
@@ -947,15 +955,15 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
-describe("savedContextWriteNeedsApproval", () => {
+describe("savedContextWriteNeedsReview", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
 
   it.each(["remember", "save_memory", "save_shared_memory", "skill_create", "skill_update"])(
-    "gates %s only once outside content entered the run",
+    "reviews %s only once outside content entered the run",
     async (name) => {
-      await expect(savedContextWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
-      await expect(savedContextWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+      await expect(savedContextWriteNeedsReview(name, readOutside)).resolves.toBe(true);
+      await expect(savedContextWriteNeedsReview(name, readNothing)).resolves.toBe(false);
     },
   );
 
@@ -973,7 +981,7 @@ describe("savedContextWriteNeedsApproval", () => {
       "write_file",
       "send_email",
     ]) {
-      await expect(savedContextWriteNeedsApproval(name, check)).resolves.toBe(false);
+      await expect(savedContextWriteNeedsReview(name, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
   });
@@ -1105,7 +1113,7 @@ describe("approvalRuleEffectChoices", () => {
       matchKind,
       matchValue,
     });
-    expect(approvalRuleEffectChoices(rule("tool", "create_space"))).toEqual([
+    expect(approvalRuleEffectChoices(rule("tool", "set_child_instructions"))).toEqual([
       "require_approval",
       "deny",
     ]);

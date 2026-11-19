@@ -34,7 +34,7 @@ import {
 } from "../network/network-address.js";
 import { createCheckedProxyDispatcher } from "../network/proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "../network/undici-fetch.js";
-import { composioToolBatch } from "../providers/integration/composio/composio-batch.js";
+import { composioMcpToolFields } from "../providers/integration/composio/composio-batch.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
@@ -138,11 +138,12 @@ const resolveHostname: ResolveHostname = (hostname) =>
  * and app routing differ by caller. */
 export function mcpToolFields(
   tool: Tool,
-): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch"> {
+  endpoint?: string | null,
+): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch" | "outgoingDraft"> {
   return {
     inputSchema: tool.inputSchema as Record<string, unknown>,
     readOnly: tool.annotations?.readOnlyHint,
-    batch: composioToolBatch(tool.name),
+    ...composioMcpToolFields(tool.name, endpoint),
   };
 }
 
@@ -151,7 +152,7 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
     (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).tools.map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
-      ...mcpToolFields(tool),
+      ...mcpToolFields(tool, options.endpoint),
       appResourceUri: mcpToolAppResourceUri(tool),
     }));
   return withScopedMcpClient(options, list);

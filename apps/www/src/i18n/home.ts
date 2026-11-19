@@ -1019,8 +1019,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Rozmowa i działanie",
       items: {
         call: {
-          title: "Dzwoni do Ciebie",
-          body: "Gdy potrzebuje Twojej decyzji, bot dzwoni przez aplikację. Możecie omówić sprawę.",
+          title: "Połączenia i spotkania",
+          body: "Bot dzwoni do Ciebie w aplikacji i dołącza do Zoom lub Google Meet, by sporządzić transkrypcję.",
         },
         apps: {
           title: "Pracuje w Twoich aplikacjach",
@@ -1200,8 +1200,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "More than chat",
       items: {
         call: {
-          title: "It calls you",
-          body: "When something needs you, your bot calls you in the app. Talk it through.",
+          title: "Calls and meetings",
+          body: "Your bot can call you in the app and join Zoom or Google Meet for a transcript.",
         },
         apps: {
           title: "Works in your apps",
@@ -1385,8 +1385,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Mehr als Chat",
       items: {
         call: {
-          title: "Er ruft dich an",
-          body: "Wenn etwas dich braucht, ruft dein Bot dich in der App an. Sprecht es durch.",
+          title: "Anrufe und Meetings",
+          body: "Dein Bot ruft dich in der App an und erstellt Transkripte für Zoom- oder Google-Meet-Termine.",
         },
         apps: {
           title: "Arbeitet in deinen Apps",
@@ -1562,8 +1562,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "채팅 그 이상",
       items: {
         call: {
-          title: "먼저 전화해요",
-          body: "당신이 필요할 때 봇이 앱에서 전화를 걸어요. 말로 해결하세요.",
+          title: "통화와 회의",
+          body: "봇이 앱에서 전화하거나 Zoom 또는 Google Meet에 참여해 회의록을 작성해요.",
         },
         apps: {
           title: "쓰던 앱에서 일해요",
@@ -1730,8 +1730,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "不止聊天",
       items: {
         call: {
-          title: "它会给你打电话",
-          body: "需要你的时候，机器人会在应用里给你打电话。当面说清楚。",
+          title: "通话和会议",
+          body: "机器人可以在应用里给你打电话，也能加入 Zoom 或 Google Meet 并生成文字记录。",
         },
         apps: {
           title: "在你的应用里工作",
@@ -1899,8 +1899,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "チャットだけじゃない",
       items: {
         call: {
-          title: "ボットから電話",
-          body: "あなたが必要なとき、ボットがアプリで電話をかけてきます。話して片付けましょう。",
+          title: "通話と会議",
+          body: "ボットはアプリから電話をかけ、Zoom や Google Meet に参加して文字起こしもできます。",
         },
         apps: {
           title: "いつものアプリで",
@@ -2076,8 +2076,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Más que un chat",
       items: {
         call: {
-          title: "Te llama",
-          body: "Cuando algo te necesita, tu bot te llama en la app. Háblalo con él.",
+          title: "Llamadas y reuniones",
+          body: "Tu bot puede llamarte en la app y unirse a Zoom o Google Meet para transcribir la reunión.",
         },
         apps: {
           title: "Trabaja en tus apps",
@@ -2265,8 +2265,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Plus qu’un chat",
       items: {
         call: {
-          title: "Il vous appelle",
-          body: "Quand quelque chose a besoin de vous, votre bot vous appelle dans l’app. Parlez-en ensemble.",
+          title: "Appels et réunions",
+          body: "Votre bot peut vous appeler dans l’app et rejoindre Zoom ou Google Meet pour transcrire la réunion.",
         },
         apps: {
           title: "Travaille dans vos apps",
@@ -2451,8 +2451,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Mais que um chat",
       items: {
         call: {
-          title: "Ele liga para você",
-          body: "Quando algo precisa de você, seu bot liga para você no app. Converse com ele.",
+          title: "Chamadas e reuniões",
+          body: "Seu bot pode ligar pelo app e entrar no Zoom ou no Google Meet para transcrever a reunião.",
         },
         apps: {
           title: "Funciona nos seus apps",
@@ -2637,8 +2637,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Meer dan chat",
       items: {
         call: {
-          title: "Hij belt je",
-          body: "Als iets jou nodig heeft, belt je bot je in de app. Bespreek het samen.",
+          title: "Gesprekken en vergaderingen",
+          body: "Je bot kan je in de app bellen en deelnemen aan Zoom of Google Meet voor een transcript.",
         },
         apps: {
           title: "Werkt in je apps",
@@ -2817,8 +2817,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Больше, чем чат",
       items: {
         call: {
-          title: "Он вам звонит",
-          body: "Когда нужно ваше участие, бот звонит вам в приложении. Обсудите всё голосом.",
+          title: "Звонки и встречи",
+          body: "Бот может позвонить вам в приложении и расшифровать встречу в Zoom или Google Meet.",
         },
         apps: {
           title: "Работает в ваших приложениях",
@@ -3003,8 +3003,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Sohbetten fazlası",
       items: {
         call: {
-          title: "Sizi arar",
-          body: "Size ihtiyaç duyulduğunda botunuz sizi uygulamada arar. Konuşarak halledin.",
+          title: "Aramalar ve toplantılar",
+          body: "Botunuz sizi uygulamada arayabilir ve Zoom veya Google Meet toplantılarını yazıya dökebilir.",
         },
         apps: {
           title: "Uygulamalarınızda çalışır",
@@ -3179,8 +3179,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "יותר מצ'אט",
       items: {
         call: {
-          title: "הוא מתקשר אליך",
-          body: "כשמשהו צריך אותך, הבוט מתקשר אליך באפליקציה. מדברים על זה.",
+          title: "שיחות ופגישות",
+          body: "הבוט יכול להתקשר אליך באפליקציה ולהצטרף לפגישות ב-Zoom או ב-Google Meet כדי לתמלל אותן.",
         },
         apps: {
           title: "עובד באפליקציות שלך",
@@ -3358,8 +3358,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "चैट से कहीं ज़्यादा",
       items: {
         call: {
-          title: "यह आपको कॉल करता है",
-          body: "जब किसी काम में आपकी ज़रूरत हो, आपका बॉट ऐप में आपको कॉल करता है। बात करके सुलझाएं।",
+          title: "कॉल और मीटिंग",
+          body: "आपका बॉट ऐप में आपको कॉल कर सकता है और Zoom या Google Meet की मीटिंग का लिखित रिकॉर्ड बना सकता है।",
         },
         apps: {
           title: "आपके ऐप्स में काम करता है",
@@ -3532,8 +3532,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "不只是聊天",
       items: {
         call: {
-          title: "它會打電話給你",
-          body: "需要你的時候，機器人會在 App 裡打電話給你。直接講清楚。",
+          title: "通話和會議",
+          body: "機器人可以在 App 裡打電話給你，也能加入 Zoom 或 Google Meet 並產生逐字稿。",
         },
         apps: {
           title: "在你的 App 裡工作",

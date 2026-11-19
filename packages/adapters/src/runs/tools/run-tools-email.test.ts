@@ -503,13 +503,10 @@ describe("claim_email_address", () => {
     });
   });
 
-  it("claims after outside content only when the owner approved this call", async () => {
-    const steered = claimRun({ tainted: true });
-    const approved = claimRun({ tainted: true, approved: true });
+  it("claims after outside content too; the approval mode decides whether it asks", async () => {
+    const { call } = claimRun({ tainted: true });
 
-    expect((await steered.call({ name: "scout" })).error).toContain("read outside content");
-    expect(steered.names.size).toBe(0);
-    expect(await approved.call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
+    expect(await call({ name: "scout" })).toEqual({ address: "scout@bots.test" });
   });
 
   it("tells a claim that lost a race to another name what the bot got", async () => {

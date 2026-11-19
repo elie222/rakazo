@@ -20,6 +20,7 @@ async function reconcileConnections(
   connectorId: string,
   connectedProviders: string[],
   reconnectRefs: string[],
+  listConnectedRefs: () => Promise<string[] | undefined>,
 ): Promise<void> {
   const connectedProviderKeys = new Set(
     connectedProviders.map((provider) => provider.trim().toLowerCase()),
@@ -32,13 +33,31 @@ async function reconcileConnections(
         connectorId,
         status: { in: ["pending", "connected"] },
       },
-      select: { id: true, provider: true, displayName: true, status: true },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        provider: true,
+        displayName: true,
+        status: true,
+        updatedAt: true,
+        providerRef: true,
+      },
+      // Breaks a tie between attempts begun at the same moment in favour of the later row.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     })
   ).filter((row: { provider: string }) =>
     connectedProviderKeys.has(row.provider.trim().toLowerCase()),
   );
-  const sync = planLiveConnectionSync(rows, connectedProviders);
+  // Asked only when a sign-in is waiting to be matched to the account it created. When the
+  // listing fails, the rows wait for the next pass instead of this one guessing.
+  let sync: ReturnType<typeof planLiveConnectionSync> = { connectIds: [], revokeIds: [] };
+  try {
+    const liveRefs = rows.some((row) => row.status === "pending")
+      ? await listConnectedRefs()
+      : undefined;
+    sync = planLiveConnectionSync(rows, connectedProviders, Date.now(), liveRefs);
+  } catch (error) {
+    getLogger().warn(`${connectorId} signed-in accounts could not be listed`, { error });
+  }
   // One update per row so the credential event goes only to rows this call actually connected.
   const connectedIds: string[] = [];
   const updates = [
@@ -122,6 +141,7 @@ export function connectionsRoutes(ctx: RouterContext) {
                   provider.describe().id,
                   nowConnected,
                   reconnectRefs,
+                  async () => provider.listConnectedRefs?.(adapterContext),
                 ).catch((error) => {
                   getLogger().error(
                     `${provider.describe().id} connection reconciliation failed`,
