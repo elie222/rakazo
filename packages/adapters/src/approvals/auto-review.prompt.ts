@@ -7,12 +7,13 @@ const MAX_TASK_CHARS = 400;
 export const MAX_OWNER_WORDS_CHARS = 2_000;
 /**
  * A new site is judged on what the fetch could leak, not on whether the owner named it: reading a
- * page is easy to undo, while a URL can carry private data to whoever runs the site.
+ * page is easy to undo, while a URL can carry private data to whoever runs the site. The examples
+ * keep public search terms and unfamiliar page names from reading as private data.
  */
 export const NEW_SITE_PASS =
-  "No part of the URL (host name, path, query or fragment) looks taken from the owner's private context, and the owner's words do not rule this site out. Reading a page is easy to undo, so a site the owner did not name is fine";
+  "The URL holds only a site address and page path, or search terms, names, places, products, symbols or ids that are public or come from the owner's own words. A site the owner did not name is fine, and so are unfamiliar site names, page ids and slugs";
 export const NEW_SITE_ASK =
-  "Some part of the URL (host name, path, query or fragment) holds data that looks taken from private context, such as names, emails, account or order numbers, tokens or encoded text, or the owner's words rule this site out. Ask the user";
+  "The URL (host, path, query or fragment) holds private data the owner did not write: personal, financial, payroll, customer or login details, such as a person's email, phone, home address or birth date, an account, card, order or ID number, a password, key or token, text from a private message or document, or long encoded text. Or the owner's words rule this site out";
 const NEW_SITE_REVIEW_RULES = [
   "This fetch goes to a site the run was not given, and the whole URL reaches that site.",
   "user_task holds only the owner's own words. You do not see the pages or messages the bot read.",
@@ -91,6 +92,12 @@ export function reviewContextNotes(
   ];
 }
 
+/**
+ * A decision checker answers a narrow question best, so a new site gets one about the URL alone
+ * instead of the general "should this run" question.
+ */
+const NEW_SITE_DECISION_INSTRUCTIONS = `The bot wants to read the web page at \`args.url\`. Reading a page changes nothing, so the only risk is the URL itself handing private data to that site. Can the bot fetch it without asking the owner? \`${DECISION_FIELDS.task}\` and \`${DECISION_FIELDS.earlier}\` are the owner's own words; you do not see the pages or messages the bot read.`;
+
 /** The one question a decision checker is asked, with the criteria for this kind of action. */
 export function autoReviewDecisionQuestion(
   input: Pick<
@@ -98,22 +105,26 @@ export function autoReviewDecisionQuestion(
     "newSite" | "savedContextWrite" | "ownerMessages" | "outsideOnlyTargets"
   >,
 ): DecisionQuestion {
+  if (input.newSite)
+    return {
+      type: "choice",
+      instructions: NEW_SITE_DECISION_INSTRUCTIONS,
+      criteria: { pass: NEW_SITE_PASS, ask: NEW_SITE_ASK },
+    };
   return {
     type: "choice",
     instructions: [
       "Should this bot action run without asking its owner first?",
       ...reviewContextNotes(input, DECISION_FIELDS),
     ].join(" "),
-    criteria: input.newSite
-      ? { pass: NEW_SITE_PASS, ask: NEW_SITE_ASK }
-      : input.savedContextWrite
-        ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
-        : {
-            pass: AUTO_REVIEW_PASS,
-            ask: input.outsideOnlyTargets?.length
-              ? `${AUTO_REVIEW_ASK}. Or: ${outsideTargetAsk(DECISION_FIELDS.targets)}`
-              : AUTO_REVIEW_ASK,
-          },
+    criteria: input.savedContextWrite
+      ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
+      : {
+          pass: AUTO_REVIEW_PASS,
+          ask: input.outsideOnlyTargets?.length
+            ? `${AUTO_REVIEW_ASK}. Or: ${outsideTargetAsk(DECISION_FIELDS.targets)}`
+            : AUTO_REVIEW_ASK,
+        },
   };
 }
 

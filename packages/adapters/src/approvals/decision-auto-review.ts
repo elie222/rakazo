@@ -23,7 +23,7 @@ import {
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v6";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v7";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
