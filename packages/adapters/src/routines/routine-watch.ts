@@ -48,6 +48,7 @@ import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
+import { resolveWatchArgs } from "./routine-watch-args.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -89,6 +90,8 @@ export type RoutineWatchTarget = {
   spaceId: string;
   userId: string;
   botId: string;
+  /** Where a relative day in a tool watch's arguments is counted from; UTC when absent. */
+  timezone?: string | null;
   watch: unknown;
   watchState: unknown;
 };
@@ -720,7 +723,8 @@ async function readTool(
   }
   // Discovery waits on every provider; the tool call gets its own full budget.
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
-  const call = { tool: toolName, args: watch.args ?? {}, executionId: ctx.operationId };
+  const args = resolveWatchArgs(watch.args ?? {}, new Date(), routine.timezone);
+  const call = { tool: toolName, args, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool
     ? { call: { ...call, route: tool.route }, tool }
