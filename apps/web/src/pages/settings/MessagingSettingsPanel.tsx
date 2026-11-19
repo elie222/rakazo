@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
+  MessagingAgentConnection,
   MessagingChannelMembership,
   MessagingInstallationsStatus,
   MessagingStatus,
@@ -41,10 +42,19 @@ import { ExternalConversationSettings } from "./ExternalConversationSettings";
 const LINK_POLL_MS = 3_000;
 const NO_INSTALLATIONS: MessagingInstallationsStatus = { available: false, installations: [] };
 
-function Row({ children, actions }: { children: ReactNode; actions: ReactNode }) {
+function Row({
+  children,
+  actions,
+  wrap = false,
+}: {
+  children: ReactNode;
+  actions: ReactNode;
+  /** A request is a sentence, so it wraps instead of losing its end. */
+  wrap?: boolean;
+}) {
   return (
     <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
-      <span className="min-w-0 truncate">{children}</span>
+      <span className={wrap ? "min-w-0" : "min-w-0 truncate"}>{children}</span>
       <span className="flex shrink-0 gap-2">{actions}</span>
     </li>
   );
@@ -52,6 +62,41 @@ function Row({ children, actions }: { children: ReactNode; actions: ReactNode })
 
 function Meta({ children }: { children: ReactNode }) {
   return <span className="ml-2 text-label text-muted-foreground/70">{children}</span>;
+}
+
+function InviteText({ channel, agent }: { channel: MessagingChannelMembership; agent: string }) {
+  const group = channel.name ?? "";
+  const app = providerLabel(channel.provider);
+  return (
+    <>
+      {group ? (
+        <Trans>
+          {agent} was invited to {group}
+        </Trans>
+      ) : (
+        <Trans>{agent} was invited to a group</Trans>
+      )}
+      <Meta>
+        <Trans>{app} group</Trans>
+      </Meta>
+    </>
+  );
+}
+
+function ConnectionRequestText({
+  connection,
+  agent,
+}: {
+  connection: MessagingAgentConnection;
+  agent: string;
+}) {
+  const owner = connection.peerOwnerLabel;
+  const peer = connection.peerBotName;
+  return (
+    <Trans>
+      {owner}'s {peer} wants to connect to {agent}
+    </Trans>
+  );
 }
 
 function AppLabel({ provider, detail }: { provider: string; detail?: string }) {
@@ -193,9 +238,11 @@ export function MessagingSettingsPanel() {
     [linkGuard],
   );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
-  // Only meaningful once a second chat app is linked: the same group can then
-  // hold two of the caller's memberships, one per agent.
+  // A joined group names its agent only once a second chat app is linked: the
+  // same group can then hold two of the caller's memberships, one per agent.
   const agentByIdentity = new Map(status?.identities.map((i) => [i.id, i.botName]) ?? []);
+  const agentOf = (identityId: string | undefined) =>
+    (identityId && agentByIdentity.get(identityId)) || t`Your agent`;
   function channelMeta(channel: MessagingChannelMembership): string {
     return [
       providerLabel(channel.provider),
@@ -227,10 +274,11 @@ export function MessagingSettingsPanel() {
   const memberLink =
     Boolean(installationStatus.personalLinkAvailable) &&
     Boolean(status?.providers.includes("slack"));
-  const invitedChannels = channels.filter((channel) => channel.status === "invited");
-  const incomingConnections = connections.filter(
-    (connection) => connection.status === "pending" && connection.incoming,
-  );
+  // A request names the caller's agent, which only the status read knows.
+  const invitedChannels = status ? channels.filter((channel) => channel.status === "invited") : [];
+  const incomingConnections = status
+    ? connections.filter((connection) => connection.status === "pending" && connection.incoming)
+    : [];
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
     (connection) =>
@@ -438,7 +486,7 @@ export function MessagingSettingsPanel() {
   const respondButtons = (respond: (accept: boolean) => Promise<unknown>) => (
     <>
       <Button size="sm" onClick={() => void act(() => respond(true))}>
-        <Trans>Approve</Trans>
+        <Trans>Allow</Trans>
       </Button>
       <Button size="sm" variant="secondary" onClick={() => void act(() => respond(false))}>
         <Trans>Decline</Trans>
@@ -459,24 +507,26 @@ export function MessagingSettingsPanel() {
             {invitedChannels.map((channel) => (
               <Row
                 key={channel.id}
+                wrap
                 actions={respondButtons((accept) =>
                   rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
                 )}
               >
-                {channel.name ?? t`Group`}
-                <Meta>{channelMeta(channel)}</Meta>
+                <InviteText channel={channel} agent={agentOf(channel.identityId)} />
               </Row>
             ))}
             {incomingConnections.map((connection) => (
               <Row
                 key={connection.id}
+                wrap
                 actions={respondButtons((accept) =>
                   rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
                 )}
               >
-                {connection.peerOwnerLabel}
-                {"'s "}
-                {connection.peerBotName}
+                <ConnectionRequestText
+                  connection={connection}
+                  agent={agentOf(identities.find((i) => i.botId === connection.botId)?.id)}
+                />
               </Row>
             ))}
           </ul>
