@@ -43,7 +43,13 @@ function selectLookupAddress(
     if (candidates.length === 0) throw new Error("Endpoint did not resolve to an address");
     return { all: true, addresses: candidates };
   }
-  const selected = candidates[0];
+  // A single address for any family is the first IPv4 one when there is one. Resolution is
+  // `verbatim` (DNS order), so a dual-stack host's first answer is often IPv6; on a network with no
+  // IPv6 route that connect fails at once (ENETUNREACH). Every address is still validated first,
+  // `all` keeps DNS order, and an IPv6-only host keeps its IPv6 address.
+  const selected =
+    (requestedFamily === 0 ? candidates.find((entry) => entry.family === 4) : undefined) ??
+    candidates[0];
   if (!selected) throw new Error("Endpoint did not resolve to an address");
   return { all: false, address: selected.address, family: selected.family };
 }
