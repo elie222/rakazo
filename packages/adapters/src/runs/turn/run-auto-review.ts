@@ -137,14 +137,14 @@ export async function autoReviewCheckerProvider(
         },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
-  if (decision && judgeKey?.zeroDataRetention) {
-    // The decision endpoint has no way to restrict routing, so it is never used for this connection.
+  if (decision && judgeKey?.zeroDataRetention && !decision.dataRetentionControl) {
     throw new DataRetentionRefusedError("Selected checker cannot restrict data retention");
   }
   if (decision)
     return new DecisionAutoReviewProvider({
       provider: decision.create({
         apiKey: deploymentKey ?? judgeKey?.apiKey ?? "",
+        ...(judgeKey?.zeroDataRetention ? { zeroDataRetention: true } : {}),
         callObserver,
         onUsage: operatorFunded ? undefined : onUsage,
       }),

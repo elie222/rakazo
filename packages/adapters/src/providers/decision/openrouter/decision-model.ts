@@ -5,6 +5,7 @@ export const openRouterDecisionModel: DecisionModelDescriptor = {
   create: (options) => new HttpDecisionProvider("openrouter", options),
   deploymentApiKey: (env) => env.OPENROUTER_API_KEY?.trim() || undefined,
   includedByDefault: true,
+  dataRetentionControl: true,
   provider: "openrouter",
   id: "typesafe/jev-1.14",
   inputUsdPerMillion: 0.042,
