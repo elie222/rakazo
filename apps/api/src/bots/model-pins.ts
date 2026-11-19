@@ -141,8 +141,9 @@ export async function assertCompatibleDefaultChange(
 /**
  * What disconnecting one connection takes with it. The main and backup choices it serves are
  * deleted with it, in the account's models and in every Space that has its own, and connecting
- * again does not bring them back. The member's bots and routines set to the provider stop only
- * when this is the provider's last connection, since any other one serves them.
+ * again does not bring them back. The member's bots and active routines set to the provider are
+ * named only when this is the provider's last connection. With another one left, which of them
+ * it serves depends on that connection's models, so none is named rather than guessed.
  */
 export async function modelDisconnectPreview(
   deps: RouterDeps,
@@ -155,7 +156,7 @@ export async function modelDisconnectPreview(
     select: { id: true },
   });
   if (!connections.some((row) => row.id === input.credentialId)) {
-    return { mainModel: false, backupModel: false, usedBy: [] };
+    return { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   }
   const last = connections.length === 1;
   // The same rows `models.disconnect` deletes.
@@ -183,7 +184,7 @@ export async function modelDisconnectPreview(
         last ? deps.prisma.bot.findMany({ where: { ...pinned, archivedAt: null }, ...named }) : [],
         last
           ? deps.prisma.routine.findMany({
-              where: { ...pinned, bot: { archivedAt: null } },
+              where: { ...pinned, active: true, bot: { archivedAt: null } },
               ...named,
             })
           : [],
@@ -192,13 +193,12 @@ export async function modelDisconnectPreview(
   const served = [...accountRoles, ...spaceRoles];
   const runsMain = (row: { role: string; position: number }) =>
     row.role === "main" && row.position === 0;
+  const names = [...new Set([...bots, ...routines].map((row) => row.name))];
   return {
     mainModel: served.some(runsMain),
-    backupModel: served.some((row) => !runsMain(row)),
-    usedBy: [...new Set([...bots, ...routines].map((row) => row.name))].slice(
-      0,
-      MAX_MODEL_DISCONNECT_NAMES,
-    ),
+    otherChoice: served.some((row) => !runsMain(row)),
+    usedBy: names.slice(0, MAX_MODEL_DISCONNECT_NAMES),
+    usedByTotal: names.length,
   };
 }
 

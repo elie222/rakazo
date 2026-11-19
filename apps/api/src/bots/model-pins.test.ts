@@ -48,8 +48,9 @@ describe("modelDisconnectPreview", () => {
 
     await expect(preview("only")).resolves.toEqual({
       mainModel: true,
-      backupModel: false,
+      otherChoice: false,
       usedBy: ["Inbox", "Scout", "Morning digest"],
+      usedByTotal: 3,
     });
     // The legacy rows without a funding pin ran on the last connection, so they count too.
     expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
@@ -64,6 +65,10 @@ describe("modelDisconnectPreview", () => {
         where: { userId: "user-1", modelProvider: "provider-a", archivedAt: null },
       }),
     );
+    // A routine that is switched off has no runs to stop.
+    expect(prisma.routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ active: true }) }),
+    );
   });
 
   it("names no bot while another connection of the provider still serves them", async () => {
@@ -75,8 +80,9 @@ describe("modelDisconnectPreview", () => {
 
     await expect(preview("work")).resolves.toEqual({
       mainModel: false,
-      backupModel: true,
+      otherChoice: true,
       usedBy: [],
+      usedByTotal: 0,
     });
     expect(prisma.bot.findMany).not.toHaveBeenCalled();
     expect(prisma.routine.findMany).not.toHaveBeenCalled();
@@ -92,8 +98,9 @@ describe("modelDisconnectPreview", () => {
 
     await expect(preview("someone-elses")).resolves.toEqual({
       mainModel: false,
-      backupModel: false,
+      otherChoice: false,
       usedBy: [],
+      usedByTotal: 0,
     });
     expect(prisma.bot.findMany).not.toHaveBeenCalled();
   });

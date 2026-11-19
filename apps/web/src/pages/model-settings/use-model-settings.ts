@@ -285,7 +285,10 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     gcTime: 0,
   });
   const disconnectPreviewLoading = confirmDisconnect && disconnectPreview.isFetching;
-  const disconnectWarning = modelDisconnectWarning(disconnectPreview.data ?? null);
+  // A read that failed leaves the plain question, never a warning kept from an earlier one.
+  const disconnectWarning = modelDisconnectWarning(
+    disconnectPreview.isError ? null : (disconnectPreview.data ?? null),
+  );
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,

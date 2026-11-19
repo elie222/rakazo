@@ -44,7 +44,12 @@ const mocks = vi.hoisted(() => ({
   prompt: vi.fn(),
   completeOAuth: vi.fn(),
   rpc: vi.fn(),
-  disconnectPreview: { mainModel: false, backupModel: false, usedBy: [] as string[] },
+  disconnectPreview: {
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [] as string[],
+    usedByTotal: 0,
+  },
   dismissKeyboard: vi.fn(),
   listProps: {} as Record<string, unknown>,
   params: {} as Record<string, string | undefined>,
@@ -627,7 +632,7 @@ beforeEach(() => {
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
-  mocks.disconnectPreview = { mainModel: false, backupModel: false, usedBy: [] };
+  mocks.disconnectPreview = { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   mocks.rpc.mockReset();
   mocks.menus.clear();
   mocks.rowAccessibilityActions.clear();
@@ -1799,11 +1804,16 @@ describe("connection screen targets", () => {
     mocks.subscriptionSignIn = false;
     await renderConnection();
     // The question opens once it knows what goes with the connection, and says so.
-    mocks.disconnectPreview = { mainModel: true, backupModel: false, usedBy: ["Inbox"] };
+    mocks.disconnectPreview = {
+      mainModel: true,
+      otherChoice: false,
+      usedBy: ["Inbox"],
+      usedByTotal: 1,
+    };
     await act(async () => buttonWithText("Disconnect")!.click());
     const [, message, choices] = mocks.alert.mock.lastCall!;
     expect(message).toBe(
-      "This removes the connection from every space. Your main model choice is cleared, and connecting again does not bring it back. Until it is connected again, runs stop for: Inbox.",
+      "This removes the connection from every space. Your main model choice is cleared, and connecting again does not bring it back. These use it and may stop until it is connected again: Inbox.",
     );
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {

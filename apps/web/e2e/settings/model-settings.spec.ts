@@ -427,14 +427,21 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await page.route("**/rpc/models/disconnectPreview", (route) =>
     route.fulfill({
       json: {
-        json: { mainModel: true, backupModel: false, usedBy: ["Inbox", "Morning digest"] },
+        json: {
+          mainModel: true,
+          otherChoice: false,
+          usedBy: ["Inbox", "Morning digest"],
+          usedByTotal: 2,
+        },
       },
     }),
   );
   await connection.getByRole("button", { name: "Disconnect" }).click();
   const question = page.getByRole("alertdialog");
   await expect(question).toContainText("Your main model choice is cleared");
-  await expect(question).toContainText("runs stop for: Inbox, Morning digest.");
+  await expect(question).toContainText(
+    "may stop until it is connected again: Inbox, Morning digest.",
+  );
   await captureScreenshot(page, testInfo, "model-disconnect-warning");
   await question.getByRole("button", { name: "Cancel" }).click();
 });

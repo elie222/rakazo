@@ -20,27 +20,30 @@ export function modelDisconnectWarning(preview: ModelDisconnectPreview | null): 
         message: "Your main model choice is cleared, and connecting again does not bring it back.",
       }),
     );
-  } else if (preview.backupModel) {
+  } else if (preview.otherChoice) {
     parts.push(
       i18n._({
-        id: "A backup model choice is cleared, and connecting again does not bring it back.",
-        message: "A backup model choice is cleared, and connecting again does not bring it back.",
+        id: "A model choice that uses it is cleared, and connecting again does not bring it back.",
+        message:
+          "A model choice that uses it is cleared, and connecting again does not bring it back.",
       }),
     );
   }
   if (preview.usedBy.length > 0) {
     const names = preview.usedBy.slice(0, SHOWN).join(", ");
-    const more = preview.usedBy.length - SHOWN;
+    // Counted from the server's total: the names it sends are only the first of them.
+    const more = Math.max(preview.usedByTotal, preview.usedBy.length) - SHOWN;
     parts.push(
       more > 0
         ? i18n._({
-            id: "Until it is connected again, runs stop for: {names} and {more} more.",
-            message: "Until it is connected again, runs stop for: {names} and {more} more.",
+            id: "These use it and may stop until it is connected again: {names} and {more} more.",
+            message:
+              "These use it and may stop until it is connected again: {names} and {more} more.",
             values: { names, more },
           })
         : i18n._({
-            id: "Until it is connected again, runs stop for: {names}.",
-            message: "Until it is connected again, runs stop for: {names}.",
+            id: "These use it and may stop until it is connected again: {names}.",
+            message: "These use it and may stop until it is connected again: {names}.",
             values: { names },
           }),
     );

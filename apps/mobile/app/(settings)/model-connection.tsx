@@ -76,6 +76,14 @@ export default function ModelConnection() {
   // A new connection is managed by its id once it is saved, so later saves update it.
   const [credentialId, setCredentialId] = useState(request?.credentialId ?? null);
   const credentialIdRef = useRef(credentialId);
+  // False once this screen has gone, so a late disconnect question does not open elsewhere.
+  const shown = useRef(true);
+  useEffect(
+    () => () => {
+      shown.current = false;
+    },
+    [],
+  );
   credentialIdRef.current = credentialId;
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -757,6 +765,7 @@ export default function ModelConnection() {
             selectedProviderLabel,
             credential,
             () => void disconnectCredential(),
+            () => shown.current,
           );
         }}
         prominence="destructive"

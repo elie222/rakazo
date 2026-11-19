@@ -2,7 +2,7 @@ import { i18n } from "@lingui/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { modelDisconnectWarning } from "./model-disconnect.js";
 
-const unused = { mainModel: false, backupModel: false, usedBy: [] };
+const unused = { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
 
 describe("modelDisconnectWarning", () => {
   beforeAll(() => {
@@ -14,29 +14,34 @@ describe("modelDisconnectWarning", () => {
     expect(modelDisconnectWarning(null)).toBe("");
   });
 
-  it("says the main model choice is cleared, ahead of a backup it also serves", () => {
-    expect(modelDisconnectWarning({ ...unused, mainModel: true, backupModel: true })).toBe(
+  it("says the main model choice is cleared, ahead of another choice it also serves", () => {
+    expect(modelDisconnectWarning({ ...unused, mainModel: true, otherChoice: true })).toBe(
       "Your main model choice is cleared, and connecting again does not bring it back.",
     );
   });
 
-  it("says a backup choice is cleared when that is all it serves", () => {
-    expect(modelDisconnectWarning({ ...unused, backupModel: true })).toBe(
-      "A backup model choice is cleared, and connecting again does not bring it back.",
+  it("says a choice is cleared when a backup or another purpose is all it serves", () => {
+    expect(modelDisconnectWarning({ ...unused, otherChoice: true })).toBe(
+      "A model choice that uses it is cleared, and connecting again does not bring it back.",
     );
   });
 
-  it("names the bots and routines that stop", () => {
-    expect(modelDisconnectWarning({ ...unused, usedBy: ["Inbox", "Morning digest"] })).toBe(
-      "Until it is connected again, runs stop for: Inbox, Morning digest.",
-    );
-  });
-
-  it("names the first three and counts the rest", () => {
+  it("names the bots and routines that may stop", () => {
     expect(
-      modelDisconnectWarning({ ...unused, mainModel: true, usedBy: ["A", "B", "C", "D", "E"] }),
+      modelDisconnectWarning({ ...unused, usedBy: ["Inbox", "Morning digest"], usedByTotal: 2 }),
+    ).toBe("These use it and may stop until it is connected again: Inbox, Morning digest.");
+  });
+
+  it("names the first three and counts the rest from the total, not from the names sent", () => {
+    expect(
+      modelDisconnectWarning({
+        ...unused,
+        mainModel: true,
+        usedBy: ["A", "B", "C", "D", "E"],
+        usedByTotal: 80,
+      }),
     ).toBe(
-      "Your main model choice is cleared, and connecting again does not bring it back. Until it is connected again, runs stop for: A, B, C and 2 more.",
+      "Your main model choice is cleared, and connecting again does not bring it back. These use it and may stop until it is connected again: A, B, C and 77 more.",
     );
   });
 });

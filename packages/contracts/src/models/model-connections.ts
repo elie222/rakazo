@@ -204,9 +204,13 @@ export const ModelDisconnectPreviewSchema = z.object({
   /** It runs the main model, in the account's models or a Space's own. */
   mainModel: z.boolean(),
   /** It serves another choice: a backup, or another purpose's model. */
-  backupModel: z.boolean(),
-  /** The member's bots and routines set to its provider, when it is that provider's last. */
+  otherChoice: z.boolean(),
+  /**
+   * The member's bots and active routines set to its provider, when it is that provider's last;
+   * the first names of `usedByTotal`.
+   */
   usedBy: z.array(z.string()).max(MAX_MODEL_DISCONNECT_NAMES),
+  usedByTotal: z.number().int().nonnegative(),
 });
 export type ModelDisconnectPreview = z.infer<typeof ModelDisconnectPreviewSchema>;
 

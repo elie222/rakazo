@@ -355,7 +355,12 @@ beforeEach(() => {
   });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
-  models.disconnectPreview.mockResolvedValue({ mainModel: false, backupModel: false, usedBy: [] });
+  models.disconnectPreview.mockResolvedValue({
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [],
+    usedByTotal: 0,
+  });
   models.forRole.mockImplementation(() => models.list());
   models.setRole.mockImplementation(
     async ({ role: _role, expectedUserId: _user, ...patch }: Record<string, unknown>) => ({
