@@ -37,7 +37,7 @@ import {
   spaceTakesWork,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveAgentHomePath } from "../storage/home.js";
 import { ObjectAgentHomeStore } from "../storage/home-object-store.js";
 import {
@@ -310,7 +310,16 @@ export async function provisionComputer(
       });
       if (retained.count !== 1) throw busy("running_claim_lost");
       await recordComputerRunStart(deps.prisma, existing, runningSince);
-      const damaged = await prepare(ref).then(
+      const damaged = await (async () => {
+        await prepare(ref);
+        await ensureComputerWorkspaceLayout(
+          deps.sandbox,
+          ref,
+          parseComputerMode(existing.scope),
+          context.botId,
+          context,
+        );
+      })().then(
         () => false,
         (error: unknown) => {
           // Only the reconnect claim below can stop a damaged system back to its last good copy.
@@ -319,13 +328,6 @@ export async function provisionComputer(
         },
       );
       if (!damaged) {
-        await ensureComputerWorkspaceLayout(
-          deps.sandbox,
-          ref,
-          parseComputerMode(existing.scope),
-          context.botId,
-          context,
-        );
         logProvisioned(ref, "reuse");
         return ref;
       }
@@ -738,7 +740,11 @@ export async function provisionComputer(
         "Computer provisioning failed and its failure could not be recorded",
       );
     }
-    if (released) await endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId);
+    if (released)
+      await bestEffort(
+        "teaching recording of a damaged computer",
+        endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId),
+      );
     if (rollbackError) {
       // The provider was still down for the cleanup, which adds nothing to why the start failed.
       if (

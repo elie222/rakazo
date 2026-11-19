@@ -103,6 +103,8 @@ export async function failRun(
   const { reply } = ctx.state;
   let error = caughtError;
   let computerFailed = false;
+  // The whole failed start, kept for the log when the run reports one refusal from within it.
+  let startFailure: unknown;
   // A refused account limit or a computer only Recover fixes needs user/operator action, not
   // setup-job retries. Keep the provisioning error even if aborting the model masked it.
   try {
@@ -122,6 +124,7 @@ export async function failRun(
     if (!refusal && !computerNeedsRecovery(computerError))
       throw new RunComputerFailedError(computerError);
     error = refusal ?? computerError;
+    if (refusal && refusal !== computerError) startFailure = computerError;
     computerFailed = true;
   }
   if (!ctx.state.terminalCheckpointComplete) {
@@ -180,6 +183,9 @@ export async function failRun(
       "run.failure": error instanceof Error ? error.name : "UnknownFailure",
       reason: message,
       ...model.active,
+      ...(startFailure
+        ? { error: sanitizedError(startFailure, (text) => redactSecrets(text, ctx.secrets)) }
+        : {}),
     });
   } else {
     getLogger().error(

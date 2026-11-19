@@ -154,6 +154,20 @@ describe("a computer whose system is damaged", () => {
     ]);
   });
 
+  it("is recovered when its damage first shows while laying out the workspace", async () => {
+    const { api, deps, row, first } = await damagedComputer();
+    // Already prepared in this process, so only a team computer's layout runs a command.
+    vi.spyOn(deps.sandbox, "prepare").mockResolvedValueOnce(undefined);
+    row.scope = "team";
+
+    const ref = await provisionComputer(deps, row.id, context);
+
+    expect(ref).toMatchObject({ providerRef: first.providerRef, started: true });
+    expect(api.state(first.id)).toBe("ready");
+    expect(row).toMatchObject({ state: "running" });
+    expect(row.autoRecoveredAt).toBeInstanceOf(Date);
+  });
+
   it("is replaced from its saved workspace when that is newer than the provider's snapshot", async () => {
     const { api, deps, row, first } = await damagedComputer();
     row.homeRevisionAt = new Date();
