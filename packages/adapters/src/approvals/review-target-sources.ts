@@ -25,8 +25,6 @@ const MAX_PARTY_CHARS = 120;
 const MAX_ARG_DEPTH = 6;
 /** Enough for a batch's recipients without burying the reviewer's input. */
 const MAX_TARGETS = 10;
-/** How many of a call's targets are looked up, so a huge batch costs bounded work. */
-const MAX_CHECKED_TARGETS = 40;
 /** What a run keeps of the outside content it read, newest last. */
 export const MAX_OUTSIDE_TEXT_CHARS = 400_000;
 
@@ -83,7 +81,9 @@ export function outsideOnlyTargets(
   if (!sources.outsideText) return [];
   const words = sources.ownerWords.join("\n");
   const owner = normalize(words);
-  const targets = actionTargets(args).slice(0, MAX_CHECKED_TARGETS);
+  // Every target is checked: one left out would let an outside-chosen recipient hide behind
+  // owner-known ones. Review arguments are already capped in size, which bounds this work.
+  const targets = actionTargets(args);
   const ownerSites = targets.some((target) => target.site) ? sitesInText(words) : new Set();
   return targets
     .filter(
@@ -118,17 +118,12 @@ function containsWhole(text: string, value: string): boolean {
 /** The text in outside content (a tool result, a message), normalized for `outsideOnlyTargets`. */
 export function outsideTextOf(content: unknown): string {
   const parts: string[] = [];
-  let length = 0;
-  const keep = (text: string) => {
-    parts.push(text);
-    length += text.length + 1;
-  };
+  // The whole result is read: padding before a recipient must not push it out of reach.
   const walk = (node: unknown, depth: number) => {
-    // Only the cap's worth is ever kept, so a huge result is not read past it.
-    if (depth > MAX_ARG_DEPTH * 2 || length > MAX_OUTSIDE_TEXT_CHARS) return;
-    if (typeof node === "string") keep(node);
+    if (depth > MAX_ARG_DEPTH * 2) return;
+    if (typeof node === "string") parts.push(node);
     // An account number in a structured result can be a call's target too.
-    else if (typeof node === "number") keep(String(node));
+    else if (typeof node === "number") parts.push(String(node));
     else if (Array.isArray(node)) for (const item of node) walk(item, depth + 1);
     else if (node && typeof node === "object") {
       // An image's bytes hold no names.
