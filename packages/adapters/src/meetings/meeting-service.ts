@@ -822,7 +822,7 @@ async function countSpaceMeetings(prisma: MeetingQuotaReader, spaceId: string, t
 
 /**
  * Deleting a bot deletes its meetings, so the ones the allowance still counts are kept as uses.
- * Its upcoming reservations are not: they never reached a meeting.
+ * Its upcoming reservations are not, unless the meeting already started early.
  */
 export async function keepDeletedBotMeetingsCounted(
   tx: Prisma.TransactionClient,
@@ -836,7 +836,10 @@ export async function keepDeletedBotMeetingsCounted(
       where: {
         botId: bot.id,
         spaceId: bot.spaceId,
-        OR: countedMeetings({ gte: since, lte: now }),
+        OR: [
+          ...countedMeetings({ gte: since, lte: now }),
+          { scheduledFor: { gt: now }, receivedAt: { not: null } },
+        ],
       },
       select: { createdAt: true, scheduledFor: true },
     });

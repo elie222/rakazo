@@ -43,7 +43,13 @@ describe.skipIf(!databaseUrl)("meeting allowance after a bot is deleted (Postgre
     const userId = randomUUID();
     const spaceId = randomUUID();
     const botId = randomUUID();
-    const session = (patch: { createdAt: Date; scheduledFor?: Date; status?: string }) => ({
+    const tomorrow = new Date("2026-11-19T00:30:00Z");
+    const session = (patch: {
+      createdAt: Date;
+      scheduledFor?: Date;
+      status?: string;
+      receivedAt?: Date;
+    }) => ({
       id: randomUUID(),
       spaceId,
       userId,
@@ -76,6 +82,7 @@ describe.skipIf(!databaseUrl)("meeting allowance after a bot is deleted (Postgre
               scheduledFor: new Date(now.getTime() + 2 * HOUR),
               status: "scheduled",
             }),
+            session({ createdAt: now, scheduledFor: tomorrow, receivedAt: now }),
           ],
         });
         await prisma.meetingAllowanceUse.create({
@@ -86,8 +93,9 @@ describe.skipIf(!databaseUrl)("meeting allowance after a bot is deleted (Postgre
         runAsSystem("count the Space's meeting usage", async () => ({
           today: await countSpaceMeetingsForDay(prisma, spaceId, now),
           pastDay: await countSpaceMeetingsInPastDay(prisma, spaceId, now),
+          tomorrow: await countSpaceMeetingsForDay(prisma, spaceId, tomorrow),
         }));
-      expect(await usage()).toEqual({ today: 3, pastDay: 2 });
+      expect(await usage()).toEqual({ today: 3, pastDay: 2, tomorrow: 1 });
 
       await runAsSystem("delete the bot", () =>
         prisma.$transaction(async (tx) => {
@@ -96,12 +104,12 @@ describe.skipIf(!databaseUrl)("meeting allowance after a bot is deleted (Postgre
         }),
       );
 
-      expect(await usage()).toEqual({ today: 2, pastDay: 2 });
+      expect(await usage()).toEqual({ today: 2, pastDay: 2, tomorrow: 1 });
       expect(
         await runAsSystem("read kept uses", () =>
           prisma.meetingAllowanceUse.count({ where: { spaceId } }),
         ),
-      ).toBe(2);
+      ).toBe(3);
     } finally {
       await runAsSystem("remove meeting allowance fixture", async () => {
         await prisma.space.deleteMany({ where: { id: spaceId } });
