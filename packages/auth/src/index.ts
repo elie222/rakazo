@@ -176,11 +176,33 @@ const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
   "/passkey/delete-passkey": "auth.passkey.removed",
 };
 
-/** Shared across API processes. Off outside production so tests can sign in freely. */
-export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
+/**
+ * `RAKAZO_AUTH_RATE_LIMIT=1` forces the limiter on, `=0` forces it off, anything else is
+ * a typo. Unset keeps the NODE_ENV default.
+ */
+function resolveRateLimitEnabled(
+  nodeEnv: string | undefined,
+  override: string | undefined,
+): boolean {
+  const value = override?.trim().toLowerCase();
+  if (value === "1") return true;
+  if (value === "0") return false;
+  if (value) throw new Error('RAKAZO_AUTH_RATE_LIMIT must be "1" or "0".');
+  return nodeEnv === "production";
+}
+
+/**
+ * Shared across API processes. Off outside production so tests can sign in freely. A
+ * deployment that runs without NODE_ENV=production can still have the limiter with
+ * `RAKAZO_AUTH_RATE_LIMIT=1`, and one behind its own gateway can drop it with `=0`.
+ */
+export function authRateLimitOptions(
+  nodeEnv = process.env.NODE_ENV,
+  override = process.env.RAKAZO_AUTH_RATE_LIMIT,
+) {
   const rule = { window: 15 * 60, max: 10 };
   return {
-    enabled: nodeEnv === "production",
+    enabled: resolveRateLimitEnabled(nodeEnv, override),
     storage: "database" as const,
     customRules: {
       ...Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),
