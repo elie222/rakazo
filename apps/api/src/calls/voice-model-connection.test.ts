@@ -67,6 +67,7 @@ function modelConnectionDeps(
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("synthesizeVoice through a model connection", () => {
@@ -247,6 +248,16 @@ describe("accountVoiceCatalog", () => {
     }
     const others = (await catalogFor([])).filter((entry) => entry.id !== "xai");
     expect(others.some((entry) => entry.modelSignIn || entry.modelConnections)).toBe(false);
+  });
+
+  it("offers neither connections nor a sign-in for a model provider the deployment refuses", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    for (const credentials of [[], [xaiModelCredential]]) {
+      const xai = (await catalogFor(credentials)).find((entry) => entry.id === "xai");
+      expect(xai).toBeDefined();
+      expect(xai).not.toHaveProperty("modelConnections");
+      expect(xai).not.toHaveProperty("modelSignIn");
+    }
   });
 });
 

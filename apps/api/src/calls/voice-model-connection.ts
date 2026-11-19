@@ -1,6 +1,8 @@
 import {
   listPiCatalog,
   listVoiceCatalog,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   parseModelConnectionVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
@@ -18,9 +20,11 @@ export async function accountVoiceCatalog(
   actor: Pick<Actor, "userId">,
 ): Promise<VoiceCatalogEntry[]> {
   const catalog = listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint });
+  const allowlist = modelProviderAllowlist();
   return Promise.all(
     catalog.map(async ({ modelConnection, ...entry }) => {
-      if (!modelConnection) return entry;
+      // A model provider the deployment refuses can't lend voice a connection or a sign-in.
+      if (!modelConnection || !modelProviderAllowed(allowlist, entry.id)) return entry;
       const rows = await deps.prisma.userModelCredential.findMany({
         where: { userId: actor.userId, provider: modelCredentialProviderFilter(entry.id) },
         orderBy: newestModelCredentialOrder,
