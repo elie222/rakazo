@@ -1,4 +1,4 @@
-import type { EvalCase, Evidence } from "./cases.js";
+import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { EvalJudge } from "./judge.js";
 import type { FailureCategory, TrialResult } from "./report.js";
 import { redact, restoreEvidence } from "./report.js";
@@ -29,6 +29,8 @@ export async function withinDeadline<T>(work: Promise<T>, deadline: number): Pro
   }
 }
 
+const SEMANTIC_OUTCOME = "semantic-outcome";
+
 type Grading = { judge?: EvalJudge; deadline: number; secrets: readonly string[] };
 
 /** The judge grades meaning only once every deterministic criterion holds. */
@@ -46,7 +48,7 @@ export async function judgeOutcome(
       deadline,
     );
     result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
-    result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
+    result.criteria.push({ id: SEMANTIC_OUTCOME, pass: judgment.pass });
   } catch (error) {
     throw new EvalFailure(
       "incomplete",
@@ -104,14 +106,34 @@ export function settle(scenario: EvalCase, result: TrialResult, harnessIssues: r
   }
 }
 
+/**
+ * The deterministic criteria the current case gives a stored trial's evidence, or null when the
+ * trial kept none or the case cannot read it (its shape changed since).
+ */
+function currentCriteria(scenario: EvalCase, trial: TrialResult): Criterion[] | null {
+  if (!trial.evidence) return null;
+  try {
+    return scenario.grade(restoreEvidence(trial.evidence) as Evidence);
+  } catch {
+    return null;
+  }
+}
+
 /** Whether a stored trial can be graded again: it reached grading and kept what it was graded on. */
 export function regradable(scenario: EvalCase, trial: TrialResult) {
-  return !trial.criteria.length || !(scenario.judge || scenario.observe) || !!trial.evidence;
+  return !trial.criteria.length || currentCriteria(scenario, trial) !== null;
+}
+
+/** Whether the current case's deterministic criteria give the trial the verdicts it was stored with. */
+export function gradedAsStored(scenario: EvalCase, trial: TrialResult) {
+  if (!trial.criteria.length) return true;
+  const stored = trial.criteria.filter((c) => c.id !== SEMANTIC_OUTCOME);
+  return JSON.stringify(currentCriteria(scenario, trial)) === JSON.stringify(stored);
 }
 
 /**
- * A stored trial graded again with the current judge, from the evidence it kept, without running
- * the bot. Deterministic criteria stand as stored; a trial that never reached grading is unchanged.
+ * A stored trial graded again with the current case and judge, from the evidence it kept, without
+ * running the bot. A trial that never reached grading is unchanged.
  */
 export async function regradeTrial(
   scenario: EvalCase,
@@ -123,18 +145,15 @@ export async function regradeTrial(
   if (!stored.criteria.length || !stored.evidence) return result;
   const evidence = restoreEvidence(stored.evidence) as Evidence;
   const grading = { judge, deadline: Date.now() + timeoutMs, secrets: [] };
-  result.criteria = stored.criteria.filter((c) => c.id !== "semantic-outcome");
+  result.criteria = scenario.grade(evidence);
   delete result.judgment;
-  // A deterministic failure keeps its stored verdict and reason; only observations change.
-  if (result.criteria.every((c) => c.pass)) {
-    try {
-      await judgeOutcome(scenario, evidence, result, grading);
-      settle(scenario, result, stored.harnessIssues ?? []);
-    } catch (error) {
-      result.status = "failed";
-      result.category = error instanceof EvalFailure ? error.category : "harness";
-      result.reason = error instanceof Error ? error.message : "Unknown judge failure";
-    }
+  try {
+    await judgeOutcome(scenario, evidence, result, grading);
+    settle(scenario, result, stored.harnessIssues ?? []);
+  } catch (error) {
+    result.status = "failed";
+    result.category = error instanceof EvalFailure ? error.category : "harness";
+    result.reason = error instanceof Error ? error.message : "Unknown judge failure";
   }
   const observations = await observe(scenario, evidence, grading);
   if (observations) result.observations = observations;
