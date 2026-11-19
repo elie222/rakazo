@@ -89,7 +89,7 @@ export default function ComputersSettings() {
   }
 
   function chooseSize(computer: CloudComputer, size: ComputerSize) {
-    if (!cloud || size === computer.size) return;
+    if (!cloud || size === computer.savedSize) return;
     if (!cloud.available.includes(size)) {
       Alert.alert(t`Your plan does not include this size.`, undefined, [
         { text: t`Cancel`, style: "cancel" },

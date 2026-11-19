@@ -112,7 +112,10 @@ export const CloudComputersSchema = z.object({
       id: Id,
       scope: ComputerModeSchema,
       botName: z.string().nullable(),
+      /** The size it starts at: the saved size, or the largest the plan allows below it. */
       size: ComputerSizeSchema,
+      /** The size its owner chose, which `size` returns to if the plan grows again. */
+      savedSize: ComputerSizeSchema,
     }),
   ),
   available: z.array(ComputerSizeSchema),

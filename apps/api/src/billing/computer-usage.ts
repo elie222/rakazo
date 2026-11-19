@@ -5,6 +5,7 @@ import {
   sandboxKindsWhere,
 } from "@rakazo/adapters";
 import type { CloudComputers, ComputerSize } from "@rakazo/contracts";
+import { ComputerSizeSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -52,7 +53,11 @@ export async function readCloudComputers(
   ]);
   return {
     computers: computers.flatMap(({ id, scope, size, bots }): CloudComputers["computers"] => {
-      const shown = { id, size: effectiveComputerSize(size, available) };
+      const shown = {
+        id,
+        size: effectiveComputerSize(size, available),
+        savedSize: ComputerSizeSchema.catch("standard").parse(size),
+      };
       if (scope !== "dedicated") return [{ ...shown, scope: "team" as const, botName: null }];
       const botName = bots[0]?.name;
       return botName ? [{ ...shown, scope: "dedicated" as const, botName }] : [];

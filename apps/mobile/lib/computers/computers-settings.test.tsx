@@ -196,8 +196,8 @@ const laptop = { deviceId: "d1", name: "Laptop", connected: true };
 const desk = { deviceId: "d2", name: "Desk PC", connected: false };
 const cloud: CloudComputers = {
   computers: [
-    { id: "c1", scope: "team", botName: null, size: "standard" },
-    { id: "c2", scope: "dedicated", botName: "Researcher", size: "large" },
+    { id: "c1", scope: "team", botName: null, size: "standard", savedSize: "standard" },
+    { id: "c2", scope: "dedicated", botName: "Researcher", size: "large", savedSize: "large" },
   ],
   available: ["standard", "large"],
   canManage: true,
@@ -289,7 +289,10 @@ it("lists cloud computers above paired ones and changes a size", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([laptop]);
   mocks.cloud.mockResolvedValueOnce(cloud).mockResolvedValue({
     ...cloud,
-    computers: [cloud.computers[0], { ...cloud.computers[1], size: "standard" }],
+    computers: [
+      cloud.computers[0],
+      { ...cloud.computers[1], size: "standard", savedSize: "standard" },
+    ],
   });
   mocks.setSize.mockResolvedValue(null);
   await render();

@@ -103,7 +103,9 @@ function CloudComputerRow({
                 return;
               }
               setBeyondPlan(null);
-              if (size !== computer.size) change.run(size);
+              // A plan that shrank shows the size it allows; picking it saves it in place of the
+              // larger one it stands in for.
+              if (size !== computer.savedSize) change.run(size);
             }}
           />
         ) : (

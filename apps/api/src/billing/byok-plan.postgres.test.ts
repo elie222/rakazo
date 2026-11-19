@@ -254,7 +254,9 @@ dbTests("own-key plan", () => {
       webOrigin: "https://example.test",
     });
     await expect(sized.cloudComputers(actor)).resolves.toEqual({
-      computers: [{ id: computer.id, scope: "team", botName: null, size: "standard" }],
+      computers: [
+        { id: computer.id, scope: "team", botName: null, size: "standard", savedSize: "standard" },
+      ],
       available: ["standard", "large"],
       canManage: true,
     });
@@ -285,11 +287,17 @@ dbTests("own-key plan", () => {
     // Above the new plan's limit, the computer runs at the largest size the plan allows.
     expect(await planComputerSize(prisma, computer.id)).toBe("large");
     await expect(sized.cloudComputers(actor)).resolves.toMatchObject({
-      computers: [{ id: computer.id, size: "large" }],
+      computers: [{ id: computer.id, size: "large", savedSize: "xlarge" }],
     });
 
     await service.changeTier(actor, "max");
     expect(await planComputerSize(prisma, computer.id)).toBe("xlarge");
+
+    // Choosing the size a smaller plan held it at keeps it there once the plan grows again.
+    await service.changeTier(actor, "pro");
+    await sized.setComputerSize(actor, computer.id, "large");
+    await service.changeTier(actor, "max");
+    expect(await planComputerSize(prisma, computer.id)).toBe("large");
 
     // A plan set to cancel stays as it is.
     provider.subscriptions.at(-1)!.cancelAtPeriodEnd = true;
