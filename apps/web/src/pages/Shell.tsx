@@ -49,11 +49,11 @@ import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-s
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
-import { hasOpenDialog } from "../lib/has-open-dialog";
 import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import type { ArtifactTarget } from "../lib/pages/artifact-open";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
+import { hasOpenDialog } from "../lib/platform/has-open-dialog";
 import { markAfterPaint, markOnce } from "../lib/platform/performance";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { useDesktopBadge } from "../lib/platform/use-desktop-badge";
@@ -73,10 +73,7 @@ import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
 import { errorText } from "../lib/query/user-error";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { routineNeedsOneShotArm } from "../lib/routines/routine-draft";
-import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
-import { HostComputerPrompt } from "./HostComputerPrompt";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
 import { useTeaching } from "./shell/bots/use-teaching";
@@ -96,11 +93,14 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
-import { ComputerOverlay } from "./shell/computer/computer-overlay";
-import { ComputerPanel } from "./shell/computer/computer-panel";
-import { useComputerControls, useComputerState } from "./shell/computer/use-computer";
+import { ComputerOverlay } from "./shell/computers/computer-overlay";
+import { ComputerPanel } from "./shell/computers/computer-panel";
+import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
+import { HostComputerPrompt } from "./shell/host-computer-prompt";
 import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
+import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
@@ -116,6 +116,8 @@ import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
 import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import { markShellReady, useSpaceEpoch } from "./shell/space-switch";
+import { TimezonePrompt } from "./shell/timezone-prompt";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
 import { usePaletteActions } from "./shell/use-palette-actions";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
@@ -124,8 +126,6 @@ import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
 import { useSpaceActions } from "./shell/use-space-actions";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
-import type { SettingsSection } from "./shell-overlay";
-import { TimezonePrompt } from "./TimezonePrompt";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -487,7 +487,6 @@ function SpaceShell() {
     else if (active) read.markBotReadIfVisible(active.id);
   }, [openChatWoke]);
   const {
-    startChatRead,
     refreshThread,
     refreshGroupThread,
     refreshThreadRef,
@@ -607,7 +606,6 @@ function SpaceShell() {
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
     beginSpaceSwitch: roster.beginSpaceSwitch,
-    startChatRead,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -679,6 +677,17 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // Not while the shell is leaving: a roster with nothing anywhere is on its way to onboarding,
+  // and a reopened group chat is on its way to that group.
+  const showNewBotPrompt =
+    initialBotsLoaded &&
+    bots.length === 0 &&
+    !activeGroup &&
+    !routeChat?.groupId &&
+    (groups.length > 0 ||
+      archivedBots.length > 0 ||
+      archivedGroups.length > 0 ||
+      spaces.some((space) => space.hasContent));
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1135,6 +1144,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
@@ -1148,7 +1158,7 @@ function SpaceShell() {
               callBot(bot);
             }}
           />
-          {!active && !activeGroup && initialBotsLoaded ? (
+          {showNewBotPrompt ? (
             <div className="grid flex-1 place-items-center">
               <Button onClick={() => dialogs.setCreateBotOpen(true)}>
                 <Plus size={16} aria-hidden="true" />
@@ -1323,6 +1333,10 @@ function SpaceShell() {
               bot={active}
               computer={computer}
               computerOpen={computerOpen}
+              embeddedScreenUrl={panel === "settings" ? computerControls.embeddedScreenUrl : null}
+              screenFrameKey={computerState.screenFrameKey}
+              heldScreen={computerState.heldScreen}
+              screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
               booting={booting}
@@ -1405,7 +1419,6 @@ function SpaceShell() {
         }}
         routineEditorProps={routineEditorProps}
         openBot={openBot}
-        openCreatedBot={openCreatedBot}
         modelFocusRequest={modelFocusRequest}
         onClearBot={(bot) => dialogs.setClearTarget({ kind: "bot", chat: bot })}
       />
@@ -1442,8 +1455,13 @@ function SpaceShell() {
           setOverlay={setOverlay}
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
+          messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
-          onOpenBot={openCreatedBot}
+          onOpenBot={(bot) => {
+            openCreatedBot(bot);
+            // As after any new bot: the Space's sections and counts come from the server.
+            void refreshBots().catch(() => undefined);
+          }}
         />
       </Suspense>
 
@@ -1460,7 +1478,6 @@ function SpaceShell() {
           removeSpace={removeSpace}
           leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
-          openAgentImport={() => setPanel("import-agent")}
           alive={alive}
           user={session.data?.user}
           refetchSession={() => session.refetch({ query: { disableCookieCache: true } })}

@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { ModelRoleSettings } from "@rakazo/contracts";
 import {
   captureScreenshot,
   chooseOption,
@@ -44,7 +45,7 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   });
   await openUserSettings(page, "models");
   const mainList = page.getByTestId("model-role-main");
-  await expect(mainList.getByTestId("model-role-default")).toContainText("Choose a model");
+  await expect(mainList.getByTestId("model-role-default")).toContainText("Connect a model");
   const dialog = await openModelConnection(page, "OpenRouter");
   await expect(dialog.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
@@ -479,4 +480,74 @@ test("project-scoped model connection keeps its routing after reopening", async 
   const saved = await manageModelConnection(page, "Google Vertex AI");
   await expect(saved.getByLabel("Project ID", { exact: true })).toHaveValue("example-project");
   await expect(saved.getByLabel("Region", { exact: true })).toHaveValue("global");
+});
+
+test("model funding connections", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `model-funding-${stamp}@rakazo.test`, "password12", "Model Settings");
+  await completeOnboarding(page);
+  const model = {
+    provider: "example",
+    providerName: "Example",
+    id: "reasoning-example",
+    label: "Reasoning model",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  let settings: ModelRoleSettings = {
+    primary: { provider: model.provider, modelId: model.id, credentialId: "personal-example" },
+    backups: [],
+  };
+  await page.route("**/rpc/models/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "personal-example",
+            provider: model.provider,
+            label: "Personal",
+            hasKey: true,
+            isDefault: true,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/models/forRole", (route) => route.fulfill({ json: { json: [model] } }));
+  await page.route("**/rpc/models/role", (route) => route.fulfill({ json: { json: settings } }));
+  await page.route("**/rpc/models/setRole", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: Partial<ModelRoleSettings> };
+    settings = { ...settings, ...json };
+    await route.fulfill({ json: { json: settings } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const main = page.getByTestId("model-role-main");
+  await main.getByRole("button", { name: "Change Reasoning model", exact: true }).click();
+  await expect(page.locator("[cmdk-group]").filter({ hasText: "Rakazo credits" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-funding-connections-picker");
+  await page
+    .locator("[cmdk-group]")
+    .filter({ hasText: "Rakazo credits" })
+    .getByRole("option", { name: "Reasoning model", exact: true })
+    .click();
+  await expect(main.getByTestId("model-role-row-1")).toContainText("Rakazo credits");
+  expect(settings.primary).toEqual({
+    provider: model.provider,
+    modelId: model.id,
+    creditOfferingId: model.creditOfferingId,
+  });
+  await captureScreenshot(page, testInfo, "model-funding-connections-credits");
+  await main.getByRole("button", { name: "Change Reasoning model", exact: true }).click();
+  await page
+    .locator("[cmdk-group]")
+    .filter({ hasText: "Example (Personal)" })
+    .getByRole("option", { name: "Reasoning model", exact: true })
+    .click();
+  await expect(main.getByTestId("model-role-row-1")).toContainText("Example (Personal)");
+  expect(settings.primary).toEqual({
+    provider: model.provider,
+    modelId: model.id,
+    credentialId: "personal-example",
+  });
 });

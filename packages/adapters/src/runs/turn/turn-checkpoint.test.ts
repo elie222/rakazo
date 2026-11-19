@@ -51,6 +51,33 @@ describe("turn checkpoint", () => {
     expect(JSON.stringify(restored.messages)).not.toContain("synthetic thought");
     expect(JSON.stringify(restored.messages)).toContain("pending");
   });
+  it("omits meeting transcript evidence from new and previously saved checkpoints", () => {
+    const transcript: Message = {
+      role: "toolResult",
+      toolCallId: "transcript-read",
+      toolName: "read_meeting_transcript",
+      content: [{ type: "text", text: "Fixture recorded speech" }],
+      details: { transcript: "Fixture duplicate text" },
+      timestamp: 0,
+      isError: false,
+    };
+    const turn = { ...checkpoint, messages: [checkpoint.messages[0]!, transcript, assistant] };
+    const serialized = serializeTurnCheckpoint(turn);
+    expect(serialized).not.toContain("Fixture recorded speech");
+    expect(serialized).not.toContain("Fixture duplicate text");
+    const legacy = restoreTurnCheckpoint(JSON.stringify(turn), {
+      provider: "fixture",
+      id: "first",
+    });
+    expect(legacy.messages[1]).toMatchObject({
+      role: "toolResult",
+      toolCallId: "transcript-read",
+      toolName: "read_meeting_transcript",
+      content: [{ type: "text", text: expect.stringContaining("Read it again") }],
+    });
+    expect(JSON.stringify(legacy)).toBe(serialized);
+    expect(transcript.content).toEqual([{ type: "text", text: "Fixture recorded speech" }]);
+  });
   it.each(["retrieval", "current"] as const)(
     "restored results use the same newest-first budget and remain shortened on rebuild (%s)",
     (strategy) => {

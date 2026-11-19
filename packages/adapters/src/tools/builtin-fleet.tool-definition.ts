@@ -14,7 +14,7 @@ const childRoutineTargetProperties = {
   bot_name: { type: "string", description: "Exact name of a bot in this space." },
 };
 
-/** Same exactly-one-timing-method rule as schedule_create, plus the target bot. */
+/** Same exactly-one-timing-method rule as schedule_create, without watches, plus the target bot. */
 const createChildRoutineInputSchema = {
   oneOf: [
     scheduleCreateBranch(["cron"], childRoutineTargetProperties),
@@ -153,7 +153,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "spawn_bot",
     description:
-      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
+      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. To give the new bot more than instructions (skills, routines, memories, apps to connect) or a task the user wants started, put it in prompt; the bot sets itself up from it. Otherwise creating the bot is the whole action.",
     inputSchema: {
       type: "object",
       properties: {
@@ -172,7 +172,8 @@ export const fleetTools: ConnectorTool[] = [
         },
         prompt: {
           type: "string",
-          description: "Optional first task to run in the new bot's thread.",
+          description:
+            "Optional first message to the new bot, which it acts on at once in its own thread: everything it should set up for itself, in full, or the task to start.",
         },
         computer_mode: {
           type: "string",
@@ -224,7 +225,7 @@ export const fleetTools: ConnectorTool[] = [
           type: "string",
           maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
           description:
-            "Your private operating instructions, replaced as a whole: include what should stay. Read every page before replacing them. Send in a call of its own, with no other fields.",
+            "Your private operating instructions, replaced as a whole: include what should stay. Read every page before replacing them.",
         },
         instructions_offset: {
           type: "integer",
@@ -358,7 +359,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "create_child_routine",
     description:
-      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.",
+      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. on: events, as in schedule_create.",
     inputSchema: createChildRoutineInputSchema,
   },
   {
@@ -432,6 +433,26 @@ export const fleetTools: ConnectorTool[] = [
           maxItems: ATTACHMENT_MAX_COUNT,
           description:
             "Paths of files or folders on your computer to send with it. A bot on your computer reads them in place; one with its own computer gets copies, so zip a folder for it. Never paste file contents into message.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "post_to_group",
+    description:
+      "Post a message as yourself in one of your groups. Wakes no member; use handoff_to_bot for that.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group_id: { type: "string", description: "Group id from your groups list." },
+        group_name: { type: "string", description: "Exact group name, if no group_id." },
+        message: { type: "string", description: "Send code, logs and long content as files." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description: "Paths on your computer to attach, never their contents. Zip folders.",
         },
       },
       required: ["message"],

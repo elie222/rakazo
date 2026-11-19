@@ -18,7 +18,7 @@ export async function createPaymentWalletProvider(
   const kind = resolvePaymentWalletProvider(source);
   if (kind === "emulator") return new EmulatorPaymentWalletProvider();
   if (kind !== "link") return null;
-  const { LinkWalletProvider } = await import("./link-wallet.js");
+  const { LinkWalletProvider } = await import("../providers/payment-wallet/link/link-wallet.js");
   const clientId = source.PAYMENT_WALLET_CLIENT_ID?.trim();
   return new LinkWalletProvider(clientId ? { clientId } : {});
 }

@@ -965,6 +965,7 @@ function fleetCall(prompt: string): { name: string; args: Record<string, unknown
         every: Number(routine[3]),
         unit: routine[4]!.toLowerCase(),
         prompt: clean(routine[5]!),
+        inChat: false,
       },
     };
   }

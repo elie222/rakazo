@@ -151,6 +151,35 @@ describe("home archive", () => {
     await expect(collect(packHome(source))).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
   });
 
+  it("packs a home past 5 GiB when the configured save limit allows it", async () => {
+    const source = await tempDir();
+    const handle = await open(path.join(source, "large.bin"), "w");
+    try {
+      await handle.truncate(5 * 1024 ** 3 + 1);
+    } finally {
+      await handle.close();
+    }
+    const limits = { maxBytes: 100 * 1024 ** 3, maxEntries: 10 };
+    const saveLimits = { maxBytes: 20 * 1024 ** 3, maxFiles: 1_000_000 };
+    const packed = packHome(source, limits, saveLimits);
+    // The size is checked before any content is read, so the first parts show it was accepted.
+    const first = await packed.next();
+    expect(first.done).toBe(false);
+    await packed.return(undefined);
+    await expect(
+      collect(packHome(source, limits, { ...saveLimits, maxBytes: 5 * 1024 ** 3 })),
+    ).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
+  });
+
+  it("counts files against the configured save limit", async () => {
+    const source = await tempDir();
+    await writeFile(path.join(source, "a"), "a");
+    await writeFile(path.join(source, "b"), "b");
+    await expect(
+      collect(packHome(source, undefined, { maxBytes: 1024, maxFiles: 1 })),
+    ).rejects.toEqual(new WorkspaceTooLargeError("files"));
+  });
+
   it("ignores excluded entries in older archives when restoring", async () => {
     const dest = await tempDir();
     await unpackHome(

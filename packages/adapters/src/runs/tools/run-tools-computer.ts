@@ -18,6 +18,13 @@ import {
 } from "../../browser/browser-tools.js";
 import { BACKGROUND_WORK_LAUNCH } from "../../computers/computer-idle.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
+import { redactShellStreams } from "../../computers/sandbox/agent-environment.js";
+import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
+import {
+  isRunningShellCommand,
+  observeShellCommand,
+  SHELL_STILL_RUNNING_NOTICE,
+} from "../../computers/sandbox/shell-command-stream.js";
 import {
   displayBotWorkspacePath,
   resolveBotUploadPath,
@@ -44,13 +51,6 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
-import { redactShellStreams } from "../../sandboxes/agent-environment.js";
-import { sandboxKindCapabilities } from "../../sandboxes/sandbox-kind-capabilities.js";
-import {
-  isRunningShellCommand,
-  observeShellCommand,
-  SHELL_STILL_RUNNING_NOTICE,
-} from "../../sandboxes/shell-command-stream.js";
 import {
   LOGIN_CODE_CHANGED,
   loginCodeClaim,

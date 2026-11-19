@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
-import { sliceWellFormed } from "../../shared/utf8.js";
+import { sliceWellFormed } from "@rakazo/core";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
 
 /** Per-attempt wait for response headers; this does not cap active streaming duration. */

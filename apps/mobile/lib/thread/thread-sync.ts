@@ -7,7 +7,9 @@ import { rpc, selectedSpaceId } from "../api/api";
 import { mobileThreadRefreshResult } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
+import type { SavedChatsScope } from "../inbox/saved-chats";
 import {
+  currentSavedChatsScope,
   liveSavedChatsScope,
   readSavedThread,
   savedChatsScope,
@@ -102,8 +104,7 @@ export function useThreadSync({
       commitSnap(null);
       setShowingSaved(false);
     }
-    void savedChatsScope().then((scope) => {
-      if (signal.aborted || !scope) return;
+    const show = (scope: SavedChatsScope) => {
       const onScreen = snapRef.current;
       if (messageId || (onScreen && savedChatTarget(onScreen) === target)) return;
       const saved = readSavedThread(scope, target);
@@ -111,6 +112,16 @@ export function useThreadSync({
       snapshotOrigin.current = scope;
       commitSnap(saved);
       setShowingSaved(true);
+    };
+    // A Space whose scope this session already read shows the copy at once, without waiting
+    // on the keychain reads that find the scope.
+    const known = currentSavedChatsScope();
+    if (known) {
+      show(known);
+      return;
+    }
+    void savedChatsScope().then((scope) => {
+      if (!signal.aborted && scope) show(scope);
     });
   }
 

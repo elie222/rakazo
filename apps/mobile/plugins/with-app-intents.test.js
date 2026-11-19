@@ -16,7 +16,7 @@ describe("RakazoIntents", () => {
       ["lib/api/session.ts", "SESSION_KEY"],
       ["lib/api/server-config.ts", "API_BASE_STORAGE_KEY"],
       ["lib/api/api.ts", "SPACE_KEY"],
-      ["lib/home/last-bot.ts", "LAST_BOT_KEY"],
+      ["lib/inbox/last-bot.ts", "LAST_BOT_KEY"],
       ["lib/api/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
@@ -130,7 +130,9 @@ describe("voice message Live Activity", () => {
   // EAS signs only the extensions app.json lists, under the bundle id the plugin gives them.
   it("lists the widget extension for EAS signing", () => {
     const app = JSON.parse(read("app.json")).expo;
-    const [extension] = app.extra.eas.build.experimental.ios.appExtensions;
+    const extension = app.extra.eas.build.experimental.ios.appExtensions.find(
+      ({ targetName }) => targetName === "RakazoWidgets",
+    );
     expect(read("plugins/with-app-intents.js")).toContain(`"${extension.targetName}"`);
     expect(extension.bundleIdentifier).toBe(`${app.ios.bundleIdentifier}.widgets`);
   });

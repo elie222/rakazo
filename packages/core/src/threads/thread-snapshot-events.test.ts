@@ -89,6 +89,36 @@ describe("thread event reduction", () => {
     expect(next?.messages).toBe(initial.messages);
   });
 
+  it("lets the run's user answer a tool's question that arrives right after the run starts", () => {
+    const initial = snapshot([]);
+    const started = reduceThreadSnapshot(initial, {
+      type: "run.started",
+      threadId: initial.threadId,
+      runId: "live",
+      payload: { trigger: "user", userId: "me" },
+    });
+    const asked = reduceThreadSnapshot(started, {
+      type: "thread.message.created",
+      threadId: initial.threadId,
+      runId: "live",
+      payload: {
+        messageId: "question",
+        role: "bot",
+        blocks: [
+          {
+            kind: "tool_question",
+            question: { source: "Gateway", message: "Approve?", fields: [] },
+            status: "pending",
+            expiresAt: "2026-11-18T00:04:00.000Z",
+            publicKey: "key",
+          },
+        ],
+      },
+    });
+    expect(answerableAskMessageIds(asked, "me")).toEqual(new Set(["question"]));
+    expect(answerableAskMessageIds(asked, "someone-else")).toEqual(new Set());
+  });
+
   it("keeps a private card answerable through a new send receipt and run start", () => {
     const paused = { ...threadRun("paused"), status: "waiting_input" as const };
     const ask = {

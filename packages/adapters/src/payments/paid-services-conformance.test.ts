@@ -1,7 +1,7 @@
 import type { AdapterContext, PaidServiceProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import { TregPaidServiceProvider } from "../providers/paid-service/treg/treg-paid-services.js";
 import { FakePaidServiceProvider } from "./paid-services-factory.js";
-import { TregPaidServiceProvider } from "./treg-paid-services.js";
 
 const context = { signal: new AbortController().signal } as AdapterContext;
 

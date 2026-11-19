@@ -282,3 +282,21 @@ it("stays hidden in a browser on plain HTTP", async () => {
   await renderSettings();
   expect(host.innerHTML).toBe("");
 });
+
+it("marks only the server-selected connected computer as bound", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([
+    { ...laptop, bound: false },
+    { ...desk, connected: true, bound: true },
+  ]);
+  await renderSettings();
+  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("Desk PCBound to bots");
+  expect(host.textContent?.match(/Bound to bots/g)).toHaveLength(1);
+});
+
+it("never marks an offline computer as bound", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([{ ...desk, bound: true }]);
+  await renderSettings();
+  expect(host.textContent).toContain("Desk PCOffline");
+  expect(host.textContent).not.toContain("Bound to bots");
+});

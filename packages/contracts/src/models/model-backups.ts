@@ -7,6 +7,7 @@ export type ConnectedBackupOption = ModelBackupChoice & {
   providerName: string;
   /** The connection serving it; absent for a deployment-managed model. */
   credentialId?: string;
+  creditOfferingId?: string;
   /** The connection's name, or the provider's for a deployment-managed model. */
   connectionName: string;
 };
@@ -18,13 +19,26 @@ export function backupChoiceKey(choice: ModelBackupChoice): string {
 
 /** One row of a role list: the same model on two connections is two rows. */
 export function modelRoleChoiceKey(
-  choice: ModelBackupChoice & { credentialId?: string | null },
+  choice: ModelBackupChoice & { credentialId?: string | null; creditOfferingId?: string | null },
 ): string {
   return JSON.stringify([
     canonicalPiProviderId(choice.provider),
     choice.modelId,
-    choice.credentialId ?? null,
+    modelRoleConnectionId(choice) ?? null,
   ]);
+}
+
+/** A runtime identity keeps funding distinct through retries and checkpoints. */
+export function modelRoleConnectionId(choice: {
+  credentialId?: string | null;
+  creditOfferingId?: string | null;
+}): string | undefined {
+  return choice.creditOfferingId
+    ? `credits:${choice.creditOfferingId}`
+    : (choice.credentialId ?? undefined);
+}
+export function creditOfferingFromConnectionId(connectionId?: string | null): string | undefined {
+  return connectionId?.startsWith("credits:") ? connectionId.slice("credits:".length) : undefined;
 }
 
 /**
@@ -99,9 +113,21 @@ export function connectedBackupOptions(
         connectionName: connection ? connectionDisplayName(connection, providerName) : providerName,
       };
     };
+    for (const entry of models) {
+      if (!entry.creditOfferingId || (computerUse && entry.images === false)) continue;
+      options.push({
+        ...option(entry),
+        creditOfferingId: entry.creditOfferingId,
+        connectionName: "Rakazo credits",
+      });
+    }
     if (owners.length === 0) {
       if (!computerUse)
-        options.push(...models.filter((entry) => entry.managed).map((entry) => option(entry)));
+        options.push(
+          ...models
+            .filter((entry) => entry.managed && !entry.creditOfferingId)
+            .map((entry) => option(entry)),
+        );
       continue;
     }
     for (const connection of owners)

@@ -3,6 +3,10 @@ import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ROUTINE_CHAT_TRIGGER_NOTE,
+  ROUTINE_WEBHOOK_SETUP_NOTE,
+} from "../routines/routine-triggers.prompt.js";
+import {
   cancelScheduleFromTool,
   changeUserTimezone,
   commandWatchFromTool,
@@ -1011,15 +1015,18 @@ describe("scheduleCreateError", () => {
         { id: "routine-1", name: "Daily digest", threadId: "thread-1" },
       ]),
     },
-  } as unknown as Parameters<typeof scheduleCreateError>[0];
+  } as unknown as Parameters<typeof scheduleCreateError>[0]["prisma"];
   const check = (args: Record<string, unknown>) =>
-    scheduleCreateError(prisma, {
-      spaceId: "space-1",
-      botId: "bot-1",
-      userId: "user-1",
-      threadId: "thread-1",
-      ...scheduleCreateFields(args),
-    });
+    scheduleCreateError(
+      { prisma },
+      {
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        ...scheduleCreateFields(args),
+      },
+    );
   const named = { name: "Inbox check", prompt: "Summarize what changed" };
   const watch = { kind: "command", command: "ls inbox", everyMinutes: 15 };
 
@@ -1736,5 +1743,264 @@ describe("changeUserTimezone", () => {
 
     expect(user.timezone).toBeNull();
     expect(rows[0]).toMatchObject({ timezone: "Africa/Cairo" });
+  });
+});
+
+describe("schedule tools with events", () => {
+  const owner = { spaceId: "ws-1", botId: "bot-1", userId: "user-1", threadId: "thread-1" };
+
+  function eventDeps(options: { botUserId?: string; provider?: string } = {}) {
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const enqueue = vi.fn(async () => undefined);
+    const key = { plaintext: "" };
+    const put = vi.fn(async (plaintext: string) => {
+      key.plaintext = plaintext;
+      return { id: "secret-1", ciphertext: "sealed" };
+    });
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
+      secret: { create: vi.fn(), deleteMany: vi.fn() },
+      bot: { update: vi.fn() },
+    };
+    const prisma = accountZonePrisma(
+      {
+        routine: { create, findMany: noRoutines },
+        bot: {
+          findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
+          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+        },
+        messagingIdentity: {
+          findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),
+        },
+      },
+      null,
+    );
+    const deps = {
+      prisma: {
+        ...prisma,
+        $transaction: async (run: (client: unknown) => Promise<unknown>) =>
+          run({ ...prisma, ...tx }),
+      },
+      events: { append: vi.fn() },
+      jobs: { enqueue },
+      secretStore: { put },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+    return { deps, create, enqueue, put, key };
+  }
+
+  it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
+    const { deps, create, enqueue, put, key } = eventDeps();
+    const result = await createScheduleFromTool(deps, {
+      ...owner,
+      ...scheduleCreateFields({
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        on: { webhook: true },
+      }),
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        crons: [],
+        nextRunAt: null,
+        webhookEnabled: true,
+        githubEnabled: false,
+        messageProvider: null,
+        emailSenders: null,
+      }),
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(put).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      ok: true,
+      on: { webhook: true },
+      setup: ROUTINE_WEBHOOK_SETUP_NOTE,
+    });
+    expect(key.plaintext).not.toBe("");
+    expect(JSON.stringify(result)).not.toContain(key.plaintext);
+  });
+
+  it("adds a chat event to a repeating schedule by the app's name", async () => {
+    const { deps, create, enqueue, put } = eventDeps({ provider: "slack" });
+    const result = await createScheduleFromTool(deps, {
+      ...owner,
+      ...scheduleCreateFields({
+        name: "Standup",
+        prompt: "Post the standup",
+        cron: "0 9 * * 1-5",
+        on: { chat: "Slack" },
+      }),
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ crons: ["0 9 * * 1-5"], messageProvider: "slack" }),
+    });
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(put).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      on: { chat: "Slack" },
+      chatNote: ROUTINE_CHAT_TRIGGER_NOTE,
+    });
+  });
+
+  it("makes no key for a routine that cannot be saved", async () => {
+    const { deps, create, put } = eventDeps();
+    expect(
+      await createScheduleFromTool(deps, {
+        ...owner,
+        ...scheduleCreateFields({
+          name: "Hook",
+          prompt: "Check",
+          timezone: "UTC",
+          cron: "not a cron",
+          on: { webhook: true },
+        }),
+      }),
+    ).toEqual({ error: "cron must be a 5-field cron expression." });
+    expect(
+      await createScheduleFromTool(deps, {
+        ...owner,
+        ...scheduleCreateFields({
+          name: "Hook",
+          prompt: "Check",
+          startAt: "2099-01-01",
+          on: { webhook: true },
+        }),
+      }),
+    ).toEqual({ error: "startAt is only for repeating schedules." });
+    expect(create).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("refuses events on a one-time schedule or another member's bot before saving", async () => {
+    const oneShot = eventDeps();
+    expect(
+      await createScheduleFromTool(oneShot.deps, {
+        ...owner,
+        ...scheduleCreateFields({
+          name: "Once",
+          prompt: "Check",
+          delayMinutes: 5,
+          on: { git: true },
+        }),
+      }),
+    ).toEqual({ error: "A one-time schedule takes no events (on)." });
+    const member = eventDeps({ botUserId: "user-2" });
+    expect(
+      await createScheduleFromTool(member.deps, {
+        ...owner,
+        ...scheduleCreateFields({ name: "Hook", prompt: "Check", on: { webhook: true } }),
+      }),
+    ).toEqual({ error: "Only the bot's creator can start its routines from events." });
+    for (const { create, put } of [oneShot, member]) {
+      expect(create).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    }
+  });
+
+  it("checks events before the approval card and makes no key there", async () => {
+    const { deps, put } = eventDeps();
+    expect(
+      await scheduleCreateError(deps, {
+        ...owner,
+        ...scheduleCreateFields({ name: "Inbox", prompt: "Read it", on: { email: "owner" } }),
+      }),
+    ).toBe("This server doesn't receive email.");
+    expect(
+      await scheduleCreateError(deps, {
+        ...owner,
+        ...scheduleCreateFields({ name: "Hook", prompt: "Check", on: { webhook: true } }),
+      }),
+    ).toBeUndefined();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("replaces a routine's events on update and keeps a routine with a trigger", async () => {
+    const row = {
+      id: "routine-1",
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      name: "Deploys",
+      prompt: "Summarize the deploy",
+      crons: [],
+      timezone: "UTC",
+      active: true,
+      watch: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      webhookEnabled: true,
+      githubEnabled: false,
+      messageProvider: null,
+      emailSenders: null,
+    };
+    const { deps } = eventDeps();
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const updateDeps = {
+      ...deps,
+      prisma: {
+        ...deps.prisma,
+        routine: { findFirst: vi.fn(async () => row), updateMany },
+      },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as Parameters<typeof updateScheduleFromTool>[0];
+    const update = (on: unknown) =>
+      updateScheduleFromTool(updateDeps, { ...owner, routineId: "routine-1", schedule: {}, on });
+
+    expect(await update({})).toEqual({
+      error: "A routine needs a schedule or an event. Cancel it instead.",
+    });
+    // Another member's edit would take the routine over and leave its events off.
+    expect(
+      await updateScheduleFromTool(updateDeps, {
+        ...owner,
+        userId: "user-2",
+        routineId: "routine-1",
+        prompt: "Summarize less",
+        schedule: {},
+      }),
+    ).toMatchObject({ error: expect.stringContaining("run only for the person who owns it") });
+    expect(updateMany).not.toHaveBeenCalled();
+
+    const result = await update({ git: true });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ webhookEnabled: false, githubEnabled: true }),
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      on: { git: true },
+      changes: { on: { before: { webhook: true }, after: { git: true } } },
+    });
+  });
+
+  it("lists a routine's events", async () => {
+    const prisma = {
+      routine: {
+        findMany: vi.fn(async () => [
+          {
+            id: "routine-1",
+            name: "Deploys",
+            prompt: "Summarize",
+            crons: [],
+            timezone: "UTC",
+            active: true,
+            nextRunAt: null,
+            watch: null,
+            threadId: "thread-1",
+            webhookEnabled: false,
+            githubEnabled: true,
+            messageProvider: null,
+            emailSenders: "domain",
+          },
+        ]),
+      },
+    } as unknown as Parameters<typeof listSchedulesFromTool>[0]["prisma"];
+    const listed = await listSchedulesFromTool({ prisma }, { spaceId: "ws-1", botId: "bot-1" });
+    expect(listed.routines[0]).toMatchObject({ on: { git: true, email: "domain" } });
   });
 });

@@ -605,3 +605,28 @@ describe("memory.retain-turn", () => {
     );
   });
 });
+
+describe("lifecycle email job", () => {
+  const job = {
+    kind: "model-connection",
+    organizationId: "org-1",
+    userId: "user-1",
+    message: { subject: "Subject", text: "Text" },
+  } as const;
+  const handlers = (lifecycleEmail?: (payload: typeof job) => Promise<void>) =>
+    createBackgroundJobHandlers({ lifecycleEmail } as unknown as Parameters<
+      typeof createBackgroundJobHandlers
+    >[0]);
+
+  it("is dropped where account mail is not configured", async () => {
+    await expect(handlers()["email.lifecycle"](job)).resolves.toBeUndefined();
+  });
+
+  it("hands the job to the sender outside any Space", async () => {
+    const sent = vi.fn(async (_payload: typeof job) => {
+      expect(currentDbContext()).toMatchObject({ kind: "system" });
+    });
+    await handlers(sent)["email.lifecycle"](job);
+    expect(sent).toHaveBeenCalledWith(job);
+  });
+});

@@ -937,6 +937,10 @@ describe("provider connection screen", () => {
     );
     const signal = mocks.completeOAuth.mock.lastCall![0] as AbortSignal;
     expect(signal.aborted).toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
     expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
@@ -1062,7 +1066,7 @@ describe("model role lists", () => {
     await renderModels();
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["1Choose a model", "2Model 2OpenRouter", "Add fallback"]);
+    ).toEqual(["1Choose a model", "2Model 2OpenRouter"]);
   });
 
   it("adds a fallback from the shared picker and saves it immediately", async () => {

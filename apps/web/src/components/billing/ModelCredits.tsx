@@ -52,13 +52,14 @@ import {
   formatBillingAmount,
   formatBillingDate,
   formatBillingPrice,
-} from "../../lib/billing";
-import { desktopBridge } from "../../lib/platform/desktop";
+} from "../../lib/billing/billing";
+import { analyticsSurface, desktopBridge } from "../../lib/platform/desktop";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { InfoTooltip } from "../InfoTooltip";
+import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
@@ -233,10 +234,8 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className={cn(
-          "w-full",
-          !compact && "rounded-xl pr-3 pl-4 text-body-lg data-[size=default]:h-12",
-        )}
+        size={compact ? "default" : "xl"}
+        className="w-full"
       >
         <SelectValue />
       </SelectTrigger>
@@ -855,6 +854,7 @@ export function ModelCreditsSettings({
               </Trans>
             </p>
           ) : null}
+          {status.canManage ? <ComputerUsage /> : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
@@ -1055,7 +1055,10 @@ export function ModelCreditsSettings({
           disabled={pending || !status.creditPurchasesEnabled}
           onClick={() =>
             void action(async () => {
-              await client.billing.selectFunding({ funding: "credits" });
+              await client.billing.selectFunding({
+                funding: "credits",
+                surface: analyticsSurface(),
+              });
               window.location.reload();
             })
           }

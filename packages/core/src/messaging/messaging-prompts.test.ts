@@ -1,6 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  chatAppConnectNote,
   isMessagingChannelRun,
   teamChatAmbientPrompt,
   teamChatPrompt,
@@ -77,5 +78,17 @@ describe("team chat prompts", () => {
     ];
     expect(teamChatResponseText(blocks)).toBe("The plan is ready.");
     expect(teamChatResponseText([])).toBe("Bot completed the request without a written reply.");
+  });
+});
+
+describe("chatAppConnectNote", () => {
+  it("names the chat apps and keeps their setup apart from the connect card", () => {
+    const note = chatAppConnectNote(["Slack", "Telegram"], true);
+    expect(note).toContain("Slack, Telegram");
+    expect(note).toContain("Settings, under Messaging");
+    expect(note).not.toContain("connect_app");
+    expect(chatAppConnectNote(["Slack"], false)).toBe(
+      "People can also message you from Slack. They set that up themselves in Settings, under Messaging.",
+    );
   });
 });

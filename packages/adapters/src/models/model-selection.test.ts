@@ -25,6 +25,7 @@ import {
   routineRunModelPin,
   runModelChoice,
   selectDefaultCredentialId,
+  spaceCanRunCatalogModel,
   validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -344,6 +345,57 @@ describe("space catalog auth", () => {
       expect(auth.managedProvider).toBeUndefined();
       expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
       expect(load).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps personal models outside an approved provider's credit offering", async () => {
+    const models = listPiCatalog().filter((entry) => entry.provider === "openrouter");
+    const [approved, personal] = models;
+    expect(approved).toBeDefined();
+    expect(personal).toBeDefined();
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "openrouter",
+            modelId: approved!.id,
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    try {
+      const { prisma } = authPrisma({
+        credentials: [
+          {
+            ...storedCredential("personal", "personal-secret", "2026-01-01T00:00:00.000Z"),
+            provider: "openrouter",
+          },
+        ],
+        preferences: [],
+        secrets: [{ id: "personal-secret", ciphertext: "fake-ciphertext" }],
+      });
+      Object.assign(prisma, {
+        space: {
+          findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
+        },
+      });
+      const auth = await modelCredentialAuthKindsForSpace(
+        prisma,
+        { load: vi.fn(async () => "fake-personal-key") },
+        scope,
+        "openrouter",
+      );
+      expect(auth.managedProviders).toContain("openrouter");
+      expect(auth.secretIdByProvider.openrouter).toBe("personal-secret");
+      expect(spaceCanRunCatalogModel(auth, personal!)).toBe(true);
+      expect(spaceCanRunCatalogModel({ ...auth, secretIdByProvider: {} }, personal!)).toBe(false);
     } finally {
       vi.unstubAllEnvs();
     }

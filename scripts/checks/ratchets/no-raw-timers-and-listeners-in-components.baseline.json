@@ -13,7 +13,7 @@
   "apps/web/src/lib/platform/preload-recovery.ts": 1,
   "apps/web/src/pages/shell/chat/chat-context.tsx": 1,
   "apps/web/src/pages/shell/composer/composer-error.tsx": 2,
-  "apps/web/src/pages/shell/computer/use-computer-controls.tsx": 2,
-  "apps/web/src/pages/shell/computer/use-computer.tsx": 5,
+  "apps/web/src/pages/shell/computers/use-computer-controls.tsx": 2,
+  "apps/web/src/pages/shell/computers/use-computer.tsx": 5,
   "apps/web/src/pages/shell/sidebar/use-space-roster.ts": 1
 }

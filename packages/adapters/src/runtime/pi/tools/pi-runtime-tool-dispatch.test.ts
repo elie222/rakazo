@@ -486,7 +486,6 @@ vi.mock("../models/pi-openai-compatible-provider.js", () => ({
 
 import {
   approvalPausedToolResult,
-  OWNER_SETTINGS_REFUSAL_REPLY,
   terminatingToolResult,
 } from "../../../approvals/approval-effect.js";
 import {
@@ -499,6 +498,9 @@ import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "../pi-runtime
 import { providerFailureText } from "../pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../pi-runtime-limits.js";
 import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+
+const TERMINATING_REPLY =
+  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -601,6 +603,34 @@ describe("Pi connector tool dispatch", () => {
       args: { collection: "notes", title: "Result", body: "Done" },
     };
     delete process.env.MAX_TOOL_CALLS_PER_TURN;
+  });
+
+  it("preserves an explicit computer id through shell argument preparation", async () => {
+    fakeAgentState.invoke = {
+      name: "user_computer_shell",
+      args: { command: "pwd", computerId: "device-2" },
+    };
+    const executeTool = vi.fn(async () => ({ code: 0 }));
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "computer-target",
+        prompt: "Check the selected computer",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [builtinAgentTools.find((tool) => tool.name === "user_computer_shell")!],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+    }
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(executeTool.mock.calls[0]?.slice(0, 2)).toEqual([
+      "user_computer_shell",
+      { command: "pwd", computerId: "device-2" },
+    ]);
   });
 
   it("injects durable steering at Pi's next safe turn boundary", async () => {
@@ -2063,7 +2093,7 @@ describe("Pi connector tool dispatch", () => {
 
   it("ends the run with the reply a terminating tool result carries", async () => {
     fakeAgentState.mode = "terminating-tool";
-    const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+    const terminatingReply = TERMINATING_REPLY;
     const executeTool = vi.fn(async () =>
       terminatingToolResult(terminatingReply, { refused: "owner-settings" }),
     );
@@ -2101,7 +2131,7 @@ describe("Pi connector tool dispatch", () => {
   it.each([true, false])(
     "requires internal provenance to end a restored turn (trusted: %s)",
     async (trusted) => {
-      const terminatingReply = OWNER_SETTINGS_REFUSAL_REPLY;
+      const terminatingReply = TERMINATING_REPLY;
       const executed: string[] = [];
       const executeTool = vi.fn(async (name: string) => {
         executed.push(name);

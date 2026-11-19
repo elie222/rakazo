@@ -20,13 +20,13 @@ import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
-import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
-import { isSandboxGoneError } from "../../../sandboxes/sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxReadLimit,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandboxes/sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
 import type { DaytonaSandbox } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { daytonaFixture } from "./daytona-sandbox.test-support.js";

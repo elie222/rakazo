@@ -22,6 +22,92 @@ describe("buildApprovalAskBlock", () => {
     expect(JSON.stringify(block)).not.toContain("token-secret");
   });
 
+  it("shows an editable draft only when the full outgoing message fits on the card", () => {
+    const args = { channel: "#general", text: "Review the report" };
+    const entry = { action: "send", arguments: args };
+    const options = {
+      allowOutgoingDraft: true,
+      batch: {
+        items: "tools",
+        action: "action",
+        arguments: "arguments",
+        outgoingDrafts: {
+          send: {
+            kind: "message" as const,
+            source: "Team chat",
+            keys: { to: "channel", body: "text" },
+          },
+        },
+      },
+    };
+    expect(buildApprovalAskBlock("effect", "batch", { tools: [entry] }, [], options)).toMatchObject(
+      {
+        outgoingDraft: { values: { kind: "message", to: "#general", body: "Review the report" } },
+        actions: [
+          { id: "allow", label: "Send" },
+          { id: "deny", label: "Discard" },
+        ],
+      },
+    );
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [entry, entry] }, [], options),
+    ).not.toHaveProperty("outgoingDraft");
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [entry] }, ["the report"], options),
+    ).not.toHaveProperty("outgoingDraft");
+    const attachment = { ...entry, arguments: { ...args, attachment: "example-file" } };
+    expect(
+      buildApprovalAskBlock("effect", "batch", { tools: [attachment] }, [], options),
+    ).not.toHaveProperty("outgoingDraft");
+  });
+
+  it("keeps the redacted checker warning on the draft card", () => {
+    const block = buildApprovalAskBlock(
+      "effect",
+      "send_message",
+      { channel: "C123", text: "Status update" },
+      ["private-name"],
+      {
+        allowOutgoingDraft: true,
+        reviewReason: "This posts to private-name",
+        outgoingDraft: {
+          kind: "message",
+          source: "Team chat",
+          keys: { to: "channel", body: "text" },
+        },
+      },
+    );
+    expect(block).toHaveProperty("outgoingDraft");
+    expect(block).toHaveProperty("detail", expect.stringContaining("This posts to"));
+    expect(block).toHaveProperty("detail", expect.not.stringContaining("private-name"));
+  });
+
+  it("previews a subject-only email with the recipient alias", () => {
+    const outgoingDraft = {
+      kind: "email" as const,
+      source: "Mail",
+      keys: { to: "recipient_email", subject: "subject", body: "body" },
+      recipientAlias: "to",
+    };
+    const args = { to: "sam@example.test", subject: "Review" };
+    const options = { outgoingDraft, allowOutgoingDraft: true };
+    expect(buildApprovalAskBlock("effect", "send_email", args, [], options)).toMatchObject({
+      outgoingDraft: {
+        keys: { to: "to" },
+        values: { kind: "email", to: args.to, subject: args.subject, body: "" },
+      },
+    });
+    expect(
+      buildApprovalAskBlock(
+        "effect",
+        "send_email",
+        { ...args, recipient_email: "other@example.test" },
+        [],
+        options,
+      ),
+    ).not.toHaveProperty("outgoingDraft");
+  });
+
   it("offers no Always allow on an approval that asks every time", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
@@ -163,16 +249,17 @@ describe("bot management approval cards", () => {
       detail: "Members: Scout, Writer\nPrompt: use [redacted]",
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: toolName.startsWith("set_child_")
-        ? [
-            { id: "allow", label: "Allow once" },
-            { id: "deny", label: "Deny" },
-          ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+      actions:
+        toolName === "set_child_instructions"
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
     });
   });
 
@@ -215,7 +302,12 @@ describe("bot management approval cards", () => {
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {
-    const block = buildApprovalAskBlock("effect-1", "set_child_bot_model", { bot_id: "bot-a" }, []);
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "set_child_instructions",
+      { bot_id: "bot-a" },
+      [],
+    );
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.actions?.map((action) => action.id)).toEqual(["allow", "deny"]);
   });

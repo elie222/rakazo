@@ -1,5 +1,5 @@
-import type { VoiceCatalogEntry, VoiceCredential } from "../domain.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
+import type { VoiceCatalogEntry, VoiceCredential } from "./voice.js";
 
 /**
  * What the voice settings form offers for a provider. Until connected, the account's model

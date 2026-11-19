@@ -6,9 +6,9 @@ import {
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
+import { Prisma } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
-
-const LIVE_SUBSCRIPTION_STATUSES = new Set(["trialing", "active", "past_due"]);
+import { hasBillingAccess } from "./billing.js";
 
 /**
  * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever
@@ -22,7 +22,7 @@ function byokTierOf(
     | null
     | undefined,
 ): ByokTier | null {
-  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
+  const live = hasBillingAccess(billing?.status ?? null);
   if (mode !== "byok" && !(live && billing?.byokPriceCents)) return null;
   return (live && ByokTierSchema.safeParse(billing?.byokTier).data) || "standard";
 }
@@ -64,7 +64,7 @@ export async function sandboxAllowancePlan(
   ]);
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
-  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));
+  const live = hasBillingAccess(billing?.status ?? null);
   const periodStart =
     live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
       ? billing.currentPeriodStartsAt
@@ -182,19 +182,37 @@ export async function sandboxRunHours(
   now = new Date(),
 ): Promise<Array<{ kind: string; hours: number }>> {
   // The allowance is per organization, so it counts the computers of all its Spaces.
-  return runAsSystem(
-    "computer allowance across an organization's Spaces",
-    () => prisma.$queryRaw<Array<{ kind: string; hours: number }>>`
-    SELECT r."kind",
-      SUM(EXTRACT(EPOCH FROM (
+  return runAsSystem("computer allowance across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ kind: string; hours: number }>>(Prisma.sql`
+      SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
+      FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
+      GROUP BY "kind"`),
+  );
+}
+
+export function sandboxRunHoursByComputer(
+  prisma: Pick<PrismaClient, "$queryRaw">,
+  organizationId: string,
+  since: Date,
+  now: Date,
+) {
+  return runAsSystem("computer usage across an organization's Spaces", () =>
+    prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>(Prisma.sql`
+      SELECT "computerId", "kind", SUM("seconds")::float8 / 3600 AS "hours"
+      FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
+      GROUP BY "computerId", "kind"`),
+  );
+}
+
+function sandboxRunWindow(organizationId: string, since: Date, now: Date) {
+  return Prisma.sql`
+    SELECT r."computerId", r."kind", EXTRACT(EPOCH FROM (
         LEAST(COALESCE(r."endedAt", ${now}::timestamp(3)), ${now}::timestamp(3))
         - GREATEST(r."startedAt", ${since}::timestamp(3))
-      )))::float8 / 3600 AS "hours"
+      )) AS "seconds"
     FROM "computer_runs" AS r
     JOIN "spaces" AS s ON s."id" = r."spaceId"
     WHERE s."organizationId" = ${organizationId}
       AND r."startedAt" < ${now}::timestamp(3)
-      AND (r."endedAt" IS NULL OR r."endedAt" > ${since}::timestamp(3))
-    GROUP BY r."kind"`,
-  );
+      AND (r."endedAt" IS NULL OR r."endedAt" > ${since}::timestamp(3))`;
 }
