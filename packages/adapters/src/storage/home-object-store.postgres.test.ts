@@ -73,6 +73,49 @@ describePostgres("agent home storage records (PostgreSQL)", () => {
     expect((await records.load(homeKey))?.revision).toBe("rev-1");
   });
 
+  it("leaves the revision where it was when its version cannot be recorded", async () => {
+    const homeKey = `home-versions-${randomUUID()}`;
+    await system.computer.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        scopeKey: homeKey,
+        homeKey,
+        kind: "fake",
+        state: "running",
+      },
+    });
+    const records = new PrismaAgentHomeRecords(db.prisma, memoryRing());
+    const { storageId } = (await records.create(homeKey))!;
+    expect(await records.advance(homeKey, storageId, null, "rev-1")).toBe(true);
+    const failing = new PrismaAgentHomeRecords(
+      {
+        computer: db.prisma.computer,
+        computerHomeVersion: db.prisma.computerHomeVersion,
+        $transaction: ((work: (tx: PrismaClient) => Promise<unknown>) =>
+          db.prisma.$transaction((tx) =>
+            work({
+              computer: tx.computer,
+              computerHomeVersion: {
+                createMany: () => Promise.reject(new Error("connection lost")),
+              },
+            } as unknown as PrismaClient),
+          )) as unknown as PrismaClient["$transaction"],
+      },
+      memoryRing(),
+    );
+
+    await expect(failing.advance(homeKey, storageId, "rev-1", "rev-2")).rejects.toThrow(
+      "connection lost",
+    );
+    expect((await records.load(homeKey))?.revision).toBe("rev-1");
+    expect(await records.advance(homeKey, storageId, "rev-1", "rev-2")).toBe(true);
+    expect((await records.versions(homeKey))?.versions.map((v) => v.revision).sort()).toEqual([
+      "rev-1",
+      "rev-2",
+    ]);
+  });
+
   it("keeps versions across saves, prunes them and restores one", async () => {
     const homeKey = `home-versions-${randomUUID()}`;
     const computer = await system.computer.create({

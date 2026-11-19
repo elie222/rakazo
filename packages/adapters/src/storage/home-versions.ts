@@ -110,30 +110,28 @@ export function loadHomeVersions(
  * row for its previous revision yet; it is recorded with the time that save finished.
  */
 export async function recordHomeVersion(
-  prisma: VersionsDb,
+  prisma: Pick<PrismaClient, "computerHomeVersion">,
   computer: { id: string; homeRevisionAt: Date | null; updatedAt: Date },
   storageId: string,
   from: string | null,
   to: string,
 ): Promise<void> {
-  await runAsSystem("record an agent home's saved version", () =>
-    prisma.computerHomeVersion.createMany({
-      data: [
-        ...(from
-          ? [
-              {
-                computerId: computer.id,
-                storageId,
-                revision: from,
-                savedAt: computer.homeRevisionAt ?? computer.updatedAt,
-              },
-            ]
-          : []),
-        { computerId: computer.id, storageId, revision: to, savedAt: new Date() },
-      ],
-      skipDuplicates: true,
-    }),
-  );
+  await prisma.computerHomeVersion.createMany({
+    data: [
+      ...(from
+        ? [
+            {
+              computerId: computer.id,
+              storageId,
+              revision: from,
+              savedAt: computer.homeRevisionAt ?? computer.updatedAt,
+            },
+          ]
+        : []),
+      { computerId: computer.id, storageId, revision: to, savedAt: new Date() },
+    ],
+    skipDuplicates: true,
+  });
 }
 
 /**

@@ -632,24 +632,33 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
    * Lifecycle claims (booting, suspending) fence on the computer's updatedAt, so recording where
    * a home is stored must leave it unchanged. Writing it back would race a claim landing between
    * the read and the write, so the write also requires the value it read and retries if a claim
-   * moved it. Resolves to the row as it was before the write, or undefined when nothing matched.
+   * moved it. `alsoWrite` commits with the update or not at all. Resolves to the row as it was
+   * before the write, or undefined when nothing matched.
    */
   private async updateKeepingClaim(
     reason: string,
     homeKey: string,
     where: Record<string, unknown>,
     data: Record<string, unknown>,
+    alsoWrite?: (
+      tx: Pick<PrismaClient, "computerHomeVersion">,
+      row: { id: string; homeRevisionAt: Date | null; updatedAt: Date },
+    ) => Promise<unknown>,
   ) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const row = await this.row(homeKey);
       if (!row) return undefined;
-      const { count } = await runAsSystem(reason, () =>
-        this.prisma.computer.updateMany({
-          where: { ...where, id: row.id, updatedAt: row.updatedAt },
-          data: { ...data, updatedAt: row.updatedAt },
+      const updated = await runAsSystem(reason, () =>
+        this.prisma.$transaction(async (tx) => {
+          const { count } = await tx.computer.updateMany({
+            where: { ...where, id: row.id, updatedAt: row.updatedAt },
+            data: { ...data, updatedAt: row.updatedAt },
+          });
+          if (count === 1) await alsoWrite?.(tx, row);
+          return count === 1;
         }),
       );
-      if (count === 1) return row;
+      if (updated) return row;
       const current = await this.row(homeKey);
       if (!current || current.updatedAt.getTime() === row.updatedAt.getTime()) return undefined;
     }
@@ -697,10 +706,9 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
       homeKey,
       { homeStorageId: storageId, homeStorageRevision: from },
       { homeStorageRevision: to },
+      (tx, before) => recordHomeVersion(tx, before, storageId, from, to),
     );
-    if (!row) return false;
-    await recordHomeVersion(this.prisma, row, storageId, from, to);
-    return true;
+    return row !== undefined;
   }
 
   prune(homeKey: string, storageId: string, now: Date) {

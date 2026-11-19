@@ -73,23 +73,24 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
         confirmLabel={restore.pending ? <Trans>Restoring…</Trans> : <Trans>Restore</Trans>}
         onConfirm={() => restore.run(selected)}
       >
-        <RadioGroup
-          aria-label={t`Saved at`}
-          value={selected}
-          onValueChange={(value) => setChosen(String(value))}
-          className="max-h-72 overflow-y-auto"
-        >
-          {versions.map((version) => (
-            // biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control.
-            <label
-              key={version.key}
-              className="flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
-            >
-              <RadioGroupItem value={version.key} />
-              {version.label}
-            </label>
-          ))}
-        </RadioGroup>
+        <div className="max-h-72 overflow-y-auto">
+          <RadioGroup
+            aria-label={t`Saved at`}
+            value={selected}
+            onValueChange={(value) => setChosen(String(value))}
+          >
+            {versions.map((version) => (
+              // biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control.
+              <label
+                key={version.key}
+                className="flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
+              >
+                <RadioGroupItem value={version.key} />
+                {version.label}
+              </label>
+            ))}
+          </RadioGroup>
+        </div>
       </ConfirmDialog>
     </div>
   );
