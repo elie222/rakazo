@@ -350,6 +350,11 @@ export default function ArtifactsScreen() {
                 />
               ))}
             </ScrollView>
+            {items !== null && loadError ? (
+              <Text accessibilityRole="alert" style={[styles.empty, styles.refreshError]}>
+                {loadError}
+              </Text>
+            ) : null}
           </View>
         }
         style={[styles.listView, sideInsets]}
@@ -548,6 +553,7 @@ function createStyles() {
       paddingHorizontal: 24,
       paddingTop: 8,
     },
+    refreshError: { color: tokens.destructive, paddingBottom: 8 },
     footer: { paddingVertical: 20 },
     row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
     rowPressed: { opacity: 0.6 },
