@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
+import { shownOpenWork } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,10 +55,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
   });
   const busy = change.pending;
   // Parked work waits behind Show more, so what is still open leads the list.
-  const openItems = items.filter((item) => item.status !== "parked");
-  const shown = showAll
-    ? [...openItems, ...items.filter((item) => item.status === "parked")]
-    : openItems.slice(0, 5);
+  const shown = shownOpenWork(items, showAll);
   const input = change.input;
   const error = change.error
     ? input && "title" in input

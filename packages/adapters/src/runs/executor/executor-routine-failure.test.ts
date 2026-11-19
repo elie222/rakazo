@@ -348,7 +348,7 @@ describe("routine failure notifications", () => {
     );
   });
 
-  it("offers a daily check-in only asking and tidying its list, never message_user", async () => {
+  it("offers a daily check-in only ask_user and never tells it to use message_user", async () => {
     const { runtimeRun } = await failRun({
       error: new Error("Invalid API key"),
       clientNonce: "strategic-initiative:bot-1:1",
@@ -357,11 +357,7 @@ describe("routine failure notifications", () => {
       tools: { name: string }[];
       instructions: string;
     };
-    expect(request.tools.map((tool) => tool.name).sort()).toEqual([
-      "ask_user",
-      "scratchpad_complete",
-      "scratchpad_update",
-    ]);
+    expect(request.tools.map((tool) => tool.name)).toEqual(["ask_user"]);
     expect(request.instructions).toContain("exactly NO_RESPONSE");
     expect(request.instructions).not.toContain("message_user");
   });
