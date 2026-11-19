@@ -8,7 +8,12 @@ import type {
   MessagingChannelMembership,
   MessagingStatus,
 } from "@rakazo/contracts";
-import { createMessagingLinkGuard, messagingChatApps, messagingProviderName } from "@rakazo/core";
+import {
+  createMessagingLinkGuard,
+  messagingChatApps,
+  messagingProviderName,
+  messagingRequests,
+} from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -168,10 +173,9 @@ export default function MessagingSettings() {
     ]
       .filter(Boolean)
       .join(", ");
-  const agentOf = (identityId: string | undefined) =>
-    (identityId && agentByIdentity.get(identityId)) || t`Your agent`;
-  const inviteTitle = (channel: MessagingChannelMembership) => {
-    const agent = agentOf(channel.identityId);
+  const { invites, connectionRequests } = messagingRequests({ status, channels, connections });
+  const inviteTitle = (channel: MessagingChannelMembership, named: string | undefined) => {
+    const agent = named ?? t`Your agent`;
     const group = channel.name;
     return group ? t`${agent} was invited to ${group}` : t`${agent} was invited to a group`;
   };
@@ -179,17 +183,15 @@ export default function MessagingSettings() {
     const app = messagingProviderName(channel.provider);
     return t`${app} group`;
   };
-  const connectionRequestTitle = (connection: MessagingAgentConnection) => {
+  const connectionRequestTitle = (
+    connection: MessagingAgentConnection,
+    named: string | undefined,
+  ) => {
     const owner = connection.peerOwnerLabel;
     const peer = connection.peerBotName;
-    const agent = agentOf(status?.identities.find((i) => i.botId === connection.botId)?.id);
+    const agent = named ?? t`Your agent`;
     return t`${owner}'s ${peer} wants to connect to ${agent}`;
   };
-  // A request names the caller's agent, which only the status read knows.
-  const invitedChannels = status ? channels.filter((channel) => channel.status === "invited") : [];
-  const incomingConnections = status
-    ? connections.filter((connection) => connection.status === "pending" && connection.incoming)
-    : [];
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
     (connection) =>
@@ -409,20 +411,20 @@ export default function MessagingSettings() {
         <Text style={styles.error}>{shownError}</Text>
       ) : null}
       <SettingsGroup label={t`Requests`}>
-        {invitedChannels.map((channel) => (
+        {invites.map(({ channel, agent }) => (
           <SettingsRow
             key={channel.id}
-            title={inviteTitle(channel)}
+            title={inviteTitle(channel, agent)}
             detail={inviteDetail(channel)}
             trailing={respond((accept, send) =>
               send("messaging/channels/respond", { membershipId: channel.id, accept }),
             )}
           />
         ))}
-        {incomingConnections.map((connection) => (
+        {connectionRequests.map(({ connection, agent }) => (
           <SettingsRow
             key={connection.id}
-            title={connectionRequestTitle(connection)}
+            title={connectionRequestTitle(connection, agent)}
             trailing={respond((accept, send) =>
               send("messaging/connections/respond", { connectionId: connection.id, accept }),
             )}

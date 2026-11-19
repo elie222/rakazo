@@ -11,6 +11,7 @@ import {
   createMessagingLinkGuard,
   isRetryableError,
   messagingChatApps,
+  messagingRequests,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
@@ -241,8 +242,6 @@ export function MessagingSettingsPanel() {
   // A joined group names its agent only once a second chat app is linked: the
   // same group can then hold two of the caller's memberships, one per agent.
   const agentByIdentity = new Map(status?.identities.map((i) => [i.id, i.botName]) ?? []);
-  const agentOf = (identityId: string | undefined) =>
-    (identityId && agentByIdentity.get(identityId)) || t`Your agent`;
   function channelMeta(channel: MessagingChannelMembership): string {
     return [
       providerLabel(channel.provider),
@@ -274,17 +273,13 @@ export function MessagingSettingsPanel() {
   const memberLink =
     Boolean(installationStatus.personalLinkAvailable) &&
     Boolean(status?.providers.includes("slack"));
-  // A request names the caller's agent, which only the status read knows.
-  const invitedChannels = status ? channels.filter((channel) => channel.status === "invited") : [];
-  const incomingConnections = status
-    ? connections.filter((connection) => connection.status === "pending" && connection.incoming)
-    : [];
+  const { invites, connectionRequests } = messagingRequests({ status, channels, connections });
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
     (connection) =>
       connection.status === "approved" || (connection.status === "pending" && !connection.incoming),
   );
-  const hasRequests = invitedChannels.length > 0 || incomingConnections.length > 0;
+  const hasRequests = invites.length > 0 || connectionRequests.length > 0;
   const hasConversations =
     joinedChannels.length > 0 || otherConnections.length > 0 || externalConversations.length > 0;
   const hasChatApps = showSlack || linkProviders.length > 0 || otherIdentities.length > 0;
@@ -504,7 +499,7 @@ export function MessagingSettingsPanel() {
             <Trans>Requests</Trans>
           </SectionHeading>
           <ul className="mt-3 space-y-3">
-            {invitedChannels.map((channel) => (
+            {invites.map(({ channel, agent }) => (
               <Row
                 key={channel.id}
                 wrap
@@ -512,10 +507,10 @@ export function MessagingSettingsPanel() {
                   rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
                 )}
               >
-                <InviteText channel={channel} agent={agentOf(channel.identityId)} />
+                <InviteText channel={channel} agent={agent ?? t`Your agent`} />
               </Row>
             ))}
-            {incomingConnections.map((connection) => (
+            {connectionRequests.map(({ connection, agent }) => (
               <Row
                 key={connection.id}
                 wrap
@@ -523,10 +518,7 @@ export function MessagingSettingsPanel() {
                   rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
                 )}
               >
-                <ConnectionRequestText
-                  connection={connection}
-                  agent={agentOf(identities.find((i) => i.botId === connection.botId)?.id)}
-                />
+                <ConnectionRequestText connection={connection} agent={agent ?? t`Your agent`} />
               </Row>
             ))}
           </ul>
