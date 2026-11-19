@@ -188,6 +188,19 @@ export class PausedTurnToolsUnavailableError extends Error {
 }
 
 /**
+ * A paused turn's saved model is not in its provider's catalog right now. A catalog that could
+ * not be read looks the same, so setup retries it quietly; past the retry limit the run fails.
+ */
+export class PausedTurnModelUnlistedError extends Error {
+  constructor() {
+    super(
+      "A model this paused task was using is no longer offered by its provider, so it cannot continue. Choose another model and start the task again.",
+    );
+    this.name = "PausedTurnModelUnlistedError";
+  }
+}
+
+/**
  * Setup failures in a row before the current attempt. Busy-computer and database waits are
  * setup_failed attempts without an error; they neither count nor break the streak. Any error
  * text counts: an earlier release wrote one fixed text where this one writes the reason.
@@ -494,6 +507,7 @@ export async function retryRunSetup(
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof SandboxDiskTooLargeError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof PausedTurnModelUnlistedError ||
     setupError instanceof VaultKeyUnavailableError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
