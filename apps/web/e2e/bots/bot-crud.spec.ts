@@ -3,6 +3,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createBotFromPicker,
+  openBotComputer,
   openBotPanel,
   openBotSettings,
   openNewBot,
@@ -123,6 +124,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await openBotSettings(page);
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toBeVisible();
   async function editName(value: string) {
+    await page.getByTestId("bot-tab-settings").click();
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const input = page.getByRole("textbox", { name: "Name", exact: true });
     await input.fill(value);
@@ -229,7 +231,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(modelRow).toBeVisible();
   await expect(modelRow).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
-  await openBotPanel(page);
+  await openBotComputer(page);
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
@@ -261,6 +263,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
   // Long instructions scroll inside their box instead of stretching the narrow panel.
+  await settings.getByTestId("bot-tab-details").click();
   const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
   await instructionsInput.fill(
     Array.from(

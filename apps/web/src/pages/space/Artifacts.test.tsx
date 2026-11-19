@@ -113,6 +113,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import { takeInitialBootstrap } from "../../lib/bootstrap";
 import { ArtifactsPage } from "./Artifacts";
 
 function artifact(name: string, id: string, createdAt = new Date().toISOString()) {
@@ -194,6 +195,9 @@ it("opens the Artifacts screen and lists what listSpace returns", async () => {
 
 it("applies the bot filter named in the URL", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(takeInitialBootstrap).mockResolvedValue({
+    bots: [{ id: "bot-9", name: "Ada", color: "ink" }],
+  } as never);
   api.listSpace.mockResolvedValue({ items: [], nextCursor: null });
   const page = await renderArtifacts("/app/artifacts?bot=bot-9");
   try {
@@ -201,6 +205,7 @@ it("applies the bot filter named in the URL", async () => {
       expect.objectContaining({ botId: "bot-9" }),
       expect.anything(),
     );
+    expect(api.listSpace.mock.lastCall?.[0]).toMatchObject({ botId: "bot-9" });
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

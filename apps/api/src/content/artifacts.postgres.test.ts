@@ -158,4 +158,24 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
     expect(listed.items.map((item) => item.name)).not.toContain("crew-plan.txt");
   });
+
+  it("keeps files the bot itself made on a group run in its own listing", async () => {
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Runway" } });
+    await system.artifact.create({
+      data: {
+        spaceId,
+        userId,
+        botId,
+        groupId: group.id,
+        runId: `run-${suffix}`,
+        name: "bot-made-report.txt",
+        mimeType: "text/plain",
+        size: 2,
+        hash: "bot-made-hash",
+        storageKey: "blob-bot-made",
+      },
+    });
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(listed.items.map((item) => item.name)).toContain("bot-made-report.txt");
+  });
 });
