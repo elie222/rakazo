@@ -1066,7 +1066,7 @@ describe("model role lists", () => {
     await renderModels();
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["1Choose a model", "2Model 2OpenRouter", "Add fallback"]);
+    ).toEqual(["1Choose a model", "2Model 2OpenRouter"]);
   });
 
   it("adds a fallback from the shared picker and saves it immediately", async () => {

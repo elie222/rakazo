@@ -15,6 +15,7 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
+  RetryJobLaterError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -22,6 +23,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { expireApprovalCard } from "../../approvals/approval-expiry.js";
 import { expireTaughtSkillTeaching } from "../../bots/teaching-session.js";
 import { settleCallRequest } from "../../calls/call-request.js";
 import type {
@@ -118,6 +120,8 @@ export function createBackgroundJobHandlers(deps: {
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
   /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
+  meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
+  meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
   lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
   const delivery = deps.messagingDelivery;
@@ -270,6 +274,9 @@ export function createBackgroundJobHandlers(deps: {
     "run.forget-secrets": asOwner(run, async ({ runId }) => {
       await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
+    "approval.expire": asOwner(run, async (payload) => {
+      await expireApprovalCard(deps, payload);
+    }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
     }),
@@ -285,6 +292,14 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
     }),
+    "meeting.calendar-sync": async (payload) => {
+      if (!deps.meetingCalendarSync) throw new RetryJobLaterError(60_000);
+      await deps.meetingCalendarSync(payload);
+    },
+    "meeting.work": async (payload) => {
+      if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
+      await deps.meetingWork(payload);
+    },
     "purchase.poll": asOwner(purchase, async (payload) => {
       await pollPurchase(
         {

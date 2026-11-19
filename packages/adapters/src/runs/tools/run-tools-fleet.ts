@@ -6,12 +6,13 @@ import {
   InstructionConflictError,
   InvalidSpaceNameError,
   isRecordNotFound,
+  recordAuditEvent,
   runAsSystem,
   SpaceLimitError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   writeBotInstructions,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "../../approvals/approval-effect.js";
 import { archiveSpawnedBot, spawnBot } from "../../bots/child-bots.js";
 import {
@@ -143,7 +144,7 @@ async function commitOwnInstructions(
 /** This bot's own settings, Spaces and the bots this bot manages. */
 export const fleetTools: ToolHandlers = {
   async create_space(ctx, call) {
-    const { deps, run } = ctx;
+    const { deps, run, bot } = ctx;
     const { args } = call;
     try {
       // The new Space's rows are outside the run's tenant until it exists.
@@ -153,6 +154,20 @@ export const fleetTools: ToolHandlers = {
           userId: run.userId,
           name: String(args.name ?? ""),
         }),
+      );
+      // As spaces.create does for a person's own Space: audit the bot's creation and tell the
+      // member's apps to re-read their Space list, or the new Space stays invisible to them.
+      await recordAuditEvent({
+        action: "space.created",
+        actor: { type: "bot", id: bot.id, label: bot.name },
+        spaceId: space.id,
+        target: { type: "space", id: space.id, label: space.name },
+        runId: run.id,
+        threadId: run.threadId,
+      });
+      await bestEffort(
+        "announce a Space a bot created",
+        deps.events.publishRosterChange?.({ userIds: [run.userId] }),
       );
       return call.finish({ ok: true, spaceId: space.id, name: space.name });
     } catch (error) {

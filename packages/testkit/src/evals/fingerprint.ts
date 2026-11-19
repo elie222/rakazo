@@ -109,7 +109,11 @@ export function caseFingerprint(input: {
         model: modelSettings(input.connection),
         caseVersion: input.caseVersion,
         // Functions drop out; the steps, files and scripts a case feeds the bot later stay.
-        caseData: JSON.parse(JSON.stringify(input.scenario)),
+        caseData: JSON.parse(JSON.stringify({ ...input.scenario, fixtureData: undefined })),
+        // Hashed as written: a date the case plants in its content is part of the case.
+        ...(input.scenario.fixtureData === undefined
+          ? {}
+          : { fixtureData: sha256(JSON.stringify(input.scenario.fixtureData)) }),
         strategy: input.strategy,
         replyMode: input.replyMode,
         maxToolCalls: input.maxToolCalls,

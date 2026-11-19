@@ -74,6 +74,7 @@ export function ModelRoleSettings({
   modelRole: role,
   credentials,
   title,
+  hideHeading,
   defaultLabel,
   providers,
   openPicker,
@@ -90,6 +91,7 @@ export function ModelRoleSettings({
   modelRole: ModelRole;
   credentials: ModelCredential[];
   title: string;
+  hideHeading?: boolean;
   /** What runs when the first slot is empty. */
   defaultLabel: string;
   /** Providers without a connection, offered at the end of the picker. */
@@ -368,7 +370,7 @@ export function ModelRoleSettings({
     </Text>
   );
   return (
-    <SettingsGroup accessibilityLabel={title} label={title}>
+    <SettingsGroup accessibilityLabel={title} label={hideHeading ? undefined : title}>
       {primary || !settings ? null : (
         <SettingsRow
           key="empty"
@@ -448,7 +450,7 @@ export function ModelRoleSettings({
           </View>
         );
       })}
-      {settings && backups.length < MAX_MODEL_BACKUPS ? (
+      {(primary || deployment) && backups.length < MAX_MODEL_BACKUPS ? (
         <SettingsRow
           key="add"
           title={t`Add fallback`}
