@@ -212,7 +212,9 @@ describe("partition and payload", () => {
 describe("strip and connector intent", () => {
   it("preserves code indentation and double spaces when stripping a typed mention", () => {
     const code = 'if ready:\n    print("a  b")';
-    expect(stripMentionToken(`Run @Planning this:\n${code}`, "Planning")).toBe(`Run this:\n${code}`);
+    expect(stripMentionToken(`Run @Planning this:\n${code}`, "Planning")).toBe(
+      `Run this:\n${code}`,
+    );
   });
 
   it("preserves formatting in the send plan when removing an exact connector range", () => {
