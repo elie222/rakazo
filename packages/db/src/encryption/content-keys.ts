@@ -382,7 +382,9 @@ export class ContentKeyRing {
     await this.once(`preload:${spaceId}`, async () => {
       const records = await this.store.forSpace(spaceId);
       const keys = await Promise.all(records.map((record) => this.unwrap(record, freshForMs)));
-      if (keys.length) this.versions.set(spaceId, keys);
+      // A rotation that finished meanwhile cached a newer version; keep it.
+      const newest = this.versions.get(spaceId)?.at(-1)?.version ?? 0;
+      if (keys.length && keys.at(-1)!.version >= newest) this.versions.set(spaceId, keys);
     });
   }
 
