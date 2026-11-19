@@ -102,16 +102,13 @@ export function isTerminal(status: string): boolean {
   return TERMINAL.includes(status as RunStatus);
 }
 
-/** A failed reply to a typed message, which its sender can run again. A live run may lack its sender. */
+/** A failed reply to a typed message, which its sender can run again. */
 export function canRetryRun(
   run: { status: string; trigger?: string | null; userId?: string | null } | null | undefined,
   userId: string | null | undefined,
 ): boolean {
   return (
-    run?.status === "failed" &&
-    run.trigger === "user" &&
-    Boolean(userId) &&
-    (run.userId == null || run.userId === userId)
+    run?.status === "failed" && run.trigger === "user" && Boolean(userId) && run.userId === userId
   );
 }
 

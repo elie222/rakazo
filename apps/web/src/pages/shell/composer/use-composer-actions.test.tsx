@@ -27,7 +27,11 @@ vi.mock("../../../lib/composer/prepare-image", () => ({
 type Rpc = {
   routines: { testRun: ReturnType<typeof vi.fn> };
   artifacts: { create: ReturnType<typeof vi.fn> };
-  threads: { send: ReturnType<typeof vi.fn>; sendWithRoutines: ReturnType<typeof vi.fn> };
+  threads: {
+    send: ReturnType<typeof vi.fn>;
+    sendWithRoutines: ReturnType<typeof vi.fn>;
+    retry: ReturnType<typeof vi.fn>;
+  };
 };
 
 let rpc: Rpc;
@@ -113,7 +117,7 @@ beforeEach(() => {
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { send: vi.fn(), sendWithRoutines: vi.fn() },
+    threads: { send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
   };
   root = createRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
@@ -569,4 +573,60 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   );
   expect(latest.replyTarget).toBeNull();
   expect(latest.replyQuote).toBeNull();
+});
+
+function failedReply(runId: string): ThreadSnapshot {
+  return {
+    run: { id: runId, status: "failed", trigger: "user", userId: "user-1", error: "terminated" },
+  } as ThreadSnapshot;
+}
+
+function pendingRetry() {
+  let reject!: (error: Error) => void;
+  rpc.threads.retry.mockReturnValue(
+    new Promise((_, fail) => {
+      reject = fail;
+    }),
+  );
+  return reject;
+}
+
+it("offers another chat's failed reply while a retry is still in flight", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  pendingRetry();
+  act(() => void latest.retryRun?.());
+  expect(latest.retryRun).toBeUndefined();
+
+  activeSnapshot = failedReply("run-2");
+  switchChat("bot-2");
+  expect(latest.retryRun).toBeDefined();
+});
+
+it("drops a late retry error once a newer failure is on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+
+  activeSnapshot = failedReply("run-2");
+  act(() => root.render(<Harness />));
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeNull();
+  expect(latest.displayedRunErrorId).toBe("run-2");
+});
+
+it("shows a retry error for the failure still on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeTruthy();
+  expect(latest.retryRun).toBeUndefined();
 });

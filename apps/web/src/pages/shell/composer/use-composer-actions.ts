@@ -157,7 +157,9 @@ export function useComposerActions({
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
   const runRetryable =
     Boolean(displayedRunErrorId) && canRetryRun(activeSnapshot?.run, bootstrapMe?.userId);
-  const [retrying, setRetrying] = useState(false);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
+  const displayedRunErrorIdRef = useRef(displayedRunErrorId);
+  displayedRunErrorIdRef.current = displayedRunErrorId;
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -621,10 +623,10 @@ export function useComposerActions({
     const failedRunId = displayedRunErrorId;
     const botId = activeBotId.current;
     const groupId = activeGroupId.current;
-    if (!failedRunId || (!botId && !groupId) || retrying) return;
+    if (!failedRunId || (!botId && !groupId) || retryingRunId === failedRunId) return;
     const stillHere = () =>
       groupId ? activeGroupId.current === groupId : activeBotId.current === botId;
-    setRetrying(true);
+    setRetryingRunId(failedRunId);
     try {
       await rpc.threads.retry({
         ...(groupId ? { groupId } : { botId: botId! }),
@@ -636,9 +638,11 @@ export function useComposerActions({
       if (groupId) await refreshGroupThreadRef.current(groupId).catch(() => undefined);
       else if (botId) await refreshThreadRef.current(botId).catch(() => undefined);
     } catch (error) {
-      if (stillHere()) setSendError(errorText(error, t`Could not try again`));
+      if (stillHere() && displayedRunErrorIdRef.current === failedRunId) {
+        setSendError(errorText(error, t`Could not try again`));
+      }
     } finally {
-      setRetrying(false);
+      setRetryingRunId((current) => (current === failedRunId ? null : current));
     }
   }
 
@@ -669,7 +673,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
-    retryRun: runRetryable && !retrying ? retryRun : undefined,
+    retryRun: runRetryable && retryingRunId !== displayedRunErrorId ? retryRun : undefined,
     startFocusPrompt,
   };
 }
