@@ -1004,24 +1004,26 @@ export default function Integrations() {
   }
 
   useLayoutEffect(() => {
-    if (!iosAtLeast(26)) return;
-    navigation.setOptions({
-      unstable_headerRightItems: () => [
-        {
-          type: "menu" as const,
-          label: t`Add custom`,
-          accessibilityLabel: t`Add custom`,
-          icon: { type: "sfSymbol" as const, name: "plus" },
-          menu: {
-            items: addOptions.map((option) => ({
-              type: "action" as const,
-              label: option.label,
-              onPress: () => startAdding(option),
-            })),
-          },
-        },
-      ],
-    } satisfies NativeStackNavigationOptions);
+    const options: NativeStackNavigationOptions = iosAtLeast(26)
+      ? {
+          unstable_headerRightItems: () => [
+            {
+              type: "menu" as const,
+              label: t`Add custom`,
+              accessibilityLabel: t`Add custom`,
+              icon: { type: "sfSymbol" as const, name: "plus" },
+              menu: {
+                items: addOptions.map((option) => ({
+                  type: "action" as const,
+                  label: option.label,
+                  onPress: () => startAdding(option),
+                })),
+              },
+            },
+          ],
+        }
+      : { headerRight: () => <AddCustomMenu options={addOptions} onSelect={startAdding} /> };
+    navigation.setOptions(options);
   }, [navigation, sourcePresets, t]);
 
   return (
@@ -1057,41 +1059,41 @@ export default function Integrations() {
           />
         ) : (
           <>
-            {!detailItem ? <AddCustomMenu options={addOptions} onSelect={startAdding} /> : null}
             {!detailItem ? (
-              <TextInput
-                value={query}
-                onChangeText={(value) => {
-                  setQuery(value);
-                  setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
-                  setPluginCount(PLUGIN_PAGE_SIZE);
-                }}
-                accessibilityLabel={t`Search apps`}
-                placeholder={t`Search apps`}
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                style={styles.input}
-              />
-            ) : null}
-
-            {!detailItem && (categories.length >= 2 || category) ? (
-              <View style={styles.categoryPicker}>
-                <MenuPicker
-                  label={t`Category`}
-                  showLabel={false}
-                  plain
-                  choices={[
-                    { key: "", label: t`All` },
-                    ...categories.map((name) => ({ key: name, label: categoryLabel(name) })),
-                  ]}
-                  value={category}
-                  onChange={(key) => {
-                    setCategory(key);
+              <View style={styles.searchRow}>
+                <TextInput
+                  value={query}
+                  onChangeText={(value) => {
+                    setQuery(value);
+                    setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
                     setPluginCount(PLUGIN_PAGE_SIZE);
                   }}
+                  accessibilityLabel={t`Search apps`}
+                  placeholder={t`Search apps`}
+                  placeholderTextColor={native.tertiaryLabel}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  style={[styles.input, styles.searchInput]}
                 />
+                {categories.length >= 2 || category ? (
+                  <View style={styles.categoryPicker}>
+                    <MenuPicker
+                      label={t`Category`}
+                      showLabel={false}
+                      plain
+                      choices={[
+                        { key: "", label: t`All` },
+                        ...categories.map((name) => ({ key: name, label: categoryLabel(name) })),
+                      ]}
+                      value={category}
+                      onChange={(key) => {
+                        setCategory(key);
+                        setPluginCount(PLUGIN_PAGE_SIZE);
+                      }}
+                    />
+                  </View>
+                ) : null}
               </View>
             ) : null}
 

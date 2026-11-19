@@ -19,7 +19,7 @@ export type AddCustomOption = {
   preset?: McpSourcePreset;
 };
 
-/** The Add custom button before Liquid Glass, which puts it in the header instead. */
+/** The Add custom header button where there is no native header menu (Android, iOS before 26). */
 export function AddCustomMenu({
   options,
   onSelect,

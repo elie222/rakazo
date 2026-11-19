@@ -3,7 +3,7 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -24,6 +24,8 @@ const state = vi.hoisted(() => ({
   authSession: vi.fn(),
   headerMenu: false,
   navigation: { setOptions: vi.fn() },
+  headerRight: null as (() => ReactNode) | null,
+  headerChanged: null as (() => void) | null,
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
@@ -221,7 +223,13 @@ beforeEach(() => {
   state.authSession.mockReset().mockResolvedValue({ type: "cancel" });
   queryClient.clear();
   state.headerMenu = false;
-  state.navigation.setOptions.mockReset();
+  state.headerRight = null;
+  state.navigation.setOptions
+    .mockReset()
+    .mockImplementation((options: { headerRight?: () => ReactNode }) => {
+      if ("headerRight" in options) state.headerRight = options.headerRight ?? null;
+      state.headerChanged?.();
+    });
   state.scope.mockReset().mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
   state.persisted.mockReset().mockResolvedValue(null);
   state.read.mockReset().mockReturnValue(null);
@@ -246,7 +254,18 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
-async function render(node: ReactNode = <Integrations />) {
+/** The screen with the header button it sets where there is no native header menu. */
+function IntegrationsWithHeader() {
+  const [, rerender] = useState(0);
+  state.headerChanged = () => rerender((count) => count + 1);
+  return (
+    <>
+      {state.headerRight?.()}
+      <Integrations />
+    </>
+  );
+}
+async function render(node: ReactNode = <IntegrationsWithHeader />) {
   await act(async () => root.render(node));
 }
 async function settle() {
