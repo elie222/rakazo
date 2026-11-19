@@ -12,9 +12,11 @@ import { ConnectionSetupError } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { readMcpApp } from "../mcp/mcp-app.js";
+import { UNAVAILABLE_TOOL } from "../mcp/mcp-connector.tool-definition.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "../mcp/remote-mcp.js";
 import {
   assertSafeRemoteUrl,
@@ -58,6 +60,7 @@ import {
 } from "./connector-safety.js";
 import { checkConnectorSource } from "./connector-source.js";
 import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
+import { unavailableInstalledTool } from "./installed-connectors.tool-definition.js";
 
 const ModelHeaderName = HeaderName.refine(
   (name) => !isSensitiveHeader(name),
@@ -138,6 +141,8 @@ type RemoteRequestPolicy = RemoteConnectorDependencies & RemoteUrlPolicy;
 export class InstalledConnectorProvider implements ConnectorProvider {
   /** Run-scoped MCP sessions, so a stateful server sees one session per run. */
   private readonly mcpSessions = new RemoteMcpSessionCache();
+  /** Why each install's tools could not be listed last time, by install id. */
+  private readonly unavailable = new Map<string, string>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -243,10 +248,11 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     remote: RemoteRequestPolicy,
   ): Promise<ConnectorTool[]> {
     const catalogGroup = catalogGroupLabel(install.name, install.kind, install.id);
+    let credential: string | undefined;
     try {
       if (install.kind === "mcp") {
         const config = McpConfigSchema.parse(install.config);
-        const credential = await this.loadCredential(install, context);
+        credential = await this.loadCredential(install, context);
         const tools = await listRemoteMcpTools({
           ...remote,
           endpoint: install.source,
@@ -254,6 +260,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           signal: context.signal,
           ...this.mcpSessionOptions(context, install),
         });
+        this.unavailable.delete(install.id);
         return tools.map((tool) => ({
           ...tool,
           route: {
@@ -302,8 +309,19 @@ export class InstalledConnectorProvider implements ConnectorProvider {
           },
         }));
       }
-    } catch {
-      // One unavailable user-installed source must not hide the other tools.
+    } catch (error) {
+      // A cancelled run says nothing about the source.
+      if (context.signal?.aborted) return [];
+      const reason = sanitizeConnectorError(error, credential ? [credential] : []);
+      getLogger().warn("installed connector discovery failed", {
+        "connector.id": install.id,
+        "connector.kind": install.kind,
+        reason,
+      });
+      this.unavailable.set(install.id, reason);
+      // One unavailable user-installed source must not hide the other tools, and the model
+      // is told this one is unavailable instead of finding it missing.
+      return [unavailableInstalledTool(install, catalogGroup, reason)];
     }
     return [];
   }
@@ -335,6 +353,14 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     });
     if (!install) {
       yield { type: "error", message: "Installed connector is unavailable" };
+      return;
+    }
+    if (call.route?.toolName === UNAVAILABLE_TOOL) {
+      const reason = this.unavailable.get(install.id) ?? "its tools could not be listed";
+      yield {
+        type: "error",
+        message: `Installed source "${install.name}" is unavailable: ${reason}`,
+      };
       return;
     }
     let credential: string | undefined;
