@@ -137,7 +137,8 @@ export function RoutineEditor({
           <Switch
             id={`${fieldId}-active`}
             checked={draft.active}
-            disabled={readOnly && saving}
+            // Arming a one-time routine sets when it runs, which only its owner decides.
+            disabled={readOnly && (saving || needsOneShotArm)}
             onCheckedChange={(active) =>
               readOnly ? onSetActive(active) : onChange({ ...draft, active })
             }
