@@ -1,4 +1,5 @@
 import { BOT_SECTION_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import { truncatePlainText } from "@rakazo/core";
 import { Alert } from "react-native";
 
 /**
@@ -20,7 +21,7 @@ export function promptSectionName(input: {
       {
         text: input.submitLabel,
         onPress: (value?: string) => {
-          const name = value?.trim().slice(0, BOT_SECTION_NAME_MAX_LENGTH);
+          const name = truncatePlainText(value?.trim() ?? "", BOT_SECTION_NAME_MAX_LENGTH);
           if (name && name !== input.defaultValue) input.onSubmit(name);
         },
       },
