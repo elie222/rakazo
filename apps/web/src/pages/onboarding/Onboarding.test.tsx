@@ -117,9 +117,7 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   };
   await change("OpenAI-compatible server URL", "https://models.example.test/v1");
   await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((button) => button.textContent === "Find models")!
-      .click(),
+    vi.waitFor(() => expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalled()),
   );
   // Onboarding probes the endpoint the same way model settings does.
   expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalledWith(

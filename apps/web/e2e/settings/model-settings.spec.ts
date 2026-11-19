@@ -171,7 +171,6 @@ async function fulfillWithoutModelStep(route: Route) {
 }
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
-  let expandedModels = false;
   const completionBodies: Array<Record<string, unknown>> = [];
   const completionHeaders: Array<string | string[] | undefined> = [];
   const server = createServer(async (request, response) => {
@@ -183,9 +182,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
           data: [
             { id: LOCAL_MODEL_ID },
             { id: SECOND_MODEL_ID },
-            ...(expandedModels
-              ? Array.from({ length: 9 }, (_, index) => ({ id: `fixture-extra-${index}` }))
-              : []),
+            ...Array.from({ length: 9 }, (_, index) => ({ id: `fixture-extra-${index}` })),
           ],
         }),
       );
@@ -265,20 +262,8 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await captureScreenshot(page, testInfo, "add-provider-list-search");
     await providerSearch.press("Escape");
     await openModelConnection(page, "OpenAI-compatible");
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeHidden();
-    await page.getByText("Setup help", { exact: true }).click();
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeVisible();
-    await page.getByText("Setup help", { exact: true }).click();
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeHidden();
     await page.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await page.getByLabel("Model id").fill("manual-model-not-listed");
-    await page.getByRole("button", { name: "Find models" }).click();
 
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
     await page.getByRole("button", { name: "Use a found model" }).click();
@@ -286,14 +271,12 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
     await chooseOption(discoveredModels, "Other model…");
     await expect(page.getByLabel("Model id")).toBeVisible();
-    await page.getByRole("button", { name: "Find models" }).click();
+    await page.getByRole("button", { name: "Use a found model" }).click();
     await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
-    await expect(page.getByText("Found 2 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
-    expandedModels = true;
-    await page.getByRole("button", { name: "Find models" }).click();
+    await page.getByRole("button", { name: "Enabled models", exact: true }).click();
     const modelSearch = page.getByRole("textbox", { name: "Search models", exact: true });
     await expect(modelSearch).toBeVisible();
     await captureScreenshot(page, testInfo, "compatible-model-list-search");
@@ -301,8 +284,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByText("1 selected model is hidden by your search.")).toBeVisible();
     await captureScreenshot(page, testInfo, "compatible-model-list-search-filtered");
     await modelSearch.fill("");
-    expandedModels = false;
-    await page.getByRole("button", { name: "Find models" }).click();
     await expect(page.getByRole("checkbox", { name: LOCAL_MODEL_ID })).toBeChecked();
     await page.getByRole("checkbox", { name: SECOND_MODEL_ID }).check();
     await page.getByText("Advanced", { exact: true }).click();
@@ -338,6 +319,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await openUserSettings(page, "models");
     const saved = await manageModelConnection(page, "OpenAI-compatible");
     await captureScreenshot(page, testInfo, "model-provider-models");
+    await saved.getByRole("button", { name: "Enabled models", exact: true }).click();
     await expect(saved.getByRole("checkbox", { name: SECOND_MODEL_ID })).toBeChecked();
     await captureScreenshot(page, testInfo, "openai-compatible-multi-model");
     await saved.getByText("Advanced", { exact: true }).click();
@@ -357,7 +339,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     ).toEqual([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
 
     await saved.getByLabel("OpenAI-compatible server URL").fill("");
-    await expect(saved.getByRole("button", { name: "Find models" })).toBeDisabled();
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await saved.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
@@ -458,12 +439,7 @@ test("a refused private model server names the setting that allows it", async ({
   await openUserSettings(page, "models");
   const dialog = await openModelConnection(page, "OpenAI-compatible");
   await dialog.getByLabel("OpenAI-compatible server URL").fill("http://192.168.1.20:1234/v1");
-  await dialog.getByRole("button", { name: "Find models", exact: true }).click();
-  const alert = dialog.getByRole("alert");
-  await expect(alert.getByText(message, { exact: true })).toBeVisible();
-  await expect(
-    alert.getByText("Review provider settings and test again.", { exact: true }),
-  ).toBeVisible();
+  await expect(dialog.getByText(message, { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "openai-compatible-private-endpoint-refused");
 });
 

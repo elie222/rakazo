@@ -1,3 +1,42 @@
+import type { CompatibleEndpointPreset, ModelApiProtocol, ModelHeaderRow } from "@rakazo/contracts";
+import {
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
+  normalizeOpenAiCompatibleBaseUrl,
+  savedCompatibleEndpointMatches,
+} from "@rakazo/contracts";
+
+export const MODEL_DISCOVERY_DELAY_MS = 450;
+
+/** Once the endpoint has enough information, schedule discovery for this exact configuration. */
+export function compatibleModelDiscovery(input: {
+  baseUrl: string;
+  apiKey: string;
+  apiProtocol: ModelApiProtocol;
+  headerRows: ModelHeaderRow[] | null;
+  preset?: CompatibleEndpointPreset;
+  credential?: { id: string; hasKey: boolean; baseUrl?: string };
+}) {
+  const { preset, credential, headerRows, apiProtocol } = input;
+  if (headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success) return null;
+  const apiKey = preset?.publicModels ? undefined : input.apiKey.trim() || undefined;
+  const saved = savedCompatibleEndpointMatches(input.baseUrl, credential?.baseUrl)
+    ? credential
+    : undefined;
+  if (preset && !preset.publicModels && !apiKey && !saved?.hasKey) return null;
+  try {
+    return {
+      baseUrl: normalizeOpenAiCompatibleBaseUrl(input.baseUrl),
+      apiKey,
+      apiProtocol,
+      headers: modelHeadersInput(headerRows),
+      credentialId: saved?.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type ModelProbeState = {
   models: string[];
   baseUrl: string | null;

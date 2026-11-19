@@ -1063,7 +1063,7 @@ async function renderCompatible(credential: object = compatibleCredential) {
 async function renderCompatibleWithProbe(probed: string[]) {
   models.probeOpenAiCompatible.mockResolvedValue({ models: probed });
   const view = await renderCompatible();
-  await click(buttons(view.container, "Find models")[0]);
+  await act(async () => vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()));
   return view;
 }
 
@@ -1321,7 +1321,9 @@ it("keeps the chosen protocol when the endpoint changes and probes with it", asy
   try {
     await typeInto(baseUrlField(view.container), "http://127.0.0.1:9000/v1");
     expect(protocolField(view.container).textContent).toBe("Anthropic Messages");
-    await click(buttons(view.container, "Find models")[0]);
+    await act(async () =>
+      vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()),
+    );
     expect(models.probeOpenAiCompatible).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiProtocol: "anthropic-messages" }),
     );
@@ -1437,7 +1439,9 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
   try {
     await pick("Change Main model", "Ollama Cloud");
     expect(titles(view.container)).toContain("Connect Ollama Cloud");
-    expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
+    expect(
+      view.container.querySelector('input[aria-label="OpenAI-compatible server URL"]'),
+    ).toBeNull();
     expect(
       [...view.container.querySelectorAll("button")].filter(
         (row) => row.textContent === "Setup help",
@@ -1449,7 +1453,9 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     const key = view.container.querySelector('input[aria-label="API key"]') as HTMLInputElement;
     expect(key.required).toBe(true);
     await typeInto(key, "fake-fixture-key");
-    await click(buttons(view.container, "Find models")[0]);
+    await act(async () =>
+      vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()),
+    );
     expect(models.probeOpenAiCompatible).toHaveBeenCalledWith(
       expect.objectContaining({ baseUrl: "https://ollama.com/v1", apiKey: "fake-fixture-key" }),
     );
@@ -1507,60 +1513,56 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
     await openPicker("Change Main model");
     expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
     await choose("Ollama Cloud");
-    expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
+    expect(
+      view.container.querySelector('input[aria-label="OpenAI-compatible server URL"]'),
+    ).toBeNull();
   } finally {
     await view.unmount();
   }
 });
 
-it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+it("keeps the optional API key collapsible for generic compatible servers", async () => {
   models.list.mockResolvedValue([compatibleEntry]);
   models.credentials.mockResolvedValue([]);
   const view = await renderSettings(false);
   try {
     await pick("Change Main model", "OpenAI-compatible");
-    for (const name of ["Setup help", "API key"]) {
-      const row = buttons(view.container, name)[0]!;
-      expect(row.getAttribute("aria-expanded")).toBe("false");
-      expect(row.querySelector("svg")).not.toBeNull();
-      await act(async () => row.click());
-      expect(row.getAttribute("aria-expanded")).toBe("true");
-    }
+    const row = buttons(view.container, "API key")[0]!;
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    expect(row.querySelector("svg")).not.toBeNull();
+    await act(async () => row.click());
+    expect(row.getAttribute("aria-expanded")).toBe("true");
   } finally {
     await view.unmount();
   }
 });
 
-it.each(["https://ollama.com", "https://ollama.com/v1/"])(
-  "keeps Save enabled with a saved Ollama key at %s",
-  async (baseUrl) => {
-    vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "fixture-model"));
-    models.list.mockResolvedValue([compatibleEntry]);
-    models.credentials.mockResolvedValue([
-      {
-        id: "fixture",
-        label: "OpenAI-compatible",
-        provider: "openai-compatible",
-        modelId: "fixture-model",
-        baseUrl: "https://ollama.com/v1",
-        endpointName: "Ollama Cloud",
-        hasKey: true,
-      },
-    ]);
-    const view = await renderSettings(false);
-    try {
-      await manage();
-      expect(titles(view.container)).toContain("Ollama Cloud");
-      await typeInto(baseUrlField(view.container), baseUrl);
-      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
-      await typeInto(baseUrlField(view.container), "https://other.test/v1");
-      await typeInto(baseUrlField(view.container), "https://ollama.com/v1/");
-      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
-    } finally {
-      await view.unmount();
-    }
-  },
-);
+it("keeps Save enabled with a saved Ollama key and keeps the endpoint fixed", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "fixture-model"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      label: "OpenAI-compatible",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "https://ollama.com/v1",
+      endpointName: "Ollama Cloud",
+      hasKey: true,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    await manage();
+    expect(titles(view.container)).toContain("Ollama Cloud");
+    expect(
+      view.container.querySelector('input[aria-label="OpenAI-compatible server URL"]'),
+    ).toBeNull();
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
 
 it.each([
   [undefined, false],
