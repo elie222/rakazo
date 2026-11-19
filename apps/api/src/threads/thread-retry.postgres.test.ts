@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -26,6 +27,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
   let threadId: string;
   let call: (path: string, input: Record<string, unknown>) => Promise<Response>;
   const enqueue = vi.fn().mockResolvedValue(undefined);
+  let env: { agentRuntime: string; deploymentModelConfigured: boolean };
 
   beforeAll(() => {
     const db = createDb(databaseUrl!);
@@ -47,13 +49,14 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     botId = identity.botId;
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
     threadId = (await system.thread.findFirstOrThrow({ where: { botId } })).id;
+    env = { agentRuntime: "scripted", deploymentModelConfigured: false };
     const deps = {
       prisma,
       events: createThreadEvents(prisma),
       jobs: { enqueue, cancel: vi.fn(), close: async () => undefined },
       secrets: { load: vi.fn() },
       sandbox: {},
-      env: { agentRuntime: "pi", deploymentModelConfigured: false },
+      env,
     } as unknown as RouterDeps;
     const handler = new RPCHandler(createRouter(deps));
     call = async (path, input) => {
@@ -162,14 +165,28 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("refuses while the bot is busy with other work", async () => {
+  it.each(["running", "waiting_input"])(
+    "refuses while the bot has other work %s",
+    async (status) => {
+      const { run } = await failedReply();
+      const work = { spaceId: actor.spaceId, botId, threadId, userId: actor.userId };
+      const task = await system.task.create({
+        data: { ...work, prompt: "work", status: "queued" },
+      });
+      await system.run.create({
+        data: { ...work, taskId: task.id, status, trigger: "routine" },
+      });
+      expect((await retry(run.id)).status).toBe(409);
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses without a model to run on, as a send does", async () => {
     const { run } = await failedReply();
-    const work = { spaceId: actor.spaceId, botId, threadId, userId: actor.userId };
-    const task = await system.task.create({ data: { ...work, prompt: "work", status: "queued" } });
-    await system.run.create({
-      data: { ...work, taskId: task.id, status: "running", trigger: "user" },
-    });
-    expect((await retry(run.id)).status).toBe(409);
-    expect(enqueue).not.toHaveBeenCalled();
+    env.agentRuntime = "pi";
+    const refused = await retry(run.id);
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain(MODEL_REQUIRED_SEND_ERROR);
+    expect(await system.run.count({ where: { retryOfRunId: run.id } })).toBe(0);
   });
 });

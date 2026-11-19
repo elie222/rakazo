@@ -37,6 +37,7 @@ import {
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
+import { useSave } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { clearActiveThreadRuns, threadRunError } from "../../../lib/query/thread-events";
 import { errorText } from "../../../lib/query/user-error";
@@ -49,6 +50,8 @@ type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
  * answers, reactions, and the errors they leave.
  */
+type RetryTarget = { botId?: string; groupId?: string; runId: string };
+
 export function useComposerActions({
   rpc,
   pageSession,
@@ -157,9 +160,33 @@ export function useComposerActions({
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
   const runRetryable =
     Boolean(displayedRunErrorId) && canRetryRun(activeSnapshot?.run, bootstrapMe?.userId);
-  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const displayedRunErrorIdRef = useRef(displayedRunErrorId);
   displayedRunErrorIdRef.current = displayedRunErrorId;
+  const isActiveTarget = (target: RetryTarget) =>
+    target.groupId
+      ? activeGroupId.current === target.groupId
+      : activeBotId.current === target.botId;
+  const retrySave = useSave({
+    save: (target: RetryTarget, client) =>
+      client.threads.retry({
+        ...(target.groupId ? { groupId: target.groupId } : { botId: target.botId! }),
+        runId: target.runId,
+      }),
+    onSaved: async (_, target) => {
+      // A group keeps its failure on screen until dismissed, even once the retry starts.
+      setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
+      if (!isActiveTarget(target)) return;
+      if (target.groupId)
+        await refreshGroupThreadRef.current(target.groupId).catch(() => undefined);
+      else if (target.botId) await refreshThreadRef.current(target.botId).catch(() => undefined);
+    },
+    onFailed: (error, target) => {
+      if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {
+        setSendError(errorText(error, t`Could not try again`));
+      }
+    },
+  });
+  const retryingDisplayedRun = retrySave.pending && retrySave.input?.runId === displayedRunErrorId;
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -619,31 +646,11 @@ export function useComposerActions({
     }
   }
 
-  async function retryRun() {
-    const failedRunId = displayedRunErrorId;
+  function retryRun() {
+    const runId = displayedRunErrorId;
     const botId = activeBotId.current;
     const groupId = activeGroupId.current;
-    if (!failedRunId || (!botId && !groupId) || retryingRunId === failedRunId) return;
-    const stillHere = () =>
-      groupId ? activeGroupId.current === groupId : activeBotId.current === botId;
-    setRetryingRunId(failedRunId);
-    try {
-      await rpc.threads.retry({
-        ...(groupId ? { groupId } : { botId: botId! }),
-        runId: failedRunId,
-      });
-      // A group keeps its failure on screen until dismissed, even once the retry starts.
-      setDismissedRunErrorIds((current) => new Set(current).add(failedRunId));
-      if (!stillHere()) return;
-      if (groupId) await refreshGroupThreadRef.current(groupId).catch(() => undefined);
-      else if (botId) await refreshThreadRef.current(botId).catch(() => undefined);
-    } catch (error) {
-      if (stillHere() && displayedRunErrorIdRef.current === failedRunId) {
-        setSendError(errorText(error, t`Could not try again`));
-      }
-    } finally {
-      setRetryingRunId((current) => (current === failedRunId ? null : current));
-    }
+    if (runId && (botId || groupId)) retrySave.run({ botId, groupId, runId });
   }
 
   return {
@@ -673,7 +680,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
-    retryRun: runRetryable && retryingRunId !== displayedRunErrorId ? retryRun : undefined,
+    retryRun: runRetryable && !retryingDisplayedRun ? retryRun : undefined,
     startFocusPrompt,
   };
 }
