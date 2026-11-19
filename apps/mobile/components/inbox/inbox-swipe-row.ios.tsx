@@ -2,6 +2,7 @@ import {
   Button,
   ContextMenu,
   Divider,
+  Group,
   Host,
   List,
   Menu,
@@ -30,9 +31,11 @@ import { PlatformColor, useWindowDimensions, View } from "react-native";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { INBOX_ROW_ACTIONS, inboxRowActions, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
 import { native, useResolvedAppearance } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
 import { NativeListRowContext } from "../native/native-list-row";
 import { NativeRowContent } from "../native/native-row";
 import { InboxChatPreview } from "./inbox-chat-preview";
+import { InboxSwipeContent } from "./inbox-swipe-content.ios";
 import type { InboxSwipeRowProps } from "./inbox-swipe-row";
 
 // Measured row heights, so recycled and reopened rows start at their size instead of 0.
@@ -40,9 +43,8 @@ const rowHeights = new Map<string, number>();
 let lastRowHeight = 0;
 
 /**
- * The inbox row inside a one-row SwiftUI list, which is what gives it the system swipe
- * actions, full swipe and haptics, and the system context menu on long press. The FlatList
- * around it keeps scrolling and sections.
+ * A chat row with a native context menu, hosted in the inbox's SwiftUI list or in its own
+ * one-row list when embedded in an activity section.
  */
 export function InboxSwipeRow({
   rowKey,
@@ -66,28 +68,20 @@ export function InboxSwipeRow({
   const [height, setHeight] = useState(() => rowHeights.get(rowKey) ?? lastRowHeight);
   const actions = inboxRowActions({ unread, pinned });
   const nativeRow = useContext(NativeListRowContext);
+  const interactiveSwipe = iosAtLeast(26);
 
-  function button(action: InboxRowAction, swipe = true) {
+  function button(action: InboxRowAction, swipe = false) {
     const { label, systemImage } = INBOX_ROW_ACTIONS[action];
+    const fill =
+      action === "archive" ? "systemRed" : action === actions.leading ? "systemBlue" : null;
     return (
       <Button
         key={action}
         label={i18n._(label)}
         systemImage={systemImage}
-        // A swipe button is never given the destructive role, which makes SwiftUI remove the
-        // row at the tap even when the request then fails; Archive is red by its tint instead.
         role={!swipe && action === "delete" ? "destructive" : undefined}
         modifiers={
-          swipe
-            ? [
-                labelStyle("iconOnly"),
-                ...(action === "read" || action === "unread"
-                  ? [tint(PlatformColor("systemBlue"))]
-                  : action === "archive"
-                    ? [tint(PlatformColor("systemRed"))]
-                    : []),
-              ]
-            : undefined
+          swipe ? [labelStyle("iconOnly"), ...(fill ? [tint(PlatformColor(fill))] : [])] : undefined
         }
         onPress={() => onAction(action)}
       />
@@ -99,81 +93,93 @@ export function InboxSwipeRow({
   }
 
   function swipeRow(rowModifiers: ViewModifier[], content: ReactElement) {
-    return (
-      <SwipeActions modifiers={rowModifiers}>
-        <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
-          <ContextMenu.Trigger>{content}</ContextMenu.Trigger>
-          <ContextMenu.Preview>
-            <InboxChatPreview {...preview} />
-          </ContextMenu.Preview>
-          <ContextMenu.Items>
-            {button(actions.leading, false)}
-            {button(pinned ? "unpin" : "pin", false)}
-            {notifyOnFinish === undefined ? null : (
-              <Button
-                label={notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
-                systemImage={notifyOnFinish ? "bell.slash" : "bell"}
-                onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
-              />
-            )}
-            {!onSnooze ? null : snoozed ? (
-              <Button label={t`Unsnooze`} systemImage="moon.zzz" onPress={() => onSnooze(null)} />
-            ) : (
-              <Menu label={t`Snooze`} systemImage="moon.zzz">
-                {SNOOZE_PRESETS.map((preset) => (
-                  <Button
-                    key={preset}
-                    label={i18n._(SNOOZE_LABELS[preset])}
-                    onPress={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
-                  />
-                ))}
-              </Menu>
-            )}
-            <Menu label={t`Move to`} systemImage="folder">
-              {sections.map((section) => (
-                <Toggle
-                  key={section.id}
-                  label={section.name}
-                  isOn={sectionId === section.id}
-                  onIsOnChange={() => moveTo(section.id)}
+    const menu = (
+      <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
+        <ContextMenu.Trigger>{content}</ContextMenu.Trigger>
+        <ContextMenu.Preview>
+          <InboxChatPreview {...preview} />
+        </ContextMenu.Preview>
+        <ContextMenu.Items>
+          {button(actions.leading)}
+          {button(pinned ? "unpin" : "pin")}
+          {notifyOnFinish === undefined ? null : (
+            <Button
+              label={notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
+              systemImage={notifyOnFinish ? "bell.slash" : "bell"}
+              onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
+            />
+          )}
+          {!onSnooze ? null : snoozed ? (
+            <Button label={t`Unsnooze`} systemImage="moon.zzz" onPress={() => onSnooze(null)} />
+          ) : (
+            <Menu label={t`Snooze`} systemImage="moon.zzz">
+              {SNOOZE_PRESETS.map((preset) => (
+                <Button
+                  key={preset}
+                  label={i18n._(SNOOZE_LABELS[preset])}
+                  onPress={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
                 />
               ))}
-              <Toggle
-                label={t`Unassigned`}
-                isOn={sectionId == null}
-                onIsOnChange={() => moveTo(null)}
-              />
-              <Divider />
-              <Button
-                label={t`New section`}
-                systemImage="folder.badge.plus"
-                onPress={() => onEditSection("create")}
-              />
-              {sections.some((section) => section.id === sectionId) ? (
-                <Button
-                  label={t`Rename section`}
-                  systemImage="pencil"
-                  onPress={() => onEditSection("rename")}
-                />
-              ) : null}
             </Menu>
-            {button("archive", false)}
-            {button("delete", false)}
-          </ContextMenu.Items>
-        </ContextMenu>
-        <SwipeActions.Actions edge="leading">{button(actions.leading)}</SwipeActions.Actions>
+          )}
+          <Menu label={t`Move to`} systemImage="folder">
+            {sections.map((section) => (
+              <Toggle
+                key={section.id}
+                label={section.name}
+                isOn={sectionId === section.id}
+                onIsOnChange={() => moveTo(section.id)}
+              />
+            ))}
+            <Toggle
+              label={t`Unassigned`}
+              isOn={sectionId == null}
+              onIsOnChange={() => moveTo(null)}
+            />
+            <Divider />
+            <Button
+              label={t`New section`}
+              systemImage="folder.badge.plus"
+              onPress={() => onEditSection("create")}
+            />
+            {sections.some((section) => section.id === sectionId) ? (
+              <Button
+                label={t`Rename section`}
+                systemImage="pencil"
+                onPress={() => onEditSection("rename")}
+              />
+            ) : null}
+          </Menu>
+          {button("archive")}
+          {button("delete")}
+        </ContextMenu.Items>
+      </ContextMenu>
+    );
+    if (interactiveSwipe) return <Group modifiers={rowModifiers}>{menu}</Group>;
+    return (
+      <SwipeActions modifiers={rowModifiers}>
+        {menu}
+        <SwipeActions.Actions edge="leading">{button(actions.leading, true)}</SwipeActions.Actions>
         <SwipeActions.Actions edge="trailing">
-          {actions.trailing.map((action) => button(action))}
+          {actions.trailing.map((action) => button(action, true))}
         </SwipeActions.Actions>
       </SwipeActions>
     );
   }
 
+  const swipeContent = interactiveSwipe ? (
+    <InboxSwipeContent actions={actions} onAction={onAction}>
+      {children}
+    </InboxSwipeContent>
+  ) : (
+    children
+  );
+
   // In the native inbox list the row is one of its rows; elsewhere it hosts a one-row list.
   if (nativeRow) {
     return swipeRow(
       nativeRow.modifiers,
-      <NativeRowContent width={nativeRow.width}>{children}</NativeRowContent>,
+      <NativeRowContent width={nativeRow.width}>{swipeContent}</NativeRowContent>,
     );
   }
 
@@ -205,7 +211,7 @@ export function InboxSwipeRow({
                   setHeight(next);
                 }}
               >
-                {children}
+                {swipeContent}
               </View>
             </RNHostView>,
           )}
