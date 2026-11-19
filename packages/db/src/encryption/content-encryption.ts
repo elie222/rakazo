@@ -182,6 +182,9 @@ export function contentEncryptionOf(prisma: unknown): ContentEncryption | undefi
   return typeof accessor === "function" ? accessor.call(prisma) : undefined;
 }
 
+/** Longer than the longest of these transactions, lock wait included, may stay open. */
+const KEYS_OUTLAST_TRANSACTION_MS = 30_000;
+
 /**
  * Loads a Space's content keys before a transaction seals its rows, so the transaction does not
  * wait on the key store or, for keys no longer in memory, the key manager. A Space without keys
@@ -190,7 +193,11 @@ export function contentEncryptionOf(prisma: unknown): ContentEncryption | undefi
  */
 export async function loadSpaceContentKeys(prisma: unknown, spaceId: string): Promise<void> {
   const ring = contentEncryptionOf(prisma)?.ring;
-  if (ring?.encryptWrites) await bestEffort("load a Space's content keys", ring.all(spaceId));
+  if (ring?.encryptWrites)
+    await bestEffort(
+      "load a Space's content keys",
+      ring.preload(spaceId, KEYS_OUTLAST_TRANSACTION_MS),
+    );
 }
 
 /**

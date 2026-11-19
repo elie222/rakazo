@@ -253,6 +253,37 @@ describe("loadSpaceContentKeys", () => {
     expect(unwrap).toHaveBeenCalledTimes(1);
   });
 
+  it("reloads keys that would expire before the transaction ends", async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]);
+      const record = {
+        id: "key-1",
+        spaceId: "s",
+        version: 1,
+        ...(await provider.wrap(randomBytes(32), { spaceId: "s", version: 1 })),
+      };
+      const forSpace = vi.fn(async () => [record]);
+      const unwrap = vi.spyOn(provider, "unwrap");
+      const warm = new ContentKeyRing(provider, { ...store, forSpace }, { ttlMs: 60_000 });
+      const client = withContentEncryption(new PrismaClient({ adapter: new PrismaPg(pool) }), warm);
+
+      await loadSpaceContentKeys(client, "s");
+      vi.advanceTimersByTime(10_000);
+      await loadSpaceContentKeys(client, "s");
+      expect(unwrap).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(40_000);
+      await loadSpaceContentKeys(client, "s");
+      expect(unwrap).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(40_000);
+      await expect(warm.current("s")).resolves.toMatchObject({ id: "key-1" });
+      expect(unwrap).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves a key that cannot be loaded for the transaction to meet where it seals", async () => {
     const failing = new ContentKeyRing(new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]), {
       ...store,
