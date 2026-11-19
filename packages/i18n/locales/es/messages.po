@@ -249,7 +249,7 @@ msgstr "{count, plural, one {# fila} other {# filas}}"
 
 #: apps/mobile/components/thread/selection-bar.tsx
 msgid "{count, plural, one {# selected} other {# selected}}"
-msgstr ""
+msgstr "{count, plural, one {# seleccionado} other {# seleccionados}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -1045,7 +1045,7 @@ msgstr "Actividad"
 #: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Activity log"
-msgstr ""
+msgstr "Registro de actividad"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3606,7 +3606,7 @@ msgstr "No se pudieron activar las herramientas"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not export the log."
-msgstr ""
+msgstr "No se pudo exportar el registro."
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3817,7 +3817,7 @@ msgstr "No se pudo cargar el escritorio. Este dispositivo no puede acceder a la 
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not load the log."
-msgstr ""
+msgstr "No se pudo cargar el registro."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4526,7 +4526,7 @@ msgstr "Creado"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Created routine \"{name}\""
-msgstr ""
+msgstr "Se creó la rutina \"{name}\""
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
@@ -4906,7 +4906,7 @@ msgstr "Bot eliminado"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Deleted routine \"{name}\""
-msgstr ""
+msgstr "Se eliminó la rutina \"{name}\""
 
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5011,7 +5011,7 @@ msgstr "Desactivado"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Disabled routine \"{name}\""
-msgstr ""
+msgstr "Se desactivó la rutina \"{name}\""
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5310,7 +5310,7 @@ msgstr "Activar {0}"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
-msgstr ""
+msgstr "Se activó la rutina \"{name}\""
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -8188,7 +8188,7 @@ msgstr "Clave de API de organización"
 
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Organization options"
-msgstr ""
+msgstr "Opciones de la organización"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9845,7 +9845,7 @@ msgstr "Selecciona un bot"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
-msgstr ""
+msgstr "Seleccionar mensajes"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11820,7 +11820,7 @@ msgstr "Actualizada abajo"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Updated routine \"{name}\""
-msgstr ""
+msgstr "Se actualizó la rutina \"{name}\""
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -12612,7 +12612,7 @@ msgstr "Tu proveedor de voz rechazó la clave."
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Zero data retention"
-msgstr ""
+msgstr "Sin retención de datos"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

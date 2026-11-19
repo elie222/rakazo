@@ -249,7 +249,7 @@ msgstr "{count, plural, one {# 行} other {# 行}}"
 
 #: apps/mobile/components/thread/selection-bar.tsx
 msgid "{count, plural, one {# selected} other {# selected}}"
-msgstr ""
+msgstr "{count, plural, other {已选择 # 项}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -1045,7 +1045,7 @@ msgstr "动态"
 #: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Activity log"
-msgstr ""
+msgstr "活动日志"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3606,7 +3606,7 @@ msgstr "无法启用工具"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not export the log."
-msgstr ""
+msgstr "无法导出日志。"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3817,7 +3817,7 @@ msgstr "无法加载桌面。此设备无法访问屏幕地址。"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not load the log."
-msgstr ""
+msgstr "无法加载日志。"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4526,7 +4526,7 @@ msgstr "已创建"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Created routine \"{name}\""
-msgstr ""
+msgstr "已创建例行任务“{name}”"
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
@@ -4906,7 +4906,7 @@ msgstr "已删除的 Bot"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Deleted routine \"{name}\""
-msgstr ""
+msgstr "已删除例行任务“{name}”"
 
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5011,7 +5011,7 @@ msgstr "已禁用"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Disabled routine \"{name}\""
-msgstr ""
+msgstr "已禁用例行任务“{name}”"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5310,7 +5310,7 @@ msgstr "启用 {0}"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
-msgstr ""
+msgstr "已启用例行任务“{name}”"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -8188,7 +8188,7 @@ msgstr "组织 API 密钥"
 
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Organization options"
-msgstr ""
+msgstr "组织选项"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9845,7 +9845,7 @@ msgstr "选择 Bot"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
-msgstr ""
+msgstr "选择消息"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11820,7 +11820,7 @@ msgstr "已在下方更新"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Updated routine \"{name}\""
-msgstr ""
+msgstr "已更新例行任务“{name}”"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -12612,7 +12612,7 @@ msgstr "你的语音提供商拒绝了该密钥。"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Zero data retention"
-msgstr ""
+msgstr "零数据保留"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

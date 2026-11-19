@@ -249,7 +249,7 @@ msgstr "{count, plural, one {# 行} other {# 行}}"
 
 #: apps/mobile/components/thread/selection-bar.tsx
 msgid "{count, plural, one {# selected} other {# selected}}"
-msgstr ""
+msgstr "{count, plural, other {#件を選択中}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -1045,7 +1045,7 @@ msgstr "アクティビティ"
 #: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Activity log"
-msgstr ""
+msgstr "アクティビティログ"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3606,7 +3606,7 @@ msgstr "ツールを有効にできませんでした"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not export the log."
-msgstr ""
+msgstr "ログをエクスポートできませんでした。"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3817,7 +3817,7 @@ msgstr "デスクトップを読み込めませんでした。このデバイス
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not load the log."
-msgstr ""
+msgstr "ログを読み込めませんでした。"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4526,7 +4526,7 @@ msgstr "作成済み"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Created routine \"{name}\""
-msgstr ""
+msgstr "ルーティン「{name}」を作成しました"
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
@@ -4906,7 +4906,7 @@ msgstr "削除されたボット"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Deleted routine \"{name}\""
-msgstr ""
+msgstr "ルーティン「{name}」を削除しました"
 
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5011,7 +5011,7 @@ msgstr "無効"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Disabled routine \"{name}\""
-msgstr ""
+msgstr "ルーティン「{name}」を無効にしました"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5310,7 +5310,7 @@ msgstr "{0}を有効にする"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
-msgstr ""
+msgstr "ルーティン「{name}」を有効にしました"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -8188,7 +8188,7 @@ msgstr "組織のAPIキー"
 
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Organization options"
-msgstr ""
+msgstr "組織のオプション"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9845,7 +9845,7 @@ msgstr "ボットを選択"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
-msgstr ""
+msgstr "メッセージを選択"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11820,7 +11820,7 @@ msgstr "下で更新済み"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Updated routine \"{name}\""
-msgstr ""
+msgstr "ルーティン「{name}」を更新しました"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -12612,7 +12612,7 @@ msgstr "音声プロバイダーのキーが拒否されました。"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Zero data retention"
-msgstr ""
+msgstr "データ保持なし"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

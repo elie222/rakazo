@@ -249,7 +249,7 @@ msgstr "{count, plural, one {# पंक्ति} other {# पंक्ति�
 
 #: apps/mobile/components/thread/selection-bar.tsx
 msgid "{count, plural, one {# selected} other {# selected}}"
-msgstr ""
+msgstr "{count, plural, one {# चुना गया} other {# चुने गए}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -1045,7 +1045,7 @@ msgstr "गतिविधि"
 #: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Activity log"
-msgstr ""
+msgstr "गतिविधि लॉग"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3606,7 +3606,7 @@ msgstr "टूल सक्षम नहीं हो सके"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not export the log."
-msgstr ""
+msgstr "लॉग एक्सपोर्ट नहीं हो सका।"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3817,7 +3817,7 @@ msgstr "डेस्कटॉप लोड नहीं हो सका। य�
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not load the log."
-msgstr ""
+msgstr "लॉग लोड नहीं हो सका।"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4526,7 +4526,7 @@ msgstr "बनाया गया"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Created routine \"{name}\""
-msgstr ""
+msgstr "रूटीन \"{name}\" बनाया गया"
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
@@ -4906,7 +4906,7 @@ msgstr "डिलीट किया गया बॉट"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Deleted routine \"{name}\""
-msgstr ""
+msgstr "रूटीन \"{name}\" डिलीट किया गया"
 
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5011,7 +5011,7 @@ msgstr "अक्षम"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Disabled routine \"{name}\""
-msgstr ""
+msgstr "रूटीन \"{name}\" अक्षम किया गया"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5310,7 +5310,7 @@ msgstr "{0} सक्षम करें"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
-msgstr ""
+msgstr "रूटीन \"{name}\" सक्षम किया गया"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -8188,7 +8188,7 @@ msgstr "संगठन API कुंजी"
 
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Organization options"
-msgstr ""
+msgstr "संगठन विकल्प"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9845,7 +9845,7 @@ msgstr "एक बॉट चुनें"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
-msgstr ""
+msgstr "संदेश चुनें"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11820,7 +11820,7 @@ msgstr "नीचे अपडेट किया गया"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Updated routine \"{name}\""
-msgstr ""
+msgstr "रूटीन \"{name}\" अपडेट किया गया"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -12612,7 +12612,7 @@ msgstr "आपके आवाज़ प्रोवाइडर ने कु�
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Zero data retention"
-msgstr ""
+msgstr "ज़ीरो डेटा रिटेंशन"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

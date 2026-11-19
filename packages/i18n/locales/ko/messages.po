@@ -249,7 +249,7 @@ msgstr "{count, plural, one {# 행} other {# 행}}"
 
 #: apps/mobile/components/thread/selection-bar.tsx
 msgid "{count, plural, one {# selected} other {# selected}}"
-msgstr ""
+msgstr "{count, plural, other {#개 선택됨}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -1045,7 +1045,7 @@ msgstr "활동"
 #: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Activity log"
-msgstr ""
+msgstr "활동 로그"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -3606,7 +3606,7 @@ msgstr "도구를 켜지 못했습니다"
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not export the log."
-msgstr ""
+msgstr "로그를 내보내지 못했습니다."
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3817,7 +3817,7 @@ msgstr "데스크톱을 불러오지 못했습니다. 이 기기에서 화면 UR
 
 #: apps/web/src/components/audit/AuditLog.tsx
 msgid "Could not load the log."
-msgstr ""
+msgstr "로그를 불러오지 못했습니다."
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4526,7 +4526,7 @@ msgstr "생성됨"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Created routine \"{name}\""
-msgstr ""
+msgstr "\"{name}\" 자동 실행을 만들었습니다"
 
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
@@ -4906,7 +4906,7 @@ msgstr "삭제된 봇"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Deleted routine \"{name}\""
-msgstr ""
+msgstr "\"{name}\" 자동 실행을 삭제했습니다"
 
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5011,7 +5011,7 @@ msgstr "비활성화됨"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Disabled routine \"{name}\""
-msgstr ""
+msgstr "\"{name}\" 자동 실행을 비활성화했습니다"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5310,7 +5310,7 @@ msgstr "{0} 활성화"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
-msgstr ""
+msgstr "\"{name}\" 자동 실행을 활성화했습니다"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -8188,7 +8188,7 @@ msgstr "조직 API 키"
 
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 msgid "Organization options"
-msgstr ""
+msgstr "조직 옵션"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9845,7 +9845,7 @@ msgstr "대화할 Bot을 선택하세요"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
-msgstr ""
+msgstr "메시지 선택"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11820,7 +11820,7 @@ msgstr "아래에서 업데이트됨"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Updated routine \"{name}\""
-msgstr ""
+msgstr "\"{name}\" 자동 실행을 업데이트했습니다"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -12612,7 +12612,7 @@ msgstr "음성 서비스에서 키를 거부했습니다."
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Zero data retention"
-msgstr ""
+msgstr "데이터 보존 안 함"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
