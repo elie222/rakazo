@@ -456,7 +456,31 @@ const checkerDeps = {
   runtime: { describe: () => ({ capabilities: { scripted: false } }), run: vi.fn() },
 } as unknown as ExecutorDeps;
 
-it("refuses a decision-model checker on a connection that restricts data retention", async () => {
+it("keeps a decision-model checker on a data-retention connection to hosts that retain nothing", async () => {
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({
+    apiKey: "fixture-model-key",
+    zeroDataRetention: true,
+  } as Awaited<ReturnType<typeof resolveModelKey>>);
+  const fetchMock = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      answers: { decision: { type: "choice", choice: "pass", confidence: 0.99 } },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const provider = await autoReviewCheckerProvider(
+    checkerDeps,
+    reviewScope,
+    { memberChecker: true, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "typesafe/jev-1.14" },
+  );
+  await provider.review(reviewRequest, reviewContext);
+  expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+    model: "typesafe/jev-1.14",
+    provider: { zdr: true },
+  });
+});
+
+it("refuses a decision-model checker whose host cannot restrict data retention", async () => {
   vi.mocked(resolveModelKey).mockResolvedValueOnce({
     apiKey: "fixture-model-key",
     zeroDataRetention: true,
@@ -466,7 +490,7 @@ it("refuses a decision-model checker on a connection that restricts data retenti
       checkerDeps,
       reviewScope,
       { memberChecker: true, registerSecrets: vi.fn() },
-      { provider: "openrouter", model: "typesafe/jev-1.14" },
+      { provider: "typesafe", model: "jev-1.14" },
     ),
   ).rejects.toMatchObject({
     code: "DATA_RETENTION_UNSUPPORTED",
