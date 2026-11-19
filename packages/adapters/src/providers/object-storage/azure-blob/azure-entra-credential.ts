@@ -50,10 +50,16 @@ export function refuseEntraAuthUnderOtherProtocol(env: NodeJS.ProcessEnv, protoc
 function certificateBundle(value: string): string {
   let certificate: string;
   try {
-    // A PEM bundle inline, or a path to one. Windows edits leave CRLF line endings, which
-    // node's parsers and the SDK accept; normalize so the delimiter checks see them too.
+    // A PEM bundle inline, or a path to one. Env files, docker -e and systemd EnvironmentFile
+    // carry multi-line values on one line with escaped newlines, so decode those; Windows
+    // edits leave CRLF endings, which node's parsers and the SDK also accept. Normalizing both
+    // lets the line-anchored checks see real lines.
     const raw = value.includes("-----BEGIN") ? value : readFileSync(value, "utf8");
-    certificate = raw.replace(/\r\n/g, "\n").trim();
+    certificate = raw
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\r\n/g, "\n")
+      .trim();
   } catch (error) {
     throw new Error(`OBJECT_STORAGE_CERTIFICATE could not be read: ${(error as Error).message}`);
   }

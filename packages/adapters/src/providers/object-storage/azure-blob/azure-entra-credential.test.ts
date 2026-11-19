@@ -74,6 +74,14 @@ describe("entraAuthFromEnv", () => {
         OBJECT_STORAGE_CERTIFICATE: certificate.split("\n").join("\r\n"),
       }),
     ).not.toThrow();
+    // Env files, docker -e and systemd EnvironmentFile carry the bundle on one line.
+    expect(() =>
+      entraAuthFromEnv({
+        OBJECT_STORAGE_AUTH: "client-certificate",
+        ...principal,
+        OBJECT_STORAGE_CERTIFICATE: certificate.split("\n").join("\\n"),
+      }),
+    ).not.toThrow();
   });
 
   it("fails at startup when the certificate is missing or malformed", () => {
