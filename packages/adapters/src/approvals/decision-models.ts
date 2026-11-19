@@ -18,7 +18,16 @@ export function decisionModel(provider: string, id: string) {
   );
 }
 export function decisionModelCatalog(): ModelCatalogEntry[] {
-  return models.flatMap((model) => (model.catalog ? [{ ...model.catalog }] : []));
+  return models.flatMap((model) =>
+    model.catalog
+      ? [
+          {
+            ...model.catalog,
+            ...(model.dataRetentionControl ? { dataRetentionControl: true as const } : {}),
+          },
+        ]
+      : [],
+  );
 }
 
 /** Only a single explicitly designated, configured default can supply included checks. */

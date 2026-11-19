@@ -21,5 +21,7 @@ export interface DecisionModelDescriptor {
   catalog?: ModelCatalogEntry;
   create: (options: DecisionProviderOptions) => DecisionProvider;
   deploymentApiKey: (env: NodeJS.ProcessEnv) => string | undefined;
+  /** Whether its host can keep requests to endpoints that retain no prompts. */
+  dataRetentionControl?: true;
   includedByDefault?: boolean;
 }
