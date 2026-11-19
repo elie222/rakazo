@@ -52,6 +52,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     TabsContent,
     TabsList,
     TabsTrigger,
+    BotAvatar: () => <span />,
     useCopyText: () => [false, () => {}],
     SectionHeading: ({
       variant: _variant,

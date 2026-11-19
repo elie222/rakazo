@@ -9,6 +9,7 @@ import type {
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import {
+  BotAvatar,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -599,23 +600,15 @@ export function BotSettings({
           className="flex flex-col items-center pb-5 text-center"
         >
           <div className="flex justify-center pb-4">
-            <AvatarStudioPopover
-              value={color}
+            <BotAvatar
+              color={color}
               identity={bot.id}
               status={bot.status}
               size={76}
               avatarSet={avatarSet}
-              onChange={changeAvatar}
             />
           </div>
-          <InlineProfileField
-            label={t`Name`}
-            editLabel={t`Edit name`}
-            value={name}
-            maxLength={BOT_NAME_MAX_LENGTH}
-            className="text-heading2 font-semibold"
-            onCommit={commitName}
-          />
+          <div className="break-words px-2 text-heading2 font-semibold">{name}</div>
           {email && (email.address || claimingEmail) ? (
             <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
               <BotEmailAddressField
@@ -766,7 +759,6 @@ export function BotSettings({
                   size={44}
                   avatarSet={avatarSet}
                   onChange={changeAvatar}
-                  triggerTestId="avatar-studio-trigger-profile"
                 />
                 <InlineProfileField
                   label={t`Name`}

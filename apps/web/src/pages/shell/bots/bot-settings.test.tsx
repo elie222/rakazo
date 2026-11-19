@@ -40,6 +40,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   TabsList: (await importOriginal<typeof UiWeb>()).TabsList,
   TabsTrigger: (await importOriginal<typeof UiWeb>()).TabsTrigger,
   TabsContent: (await importOriginal<typeof UiWeb>()).TabsContent,
+  BotAvatar: () => <span />,
   SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
     <h3 data-variant={variant} {...props} />
   ),
