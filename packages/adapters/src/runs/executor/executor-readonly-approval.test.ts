@@ -5149,6 +5149,19 @@ describe("Auto Review of targets only outside content named", () => {
     expect(reviewRequest(1)).toMatchObject({ outsideOnlyTargets: ["dana@hr.test"] });
   });
 
+  it("counts the task of a run the owner started as their words, with no stored message", async () => {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      prompt: "Send it to dana@hr.test",
+    });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(1)).not.toHaveProperty("outsideOnlyTargets");
+  });
+
   it("says nothing when the owner wrote the address", async () => {
     const f = fixture({
       name: "demo_send_message",

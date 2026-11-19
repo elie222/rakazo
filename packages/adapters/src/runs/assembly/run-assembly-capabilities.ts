@@ -14,7 +14,7 @@ import {
 import { availableInSpace, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
-import { appendOutsideText } from "../../approvals/review-target-sources.js";
+import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-factory.js";
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
@@ -803,11 +803,7 @@ export async function selectRunTools(
   // What Auto Review checks a call's targets against: a run someone else started carries their
   // words in its task, and replayed history the results earlier turns read.
   const initialOutsideText = [
-    ...(ownerStartedRun &&
-    run.trigger !== BACKGROUND_HELPER_TRIGGER &&
-    run.trigger !== HELPER_RESULT_TRIGGER
-      ? []
-      : [task.prompt]),
+    ...(taskPromptIsOutside(run, ownerStartedRun) ? [task.prompt] : []),
     ...historyToolResults(history),
   ].reduce<string>(appendOutsideText, "");
   // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),

@@ -1,7 +1,7 @@
 import { redactSecrets } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
-import { outsideOnlyTargets } from "../../approvals/review-target-sources.js";
+import { outsideOnlyTargets, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 /**
@@ -22,7 +22,12 @@ export async function reviewOwnerContext(
   );
   const targets = withTargets
     ? outsideOnlyTargets(reviewArgs, {
-        ownerWords: [await ctx.trust.loadOwnerWords(), ...earlier],
+        ownerWords: [
+          await ctx.trust.loadOwnerWords(),
+          ...earlier,
+          // The task of a run the owner started is their own words, as the outside side assumes.
+          ...(taskPromptIsOutside(ctx.run, ctx.source.ownerStartedRun) ? [] : [ctx.task.prompt]),
+        ],
         outsideText: ctx.state.outsideText,
       })
     : [];

@@ -1,3 +1,4 @@
+import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
 import { sitesInText, urlSite } from "@rakazo/core/egress";
 
 /**
@@ -137,6 +138,18 @@ export function outsideTextOf(content: unknown): string {
   };
   walk(content, 0);
   return normalize(parts.join("\n"));
+}
+
+/**
+ * Whether a run's task prompt is someone else's words (a run someone else or a helper started)
+ * rather than the owner's: the one rule for both sides of the target check.
+ */
+export function taskPromptIsOutside(run: { trigger: string }, ownerStartedRun: boolean): boolean {
+  return (
+    !ownerStartedRun ||
+    run.trigger === BACKGROUND_HELPER_TRIGGER ||
+    run.trigger === HELPER_RESULT_TRIGGER
+  );
 }
 
 /** Adds newly read outside text to what a run keeps, dropping the oldest past the cap. */
