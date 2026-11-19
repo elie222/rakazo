@@ -27,6 +27,13 @@ import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
+// ICU accepts these legacy names even when PostgreSQL ships only their IANA targets.
+const usageTimezoneAliases = new Map([
+  ["america/indianapolis", "America/Indiana/Indianapolis"],
+  ["asia/calcutta", "Asia/Kolkata"],
+  ["asia/saigon", "Asia/Ho_Chi_Minh"],
+]);
+
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
   return {
@@ -217,7 +224,10 @@ export function contentRoutes(ctx: RouterContext) {
           where: { id: context.actor.userId },
           select: { timezone: true },
         });
-        const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
+        const savedTimezone = member?.timezone ?? "UTC";
+        const timezone = validTimezoneOrUtc(
+          usageTimezoneAliases.get(savedTimezone.toLowerCase()) ?? savedTimezone,
+        );
         const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
         const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
         const firstDate = new Date(`${localDay(now)}T00:00:00Z`);
