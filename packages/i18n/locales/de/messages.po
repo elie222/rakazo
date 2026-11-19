@@ -6402,7 +6402,7 @@ msgstr "Dieser Serie beitreten"
 #. js-lingui-explicit-id
 #: packages/i18n/src/meeting.ts
 msgid "Joining…"
-msgstr "Tritt bei…"
+msgstr "Beitritt läuft…"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
@@ -6539,7 +6539,7 @@ msgstr "Space verlassen"
 #. js-lingui-explicit-id
 #: packages/i18n/src/meeting.ts
 msgid "Leaving…"
-msgstr "Verlässt…"
+msgstr "Wird verlassen…"
 
 #: apps/mobile/components/computers/computer-keyboard-bar.tsx
 msgid "Left"
