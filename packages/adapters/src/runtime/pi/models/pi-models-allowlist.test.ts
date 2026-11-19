@@ -57,6 +57,8 @@ describe("model provider allowlist in the catalog", () => {
     const withPreset = listPiCatalog().find(
       (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
     );
-    expect(withPreset?.endpointPresets).toEqual(COMPATIBLE_ENDPOINT_PRESETS);
+    expect(withPreset?.endpointPresets).toEqual(
+      COMPATIBLE_ENDPOINT_PRESETS.filter((preset) => preset.id === "ollama-cloud"),
+    );
   });
 });

@@ -501,8 +501,8 @@ export function prepareOpenAiCompatibleConnect(
 
 export type OpenAiCompatibleModelsResponse = {
   object?: string;
-  data?: Array<{ id?: string }>;
-  models?: Array<{ id?: string }>;
+  data?: Array<{ id?: string; type?: string }>;
+  models?: Array<{ id?: string; type?: string }>;
   has_more?: boolean;
   last_id?: string | null;
 };
@@ -511,9 +511,14 @@ export type OpenAiCompatibleModelsResponse = {
 const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
 
 /** Extracts model ids; valid JSON can still be null or lack a list, which gets the actionable missing-list error. */
+/** AI/ML API lists every model it serves (images, video, speech) and repeats a chat model under
+ * each protocol it accepts; only chat-completions entries work on this connection. */
+const AIMLAPI_HOST = "api.aimlapi.com";
+const AIMLAPI_CHAT_MODEL_TYPE = "openai/chat-completions";
+
 function probeModelIds(
   body: OpenAiCompatibleModelsResponse,
-  opts?: { catalogProbe?: boolean },
+  opts?: { catalogProbe?: boolean; chatTypeOnly?: boolean },
 ): string[] {
   const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
   const entries = Array.isArray(body?.data)
@@ -530,6 +535,7 @@ function probeModelIds(
   for (const entry of entries) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
     if (!id) continue;
+    if (opts?.chatTypeOnly && entry?.type !== AIMLAPI_CHAT_MODEL_TYPE) continue;
     if (id.length > MAX_MODEL_ID_LENGTH || ids.length >= maxModelIds) {
       throw new ConnectionSetupError("Model server returned too many or overly long model ids");
     }
@@ -581,18 +587,25 @@ async function readBoundedJson(
   }
 }
 
+/** Keyed endpoints, by exact host, of compatible servers that list models without a key. */
+const KEY_CHECK_URLS = new Map([
+  ["ollama.com", "https://ollama.com/api/balance"],
+  [AIMLAPI_HOST, "https://api.aimlapi.com/v1/billing/balance"],
+]);
+
 /** Some compatible servers expose their model list without authenticating. */
 export async function verifyOpenAiCompatibleApiKey(
   input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (new URL(input.baseUrl).hostname !== "ollama.com") return;
+  const keyCheckUrl = KEY_CHECK_URLS.get(new URL(input.baseUrl).hostname);
+  if (!keyCheckUrl) return;
   if (!input.apiKey?.trim()) throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
-    response = await safeFetch("https://ollama.com/api/balance", {
+    response = await safeFetch(keyCheckUrl, {
       headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
       redirect: "error",
       signal: AbortSignal.any([
@@ -695,7 +708,10 @@ export async function probeOpenAiCompatibleModels(
         );
       }
       const body = await overTransport(readBoundedJson(response, opts));
-      const pageIds = probeModelIds(body, opts);
+      const pageIds = probeModelIds(body, {
+        ...opts,
+        chatTypeOnly: baseUrl.hostname === AIMLAPI_HOST,
+      });
       if (ids.length + pageIds.length > maxModelIds) {
         throw new ConnectionSetupError("Model server returned too many or overly long model ids");
       }

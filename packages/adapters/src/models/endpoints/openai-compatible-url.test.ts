@@ -3,6 +3,7 @@ import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
+  compatibleEndpointPresetsFor,
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatAllowPublicHosts,
   PRIVATE_MODEL_ENDPOINT_MESSAGE,
@@ -255,6 +256,21 @@ describe("model provider allowlist and built-in public hosts", () => {
     process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "ollama-cloud";
     expect(assertAllowedOpenAiCompatibleUrl("https://ollama.com/v1", OWNER).href).toBe(
       "https://ollama.com/v1",
+    );
+  });
+
+  it("offers the AI/ML API preset and its host only while the allowlist keeps it", () => {
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "aimlapi";
+    expect(compatibleEndpointPresetsFor(new Set(["aimlapi"]))).toEqual([
+      { id: "aimlapi", name: "AI/ML API", baseUrl: "https://api.aimlapi.com/v1" },
+    ]);
+    expect(assertAllowedOpenAiCompatibleUrl("https://api.aimlapi.com/v1", OWNER).href).toBe(
+      "https://api.aimlapi.com/v1",
+    );
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openai-compatible,ollama-cloud";
+    expect(() => assertAllowedOpenAiCompatibleUrl("https://api.aimlapi.com/v1", OWNER)).toThrow(
+      /Public model endpoints are disabled/,
     );
   });
 

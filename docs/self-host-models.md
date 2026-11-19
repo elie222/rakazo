@@ -170,6 +170,10 @@ own sign-in. Only the deployment model runs on Claude Code; it is not offered as
 
 In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too; see [Limiting model providers](#limiting-model-providers).
 
+## AI/ML API
+
+In **Settings → Models**, choose **AI/ML API**, paste an API key from aimlapi.com, then **Find models**. The key is checked before it is saved, and only the chat-completions models from AI/ML API's model list are offered. Like Ollama Cloud, this uses an OpenAI-compatible connection with no environment configuration and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `aimlapi` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too.
+
 ## OpenAI-compatible connections
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
@@ -213,11 +217,11 @@ provider not on it is not offered, a key for it is refused on save and on import
 switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
 exactly the behavior without it.
 
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` still allows `ollama.com`, the one built-in public host,
-because the Ollama Cloud preset needs it. To keep OpenAI-compatible endpoints while dropping that
-exemption, list `openai-compatible` and leave the preset's id `ollama-cloud` out: the preset
-disappears and its host is refused like any other public host. List `ollama-cloud` as well to keep
-both.
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` still allows `ollama.com` and `api.aimlapi.com`, the built-in
+public hosts, because the Ollama Cloud and AI/ML API presets need them. To keep OpenAI-compatible
+endpoints while dropping an exemption, list `openai-compatible` and leave that preset's id
+(`ollama-cloud` or `aimlapi`) out: the preset disappears and its host is refused like any other
+public host. List the preset's id as well to keep both.
 
 ## Thinking
 

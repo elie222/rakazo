@@ -15,7 +15,7 @@ import { modelProviderAllowlist } from "../model-provider-allowlist.js";
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com", "api.aimlapi.com"]);
 
 /**
  * Public hosts still exempt from RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0: unset keeps the
@@ -34,6 +34,7 @@ function builtInPublicModelHosts(): ReadonlySet<string> {
 /** Hosted compatible services the catalog offers by name. Each one needs a key. */
 export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
   { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  { id: "aimlapi", name: "AI/ML API", baseUrl: "https://api.aimlapi.com/v1" },
 ];
 
 /**

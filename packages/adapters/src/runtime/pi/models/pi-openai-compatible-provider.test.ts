@@ -1279,6 +1279,87 @@ describe("built-in public compatible host", () => {
   });
 });
 
+describe("AI/ML API preset host", () => {
+  it("exempts only the exact HTTPS host from the public gate", () => {
+    expect(
+      assertAllowedOpenAiCompatibleUrl("https://api.aimlapi.com/v1", { allowPublic: false }).href,
+    ).toBe("https://api.aimlapi.com/v1");
+    for (const url of [
+      "http://api.aimlapi.com/v1",
+      "https://api.aimlapi.com:8443/v1",
+      "https://aimlapi.com/v1",
+      "https://evil.api.aimlapi.com/v1",
+      "https://api.aimlapi.com.evil.test/v1",
+      "https://user@api.aimlapi.com/v1",
+    ]) {
+      expect(() => assertAllowedOpenAiCompatibleUrl(url, { allowPublic: false })).toThrow();
+    }
+  });
+  it("checks the key on the exact host, then lists only chat-completions models", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new URL(String(input)).host).toBe("api.aimlapi.com");
+      expect(init?.redirect).toBe("error");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
+      return String(input).endsWith("/billing/balance")
+        ? new Response(null)
+        : Response.json({
+            data: [
+              { id: "vendor/chat-model", type: "openai/chat-completions" },
+              { id: "vendor/chat-model", type: "anthropic/messages" },
+              { id: "vendor/image-model", type: "openai/image-generations" },
+              { id: "vendor/untyped-model" },
+            ],
+          });
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.aimlapi.com/v1", apiKey: "fake-key" },
+        transport,
+      ),
+    ).resolves.toEqual(["vendor/chat-model"]);
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.aimlapi.com/v1/billing/balance");
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it.each([401, 403])("rejects an invalid key (%s) before listing models", async (status) => {
+    const transport = vi.fn(async () => new Response(null, { status }));
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.aimlapi.com/v1", apiKey: "fake-key" },
+        transport,
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+    expect(transport).toHaveBeenCalledOnce();
+  });
+  it("refuses a redirect from the key check instead of following it with the key", async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(null, { status: 302, headers: { location: "https://evil.test/balance" } }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.aimlapi.com/v1", apiKey: "fake-key" },
+        transport,
+      ),
+    ).rejects.toThrow("Could not verify the API key");
+    expect(transport).toHaveBeenCalledOnce();
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.aimlapi.com/v1/billing/balance");
+  });
+  it("filters by type only on the exact host, not a lookalike one", async () => {
+    const transport = vi.fn(async () =>
+      Response.json({ data: [{ id: "a", type: "openai/image-generations" }, { id: "b" }] }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.aimlapi.com.evil.test/v1", apiKey: "fake-key" },
+        transport,
+        undefined,
+        { allowPublic: true },
+      ),
+    ).resolves.toEqual(["a", "b"]);
+    expect(transport).toHaveBeenCalledOnce();
+  });
+});
+
 describe("per-connection wire protocol", () => {
   const input = {
     provider: OPENAI_COMPATIBLE_PROVIDER_ID,
