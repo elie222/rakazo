@@ -510,6 +510,10 @@ const BROWSER_POLICY_DIRS = [
 
 export const PREPARE_LINUX_DESKTOP = [
   "set -eu",
+  // Two processes can prepare the same computer at once, and their package installs would
+  // collide on APT's locks. The second waits, within the command's own timeout, and then finds
+  // the tools the first installed.
+  "if command -v flock >/dev/null 2>&1; then exec 9>/tmp/rakazo-desktop-prepare.lock; flock 9; fi",
   ...FIND_MISSING_DESKTOP_TOOLS,
   'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
   'if [ -n "$missing" ]; then',

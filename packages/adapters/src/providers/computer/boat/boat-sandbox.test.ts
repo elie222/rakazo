@@ -1111,10 +1111,35 @@ describe("BoatSandboxProvider", () => {
     });
   });
 
+  it("reports desktop tool setup that outlasts its timeout as unresponsive", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("apt-get")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        exitCode: 124,
+        stdout: "",
+        stderr: "",
+        timedOut: true,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(
+      SandboxUnresponsiveError,
+    );
+  });
+
   it.each([
     'Executable not found in $PATH: "systemd-run"',
     "ENOENT: no such file or directory, posix_spawn 'systemd-run'",
     "environment: line 7: /usr/bin/grep: cannot execute: required file not found\nenvironment: line 8: /usr/bin/grep: cannot execute: required file not found",
+    "sudo: you do not exist in the passwd database",
   ])("reports a machine that cannot start programs as damaged: %s", async (stderr) => {
     vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
       ok: true,

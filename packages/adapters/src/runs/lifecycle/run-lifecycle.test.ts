@@ -1,5 +1,6 @@
 import {
   runContinueJob,
+  SandboxDamagedError,
   SandboxDiskTooLargeError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -158,18 +159,26 @@ describe("retrying a run whose setup failed", () => {
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   });
 
-  async function retry(setupError: unknown, options: { leaseValid?: boolean } = {}) {
+  async function retry(
+    setupError: unknown,
+    options: { leaseValid?: boolean; findBot?: () => Promise<{ name: string }> } = {},
+  ) {
     const requeueRun = vi.fn(async (_: { data: { error: string | null } }) => ({ count: 1 }));
     const recordAttempt = vi.fn(async (_: { data: { status: string; error: string | null } }) => ({
       id: "attempt-1",
     }));
     const priorAttempts = vi.fn(async () => []);
+    const finalizeRun = vi.fn(async (_: { outcome: string; error: string }) => ({
+      continuationRunId: null,
+    }));
     const deps = {
       prisma: {
         run: { updateMany: requeueRun },
         attempt: { update: recordAttempt, findMany: priorAttempts },
+        bot: { findUnique: vi.fn(options.findBot ?? (async () => ({ name: "Chief" }))) },
       },
       jobs: { enqueue: vi.fn(async () => undefined) },
+      events: { finalizeRun },
     } as unknown as ExecutorDeps;
     await retryRunSetup(
       deps,
@@ -188,6 +197,7 @@ describe("retrying a run whose setup failed", () => {
       attempt: recordAttempt.mock.calls[0]?.[0].data,
       runError: requeueRun.mock.calls[0]?.[0].data.error,
       priorAttempts,
+      ended: finalizeRun.mock.calls[0]?.[0],
       logged: sink.events.filter((event) => event.message === "run.setup_failed"),
     };
   }
@@ -210,6 +220,30 @@ describe("retrying a run whose setup failed", () => {
   });
 
   it.each([
+    ["whose system is damaged", () => new SandboxDamagedError()],
+    ["too large to start", () => new SandboxDiskTooLargeError()],
+  ])("ends the run at once, with a warning, for a computer %s", async (_name, error) => {
+    const failure = error();
+    const ended = await retry(failure);
+
+    expect(ended.ended).toMatchObject({ outcome: "failed", error: failure.message });
+    expect(ended.runError).toBeUndefined();
+    expect(ended.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it("waits out a database outage while ending the run", async () => {
+    const findBot = vi
+      .fn<() => Promise<{ name: string }>>()
+      .mockRejectedValueOnce(databaseDown())
+      .mockResolvedValue({ name: "Chief" });
+    const failure = new SandboxDamagedError();
+    const ended = await retry(failure, { findBot });
+
+    expect(findBot).toHaveBeenCalledTimes(2);
+    expect(ended.ended).toMatchObject({ outcome: "failed", error: failure.message });
+  });
+
+  it.each([
     ["a computer busy with another run", () => new ComputerBusyError()],
     ["a database outage", databaseDown],
   ])("records no reason, counts nothing and stays quiet for %s", async (_name, error) => {
@@ -224,7 +258,6 @@ describe("retrying a run whose setup failed", () => {
   it.each([
     ["an unexpected failure", () => new Error(`boom ${SECRET}`), true, "error"],
     ["a computer that did not start", () => new SandboxUnavailableError(), true, "warn"],
-    ["a computer too large to start", () => new SandboxDiskTooLargeError(), true, "warn"],
     [
       "an unreachable computer provider",
       () => new SandboxUnresponsiveError(`unreachable ${SECRET}`),
