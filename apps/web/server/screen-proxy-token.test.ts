@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import type { Server } from "node:http";
 import { createServer as createHttpServer, request as httpRequestFn } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -94,13 +95,15 @@ function screenAuthority() {
 }
 
 async function listen(server: Server) {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
 async function close(server: Server) {
   server.closeAllConnections();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  server.close();
+  await once(server, "close");
 }
 
 /** The status code of a plain GET for the path. */
