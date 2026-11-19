@@ -260,7 +260,7 @@ describeBreakdown("usage.breakdown", () => {
     const task = await prisma.task.create({
       data: { ...owner, botId: bot.id, threadId: thread.id, prompt: "p", status: "completed" },
     });
-    const run = (routineId: string | null) =>
+    const run = (routineId: string | null, delegatedFromRunId: string | null = null) =>
       prisma.run.create({
         data: {
           ...owner,
@@ -270,9 +270,14 @@ describeBreakdown("usage.breakdown", () => {
           status: "completed",
           trigger: routineId ? "routine" : "user",
           routineId,
+          delegatedFromRunId,
         },
       });
     const [first, second, chat] = [await run(routine.id), await run(routine.id), await run(null)];
+    // Handed-on work is its own run, without a routine, that names the run it came from.
+    const helper = await run(null, first.id);
+    const helperOfHelper = await run(null, helper.id);
+    const chatHelper = await run(null, chat.id);
     const record = (
       runId: string | null,
       parentRunId: string | null,
@@ -293,10 +298,13 @@ describeBreakdown("usage.breakdown", () => {
     await prisma.usageRecord.createMany({
       data: [
         record(first.id, first.id, "m1", 100),
-        // A helper's call counts toward the routine that started its parent run.
-        record(`helper-${stamp}`, first.id, "m2", 50),
+        // A call inside the run counts with it, as does work the run handed on, however far.
+        record(first.id, first.id, "m2", 50),
+        record(helper.id, helper.id, "m2", 20),
+        record(helperOfHelper.id, helperOfHelper.id, "m2", 5),
         record(second.id, second.id, "m1", 10),
         record(chat.id, chat.id, "m1", 7),
+        record(chatHelper.id, chatHelper.id, "m1", 2),
         // Background work with no run belongs to no routine.
         record(null, null, "m1", 3),
       ],
@@ -307,17 +315,17 @@ describeBreakdown("usage.breakdown", () => {
     const rows = (usage: UsageBreakdown) =>
       usage.routines.map((row) => [row.id, row.name, row.botName, row.runs, row.totalTokens]);
     expect(rows(await get({ range: "30d" }))).toEqual([
-      [routine.id, "Morning brief", "Brief", 2, 160],
-      [null, null, null, 1, 10],
+      [routine.id, "Morning brief", "Brief", 4, 185],
+      [null, null, null, 2, 12],
     ]);
     // The model filter narrows the split like every other figure.
     expect(rows(await get({ range: "30d", provider: "p", model: "m2" }))).toEqual([
-      [routine.id, "Morning brief", "Brief", 1, 50],
+      [routine.id, "Morning brief", "Brief", 3, 75],
     ]);
 
     // Deleting a routine keeps its usage, which is then no routine's.
     await rpc(app, cookie, "routines/remove", { routineId: routine.id });
-    expect(rows(await get({ range: "30d" }))).toEqual([[null, null, null, 3, 170]]);
+    expect(rows(await get({ range: "30d" }))).toEqual([[null, null, null, 6, 197]]);
   });
 
   it("cuts today and day buckets at the member's own midnight", async () => {

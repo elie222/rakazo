@@ -79,6 +79,30 @@ const breakdown = {
     modelCalls: 180,
   },
   models: summary.models,
+  routines: [
+    {
+      id: "routine-1",
+      name: "Morning brief",
+      botName: "Assistant",
+      runs: 30,
+      inputTokens: 700_000,
+      outputTokens: 60_000,
+      totalTokens: 760_000,
+      costUsd: 3.2,
+      modelCalls: 140,
+    },
+    {
+      id: null,
+      name: null,
+      botName: null,
+      runs: 12,
+      inputTokens: 210_000,
+      outputTokens: 26_000,
+      totalTokens: 236_000,
+      costUsd: 1,
+      modelCalls: 40,
+    },
+  ],
   overTimeUnit: "day",
   overTime: [
     {
