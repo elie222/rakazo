@@ -81,7 +81,7 @@ export type OpenAiCompatibleUrlPolicy = {
 };
 
 export const PRIVATE_MODEL_ENDPOINT_MESSAGE =
-  "Private endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker. Model endpoints can instead be allowed by an admin in Settings.";
+  "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
 
 export function assertAllowedOpenAiCompatibleUrl(
   raw: string,

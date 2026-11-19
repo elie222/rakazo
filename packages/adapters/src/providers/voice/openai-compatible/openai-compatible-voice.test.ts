@@ -261,7 +261,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
         sttBaseUrl: "http://192.168.1.30:9000",
       }),
     ).toThrow(
-      "Private endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker. Model endpoints can instead be allowed by an admin in Settings.",
+      "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.",
     );
     expect(() =>
       serializeAsOwner({ baseUrl: "http://127.0.0.1:8810", sttBaseUrl: "http://169.254.169.254" }),
