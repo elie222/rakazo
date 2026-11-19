@@ -27,6 +27,7 @@ function allowanceDeps(input: {
   hours?: Array<{ kind: string; hours: number; size?: string | null }>;
   sandbox?: Partial<SandboxProvider>;
   granted?: { creditCents: number; since: Date };
+  extraCents?: number;
 }) {
   const prisma = {
     deploymentSettings: {
@@ -55,6 +56,9 @@ function allowanceDeps(input: {
         _sum: { creditCents: input.granted?.creditCents ?? null },
         _min: { appliedAt: input.granted?.since ?? null },
       }),
+    },
+    computerAllowanceGrant: {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: input.extraCents ?? null } }),
     },
     $queryRaw: vi.fn(async (_query: { values: unknown[] }) => input.hours ?? []),
   };
@@ -118,6 +122,22 @@ describe("computer allowance", () => {
     expect(await limit("canceled", "max")).toBe(5_000_000);
     // Every tier's trial gets the trial allowance.
     expect(await limit("trialing", "max")).toBe(3_000_000);
+  });
+
+  it("adds extra allowance granted this period to a paid own-key tier", async () => {
+    const periodStart = new Date("2026-03-10T00:00:00Z");
+    const now = new Date("2026-03-17T00:00:00Z");
+    const { deps, prisma } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      subscription: { status: "active", byokTier: "pro", currentPeriodStartsAt: periodStart },
+      extraCents: 1_500,
+    });
+    expect((await sandboxAllowance(deps, "organization", now))?.limitMicros).toBe(35_000_000);
+    expect(prisma.computerAllowanceGrant.aggregate).toHaveBeenCalledWith({
+      where: { organizationId: "organization", createdAt: { gte: periodStart, lte: now } },
+      _sum: { amountCents: true },
+    });
   });
 
   it("gives a monthly credit plan a fifth of its amount", async () => {

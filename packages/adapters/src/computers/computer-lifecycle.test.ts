@@ -2206,6 +2206,9 @@ describe("Team Computer wake", () => {
           billing: { creditAmountCents: 5000 },
         }),
       },
+      computerAllowanceGrant: {
+        aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
+      },
       // $10 of a $50 plan, at the default $0.10 an hour.
       $queryRaw: vi.fn().mockResolvedValue([{ kind: "e2b", hours: 100 }]),
     });

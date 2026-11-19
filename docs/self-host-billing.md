@@ -78,6 +78,19 @@ also include personal-key activity. Those records are excluded rather than guess
 not a complete lifetime-spend total for people who used credits before per-user journaling.
 The operator command reports this boundary alongside the allowance.
 
+## Extra computer allowance
+
+An operator can give an organization extra computer allowance, in US dollars, for its current
+period only. It adds to whatever its plan includes, is recorded in the billing journal, and does
+not carry into the next period. From the API container, run:
+
+```sh
+node dist/cli/computer-allowance.js grant <organization-id> 10
+node dist/cli/computer-allowance.js status <organization-id>
+```
+
+Both print the period's allowance, the extra granted, and the Standard computer hours left.
+
 The cap has no automatic reset or expiry, and credit purchases cannot lift it. At the limit,
 new hosted calls fail with “Usage limit reached. Contact support to continue.” Sign-in and
 personal model connections remain available. Reservations may stop a call before the displayed

@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
-import { sandboxRunHours, sandboxRunHoursByComputer } from "./sandbox-allowance.js";
+import {
+  grantComputerAllowance,
+  sandboxAllowancePlan,
+  sandboxRunHours,
+  sandboxRunHoursByComputer,
+} from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -99,5 +104,72 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       ]),
     );
     expect(byComputer).toHaveLength(3);
+  });
+
+  it("adds a grant to the period it was made in and not to the next one", async () => {
+    const periodStart = new Date("2026-03-05T00:00:00.000Z");
+    const settings = await prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    await prisma.billingAccount.create({
+      data: {
+        organizationId,
+        customerId: `customer-${suffix}`,
+        status: "active",
+        byokTier: "pro",
+        byokPriceCents: 4_000,
+        byokInterval: "month",
+        currentPeriodStartsAt: periodStart,
+        currentPeriodEndsAt: new Date("2026-04-05T00:00:00.000Z"),
+      },
+    });
+    try {
+      expect(await sandboxAllowancePlan(prisma, organizationId, now)).toMatchObject({
+        limitCents: 2_000,
+        extraCents: 0,
+      });
+      await grantComputerAllowance(prisma, organizationId, 2_500);
+      const grant = await prisma.computerAllowanceGrant.findFirstOrThrow({
+        where: { organizationId },
+      });
+      // Granted during this period.
+      await prisma.computerAllowanceGrant.update({
+        where: { id: grant.id },
+        data: { createdAt: new Date("2026-03-09T00:00:00.000Z") },
+      });
+      const during = await sandboxAllowancePlan(prisma, organizationId, now);
+      expect(during).toMatchObject({ limitCents: 4_500, extraCents: 2_500 });
+      expect(
+        await prisma.billingAuditEvent.findUnique({
+          where: { source: `computer-allowance:${grant.id}` },
+          select: { kind: true, organizationId: true, amountMicros: true },
+        }),
+      ).toEqual({ kind: "computer_allowance_granted", organizationId, amountMicros: 0n });
+
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          currentPeriodStartsAt: new Date("2026-04-05T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-05-05T00:00:00.000Z"),
+        },
+      });
+      const next = await sandboxAllowancePlan(
+        prisma,
+        organizationId,
+        new Date("2026-04-10T00:00:00.000Z"),
+      );
+      expect(next).toMatchObject({ limitCents: 2_000, extraCents: 0 });
+    } finally {
+      await prisma.billingAccount.deleteMany({ where: { organizationId } });
+      if (settings)
+        await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
   });
 });
