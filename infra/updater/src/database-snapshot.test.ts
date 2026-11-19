@@ -131,9 +131,9 @@ describe("snapshot before an update", () => {
       "sh",
       "-c",
     ]);
-    expect(dump.at(-1)).toContain(
-      'pg_dump --format=custom --no-owner --no-privileges -U "$POSTGRES_USER"',
-    );
+    expect(dump.at(-1)).toContain('pg_dump --format=custom -U "$POSTGRES_USER"');
+    // Restoring must bring back the migrations' revocations, so neither is stripped.
+    expect(dump.at(-1)).not.toMatch(/--no-(owner|privileges)/);
     expect(dump.at(-1)).toContain("pg_restore --list");
     expect(dump.slice(0, 3)).toEqual(["compose", "-p", fixture.config.projectName]);
 
@@ -192,6 +192,31 @@ describe("snapshot before an update", () => {
 });
 
 describe("snapshot retention", () => {
+  it("keeps a retried update's first snapshot, the one from before its migrations", async () => {
+    const fixture = await deployment("1");
+    const target = {
+      composeFiles: fixture.config.composeFiles,
+      projectName: fixture.config.projectName,
+    };
+    await mkdir(fixture.snapshots, { recursive: true });
+    await writeFile(path.join(fixture.snapshots, "20260101T000000Z-v0.9.0.dump"), "older release");
+    // Four attempts at the same update, as a schedule retrying a failing recreate would make.
+    for (const day of ["02", "03", "04", "05"]) {
+      const result = await snapshotDatabase(
+        fixture.config,
+        target,
+        "sha-v1.0.0-build",
+        fakeDocker().run,
+        new Date(`2026-01-${day}T00:00:00Z`),
+      );
+      expect(result.ok).toBe(true);
+    }
+    expect((await readdir(fixture.snapshots)).sort()).toEqual([
+      "20260102T000000Z-sha-v1.0.0-build.dump",
+      "20260105T000000Z-sha-v1.0.0-build.dump",
+    ]);
+  });
+
   it("keeps the newest files and leaves anything it did not name", async () => {
     const fixture = await deployment("2");
     await mkdir(fixture.snapshots, { recursive: true });

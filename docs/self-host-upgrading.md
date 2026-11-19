@@ -382,8 +382,8 @@ manually before scheduling can proceed. Cloud CI deployment triggers remain unch
 
 Rolling back restores the previous image, never the previous database, so an update whose
 migrations cannot be undone needs a database copy from just before it. Set
-`RAKAZO_UPDATE_DATABASE_SNAPSHOTS` in `.env` to the number of copies to keep (1 to 30; `0`, the
-default, takes none) and recreate the updater:
+`RAKAZO_UPDATE_DATABASE_SNAPSHOTS` in `.env` to the number of outgoing releases to keep copies
+for (1 to 30; `0`, the default, takes none) and recreate the updater:
 
 ```dotenv
 RAKAZO_UPDATE_DATABASE_SNAPSHOTS=2
@@ -392,27 +392,40 @@ RAKAZO_UPDATE_DATABASE_SNAPSHOTS=2
 Each scheduled or manual update then dumps the database after its images are pulled or its
 checkout is fast-forwarded and before any service is recreated, checks that the dump can be
 listed, and saves it as `backups/pre-update/<time>-<outgoing tag>.dump` in the deployment
-directory, readable only by root. The oldest files beyond the number kept are removed. If the
-snapshot fails, the update stops there with the running services untouched. A rollback takes no
-snapshot, and an update that finds nothing to change takes none either.
+directory, readable only by root. If the snapshot fails, the update stops there with the running
+services untouched. A rollback takes no snapshot, and an update that finds nothing to change
+takes none either.
 
-The dump is a `pg_dump` custom-format file of the Compose `postgres` service, written inside that
-container first and then copied out, so it needs free space for about two copies. Leave the
-setting at `0` when the database runs outside this Compose stack. It is a way back from one
-update, not a backup: it holds no application data and never leaves the server, so keep the
-[scheduled backups](./self-host-backups.md) too.
+A failed update that is tried again is snapshotted again, and by then the failed attempt's
+migrations may already have run. So for each outgoing release the updater keeps the first copy
+and the latest one and removes those between; releases beyond the number kept lose all of
+theirs. The first copy for a release is the one certain to predate the update.
 
-To go back after a bad update, pause scheduling, roll back the image as above, then stop
-`api`, `worker` and `web` and restore the snapshot over the database:
+The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
+privileges, written inside that container first and then copied out, so it needs free space for
+about two copies. Leave the setting at `0` when the database runs outside this Compose stack. It
+is a way back from one update, not a backup: it holds no application data and never leaves the
+server, so keep the [scheduled backups](./self-host-backups.md) too.
+
+To go back after a bad update, restore the database first and roll back the image second: the
+previous release cannot start on the newer schema. Pause scheduling, stop everything that uses
+the database, and restore the outgoing release's first snapshot. Use your own Compose files in
+place of `docker-compose.images.yml`, the ones the updater runs:
 
 ```bash
-docker compose --env-file .env -f docker-compose.images.yml exec -T postgres sh -c \
-  'pg_restore --clean --if-exists --no-owner --exit-on-error --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+COMPOSE="docker compose --env-file .env -f docker-compose.images.yml"
+$COMPOSE stop api worker web
+$COMPOSE exec -T postgres sh -c \
+  'pg_restore --clean --if-exists --create --exit-on-error -U "$POSTGRES_USER" -d postgres' \
   < backups/pre-update/<time>-<outgoing tag>.dump
 ```
 
-Everything written to the database after the snapshot is lost, so restore right away or roll
-forward instead.
+`--create` drops the database and creates it again from the snapshot, so tables the failed
+update added do not survive, and grants and revocations return as they were. It refuses while
+anything is still connected: stop any other service from your overlay that uses the database
+(and `pitr`, if enabled) first. Then call `/rollback` as shown above, which starts the previous
+image on the restored database. Everything written to the database after the snapshot is lost,
+so restore right away or roll forward instead.
 
 ## The deploy directory must be one path
 

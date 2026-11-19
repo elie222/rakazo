@@ -12,6 +12,7 @@ export const SNAPSHOT_DIRECTORY = "backups/pre-update";
 const DATABASE_SERVICE = "postgres";
 const CONTAINER_DUMP = "/tmp/rakazo-pre-update.dump";
 const SNAPSHOT_FILE = /^\d{8}T\d{6}Z-[A-Za-z0-9_.-]+\.dump$/;
+const STAMP_LENGTH = "20260101T000000Z".length;
 // A dump of a large database is slow; the copy out of the container is bounded the same way.
 const SNAPSHOT_TIMEOUT_MS = 1_800_000;
 // Fixed text: the database name and user are read from the container's own environment, so no
@@ -20,7 +21,9 @@ const DUMP_SCRIPT = [
   "set -e",
   "umask 077",
   `rm -f ${CONTAINER_DUMP}`,
-  `pg_dump --format=custom --no-owner --no-privileges -U "$POSTGRES_USER" -f ${CONTAINER_DUMP} "$POSTGRES_DB"`,
+  // Owners and privileges stay in the dump: it is restored into the cluster it came from, and
+  // the migrations' revocations must come back with it.
+  `pg_dump --format=custom -U "$POSTGRES_USER" -f ${CONTAINER_DUMP} "$POSTGRES_DB"`,
   // A dump that cannot be listed cannot be restored, so it must not count as a snapshot.
   `pg_restore --list ${CONTAINER_DUMP} >/dev/null`,
 ].join("; ");
@@ -53,7 +56,7 @@ function snapshotName(fromTag: string, now: Date): string {
 
 /**
  * Dumps the database the outgoing release wrote and saves it in the deployment directory, keeping
- * the newest `config.databaseSnapshots` files. Image recovery never reverses a migration, so this
+ * files for the last `config.databaseSnapshots` releases. Image recovery never reverses a migration, so this
  * file is what makes going back to the previous release possible. A failure is returned, not
  * thrown, and happens before any service is recreated.
  */
@@ -96,10 +99,26 @@ export async function snapshotDatabase(
   }
 }
 
-/** Stamps sort by time. Only files this module named are ever removed. */
+/**
+ * Keeps snapshots for the `keep` most recently outgoing releases. A release that was snapshotted
+ * more than once had an update retried: its first file is the only one certain to predate the
+ * failed attempt's migrations and its last is the freshest, so both stay and the ones between go.
+ * Only files this module named are ever removed.
+ */
 async function prune(directory: string, keep: number) {
-  const snapshots = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name)).sort();
-  for (const name of snapshots.slice(0, Math.max(0, snapshots.length - keep))) {
-    await rm(path.posix.join(directory, name), { force: true });
+  // Stamps sort by time, so each release's files are oldest first.
+  const names = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name)).sort();
+  const byRelease = new Map<string, string[]>();
+  for (const name of names) {
+    const release = name.slice(STAMP_LENGTH + 1);
+    const files = byRelease.get(release) ?? [];
+    // Inserted again at the end, which leaves the releases ordered by their newest file.
+    byRelease.delete(release);
+    byRelease.set(release, [...files, name]);
+  }
+  const releases = [...byRelease.values()];
+  const kept = new Set(releases.slice(-keep).flatMap((files) => [files[0], files.at(-1)]));
+  for (const name of releases.flat()) {
+    if (!kept.has(name)) await rm(path.posix.join(directory, name), { force: true });
   }
 }
