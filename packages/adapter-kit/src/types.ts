@@ -1723,6 +1723,12 @@ export interface AutoReviewRequest {
    * result or anyone else's message. Redacted and capped by the caller.
    */
   ownerMessages?: string[];
+  /**
+   * Recipients, sites, payees or accounts in `args` that outside content read during the run holds
+   * and the owner's own words do not, worked out by the server. Taken from `args`, so already
+   * redacted.
+   */
+  outsideOnlyTargets?: string[];
 }
 
 export interface AutoReviewResult {

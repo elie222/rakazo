@@ -5,11 +5,13 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import {
@@ -767,6 +769,25 @@ describe("BoatSandboxProvider", () => {
     },
   );
 
+  it("reports a stopped sandbox whose disk fits no machine as too large to start", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.setState(computer.id, "archived");
+    resume.mockRejectedValue(
+      boatError(
+        409,
+        "resume_failed",
+        "This sandbox uses 83.8 GB of disk, which does not fit any available 'default' machine (largest budget: 76.0 GB).",
+      ),
+    );
+
+    await expect(provider.readFile(computer, "kept.txt", context)).rejects.toBeInstanceOf(
+      SandboxDiskTooLargeError,
+    );
+    expect(resume).toHaveBeenCalledOnce();
+  });
+
   it("retries a request that never reached Boat once, whatever the call", async () => {
     const run = vi.spyOn(FakeBoatApi.prototype, "command");
     const { provider, computer } = await boat();
@@ -1091,10 +1112,35 @@ describe("BoatSandboxProvider", () => {
     });
   });
 
+  it("reports desktop tool setup that outlasts its timeout as unresponsive", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("apt-get")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        exitCode: 124,
+        stdout: "",
+        stderr: "",
+        timedOut: true,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(
+      SandboxUnresponsiveError,
+    );
+  });
+
   it.each([
     'Executable not found in $PATH: "systemd-run"',
     "ENOENT: no such file or directory, posix_spawn 'systemd-run'",
     "environment: line 7: /usr/bin/grep: cannot execute: required file not found\nenvironment: line 8: /usr/bin/grep: cannot execute: required file not found",
+    "sudo: you do not exist in the passwd database",
   ])("reports a machine that cannot start programs as damaged: %s", async (stderr) => {
     vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
       ok: true,
@@ -1774,6 +1820,22 @@ describe("BoatSandboxProvider", () => {
     expect(polledAt.length).toBeLessThanOrEqual(125);
   });
 
+  it("reports a machine that stopped under a running command as unavailable", async () => {
+    vi.spyOn(FakeBoatApi.prototype, "commandStatus").mockRejectedValue(
+      boatError(409, "machine_not_running", "Sandbox is stopped."),
+    );
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachOutdated = true;
+    api.detachedRunMs = 60_000;
+
+    await expect(
+      drain(
+        provider.execute(computer, { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 }, context),
+      ),
+    ).rejects.toBeInstanceOf(SandboxUnavailableError);
+  });
+
   it("keeps the sandbox when Boat rejects the credentials", async () => {
     const { api, provider, computer } = await boat();
     api.unauthorized();
@@ -2158,15 +2220,109 @@ describe("BoatSandboxProvider", () => {
 
     const error = await exportAll(provider, computer).catch((failure: Error) => failure);
 
-    expect((error as Error).message).toBe(
-      "could not archive Boat workspace (exit 1: No space left on device; Input/output error)",
-    );
+    expect(error).toBeInstanceOf(WorkspaceSaveFailedError);
+    expect(error).toMatchObject({
+      reason: "disk_full",
+      cause: {
+        message:
+          "could not archive Boat workspace (exit 1: No space left on device; Input/output error)",
+      },
+    });
   });
+
+  it("does not read a disk failure from a file name in the archive's errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: "tar: ./No space left on device.txt: Cannot open: Permission denied\n",
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).not.toBeInstanceOf(WorkspaceSaveFailedError);
+  });
+
+  it("reads a disk failure that follows other archive errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: [
+          "tar: ./a: Cannot stat: Stale file handle",
+          "tar: ./b: Cannot open: Too many open files",
+          "tar: ./c: Cannot read: Bad message",
+          "gzip: stdout: No space left on device",
+          "",
+        ].join("\n"),
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).toMatchObject({ reason: "disk_full" });
+  });
+
+  it.each([
+    ["Input/output error", "disk_error"],
+    ["Transport endpoint is not connected", "disk_error"],
+    ["No space left on device", "disk_full"],
+  ])(
+    "reports a workspace whose disk failed the save before archiving (%s)",
+    async (failure, reason) => {
+      const run = FakeBoatApi.prototype.command;
+      vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+        this: FakeBoatApi,
+        request,
+      ) {
+        if (request.commandRequest.command.includes("archive=")) return run.call(this, request);
+        if (!request.commandRequest.command.includes("chromium-bot-*"))
+          return run.call(this, request);
+        return {
+          ok: true,
+          type: "command.finished",
+          success: false,
+          stdout: "",
+          stderr: `mkdir: cannot create directory '/tmp/rakazo': ${failure}\n`,
+          exitCode: 1,
+          timedOut: false,
+        };
+      });
+      const { provider, computer } = await boat();
+      await provider.prepare(computer, context);
+
+      const error = await exportAll(provider, computer).catch((thrown: Error) => thrown);
+
+      expect(error).toBeInstanceOf(WorkspaceSaveFailedError);
+      expect(error).toMatchObject({ reason });
+    },
+  );
 
   it.each([
     ["timed out", { exitCode: 124, timedOut: true }, "timed out"],
     ["met an unreadable file", { exitCode: 3, timedOut: false }, "an entry could not be read"],
-  ])("reports a workspace archive that %s without its output", async (_, ending, status) => {
+  ])("reports a workspace archive that %s without its output", async (name, ending, status) => {
     const output = "/home/user/rakazo-home/private.txt\n";
     const run = FakeBoatApi.prototype.command;
     vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
@@ -2188,7 +2344,9 @@ describe("BoatSandboxProvider", () => {
 
     const error = await exportAll(provider, computer).catch((failure: Error) => failure);
 
-    expect((error as Error).message).toBe(`could not archive Boat workspace (${status})`);
+    const failure = error instanceof WorkspaceSaveFailedError ? error.cause : error;
+    expect(error instanceof WorkspaceSaveFailedError).toBe(name === "timed out");
+    expect((failure as Error).message).toBe(`could not archive Boat workspace (${status})`);
     expect(createDownloadUrl).not.toHaveBeenCalled();
   });
 

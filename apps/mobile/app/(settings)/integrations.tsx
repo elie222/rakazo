@@ -88,6 +88,7 @@ import {
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
+import { openExternalUrl } from "../../lib/platform/open-url";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -1263,7 +1264,7 @@ export default function Integrations() {
                   <NativeActionButton
                     fill={false}
                     label={t`Submit a plugin`}
-                    onPress={() => void Linking.openURL(SUBMIT_PLUGIN_URL)}
+                    onPress={() => void openExternalUrl(SUBMIT_PLUGIN_URL)}
                     prominence="quiet"
                     size="compact"
                     variant="text"

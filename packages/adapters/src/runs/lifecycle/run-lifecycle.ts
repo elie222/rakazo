@@ -1,4 +1,9 @@
-import { SandboxUnavailableError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxDamagedError,
+  SandboxDiskTooLargeError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -180,6 +185,19 @@ export class PausedTurnToolsUnavailableError extends Error {
       "A tool this paused task was using is not available, so it cannot continue. Start the task again.",
     );
     this.name = "PausedTurnToolsUnavailableError";
+  }
+}
+
+/**
+ * A paused turn's saved model is not in its provider's catalog right now. A catalog that could
+ * not be read looks the same, so setup retries it quietly; past the retry limit the run fails.
+ */
+export class PausedTurnModelUnlistedError extends Error {
+  constructor() {
+    super(
+      "A model this paused task was using is no longer offered by its provider, so it cannot continue. Choose another model and start the task again.",
+    );
+    this.name = "PausedTurnModelUnlistedError";
   }
 }
 
@@ -488,7 +506,12 @@ export async function retryRunSetup(
     setupError instanceof SandboxUnavailableError ||
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof PausedTurnModelUnlistedError ||
     setupError instanceof VaultKeyUnavailableError;
+  // A damaged computer, or one whose disk outgrew every machine, stays that way until someone
+  // recovers it, so the run ends now with the message that says so instead of retrying.
+  const needsRecovery =
+    setupError instanceof SandboxDamagedError || setupError instanceof SandboxDiskTooLargeError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
     "run.id": runId,
@@ -499,7 +522,7 @@ export async function retryRunSetup(
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (databaseDown) {
     // Logged by the outage.
-  } else if (providerOutage || !plan.leaseValid) {
+  } else if (providerOutage || needsRecovery || !plan.leaseValid) {
     getLogger().warn("run.setup_failed", { ...runFields, error: reportedSetupError });
   } else if (!computerBusy) {
     getLogger().error("run.setup_failed", reportedSetupError, runFields);
@@ -512,11 +535,10 @@ export async function retryRunSetup(
     : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
-  if (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1) {
-    const bot = await deps.prisma.bot.findUnique({
-      where: { id: run.botId },
-      select: { name: true },
-    });
+  if (!retryForever && (needsRecovery || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
+    const bot = await whileDatabaseDown("run setup", () =>
+      deps.prisma.bot.findUnique({ where: { id: run.botId }, select: { name: true } }),
+    );
     await failRunBeforeTurn(
       deps,
       run,

@@ -35,11 +35,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
@@ -445,7 +447,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         180_000,
         context.signal,
       );
-      if (runtime.exitCode !== 0 || runtime.timedOut)
+      if (runtime.timedOut)
+        throw new SandboxUnresponsiveError("could not prepare computer desktop tools (timed out)");
+      if (runtime.exitCode !== 0)
         throw new Error("could not prepare computer desktop tools", {
           cause: new Error(commandFailure(runtime)),
         });
@@ -647,7 +651,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     limits?: WorkspaceExportLimits,
   ): AsyncIterable<PortableFile | StreamedPortableFile> {
     const id = this.id(computer);
-    await this.desktops.stopBrowsers(computer, context);
+    await this.desktops.stopBrowsers(computer, context).catch((error: unknown) => {
+      const reason = diskFailure(error instanceof Error ? error.message : String(error));
+      throw reason ? new WorkspaceSaveFailedError(reason, { cause: error }) : error;
+    });
     // One archive, not a request per file: Boat rate limits every API call by IP, and a
     // workspace can hold thousands of files.
     const archive = `${BOAT_ARCHIVE_PREFIX}${randomUUID()}.tar.gz`;
@@ -667,7 +674,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         throw new WorkspaceTooLargeError("bytes");
       }
       if (result.exitCode !== 0 || result.timedOut) {
-        throw new Error(`could not archive Boat workspace (${commandStatus(result)})`);
+        const failure = new Error(`could not archive Boat workspace (${commandStatus(result)})`);
+        const reason = result.timedOut ? "timed_out" : diskFailure(result.stderr);
+        throw reason ? new WorkspaceSaveFailedError(reason, { cause: failure }) : failure;
       }
       const response = await this.signedDownload(
         id,
@@ -1404,10 +1413,16 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): Promise<BoatCommandResult> {
     for (let pause = 500; ; pause = nextPoll(pause)) {
       if (signal?.aborted) throw signal.reason ?? new Error("command aborted");
-      const status = await this.client.commandStatus(
-        { sandboxId: id, processId, tailBytes: BOAT_COMMAND_TAIL_BYTES },
-        signal ? { signal } : undefined,
-      );
+      const status = await this.client
+        .commandStatus(
+          { sandboxId: id, processId, tailBytes: BOAT_COMMAND_TAIL_BYTES },
+          signal ? { signal } : undefined,
+        )
+        .catch((error: unknown) => {
+          // The machine stopped under the command, which ended with it; running it again could
+          // repeat what it already did, so the caller retries later instead.
+          throw notRunning(error) ? new SandboxUnavailableError({ cause: error }) : error;
+        });
       if (!status.running) {
         return {
           stdout: status.stdout,
@@ -1487,13 +1502,31 @@ function commandFailure(result: BoatCommandResult): string {
 /**
  * Boat's runner starts each command with `systemd-run` and sources the machine's environment
  * before our command line runs. These failures come from that, so the machine's system files are
- * missing or broken; the command itself never started.
+ * missing or broken; the command itself never started. A machine whose user is missing from
+ * `/etc/passwd` has lost its system files the same way.
  */
 const BOAT_SYSTEM_DAMAGED =
-  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found)$/m;
+  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found|sudo: you do not exist in the passwd database)$/m;
 
 function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);
+}
+
+/** The disk failure a command's error output reports, read from each line's reason, not its paths. */
+function diskFailure(output: string): "disk_full" | "disk_error" | undefined {
+  const reasons = output.split("\n").map((line) => line.slice(line.lastIndexOf(": ") + 2).trim());
+  if (reasons.includes("No space left on device")) return "disk_full";
+  if (
+    reasons.some((reason) =>
+      [
+        "Input/output error",
+        "Transport endpoint is not connected",
+        "Read-only file system",
+      ].includes(reason),
+    )
+  )
+    return "disk_error";
+  return undefined;
 }
 
 /** How a listing command ended. Its output is file names, never an error message. */
@@ -1596,6 +1629,9 @@ function boatSizeError(error: unknown): unknown {
   }
   if (error.code === "type_too_small") {
     return new SandboxSizeUnavailableError("too_small", { cause: error });
+  }
+  if (error.code === "resume_failed" && /\bdoes not fit any available\b/i.test(error.message)) {
+    return new SandboxDiskTooLargeError({ cause: error });
   }
   return error;
 }
