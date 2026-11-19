@@ -6,6 +6,7 @@ import {
 } from "../../browser/browser-provider-factory.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
 import { pageBrowserSessionKey } from "../../browser/page-browser-session.js";
+import { PURCHASE_CHECK_FAILED_MESSAGE } from "../../payments/purchase-gate.js";
 import { ComputerBrowserProvider } from "./computer-browser.js";
 
 const baseContext: AdapterContext = {
@@ -503,8 +504,7 @@ describe("page browser safety", () => {
         purchase: null,
       });
     }
-    // Any other failure asks, naming no page and approving no click: a check that started and broke,
-    // or a 500, which only an unhandled error answers.
+    // Any other failure refuses the action: a check that started and broke, or a 500.
     for (const error of [
       "unknown command: purchase_check, and then some",
       "page browser failed: 500",
@@ -514,9 +514,9 @@ describe("page browser safety", () => {
       "Page browser unavailable or interrupted. Inspect the screen before continuing.",
     ]) {
       reply = { ok: false, error, fallback: "computer_act" };
-      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-      });
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        PURCHASE_CHECK_FAILED_MESSAGE,
+      );
     }
     const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
@@ -546,12 +546,12 @@ describe("page browser safety", () => {
       expect(liveDriver.mock.calls.map((call) => call[1])).toEqual([probe, probe]);
     });
 
-    it("still asks when the second probe times out too", async () => {
+    it("still refuses when the second probe times out too", async () => {
       const liveDriver = vi.fn().mockResolvedValue(timedOut);
       const provider = new ComputerBrowserProvider({ liveDriver });
-      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-      });
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        PURCHASE_CHECK_FAILED_MESSAGE,
+      );
       expect(liveDriver).toHaveBeenCalledTimes(2);
     });
 
@@ -573,22 +573,37 @@ describe("page browser safety", () => {
     });
 
     it("retries no other failure, and a computer that cannot check still answers none", async () => {
-      for (const [error, purchase] of [
-        [
-          "Page browser unavailable or interrupted",
-          { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-        ],
-        ["unknown command: purchase_check", null],
-      ] as const) {
-        const liveDriver = vi
-          .fn()
-          .mockResolvedValue({ ok: false, error, fallback: "computer_act" });
-        const provider = new ComputerBrowserProvider({ liveDriver });
-        expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-          purchase,
+      const interrupted = vi
+        .fn()
+        .mockResolvedValue({
+          ok: false,
+          error: "Page browser unavailable or interrupted",
+          fallback: "computer_act",
         });
-        expect(liveDriver).toHaveBeenCalledTimes(1);
-      }
+      await expect(
+        new ComputerBrowserProvider({ liveDriver: interrupted }).purchaseCheck(
+          computer,
+          { actions },
+          baseContext,
+        ),
+      ).rejects.toThrow(PURCHASE_CHECK_FAILED_MESSAGE);
+      expect(interrupted).toHaveBeenCalledTimes(1);
+
+      const unavailable = vi
+        .fn()
+        .mockResolvedValue({
+          ok: false,
+          error: "unknown command: purchase_check",
+          fallback: "computer_act",
+        });
+      expect(
+        await new ComputerBrowserProvider({ liveDriver: unavailable }).purchaseCheck(
+          computer,
+          { actions },
+          baseContext,
+        ),
+      ).toEqual({ purchase: null });
+      expect(unavailable).toHaveBeenCalledTimes(1);
     });
   });
 

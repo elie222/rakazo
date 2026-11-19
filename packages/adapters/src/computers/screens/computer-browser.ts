@@ -18,19 +18,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { PURCHASE_CHECK_FAILED_MESSAGE } from "../../payments/purchase-gate.js";
 import type { FakeBrowserProviderOptions } from "../../browser/fake-browser.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 
 /** A purchase check that failed: the page is unknown, so the card says so and approves no click by itself. */
-const UNCHECKED_PURCHASE: NonNullable<BrowserPurchaseCheckResult["purchase"]> = {
-  steps: [],
-  site: "",
-  label: "",
-  amount: "",
-  amountSource: "page",
-};
 
 const isPurchaseItem = (item: unknown): item is BrowserPurchaseItem =>
   typeof (item as BrowserPurchaseItem | null)?.name === "string" &&
@@ -39,7 +33,7 @@ const isPurchaseItem = (item: unknown): item is BrowserPurchaseItem =>
 /**
  * Whether a failed purchase check means this computer cannot check at all, rather than that the check
  * failed: a page browser from before the check ("unknown command"), none at all, or a supervisor from
- * before it. Every other failure asks, a 500 included: only an unhandled error answers that.
+ * before it. Every other failure refuses the action: a 500 included.
  */
 function cannotCheck(error: unknown): boolean {
   return (
@@ -262,9 +256,9 @@ export class ComputerBrowserProvider implements BrowserProvider {
       live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       if (!cannotCheck(live?.error)) {
-        // The check started and failed (timed out, killed, a page it could not read): ask.
-        getLogger().warn("purchase check failed, asking", { error: live?.error });
-        return { purchase: { ...UNCHECKED_PURCHASE, steps: [] } };
+        // The check started and failed (timed out, killed, a page it could not read): refuse, do not ask.
+        getLogger().warn("purchase check failed, refusing", { error: live?.error });
+        throw new Error(PURCHASE_CHECK_FAILED_MESSAGE);
       }
       if (!this.purchaseCheckWarned) {
         this.purchaseCheckWarned = true;

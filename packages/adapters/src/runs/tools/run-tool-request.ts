@@ -26,6 +26,7 @@ import type { PurchaseApproval } from "../../payments/purchase-gate.js";
 import {
   detectPurchase,
   PURCHASE_CHECKED_TOOLS,
+  PurchaseCheckFailedError,
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
@@ -384,6 +385,19 @@ async function askingLoginUse(
  * Check bot-management and instruction-proposal preconditions, and canonicalize the
  * requests whose approval card shows resolved names. Updates the request in place.
  */
+async function detectPurchaseOrRefuse(
+  ctx: RunContext,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<PurchaseApproval | undefined | { error: string }> {
+  try {
+    return await detectPurchase(ctx, name, args);
+  } catch (error) {
+    if (error instanceof PurchaseCheckFailedError) return refusal("purchase_check_failed", error.message);
+    throw error;
+  }
+}
+
 export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
@@ -549,7 +563,8 @@ export async function prepareToolRequest(
       approved &&
       (approved.site || approved.label || approved.amount)
     ) {
-      const now = await detectPurchase(ctx, name, rest);
+      const now = await detectPurchaseOrRefuse(ctx, name, rest);
+      if (now && "error" in now) return now;
       if (
         !now ||
         now.site !== approved.site ||
@@ -564,7 +579,9 @@ export async function prepareToolRequest(
           "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
         );
     }
-    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    const detected = approved ?? (await detectPurchaseOrRefuse(ctx, name, rest));
+    if (detected && "error" in detected) return detected;
+    const purchase = detected;
     // One card asks one question: a sign-in is never approved under a payment's.
     if (loginUse && purchase)
       return {

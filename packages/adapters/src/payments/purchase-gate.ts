@@ -7,6 +7,17 @@ import { cardName } from "../tools/fleet-tools.js";
 /** The page tools a click that pays can go through. */
 export const PURCHASE_CHECKED_TOOLS: ReadonlySet<string> = new Set(["browser_act", "computer_act"]);
 
+export const PURCHASE_CHECK_FAILED_MESSAGE =
+  "Page could not be checked; action not performed. Use browser_navigate or open a new tab with the browser tool instead of keyboard address-bar shortcuts.";
+
+/** Thrown when a purchase check starts and then fails (timeout, unreadable page). */
+export class PurchaseCheckFailedError extends Error {
+  override readonly name = "PurchaseCheckFailedError";
+  constructor(message = PURCHASE_CHECK_FAILED_MESSAGE) {
+    super(message);
+  }
+}
+
 /**
  * The purchase a person approves: carried in the persisted request, so a replay presses exactly
  * the clicks approved, on the site approved. `steps` are indexes into the call's actions, none
@@ -211,16 +222,73 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
     : undefined;
 }
 
+
+const LOCAL_PREVIEW_URL =
+  /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?([/?#][\x21-\x7E]*)?$/i;
+
+function actionKeyParts(step: Record<string, unknown>): string[] {
+  return [
+    ...String(step.key ?? "").split("+"),
+    ...(Array.isArray(step.modifiers) ? step.modifiers.map(String) : []),
+  ].map((part) => part.trim().toLowerCase());
+}
+
+const ADDRESS_BAR_ENTER = /^(return|kp_enter|enter|iso_enter|linefeed)$/i;
+
+function isEnterKey(step: Record<string, unknown>): boolean {
+  return String(step.kind) === "key" && actionKeyParts(step).some((part) => ADDRESS_BAR_ENTER.test(part));
+}
+
+/** Ctrl+L or Ctrl+T with no other modifiers: the address bar or a new tab. */
+function isOmniboxShortcut(step: Record<string, unknown>): boolean {
+  if (String(step.kind) !== "key") return false;
+  const parts = actionKeyParts(step);
+  const hasCtrl = parts.includes("ctrl") || parts.includes("control");
+  const letter = parts.filter((part) => part === "l" || part === "t");
+  const extra = parts.filter(
+    (part) => part !== "ctrl" && part !== "control" && part !== "l" && part !== "t",
+  );
+  return hasCtrl && letter.length === 1 && extra.length === 0;
+}
+
+function isLocalPreviewUrl(text: string): boolean {
+  const raw = text.trim();
+  if (!raw || raw.includes("@") || raw.includes("\\") || /[^\x21-\x7E]/.test(raw)) return false;
+  return LOCAL_PREVIEW_URL.test(raw);
+}
+
+/**
+ * Ctrl+L or Ctrl+T, a typed 127.0.0.1/localhost URL, then Enter: a local preview, not a checkout.
+ * Those navigations skip the purchase probe so a hung unrelated tab cannot raise a payment card.
+ */
+export function isLocalAddressBarNavigation(name: string, args: Record<string, unknown>): boolean {
+  if (name !== "computer_act") return false;
+  const actions = Array.isArray(args.actions) ? args.actions : [];
+  if (actions.length !== 3) return false;
+  const [open, typed, submit] = actions.map((raw) =>
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {},
+  );
+  return (
+    isOmniboxShortcut(open) &&
+    String(typed.kind) === "type" &&
+    isLocalPreviewUrl(String(typed.text ?? "")) &&
+    isEnterKey(submit)
+  );
+}
+
 /**
  * Ask the page browser whether this call's clicks, or its click or key on the screen, would complete
  * a purchase. A browser that cannot tell (an older computer image, no page open) answers none, and
  * browser_act still refuses an unapproved purchase click itself when its browser knows how.
+ * When the check starts and then fails, this throws PurchaseCheckFailedError: nothing is pressed
+ * and no payment card is shown.
  */
 export async function detectPurchase(
   ctx: RunContext,
   name: string,
   args: Record<string, unknown>,
 ): Promise<PurchaseApproval | undefined> {
+  if (isLocalAddressBarNavigation(name, args)) return undefined;
   const probe = purchaseProbe(name, args);
   const { browser } = ctx.providers;
   if (!probe || !browser.purchaseCheck || !ctx.computer.pageBrowserAllowed) return undefined;
@@ -245,10 +313,12 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
-    getLogger().warn("purchase check failed, asking", {
+    getLogger().warn("purchase check failed, refusing", {
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    found = { ...unchecked, steps: [] };
+    throw error instanceof PurchaseCheckFailedError
+      ? error
+      : new PurchaseCheckFailedError();
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even
