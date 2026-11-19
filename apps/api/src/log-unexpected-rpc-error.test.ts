@@ -3,6 +3,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import {
   SandboxAllowanceUsedError,
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -336,6 +337,19 @@ describe("logUnexpectedRpcError", () => {
     expect(thrown).toMatchObject({ code: "CONFLICT", status: 409, message: error.message });
     expect(sink.events.map((event) => [event.level, event.message])).toEqual([
       ["warn", "rpc computer/boot computer damaged"],
+    ]);
+  });
+
+  it("returns a computer too large to start as a conflict without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxDiskTooLargeError();
+
+    expect(() => handleRpcError(error, ["computer", "screenUrl"])).toThrow(
+      expect.objectContaining({ code: "CONFLICT", status: 409, message: error.message }),
+    );
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc computer/screenUrl computer disk too large to start"],
     ]);
   });
 

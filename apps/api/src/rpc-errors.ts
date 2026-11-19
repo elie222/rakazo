@@ -3,6 +3,7 @@ import {
   ConnectorAuthUnavailableError,
   SandboxAllowanceUsedError,
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -138,6 +139,11 @@ export function handleRpcError(
   // A retry cannot fix a damaged computer; its message tells the user to Recover it.
   if (error instanceof SandboxDamagedError) {
     getLogger().warn(`rpc ${path.join("/")} computer damaged`);
+    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
+  }
+  // The computer's disk outgrew every machine it can start on; its message tells the user to Recover it.
+  if (error instanceof SandboxDiskTooLargeError) {
+    getLogger().warn(`rpc ${path.join("/")} computer disk too large to start`);
     throw new ORPCError("CONFLICT", { message: error.message, cause: error });
   }
   // The client went away mid-request, so whatever failed next has no one waiting for it.

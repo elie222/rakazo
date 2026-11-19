@@ -1,4 +1,8 @@
-import { SandboxUnavailableError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxDiskTooLargeError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -180,6 +184,19 @@ export class PausedTurnToolsUnavailableError extends Error {
       "A tool this paused task was using is not available, so it cannot continue. Start the task again.",
     );
     this.name = "PausedTurnToolsUnavailableError";
+  }
+}
+
+/**
+ * A paused turn's saved model is not in its provider's catalog right now. A catalog that could
+ * not be read looks the same, so setup retries it quietly; past the retry limit the run fails.
+ */
+export class PausedTurnModelUnlistedError extends Error {
+  constructor() {
+    super(
+      "A model this paused task was using is no longer offered by its provider, so it cannot continue. Choose another model and start the task again.",
+    );
+    this.name = "PausedTurnModelUnlistedError";
   }
 }
 
@@ -482,12 +499,15 @@ export async function retryRunSetup(
   const retryForever = computerBusy || databaseDown;
   const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
-  // An outage at the computer provider or the key manager, or a paused turn's tool going
-  // offline, is retried like any setup failure, but is not a Rakazo bug to report.
+  // An outage at the computer provider or the key manager, a computer whose disk outgrew every
+  // machine, or a paused turn's tool going offline, is retried like any setup failure, but is
+  // not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
     setupError instanceof SandboxUnresponsiveError ||
+    setupError instanceof SandboxDiskTooLargeError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
+    setupError instanceof PausedTurnModelUnlistedError ||
     setupError instanceof VaultKeyUnavailableError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
