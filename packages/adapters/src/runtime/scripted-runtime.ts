@@ -613,7 +613,7 @@ code-b
       },
     ];
   }
-  const openWork = /add to your open work:\s*([^\n<&]+)/i.exec(prompt);
+  const openWork = /add to your open work:\s*([^\n<&]+)/i.exec(words);
   if (openWork) {
     return [
       {
