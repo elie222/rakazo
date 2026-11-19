@@ -1011,6 +1011,7 @@ describe("ownComputerActionReview", () => {
     ["browser_navigate", { url: "https://collect.example.net/?d=1" }, "page"],
     ["open_path", { path: "https://collect.example.net/?d=1" }, "page"],
     ["computer_act", { actions: [{ kind: "type", text: "notes" }] }, "input"],
+    ["computer_act", { actions: [{ kind: "key", key: "v", modifiers: ["ctrl"] }] }, "input"],
     [
       "computer_act",
       { actions: [{ kind: "focus", application: "Mail", uri: "mailto:a@example.com" }] },
@@ -1046,11 +1047,10 @@ describe("ownComputerActionReview", () => {
         {
           actions: [
             { kind: "click", x: 1, y: 2 },
-            { kind: "key", key: "Return" },
+            { kind: "scroll", amount: 3 },
           ],
         },
       ],
-      ["computer_act", { actions: [{ kind: "type", text: "  " }] }],
       ["open_path", { path: "reports/q4.pdf" }],
       ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
       ["launch_app", { application: "Calculator" }],

@@ -376,9 +376,9 @@ function actionsOf(args: Record<string, unknown>): Record<string, unknown>[] {
  * What a call on the bot's own computer could send off it, which the approval model checks in Auto
  * once outside text entered the run (see isRunTainted): "command" for a shell command, which can
  * reach anything; "page" for a page opened, or typed or uploaded into, on a site the run was not
- * given (`pageSiteGiven`, see outboundSiteGate); "input" for desktop typing or an app opened with a
- * URI. Clicks, keys, scrolling and opening a file or app send nothing the bot chose, so they get
- * nothing. Like every taint check it only informs the review; Ask and Never ask treat the call as
+ * given (`pageSiteGiven`, see outboundSiteGate); "input" for desktop typing or key presses (which
+ * can paste) or an app opened with a URI. Page clicks, pointer moves, scrolling and opening a file
+ * or app send nothing the bot chose, so they get nothing. Like every taint check it only informs the review; Ask and Never ask treat the call as
  * they treat any other. The predicates are only checked for calls that could send something.
  */
 export async function ownComputerActionReview(
@@ -407,10 +407,10 @@ function whatCouldLeave(
         ? "page"
         : undefined;
     case "computer_act":
+      // Keys can paste or spell out text as well as typing can; only the pointer sends nothing.
       return actionsOf(args).some(
         (action) =>
-          (action.kind === "type" && String(action.text ?? "").trim()) ||
-          String(action.uri ?? "").trim(),
+          action.kind === "type" || action.kind === "key" || String(action.uri ?? "").trim(),
       )
         ? "input"
         : undefined;
