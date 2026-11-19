@@ -7,11 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
-import {
-  ensureComputerWorkspaceLayout,
-  isTeamBotFolderName,
-  removeComputerWorkspaceDirectories,
-} from "./computer-workspace.js";
+import { ensureComputerWorkspaceLayout, isTeamBotFolderName } from "./computer-workspace.js";
 import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import { teamBotWorkspaceDirectory } from "./screens/computer-support.js";
 
@@ -147,8 +143,8 @@ async function replaceVisibleEntries(
  * Nothing is touched when there is nothing to bring. Safe to run again after a failure.
  * Returns whether any file was brought.
  *
- * A computer without the standard shell cannot set files aside. There a Team folder is removed
- * before the import, and the bot's own computer keeps its older files beside the ones brought.
+ * A computer without the standard shell cannot set files aside or remove only the visible
+ * ones, so there the bot's older files stay beside the ones brought.
  */
 export async function bringBotFiles(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider },
@@ -164,9 +160,6 @@ export async function bringBotFiles(
   const prefix = to.scope === "team" ? `${folder}/` : "";
   const setsAside = !sandboxKindCapabilities(to.computer.kind).nativeShell;
   if (to.scope === "team") {
-    if (!setsAside) {
-      await removeComputerWorkspaceDirectories(deps.sandbox, to.computer, "bots", [botId], context);
-    }
     await ensureComputerWorkspaceLayout(deps.sandbox, to.computer, "team", botId, context);
   }
   if (setsAside) await replaceVisibleEntries(deps.sandbox, to.computer, "aside", folder, context);
