@@ -39,6 +39,7 @@ import {
   clampRounded,
   computerObservation,
   normalizeWorkspacePath,
+  WorkspacePathError,
   workspaceCwd,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
@@ -570,7 +571,13 @@ export class DockerSandboxProvider implements SandboxProvider {
       this.url(`/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=list`),
       { headers: this.headers(context, computer.botId), signal: context.signal },
     );
-    if (!res.ok) throw new Error(`sandbox file listing failed: ${res.status}`);
+    if (!res.ok) {
+      cancelResponseBody(res);
+      // Earlier supervisors return 404 for any listing failure.
+      if (res.status === 422)
+        throw new WorkspacePathError("Could not list the workspace directory");
+      throw new Error(`sandbox file listing failed: ${res.status}`);
+    }
     return readSandboxJson<ComputerFileEntry[]>(res, context.signal);
   }
 

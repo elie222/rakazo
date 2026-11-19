@@ -4,6 +4,8 @@ import { BROWSER_ACT_KINDS } from "../browser/browser-tools.js";
 
 export const READ_FILE_MAX_BYTES = 250_000;
 export const READ_FILE_MAX_KB = READ_FILE_MAX_BYTES / 1000;
+export const LIST_FILES_PATH_GUIDANCE =
+  'Omit path or use "." to list the bot\'s home. To list a subdirectory, use a relative path such as "notes".';
 
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
@@ -173,10 +175,10 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "list_files",
     description:
-      "List files and directories in this bot's home. On a Team Computer, relative paths use the bot folder; use shared/... for shared work or bots/... to inspect the Team root.",
+      "List files and directories. On a Team Computer, use shared/... for shared work or bots/... to inspect the Team root.",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: { path: { type: "string", description: LIST_FILES_PATH_GUIDANCE } },
     },
   },
   {

@@ -9,7 +9,7 @@ type ExecOptions = { Cmd: string[]; Env?: string[]; User?: string };
 const mock = vi.hoisted(() => ({
   exec: vi.fn(),
   inspect: vi.fn(),
-  failWhen: (_options: { Cmd: string[] }): boolean => false,
+  exitCode: (_options: ExecOptions): number => 0,
 }));
 vi.mock("dockerode", () => ({
   default: class {
@@ -24,7 +24,7 @@ import { supervisorApp } from "./index.js";
 beforeEach(() => {
   mock.exec.mockReset();
   mock.inspect.mockReset();
-  mock.failWhen = () => false;
+  mock.exitCode = () => 0;
   mock.inspect.mockResolvedValue({
     Config: {
       Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
@@ -42,7 +42,7 @@ beforeEach(() => {
           },
         }),
       }),
-    inspect: async () => ({ ExitCode: mock.failWhen(options) ? 1 : 0 }),
+    inspect: async () => ({ ExitCode: mock.exitCode(options) }),
   }));
 });
 
@@ -147,7 +147,7 @@ describe("computer command identity", () => {
   });
 
   it("starts the user's terminal with the same environment and user as the bot's shell", async () => {
-    mock.failWhen = (options) => options.Cmd.join(" ").includes("terminal-fixture-token");
+    mock.exitCode = (options) => Number(options.Cmd.join(" ").includes("terminal-fixture-token"));
     const response = await post("/computers/computer-terminal/terminal", {
       controlToken: "terminal-fixture-token",
     });
@@ -157,6 +157,21 @@ describe("computer command identity", () => {
     );
     expect(terminal?.Env).toEqual(computerCommandEnv({ display: ":1" }));
     expectContainerUser();
+  });
+
+  it.each([
+    [44, 422],
+    [137, 502],
+  ])("maps directory listing exit %i to HTTP %i", async (code, status) => {
+    mock.exitCode = () => code;
+    const response = await supervisorApp.request("/computers/computer-files/files?mode=list", {
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(status);
   });
 
   it("writes uploaded files as the container's user", async () => {

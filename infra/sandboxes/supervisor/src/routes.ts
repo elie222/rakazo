@@ -839,7 +839,9 @@ app.get("/computers/:id/files", async (c) => {
       "import json, os, stat, sys",
       "root, rel = sys.argv[1], sys.argv[2]",
       "out = []",
-      "for item in os.scandir(root):",
+      "try: entries = os.scandir(root)",
+      "except (FileNotFoundError, NotADirectoryError): sys.exit(44)",
+      "for item in entries:",
       "  if item.is_symlink(): continue",
       "  info = item.stat(follow_symlinks=False)",
       "  child = '/'.join(x for x in (rel, item.name) if x)",
@@ -853,7 +855,8 @@ app.get("/computers/:id/files", async (c) => {
       target,
       relative,
     ]);
-    if (result.code !== 0) return c.json({ error: result.stderr || "directory not found" }, 404);
+    if (result.code === 44) return c.json({ error: "path is not an existing directory" }, 422);
+    if (result.code !== 0) return c.json({ error: "computer file listing failed" }, 502);
     return c.json(JSON.parse(result.stdout));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

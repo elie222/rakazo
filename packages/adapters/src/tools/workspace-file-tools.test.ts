@@ -1,10 +1,14 @@
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { normalizeWorkspacePath } from "../computers/screens/computer-support.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
-import { readFileFromTool } from "./workspace-file-tools.js";
+import { listFilesFromTool, readFileFromTool } from "./workspace-file-tools.js";
 
 function fileWorkspace(content: string, runSecrets: string[] = []) {
   const bytes = new TextEncoder().encode(content);
@@ -38,6 +42,65 @@ type ReadFileResult = {
   nextOffset?: number;
   note?: string;
 };
+
+describe("listFilesFromTool paths", () => {
+  it.each(["dedicated", "team"] as const)(
+    "guides a %s bot from a missing directory to its home or a relative directory",
+    async (computerMode) => {
+      const { sandbox, workspace } = fileWorkspace("");
+      workspace.computerMode = computerMode;
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-list-files-"));
+      const home = computerMode === "team" ? "bots/bot-1" : "";
+      const notes = path.posix.join(home, "notes");
+      const listFiles = vi.fn<SandboxProvider["listFiles"]>(async (_computer, directory) => {
+        const relative = normalizeWorkspacePath(directory);
+        const names = await readdir(path.join(root, relative));
+        return names.map((name) => ({
+          path: path.posix.join(relative, name),
+          kind: "dir",
+          size: 0,
+        }));
+      });
+      sandbox.listFiles = listFiles;
+      try {
+        await mkdir(path.join(root, notes), { recursive: true });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "missing" })).resolves.toEqual({
+          error: expect.stringContaining('Omit path or use "."'),
+        });
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "../outside" }),
+        ).resolves.toEqual({
+          error: expect.stringContaining('"notes"'),
+        });
+        const entries = [{ path: "notes", kind: "dir", size: 0 }];
+        await expect(listFilesFromTool(sandbox, workspace, {})).resolves.toEqual({
+          path: "",
+          entries,
+        });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "." })).resolves.toEqual({
+          path: ".",
+          entries,
+        });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).resolves.toEqual({
+          path: "notes",
+          entries: [],
+        });
+        expect(listFiles).toHaveBeenLastCalledWith(expect.anything(), notes, workspace.context);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("propagates computer failures", async () => {
+    const { sandbox, workspace } = fileWorkspace("");
+    const unavailable = new Error("computer offline");
+    sandbox.listFiles = vi.fn().mockRejectedValue(unavailable);
+    await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).rejects.toBe(
+      unavailable,
+    );
+  });
+});
 
 /** Walk a file chunk by chunk the way the model would, following nextOffset. */
 async function readFileInChunks(content: string, runSecrets: string[] = []) {

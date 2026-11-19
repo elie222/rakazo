@@ -1,5 +1,10 @@
 import path from "node:path";
-import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ComputerFileEntry,
+  ComputerRef,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import { isSandboxProviderOutage, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
@@ -11,12 +16,17 @@ import {
   displayBotWorkspacePath,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
+  WorkspacePathError,
 } from "../computers/screens/computer-support.js";
 import { publishMessage } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
-import { READ_FILE_MAX_BYTES, READ_FILE_MAX_KB } from "./builtin-computer.tool-definition.js";
+import {
+  LIST_FILES_PATH_GUIDANCE,
+  READ_FILE_MAX_BYTES,
+  READ_FILE_MAX_KB,
+} from "./builtin-computer.tool-definition.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
@@ -173,11 +183,22 @@ export async function listFilesFromTool(
 ) {
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const requestedPath = String(args.path ?? "");
-  const entries = await sandbox.listFiles(
-    await computer(),
-    resolveBotWorkspacePath(computerMode, botId, requestedPath),
-    context,
-  );
+  const ref = await computer();
+  let entries: ComputerFileEntry[];
+  try {
+    const directory = resolveBotWorkspacePath(computerMode, botId, requestedPath);
+    entries = await sandbox.listFiles(ref, directory, context);
+  } catch (error) {
+    if (
+      error instanceof WorkspacePathError ||
+      (error instanceof Error &&
+        "code" in error &&
+        (error.code === "ENOENT" || error.code === "ENOTDIR"))
+    ) {
+      return { error: `Cannot list that directory. ${LIST_FILES_PATH_GUIDANCE}` };
+    }
+    throw error;
+  }
   return {
     path: requestedPath,
     entries: entries.map((entry) => ({

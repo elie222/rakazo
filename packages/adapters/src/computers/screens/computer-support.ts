@@ -63,8 +63,8 @@ export function clampRounded(value: number, min: number, max: number): number {
 }
 
 /**
- * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
- * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
+ * A path that escapes its workspace or does not name a directory when listing files.
+ * The caller decides how to report it because the path could come from a provider.
  */
 export class WorkspacePathError extends Error {
   constructor(message: string) {
