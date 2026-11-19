@@ -522,10 +522,9 @@ export async function retryRunSetup(
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
   if (!retryForever && (needsRecovery || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
-    const bot = await deps.prisma.bot.findUnique({
-      where: { id: run.botId },
-      select: { name: true },
-    });
+    const bot = await whileDatabaseDown("run setup", () =>
+      deps.prisma.bot.findUnique({ where: { id: run.botId }, select: { name: true } }),
+    );
     await failRunBeforeTurn(
       deps,
       run,
