@@ -2470,7 +2470,7 @@ describe("an installed source whose tools cannot be listed", () => {
     }
     expect(events).toHaveLength(1);
     expect(events[0]?.type).toBe("error");
-    expect(events[0]?.message).toContain('Installed source "Team Gateway" is unavailable');
+    expect(events[0]?.message).toContain('"Team Gateway" could not list its tools');
   });
 
   it("lists the real tools again once the source answers", async () => {

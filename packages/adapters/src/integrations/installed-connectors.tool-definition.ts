@@ -2,7 +2,7 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { UNAVAILABLE_TOOL } from "../mcp/mcp-connector.tool-definition.js";
 
 /** Stand-in for an installed source whose tools could not be listed, so the model can say
- * why instead of concluding the source is not installed. Calling it returns the reason. */
+ * why instead of concluding the source is not installed. */
 export function unavailableInstalledTool(
   install: { id: string; kind: string; name: string },
   catalogGroup: string,
@@ -17,7 +17,7 @@ export function unavailableInstalledTool(
       .slice(0, 40) || install.kind;
   return {
     name: `${slug}__unavailable`,
-    description: `The installed source "${catalogGroup}" is available to you but could not be reached right now, so none of its tools can be used on this turn. Reason: ${brief}. Tell the user it is temporarily unavailable rather than saying it is not installed. Calling this tool returns the same error.`,
+    description: `The installed source "${catalogGroup}" is available to you but could not be reached right now, so none of its tools can be used on this turn. Reason: ${brief}. Tell the user it is temporarily unavailable rather than saying it is not installed. Calling this tool only returns an error.`,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     readOnly: true,
     route: {
