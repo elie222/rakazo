@@ -62,28 +62,7 @@ async function existingFirstBot(prisma: PrismaClient, actor: Actor): Promise<str
 }
 
 async function createFirstBot(deps: FirstBotDeps, actor: Actor): Promise<string | null> {
-  // Chief welcomes a new account, not a new Space: a chat in any Space the person made means they
-  // have been here before, so a Space or organization they add later starts empty. Spaces they
-  // were invited to do not count, so a new invitee still gets their own Chief.
-  // A request sees only its own Space, so this one read looks past it, and only at whether the
-  // person's own Spaces hold anything: ids, never content.
-  const history = await runAsSystem(
-    "first bot checks the person's own Spaces for chats",
-    async () => {
-      const created = await deps.prisma.space.findMany({
-        where: { createdByUserId: actor.userId },
-        select: { id: true },
-      });
-      const where = { spaceId: { in: [actor.spaceId, ...created.map((space) => space.id)] } };
-      const select = { id: true } as const;
-      return Promise.all([
-        deps.prisma.bot.findFirst({ where, select }),
-        deps.prisma.chatGroup.findFirst({ where, select }),
-        deps.prisma.botDeletion.findFirst({ where, select }),
-      ]);
-    },
-  );
-  if (history.some(Boolean)) return null;
+  if (await hasChatHistory(deps.prisma, actor)) return null;
   const bot = await deps.createBot(actor, {
     name: FIRST_BOT_NAME,
     description: "",
@@ -99,4 +78,28 @@ async function createFirstBot(deps: FirstBotDeps, actor: Actor): Promise<string 
   // A failed card leaves Chief usable; the person can type to it.
   await bestEffort("first bot focus prompt", deps.promptFocus(actor, bot.id));
   return bot.id;
+}
+
+/**
+ * Whether the person has chatted before. Chief welcomes a new account, not a new Space: a chat in
+ * any Space the person made means they have been here before, so a Space or organization they add
+ * later starts empty. Spaces they were invited to do not count, so a new invitee still gets their
+ * own Chief. A request sees only its own Space, so this one read looks past it, and only at
+ * whether the person's own Spaces hold anything: ids, never content.
+ */
+export function hasChatHistory(prisma: PrismaClient, actor: Actor): Promise<boolean> {
+  return runAsSystem("first bot checks the person's own Spaces for chats", async () => {
+    const created = await prisma.space.findMany({
+      where: { createdByUserId: actor.userId },
+      select: { id: true },
+    });
+    const where = { spaceId: { in: [actor.spaceId, ...created.map((space) => space.id)] } };
+    const select = { id: true } as const;
+    const found = await Promise.all([
+      prisma.bot.findFirst({ where, select }),
+      prisma.chatGroup.findFirst({ where, select }),
+      prisma.botDeletion.findFirst({ where, select }),
+    ]);
+    return found.some(Boolean);
+  });
 }

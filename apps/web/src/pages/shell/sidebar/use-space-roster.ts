@@ -25,7 +25,6 @@ import type { ChatTarget } from "../../../lib/query/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { errorText } from "../../../lib/query/user-error";
-import { firstBotDeclined } from "../../../lib/spaces/first-bot-declined";
 import { useEventListener } from "../../../lib/use-event-listener";
 import type { ThreadState } from "../chat/use-thread-state";
 import type { useShellNavigation } from "../use-shell-navigation";
@@ -140,11 +139,12 @@ export function useSpaceRoster({
         groupList.length === 0 &&
         archivedGroupList?.length === 0 &&
         !navigation.spaces.some((space) => space.hasContent) &&
-        !firstBotDeclined(navigation.current.id)
+        navigation.firstBotDue !== false
       ) {
-        // Only the very first bot everywhere needs onboarding. An empty
-        // current space with content elsewhere stays in the app so the
-        // space can be switched to or deleted instead of trapping the user.
+        // Only the very first bot everywhere needs onboarding, which the server
+        // says: an empty space beside used ones, or in a new organization of
+        // someone who has chatted before, stays in the app so it can be
+        // switched from, filled or deleted instead of trapping the user.
         navigate("/onboarding", { replace: true });
         return;
       }
@@ -329,7 +329,7 @@ export function useSpaceBootstrap({
     }
   }
   const seedStateRef = useRef<
-    | (Omit<AppBootstrap, "thread" | "routines" | "me"> & {
+    | (Omit<AppBootstrap, "thread" | "routines" | "me" | "firstBotDue"> & {
         me?: Me | null;
         chat: ChatTarget | undefined;
       })
@@ -419,7 +419,7 @@ export function useSpaceBootstrap({
           groupList.length === 0 &&
           bootstrap.archivedGroups.length === 0 &&
           !bootstrap.spaces.some((space) => space.hasContent) &&
-          !firstBotDeclined(bootstrap.me.spaceId)
+          bootstrap.firstBotDue !== false
         ) {
           navigate("/onboarding", { replace: true });
           return;

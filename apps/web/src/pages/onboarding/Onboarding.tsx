@@ -6,9 +6,8 @@ import { SignupSurvey } from "../../components/account/SignupSurvey";
 import { PageLoading } from "../../components/PageLoading";
 import { useSignOut } from "../../lib/auth/sign-out";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
-import { rpc, selectedSpaceId } from "../../lib/query/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
-import { rememberFirstBotDeclined } from "../../lib/spaces/first-bot-declined";
 import { FirstBotRetry } from "./first-bot";
 import { ModelStep } from "./model-step";
 import { useOnboardingModel } from "./use-onboarding-model";
@@ -81,7 +80,6 @@ export function OnboardingPage() {
       // The server creates and greets Chief only in a Space that never held a chat; otherwise
       // the app shows the Space as it is.
       const { botId } = await rpc.onboarding.firstBot();
-      if (!botId) rememberFirstBotDeclined(selectedSpaceId());
       navigate(botId ? `/app/${botId}` : "/app");
     } catch (err) {
       createStartedRef.current = false;

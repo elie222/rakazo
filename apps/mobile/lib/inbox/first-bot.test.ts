@@ -28,6 +28,11 @@ describe("needsFirstBot", () => {
     expect(needsFirstBot(navigation({ spaces: [false, true] }))).toBe(false);
   });
 
+  it("does not ask when the server says no first bot is due", () => {
+    expect(needsFirstBot({ ...navigation(), firstBotDue: false })).toBe(false);
+    expect(needsFirstBot({ ...navigation(), firstBotDue: true })).toBe(true);
+  });
+
   it("does not ask before the Spaces are known", () => {
     expect(needsFirstBot(navigation({ spaces: [] }))).toBe(false);
   });
