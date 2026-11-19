@@ -92,7 +92,7 @@ export const artifactsRpc = {
     getById: oc.input(z.object({ artifactId: Id })).output(ArtifactWithContentSchema),
     remove: oc.input(z.object({ artifactId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Pages bots built for the caller in this Space. */
+  /** Review pages the caller owns or has been granted access to. */
   pageReviews: {
     list: oc.input(z.strictObject({ cursor: Id.optional() })).output(
       z.strictObject({
@@ -134,6 +134,7 @@ export const artifactsRpc = {
       .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),
   },
+  /** Pages bots built for the caller in this Space. */
   pages: {
     /** Pinned first, then most recently updated. */
     list: oc
