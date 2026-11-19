@@ -422,15 +422,15 @@ describe("Speaker", () => {
     vi.spyOn(
       speaker as unknown as { prepare: () => Promise<string[]> },
       "prepare",
-    ).mockRejectedValue(new Error("ElevenLabs rejected that key."));
+    ).mockRejectedValue(new Error("The speech provider rejected that key."));
     await expect(
       speaker.speak("Hi there.", { botId: "bot-1", messageId: "voice-preview" }),
-    ).resolves.toBe("ElevenLabs rejected that key.");
+    ).resolves.toBe("The speech provider rejected that key.");
     expect(speaker.state).toEqual({
       status: "idle",
       botId: "bot-1",
       messageId: "voice-preview",
-      error: "ElevenLabs rejected that key.",
+      error: "The speech provider rejected that key.",
     });
   });
 
