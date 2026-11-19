@@ -60,6 +60,20 @@ describe("windowCounter", () => {
     expect(count("new:1")).toBe(1);
     expect(count("new:2")).toBe(1);
   });
+
+  it("reads a key's count without spending any of it", () => {
+    let at = 0;
+    const count = windowCounter(1_000, () => at);
+    expect(count.peek("a")).toBe(0);
+    count("a");
+    count("a");
+    expect(count.peek("a")).toBe(2);
+    expect(count.peek("a")).toBe(2);
+    // The peek did not count, so the next call is still the third.
+    expect(count("a")).toBe(3);
+    at = 1_000;
+    expect(count.peek("a")).toBe(0);
+  });
 });
 
 describe("throttleKey", () => {

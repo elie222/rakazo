@@ -1,10 +1,12 @@
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
+import { requestClientIp } from "../http/client-ip.js";
 import { readBoundedBody } from "../http/http-body.js";
+import { throttleKey, windowCounter } from "../http/window-counter.js";
 import { formatWebhookPrompt } from "../messaging/inbound-delivery.prompt.js";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
-import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
+import type { WebhookDeps, WebhookSecretCache, WebhookThrottle } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
   loadWebhookTarget,
@@ -30,11 +32,32 @@ export {
   type WebhookTarget,
 } from "./webhook-inbound.js";
 
-export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
+const MINUTE_MS = 60_000;
+export const WEBHOOKS_PER_IP_PER_MINUTE = 120;
+
+export function mountWebhookHttpRoutes(
+  app: Hono,
+  deps: WebhookDeps,
+  clientIp: (c: Context) => string | undefined = requestClientIp,
+) {
   const secretCache: WebhookSecretCache = new Map();
+  // Target lookup runs before any signature check, so one address must not drive those database
+  // reads at line rate with random bot ids. Only a refused delivery spends the budget: senders
+  // share address pools (a CI runner, an automation platform), and on the GitHub route a 429 loses
+  // the event for good, so a correctly signed delivery must never be locked out by its neighbours.
+  const refusals = windowCounter(MINUTE_MS);
+  const address = (c: Context) => throttleKey(clientIp(c));
+  const throttle: WebhookThrottle = {
+    throttled: (c) => refusals.peek(address(c)) >= WEBHOOKS_PER_IP_PER_MINUTE,
+    tooManyRequests: (c) => c.json({ error: "Too many requests" }, 429, { "retry-after": "60" }),
+    refuse: (c) => {
+      refusals(address(c));
+      return c.json({ error: "Unauthorized" }, 401);
+    },
+  };
 
   app.post("/api/v1/bots/:botId/webhook", async (c) => {
-    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+    if (throttle.throttled(c)) return throttle.tooManyRequests(c);
 
     // Reject oversized bodies before target lookup so size limits do not reveal active bots.
     const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
@@ -54,7 +77,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
     // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
     if (!target || !hasValidBearerToken(c.req.header("authorization"), target.expected)) {
-      return unauthorized();
+      return throttle.refuse(c);
     }
 
     const webhookRoutines = await deps.prisma.routine.findMany({
@@ -104,5 +127,5 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     );
   });
 
-  mountGithubWebhookRoute(app, deps, secretCache);
+  mountGithubWebhookRoute(app, deps, secretCache, throttle);
 }

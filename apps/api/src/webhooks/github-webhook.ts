@@ -3,7 +3,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Hono } from "hono";
 import { readBoundedBytes } from "../http/http-body.js";
 import { githubEventMetadataPrompt } from "../messaging/inbound-delivery.prompt.js";
-import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
+import type { WebhookDeps, WebhookSecretCache, WebhookThrottle } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
   loadWebhookTarget,
@@ -159,9 +159,10 @@ export function mountGithubWebhookRoute(
   app: Hono,
   deps: WebhookDeps,
   secretCache: WebhookSecretCache,
+  throttle: WebhookThrottle,
 ) {
   app.post("/api/v1/bots/:botId/github", async (c) => {
-    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+    if (throttle.throttled(c)) return throttle.tooManyRequests(c);
 
     // Reject oversized bodies before target lookup so size limits do not reveal active bots.
     // The signature covers the bytes GitHub sent, so keep them: decoding first would let a
@@ -183,9 +184,9 @@ export function mountGithubWebhookRoute(
       }
       throw error;
     }
-    if (!target) return unauthorized();
+    if (!target) return throttle.refuse(c);
     if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
-      return unauthorized();
+      return throttle.refuse(c);
     }
 
     const githubRoutines = await deps.prisma.routine.findMany({

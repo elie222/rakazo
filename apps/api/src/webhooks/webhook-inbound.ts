@@ -16,6 +16,15 @@ import type { Context } from "hono";
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 export const WEBHOOK_SECRET_KIND = "webhook";
 
+/** The per-address budget every webhook route shares, and what a refused delivery does to it. */
+export type WebhookThrottle = {
+  /** True once this address has spent the budget on refused deliveries. */
+  throttled(c: Context): boolean;
+  tooManyRequests(c: Context): Response;
+  /** Count this refusal and answer the same 401 every unauthenticated delivery gets. */
+  refuse(c: Context): Response;
+};
+
 export type WebhookEvents = {
   sendUserMessage(input: {
     spaceId: string;

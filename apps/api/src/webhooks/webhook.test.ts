@@ -10,6 +10,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { createLogger, createTestSink } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { infisicalFake } from "../../../../packages/adapters/src/secrets/secret-store-fake.js";
@@ -23,6 +24,7 @@ import {
   mountWebhookHttpRoutes,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
+  WEBHOOKS_PER_IP_PER_MINUTE,
 } from "./webhook.js";
 import { loadWebhookTarget } from "./webhook-inbound.js";
 
@@ -119,9 +121,9 @@ function createDeps(
   };
 }
 
-function mount(deps: WebhookDeps) {
+function mount(deps: WebhookDeps, clientIp?: (c: Context) => string | undefined) {
   const app = new Hono();
-  mountWebhookHttpRoutes(app, deps);
+  mountWebhookHttpRoutes(app, deps, clientIp);
   return app;
 }
 
@@ -284,6 +286,71 @@ describe("inbound webhook HTTP route", () => {
     });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  it("throttles a flood of unauthenticated deliveries from one address", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const send = () =>
+      app.request("/api/v1/bots/missing/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "hi" }),
+      });
+    for (let at = 0; at < WEBHOOKS_PER_IP_PER_MINUTE; at += 1) {
+      expect((await send()).status).toBe(401);
+    }
+    const res = await send();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    expect(await res.json()).toEqual({ error: "Too many requests" });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("shares the per-address budget with the github webhook route", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const send = () => app.request("/api/v1/bots/missing/webhook", { method: "POST", body: "{}" });
+    for (let at = 0; at < WEBHOOKS_PER_IP_PER_MINUTE; at += 1) await send();
+    const res = await app.request("/api/v1/bots/missing/github", { method: "POST", body: "{}" });
+    expect(res.status).toBe(429);
+  });
+
+  it("spends no budget on deliveries that authenticate", async () => {
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
+    const app = mount(deps);
+    const send = (authorization?: string) =>
+      app.request("/api/v1/bots/bot-1/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(authorization ? { authorization } : {}),
+        },
+        body: JSON.stringify({ event: "ping" }),
+      });
+    for (let at = 0; at <= WEBHOOKS_PER_IP_PER_MINUTE; at += 1) {
+      expect((await send(`Bearer ${SECRET}`)).status).toBe(200);
+    }
+    // The address still has its whole budget: the flood that follows starts at the first refusal.
+    expect((await send()).status).toBe(401);
+    for (let at = 1; at < WEBHOOKS_PER_IP_PER_MINUTE; at += 1) {
+      expect((await send()).status).toBe(401);
+    }
+    expect((await send()).status).toBe(429);
+  });
+
+  it("throttles one address without holding back another", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps, (c) => c.req.header("x-client-address"));
+    const send = (address: string) =>
+      app.request("/api/v1/bots/missing/webhook", {
+        method: "POST",
+        headers: { "x-client-address": address },
+        body: "{}",
+      });
+    for (let at = 0; at <= WEBHOOKS_PER_IP_PER_MINUTE; at += 1) await send("203.0.113.9");
+    expect((await send("203.0.113.9")).status).toBe(429);
+    expect((await send("198.51.100.7")).status).toBe(401);
   });
 
   it("rejects bots without a configured webhook secret", async () => {

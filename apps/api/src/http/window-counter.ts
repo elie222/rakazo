@@ -5,11 +5,18 @@ const OVERFLOW_KEY = "\0overflow";
 
 type CountedWindow = { start: number; count: number };
 
+export type WindowCounter = {
+  /** Counts this call against the key and returns the window's new count. */
+  (key: string): number;
+  /** The key's count in the current window, without counting this call. */
+  peek(key: string): number;
+};
+
 // Bounded without letting a flood of keys reset anyone's window: windows are kept oldest first so
 // expired ones drop off the front, a key that finds the table full shares a coarser-network window
 // (an IPv6 caller's /48, an IPv4 caller's /24) so one network's flood cannot throttle callers
 // elsewhere, and only a flood that also fills the coarse table shares the one overflow window.
-export function windowCounter(windowMs: number, now: () => number = Date.now) {
+export function windowCounter(windowMs: number, now: () => number = Date.now): WindowCounter {
   const windows = new Map<string, CountedWindow>();
   const coarse = new Map<string, CountedWindow>();
   const sweep = (table: Map<string, CountedWindow>, at: number) => {
@@ -24,7 +31,14 @@ export function windowCounter(windowMs: number, now: () => number = Date.now) {
     table.set(key, { start: at, count: 1 });
     return 1;
   };
-  return (key: string): number => {
+  /** Where the key's calls are counted: its own window, or the coarser one once the table is full. */
+  const windowOf = (key: string): CountedWindow | undefined => {
+    const own = windows.get(key);
+    if (own) return own;
+    const shared = coarseKey(key);
+    return coarse.get(shared) ?? coarse.get(OVERFLOW_KEY);
+  };
+  const counter = ((key: string): number => {
     const at = now();
     sweep(windows, at);
     sweep(coarse, at);
@@ -35,7 +49,14 @@ export function windowCounter(windowMs: number, now: () => number = Date.now) {
       coarse.has(shared) || coarse.size < MAX_TRACKED_KEYS ? shared : OVERFLOW_KEY,
       at,
     );
+  }) as WindowCounter;
+  counter.peek = (key: string): number => {
+    const at = now();
+    sweep(windows, at);
+    sweep(coarse, at);
+    return windowOf(key)?.count ?? 0;
   };
+  return counter;
 }
 
 /** What a caller past a full table is counted against: its IPv6 /48 or IPv4 /24. */
