@@ -26,6 +26,7 @@ import { useMobileTokens } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { usePageReviewSignals } from "../lib/pages/page-review-reads";
+import { pageLoadProblem } from "../lib/pages/pages";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
@@ -65,7 +66,7 @@ export default function PageShareScreen() {
       void grants.refetch();
     },
   });
-  if (!page.data) {
+  if (!page.data || (page.isError && pageLoadProblem(page.error) === "gone")) {
     return (
       <View style={styles.center}>
         {page.isPending ? (
@@ -149,6 +150,13 @@ export default function PageShareScreen() {
           />
         ))}
       </SettingsGroup>
+      {page.isError ? (
+        <PageLoadFailure
+          error={page.error}
+          fallback={t`Could not load this page.`}
+          onRetry={() => void page.refetch()}
+        />
+      ) : null}
       {shown === "people" ? (
         <SettingsGroup>
           <SettingsInputRow

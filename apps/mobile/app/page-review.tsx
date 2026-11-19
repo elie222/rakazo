@@ -1,7 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageSectionAnchor } from "@rakazo/contracts";
-import { pageReviewSections } from "@rakazo/core";
+import type { PageReviewSections } from "@rakazo/core";
+import { pageReviewContent, pageReviewSections } from "@rakazo/core";
 import { queryOptions } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -33,7 +34,7 @@ function Review({ pageId }: { pageId: string }) {
   const version = revision?.version;
   const [showComments, setShowComments] = useState(false);
   const [draftId, setDraftId] = useState<string>();
-  const [anchors, setAnchors] = useState<{ version: number; sections: PageSectionAnchor[] }>();
+  const [anchors, setAnchors] = useState<PageReviewSections>();
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/get", { pageId, version });
   const review = useScreenQuery(read);
   const page = review.isError ? undefined : review.data;
@@ -41,7 +42,12 @@ function Review({ pageId }: { pageId: string }) {
     targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/draft", { pageId, requestId: draftId ?? "" }),
     { enabled: Boolean(page?.owner && draftId) },
   );
-  const source = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
+  const { code: source, sections } = pageReviewContent({
+    page,
+    showingDraft: Boolean(draftId),
+    draftCode: draft.isError ? undefined : draft.data?.code,
+    reported: anchors,
+  });
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;
   const document = useScreenQuery(
@@ -82,10 +88,16 @@ function Review({ pageId }: { pageId: string }) {
       setShowComments(true);
     },
   });
+  const backToLatest = () => {
+    setRevision(undefined);
+    setShowComments(false);
+  };
   useScreenHeader({
     title: draftId ? t`Draft revision` : showComments ? t`Comments` : page?.title,
     action: !page
-      ? null
+      ? revision
+        ? { label: t`Back to latest`, onPress: backToLatest, prominence: "secondary" }
+        : null
       : draftId
         ? draft.isError
           ? {
@@ -128,15 +140,12 @@ function Review({ pageId }: { pageId: string }) {
     return (
       <PageReviewComments
         page={page}
-        sections={anchors?.version === page.version ? anchors.sections : []}
+        sections={sections}
         onRevision={(version, anchor) => {
           setRevision({ version, anchor });
           setShowComments(false);
         }}
-        onLatest={() => {
-          setRevision(undefined);
-          setShowComments(false);
-        }}
+        onLatest={backToLatest}
         onDraft={(id) => {
           setDraftId(id);
           setShowComments(false);

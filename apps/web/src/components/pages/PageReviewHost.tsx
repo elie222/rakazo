@@ -1,6 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import { pageReviewPath } from "@rakazo/contracts";
+import type { PageReviewSections } from "@rakazo/core";
+import { pageReviewContent } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -60,7 +62,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   const version = revision?.version;
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draftId, setDraftId] = useState<string>();
-  const [anchors, setAnchors] = useState<{ version: number; sections: PageSectionAnchor[] }>();
+  const [anchors, setAnchors] = useState<PageReviewSections>();
   const read = queries.pageReviews.get.queryOptions({ input: { pageId, version } });
   const review = useQuery({ ...read, refetchOnMount: "always", refetchOnWindowFocus: "always" });
   const page = review.isError ? undefined : review.data;
@@ -69,7 +71,12 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     enabled: Boolean(page?.owner && draftId),
     gcTime: 0,
   });
-  const code = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
+  const { code, sections } = pageReviewContent({
+    page,
+    showingDraft: Boolean(draftId),
+    draftCode: draft.isError ? undefined : draft.data?.code,
+    reported: anchors,
+  });
   const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.anchor);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
@@ -120,7 +127,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               page={page}
               open={commentsOpen}
               setOpen={setCommentsOpen}
-              sections={anchors?.version === page.version ? anchors.sections : []}
+              sections={sections}
               onVersion={(version, anchor) => {
                 setAnchors(undefined);
                 setRevision(version !== undefined && anchor ? { version, anchor } : undefined);

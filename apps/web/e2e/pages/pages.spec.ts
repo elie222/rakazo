@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { PageComment } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -1108,6 +1109,8 @@ test("specific people review a version and lose access when removed", async ({
     const source = `export default function Report() {
       return <Page title="Weekly review"><Section heading="Release readiness">
         <Text>All checks are complete.</Text>
+      </Section><Section heading="Release readiness">
+        <Text>The rollout date is still open.</Text>
       </Section></Page>;
     }`;
     await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
@@ -1126,16 +1129,20 @@ test("specific people review a version and lose access when removed", async ({
 
     await reviewer.goto(detail.shareUrl);
     await expect(
-      pageFrame(reviewer, title).getByRole("heading", { name: "Release readiness" }),
-    ).toBeVisible();
+      pageFrame(reviewer, title).getByRole("heading", { name: "Release readiness", exact: true }),
+    ).toHaveCount(2);
     await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
     await reviewer.getByRole("combobox", { name: "Section", exact: true }).click();
-    await reviewer.getByRole("option", { name: "Release readiness" }).click();
+    await reviewer.getByRole("option", { name: "Release readiness (2)", exact: true }).click();
     await reviewer
       .getByRole("textbox", { name: "Comment", exact: true })
       .fill("Add the rollout date.");
     await reviewer.getByRole("button", { name: "Post comment" }).click();
     await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    const { items } = await rpc<{ items: PageComment[] }>(reviewer, "pageReviews/comments", {
+      pageId,
+    });
+    expect(items[0]).toMatchObject({ section: "Release readiness", sectionOccurrence: 1 });
     const reviewerActions = reviewer.getByRole("button", { name: "Comment actions" });
     await expect(reviewerActions).toBeVisible();
     await captureScreenshot(reviewer, testInfo, "page-review-comment");

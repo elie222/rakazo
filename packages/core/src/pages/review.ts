@@ -3,6 +3,26 @@ import { newClientId } from "../primitives/client-id.js";
 
 type PageCommentDraft = Pick<PageComment, "version" | "body"> & PageSectionAnchor;
 export type PageCommentSubmission = PageCommentDraft & { submissionId: string };
+export type PageReviewSections = { version: number; sections: PageSectionAnchor[] };
+
+export function pageReviewContent({
+  page,
+  showingDraft,
+  draftCode,
+  reported,
+}: {
+  page: PageReview | undefined;
+  showingDraft: boolean;
+  draftCode?: string;
+  reported?: PageReviewSections;
+}) {
+  if (!page) return { code: undefined, sections: [] };
+  if (showingDraft) return { code: page.owner ? draftCode : undefined, sections: [] };
+  return {
+    code: page.code,
+    sections: reported?.version === page.version ? reported.sections : [],
+  };
+}
 
 export function pageCommentSubmission(
   draft: PageCommentDraft,

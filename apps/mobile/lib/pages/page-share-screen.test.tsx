@@ -114,7 +114,7 @@ vi.mock("../api/api", () => ({
   }),
 }));
 
-const { queryClient } = await import("../query/query");
+const { queryClient, rpcQuery } = await import("../query/query");
 const { default: PageShareScreen } = await import("../../app/page-share");
 
 async function sheet() {
@@ -183,6 +183,31 @@ it("says a page that could not be read in the user's words, and Try again reads 
   expect(checked()).toEqual(["Anyone with the link"]);
   expect(row("Copy link")).not.toBeNull();
   await act(async () => root.unmount());
+});
+
+it("shows a retry when a refresh fails after sharing controls loaded", async () => {
+  host.server = { visibility: "link", shareUrl: "https://rakazo.example/p/1" };
+  const { root, row, press, checked, text } = await sheet();
+  try {
+    expect(row("Copy link")).not.toBeNull();
+    host.readFails = true;
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: rpcQuery("pages/get", { pageId: "page-1", link: true }).queryKey,
+      });
+      await flush();
+    });
+    expect(row("Copy link")).toBeNull();
+    expect(checked()).toEqual([]);
+    expect(text()).toContain("Could not reach the server");
+    host.readFails = false;
+    await press("Try again");
+    expect(checked()).toEqual(["Anyone with the link"]);
+    expect(row("Copy link")).not.toBeNull();
+  } finally {
+    host.readFails = false;
+    await act(async () => root.unmount());
+  }
 });
 
 it("names an unnamed owner You and shows the account name when present", async () => {

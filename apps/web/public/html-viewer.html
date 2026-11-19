@@ -43,7 +43,14 @@ addEventListener("message", (event) => {
       const sections = data.sections.slice(0, 80)
         .filter((section) => typeof section === "string")
         .map((section) => section.slice(0, 200));
-      parent.postMessage({ type: data.type, sections }, "*");
+      // Section suggestions are display data. Rebuild the payload before passing it to the app.
+      const anchors = Array.isArray(data.anchors) ? data.anchors.slice(0, 80)
+        .filter((anchor) => anchor && typeof anchor.section === "string" &&
+          Number.isInteger(anchor.sectionOccurrence) &&
+          anchor.sectionOccurrence >= 0 && anchor.sectionOccurrence < 80)
+        .map(({ section, sectionOccurrence }) => ({ section: section.slice(0, 200), sectionOccurrence }))
+        : undefined;
+      parent.postMessage({ type: data.type, sections, anchors }, "*");
     }
     return;
   }
