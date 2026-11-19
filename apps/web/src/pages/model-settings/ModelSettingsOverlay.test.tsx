@@ -15,7 +15,7 @@ type UiWebModule = typeof UiWeb;
 /** Provider rows end with their "Connect" action; models show their name alone. */
 const optionName = (entry: Element) => entry.textContent?.replace(/Connect$/, "");
 const accountPolicy = vi.hoisted(() => ({ enabled: false }));
-vi.mock("./model-account/queries", () => ({
+vi.mock("../model-account/queries", () => ({
   modelAccountConfigQuery: {
     queryKey: ["fixture-account-config"],
     queryFn: async () => ({
@@ -48,7 +48,7 @@ const models = vi.hoisted(() => ({
 }));
 
 // These settings tests own the account fixture; no real session refresh or browser listeners.
-vi.mock("../lib/auth", () => ({
+vi.mock("../../lib/auth/auth", () => ({
   authClient: { useSession: () => ({ data: { user: { id: "user-1" } } }) },
 }));
 const autoReview = vi.hoisted(() => ({ get: vi.fn() }));

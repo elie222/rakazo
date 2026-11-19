@@ -12,7 +12,7 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../pages/model-account/AccountI18n", () => ({
   AccountI18n: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../lib/rpc", () => ({ rpc: { me: vi.fn() } }));
+vi.mock("../lib/query/rpc", () => ({ rpc: { me: vi.fn() } }));
 vi.mock("../pages/model-account/ModelAccountSettings", () => ({
   ModelAccountSettings: ({
     onClose,

@@ -21,7 +21,7 @@ vi.mock("../../components/ModelAccountOnboarding", () => ({
     </button>
   ),
 }));
-vi.mock("../../lib/user-error", () => ({ errorText: (error: Error) => error.message }));
+vi.mock("../../lib/query/user-error", () => ({ errorText: (error: Error) => error.message }));
 
 import { useModelAccountOnboarding } from "./use-model-account-onboarding";
 

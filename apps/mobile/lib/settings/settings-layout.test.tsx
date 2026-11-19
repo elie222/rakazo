@@ -29,7 +29,7 @@ const { stack, sheet } = vi.hoisted(() => ({
   sheet: { canGoBack: vi.fn(), goBack: vi.fn(), dispatch: vi.fn() },
 }));
 
-vi.mock("../components/model-account-routes", () => ({
+vi.mock("../../components/model-account-routes", () => ({
   ModelAccountRoutes: ({ children }: { children: ReactNode }) => children,
 }));
 

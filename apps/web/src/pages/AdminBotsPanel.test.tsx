@@ -15,14 +15,14 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({
+vi.mock("../lib/query/rpc", () => ({
   rpc: {
     botMarketplace: {
       admin: { create: api.create, update: api.update, setStatus: api.setStatus },
     },
   },
 }));
-vi.mock("../lib/query", () => ({
+vi.mock("../lib/query/query", () => ({
   useSpaceQueries: () => ({
     botMarketplace: {
       admin: {
@@ -37,7 +37,7 @@ vi.mock("../lib/query", () => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../lib/query/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));

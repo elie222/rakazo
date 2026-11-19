@@ -51,7 +51,7 @@ vi.mock("./message-bubble", () => ({
 
 import { MessageRow } from "./message-row";
 
-vi.mock("../components/model-account", () => ({ ModelAccount: () => null }));
+vi.mock("../model-account", () => ({ ModelAccount: () => null }));
 
 type RowProps = ComponentProps<typeof MessageRow>;
 
