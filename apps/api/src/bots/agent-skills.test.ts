@@ -343,7 +343,9 @@ describe("personal skill attachments", () => {
       readOnly: false,
       availability: { allSpaces: false, spaceIds: [actor.spaceId] },
     });
-    const read = (path: string) => skillReadFromTool(prisma, actor, { skillId, file: path });
+    const read = (path?: string) =>
+      skillReadFromTool(prisma, actor, { name: "Review", file: path });
+    expect(await read()).toMatchObject({ files: [file.path, "references/keep.txt"].sort() });
     expect(await read(file.path)).toEqual({
       name: "Review",
       file: file.path,
@@ -503,11 +505,14 @@ describe("personal skill attachments", () => {
       service.update(actor, { skillId, file }),
       service.update(actor, { skillId, file: otherFile }),
     ]);
-    expect(results).toEqual([
-      expect.objectContaining({ status: "fulfilled" }),
-      { status: "rejected", reason: expect.objectContaining({ code: "BAD_REQUEST" }) },
-    ]);
-    expect(row.files).toEqual({ ...files, [file.path]: file.content });
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "fulfilled" }),
+        { status: "rejected", reason: expect.objectContaining({ code: "BAD_REQUEST" }) },
+      ]),
+    );
+    const winner = results[0].status === "fulfilled" ? file : otherFile;
+    expect(row.files).toEqual({ ...files, [winner.path]: winner.content });
   });
 
   it("refuses to overwrite an imported attachment map with an invalid stored shape", async () => {
