@@ -6,6 +6,7 @@ import {
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
   approvedModelCreditSeesImages,
+  assertModelProviderAllowed,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
@@ -486,6 +487,7 @@ export function createRouterContext(deps: RouterDeps) {
     if (choices.length === 0) return;
     const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
+      assertModelProviderAllowed(choice.provider);
       const entry = catalog.find(
         (entry) =>
           entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,

@@ -652,6 +652,14 @@ describeIntegration("agent import", () => {
         "This model provider is not allowed on this server.",
       );
 
+      const setBackups = await raw(app, cookie, "models/setBackups", [
+        { provider: "anthropic", modelId: "claude-haiku-5-5" },
+      ]);
+      expect(setBackups.status).toBe(400);
+      expect(await setBackups.text()).toContain(
+        "This model provider is not allowed on this server.",
+      );
+
       const preview = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
         files: settingsHome,
       });
