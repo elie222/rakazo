@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { Id, SandboxKind } from "../ids.js";
+import { Id, IsoDate, SandboxKind } from "../ids.js";
 import type { ProviderSettingsField } from "../models/provider-settings.js";
 import { ProviderSettingsFieldSchema } from "../models/provider-settings.js";
 
@@ -28,6 +28,13 @@ export const ComputerUpdateSchema = z.object({
   stage: z.enum(COMPUTER_UPDATE_STAGES),
 });
 export type ComputerUpdate = z.infer<typeof ComputerUpdateSchema>;
+
+/** The error code of a restore refused because the computer is running. */
+export const COMPUTER_RUNNING_ERROR = "COMPUTER_RUNNING";
+
+/** An earlier saved copy of a computer's home that its owner can restore. */
+export const ComputerHomeVersionSchema = z.object({ id: Id, savedAt: IsoDate });
+export type ComputerHomeVersion = z.infer<typeof ComputerHomeVersionSchema>;
 
 export const ComputerStatusSchema = z.object({
   botId: Id,

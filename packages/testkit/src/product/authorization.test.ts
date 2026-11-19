@@ -409,6 +409,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/releaseInterrupted"],
       ["computer/dismissUpdate"],
       ["computer/dismissDiskWarning", { botId: "missing-bot" }],
+      ["computer/homeVersions", { botId: "missing-bot" }],
+      ["computer/restoreHomeVersion", { botId: "missing-bot", versionId: "missing-version" }],
       ["computer/downloadFile"],
       ["computer/uploadFile"],
       ["computer/terminalUrl"],

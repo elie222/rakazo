@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   applyTeachingDesktopInput,
@@ -13,6 +13,7 @@ import {
   endTeachingWithLease,
   ensureComputerWorkspaceLayout,
   isSandboxGoneError,
+  ObjectAgentHomeStore,
   provisionComputer,
   queueComputerUpdate,
   rateLimitEnds,
@@ -70,6 +71,16 @@ const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 
 /** Each command writes a running and a done event, so this keeps about 100 commands. */
 const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
+
+/**
+ * The store that keeps earlier versions of this computer's home. A computer that works in a copy
+ * on a host keeps its own files there, so restoring a stored version could not reach them.
+ */
+function versionedHomeStore(home: AgentHomeStore, kind: string) {
+  if (!(home instanceof ObjectAgentHomeStore)) return undefined;
+  if (sandboxKindCapabilities(kind).storedHomeIsBackup) return undefined;
+  return home;
+}
 
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
@@ -335,6 +346,28 @@ export function computerRoutes(ctx: RouterContext) {
             data: { diskDismissedPercent: percent },
           });
         }
+        return { ok: true as const };
+      }),
+      homeVersions: authed.computer.homeVersions.handler(async ({ context, input }) => {
+        const computer = (await repos.getBot(context.actor, input.botId)).computer;
+        if (!computer) return [];
+        const store = versionedHomeStore(deps.home, computer.kind);
+        if (!store) return [];
+        const versions = await store.earlierVersions(computer.homeKey);
+        return versions.map((version) => ({
+          id: version.revision,
+          savedAt: version.savedAt.toISOString(),
+        }));
+      }),
+      restoreHomeVersion: authed.computer.restoreHomeVersion.handler(async ({ context, input }) => {
+        const computer = (await repos.getBot(context.actor, input.botId)).computer;
+        if (!computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(computer, context.actor);
+        const store = versionedHomeStore(deps.home, computer.kind);
+        if (!store)
+          throw new ClientError("BAD_REQUEST", "Earlier versions are not kept for this computer");
+        await store.restoreVersion(computer.homeKey, input.versionId);
+        getLogger().info("computer.home_version_restored", { "computer.id": computer.id });
         return { ok: true as const };
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) =>

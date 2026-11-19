@@ -3,6 +3,7 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import {
+  ComputerHomeVersionSchema,
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
@@ -36,6 +37,12 @@ export const computersRpc = {
       .output(z.object({ ok: z.literal(true) })),
     dismissUpdate: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     dismissDiskWarning: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    /** Earlier saved copies of the computer's home, newest first. */
+    homeVersions: oc.input(botId).output(z.array(ComputerHomeVersionSchema)),
+    /** Makes an earlier copy current; the stopped computer gets it on its next start. */
+    restoreHomeVersion: oc
+      .input(z.object({ botId: Id, versionId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(

@@ -22,6 +22,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from 
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
+import { ComputerHomeVersions } from "../../../components/computers/ComputerHomeVersions";
 import { ErrorBoundary, SectionLoadFailed } from "../../../components/ErrorBoundary";
 import { PagesList } from "../../../components/pages/PagesList";
 import { botProfilePatch } from "../../../lib/bots/bot-profile-patch";
@@ -692,6 +693,8 @@ export function BotSettings({
                 disabled={saving}
                 onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
+              {/* Read only once the settings are open: listing versions reads object storage. */}
+              {settingsOpen ? <ComputerHomeVersions botId={bot.id} /> : null}
               {changed.readAloud ? (
                 <SwitchRow
                   id={`${ids}-auto-speak`}
