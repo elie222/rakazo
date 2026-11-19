@@ -179,7 +179,7 @@ describe("consent grants", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "Anthropic",
-          detail: "claude-backup",
+          detail: "",
           use: "model",
           allowed: false,
         }),

@@ -7,12 +7,15 @@ import {
   abortableDelay,
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
+  callRunStatus,
   callTurn,
+  createCallReplySpeech,
   createCallSendTracker,
   createInterimBargeIn,
   isCallBargeIn,
   isFarewell,
   isRetryableError,
+  isRunWorking,
   latestSpokenCallReply,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
   newClientId,
@@ -23,6 +26,8 @@ import {
   retryDelayMs,
   speechFromBlocks,
   spokenMemory,
+  WAITING_ON_USER_RUN_STATUSES,
+  withBotSpeech,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
@@ -45,6 +50,7 @@ import type { SpeechOwner } from "../voice/voice";
 import {
   createSpeechOwner,
   ensureVoiceConsent,
+  queueSpeech,
   setCallAudio,
   setDictationAudio,
   speakText,
@@ -105,7 +111,11 @@ export type CallDeps = {
   followUp: (botId: string, text: string, clientNonce: string) => Promise<void>;
   /** Tells the server the caller hung up, so it files the call marker and the wrap-up run. */
   endCall: (botId: string, callId: string) => Promise<void>;
-  speak: (botId: string, text: string) => Promise<void>;
+  /**
+   * Says `text`, cutting off whatever the call is saying, or with `queue` after it, so a reply
+   * can be said sentence by sentence as the bot writes it.
+   */
+  speak: (botId: string, text: string, queue?: boolean) => Promise<void>;
   /** Cuts the reply off when the caller talks over it. */
   stopSpeaking: () => void;
   /** The opening cue as the call starts, the closing one once the caller's turn is heard. */
@@ -141,6 +151,8 @@ const FEED_RETRY_MAX_MS = 5_000;
 // ponytail: naive fixed-threshold endpointing on the fallback path only. Swap for a VAD
 // model if rooms with steady background noise start cutting people off mid-sentence.
 const SPEECH_LEVEL_DB = -35;
+/** A level at or under this shows as silence. */
+const SILENT_LEVEL_DB = -50;
 const SILENCE_HANG_MS = 1_200;
 const METER_POLL_MS = 200;
 /** How long a starting recorder may go without a level (web reports one once it records). */
@@ -172,6 +184,10 @@ let consentBlocked = false;
 let botEndedCall = false;
 let hangUpTimer: ReturnType<typeof setTimeout> | null = null;
 let spokenMessageId: string | null = null;
+/** The reply's sentences already said while its run was still writing it. */
+const replySpeech = createCallReplySpeech();
+/** The run whose reply this turn says as it is written; null once that reply is whole. */
+let streamRunId: string | null = null;
 /** The call's thread as the live feed last reported it. */
 let thread: MobileSnapshot | null = null;
 /** The microphone stays shut while the bot waits on a code typed on screen. */
@@ -198,6 +214,7 @@ const interim = createInterimBargeIn(() => {
   if (state?.phase !== "speaking") return;
   bargedIn = true;
   deps.stopSpeaking();
+  sealStream();
   set({ phase: "listening", caption: "" });
 });
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
@@ -279,6 +296,8 @@ export function startCall(
   micOpen = false;
   bargedIn = false;
   spokenMemory.clear();
+  replySpeech.clear();
+  streamRunId = null;
   state = {
     botId: call.botId,
     botName: call.botName,
@@ -364,6 +383,8 @@ export function endCall(): void {
   botEndedCall = false;
   callRunId = null;
   spokenMessageId = null;
+  replySpeech.clear();
+  streamRunId = null;
   thread = null;
   heldForCode = false;
   failures = 0;
@@ -549,10 +570,14 @@ async function handleTranscript(raw: string): Promise<void> {
   failures = 0;
   const text = raw.trim();
   if (!text) {
-    void listen();
+    // Between sentences of a reply still being written the turn stays the bot's.
+    if (replyStillWritten()) void openMic();
+    else void listen();
     return;
   }
-  if (state.phase === "speaking") {
+  // Between sentences of a reply still being written counts as over it: a backchannel or the
+  // reply's echo must not become a turn.
+  if (state.phase === "speaking" || replyStillWritten()) {
     if (!supportsPlaybackBargeIn()) {
       set({ heard: "" });
       return;
@@ -568,6 +593,7 @@ async function handleTranscript(raw: string): Promise<void> {
     bargedIn = true;
     interim.clear();
     deps.stopSpeaking();
+    sealStream();
     set({ phase: "thinking", caption: "" });
   }
   if (spokenMemory.isEcho(text)) {
@@ -575,6 +601,8 @@ async function handleTranscript(raw: string): Promise<void> {
     void listen();
     return;
   }
+  // The caller's turn: a reply said as it was written ended with it.
+  streamRunId = null;
   const handOver = switchBot?.(text);
   if (handOver) {
     void switchCall(handOver, text);
@@ -730,12 +758,43 @@ function onReply(messageId: string, text: string, runId?: string): void {
   // A reply to something typed into the thread mid-call belongs on screen only.
   if (callRunId && runId && runId !== callRunId) return;
   spokenMessageId = messageId;
-  // A finished reply with nothing to say, such as tool activity alone, still ends the wait.
-  if (!text) {
-    if (state.phase === "thinking") void listen();
-    return;
-  }
-  speakAndListen(text);
+  // What was already said while the run wrote it is not said again; the rest follows it.
+  const streamed = Boolean(runId && runId === streamRunId);
+  if (streamed) streamRunId = null;
+  const rest = runId ? replySpeech.finish(runId, text, messageId) : text;
+  if (rest) speakAndListen(rest, { queue: streamed, continues: streamed });
+  // Nothing left to say: the turn ends now, or once the sentences still playing end.
+  else if (state.phase !== "speaking") endTurn();
+}
+
+/**
+ * Says each finished sentence of the reply while its run is still writing it, when the server
+ * marks that text as the reply. Without the mark, the reply is said once it is whole.
+ */
+function speakAsWritten(): void {
+  const runId = callRunId;
+  if (!state || !thread || !runId || switching || botEndedCall || consentBlocked || opening) return;
+  const status = callRunStatus(thread, runId);
+  // A run that stops to ask the caller ends this reply. The call does not say the question, so
+  // nothing finishes it: forget it, and say what the run writes once it resumes from the start.
+  if (WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status)) replySpeech.clear();
+  if (!isRunWorking(status)) return;
+  const sentences = replySpeech.take(thread.messages, runId);
+  if (!sentences) return;
+  const continues = streamRunId === runId;
+  streamRunId = runId;
+  speakAndListen(sentences, { queue: true, continues });
+}
+
+/** The caller cut in: nothing more of the reply being written is said until it is whole. */
+function sealStream(): void {
+  if (streamRunId) replySpeech.seal(thread?.messages ?? [], streamRunId);
+  streamRunId = null;
+}
+
+/** A reply is being said as it is written, and its run is still writing it. */
+function replyStillWritten(): boolean {
+  return streamRunId !== null && isRunWorking(callRunStatus(thread, streamRunId));
 }
 
 /** Keeps the thread current, and the microphone shut while the bot waits on a typed code. */
@@ -756,9 +815,11 @@ function onThread(next: MobileSnapshot): void {
   }
   // The first snapshot arrived, or the code was entered on screen: listen again unless the
   // bot is about to speak.
-  if (!heldForCode) return;
-  heldForCode = false;
-  if (state.phase === "listening" && !micOpen && !opening) void listen();
+  if (heldForCode) {
+    heldForCode = false;
+    if (state.phase === "listening" && !micOpen && !opening) void listen();
+  }
+  speakAsWritten();
 }
 
 /** The bot on the line says it is handing over, then this call hangs up and the other bot rings. */
@@ -797,11 +858,18 @@ async function switchCall(target: CallSwitch, heard: string): Promise<void> {
   target.ring();
 }
 
-function speakAndListen(text: string): void {
+/**
+ * Says `text`, then hands the turn back to the caller. With `queue` it follows what is still
+ * playing, and `continues` adds it to the line the bot is still saying; the turn passes only
+ * once the newest speech has played and the run is no longer writing the reply.
+ */
+function speakAndListen(text: string, { queue = false, continues = false } = {}): void {
   if (!state) return;
   clearEchoGuard();
   const { botId } = state;
   const speakingCallId = callId;
+  // Sentences of a reply said as it is written, as opposed to its rest or a goodbye.
+  const writtenRunId = queue ? streamRunId : null;
   // Bump before anything else: this attempt supersedes all older ones, even if it then
   // declines to speak, so only the newest speech below may run its handlers.
   const speechId = ++speechSeq;
@@ -810,9 +878,12 @@ function speakAndListen(text: string): void {
   const superseded = () =>
     state?.botId !== botId || callId !== speakingCallId || speechSeq !== speechId;
   let blockedByConsent = false;
-  bargedIn = false;
-  interim.clear();
-  set({ exchanges: [...state.exchanges, { role: "bot", text }] });
+  // More of the same reply keeps a cut-in that is already counting down.
+  if (!continues) {
+    bargedIn = false;
+    interim.clear();
+  }
+  set({ exchanges: withBotSpeech(state.exchanges, text, continues) });
   // A prior disclosure refuse stays muted until unmute; do not re-open speech consent.
   if (consentBlocked) {
     set({ phase: "listening", heard: "" });
@@ -830,8 +901,11 @@ function speakAndListen(text: string): void {
   set({ phase: "speaking", heard: "" });
   if (bargeIn) void openMic();
   void deps
-    .speak(botId, text)
+    .speak(botId, text, queue)
     .catch((error: unknown) => {
+      // A failed clip may have gone unheard: the finished reply is said whole instead. Later
+      // sentences of the same speech fail with it, so this holds even when one superseded it.
+      if (writtenRunId) replySpeech.forget(writtenRunId);
       if (superseded()) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
@@ -850,12 +924,26 @@ function speakAndListen(text: string): void {
       if (blockedByConsent) return;
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;
-      if (hangUpAfterReply || Platform.OS !== "android") {
-        void listen();
+      // Everything written so far was said, but the run is still writing: wait for the rest
+      // with the microphone as it was while speaking.
+      if (replyStillWritten()) {
+        set({ phase: "thinking" });
+        deps.waitSound("start");
         return;
       }
-      guardThenListen();
+      endTurn();
     });
+}
+
+/** The reply has been said: listen, after the echo guard where the microphone stayed shut. */
+function endTurn(): void {
+  if (hangUpAfterReply || Platform.OS !== "android") {
+    void listen();
+    return;
+  }
+  // The waiting sound of a pause between sentences must not play into the guard's quiet.
+  if (state?.phase === "thinking") deps.waitSound("stop");
+  guardThenListen();
 }
 
 /** The bot hung up: speak the goodbye it wrote, then end — the rest lands in the thread. */
@@ -865,13 +953,16 @@ function onCallEnded(ended: CallEnded): void {
   botEndedCall = true;
   if (hangUpTimer) clearTimeout(hangUpTimer);
   hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
+  // A reply still being said, as it is written or after it landed, ends before the goodbye.
+  const afterReply = streamRunId !== null || state.phase === "speaking";
+  sealStream();
   const farewell = ended.farewell?.trim();
   // Nothing to say: hang up instead of waiting out the fallback.
   if (!farewell) {
     endCall();
     return;
   }
-  speakAndListen(farewell);
+  speakAndListen(farewell, { queue: afterReply });
 }
 
 function productionDeps(requestContext?: ApiRequestContext): CallDeps {
@@ -925,7 +1016,8 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
         }),
       ),
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
-    speak: (botId, text) => speakReply(botId, text, speechOwner, sessionCallId, requestContext),
+    speak: (botId, text, queue) =>
+      speakReply(botId, text, speechOwner, sessionCallId, requestContext, queue),
     stopSpeaking: () => stopSpeaking(speechOwner),
     audio: setCallAudio,
     cue: playCallCue,
@@ -959,6 +1051,8 @@ let recordingTurn: AbortSignal | undefined;
 export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
+  /** The microphone's loudness from 0 (silence) to 1, each time it is measured. */
+  onLevel?: (level: number) => void,
 ): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
@@ -1017,6 +1111,7 @@ export async function recordClip(
         continue;
       }
       metered = true;
+      onLevel?.(Math.min(1, Math.max(0, (level - SILENT_LEVEL_DB) / -SILENT_LEVEL_DB)));
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;
@@ -1107,8 +1202,10 @@ async function speakReply(
   owner: SpeechOwner,
   callId: string,
   requestContext?: ApiRequestContext,
+  queue = false,
 ): Promise<void> {
-  if (!(await speakText(text, { botId, owner, callId, requestContext }))) {
+  const say = queue ? queueSpeech : speakText;
+  if (!(await say(text, { botId, owner, callId, requestContext }))) {
     throw new Error(t`Add a voice provider in Voice settings.`);
   }
 }

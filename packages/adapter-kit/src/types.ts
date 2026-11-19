@@ -628,6 +628,8 @@ export interface AgentRunModel {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  /** Route only to endpoints that keep no prompts or replies, where the provider offers it. */
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
@@ -917,6 +919,11 @@ export interface VoiceInfo {
   id: string;
   label: string;
   description?: string;
+}
+
+export interface VoiceModelInfo {
+  id: string;
+  label: string;
 }
 
 /** Provider evidence only; no transcript, audio or credentials. */

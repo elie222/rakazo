@@ -58,6 +58,7 @@ export function useModelConnectionForm({
   const [gatewayId, setGatewayId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [region, setRegion] = useState("global");
+  const [zeroDataRetention, setZeroDataRetention] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -100,6 +101,7 @@ export function useModelConnectionForm({
     setGatewayId(fields.gatewayId);
     setProjectId(fields.projectId ?? "");
     setRegion(fields.region ?? "global");
+    setZeroDataRetention(fields.zeroDataRetention ?? false);
   }
 
   function invalidatePreflight() {
@@ -280,6 +282,7 @@ export function useModelConnectionForm({
     setGatewayId,
     setProjectId,
     setRegion,
+    setZeroDataRetention,
     setHeaderRows,
     setModelId,
     setNotice,
@@ -290,5 +293,6 @@ export function useModelConnectionForm({
     updateApiKey,
     updateApiProtocol,
     updateBaseUrl,
+    zeroDataRetention,
   };
 }

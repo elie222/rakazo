@@ -43,6 +43,11 @@ export function displayApiHost(url: string) {
   }
 }
 
+/** The host, with `http://` kept so a plain-http server never reads like its https twin. */
+export function displaySavedServer(url: string) {
+  return url.startsWith("http://") ? url : displayApiHost(url);
+}
+
 export function usesCustomApiBase(url: string, fallback = defaultApiBase()) {
   return url !== fallback;
 }

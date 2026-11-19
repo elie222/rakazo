@@ -23,6 +23,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { finishRoutineHandover } from "../routines/routine-handover.js";
+import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
   hasRoutineEvents,
@@ -706,6 +707,13 @@ export async function createScheduleFromTool(
     // Match routines.create: the reminder is live even if the thread signal fails.
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
+  await postRoutineNotice(deps, {
+    spaceId: input.spaceId,
+    threadId: routineThreadId,
+    botId: routineBotId,
+    change: "created",
+    name: row.name,
+  });
 
   return {
     ok: true as const,
@@ -885,6 +893,13 @@ async function createWatchFromTool(
     // The watch is live even if the thread signal fails.
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
+  await postRoutineNotice(deps, {
+    spaceId: input.spaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    change: "created",
+    name: row.name,
+  });
   return {
     ok: true as const,
     routineId: row.id,
@@ -1197,6 +1212,23 @@ export async function updateScheduleFromTool(
   } catch {
     // The change is saved even if the thread signal fails.
   }
+  const saved = {
+    ...existing,
+    ...(name === undefined ? {} : { name }),
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(inChat === undefined ? {} : { inChat }),
+    ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+    ...(eventsChanged ? events : {}),
+  };
+  if (routineEdited(existing, saved)) {
+    await postRoutineNotice(deps, {
+      spaceId: input.spaceId,
+      threadId: existing.threadId,
+      botId: input.botId,
+      change: routineEditChange(existing, saved),
+      name: saved.name,
+    });
+  }
 
   const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
   return {
@@ -1303,6 +1335,13 @@ export async function cancelScheduleFromTool(
   if (count === 0) return { error: "Schedule not found." };
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
   await deps.jobs.cancel(routineJobKey(existing.id));
+  await postRoutineNotice(deps, {
+    spaceId: input.spaceId,
+    threadId: existing.threadId,
+    botId: input.botId,
+    change: "deleted",
+    name: existing.name,
+  });
   return { ok: true as const, routineId: existing.id, name: existing.name };
 }
 
