@@ -211,7 +211,9 @@ export function voiceRequestError(
   const message = voiceHttpError(status, provider, what, body);
   const code = voiceAccountIssue(status, rawBody);
   if (code || status === 401 || status === 403) return new VoiceAccountError(code, message);
-  if (status >= 500) return new VoiceProviderUnavailableError(message);
+  // The provider's own text stays in the cause: a server error can carry its internals.
+  if (status >= 500)
+    return new VoiceProviderUnavailableError(undefined, { cause: new Error(message) });
   return new Error(message);
 }
 

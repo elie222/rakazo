@@ -629,11 +629,12 @@ describe("FishAudioVoiceProvider", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(VoiceProviderUnavailableError);
-    expect(error).toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
-    expect((error as Error).message).toBe(
-      "speaking failed: model s1 is not enabled for [Redacted]",
-    );
-    expect((error as Error).message).not.toContain(apiKey);
+    expect(error).toMatchObject({
+      kind: "SERVICE_UNAVAILABLE",
+      message: "The voice service is not responding. Try again in a moment.",
+      cause: { message: "speaking failed: model s1 is not enabled for [Redacted]" },
+    });
+    expect(JSON.stringify((error as Error).cause)).not.toContain(apiKey);
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({
@@ -706,9 +707,9 @@ describe("FishAudioVoiceProvider", () => {
       ),
     );
 
-    await expect(call(new FishAudioVoiceProvider())).rejects.toThrow(
-      `${operation} failed: Voice response is too large.`,
-    );
+    await expect(call(new FishAudioVoiceProvider())).rejects.toMatchObject({
+      cause: { message: `${operation} failed: Voice response is too large.` },
+    });
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({
@@ -730,7 +731,9 @@ describe("FishAudioVoiceProvider", () => {
 
     await expect(
       new FishAudioVoiceProvider().synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx),
-    ).rejects.toThrow("speaking failed (502)");
+    ).rejects.toMatchObject({
+      cause: { message: expect.stringContaining("speaking failed (502)") },
+    });
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({
