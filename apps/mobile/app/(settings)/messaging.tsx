@@ -348,6 +348,7 @@ export default function MessagingSettings() {
                   id: `bot:${bot.id}`,
                   title: bot.name,
                   attributes: { disabled: linkedBots.has(bot.id) },
+                  state: bot.id === identity.botId ? ("on" as const) : undefined,
                 })),
               },
             ]
