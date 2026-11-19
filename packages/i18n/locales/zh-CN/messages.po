@@ -247,6 +247,10 @@ msgstr "{count, plural, other {与 {peer} 的 # 条消息}}"
 msgid "{count, plural, one {# row} other {# rows}}"
 msgstr "{count, plural, one {# 行} other {# 行}}"
 
+#: apps/mobile/components/thread/selection-bar.tsx
+msgid "{count, plural, one {# selected} other {# selected}}"
+msgstr "{count, plural, other {已选择 # 项}}"
+
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
 msgstr "{count} 个智能体正在工作"
@@ -1037,6 +1041,11 @@ msgstr "启用：{name}"
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Activity"
 msgstr "动态"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Activity log"
+msgstr "活动日志"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2238,6 +2247,7 @@ msgstr "无法读取图像"
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/ui/name-dialog-compose.tsx
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -3190,6 +3200,7 @@ msgstr "已复制"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/mobile/components/thread/message-row.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -3593,6 +3604,10 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not enable tools"
 msgstr "无法启用工具"
 
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not export the log."
+msgstr "无法导出日志。"
+
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
 msgstr "无法完成登录"
@@ -3799,6 +3814,10 @@ msgstr "无法加载模板"
 #: apps/mobile/app/computer.tsx
 msgid "Could not load the desktop. This device cannot reach the screen URL."
 msgstr "无法加载桌面。此设备无法访问屏幕地址。"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not load the log."
+msgstr "无法加载日志。"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4504,6 +4523,11 @@ msgstr "创建你的账户"
 msgid "Created"
 msgstr "已创建"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Created routine \"{name}\""
+msgstr "已创建例行任务“{name}”"
+
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/new-organization.tsx
@@ -4879,6 +4903,11 @@ msgstr "已删除"
 msgid "Deleted bot"
 msgstr "已删除的 Bot"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Deleted routine \"{name}\""
+msgstr "已删除例行任务“{name}”"
+
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4978,6 +5007,11 @@ msgstr "禁用工具"
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "已禁用"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Disabled routine \"{name}\""
+msgstr "已禁用例行任务“{name}”"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5273,6 +5307,11 @@ msgstr "内置"
 msgid "Enable {0}"
 msgstr "启用 {0}"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Enabled routine \"{name}\""
+msgstr "已启用例行任务“{name}”"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "终端用户 ID"
@@ -5515,6 +5554,7 @@ msgid "Expiry"
 msgstr "有效期"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Export"
@@ -6609,6 +6649,7 @@ msgstr "实时工作状态"
 msgid "Load earlier messages"
 msgstr "加载更早的消息"
 
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Load more"
 msgstr "加载更多"
@@ -8144,6 +8185,10 @@ msgstr "组织"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "组织 API 密钥"
+
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Organization options"
+msgstr "组织选项"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9796,6 +9841,11 @@ msgstr "安全码"
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Select a bot"
 msgstr "选择 Bot"
+
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+#: apps/mobile/components/thread/message-row.tsx
+msgid "Select messages"
+msgstr "选择消息"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11767,6 +11817,11 @@ msgstr "请更新服务器，以便在此移动版本中使用 AI 数据共享�
 msgid "Updated below"
 msgstr "已在下方更新"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Updated routine \"{name}\""
+msgstr "已更新例行任务“{name}”"
+
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
 msgstr "更新"
@@ -12553,6 +12608,11 @@ msgstr "你的语音提供商额度已用完。"
 #: apps/web/src/lib/query/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供商拒绝了该密钥。"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+msgid "Zero data retention"
+msgstr "零数据保留"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
