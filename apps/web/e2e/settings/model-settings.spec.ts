@@ -433,7 +433,7 @@ test("a refused private model server names the setting that allows it", async ({
   await completeOnboarding(page);
   // The e2e server allows private endpoints, so replay the refusal a default install sends.
   const message =
-    "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
+    "Private endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker. Model endpoints can instead be allowed by an admin in Settings.";
   await page.route("**/rpc/models/probeOpenAiCompatible", (route) =>
     route.fulfill({
       status: 400,

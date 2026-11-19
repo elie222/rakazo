@@ -7,6 +7,7 @@ import {
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   compatibleEndpointPreset,
+  httpModelEndpointsAllowed,
   listPiCatalog,
   ModelSignInError,
   modelCredentialDto,
@@ -51,6 +52,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
+import { requireAdmin } from "../auth/admins.js";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import {
@@ -317,6 +319,21 @@ export function modelsRoutes(ctx: RouterContext) {
           throw error;
         }
       }),
+      httpEndpointsAllowed: authed.models.httpEndpointsAllowed.handler(async ({ context }) => {
+        await requireAdmin(deps, context.actor.userId);
+        return { allowed: await httpModelEndpointsAllowed(deps.prisma) };
+      }),
+      setHttpEndpointsAllowed: authed.models.setHttpEndpointsAllowed.handler(
+        async ({ context, input }) => {
+          await requireAdmin(deps, context.actor.userId);
+          await deps.prisma.deploymentSettings.upsert({
+            where: { id: "default" },
+            create: { id: "default", httpModelEndpointsAllowed: input.allowed },
+            update: { httpModelEndpointsAllowed: input.allowed },
+          });
+          return { allowed: input.allowed };
+        },
+      ),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
@@ -371,11 +388,12 @@ export function modelsRoutes(ctx: RouterContext) {
             }
           }
           try {
+            const allowHttp = await httpModelEndpointsAllowed(deps.prisma);
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
               compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
-              { allowPrivate: mayUsePrivateEndpoint(deps) },
+              { allowPrivate: mayUsePrivateEndpoint(deps) || allowHttp, allowHttp },
             );
             return { models };
           } catch (error) {

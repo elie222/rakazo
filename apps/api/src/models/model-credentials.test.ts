@@ -63,6 +63,7 @@ describe("project routing connection checks", () => {
       prisma: {
         userModelCredential: { findFirst: vi.fn(async () => saved) },
         secret: { findFirst: vi.fn(async () => ({ ciphertext: "fixture-ciphertext" })) },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
       },
       secrets: {
         load: vi.fn(async () =>
@@ -111,6 +112,7 @@ describe("failed connection messages", () => {
       prisma: {
         userModelCredential: { findFirst: vi.fn(async () => saved) },
         secret: { findFirst: vi.fn(async () => ({ ciphertext: "fixture-ciphertext" })) },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
       },
       secrets: {
         load: vi.fn(async () =>
@@ -169,6 +171,7 @@ describe("failed connection messages", () => {
       prisma: {
         userModelCredential: { findFirst: vi.fn(async () => saved) },
         secret: { findFirst: vi.fn(async () => ({ ciphertext: "fixture-ciphertext" })) },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
       },
       secrets: {
         load: vi.fn(async () =>
