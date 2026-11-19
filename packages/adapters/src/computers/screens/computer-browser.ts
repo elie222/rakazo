@@ -22,6 +22,10 @@ import type { FakeBrowserProviderOptions } from "../../browser/fake-browser.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
+/** What a routed sandbox answers when the computer's provider has no page browser. */
+const UNAVAILABLE_MESSAGE = "Page browser is unavailable on this computer.";
+/** What the helper reports, in place of a purchase, when it could not read the page at all. */
+const UNREADABLE_REASON = "unreadable";
 
 const isPurchaseItem = (item: unknown): item is BrowserPurchaseItem =>
   typeof (item as BrowserPurchaseItem | null)?.name === "string" &&
@@ -29,14 +33,16 @@ const isPurchaseItem = (item: unknown): item is BrowserPurchaseItem =>
 
 /**
  * Whether a failed purchase check means this computer cannot check at all, rather than that the check
- * failed: a page browser from before the check ("unknown command"), none at all, or a supervisor from
- * before it. Every other failure refuses the press, a 500 included: only an unhandled error answers that.
+ * failed: a page browser from before the check ("unknown command"), none at all (detached, or a computer
+ * whose provider has none), or a supervisor from before it. Every other failure refuses the press, a 500
+ * included: only an unhandled error answers that.
  */
 function cannotCheck(error: unknown): boolean {
   return (
     typeof error === "string" &&
     (error === "unknown command: purchase_check" ||
       error === DETACHED_MESSAGE ||
+      error === UNAVAILABLE_MESSAGE ||
       // An older supervisor rejects the unknown command's body before running anything.
       /^page browser failed: (400|404|422)$/.test(error))
   );
@@ -232,7 +238,8 @@ export class ComputerBrowserProvider implements BrowserProvider {
   /**
    * Whether these clicks, or a click or key on the screen, would complete a purchase. A computer
    * image from before the check answers "unknown command": it cannot tell, so nothing is asked.
-   * A check that started and could not read the page throws, and the press is refused.
+   * A check that started and could not read the page throws, and the press is refused, unless the
+   * helper found a JavaScript dialog open on it.
    */
   async purchaseCheck(
     computer: ComputerRef,
@@ -253,29 +260,32 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (live?.ok !== true && live?.error?.startsWith("Page browser timed out;"))
       live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
-      if (!cannotCheck(live?.error)) {
-        // The check started and failed (timed out, killed, a page it could not read).
-        getLogger().warn("purchase check failed", { error: live?.error });
-        throw new Error("The purchase check could not read the page.");
-      }
+      // The check started and failed (timed out, killed, a page it could not read).
+      if (!cannotCheck(live?.error)) unreadable(live?.error);
       if (!this.purchaseCheckWarned) {
         this.purchaseCheckWarned = true;
         getLogger().warn("purchase check unavailable on a computer", { error: live?.error });
       }
       return { purchase: null };
     }
+    // A JavaScript dialog open on the page: the page takes no input until it closes, so a press reaches
+    // only the dialog or the browser around the page, and buys nothing.
+    if (typeof live.dialog === "string" && live.dialog) return { purchase: null };
     const found = live.purchase as
       | {
           steps?: unknown;
           label?: unknown;
           amount?: unknown;
           amountFrom?: unknown;
+          reason?: unknown;
           total?: unknown;
           items?: unknown;
         }
       | null
       | undefined;
     if (!found) return { purchase: null };
+    // A check that ran but could not read even the page's own signals: nothing was checked.
+    if (found.reason === UNREADABLE_REASON) unreadable(UNREADABLE_REASON);
     return {
       purchase: {
         steps: Array.isArray(found.steps)
@@ -349,6 +359,12 @@ export class ComputerBrowserProvider implements BrowserProvider {
       };
     }
   }
+}
+
+/** A purchase check that could not read the page: the press is refused. */
+function unreadable(error: unknown): never {
+  getLogger().warn("purchase check failed", { error });
+  throw new Error("The purchase check could not read the page.");
 }
 
 /** Files the call's page downloaded, which the helper lists even when a later step failed. */

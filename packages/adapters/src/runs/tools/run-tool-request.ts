@@ -637,7 +637,7 @@ function uncheckedPress(why: UncheckedPress): { error: string } {
       )
     : refusal(
         "purchase_page_unreadable",
-        "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot, then try again.",
+        "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
       );
 }
 

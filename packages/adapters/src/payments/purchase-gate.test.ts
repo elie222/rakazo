@@ -7,7 +7,7 @@ import type { PurchaseApproval } from "./purchase-gate.js";
 import { detectPurchase, purchaseApprovalOf, purchaseCardSummary } from "./purchase-gate.js";
 
 const UNREADABLE =
-  "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot, then try again.";
+  "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.";
 const CHECKED = "The button label and total are read from the page. The bot has not checked them.";
 const found = {
   steps: [],

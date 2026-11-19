@@ -4928,7 +4928,7 @@ describe("a click that completes a purchase on a website", () => {
     expect(f.results).toEqual([
       {
         error:
-          "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot, then try again.",
+          "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
       },
     ]);
     expect(f.spending.payments).toEqual([]);

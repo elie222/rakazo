@@ -503,6 +503,23 @@ describe("page browser safety", () => {
         purchase: null,
       });
     }
+    // As a routed sandbox answers for a computer whose provider has no page browser.
+    reply = {
+      ok: false,
+      uncertain: false,
+      fallback: "computer_act",
+      error: "Page browser is unavailable on this computer.",
+    };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // A JavaScript dialog is open, so the page underneath takes no input: nothing is bought.
+    for (const dialog of ["alert", "confirm", "beforeunload"]) {
+      reply = { ok: true, url: "", title: "", site: "", purchase: null, dialog };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: null,
+      });
+    }
     // Any other failure throws, so the press is refused: a check that started and broke, or a 500,
     // which only an unhandled error answers.
     for (const error of [
@@ -518,12 +535,28 @@ describe("page browser safety", () => {
         "could not read the page",
       );
     }
+    // A check that ran but could not read the page is refused too, on a page with a host or none.
+    for (const site of ["shop.example.test", ""]) {
+      reply = {
+        ...answer,
+        site,
+        purchase: { steps: [], label: "", amount: "", amountFrom: "page", reason: "unreadable" },
+      };
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        "could not read the page",
+      );
+    }
+    // Only a dialog the helper names lets an unreadable page through.
+    reply = { ...answer, dialog: "", purchase: { steps: [], reason: "unreadable" } };
+    await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+      "could not read the page",
+    );
     const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
     // The timed-out check was probed twice.
-    expect(commands).toHaveLength(14);
+    expect(commands).toHaveLength(21);
   });
 
   describe("a timed-out purchase check", () => {
