@@ -1,5 +1,6 @@
 """Classify pull-request merge commits in disposable repositories, without network access."""
 
+import json
 import pathlib
 import re
 import subprocess
@@ -62,60 +63,67 @@ def vitest_config_files(config):
     return sorted(paths)
 
 
-AREAS = ("web", "e2e", "server", "native", "compose", "all_packages")
+AREAS = ("web", "e2e", "server", "www", "native", "compose", "all_packages")
+EVERY_SHARD = "[1,2,3,4]"
 
 
-def expect(*on):
-    return {area: str(area in on).lower() for area in AREAS}
+def expect(*on, unit=EVERY_SHARD):
+    return {**{area: str(area in on).lower() for area in AREAS}, "unit_shards": unit}
 
 
-EVERY_BROWSER_AREA = ("web", "e2e", "server")
+PRODUCT = ("web", "e2e", "server")
+EVERY_BROWSER_AREA = (*PRODUCT, "www")
 
 
 class ChangedAreasTests(unittest.TestCase):
     def test_classifies_what_the_pull_request_changed(self):
         cases = [
             ("apps/mobile/app/screen.tsx", expect()),
-            (".agents/skills/x/SKILL.md", expect()),
-            ("CHANGELOG.md", expect()),
-            ("docs/getting-started.md", expect("web")),
-            ("apps/www/src/page.astro", expect("web", "e2e")),
+            (".agents/skills/x/SKILL.md", expect(unit="[]")),
+            (".claude/settings.json", expect(unit="[]")),
+            ("CHANGELOG.md", expect(unit="[]")),
+            ("docs/getting-started.md", expect("www", unit="[1]")),
+            ("apps/www/src/page.astro", expect("www", unit="[1]")),
+            ("apps/www/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
             ("apps/worker/src/index.ts", expect("web", "server")),
             ("packages/adapters/src/slack.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/scripted-runtime.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/computer-workspace.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/runtime/scripted-runtime.ts", expect("web", "e2e", "server")),
+            ("packages/adapters/src/computers/host/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/computers/computer-workspace.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/file-handle-path.ts", expect("web", "e2e", "server", "native")),
+            ("packages/adapters/src/storage/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",
-                expect(*EVERY_BROWSER_AREA, "compose", "all_packages"),
+                expect(*PRODUCT, "compose", "all_packages"),
             ),
-            ("infra/sandboxes/computer/start.sh", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("infra/sandboxes/computer/Dockerfile", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("infra/sandboxes/supervisor/Dockerfile", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("infra/updater/Dockerfile", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("infra/updater/src/compose-env.ts", expect(*EVERY_BROWSER_AREA)),
-            ("apps/mobile/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
+            ("infra/sandboxes/computer/start.sh", expect(*PRODUCT, "all_packages")),
+            ("infra/sandboxes/computer/Dockerfile", expect(*PRODUCT, "all_packages")),
+            ("infra/sandboxes/supervisor/Dockerfile", expect(*PRODUCT, "all_packages")),
+            ("infra/updater/Dockerfile", expect(*PRODUCT, "all_packages")),
+            ("infra/updater/src/compose-env.ts", expect(*PRODUCT)),
+            ("apps/mobile/package.json", expect(*PRODUCT, "all_packages")),
             ("tsconfig.base.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("scripts/build-server.mjs", expect(*EVERY_BROWSER_AREA, "all_packages")),
+            ("scripts/build-server.mjs", expect(*PRODUCT, "all_packages")),
             (
                 "scripts/setup-worktree.mjs",
-                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+                expect(*PRODUCT, "native", "all_packages"),
             ),
             (
                 "scripts/setup-worktree.test.mjs",
-                expect(*EVERY_BROWSER_AREA, "native", "all_packages"),
+                expect(*PRODUCT, "native", "all_packages"),
             ),
             (".agents/skills/pr-watch/pr-digest", expect("all_packages")),
             (".agents/skills/translate/catalog-gaps.ts", expect("all_packages")),
             ("packages/core/README.md", expect(*EVERY_BROWSER_AREA)),
-            ("packages/core/src/run-error.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/core/src/runs/run-error.ts", expect(*EVERY_BROWSER_AREA)),
             ("pnpm-lock.yaml", expect(*AREAS)),
             (".github/workflows/ci.yml", expect(*AREAS)),
             (".github/workflows/playwright.yml", expect(*AREAS)),
+            (".github/workflows/test-suites.yml", expect(*AREAS)),
             (".github/actions/setup-workspace/action.yml", expect(*AREAS)),
             (".github/scripts/restore-postgres-image.sh", expect(*AREAS)),
+            (".github/actions/start-postgres/action.yml", expect(*AREAS)),
         ]
         for path, expected in cases:
             with self.subTest(path=path):
@@ -141,6 +149,14 @@ class ChangedAreasTests(unittest.TestCase):
             ["apps/c/src/stub.ts", "packages/a/src/setup.ts", "packages/b/src/extra-setup.ts"],
         )
 
+    def test_marketing_site_and_docs_together_stay_out_of_the_product_suites(self):
+        def change(root):
+            write("apps/www/src/page.astro")(root)
+            write("docs/getting-started.md")(root)
+            write("CHANGELOG.md")(root)
+
+        self.assertEqual(areas(change), expect("www", unit="[1]"))
+
     def test_a_rename_out_of_the_web_app_counts_its_old_path(self):
         def move(root):
             (root / "apps/mobile/assets").mkdir()
@@ -151,11 +167,50 @@ class ChangedAreasTests(unittest.TestCase):
     def test_browser_clients_skip_the_postgres_journeys(self):
         cases = [
             ("apps/web/src/app.ts", expect("web", "e2e")),
-            ("packages/ui-web/src/button.tsx", expect("web", "e2e")),
+            ("packages/ui-web/src/button.tsx", expect("web", "e2e", "www")),
             ("packages/chat-ui/src/thread.tsx", expect("web", "e2e")),
-            ("apps/desktop/src/main.ts", expect("web", "e2e", "native")),
-            ("apps/web/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
+            ("apps/desktop/src/main/main.ts", expect("web", "e2e", "native")),
+            ("apps/web/package.json", expect(*PRODUCT, "all_packages")),
             ("packages/ui-tokens/src/tokens.ts", expect(*EVERY_BROWSER_AREA)),
+        ]
+        for path, expected in cases:
+            with self.subTest(path=path):
+                self.assertEqual(areas(write(path)), expected)
+
+    def test_repo_checks_and_unrelated_workflows_skip_the_product_suites(self):
+        # Lint and typecheck runs the repo checks' own tests on every pull request.
+        cases = [
+            ("scripts/checks/import-boundaries.test.mjs", expect(unit="[]")),
+            ("scripts/checks/bundle-size.budgets.json", expect("web", unit="[]")),
+            # Unit and script tests read the release workflows, but no product suite builds them.
+            (".github/workflows/release-mobile.yml", expect("all_packages")),
+        ]
+        for path, expected in cases:
+            with self.subTest(path=path):
+                self.assertEqual(areas(write(path)), expected)
+
+    def test_www_packages_are_the_marketing_sites_workspace_dependencies(self):
+        repo = SCRIPT.parents[2]
+        manifests = {}
+        for manifest in [*repo.glob("apps/*/package.json"), *repo.glob("packages/*/package.json")]:
+            data = json.loads(manifest.read_text())
+            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {}), **data.get("peerDependencies", {})}
+            manifests[data["name"]] = (manifest.parent, [name for name, spec in deps.items() if str(spec).startswith("workspace:")])
+        closure, pending = set(), list(manifests["@rakazo/www"][1])
+        while pending:
+            name = pending.pop()
+            if name not in closure:
+                closure.add(name)
+                pending.extend(manifests[name][1])
+        expected = sorted(manifests[name][0].name for name in closure)
+        declared = re.search(r'^WWW_PACKAGES="([^"]*)"$', SCRIPT.read_text(), re.M).group(1).split()
+        self.assertEqual(sorted(declared), expected)
+
+    def test_marketing_screenshots_follow_the_packages_the_site_imports(self):
+        cases = [
+            ("packages/contracts/src/clients/client-build.ts", expect(*EVERY_BROWSER_AREA)),
+            ("packages/db/src/database/client.ts", expect(*PRODUCT)),
+            ("apps/api/src/server.ts", expect(*PRODUCT)),
         ]
         for path, expected in cases:
             with self.subTest(path=path):

@@ -3,6 +3,9 @@
 
 @source "../../packages/ui-web/src/**/*.{ts,tsx}";
 @source "./src/**/*.{ts,tsx}";
+/* Unused, and its breakpoints would flip this sheet's media queries at common desktop widths,
+   which restyles every element on the page mid-resize. */
+@source not inline("container");
 
 html,
 body,
@@ -23,7 +26,7 @@ body,
     env(safe-area-inset-left);
 }
 
-/* Switching spaces in place (lib/space-switch.ts): the sidebar holds still while the
+/* Switching spaces in place (pages/shell/space-switch.ts): the sidebar holds still while the
    conversation crossfades, instead of the whole screen redrawing. */
 .rk-space-switching [data-space-switch="sidebar"] {
   view-transition-name: rk-space-sidebar;
@@ -113,11 +116,13 @@ body,
   }
 }
 
-/* Find in chat (pages/shell/chat-find-bar.tsx) paints its matches without touching the transcript. */
-::highlight(rk-find) {
+/* Find in chat (pages/shell/chat-find-bar.tsx) paints its matches without touching the transcript.
+   Only while it is open: a highlight rule slows styling every element, and a page-wide one makes
+   any style change on <html>, such as a space switch's view transition, restyle all of them. */
+[data-finding] ::highlight(rk-find) {
   background-color: color-mix(in oklab, var(--foreground) 18%, transparent);
 }
-::highlight(rk-find-current) {
+[data-finding] ::highlight(rk-find-current) {
   background-color: var(--primary);
   color: var(--primary-foreground);
 }

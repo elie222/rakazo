@@ -1,11 +1,11 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { Button, Disclosure, Input } from "@rakazo/ui-web";
+import { Button, Disclosure, Input, Label, Switch } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
-} from "../../components/ModelConnectionPreflightNotice";
+} from "../../components/models/ModelConnectionPreflightNotice";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -21,10 +21,14 @@ export function ConnectionControls({
   codeCopied,
   connectKey,
   copyOAuthCode,
+  reportSignInStep,
   credential,
   gatewayId,
+  projectId,
+  region,
   needsRouting,
   needsGateway,
+  needsProject,
   isOpenAiCompatible,
   oauth,
   oauthPending,
@@ -38,12 +42,15 @@ export function ConnectionControls({
   selected,
   setAccountId,
   setGatewayId,
+  setProjectId,
+  setRegion,
   setPasteCode,
+  setZeroDataRetention,
   submitOAuthCode,
   subscriptionSignIn,
   testApiKeyConnection,
-  testOAuthConnection,
   updateApiKey,
+  zeroDataRetention,
 }: Pick<
   ModelSettingsState,
   | "acceptsKey"
@@ -56,10 +63,14 @@ export function ConnectionControls({
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
+  | "reportSignInStep"
   | "credential"
   | "gatewayId"
+  | "projectId"
+  | "region"
   | "needsRouting"
   | "needsGateway"
+  | "needsProject"
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
@@ -73,12 +84,15 @@ export function ConnectionControls({
   | "selected"
   | "setAccountId"
   | "setGatewayId"
+  | "setProjectId"
+  | "setRegion"
   | "setPasteCode"
+  | "setZeroDataRetention"
   | "submitOAuthCode"
   | "subscriptionSignIn"
   | "testApiKeyConnection"
-  | "testOAuthConnection"
   | "updateApiKey"
+  | "zeroDataRetention"
 >) {
   const { t } = useLingui();
   // Signed in with a subscription, a key is an alternative, so it stays folded until asked for.
@@ -93,7 +107,7 @@ export function ConnectionControls({
   }, [keyShownFor]);
   return !isOpenAiCompatible ? (
     <>
-      {subscriptionSignIn ? (
+      {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
         <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
           {oauth ? (
             <div className="w-full rounded-xl border border-border px-4 py-3">
@@ -104,6 +118,7 @@ export function ConnectionControls({
                       Sign in at{" "}
                       <a
                         href={oauth.verificationUri}
+                        onClick={() => reportSignInStep("page_opened")}
                         target="_blank"
                         rel="noreferrer"
                         className="text-foreground underline"
@@ -148,6 +163,7 @@ export function ConnectionControls({
                         Open{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -161,6 +177,7 @@ export function ConnectionControls({
                         A sign-in tab opened at{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -225,23 +242,6 @@ export function ConnectionControls({
               )}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy || preflightTesting || credential?.authKind !== "oauth"}
-            onClick={() => void testOAuthConnection()}
-          >
-            {modelPreflightTestingLabel(
-              preflightTesting && preflightTarget === "sign-in",
-              "sign-in",
-            )}
-          </Button>
-          {preflightTarget === "sign-in" ? (
-            <div className="w-full">
-              <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -260,29 +260,35 @@ export function ConnectionControls({
           {needsRouting ? (
             <>
               <label className="block text-body text-muted-foreground" htmlFor="model-account-id">
-                <Trans>Account ID</Trans>
+                {needsProject ? <Trans>Project ID</Trans> : <Trans>Account ID</Trans>}
                 <Input
                   id="model-account-id"
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
+                  value={needsProject ? projectId : accountId}
+                  onChange={(event) =>
+                    (needsProject ? setProjectId : setAccountId)(event.target.value)
+                  }
                   autoComplete="off"
                   spellCheck={false}
-                  className="mt-2 h-10 text-foreground"
+                  size="lg"
+                  className="mt-2 text-foreground"
                 />
               </label>
-              {needsGateway ? (
+              {needsGateway || needsProject ? (
                 <label
                   className="mt-4 block text-body text-muted-foreground"
                   htmlFor="model-gateway-id"
                 >
-                  <Trans>Gateway ID</Trans>
+                  {needsProject ? <Trans>Region</Trans> : <Trans>Gateway ID</Trans>}
                   <Input
                     id="model-gateway-id"
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
+                    value={needsProject ? region : gatewayId}
+                    onChange={(event) =>
+                      (needsProject ? setRegion : setGatewayId)(event.target.value)
+                    }
                     autoComplete="off"
                     spellCheck={false}
-                    className="mt-2 h-10 text-foreground"
+                    size="lg"
+                    className="mt-2 text-foreground"
                   />
                 </label>
               ) : null}
@@ -307,9 +313,23 @@ export function ConnectionControls({
                 placeholder={credential?.hasKey ? t`Paste a replacement key` : "sk-…"}
                 type="password"
                 autoComplete="new-password"
-                className="mt-2 h-10 text-foreground"
+                size="lg"
+                className="mt-2 text-foreground"
               />
             </label>
+          ) : null}
+          {selected?.dataRetentionControl ? (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <Label htmlFor="model-zero-data-retention" className="text-body font-normal">
+                <Trans>Zero data retention</Trans>
+              </Label>
+              <Switch
+                id="model-zero-data-retention"
+                checked={zeroDataRetention}
+                disabled={busy}
+                onCheckedChange={setZeroDataRetention}
+              />
+            </div>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {acceptsKey && selected?.catalogProbe ? (
@@ -320,10 +340,7 @@ export function ConnectionControls({
                 disabled={busy || preflightTesting || apiKey.trim().length < 8}
                 onClick={() => void testApiKeyConnection()}
               >
-                {modelPreflightTestingLabel(
-                  preflightTesting && preflightTarget === "api-key",
-                  "api-key",
-                )}
+                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
               </Button>
             ) : null}
             <Button
@@ -403,7 +420,8 @@ export function CompatibleKeyControls({
           }
           type="password"
           autoComplete="new-password"
-          className="mt-2 h-10 text-foreground"
+          size="lg"
+          className="mt-2 text-foreground"
         />
       </CompatibleKeyField>
       <Button

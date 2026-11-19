@@ -105,7 +105,7 @@ are independent.
 
 Screen assets now live under `/computer-screen/`. Run the SDK download command again before
 building the web or desktop app; it writes the pinned files to the new directory. The browser
-adapter source is bundled from `packages/adapters/src/wuying-screen/` by the web composition root.
+adapter source is bundled from `packages/adapters/src/providers/computer/wuying/wuying-screen/` by the web composition root.
 API screen sessions contain fresh `wuying:` tickets, not saved static page paths; the client builds
 the current screen page URL when it reads a ticket. No database URL backfill is needed. Reload an
 already-open computer panel after upgrading; old static screen page links are not durable logins.

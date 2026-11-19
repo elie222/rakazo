@@ -32,10 +32,26 @@ const URL_END = /[\s<>"]/;
 /** Punctuation that ends a sentence rather than the link, trimmed by walking back from the end. */
 const URL_TRAILING = new Set([".", ",", ";", ":", "!", "?", ")", "]", "'"]);
 
-// A backwards walk, not a `[...]+$` regex: the regex retries from every start in a long run.
+// Keep paired closers, then trim with a backwards walk. Both scans stay linear;
+// a `[...]+$` regex retries from every start in a long punctuation run.
 function withoutTrailingPunctuation(raw: string): string {
+  let parentheses = 0;
+  let brackets = 0;
+  let lastPairedCloser = -1;
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw[index];
+    if (char === "(") parentheses++;
+    else if (char === "[") brackets++;
+    else if (char === ")" && parentheses > 0) {
+      parentheses--;
+      lastPairedCloser = index;
+    } else if (char === "]" && brackets > 0) {
+      brackets--;
+      lastPairedCloser = index;
+    }
+  }
   let end = raw.length;
-  while (end > 0 && URL_TRAILING.has(raw[end - 1]!)) end--;
+  while (end > lastPairedCloser + 1 && URL_TRAILING.has(raw[end - 1]!)) end--;
   return raw.slice(0, end);
 }
 

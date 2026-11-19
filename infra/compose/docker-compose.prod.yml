@@ -27,8 +27,9 @@ x-app-environment: &app-environment # Runtime
   AWS_KMS_SECRET_ACCESS_KEY:
   # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible or Azure Blob storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_PROTOCOL:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
   OBJECT_STORAGE_ACCESS_KEY_ID:
@@ -40,22 +41,29 @@ x-app-environment: &app-environment # Runtime
   API_URL:
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
+  STUCK_WORK_NOTIFY_AFTER_MS:
+  STUCK_WORK_EXPIRE_AFTER_MS:
+  UNATTENDED_APPROVAL_EXPIRE_AFTER_MS:
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
+  BOT_EMAIL_SMTP_URL:
+  # Account mail: the API sends sign-in and account messages, the worker the ones queued for later.
   EMAIL_PROVIDER:
   EMAIL_API_KEY:
   SMTP_URL:
   EMAIL_FROM:
   EMAIL_REPLY_TO:
+  WELCOME_EMAIL_ENABLED:
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -74,8 +82,10 @@ x-app-environment: &app-environment # Runtime
   INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
   # Logs, errors, traces and analytics
   LOG_LEVEL:
+  GRAPHILE_LOGGER_DEBUG:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -109,6 +119,7 @@ x-app-environment: &app-environment # Runtime
   MODEL_STREAM_MAX_RETRIES:
   MODEL_STREAM_TIMEOUT_MS:
   MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_CREDIT_OFFERINGS:
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
@@ -118,9 +129,12 @@ x-app-environment: &app-environment # Runtime
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
   RAKAZO_LOCAL_MAX_TOKENS:
+  RAKAZO_LOCAL_TOKENS_PER_MINUTE:
+  RAKAZO_LOCAL_PROMPT_CACHE:
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
   RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
   RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
+  RAKAZO_MODEL_PROVIDER_ALLOWLIST:
   RAKAZO_AUTO_REVIEW_PROVIDER:
   RAKAZO_AUTO_REVIEW_MODEL:
   RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE:
@@ -133,6 +147,18 @@ x-app-environment: &app-environment # Runtime
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  MEETING_PROVIDER:
+  MEETING_API_KEY:
+  MEETING_REGION:
+  MEETING_SPACE_IDS:
+  MEETING_WEBHOOK_SECRET:
+  MEETING_WEBHOOK_SIGNATURE:
+  MEETING_SIGNING_KEY:
+  MEETING_PUBLIC_ORIGIN:
+  MEETING_LIVE_VOICE:
+  MEETING_CALENDAR_CLIENT_ID:
+  MEETING_CALENDAR_CLIENT_SECRET:
+  MEETING_CALENDAR_WEBHOOK_SECRET:
   PAID_SERVICES_PROVIDER:
   PAID_SERVICES_API_KEY:
   PAID_SERVICES_BASE_URL:
@@ -202,9 +228,9 @@ x-app-environment: &app-environment # Runtime
   SANDBOX_COMMAND_TIMEOUT_MS:
   SANDBOX_IDLE_MS:
   SANDBOX_MAX_COMPUTERS_PER_USER:
+  COMPUTER_DEFAULT_MODE:
   COMPUTER_MAX_ACTIVE_MS:
   COMPUTER_MAX_ACTIVE_UNBILLED_MS:
-  COMPUTER_TAKEOVER_TTL_MS:
   BROWSER_PROVIDER:
   NOVITA_API_KEY:
   SANDBOX_TEMPLATE:
@@ -217,10 +243,12 @@ x-app-environment: &app-environment # Runtime
   BOAT_API_URL:
   BOXD_API_KEY:
   BOXD_ORG:
+  INSTABOX_API_KEY:
   RAILWAY_API_TOKEN:
   RAILWAY_ENVIRONMENT_ID:
   RAILWAY_SANDBOX_REGION:
   RAILWAY_MAX_WORKSPACE_FILE_BYTES:
+  RAKAZO_COMPUTER_PROXY:
   WUYING_ACCESS_KEY_ID:
   WUYING_ACCESS_KEY_SECRET:
   WUYING_DESKTOP_ID:
@@ -272,8 +300,13 @@ x-app-environment: &app-environment # Runtime
   SENDBLUE_PHONE_NUMBER:
   SLACK_CLIENT_ID:
   SLACK_CLIENT_SECRET:
+  TEAMS_APP_ID:
+  TEAMS_APP_PASSWORD:
+  TEAMS_APP_TENANT_ID:
   SLACK_BOT_TOKEN:
   SLACK_SIGNING_SECRET:
+  TEAM_CHAT_JUDGE_PROVIDER:
+  TEAM_CHAT_JUDGE_MODEL:
   WHATSAPP_ACCESS_TOKEN:
   WHATSAPP_PHONE_NUMBER_ID:
   WHATSAPP_APP_SECRET:
@@ -295,6 +328,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -467,6 +502,8 @@ services:
     # Chat runs execute in the API that receives them, so it gets the worker's headroom.
     pids_limit: 512
     mem_limit: ${RAKAZO_API_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_API_REPLICAS:-1}
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
@@ -490,6 +527,13 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_PRIVATE_KEY_FILE: ${APPLE_PRIVATE_KEY_FILE:-}
       SCIM_BEARER_TOKEN: ${SCIM_BEARER_TOKEN:-}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
@@ -499,21 +543,20 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      INBOUND_EMAIL_RELAY_ARC_DOMAIN:
-      WELCOME_EMAIL_ENABLED:
+      EXPERIMENTS:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
+      DUB_API_KEY:
       CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
-      TEAM_CHAT_JUDGE_PROVIDER:
-      TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"
@@ -551,9 +594,11 @@ services:
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
+    # Busy runs allocate fast; a larger young generation cuts the garbage collection that otherwise
+    # takes most of the worker's CPU.
+    command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
@@ -571,9 +616,15 @@ services:
       - ALL
     pids_limit: 512
     mem_limit: ${RAKAZO_WORKER_MEMORY_LIMIT:-2g}
+    deploy:
+      replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
+      # A stopping worker ends the turns it is running before it hands them back, which fits
+      # inside stop_grace_period. The deploy starts its replacement first, so nothing waits.
+      RUN_DRAIN_ENABLED: ${RUN_DRAIN_ENABLED:-true}
     volumes:
       - appdata:/data
     networks:
@@ -657,6 +708,8 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     logging: *logging
     user: root
@@ -669,9 +722,11 @@ services:
       # Keep interpolation optional so deployments that do not enable this profile need no token.
       # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
       RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       # `-p` is available to Compose interpolation but is not injected into containers unless it is
       # declared here. The sidecar must target the project the operator actually started.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}

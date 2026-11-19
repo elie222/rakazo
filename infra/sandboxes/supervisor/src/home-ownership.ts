@@ -6,6 +6,13 @@ import path from "node:path";
 
 const DIRECTORY_OPEN_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 
+/**
+ * Windows reports every entry as owner 0 with mode 0o666 and keeps NTFS ACLs out of `fs.Stats`,
+ * so the POSIX mode walk can only produce a false refusal there (a directory then lacks the
+ * execute bit). The structural checks in the walk still run on Windows.
+ */
+const hasPosixPermissions = process.platform !== "win32";
+
 function hasPermissions(stat: Stats, uid: number, gid: number, required: number): boolean {
   const shift = stat.uid === uid ? 6 : stat.gid === gid ? 3 : 0;
   return ((stat.mode >> shift) & required) === required;
@@ -137,9 +144,11 @@ async function assertWritableEntry(
     throw new Error(`computer home ${root} must be a directory`);
   }
 
-  const usable = stat.isDirectory()
-    ? directoryIsUsable(stat, uid, gid, entry)
-    : regularFileIsUsable(stat, uid, gid);
+  const usable =
+    !hasPosixPermissions ||
+    (stat.isDirectory()
+      ? directoryIsUsable(stat, uid, gid, entry)
+      : regularFileIsUsable(stat, uid, gid));
   if (!usable) {
     throw writabilityError(entry, root, uid, gid, stat.uid);
   }

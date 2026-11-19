@@ -7,10 +7,10 @@ import { Button } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import type { ResolvedAppearance } from "../../src/lib/ui-appearance";
-import { applyResolvedAppearance } from "../../src/lib/ui-appearance";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import type { ResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { applyResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { queryClient } from "../../src/lib/query/query";
 import "../../src/styles.css";
 import { BOT, FixtureTranscript } from "./thread-fixture";
 
@@ -19,6 +19,20 @@ import { BOT, FixtureTranscript } from "./thread-fixture";
 
 const SCOUT = { botId: "bot-2", name: "Scout", color: botColor("green") };
 const LEDGER = { botId: "bot-3", name: "Ledger", color: botColor("red") };
+const INSTRUCTIONS_BEFORE = [
+  "Reply in English.",
+  "Sign off as the team, never by name.",
+  "Draft replies; ask before sending.",
+  "Flag invoices over 500.",
+  "Summarize long threads in bullets.",
+  "Skip newsletters.",
+  "Archive receipts after filing them.",
+  "Never share calendar details.",
+].join("\n");
+const INSTRUCTIONS_AFTER = INSTRUCTIONS_BEFORE.replace(
+  "Summarize long threads in bullets.",
+  "Keep summaries to one paragraph.",
+);
 
 function botColor(id: string) {
   return BOT_COLOR_LIST.find((color) => color.id === id)!.hex;
@@ -190,6 +204,74 @@ const approvals: Scenario = {
   id: "approvals",
   label: "Approvals",
   messages: [
+    bot(
+      [
+        {
+          kind: "ask",
+          text: "Gmail",
+          approvalEffectId: "draft-effect",
+          status: "pending",
+          actions: [
+            { id: "allow", label: "Send" },
+            { id: "deny", label: "Discard" },
+          ],
+          outgoingDraft: {
+            source: "Gmail",
+            keys: { to: "recipient_email", subject: "subject", body: "body" },
+            values: {
+              kind: "email",
+              to: "sam@example.test",
+              subject: "Friday handoff",
+              body: "Hi Sam,\n\nThe report is ready for review. Could you take a look before Friday?\n\nThanks!",
+            },
+          },
+        },
+      ],
+      { runId: "draft-run" },
+    ),
+    // A tool's server asking mid-call; its text is the server's, so markdown stays literal.
+    bot([
+      {
+        kind: "tool_question",
+        question: {
+          source: "Tool gateway",
+          message: "Run **send_email** to sam@example.test?",
+          fields: [
+            { name: "approve", label: "Approve this call", required: true, type: "boolean" },
+            {
+              name: "reason",
+              label: "Reason",
+              description: "Shown in the audit log",
+              required: false,
+              type: "text",
+              maxLength: 200,
+            },
+            {
+              name: "scope",
+              label: "Scope",
+              required: true,
+              type: "choice",
+              options: [
+                { value: "once", label: "This call" },
+                { value: "session", label: "This session" },
+              ],
+            },
+          ],
+        },
+        status: "pending",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
+    bot([
+      {
+        kind: "tool_question",
+        question: { source: "Tool gateway", message: "Delete the draft?", fields: [] },
+        status: "declined",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
     bot([
       {
         kind: "ask",
@@ -262,14 +344,11 @@ const approvals: Scenario = {
         status: "pending",
         instructionUpdate: {
           botId: BOT.botId,
-          before: "Reply in English.",
-          after: "Reply in English. Keep summaries to one paragraph.",
+          before: INSTRUCTIONS_BEFORE,
+          after: INSTRUCTIONS_AFTER,
           reason: "You asked for shorter summaries.",
         },
-        detail: instructionUpdateDiff(
-          "Reply in English.",
-          "Reply in English. Keep summaries to one paragraph.",
-        ),
+        detail: instructionUpdateDiff(INSTRUCTIONS_BEFORE, INSTRUCTIONS_AFTER),
         detailFormat: "code",
         actions: [
           { id: "allow", label: "Apply" },
@@ -439,8 +518,20 @@ const working: Scenario = {
         prUrl: "https://example.test/pull/42",
       },
     ]),
-    bot([{ kind: "computer", state: "Needs you", text: "The site wants a captcha solved." }]),
+    bot(
+      [
+        {
+          kind: "computer",
+          state: "Needs you",
+          text: "Sign in to Harbor Bookings, then hand it back.",
+        },
+      ],
+      { runId: "run-sign-in" },
+    ),
     bot([{ kind: "computer", state: "Working", text: "Filling in the booking form." }]),
+    bot([
+      { kind: "computer", state: "Done", text: "Sign in to the booking site, then hand it back." },
+    ]),
     bot([{ kind: "progress", text: "Checking Sam's calendar…" }]),
   ],
 };
@@ -490,6 +581,26 @@ const team: Scenario = {
     ]),
     bot([{ kind: "child_bot", botId: SCOUT.botId, name: SCOUT.name, status: "created" }]),
     bot([{ kind: "child_bot", botId: LEDGER.botId, name: LEDGER.name, status: "archived" }]),
+  ],
+};
+
+const routine = (
+  change: "created" | "updated" | "enabled" | "disabled" | "deleted",
+  name: string,
+) => message("system", [{ kind: "routine_event", change, name }]);
+const routines: Scenario = {
+  id: "routines",
+  label: "Routine changes",
+  messages: [
+    user("Remind me to stretch every morning."),
+    routine("created", "Morning stretch"),
+    say("Done. I'll remind you at 8:00 every day."),
+    routine("updated", "Morning stretch"),
+    routine("updated", "Morning stretch"),
+    routine("disabled", "Morning stretch"),
+    routine("enabled", "Morning stretch"),
+    say("Back on."),
+    routine("deleted", "Morning stretch"),
   ],
 };
 
@@ -667,11 +778,15 @@ const SCENARIOS: Scenario[] = [
   secrets,
   working,
   team,
+  routines,
   rich,
   calls,
 ];
 
 const IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320"><rect width="480" height="320" fill="#d4d4d4"/><circle cx="160" cy="150" r="70" fill="#a3a3a3"/><rect x="250" y="90" width="150" height="120" rx="12" fill="#737373"/></svg>`;
+
+/** A browser on a sign-in page, as a computer card's still of the screen. */
+const SCREEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" font-family="Helvetica,Arial,sans-serif"><rect width="1280" height="800" fill="#f5f5f7"/><rect width="1280" height="40" fill="#dfe1e5"/><rect x="12" y="8" width="240" height="32" rx="8" fill="#fff"/><text x="28" y="29" font-size="14" fill="#333">Sign in - Harbor Bookings</text><rect y="40" width="1280" height="48" fill="#fff"/><rect x="96" y="50" width="1088" height="28" rx="14" fill="#f1f3f4"/><text x="116" y="69" font-size="14" fill="#444">bookings.example.test/login</text><rect x="450" y="210" width="380" height="380" rx="16" fill="#fff" stroke="#e3e3e8"/><text x="482" y="262" font-size="26" font-weight="700" fill="#111">Welcome back</text><text x="482" y="290" font-size="15" fill="#666">Sign in to manage your reservations.</text><text x="482" y="334" font-size="13" fill="#444">Email</text><rect x="482" y="344" width="316" height="40" rx="8" fill="#fff" stroke="#ccc"/><text x="482" y="414" font-size="13" fill="#444">Password</text><rect x="482" y="424" width="316" height="40" rx="8" fill="#fff" stroke="#ccc"/><rect x="482" y="500" width="316" height="44" rx="8" fill="#2457f5"/><text x="640" y="528" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">Sign in</text><rect y="764" width="1280" height="36" fill="#1f2023"/><text x="1250" y="787" font-size="13" fill="#ccc" text-anchor="end">4:19 PM</text></svg>`;
 
 // The page has no API; answer the few reads cards make on mount with fake data.
 const realFetch = window.fetch.bind(window);
@@ -681,6 +796,8 @@ window.fetch = async (input, init) => {
     return Response.json({
       json: { contentBase64: btoa(IMAGE_SVG), mimeType: "image/svg+xml" },
     });
+  if (url.pathname === "/rpc/computer/preview")
+    return Response.json({ json: { image: `data:image/svg+xml;base64,${btoa(SCREEN_SVG)}` } });
   if (url.pathname.startsWith("/rpc/"))
     return Response.json({ json: { message: "Not available in the gallery" } }, { status: 503 });
   return realFetch(input, init);

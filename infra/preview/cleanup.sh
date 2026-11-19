@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deletes previews: the one for PR when it is set (the pull request closed), otherwise every
-# preview whose pull request is no longer open, to catch a missed close.
+# preview whose pull request is no longer open, to catch a missed close. The main branch's
+# preview has no number, so it is never deleted.
 #
 # Env: FLY_API_TOKEN, FLY_ORG, GH_TOKEN, REPO, optional PR, APP_PREFIX (default rakazo-pr).
 set -euo pipefail

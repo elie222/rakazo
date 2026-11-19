@@ -1,6 +1,7 @@
 import { globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lingui } from "@lingui/vite-plugin";
 import { defineConfig } from "vitest/config";
 
 const include = [
@@ -10,7 +11,8 @@ const include = [
   "infra/updater/src/**/*.test.ts",
   "apps/desktop/src/**/*.test.ts",
   "apps/web/src/**/*.test.{ts,tsx}",
-  "apps/mobile/lib/**/*.test.{ts,tsx}",
+  "apps/web/server/**/*.test.ts",
+  "apps/mobile/{lib,components}/**/*.test.{ts,tsx}",
   "apps/mobile/plugins/**/*.test.js",
   "apps/api/src/**/*.test.ts",
   "apps/worker/src/**/*.test.ts",
@@ -32,6 +34,9 @@ const isolated = include
   );
 
 export default defineConfig({
+  // Mobile imports its translation catalogs as `.po` files.
+  // Some runs start outside the repo, so the config is named rather than searched for.
+  plugins: [lingui({ configPath: path.join(root, "lingui.config.ts") })],
   resolve: {
     alias: [
       {
@@ -49,6 +54,19 @@ export default defineConfig({
         find: /^@lingui\/core\/macro$/,
         replacement: fileURLToPath(
           new URL("./packages/testkit/src/lingui-core-macro.ts", import.meta.url),
+        ),
+      },
+      {
+        find: /^@lingui\/react\/macro$/,
+        replacement: fileURLToPath(
+          new URL("./packages/testkit/src/lingui-react-macro.ts", import.meta.url),
+        ),
+      },
+      {
+        // A native view; tests see its Markdown as text.
+        find: /^react-native-enriched-markdown$/,
+        replacement: fileURLToPath(
+          new URL("./packages/chat-ui/src/enriched-markdown-test-stub.tsx", import.meta.url),
         ),
       },
       // Native-only transitive deps of the renderer contain uncompiled Flow

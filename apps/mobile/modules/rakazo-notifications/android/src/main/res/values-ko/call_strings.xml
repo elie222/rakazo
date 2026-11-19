@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">통화 중</string>
+  <string name="rakazo_call_title">Rakazo 통화</string>
+  <string name="rakazo_call_text">마이크 사용 중</string>
+  <string name="rakazo_call_answer">받기</string>
+  <string name="rakazo_call_decline">거절</string>
+</resources>

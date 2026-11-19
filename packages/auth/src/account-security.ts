@@ -38,19 +38,21 @@ export function accountSecurity(
           const accounts = await ctx.context.internalAdapter.findAccounts(
             ctx.context.session.user.id,
           );
+          const ssoLinked = (
+            await Promise.all(
+              accounts.map((account) =>
+                isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
+              ),
+            )
+          ).some(Boolean);
           return ctx.json({
             freshOidcAuth: Boolean(
               proof &&
                 proof.value === ctx.context.session.user.id &&
                 proof.expiresAt.getTime() > Date.now(),
             ),
-            ssoLinked: (
-              await Promise.all(
-                accounts.map((account) =>
-                  isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
-                ),
-              )
-            ).some(Boolean),
+            ssoLinked,
+            linkedProviderIds: [...new Set(accounts.map((account) => account.providerId))],
             hasPassword: Boolean(credential?.password),
             passwordChangeEnabled,
             emailDeletion: Boolean(email),

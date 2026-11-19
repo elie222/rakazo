@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">실시간 에이전트 상태</string>
+  <string name="rakazo_channel_messages">에이전트 메시지</string>
+  <string name="rakazo_channel_scheduled">예약된 작업</string>
+  <string name="rakazo_channel_attention">확인 필요</string>
+
+  <string name="rakazo_live_one">%1$s 작업 중</string>
+  <string name="rakazo_live_many">%1$s 외 %2$d명 작업 중</string>
+  <string name="rakazo_live_working">작업 중</string>
+
+  <string name="rakazo_scheduled_title">%1$s · 예약된 작업</string>
+  <string name="rakazo_replied_group">%1$s님이 %2$s에서 답장함</string>
+  <string name="rakazo_replied">%1$s님이 답장함</string>
+
+  <string name="rakazo_attention_failed">%1$s에 문제가 생겼어요</string>
+  <string name="rakazo_attention_takeover">%1$s이(가) 화면에서 도움이 필요해요</string>
+  <string name="rakazo_attention_input">%1$s이(가) 입력을 기다려요</string>
+</resources>

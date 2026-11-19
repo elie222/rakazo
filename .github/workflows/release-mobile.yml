@@ -55,12 +55,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
-      - name: Set up Expo
-        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
-        with:
-          eas-version: latest
-          packager: pnpm
-          token: ${{ secrets.EXPO_TOKEN }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify mobile project
@@ -71,18 +65,19 @@ jobs:
         id: build
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXISTING_BUILD_ID: ${{ inputs.ios_build_id }}
         run: |
           set -euo pipefail
           if [[ -n "$EXISTING_BUILD_ID" ]]; then
-            eas build:view "$EXISTING_BUILD_ID" --json | jq '[.]' > "$RUNNER_TEMP/build.json"
+            pnpm exec eas build:view "$EXISTING_BUILD_ID" --json | jq '[.]' > "$RUNNER_TEMP/build.json"
             jq -e \
               --arg project "$(node -p 'require("./app.json").expo.extra.eas.projectId')" \
               --arg identifier "$(node -p 'require("./app.json").expo.ios.bundleIdentifier')" \
               '.[0] | .status == "FINISHED" and .platform == "IOS" and .buildProfile == "production" and .app.id == $project and .appIdentifier == $identifier' \
               "$RUNNER_TEMP/build.json" > /dev/null
           else
-            eas build --platform ios --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+            pnpm exec eas build --platform ios --profile production --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
           fi
           {
             echo "id=$(jq -r '.[0].id' "$RUNNER_TEMP/build.json")"
@@ -95,13 +90,14 @@ jobs:
         if: inputs.ios_build_id == ''
         working-directory: apps/mobile
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
           BUILD_ID: ${{ steps.build.outputs.id }}
         run: |
           set -euo pipefail
           jq --arg id "$ASC_APP_ID" '.submit.production.ios.ascAppId = $id' eas.json > "$RUNNER_TEMP/eas.json"
           cp "$RUNNER_TEMP/eas.json" eas.json
-          eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait
+          pnpm exec eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait
 
       - name: Submit for App Store review
         env:

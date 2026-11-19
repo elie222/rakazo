@@ -1,3 +1,5 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import type {
   CapabilityInstall,
   Connection,
@@ -15,12 +17,11 @@ import {
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
-  EMPTY_PLUGIN_CATALOG_MESSAGE,
+  customMcpServerInput,
   filterConnectionCatalogItems,
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  newClientId,
   OTHER_PLUGINS,
 } from "@rakazo/core";
 import type { NativeStackNavigationOptions } from "expo-router";
@@ -28,7 +29,6 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -38,38 +38,44 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import type {
   AddCustomOption,
   SourceAuth,
   SourceKind,
-} from "../../components/add-custom-integration";
-import { AddCustomForm, AddCustomMenu } from "../../components/add-custom-integration";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { ConnectorIcon } from "../../components/connector-icon";
-import type { ConnectionTool } from "../../components/integration-detail";
-import { IntegrationDetail } from "../../components/integration-detail";
-import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integration-plugins";
-import { createIntegrationsStyles, LOGO_SIZE } from "../../components/integrations-styles";
-import { MenuPicker } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { Chevron } from "../../components/row-accessories";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
-import type { IntegrationsCacheScope, IntegrationsSnapshot } from "../../lib/integrations-cache";
+} from "../../components/integrations/add-custom-integration";
+import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
+import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
+import type { ConnectionTool } from "../../components/integrations/integration-detail";
+import { IntegrationDetail } from "../../components/integrations/integration-detail";
+import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integrations/integration-plugins";
+import {
+  createIntegrationsStyles,
+  LOGO_SIZE,
+} from "../../components/integrations/integrations-styles";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { Chevron } from "../../components/ui/row-accessories";
+import { rpc } from "../../lib/api/api";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import type {
+  IntegrationsCacheScope,
+  IntegrationsSnapshot,
+} from "../../lib/integrations/integrations-cache";
 import {
   integrationsCacheScope,
   isIntegrationsScopeCurrent,
   persistedIntegrationsCacheScope,
   readIntegrationsCache,
   writeIntegrationsCache,
-} from "../../lib/integrations-cache";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
+} from "../../lib/integrations/integrations-cache";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   browsablePlugins,
   filterPlugins,
@@ -78,9 +84,10 @@ import {
   managedPluginParams,
   pluginCategories,
   pluginParams,
-} from "../../lib/plugin-marketplace";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -89,18 +96,18 @@ export default function Integrations() {
   const { app: appToOpen } = useLocalSearchParams<{ app?: string }>();
   const navigation = useNavigation();
   const styles = useThemedStyles(createIntegrationsStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const categoryLabels: Record<PluginCategory, string> = {
-    productivity: t("Productivity"),
-    communication: t("Communication"),
-    sales: t("Sales & CRM"),
-    marketing: t("Marketing"),
-    finance: t("Finance"),
-    people: t("Recruiting & HR"),
-    design: t("Design"),
-    code: t("Developer"),
-    data: t("Data"),
-    ops: t("Security & Ops"),
+    productivity: t`Productivity`,
+    communication: t`Communication`,
+    sales: t`Sales & CRM`,
+    marketing: t`Marketing`,
+    finance: t`Finance`,
+    people: t`Recruiting & HR`,
+    design: t`Design`,
+    code: t`Developer`,
+    data: t`Data`,
+    ops: t`Security & Ops`,
   };
   const categoryLabel = (name: string) => categoryLabels[name as PluginCategory] ?? name;
   const { width } = useWindowDimensions();
@@ -140,7 +147,6 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const oauthBrowserOpen = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -250,6 +256,11 @@ export default function Integrations() {
           matchesWordPrefixes(`${server.name} ${server.description}`, query),
         )
       : [];
+  const noMatch =
+    catalogsReady &&
+    filtering &&
+    catalogApps.length + pluginMatches.length + brandMatches.length + savedServerMatches.length ===
+      0;
   const connectorPlugins = pluginInstalls.filter(hasPluginConnector);
 
   const detailItem = useMemo(() => {
@@ -339,7 +350,7 @@ export default function Integrations() {
           isIntegrationsScopeCurrent(scope) &&
           sourceGeneration === sourcesGeneration.current
         )
-          setMcpError(errorText(reason, t("Could not load MCP servers")));
+          setMcpError(errorText(reason, t`Could not load MCP servers`));
       });
     void rpc("capabilities/list")
       .then((installs) => {
@@ -404,17 +415,18 @@ export default function Integrations() {
     writeIntegrationsCache(scope, next);
   }
 
-  async function retryRefresh() {
+  async function retryRefresh(isCurrent?: () => boolean) {
     const focus = focusGeneration.current;
     try {
       await refresh();
     } catch (reason) {
       if (
+        (!isCurrent || isCurrent()) &&
         mounted.current &&
         focus === focusGeneration.current &&
         (!cacheScope.current || isIntegrationsScopeCurrent(cacheScope.current))
       ) {
-        setCatalogError(errorText(reason, t("Could not load integrations")));
+        setCatalogError(errorText(reason, t`Could not load integrations`));
       }
     }
   }
@@ -449,16 +461,6 @@ export default function Integrations() {
       };
     }, []),
   );
-
-  useEffect(() => {
-    // The OAuth callback lands in the browser, so refresh once the user comes back.
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !oauthBrowserOpen.current || !mounted.current) return;
-      oauthBrowserOpen.current = false;
-      void retryRefresh();
-    });
-    return () => subscription.remove();
-  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -507,17 +509,17 @@ export default function Integrations() {
   function serverStatus(state: McpServerConnection): string {
     switch (state) {
       case "disabled":
-        return t("Disabled");
+        return t`Disabled`;
       case "needs_client":
-        return t("Needs an OAuth client ID");
+        return t`Needs an OAuth client ID`;
       case "needs_sign_in":
-        return t("Needs sign-in");
+        return t`Needs sign-in`;
       case "not_working":
-        return t("Not working");
+        return t`Not working`;
       case "connected":
-        return t("Connected");
+        return t`Connected`;
       case "not_connected":
-        return t("Not connected");
+        return t`Not connected`;
     }
   }
 
@@ -544,7 +546,7 @@ export default function Integrations() {
         {signIn ? (
           <NativeActionButton
             fill={false}
-            label={t("Sign in")}
+            label={t`Sign in`}
             onPress={() => openPlugin(params)}
             prominence="secondary"
           />
@@ -597,7 +599,7 @@ export default function Integrations() {
         state !== "needs_client" &&
         (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
           <NativeActionButton
-            label={server.oauthStatus === "reconnect" ? t("Reconnect") : t("Connect")}
+            label={server.oauthStatus === "reconnect" ? t`Reconnect` : t`Connect`}
             fill={false}
             busy={pending === `oauth:${server.id}`}
             onPress={() => void authorizeMcp(server.id)}
@@ -614,12 +616,12 @@ export default function Integrations() {
       <>
         {apps || mcpError ? (
           <View testID="connected-apps" style={styles.catalogStack}>
-            <Text style={styles.section}>{t("Apps")}</Text>
+            <Text style={styles.section}>{t`Apps`}</Text>
             {mcpError ? (
               <View>
                 <Text style={styles.error}>{mcpError}</Text>
                 <NativeActionButton
-                  label={t("Retry")}
+                  label={t`Retry`}
                   fill={false}
                   onPress={() => void retryRefresh()}
                   prominence="secondary"
@@ -631,8 +633,8 @@ export default function Integrations() {
               return renderInstalledPlugin(
                 install,
                 servers.length === 1
-                  ? t("1 connector")
-                  : t("{count} connectors", { count: servers.length }),
+                  ? t`1 connector`
+                  : t`${ph({ count: servers.length })} connectors`,
                 servers.some(mcpServerNeedsSignIn),
               );
             })}
@@ -654,7 +656,7 @@ export default function Integrations() {
                 </View>
                 <NativeActionButton
                   fill={false}
-                  label={pending === source.id ? t("Removing…") : t("Remove")}
+                  label={pending === source.id ? t`Removing…` : t`Remove`}
                   onPress={() => void removeSource(source)}
                   prominence="destructive"
                 />
@@ -726,17 +728,17 @@ export default function Integrations() {
       if (result.status === "connected") {
         if (result.row) updateAccount(result.row);
         void notifyAppConnected(item, isCurrent);
-        await refresh();
+        await retryRefresh(isCurrent);
         if (isCurrent()) setToolsTick((tick) => tick + 1);
         return;
       }
       Alert.alert(
-        t("Connection pending"),
-        t("Finish connecting in the browser, then refresh this page."),
+        t`Connection pending`,
+        t`Finish connecting in the browser, then refresh this page.`,
       );
     } catch (reason) {
       if (controller.signal.aborted || !isCurrent()) return;
-      setCatalogError(errorText(reason, t("Could not connect")));
+      setCatalogError(errorText(reason, t`Could not connect`));
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -754,11 +756,11 @@ export default function Integrations() {
       await rpc("connections/revoke", { connectionId: row.id });
       if (!isCurrent()) return;
       updateAccount({ ...row, status: "revoked" });
-      await refresh();
+      await retryRefresh(isCurrent);
       if (isCurrent()) setToolsTick((tick) => tick + 1);
     } catch (reason) {
       if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t("Could not revoke connection")));
+      setCatalogError(errorText(reason, t`Could not revoke connection`));
     } finally {
       if (isCurrent()) setPending(null);
     }
@@ -781,7 +783,7 @@ export default function Integrations() {
       setLabelDrafts((current) => ({ ...current, [row.id]: updated.displayName }));
     } catch (reason) {
       if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t("Could not rename connection")));
+      setCatalogError(errorText(reason, t`Could not rename connection`));
     } finally {
       if (isCurrent()) setPending(null);
     }
@@ -804,12 +806,12 @@ export default function Integrations() {
         if (!isCurrent()) return;
         updateAccount({ ...row, status: "revoked" });
       }
-      await refresh();
+      await retryRefresh(isCurrent);
       if (isCurrent()) closeDetail();
     } catch (reason) {
       if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t("Could not revoke connection")));
       await refresh().catch(() => undefined);
+      if (isCurrent()) setCatalogError(errorText(reason, t`Could not revoke connection`));
     } finally {
       if (isCurrent()) setPending(null);
     }
@@ -821,9 +823,9 @@ export default function Integrations() {
     setSourcePreset(preset);
     setSourceError(null);
     setName(preset?.name ?? "");
-    setUrl(preset?.url ?? "");
+    setUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setSourceAuth(preset ? "bearer" : "none");
+    setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
   }
 
@@ -833,17 +835,10 @@ export default function Integrations() {
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API picks the registered web callback; native clients cannot supply one.
-      const result = await rpc("mcp/oauth/begin", { serverId });
-      if (!isCurrent()) return;
-      if (result.status === "authorization_required") {
-        oauthBrowserOpen.current = true;
-        await Linking.openURL(result.authorizationUrl);
-      } else {
-        await refresh();
-      }
+      await signInToMcpServer(rpc, serverId);
+      if (isCurrent()) await retryRefresh(isCurrent);
     } catch (reason) {
-      if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
+      if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
     } finally {
       if (isCurrent()) setPending(null);
     }
@@ -857,7 +852,7 @@ export default function Integrations() {
     setSourceError(null);
     const displayName =
       name.trim() ||
-      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : t("Custom connector")));
+      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : t`Custom connector`));
     const auth =
       sourceAuth === "header"
         ? { type: "header", name: authHeader.trim() }
@@ -865,12 +860,7 @@ export default function Integrations() {
     let created: McpServer | null = null;
     try {
       if (sourceAuth === "oauth") {
-        created = await rpc("mcp/servers/create", {
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name: displayName,
-          transport: "streamable_http",
-          endpoint: url.trim(),
-        });
+        created = await rpc("mcp/servers/create", customMcpServerInput(displayName, url));
         if (!isCurrent()) return;
         setOauthServerId(created.id);
       } else {
@@ -892,10 +882,10 @@ export default function Integrations() {
       setCredential("");
       setSourceKind(null);
       setAdding(null);
-      await refresh();
+      await retryRefresh(isCurrent);
       if (created) await authorizeMcp(created.id);
     } catch (reason) {
-      if (isCurrent()) setSourceError(errorText(reason, t("Could not add source")));
+      if (isCurrent()) setSourceError(errorText(reason, t`Could not add source`));
     } finally {
       if (isCurrent()) setPending(null);
     }
@@ -908,7 +898,7 @@ export default function Integrations() {
       await rpc("capabilities/remove", { id: source.id });
       setSources((current) => current.filter((item) => item.id !== source.id));
     } catch (reason) {
-      setSourceError(errorText(reason, t("Could not remove source")));
+      setSourceError(errorText(reason, t`Could not remove source`));
     } finally {
       setPending(null);
     }
@@ -921,10 +911,10 @@ export default function Integrations() {
     if (connected) {
       return (
         <NativeActionButton
-          accessibilityLabel={t("Added")}
+          accessibilityLabel={t`Added`}
           disabled={connecting}
           fill={false}
-          label={connecting ? t("Working…") : t("Added")}
+          label={connecting ? t`Working…` : t`Added`}
           onPress={() => openDetail(item)}
           prominence="secondary"
         />
@@ -932,10 +922,10 @@ export default function Integrations() {
     }
     return (
       <NativeActionButton
-        accessibilityLabel={t("Add {name}", { name: label })}
+        accessibilityLabel={t`Add ${ph({ name: label })}`}
         disabled={connecting}
         fill={false}
-        label={connecting ? t("Working…") : t("Add")}
+        label={connecting ? t`Working…` : t`Add`}
         onPress={() => void connect(item)}
         prominence="secondary"
       />
@@ -952,6 +942,18 @@ export default function Integrations() {
           <Text numberOfLines={1} style={styles.title}>
             {label}
           </Text>
+          {item.chatApp && !connected ? (
+            <Text style={styles.secondary}>
+              {t`Tools for your bot.`}{" "}
+              <Text
+                accessibilityRole="link"
+                onPress={() => router.push("/messaging")}
+                style={styles.inlineLink}
+              >
+                {t`Chat from ${ph({ name: label })}`}
+              </Text>
+            </Text>
+          ) : null}
         </View>
         {renderCatalogActions(item, label)}
       </>
@@ -979,8 +981,8 @@ export default function Integrations() {
   }
 
   const addOptions: AddCustomOption[] = [
-    { id: "github", label: t("From GitHub"), kind: "github" },
-    { id: "mcp", label: t("MCP server"), kind: "mcp" },
+    { id: "github", label: t`From GitHub`, kind: "github" },
+    { id: "mcp", label: t`MCP server`, kind: "mcp" },
     { id: "api", label: "OpenAPI", kind: "api" },
     { id: "graphql", label: "GraphQL", kind: "graphql" },
     ...sourcePresets.map((preset) => ({
@@ -1007,8 +1009,8 @@ export default function Integrations() {
       unstable_headerRightItems: () => [
         {
           type: "menu" as const,
-          label: t("Add custom"),
-          accessibilityLabel: t("Add custom"),
+          label: t`Add custom`,
+          accessibilityLabel: t`Add custom`,
           icon: { type: "sfSymbol" as const, name: "plus" },
           menu: {
             items: addOptions.map((option) => ({
@@ -1064,8 +1066,8 @@ export default function Integrations() {
                   setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
                   setPluginCount(PLUGIN_PAGE_SIZE);
                 }}
-                accessibilityLabel={t("Search apps")}
-                placeholder={t("Search apps")}
+                accessibilityLabel={t`Search apps`}
+                placeholder={t`Search apps`}
                 placeholderTextColor={native.tertiaryLabel}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -1077,11 +1079,11 @@ export default function Integrations() {
             {!detailItem && (categories.length >= 2 || category) ? (
               <View style={styles.categoryPicker}>
                 <MenuPicker
-                  label={t("Category")}
+                  label={t`Category`}
                   showLabel={false}
                   plain
                   choices={[
-                    { key: "", label: t("All") },
+                    { key: "", label: t`All` },
                     ...categories.map((name) => ({ key: name, label: categoryLabel(name) })),
                   ]}
                   value={category}
@@ -1102,7 +1104,7 @@ export default function Integrations() {
                 style={({ pressed }) => [styles.row, pressed && styles.pressed]}
               >
                 <BotTemplateIcon size={LOGO_SIZE} />
-                <Text style={[styles.title, styles.grow]}>{t("Templates")}</Text>
+                <Text style={[styles.title, styles.grow]}>{t`Templates`}</Text>
                 <Chevron />
               </Pressable>
             ) : null}
@@ -1116,7 +1118,7 @@ export default function Integrations() {
               <View style={styles.catalogStack}>
                 <Text style={styles.error}>{catalogError}</Text>
                 <NativeActionButton
-                  label={t("Retry")}
+                  label={t`Retry`}
                   fill={false}
                   onPress={() => void retryRefresh()}
                   prominence="secondary"
@@ -1140,6 +1142,7 @@ export default function Integrations() {
                 onRename={(row) => void renameAccount(row)}
                 onRevoke={(row) => void revokeAccount(row)}
                 onConnect={() => void connect(detailItem)}
+                onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (
               <>
@@ -1166,7 +1169,9 @@ export default function Integrations() {
                 ) : null}
 
                 {catalogsReady && catalog.length === 0 && plugins.length === 0 && !filtering ? (
-                  <Text style={styles.secondary}>{t(EMPTY_PLUGIN_CATALOG_MESSAGE)}</Text>
+                  <Text
+                    style={styles.secondary}
+                  >{t`Configure a plugin catalog on the server to connect apps.`}</Text>
                 ) : null}
 
                 {catalogReady && catalog.length > 0 && !category ? (
@@ -1195,7 +1200,7 @@ export default function Integrations() {
                                 </Text>
                                 {disabled ? (
                                   <Text style={styles.secondary}>
-                                    {t("Not in the plugin catalog")}
+                                    {t`Not in the plugin catalog`}
                                   </Text>
                                 ) : null}
                               </View>
@@ -1207,18 +1212,24 @@ export default function Integrations() {
                   </View>
                 ) : null}
 
-                {catalogsReady &&
-                catalogApps.length === 0 &&
-                pluginMatches.length === 0 &&
-                brandMatches.length === 0 &&
-                savedServerMatches.length === 0 &&
-                filtering ? (
-                  <Text style={styles.secondary}>{t("No apps match your search.")}</Text>
+                {noMatch && category ? (
+                  <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
+                ) : null}
+                {catalogsReady ? (
+                  <IntegrationCatalogSearch
+                    query={query}
+                    hidden={Boolean(category)}
+                    noLocalMatch={noMatch}
+                    onChanged={(serverId) => {
+                      if (serverId) setOauthServerId(serverId);
+                      void retryRefresh();
+                    }}
+                  />
                 ) : null}
 
                 {!category && renderedApps.length < catalogApps.length ? (
                   <NativeActionButton
-                    label={t("Show more")}
+                    label={t`Show more`}
                     onPress={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}
                     prominence="secondary"
                   />
@@ -1251,7 +1262,7 @@ export default function Integrations() {
                 {pluginsState !== "loading" ? (
                   <NativeActionButton
                     fill={false}
-                    label={t("Submit a plugin")}
+                    label={t`Submit a plugin`}
                     onPress={() => void Linking.openURL(SUBMIT_PLUGIN_URL)}
                     prominence="quiet"
                     size="compact"

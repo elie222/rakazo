@@ -1,0 +1,11 @@
+{
+  "apps/mobile/app/(settings)/approval-rule-add.tsx": 1,
+  "apps/mobile/app/(settings)/integrations.tsx": 1,
+  "apps/mobile/app/(settings)/vault.tsx": 1,
+  "apps/mobile/app/artifact.tsx": 1,
+  "apps/mobile/app/artifacts.tsx": 1,
+  "apps/mobile/components/inbox/pick-chat-pane.tsx": 1,
+  "apps/mobile/components/models/model-picker-list.tsx": 1,
+  "apps/mobile/components/thread/thread-header.tsx": 1,
+  "apps/mobile/lib/inbox/use-inbox-header.ts": 1
+}

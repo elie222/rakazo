@@ -91,7 +91,7 @@ Gmail, Slack, GitHub, Notion, Linear and thousands more, plus your own MCP serve
 
 ### On every device
 
-Web, desktop, iPhone, and Android, all talking to the same server.
+Web, desktop, iPhone, iPad, and Android, all talking to the same server.
 
 <img src="./docs/screenshots/readme/mobile.png" alt="The bot list and a chat on iPhone" width="100%">
 
@@ -113,10 +113,11 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, or `railway`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, `boxd`, `instabox`, or `railway`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
+New installs default to `latest` (stable releases, `linux/amd64` + `linux/arm64`). A stable
+release must exist; setup does not fall back to main builds. Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
@@ -169,7 +170,9 @@ in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
 Connect. Users can add an HTTPS MCP server or OpenAPI JSON document from **Integrations** without
-enabling either managed catalog. Connector credentials are encrypted on the server and are never
+enabling either managed catalog. Local (stdio) MCP servers are off until you set
+`MCP_STDIO_ENABLED=true` and list their commands in `MCP_STDIO_ALLOWED_COMMANDS`; see
+[Tools and integrations](./docs/self-host-integrations.md). Connector credentials are encrypted on the server and are never
 returned by the API.
 
 Paid data services (map places, search results, work emails, profiles, SEO data) are optional too.
@@ -260,15 +263,22 @@ pnpm --filter @rakazo/desktop dev
 ```
 
 On first run the desktop app asks whether to run Rakazo on this computer or connect to an existing
-server. **This computer** installs and starts the published images with Docker Compose (the same
-files as `infra/compose/install-images.sh`) under the app's data directory, so Docker Desktop,
-OrbStack, or Docker Engine must be installed; the app links to them when it is not. Installed
+server. **This computer** can run without Docker on Apple silicon Macs with macOS 26 or later
+when the build includes a server bundle. Fresh setups use this path: the app downloads the server
+and computer runtime as needed. Existing Docker setups are offered a move while Docker is running;
+choosing **Keep Docker** leaves them on Docker.
+
+Other builds and platforms use Docker Compose to install and start the published images (the same
+files as `infra/compose/install-images.sh`) under the app's data directory. This path needs Docker
+Desktop, OrbStack, or Docker Engine. Without one, setup offers the Docker Desktop download, opens
+an installed Docker app that is not running, and continues on its own once Docker answers. Installed
 builds pin the image tag to their own version; unpackaged builds pull `edge`. Developers running
 `pnpm dev` should pick **Existing instance** with `http://127.0.0.1:5173` instead. Public servers
 must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
-instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
-menu turns it off.
+instance. The Docker stack keeps running after the app quits; the Docker-free server stops with the app.
+**Quit and Stop Bots** in the application menu stops the managed stack and quits; switching to
+another server also stops it.
 
 On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
 that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
@@ -281,7 +291,7 @@ chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
 
-**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+The Docker path of **This computer** looks for the `docker` CLI and does not detect Podman. To try another
 Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
 before starting the app.
 
@@ -296,8 +306,8 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
 Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
-**Settings → Language**. The Expo app ships English, 简体中文, 繁體中文, Русский, Deutsch,
-Nederlands, 日本語, Español, and Polski catalogs, and **Account → Language** lists all nine. A device language or
+**Settings → Language**. The Expo app ships the same 15 languages under
+**Account → Language**. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
 Native Electron setup and menus also support the web UI's languages, following the saved app
 choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
@@ -339,6 +349,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 - [Tools and integrations](./docs/self-host-integrations.md)
 - [Computer providers](./docs/self-host-sandbox-providers.md)
 - [Docker computers](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s installation](./docs/self-host-kubernetes.md) ([한국어](./docs/ko-KR/self-host-kubernetes.md))
 - [Storage and encryption](./docs/self-host-storage.md)
 - [Production deployment](./docs/self-host-production.md)
 - [Backup and restore](./docs/self-host-backups.md)

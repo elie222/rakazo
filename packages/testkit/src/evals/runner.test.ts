@@ -1,6 +1,14 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { EvalActor, EvalApp } from "./runner.js";
-import { cleanupActors } from "./runner.js";
+import { cleanupActors, threadOf } from "./runner.js";
+
+describe("threadOf", () => {
+  it("clears the group thread for a group case and the direct chat otherwise", () => {
+    expect(threadOf("bot-1", { id: "group-1" })).toEqual({ groupId: "group-1" });
+    expect(threadOf("bot-1")).toEqual({ botId: "bot-1" });
+  });
+});
 
 const actors: EvalActor[] = [
   {
@@ -22,10 +30,7 @@ function fixture(options: { failDisable?: boolean; failStop?: boolean } = {}) {
   ];
   const order: string[] = [];
   let lateChildCreated = false;
-  let releaseQuietAbort!: () => void;
-  const quietAbort = new Promise<void>((resolve) => {
-    releaseQuietAbort = resolve;
-  });
+  const quietAbort = deferred();
   const updateMany = vi.fn(async () => {
     order.push("disable");
     if (options.failDisable) throw new Error("database unavailable");
@@ -47,7 +52,7 @@ function fixture(options: { failDisable?: boolean; failStop?: boolean } = {}) {
       bots.push({ id: "late-child-bot", userId: "eval-user", spaceId: "eval-space" });
       runs.push({ id: "late-child-run", botId: "late-child-bot", status: "running" });
     }
-    if (runId === "child-run") await quietAbort;
+    if (runId === "child-run") await quietAbort.promise;
   });
   const findRuns = vi.fn(async (args: { select: { status?: boolean } }) =>
     runs.map((run) => (args.select.status ? { id: run.id, status: run.status } : { id: run.id })),
@@ -69,7 +74,7 @@ function fixture(options: { failDisable?: boolean; failStop?: boolean } = {}) {
     request,
     cancel,
     abort,
-    releaseQuietAbort,
+    releaseQuietAbort: quietAbort.resolve,
   };
 }
 

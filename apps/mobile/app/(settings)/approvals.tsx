@@ -1,4 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
+import { useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule } from "@rakazo/contracts";
 import {
   APPROVAL_RULE_EFFECTS,
@@ -7,21 +8,19 @@ import {
   approvalRuleLabel,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useMemo } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
+import { settingsTarget } from "../../lib/query/settings-target";
 
 type RuleAction = ActionApprovalRule["effect"] | "remove";
 
@@ -33,29 +32,23 @@ type RuleAction = ActionApprovalRule["effect"] | "remove";
 export default function ApprovalRules() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
-  const rpc = useMemo(() => settingsRpc(target), [target]);
   const scope = target.scope;
-  const { t } = useI18n();
-  const navigation = useNavigation();
+  const { t } = useLingui();
   const router = useRouter();
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  // Sent where `rpc` sends its calls: a Space override to that Space, else the selected one.
-  const overrideSpace = target.scope === "space" ? target.spaceId : undefined;
-  const rulesRead = rpcQuery("approvalRules/list", { scope }, overrideSpace);
+  const rulesRead = targetRpcQuery(target, "approvalRules/list", { scope });
   const rulesQuery = useQuery(rulesRead, queryClient);
-  const modeQuery = useQuery(rpcQuery("autoReview/get", { scope }, overrideSpace), queryClient);
+  const modeQuery = useQuery(targetRpcQuery(target, "autoReview/get", { scope }), queryClient);
   // Null until the first load lands.
   const rules = rulesQuery.data ?? null;
   // The approval mode, which decides which rules apply. Dims only once a fresh read confirms it,
   // so a failed one never leaves stale dimming.
   const mode = modeQuery.isFetching || modeQuery.isError ? null : (modeQuery.data?.mode ?? null);
   const loadError = rulesQuery.error
-    ? errorText(rulesQuery.error, t("Something went wrong. Try again."))
+    ? errorText(rulesQuery.error, t`Something went wrong. Try again.`)
     : null;
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { refetch: refetchRules } = rulesQuery;
   const { refetch: refetchMode } = modeQuery;
 
@@ -69,26 +62,15 @@ export default function ApprovalRules() {
   const setRules = (update: (current: ActionApprovalRule[]) => ActionApprovalRule[]) =>
     queryClient.setQueryData(rulesRead.queryKey, (current) => current && update(current));
 
-  async function save(change: () => Promise<void>) {
-    setPending(true);
-    setError(null);
-    try {
+  const change = useSave({
+    target,
+    save: async ({ rule, action }: { rule: ActionApprovalRule; action: RuleAction }, send) => {
       // A read that started before a save never shows what it replaced.
       await queryClient.cancelQueries({ queryKey: rulesRead.queryKey });
       // Keeping the rules shown also clears a failed refresh's error.
       setRules((current) => current);
-      await change();
-    } catch (err) {
-      setError(errorText(err, t("Could not save that preference")));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
-    save(async () => {
       if (action === "remove") {
-        await rpc("approvalRules/remove", { scope, id: rule.id });
+        await send("approvalRules/remove", { scope, id: rule.id });
         setRules((current) => current.filter((entry) => entry.id !== rule.id));
         return;
       }
@@ -98,7 +80,7 @@ export default function ApprovalRules() {
         !approvalRuleEffectChoices(rule).includes(action)
       )
         return;
-      const saved = await rpc("approvalRules/set", {
+      const saved = await send("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,
@@ -114,45 +96,30 @@ export default function ApprovalRules() {
           return sameMatch ? [] : [entry];
         }),
       );
-    });
+    },
+  });
+  const pending = change.pending;
+  const error = change.error ? errorText(change.error, t`Could not save that preference`) : null;
 
   const canAdd = rules !== null && !loadError;
-  useLayoutEffect(() => {
-    if (!canAdd) {
-      navigation.setOptions(
-        iosAtLeast(26) ? { unstable_headerRightItems: () => [] } : { headerRight: () => null },
-      );
-      return;
-    }
-    const open = () =>
-      router.push({
-        pathname: "/approval-rule-add",
-        params: target.scope === "space" ? { spaceId: target.spaceId } : {},
-      });
-    navigation.setOptions(
-      iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              { type: "button" as const, label: t("Add rule"), onPress: open },
-            ],
-          }
-        : {
-            headerRight: () => (
-              <NativeActionButton
-                fill={false}
-                label={t("Add rule")}
-                onPress={open}
-                prominence="secondary"
-              />
-            ),
-          },
-    );
-  }, [canAdd, navigation, router, t, target]);
+  useScreenHeader({
+    action: canAdd
+      ? {
+          label: t`Add rule`,
+          prominence: "secondary",
+          onPress: () =>
+            router.push({
+              pathname: "/approval-rule-add",
+              params: target.scope === "space" ? { spaceId: target.spaceId } : {},
+            }),
+        }
+      : null,
+  });
 
   const groupTitles: Record<ActionApprovalRule["effect"], string> = {
-    always_allow: t("Always allow"),
-    require_approval: t("Always ask"),
-    deny: t("Blocked"),
+    always_allow: t`Always allow`,
+    require_approval: t`Always ask`,
+    deny: t`Blocked`,
   };
   const groups = APPROVAL_RULE_EFFECTS.map((effect) => ({ effect, title: groupTitles[effect] }));
 
@@ -170,7 +137,7 @@ export default function ApprovalRules() {
           <LoadFailure
             message={failure}
             onRetry={() => {
-              setError(null);
+              if (change.error) change.reset();
               void queryClient.resetQueries({ queryKey: rulesRead.queryKey });
               void refetchMode();
             }}
@@ -198,12 +165,12 @@ export default function ApprovalRules() {
                           title: group.title,
                           state: rule.effect === group.effect ? ("on" as const) : ("off" as const),
                         })),
-                      { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                      { id: "remove", title: t`Remove`, attributes: { destructive: true } },
                     ]}
                     colorScheme={colorScheme}
                     onPressAction={(event) => {
                       const action = event.nativeEvent.event;
-                      if (!pending && isRuleAction(action)) void applyRuleAction(rule, action);
+                      if (isRuleAction(action)) change.run({ rule, action });
                     }}
                     title={title}
                   >

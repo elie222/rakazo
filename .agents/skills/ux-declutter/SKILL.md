@@ -57,7 +57,25 @@ tinted text rows and header buttons on one screen. On mobile, prefer the platfor
 places: header buttons for Save/Cancel/Edit and icons, list rows for navigation,
 native menus for choices, swipe or a menu for per-item actions.
 
-## 6. Redo the screenshot and compare
+## 6. Read it as a newcomer
+
+Removing is half the pass. Look at the result as someone who has never seen the
+screen and cannot read the code. For each control, can they say what it acts on and
+what happens when they use it? If not, the screen is too bare, not clean:
+
+- A picker shows only its current value with no label and no row or heading that
+  says what it picks (a bot name floating beside a button). Give it a label, or move
+  the choice to the moment it matters (a menu off the action it configures).
+- Two items that do the same job use different controls (one app has a Connect
+  button, another hides in a "Connect…" dropdown). Give them the same row and action.
+- A raw id or internal value shows where a name belongs.
+- An action's label does not say what it does to what ("Connect" on its own,
+  away from the thing it connects).
+
+Fix these with structure first (labels, grouping, one row per thing), and only then
+with the fewest words that make the screen readable.
+
+## 7. Redo the screenshot and compare
 
 Capture again and put old and new side by side. Count elements and colors before and
 after. If a reference design or a sibling screen exists, match its density and
@@ -73,3 +91,9 @@ screen is for.
 - More than one filled or colored button is visible.
 - A history or log list is expanded inline on a detail screen.
 - Copy explains what a control does when its label already says it.
+
+## Signs you went too far
+
+- A control's purpose is clear only to someone who built it.
+- Similar things on the screen connect, open or change in different ways.
+- A dropdown or picker has no label and nothing nearby says what it chooses.

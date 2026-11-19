@@ -18,8 +18,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, LayoutTemplate, X } from "lucide-react";
 import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
-import { AgentSkills } from "../../pages/KnowledgeSection";
+import { useSpaceQueries } from "../../lib/query/query";
+import { AgentSkills } from "../../pages/space/KnowledgeSection";
 import type { PluginSelection } from "./plugin-marketplace";
 import {
   PluginDetail,
@@ -198,7 +198,8 @@ export function SkillsDialog({
             aria-label={t`Search skills`}
             placeholder={t`Search skills`}
             maxLength={200}
-            className="mb-5 h-11 rounded-xl"
+            size="xl"
+            className="mb-5"
           />
           {catalog.isPending ? (
             <div className="grid place-items-center py-10">

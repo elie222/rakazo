@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { observedPiStream } from "../../../adapters/src/pi-usage.js";
+import { observedPiStream } from "../../../adapters/src/runtime/pi/usage/pi-usage.js";
 import { SpendBudget } from "./measurement.js";
 
 const model: Parameters<typeof observedPiStream>[1] = {

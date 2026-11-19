@@ -4,12 +4,21 @@ Talk to your bots instead of typing, have them read replies aloud, or call them.
 
 ## Set up a voice provider
 
-Open **Settings → Voice**, pick a **Provider** and add its **API key**:
+Your server may supply a default voice connection. To use your own, open **Settings → Voice**,
+pick a **Provider** and add its **API key**:
 
-- **ElevenLabs**, **OpenAI** and **Fish Audio** can speak and transcribe.
+- **ElevenLabs**, **OpenAI**, **Fish Audio** and **xAI** can speak and transcribe. If xAI is
+  connected in **Models**, with a SuperGrok or X Premium sign-in or a key, leave the **API key**
+  empty to use that connection.
+- **OpenRouter** speaks and transcribes with models from many providers. If OpenRouter is
+  connected in **Models**, leave the **API key** empty to use that connection. **Speech model**
+  suggests the models OpenRouter lists, and each model has its own voices. A model that returns
+  only raw audio is converted to WAV, so it still plays. Speech is billed on your OpenRouter
+  account; Rakazo does not track that spend.
 - **Cartesia** speaks only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
-  **Server URL**.
+  **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
+  **Transcription API key** if it needs one.
 - **macOS** uses the voices installed on the Mac running your server, with no key. It appears only
   when the server runs on a Mac.
 
@@ -43,3 +52,7 @@ missed call shows **Call back** in the chat.
 
 The mobile app uses your phone's own speech recognition and voices for calls. Pick a
 **Device voice** in a bot's settings. On Android, a call keeps going with the screen off.
+
+## Join a meeting
+
+Open **Meetings** in a bot chat to send the bot to Zoom, Google Meet, or a Microsoft Teams work meeting and get a speaker-labeled transcript. See [Meetings](./meetings.md) to join a call, find the transcript, and ask about it.

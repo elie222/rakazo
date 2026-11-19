@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import type Docker from "dockerode";
@@ -22,6 +22,8 @@ import {
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
+  computerBrowserProxyPacMatches,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -38,17 +40,18 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import {
+  computerBrowserProxyPacUrl,
+  computerComputeGpus,
   computerDns,
   computerMounts,
   controlViaLoopback,
   dataDir,
   docker,
-  ensureComputerImage,
   inspectSupervisorContainer,
   screenNetworkMode,
   supervisorToken,
 } from "./context.js";
-import { computerEgressMode, ensureRestrictedEgressEnforced } from "./egress.js";
+import { computerEgressMode, computerEgressReport, ensureComputerEgress } from "./egress.js";
 import {
   applyContainerActions,
   observeContainer,
@@ -127,20 +130,22 @@ function identityHeaders(c: Context) {
   };
 }
 
-app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
+/** The only paths that answer without the service token. */
+export const SUPERVISOR_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/health"]);
 
-app.use("/computers", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
+app.use("*", async (c, next) => {
+  if (
+    !SUPERVISOR_PUBLIC_PATHS.has(c.req.path) &&
+    !hasValidBearerToken(c.req.header("authorization"), supervisorToken)
+  ) {
     return c.json({ error: "unauthorized" }, 401);
   }
   await next();
 });
-app.use("/computers/*", async (c, next) => {
-  if (!hasValidBearerToken(c.req.header("authorization"), supervisorToken)) {
-    return c.json({ error: "unauthorized" }, 401);
-  }
-  await next();
-});
+
+app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
+app.get("/diagnostics/egress", (c) => c.text(computerEgressReport()));
+
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
 
@@ -161,8 +166,7 @@ app.post("/computers", async (c) => {
       spaceId: body.spaceId,
     });
     return await withBotLifecycleLock(body.botId, async () => {
-      await ensureComputerImage();
-      await ensureRestrictedEgressEnforced();
+      await ensureComputerEgress();
       const runtimeInfo = await inspectSupervisorContainer();
       // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
       assertComputerMountSources(
@@ -255,8 +259,12 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // And GPUs: turning them on or off, or changing the count, replaces it too.
+          computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
           computerLocaleMatches(info.Config.Env, locale) &&
+          // And the bot browser's proxy auto-config.
+          computerBrowserProxyPacMatches(info.Config.Env, computerBrowserProxyPacUrl) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -320,6 +328,8 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          computeGpus: computerComputeGpus,
+          browserProxyPacUrl: computerBrowserProxyPacUrl,
           locale,
         });
         let container: Docker.Container | undefined;
@@ -391,6 +401,8 @@ app.get("/computers/:id", async (c) => {
   }
 });
 
+const EXEC_KEEP_ALIVE_MS = 15_000;
+
 app.post("/computers/:id/exec", async (c) => {
   const headers = identityHeaders(c);
   const id = c.req.param("id");
@@ -418,7 +430,12 @@ app.post("/computers/:id/exec", async (c) => {
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
   const encoder = new TextEncoder();
+  let stopKeepAlive = () => {};
   const stream = new ReadableStream({
+    // A caller that stops reading may leave a stuck command running; its keep-alive ends now.
+    cancel() {
+      stopKeepAlive();
+    },
     async start(controller) {
       let closed = false;
       const send = (event: {
@@ -432,6 +449,19 @@ app.post("/computers/:id/exec", async (c) => {
         } catch {
           closed = true;
         }
+      };
+      // A silent command sends nothing for minutes, and the caller's HTTP client drops a
+      // response that stays quiet for 5 minutes. Readers skip blank lines.
+      const keepAlive = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode("\n"));
+        } catch {
+          stopKeepAlive();
+        }
+      }, EXEC_KEEP_ALIVE_MS);
+      stopKeepAlive = () => {
+        closed = true;
+        clearInterval(keepAlive);
       };
       try {
         let streamedStderr = "";
@@ -465,7 +495,7 @@ app.post("/computers/:id/exec", async (c) => {
         send({ type: "stderr", data: message });
         send({ type: "exit", code: 1 });
       } finally {
-        closed = true;
+        stopKeepAlive();
         try {
           controller.close();
         } catch {
@@ -592,8 +622,7 @@ app.post("/computers/:id/browser", async (c) => {
     ])
     .safeParse(await c.req.json());
   // Refused here, before anything reaches the computer: the caller learns by this code alone that
-  // nothing ran, and may keep a one-time code for another try. Keep in step with the adapters'
-  // INVALID_BROWSER_REQUEST.
+  // nothing ran, and may keep a one-time code for another try.
   if (!parsed.success) {
     return c.json(
       { ok: false, code: "invalid_browser_request", error: "Invalid page browser request" },
@@ -1108,31 +1137,56 @@ app.delete("/computers/:id/screen", async (c) => {
   }
 });
 
+const KILL_WAIT_ATTEMPTS = 30;
+const KILL_WAIT_MS = 1_000;
+
+/** A container too starved to exit when asked is killed, so a stop always ends it. */
+async function stopOrKill(container: Docker.Container): Promise<void> {
+  try {
+    await container.stop();
+  } catch (error) {
+    await container.kill().catch(() => undefined);
+    for (let attempt = 0; attempt < KILL_WAIT_ATTEMPTS; attempt += 1) {
+      if (!(await container.inspect()).State.Running) return;
+      await new Promise((resolve) => setTimeout(resolve, KILL_WAIT_MS));
+    }
+    throw error;
+  }
+}
+
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
   const { botId, spaceId } = identityHeaders(c);
   try {
     const { container } = await managedContainer(id, botId, spaceId);
-    await withComputerScreenLock(id, async () => {
-      const info = await container.inspect();
-      if (info.State.Running) {
-        try {
-          // Every profile on the home volume, not only screens still held in memory.
-          const checkpoint = await runContainerCommand(container, [
-            "bash",
-            "-c",
-            quiesceBrowserProfilesCommand(),
-          ]);
-          if (checkpoint.code !== 0)
-            throw new Error(checkpoint.stderr || "bot browsers failed to stop");
-        } finally {
-          // Failed profiles remain on the durable home for recovery after restart.
-          await container.stop();
-          clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
-        }
-      }
+    // The caller gave up on what is running: the computer may be unable to run the checkpoint.
+    const discardUnsaved = c.req.header("x-rakazo-discard-unsaved") === "1";
+    if (discardUnsaved) {
+      // A screen command on a stuck computer can hold the screen lock forever, so this stop
+      // does not wait for it. Stopping the container ends that command and frees the lock.
+      if ((await container.inspect()).State.Running) await stopOrKill(container);
       clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
-    });
+    } else
+      await withComputerScreenLock(id, async () => {
+        const info = await container.inspect();
+        if (info.State.Running) {
+          try {
+            // Every profile on the home volume, not only screens still held in memory.
+            const checkpoint = await runContainerCommand(container, [
+              "bash",
+              "-c",
+              quiesceBrowserProfilesCommand(),
+            ]);
+            if (checkpoint.code !== 0)
+              throw new Error(checkpoint.stderr || "bot browsers failed to stop");
+          } finally {
+            // Failed profiles remain on the durable home for recovery after restart.
+            await stopOrKill(container);
+            clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+          }
+        }
+        clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+      });
     if (botId && screenNetworkMode !== "internal") {
       await reclaimComputerNetwork(container, botId).catch((error) => {
         getLogger().error("computer network reclaim failed", error);

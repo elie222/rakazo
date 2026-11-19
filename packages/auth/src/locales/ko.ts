@@ -24,26 +24,26 @@ export const KO_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "본인임을 확인하려면 Rakazo에서 이 코드를 입력하세요:",
   "Welcome to Rakazo": "Rakazo에 오신 것을 환영합니다",
-  "Thanks for signing up for Rakazo.": "Rakazo에 가입해 주셔서 감사합니다.",
-  "Rakazo also has apps for": "Rakazo는 다음 플랫폼용 앱도 제공합니다:",
-  "Questions or ideas?": "질문이나 아이디어가 있으신가요?",
-  "Join us on Discord": "Discord에 참여하세요",
-  "Rakazo is open source. If you like it,": "Rakazo는 오픈 소스입니다. 마음에 드신다면",
-  "a star on GitHub": "GitHub 스타",
-  "helps others find it.": "하나가 다른 사람들이 Rakazo를 찾는 데 도움이 됩니다.",
-  "Want to run it on your own servers?": "직접 서버에서 운영하고 싶으신가요?",
-  "Self-host Rakazo": "Rakazo 셀프 호스팅",
-  "Have any questions? Reply to this email.": "궁금한 점이 있으신가요? 이 이메일에 답장하세요.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Rakazo에 오신 것을 환영합니다. Rakazo를 가장 잘 활용하는 사람들은 세 가지를 합니다.",
+  "Get the apps": "앱 받기",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo는 {platforms}에서 실행되므로 봇이 어디서든 연락할 수 있습니다.",
+  "Join the community": "커뮤니티 참여하기",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "{discord}에서 다른 사람들이 만드는 것을 보고, 빠르게 도움을 받고, 다음에 만들 것을 알려 주세요.",
+  "Star us on GitHub": "GitHub에서 스타 누르기",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo는 오픈 소스입니다. {star}는 더 많은 사람이 Rakazo를 찾는 데 도움이 됩니다.",
+  "A star on GitHub": "GitHub 스타",
+  "Questions? Just reply. I read every one.":
+    "질문이 있으신가요? 답장만 보내 주세요. 모두 읽습니다.",
   Unsubscribe: "수신 거부",
   "Invite a friend": "친구 초대",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "친구를 Rakazo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
   "Open Rakazo": "Rakazo를 열고",
   "and choose Invite friends for your link.": "친구 초대를 선택해 링크를 받으세요.",
-  "Have any questions? Just reply to this email.":
-    "궁금한 점이 있으신가요? 이 이메일에 답장만 하시면 됩니다.",
-  "If you're enjoying Rakazo,": "Rakazo가 마음에 드신다면",
-  "give us a star on GitHub": "GitHub에서 스타를 눌러 주세요",
   "We received your Rakazo plugin": "Rakazo 플러그인을 받았습니다",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo 마켓플레이스에 플러그인을 제출해 주셔서 감사합니다.",
@@ -72,4 +72,28 @@ export const KO_MESSAGES: Record<string, string> = {
     "다시 구독하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "플랜을 선택하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter}님이 Rakazo의 {organization}에 초대했습니다",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter}님이 Rakazo의 {organization}에 참여하도록 초대했습니다.",
+  "Join {organization}": "{organization} 참여하기",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "이 초대는 7일 후에 만료됩니다. 수락하려면 이 이메일 주소로 로그인하세요.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter}님이 Rakazo의 {space}에 초대했습니다",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter}님이 Rakazo의 {space}에 참여하도록 초대했습니다.",
+  "Join {space}": "{space} 참여하기",
+  "This invitation expires in 7 days.": "이 초대는 7일 후에 만료됩니다.",
+  "Connect a model to start using Rakazo": "Rakazo를 시작하려면 모델을 연결하세요",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazo 요금제가 시작되었지만, 모델을 연결해야 봇이 답변할 수 있습니다.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions} 구독으로 로그인하거나 API 키를 붙여넣으세요.",
+  "Connect a model": "모델 연결",
+  "Bring your old assistant to Rakazo": "기존 어시스턴트를 Rakazo로 가져오세요",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "{assistants}에서 이미 어시스턴트를 설정하셨나요? Rakazo가 그 지침, 메모리, 스킬, 루틴을 새 봇으로 가져올 수 있어 처음부터 다시 시작하지 않아도 됩니다.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "다른 어시스턴트에서도 됩니다. 프롬프트 하나를 보내고 답변을 붙여넣으세요.",
+  "Import an agent": "에이전트 가져오기",
 };

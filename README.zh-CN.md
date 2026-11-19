@@ -16,7 +16,7 @@ Rakazo 是 Grok Bot 的开源、自托管替代方案。
 可在[网页](https://app.rakazo.com)、[桌面端](https://rakazo.com/download/)、[iPhone](https://apps.apple.com/app/rakazo/id6801531099) 和
 [Android](https://play.google.com/store/apps/details?id=com.rakazo.app) 上使用。
 
-它也是 Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的替代方案。
+它也是 Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent 和 Claude Duet 的替代方案。
 
 详情见 [rakazo.com](https://rakazo.com)。
 
@@ -91,21 +91,13 @@ Gmail、Slack、GitHub、Notion、Linear 等数千个应用，以及你自己的
 
 ### 全平台可用
 
-网页、桌面端、iPhone 和 Android，连接同一台服务器。
+网页、桌面端、iPhone、iPad 和 Android，连接同一台服务器。
 
 <img src="./docs/screenshots/readme/mobile.png" alt="iPhone 上的机器人列表和聊天" width="100%">
 
 </td>
 </tr>
 </table>
-
-## 部署到 Railway
-
-[![部署到 Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
-
-部署包含 PostgreSQL、持久化存储和 Railway 计算机的私有 Rakazo 实例。
-填写邮箱和 Railway API 令牌，登录后再连接模型。
-参见[安装、安全默认设置与备份](./infra/railway/README.md)。
 
 ## 快速开始（已发布镜像）
 
@@ -144,7 +136,10 @@ bash install-images.sh
 ```
 
 为 5173 端口配置 HTTPS 入口。[docs/self-host-production.md](./docs/self-host-production.md#public-single-vm-deployment)
-介绍了 Caddy 配置和主机加固方法。在桌面应用中选择 **Existing instance**（已有实例），填写 `https://` 地址。
+介绍了 Caddy 配置和主机加固方法。在桌面应用中选择 **Existing instance**（现有实例），填写 `https://` 地址。
+
+也可以[部署到 Railway](https://railway.com/new/template/rakazo-template)；参见
+[Railway 设置指南](./infra/railway/README.md)。
 
 ## 本地开发（从源码运行）
 
@@ -158,7 +153,7 @@ cp .env.example .env
 ```
 
 将 `POSTGRES_PASSWORD` 和 `POSTGRES_APP_PASSWORD` 分别设置为由 `openssl rand -hex 16` 生成的两个值，再把它们填入 `DATABASE_MIGRATION_URL` 和 `DATABASE_URL`。
-应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/self-host-configuration.md#database-roles)）。
+应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/zh-CN/self-host-configuration.md#数据库角色)）。
 为 `BETTER_AUTH_SECRET`、`ENCRYPTION_KEY` 和 `SCREEN_PROXY_SECRET` 分别设置独立的长随机值。
 Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 你也可以设置 `OPENROUTER_API_KEY`，或在首次设置时连接支持的模型提供商。
@@ -174,7 +169,7 @@ OpenAPI JSON 文档。连接器凭据在服务器上加密存储，API 不会返
 
 付费数据服务（地图地点、搜索结果、工作邮箱、个人资料、SEO 数据）同样是可选的。
 设置 `PAID_SERVICES_PROVIDER=treg`，并在 `PAID_SERVICES_API_KEY` 中填入组织级 [Treg](https://treg.to) 令牌，
-机器人即可使用部署方的账户查找并调用这些服务。启用模型额度时，每次调用按服务商成本加 20%
+机器人即可使用部署方的账户查找并调用这些服务。启用模型额度时，每次调用按提供商成本加 20%
 从组织的额度中扣除。
 
 ```bash
@@ -187,7 +182,16 @@ pnpm dev
 `rakazo-dev-postgres` 容器，所有检出目录共用该容器。启动服务前会应用数据库迁移并生成 Prisma 客户端。
 如果当前分支新增了 `main` 尚未包含的迁移，会在同一服务器上使用独立数据库，条件允许时从共享数据库复制，
 避免未合入的数据库结构变更影响共享数据库。默认端口被占用时（例如另一个 Git worktree 正在运行），
-会选择下一个空闲端口组并打印访问地址。
+会选择下一个空闲端口组并打印访问地址。也可以设置 `WEB_PORT` 和 `API_PORT` 自行指定端口。
+
+要从手机或另一台电脑访问当前检出目录，请在每台设备上安装 [Tailscale](https://tailscale.com)，
+并在 `.env` 中设置 `RAKAZO_DEV_TAILNET=1`。`pnpm dev` 随后会通过 HTTPS 提供网页，地址为
+`https://<machine>.<tailnet>.ts.net:<web port>`，只有 tailnet 中的设备可以访问；退出 `pnpm dev` 后停止提供。
+每台设备都用这个地址登录，包括运行服务的那台。首次运行时，Tailscale 可能要求你为 tailnet 开启 HTTPS 证书。
+
+如果要把密钥放在 secrets manager 而不是 `.env` 中，可将 `RAKAZO_DEV_RUN_WITH` 设为先注入密钥再运行命令的
+命令，例如 `op run --env-file=dev.env --` 或 `infisical run --env=dev --projectId=<project> --`。
+`pnpm dev` 会在其中启动，注入的值优先于 `.env`。
 
 如需改用 Compose 中的 Postgres，可通过 `postgres-host` 叠加配置启动，将端口发布到回环地址
 `127.0.0.1:5433`，并让 `DATABASE_URL` 和 `DATABASE_MIGRATION_URL` 指向它：
@@ -206,7 +210,8 @@ docker compose --env-file .env \
 
 打开终端打印的地址（默认是 [http://127.0.0.1:5173](http://127.0.0.1:5173)），创建账号、连接模型，并创建第一个机器人。
 
-部署、提供商选择、备份与升级说明见[自托管指南](./docs/zh-CN/self-host.md)。
+部署、提供商选择、备份与升级说明见[自托管指南](./docs/zh-CN/self-host.md)、[生产部署](./docs/self-host-production.md)、
+[备份与恢复](./docs/zh-CN/self-host-backups.md)和[升级](./docs/zh-CN/self-host-upgrading.md)。
 
 使用 CreateOS 时，设置 `SANDBOX_PROVIDER=createos` 和 `CREATEOS_SANDBOX_API_KEY`。
 可选配置 `CREATEOS_SANDBOX_BASE_URL`、`CREATEOS_SANDBOX_SHAPE` 和 `CREATEOS_SANDBOX_ROOTFS`
@@ -238,16 +243,20 @@ Electron 和 Expo 应用都是 Rakazo API 的客户端，与网页版使用同�
 pnpm --filter @rakazo/desktop dev
 ```
 
-首次运行时，桌面应用会询问是在本机运行 Rakazo，还是连接已有服务器。
-选择 **This computer**（本机）会在应用数据目录中，通过 Docker Compose 安装并启动已发布镜像，
-使用的文件与 `infra/compose/install-images.sh` 相同。
-因此需要先安装 Docker Desktop、OrbStack 或 Docker Engine；未安装时，应用会提供相应链接。
-已安装的发行版将镜像标签固定为自身版本，未打包的开发版本则拉取 `edge`。
+首次运行时，桌面应用会询问是在这台电脑上运行 Rakazo，还是连接现有服务器。
+选择 **This computer**（这台电脑）时，搭载 Apple 芯片、运行 macOS 26 或更高版本且构建包含服务器包的 Mac
+可以不使用 Docker。全新设置默认采用此方式，由应用按需下载服务器和计算机运行时。
+已有 Docker 服务栈且 Docker 正在运行时，应用会询问是否迁移；选择 **Keep Docker** 会继续使用 Docker。
 
-运行 `pnpm dev` 的开发者应选择 **Existing instance**（已有实例），地址填写终端打印的地址（默认为 `http://127.0.0.1:5173`）。
+其他构建和平台通过 Docker Compose 在应用数据目录中安装并启动已发布镜像，
+使用的文件与 `infra/compose/install-images.sh` 相同。这一路径需要 Docker Desktop、OrbStack 或 Docker Engine；
+未安装时，应用会提供下载链接。已安装的发行版将镜像标签固定为自身版本，未打包的开发版本则拉取 `edge`。
+
+运行 `pnpm dev` 的开发者应选择 **Existing instance**（现有实例），地址填写终端打印的地址（默认为 `http://127.0.0.1:5173`）。
 公共服务器必须使用 HTTPS；只有回环地址和局域网私有地址允许 HTTP，不包括链路本地地址。
 应用会在保存地址前检查 Rakazo 的健康检查端点，之后启动时直接连接该实例。
-退出应用后，服务仍会继续运行；可通过应用菜单中的 **Stop Local Stack**（停止本地服务）将其关闭。
+退出应用后，Docker 服务栈仍会继续运行；不使用 Docker 的服务器则随应用停止。
+应用菜单中的 **Quit and Stop Bots**（退出并停止 Bot）会停止受管服务栈并退出应用；切换到其他服务器时也会停止该服务栈。
 
 在 Linux 上，桌面应用以 AppImage 形式发布，需要 FUSE 2（`libfuse.so.2`）。只包含 FUSE 3 的发行版（例如 Fedora Silverblue 或 Ubuntu 24.04）会报错
 `dlopen(): error loading libfuse.so.2`。请安装 FUSE 2 库（Fedora 上为 `fuse-libs`，Ubuntu 24.04 上为 `libfuse2t64`，较早的 Ubuntu 和 Debian 上为 `libfuse2`），或者不借助 FUSE 运行 AppImage：
@@ -256,6 +265,9 @@ pnpm --filter @rakazo/desktop dev
 chmod +x Rakazo-*.AppImage
 ./Rakazo-*.AppImage --appimage-extract-and-run
 ```
+
+**This computer** 的 Docker 路径会查找 `docker` CLI，但不会自动识别 Podman。若要尝试另一个支持 `compose` 命令的
+Docker 兼容 CLI，请在启动应用前把 `RAKAZO_DOCKER_BINARY` 设为该 CLI 的路径。
 
 使用应用菜单中的 **Change Rakazo Server…**（更换 Rakazo 服务器）重新选择服务器。
 关闭该窗口且不保存时，会返回之前的实例。
@@ -268,13 +280,11 @@ chmod +x Rakazo-*.AppImage
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
 印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语和波兰语。
-Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语、日语、西班牙语和波兰语翻译，**Account → Language**（账号 → 语言）列出这九种语言。
-在用户保存选择之前，移动端的初始语言由设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 决定。
+Expo 应用提供与网页版相同的 15 种语言，在 **Account → Language**（账户 → 语言）中选择。
+在用户保存选择之前，设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 仍决定初始语言目录。
 
-Electron 原生设置窗口和菜单也支持上述网页版语言，并跟随应用中保存的选择；首次启动使用系统语言。
-
-官网首页（`apps/www`）可通过页脚切换全部 15 种语言，简体中文路径为 `/zh/`，繁体中文为 `/zh-tw/`。
-其他官网页面主要仍为英文。
+Electron 原生设置与菜单也支持网页版语言集，跟随已保存的应用选择；首次启动使用系统语言。
+营销首页（`apps/www`）通过页脚链接提供全部 15 种语言，含 `/zh/` 与 `/zh-tw/`；其他营销页主要仍为英文。
 
 ## 开发
 
@@ -299,33 +309,43 @@ pnpm test:e2e
 
 ## 文档
 
+中文指南：[自托管](./docs/zh-CN/self-host.md)、[模型](./docs/zh-CN/self-host-models.md)、
+[备份](./docs/zh-CN/self-host-backups.md)、[升级](./docs/zh-CN/self-host-upgrading.md)、
+[受限网络](./docs/zh-CN/self-host-restricted-network.md)、[登录门与屏幕](./docs/zh-CN/self-host-login-gate.md)。
+
 - [自托管](./docs/zh-CN/self-host.md)
-- [模型接入、审批与语音](./docs/zh-CN/self-host-models.md)
+- [自托管配置](./docs/zh-CN/self-host-configuration.md)
+- [密钥管理](./docs/zh-CN/self-host-secrets.md)
+- [登录与账号](./docs/zh-CN/self-host-accounts.md)
+- [模型](./docs/zh-CN/self-host-models.md)
+- [工具与集成](./docs/zh-CN/self-host-integrations.md)
+- [计算机提供商](./docs/self-host-sandbox-providers.md)
+- [Docker 计算机](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s 安装](./docs/self-host-kubernetes.md)（[한국어](./docs/ko-KR/self-host-kubernetes.md)）
+- [存储与加密](./docs/self-host-storage.md)
+- [生产部署](./docs/self-host-production.md)
 - [备份与恢复](./docs/zh-CN/self-host-backups.md)
 - [升级](./docs/zh-CN/self-host-upgrading.md)
-- [受限网络与镜像下载](./docs/zh-CN/self-host-restricted-network.md)
-- [部署配置](./docs/self-host-configuration.md)、[密钥管理](./docs/self-host-secrets.md)、[账号与登录](./docs/self-host-accounts.md)（英文）
-- [工具集成](./docs/self-host-integrations.md)、[计算机提供商](./docs/self-host-sandbox-providers.md)、[Docker 计算机](./docs/self-host-docker-computers.md)（英文）
-- [存储与加密](./docs/self-host-storage.md)、[生产部署](./docs/self-host-production.md)、[日志与监控](./docs/self-host-observability.md)、[审计日志](./docs/self-host-audit-log.md)（英文）
-- [客户端](./docs/self-host-clients.md)、[计费](./docs/self-host-billing.md)、[计算机运行时与隔离](./docs/computer-runtime.md)（英文）
-- [桌面端发布](./docs/desktop-release.md)、[移动端发布](./docs/mobile-release.md)、[性能测试](./docs/performance.md)、[管理机器人的机器人](./docs/fleet-management.md)（英文）
+- [日志与监控](./docs/self-host-observability.md)
+- [审计日志](./docs/self-host-audit-log.md)
+- [应用与客户端](./docs/self-host-clients.md)
+- [计费](./docs/self-host-billing.md)
+- [计算机运行时与隔离](./docs/computer-runtime.md)
+- [桌面端发布](./docs/desktop-release.md)
+- [移动端发布](./docs/mobile-release.md)
+- [性能测试](./docs/performance.md)
+- [管理机器人的机器人](./docs/fleet-management.md)
+- [无影云电脑](./docs/wuying-computers.zh-CN.md)
 
-## 与其他产品的比较
-
-Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
-Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
-后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
+## 与其他产品对比
 
 - [Grok Bot](https://rakazo.com/grok-bot-alternative/)
 - [Muse](https://rakazo.com/muse-alternative/)
 - [Dots](https://rakazo.com/dots-alternative/)
-- [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
+- [Instinct](https://rakazo.com/instinct-alternative/)
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
-- [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
-- [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
-- [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
-- [全部对比](https://rakazo.com/alternatives/)
-- [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/)
+- [全部比较](https://rakazo.com/alternatives/)
 
 ## 致谢
 

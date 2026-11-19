@@ -24,25 +24,25 @@ export const HE_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "יש להזין את הקוד הזה ב-Rakazo כדי לאשר שזה באמת את/ה:",
   "Welcome to Rakazo": "ברוכים הבאים ל-Rakazo",
-  "Thanks for signing up for Rakazo.": "תודה שנרשמת ל-Rakazo.",
-  "Rakazo also has apps for": "ל-Rakazo יש גם אפליקציות עבור",
-  "Questions or ideas?": "שאלות או רעיונות?",
-  "Join us on Discord": "הצטרפו אלינו ב-Discord",
-  "Rakazo is open source. If you like it,": "Rakazo הוא קוד פתוח. אם הוא מוצא חן בעיניך,",
-  "a star on GitHub": "כוכב ב-GitHub",
-  "helps others find it.": "עוזר לאחרים למצוא אותו.",
-  "Want to run it on your own servers?": "רוצה להריץ אותו על השרתים שלך?",
-  "Self-host Rakazo": "אירוח עצמי של Rakazo",
-  "Have any questions? Reply to this email.": "יש שאלות? אפשר להשיב לאימייל הזה.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "ברוכים הבאים ל-Rakazo. מי שמפיקים ממנו הכי הרבה עושים שלושה דברים:",
+  "Get the apps": "להוריד את האפליקציות",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "Rakazo זמין ל-{platforms}, כדי שהבוטים שלך יוכלו להשיג אותך בכל מקום.",
+  "Join the community": "להצטרף לקהילה",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "לראות מה אחרים בונים, לקבל עזרה מהר ולספר לנו ב-{discord} מה לבנות בהמשך.",
+  "Star us on GitHub": "לתת לנו כוכב ב-GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "Rakazo הוא קוד פתוח. {star} עוזר ליותר אנשים למצוא אותו.",
+  "A star on GitHub": "כוכב ב-GitHub",
+  "Questions? Just reply. I read every one.": "שאלות? פשוט להשיב לאימייל. אני קורא כל תשובה.",
   Unsubscribe: "ביטול המינוי",
   "Invite a friend": "הזמנת חבר",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "אפשר להזמין חבר ל-Rakazo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
   "Open Rakazo": "פתיחת Rakazo",
   "and choose Invite friends for your link.": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
-  "Have any questions? Just reply to this email.": "יש שאלות? פשוט משיבים לאימייל הזה.",
-  "If you're enjoying Rakazo,": "אם Rakazo מוצא חן בעיניך,",
-  "give us a star on GitHub": "נשמח לכוכב ב-GitHub",
   "We received your Rakazo plugin": "קיבלנו את הפלאגין שלך ל-Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "תודה ששלחת פלאגין לחנות של Rakazo.",
   "We review every submission and will email you when it's done.":
@@ -70,4 +70,28 @@ export const HE_MESSAGES: Record<string, string> = {
     "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תחדש את המינוי.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "קבצי המחשב השמורים שלך יימחקו ב-{date} אלא אם תבחר תוכנית.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} הזמין/ה אותך ל-{organization} ב-Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} הזמין/ה אותך להצטרף ל-{organization} ב-Rakazo.",
+  "Join {organization}": "הצטרפות ל-{organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "ההזמנה תפוג בעוד 7 ימים. כדי לקבל אותה, יש להתחבר עם כתובת האימייל הזו.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} הזמין/ה אותך ל-{space} ב-Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} הזמין/ה אותך להצטרף ל-{space} ב-Rakazo.",
+  "Join {space}": "הצטרפות ל-{space}",
+  "This invitation expires in 7 days.": "ההזמנה תפוג בעוד 7 ימים.",
+  "Connect a model to start using Rakazo": "חיבור מודל כדי להתחיל להשתמש ב-Rakazo",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "התוכנית שלך ב-Rakazo התחילה, אבל הבוטים שלך לא יוכלו לענות עד שיחובר מודל.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "אפשר להתחבר עם המינוי שלך ל-{subscriptions} או להדביק מפתח API.",
+  "Connect a model": "חיבור מודל",
+  "Bring your old assistant to Rakazo": "הביאו את העוזר הקודם שלכם ל-Rakazo",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "כבר הגדרתם עוזר ב-{assistants}? Rakazo יכול להעביר את ההנחיות, הזיכרון, המיומנויות והשגרות שלו לבוט חדש, כדי שלא תתחילו מחדש.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "זה עובד גם עם כל עוזר אחר: שלחו לו פרומפט אחד והדביקו את התשובה שלו.",
+  "Import an agent": "ייבוא סוכן",
 };

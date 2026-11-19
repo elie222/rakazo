@@ -1,7 +1,8 @@
 import type { AgentImportFile } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { parseSkillMd } from "../agent-skill.js";
+import { parseSkillMd } from "../skills/agent-skill.js";
 import {
   AGENT_IMPORT_PROMPT,
   agentImportFolder,
@@ -15,6 +16,7 @@ import {
   parseDotEnv,
   readAgentImportConfig,
   readAgentImportFolder,
+  renameSkillMd,
   resolveAgentImportNames,
   stripAgentImportSecrets,
 } from "./index.js";
@@ -999,8 +1001,34 @@ describe("dotenv parsing", () => {
     ["'placeholder-key'", "placeholder-key"],
     ["placeholder-key # comment", "placeholder-key"],
     ["placeholder#key", "placeholder#key"],
+    ['"a"b" # comment', 'a"b'],
+    ['"a\\" # b" # comment', 'a\\" # b'],
+    ["'a' b # comment", "'a' b"],
+    ["  placeholder-key  \t# comment", "placeholder-key"],
   ])("reads OPENAI_API_KEY=%s", (value, expected) => {
     expect(parseDotEnv(`OPENAI_API_KEY=${value}`)).toEqual({ OPENAI_API_KEY: expected });
+  });
+
+  it.each([
+    `A=${"\t".repeat(200_000)}x`,
+    `A='${"'#".repeat(100_000)}x`,
+    `A="${'"#'.repeat(100_000)}x`,
+    `A=x${"\t".repeat(200_000)}x`,
+  ])("reads a long adversarial line quickly", (line) => {
+    expectLinearTime(() => parseDotEnv(line));
+  });
+});
+
+describe("renameSkillMd", () => {
+  it("replaces a block scalar name and its indented lines only", () => {
+    expect(renameSkillMd("---\nname: |\n  Old\n  name\n\ndescription: d\n---\nBody", "New")).toBe(
+      "---\nname: New\ndescription: d\n---\nBody",
+    );
+  });
+
+  it("stays fast on a long indented block", () => {
+    const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
+    expectLinearTime(() => renameSkillMd(content, "New"));
   });
 });
 

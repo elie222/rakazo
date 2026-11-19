@@ -16,7 +16,7 @@ describe("collaboration transcript markers", () => {
 
     expect(html).toContain('data-testid="peer-receipt-chip"');
     expect(html).toContain('aria-label="Message from Research"');
-    expect(html).toContain('class="flex min-w-0 max-w-full justify-center py-1"');
+    expect(html).toContain('class="flex min-w-0 max-w-full justify-center"');
     expect(html).toContain('class="inline-flex max-w-full');
     expect(html).toContain("truncate font-medium");
     expect(html).toContain("rakazo-organic-avatar");
@@ -35,6 +35,6 @@ describe("collaboration transcript markers", () => {
 
     expect(html).toContain('role="status"');
     expect(html).toContain('data-working="true"');
-    expect(html).toContain("rakazo-organic-avatar-body-working");
+    expect(html).toContain("rakazo-mascot-avatar-body-working");
   });
 });

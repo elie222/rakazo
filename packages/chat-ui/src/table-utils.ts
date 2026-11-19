@@ -124,8 +124,11 @@ export function parseNumericText(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const negative = /^\(.*\)$/.test(trimmed);
-  const cleaned = trimmed.replace(/^\((.*)\)$/, "$1").replace(/[$€£%\s]/g, "");
-  if (!/^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(cleaned)) return null;
+  const cleaned = trimmed
+    .replace(/^\((.*)\)$/, "$1")
+    .replace(/[$€£%\s]/g, "")
+    .replace(/\u2212/g, "-");
+  if (!/^[+-]?((\d{1,3}(,\d{3})+|\d+)(\.\d+)?|\.\d+)$/.test(cleaned)) return null;
   const n = Number(cleaned.replace(/,/g, ""));
   return Number.isFinite(n) ? (negative ? -Math.abs(n) : n) : null;
 }
@@ -159,11 +162,12 @@ export function columnSortLabel(
   return label;
 }
 
-/** Compare non-empty cells: numeric when both parse, else text. */
+/** Compare non-empty cells with numbers before text in ascending order. */
 export function compareCellText(a: string, b: string): number {
   const an = parseNumericText(a);
   const bn = parseNumericText(b);
-  if (an !== null && bn !== null) return an - bn;
+  if (an !== null) return bn !== null ? an - bn : -1;
+  if (bn !== null) return 1;
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
@@ -194,7 +198,7 @@ export function nextSort(
   return null;
 }
 
-// Matches the .rk-table-cell-text max-width so min-width never outgrows it.
+// The .rk-table-cell-text max-width, so min-width never outgrows it.
 const MAX_WIDTH_CHARS = 60;
 
 /** ch-based min-width per column from the longest cell, capped. */

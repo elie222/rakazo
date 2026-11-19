@@ -1,12 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult } from "@rakazo/contracts";
-import { newClientId } from "@rakazo/core";
+import { signInMcpServers } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
-import { connectMcpOauth } from "../../lib/mcp-connect";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { connectMcpEndpoint } from "../../lib/integrations/mcp-connect";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */
@@ -28,18 +28,7 @@ export function IntegrationSetup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorDetails | null>(null);
   const [connected, setConnected] = useState<string[]>([]);
-  const remoteResults = [
-    ...new Map(
-      results.flatMap((result) =>
-        result.surfaces
-          .filter((surface) => surface.kind === "mcp" && surface.source?.startsWith("https://"))
-          .map(
-            (surface) =>
-              [surface.source!, { name: result.name, endpoint: surface.source! }] as const,
-          ),
-      ),
-    ).values(),
-  ];
+  const remoteResults = signInMcpServers(results);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -73,19 +62,8 @@ export function IntegrationSetup({
 
   async function connect(name: string, url: string) {
     await run(async () => {
-      const existing = (await rpc.mcp.servers.list()).find((server) => server.endpoint === url);
-      const server =
-        existing ??
-        (await rpc.mcp.servers.create({
-          slug: `integration-${newClientId().slice(0, 8)}`,
-          name,
-          transport: "streamable_http",
-          endpoint: url,
-        }));
-      const result = await connectMcpOauth(server.id);
-      if (result === "cancelled") return;
-      if (botId) await rpc.mcp.assignments.approve({ botId, serverId: server.id });
-      setConnected((current) => [...current, url]);
+      const result = await connectMcpEndpoint({ name, endpoint: url, botId });
+      if (result !== "cancelled") setConnected((current) => [...current, url]);
     });
   }
 

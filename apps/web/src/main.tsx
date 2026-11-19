@@ -1,5 +1,6 @@
 import "./zod-config";
 import "./monitoring-bootstrap";
+import { rememberSignupAttribution } from "@rakazo/core/signup-attribution";
 import { BotAvatarActivityProvider, Toaster, TooltipProvider } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect, useLayoutEffect, useRef } from "react";
@@ -8,16 +9,16 @@ import { BrowserRouter, useLocation } from "react-router-dom";
 import { App } from "./App";
 import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
-import { applyUiDirection } from "./lib/apply-ui-direction";
-import { clientUpdates } from "./lib/client-update";
-import { webLogoAvatarActivity } from "./lib/logo-avatar-activity";
-import { reportCaughtReactError } from "./lib/monitoring";
-import { markAfterPaint, markOnce } from "./lib/performance";
-import { installPreloadRecovery } from "./lib/preload-recovery";
-import { queryClient } from "./lib/query";
-import { captureReferral } from "./lib/referral";
-import { applyUiAppearance, watchSystemAppearance } from "./lib/ui-appearance";
-import { resolveUiLocale } from "./lib/ui-locale";
+import { captureReferral } from "./lib/billing/referral";
+import { webLogoAvatarActivity } from "./lib/bots/logo-avatar-activity";
+import { applyUiDirection } from "./lib/locale/apply-ui-direction";
+import { resolveUiLocale } from "./lib/locale/ui-locale";
+import { clientUpdates } from "./lib/platform/client-update";
+import { reportCaughtReactError } from "./lib/platform/monitoring";
+import { markAfterPaint, markOnce } from "./lib/platform/performance";
+import { installPreloadRecovery } from "./lib/platform/preload-recovery";
+import { applyUiAppearance, watchSystemAppearance } from "./lib/preferences/ui-appearance";
+import { queryClient } from "./lib/query/query";
 import { registerServiceWorker } from "./pwa/register";
 import { lockStandaloneZoom } from "./pwa/standalone";
 import "./styles.css";
@@ -51,6 +52,14 @@ function ClientUpdateOnNavigate() {
   return null;
 }
 
+function SignupAttributionOnNavigate() {
+  const { pathname, search } = useLocation();
+  useLayoutEffect(() => {
+    rememberSignupAttribution(window);
+  }, [pathname, search]);
+  return null;
+}
+
 function AppearanceSync() {
   useEffect(() => watchSystemAppearance(), []);
   return null;
@@ -67,6 +76,7 @@ createRoot(document.getElementById("root")!, { onCaughtError: reportCaughtReactE
           the stale location, so deep links (?m=) and thread switches never
           land while the URL already moved. */}
       <BrowserRouter useTransitions={false}>
+        <SignupAttributionOnNavigate />
         <ClientUpdateOnNavigate />
         <QueryClientProvider client={queryClient}>
           <DesktopUpdatesProvider>

@@ -13,10 +13,13 @@ import {
   attachmentMaxBytes,
   attachmentMaxCount,
   canonicalPiProviderId,
+  LAB_FEATURES,
+  modelCreditsUsd,
   resolveBotAvatarSet,
+  resolveLabs,
 } from "@rakazo/contracts";
-import { isAdmin } from "../admins.js";
-import { effectiveSandboxProvider } from "../computer-provider-config.js";
+import { isAdmin } from "../auth/admins.js";
+import { effectiveSandboxProvider } from "../computers/computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -28,7 +31,7 @@ function hostCredentials(active: boolean, provider: string) {
 }
 
 export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, setup, admin] = await Promise.all([
+  const [user, setup, admin, meetingsEnabled] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
       where: { id: actor.userId },
       select: {
@@ -37,16 +40,23 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         botAvatarSet: true,
+        labs: true,
         signupSurvey: { select: { userId: true } },
       },
     }),
     modelSetup(deps, actor),
     isAdmin(deps, actor.userId),
+    deps.meetings?.visible(actor),
   ]);
   // Where the deployment runs computers once an admin's choice in Settings applies.
   const sandboxProvider = effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider);
+  const deploymentLabs = deps.env.deploymentLabs ?? [];
+  const labs = resolveLabs(user.labs, deploymentLabs);
   return {
-    ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
+    labs,
+    labsAvailable: LAB_FEATURES.filter((feature) => !deploymentLabs.includes(feature)),
+    ticketBoardEnabled: labs.includes("board"),
+    meetingsEnabled,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
@@ -102,6 +112,18 @@ function computerHostFor(
   return null;
 }
 
+/** Whether this member can use the deployment's model under the current funding mode. */
+export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
+  const funding = deps.billing ? await deps.billing.status(actor) : null;
+  const creditsAvailable = modelCreditsUsd(funding) !== null;
+  return {
+    creditsAvailable,
+    hasDeployment:
+      Boolean(deps.env.deploymentModelConfigured) &&
+      (!funding?.creditPurchasesEnabled || creditsAvailable),
+  };
+}
+
 /** The main model chat runs: the member's while it can run, else the deployment's. */
 export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const [member, settings] = await Promise.all([
@@ -115,12 +137,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const funding = deps.billing ? await deps.billing.status(actor) : null;
-  // A balance keeps paying for the deployment model after switching to an own key.
-  const creditsAvailable = funding?.funding === "credits" || (funding?.balanceUsd ?? 0) > 0;
-  const hasDeployment =
-    Boolean(deps.env.deploymentModelConfigured) &&
-    (!funding?.creditPurchasesEnabled || creditsAvailable);
+  const deploymentAccess = await deploymentModelAccess(deps, actor);
   return {
     main,
     model:
@@ -130,10 +147,8 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
       }).primary,
     settings,
-    funding,
-    creditsAvailable,
-    hasDeployment,
-    needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
+    ...deploymentAccess,
+    needsModel: deps.env.agentRuntime !== "scripted" && !main && !deploymentAccess.hasDeployment,
   };
 }
 
@@ -228,5 +243,36 @@ export async function* withHeartbeats<T>(
     // Not awaited: closing queues behind an in-flight read until the abort lands on it, and the
     // stream (including an UNAUTHORIZED end) must not wait for that.
     void source.return(undefined).catch(() => {});
+  }
+}
+
+/** Interleaves streams in arrival order; one that fails ends the rest, and stopping ends them all. */
+export async function* mergeStreams<T extends unknown[]>(
+  ...sources: { [K in keyof T]: AsyncGenerator<T[K]> }
+): AsyncGenerator<T[number]> {
+  const streams: AsyncGenerator<T[number]>[] = sources;
+  const reads = new Map<number, Promise<{ index: number; result: IteratorResult<T[number]> }>>();
+  const read = (index: number, stream: AsyncGenerator<T[number]>) => {
+    const pending = stream.next().then((result) => ({ index, result }));
+    // Raced on the next loop; this only keeps a rejection while the consumer is paused handled.
+    pending.catch(() => {});
+    // Re-adding moves this stream behind the others, so a busy one cannot starve the rest.
+    reads.delete(index);
+    reads.set(index, pending);
+  };
+  for (const [index, stream] of streams.entries()) read(index, stream);
+  try {
+    while (reads.size > 0) {
+      const { index, result } = await Promise.race(reads.values());
+      if (result.done) {
+        reads.delete(index);
+        continue;
+      }
+      read(index, streams[index]!);
+      yield result.value;
+    }
+  } finally {
+    for (const pending of reads.values()) pending.catch(() => {});
+    for (const stream of streams) void stream.return(undefined).catch(() => {});
   }
 }
