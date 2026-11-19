@@ -589,8 +589,17 @@ export async function provisionComputer(
     }
     const activeControl = hasActiveComputerControl(existing);
     // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+    const sizeChanged =
+      ref.size &&
+      existing.runningSize &&
+      existing.runningSizeSince?.getTime() === existing.runningSince?.getTime() &&
+      ref.size !== existing.runningSize;
     const continued =
-      existing.state === "running" && existing.runningSince && !ref.started && !replacement;
+      existing.state === "running" &&
+      existing.runningSince &&
+      !ref.started &&
+      !replacement &&
+      !sizeChanged;
     const runningSince = continued ? existing.runningSince! : new Date();
     const sizing =
       !continued && ref.size ? { runningSize: ref.size, runningSizeSince: runningSince } : {};

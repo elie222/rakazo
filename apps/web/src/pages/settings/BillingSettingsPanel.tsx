@@ -17,7 +17,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
     queryFn: () => client.billing.status(),
   });
   const status = statusRead.data;
-  const error = statusRead.isError;
+  const error = statusRead.isError && !status;
   // Desktop opens the URL in the system browser and this page stays, so the button comes back.
   const portal = useSave({
     save: (_, rpc) => rpc.billing.portal(),

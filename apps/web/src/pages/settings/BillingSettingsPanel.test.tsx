@@ -265,3 +265,30 @@ it("opens the billing portal of the window's space, and says so when it cannot",
   act(() => root.unmount());
   container.remove();
 });
+
+it("keeps showing loaded billing if a later refresh fails", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const client = createSpaceRpc("space-a");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  root.queryClient.setDefaultOptions({ queries: { retry: false } });
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json({ json: { state: "active", canManage: false, hasCustomer: true, seats: 1 } }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  await act(async () => root.render(panel(client, "space-a")));
+  await vi.waitFor(() => expect(container.textContent).toContain("Active"));
+  fetch.mockResolvedValueOnce(Response.json({ json: { message: "down" } }, { status: 500 }));
+  await act(async () => {
+    await root.queryClient.refetchQueries();
+    await flush();
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Active");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  act(() => root.unmount());
+  container.remove();
+});
