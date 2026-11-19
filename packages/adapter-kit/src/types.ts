@@ -330,6 +330,11 @@ export interface ConnectorTool {
   appResourceUri?: string;
 }
 
+export interface AgentRunTool extends ConnectorTool {
+  /** Runtime-only validation schema. Expose inputSchema to the model. */
+  validationInputSchema?: ConnectorTool["inputSchema"];
+}
+
 export interface OutgoingDraftDescriptor {
   kind: "email" | "message";
   source: string;
@@ -717,7 +722,8 @@ export interface AgentRunRequest {
   currentRunRequiresImageInput?: boolean;
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
-  tools: ConnectorTool[];
+  /** Live declarations. Read these again after claiming steering, before asking the model. */
+  tools: AgentRunTool[];
   model: AgentRunModel;
   /** Optional explicitly authenticated vision target for same-run computer mode. */
   computerModel?: AgentRunModel;

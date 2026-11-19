@@ -4,6 +4,7 @@ import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
+  AgentRunTool,
   AgentRuntimeEvent,
   AgentToolCompletion,
   AgentToolExecutionResult,
@@ -72,7 +73,7 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
   return Math.floor(parsed);
 }
 
-export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
+export function toAgentTools(toolDefs: readonly AgentRunTool[], host: ToolHost): AgentTool[] {
   const { listed, deferred } = partitionTools(toolDefs);
   const tools = namedAgentTools(listed).map(({ tool, name }) =>
     toAgentTool(tool, host, name, { deferred }),
@@ -131,16 +132,16 @@ function useToolAgentTool(
 }
 
 /** Each tool's definition under the name the model calls it, as toAgentTools exposes it. */
-export function agentToolDefinitions(toolDefs: readonly ConnectorTool[]) {
+export function agentToolDefinitions(toolDefs: readonly AgentRunTool[]) {
   const { listed, deferred } = partitionTools(toolDefs);
-  return new Map([
+  return new Map<string, AgentRunTool>([
     ...deferred.map((tool) => [tool.name, tool] as const),
-    ...namedAgentTools(listed).map(({ tool, name }) => [name, tool] as const),
+    ...namedAgentTools(listed).map(({ source, name }) => [name, source] as const),
   ]);
 }
 
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
-export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
+export function namedAgentTools(toolDefs: readonly AgentRunTool[]) {
   // Registration order is incidental. Canonicalize before allocating collision suffixes
   // so both provider-visible names and JSON schema serialization stay stable.
   const canonicalJson = (value: unknown): unknown => {
@@ -156,6 +157,7 @@ export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
   };
   const ordered = toolDefs
     .map((tool) => ({
+      source: tool,
       tool: {
         ...tool,
         inputSchema: canonicalJson(tool.inputSchema) as Record<string, unknown>,
@@ -172,10 +174,9 @@ export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
             : a.key > b.key
               ? 1
               : 0,
-    )
-    .map(({ tool }) => tool);
-  const names = normalizeAgentToolNames(ordered);
-  return ordered.map((tool, index) => ({ tool, name: names[index]! }));
+    );
+  const names = normalizeAgentToolNames(ordered.map(({ tool }) => tool));
+  return ordered.map(({ tool, source }, index) => ({ tool, source, name: names[index]! }));
 }
 
 /**
@@ -366,7 +367,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
 }
 
 function toAgentTool(
-  tool: ConnectorTool,
+  tool: AgentRunTool,
   host: ToolHost,
   exposedName: string,
   { deferred = [], viaUseTool = false }: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
@@ -385,7 +386,9 @@ function toAgentTool(
     tool.name === "request_secret"
       ? { executionMode: "sequential" as const }
       : {}),
-    parameters: parametersFor(tool),
+    parameters: parametersFor(
+      tool.validationInputSchema ? { ...tool, inputSchema: tool.validationInputSchema } : tool,
+    ),
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "remember") {
