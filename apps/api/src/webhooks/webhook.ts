@@ -99,17 +99,20 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     const payload = parseWebhookPayload(raw, c.req.header("content-type"));
     const eventPrompt = formatWebhookPrompt(payload);
 
-    // A signed delivery keys on what its signature covers, so a replay under a new id header
-    // still collapses; the prefix keeps an empty signed body from falling back to those headers.
-    // Otherwise a payload id often names the resource, not the delivery, so only byte-identical
-    // retries collapse.
+    // A payload id often names the resource, not the delivery, so only byte-identical retries
+    // collapse. A signed delivery keys on what its signature covers, so a replay under a new id
+    // header still collapses: its signed id, else the body, with the signed timestamp unless the
+    // body carries an id, since a sender re-signs a retry with a new timestamp but the same body.
+    const payloadKeyed = typeof payload.id === "string" || typeof payload.event_id === "string";
+    const signedKey =
+      signed?.id ?? (signed?.timestamp && !payloadKeyed ? `${signed.timestamp}.${raw}` : raw);
     const idempotencyKey = signed
-      ? `signed:${signed.deliveryId}`
+      ? `signed:${signedKey}`
       : c.req.header("idempotency-key")?.trim() ||
         c.req.header("x-idempotency-key")?.trim() ||
         c.req.header("webhook-id")?.trim() ||
         c.req.header("svix-id")?.trim() ||
-        (typeof payload.id === "string" || typeof payload.event_id === "string" ? raw : "") ||
+        (payloadKeyed ? raw : "") ||
         undefined;
 
     return webhookDeliveryResponse(

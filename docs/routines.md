@@ -56,10 +56,10 @@ choose **Signing secret**, paste the service's secret, and pick its format:
 - **`t=…,v1=…`**: one header with a timestamp and HMAC-SHA256 signatures of `<timestamp>.<body>`.
 - **`v0=…`**: an HMAC-SHA256 of `v0:<timestamp>:<body>`, with the timestamp in its own header.
 
-A signed timestamp more than five minutes from the server's clock is refused, and a replayed
-delivery starts the routine only once. With **HMAC of the body**, which carries no timestamp, an
-identical body counts as the same delivery. The key keeps working beside the signing secret, which
-is stored encrypted and never shown again. Signatures made with a key pair or another kind of
+A signed timestamp more than five minutes from the server's clock is refused. A replay, or a
+retry of an event whose body carries its `id`, starts the routine only once; with **HMAC of the
+body**, which carries no timestamp, any identical body counts as the same delivery. The key keeps
+working beside the signing secret, which is stored encrypted and never shown again. Signatures made with a key pair or another kind of
 request signing aren't supported yet.
 
 ### Git event

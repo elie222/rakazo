@@ -14,13 +14,12 @@ type SignedDelivery = {
   algorithm: Algorithm;
   encoding: Encoding;
   timestamp?: string;
-  /**
-   * Covered by the signature, so a replay under a new id header still collapses. With a signed
-   * timestamp it includes the timestamp: the tolerance already bounds replays, and the same body
-   * sent again later is a new delivery. Without one, the same body is the same delivery.
-   */
-  deliveryId: string;
+  /** A delivery id the signature covers. */
+  id?: string;
 };
+
+/** What a valid signature covers besides the body, for deduplicating deliveries. */
+export type SignedParts = { id?: string; timestamp?: string };
 
 const ENCODED = { hex: /^[0-9a-f]+$/i, base64: /^[A-Za-z0-9+/_-]+={0,2}$/ } as const;
 
@@ -58,7 +57,7 @@ function signedDelivery(
         algorithm: "sha256",
         encoding: "base64",
         timestamp,
-        deliveryId: id,
+        id,
       };
     }
     case "hmac": {
@@ -69,7 +68,6 @@ function signedDelivery(
         candidates: [value.slice(signature.prefix.length)],
         algorithm: signature.algorithm,
         encoding: signature.encoding,
-        deliveryId: body,
       };
     }
     case "timestamp-v1": {
@@ -85,7 +83,6 @@ function signedDelivery(
         algorithm: "sha256",
         encoding: "hex",
         timestamp,
-        deliveryId: `${timestamp}.${body}`,
       };
     }
     case "timestamp-v0": {
@@ -98,7 +95,6 @@ function signedDelivery(
         algorithm: "sha256",
         encoding: "hex",
         timestamp,
-        deliveryId: `${timestamp}.${body}`,
       };
     }
   }
@@ -110,8 +106,8 @@ function freshTimestamp(timestamp: string, nowSeconds: number): boolean {
 }
 
 /**
- * Checks a delivery against the bot's signing scheme and secret. Returns the signed delivery id
- * to deduplicate on, or null for any missing, malformed, stale or wrong signature.
+ * Checks a delivery against the bot's signing scheme and secret. Returns the parts the signature
+ * covers besides the body, or null for any missing, malformed, stale or wrong signature.
  */
 export function verifyWebhookSignature(
   signature: WebhookSignature,
@@ -119,7 +115,7 @@ export function verifyWebhookSignature(
   header: (name: string) => string | undefined,
   body: string,
   nowSeconds = Math.floor(Date.now() / 1000),
-): { deliveryId: string } | null {
+): SignedParts | null {
   const key = webhookSigningKey(signature.scheme, secret);
   const signed = signedDelivery(signature, header, body);
   if (!key || !signed) return null;
@@ -131,5 +127,9 @@ export function verifyWebhookSignature(
     const supplied = Buffer.from(candidate, signed.encoding);
     return supplied.length === expected.length && timingSafeEqual(supplied, expected);
   });
-  return matched ? { deliveryId: signed.deliveryId } : null;
+  if (!matched) return null;
+  return {
+    ...(signed.id === undefined ? {} : { id: signed.id }),
+    ...(signed.timestamp === undefined ? {} : { timestamp: signed.timestamp }),
+  };
 }

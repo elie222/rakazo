@@ -48,8 +48,8 @@ describe("Standard Webhooks signatures", () => {
     now = vector.timestamp,
   ) => verifyWebhookSignature(scheme, vector.secret, h, body, now);
 
-  it("accepts the spec's test vector and dedupes on the signed id", () => {
-    expect(verify(vectorHeaders())).toEqual({ deliveryId: vector.id });
+  it("accepts the spec's test vector and returns its signed id and timestamp", () => {
+    expect(verify(vectorHeaders())).toEqual({ id: vector.id, timestamp: String(vector.timestamp) });
   });
 
   it("accepts the secret without its whsec_ prefix", () => {
@@ -61,7 +61,7 @@ describe("Standard Webhooks signatures", () => {
         vector.body,
         vector.timestamp,
       ),
-    ).toEqual({ deliveryId: vector.id });
+    ).toEqual({ id: vector.id, timestamp: String(vector.timestamp) });
   });
 
   it("accepts the alias header names", () => {
@@ -70,14 +70,14 @@ describe("Standard Webhooks signatures", () => {
       "svix-timestamp": String(vector.timestamp),
       "svix-signature": vector.signature,
     });
-    expect(verify(aliased)).toEqual({ deliveryId: vector.id });
+    expect(verify(aliased)).toEqual({ id: vector.id, timestamp: String(vector.timestamp) });
   });
 
   it("accepts any listed v1 signature, as during the sender's key rotation", () => {
     const rotating = vectorHeaders({
       "webhook-signature": `v1,${Buffer.alloc(32).toString("base64")} v1a,ignored ${vector.signature}`,
     });
-    expect(verify(rotating)).toEqual({ deliveryId: vector.id });
+    expect(verify(rotating)).toEqual({ id: vector.id, timestamp: String(vector.timestamp) });
   });
 
   it("rejects a wrong secret, a tampered body, id or timestamp", () => {
@@ -128,12 +128,10 @@ describe("HMAC body signatures", () => {
     prefix: "sha256=",
   };
 
-  it("accepts a prefixed hex HMAC of the exact body and dedupes on the body", () => {
+  it("accepts a prefixed hex HMAC of the exact body, which signs nothing else", () => {
     const value = `sha256=${hmac("sha256", FAKE_SECRET, BODY, "hex")}`;
     const h = headers({ "X-Hub-Signature-256": value });
-    expect(verifyWebhookSignature(prefixed, FAKE_SECRET, h, BODY, NOW)).toEqual({
-      deliveryId: BODY,
-    });
+    expect(verifyWebhookSignature(prefixed, FAKE_SECRET, h, BODY, NOW)).toEqual({});
     expect(verifyWebhookSignature(prefixed, FAKE_SECRET, h, `${BODY}\n`, NOW)).toBeNull();
     expect(verifyWebhookSignature(prefixed, "wrong-secret", h, BODY, NOW)).toBeNull();
   });
@@ -185,7 +183,7 @@ describe("timestamp-v1 signatures", () => {
     const secret = "whsec_fake-text-secret";
     const h = headers({ "x-event-signature": `t=${NOW},v1=${sign(NOW, secret)}` });
     expect(verifyWebhookSignature(scheme, secret, h, BODY, NOW)).toEqual({
-      deliveryId: `${NOW}.${BODY}`,
+      timestamp: String(NOW),
     });
   });
 
@@ -236,7 +234,7 @@ describe("timestamp-v0 signatures", () => {
   it("accepts v0= over v0:timestamp:body with the timestamp header", () => {
     const h = headers({ "x-request-signature": sign(NOW), "x-request-timestamp": String(NOW) });
     expect(verifyWebhookSignature(scheme, FAKE_SECRET, h, BODY, NOW)).toEqual({
-      deliveryId: `${NOW}.${BODY}`,
+      timestamp: String(NOW),
     });
   });
 

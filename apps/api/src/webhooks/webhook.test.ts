@@ -1656,6 +1656,26 @@ describe("signed webhook deliveries", () => {
     expect(load.mock.calls.map(([ciphertext]) => ciphertext)).toEqual(["cipher"]);
   });
 
+  it("runs a re-signed retry of a body that carries its event id once", async () => {
+    const TIMESTAMPED: WebhookSignature = { scheme: "timestamp-v1", header: "x-event-signature" };
+    const deps = createDeps({ signing: { signature: TIMESTAMPED }, routines: [WEBHOOK_ROUTINE] });
+    const app = mount(deps);
+    const secret = defaultLoad("signing-cipher");
+    const now = Math.floor(Date.now() / 1000);
+    // The sender signs each attempt afresh; the event body stays the same.
+    for (const timestamp of [now - 30, now]) {
+      const digest = createHmac("sha256", secret).update(`${timestamp}.${raw}`).digest("hex");
+      const res = await app.request("/api/v1/bots/bot-1/webhook", {
+        method: "POST",
+        headers: { "x-event-signature": `t=${timestamp},v1=${digest}` },
+        body: raw,
+      });
+      expect(res.status).toBe(200);
+    }
+    const nonces = deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce);
+    expect(nonces).toEqual([signedNonce(raw), signedNonce(raw)]);
+  });
+
   it("keeps accepting the bot's own key as a bearer token", async () => {
     const deps = createDeps({ signing: { signature: STANDARD }, routines: [WEBHOOK_ROUTINE] });
     const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
