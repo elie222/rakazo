@@ -13,6 +13,12 @@ set -euo pipefail
 app="${APP_PREFIX:-rakazo-pr}-$PR"
 here=$(cd "$(dirname "$0")" && pwd)
 
+# Main's preview starts empty on every deploy, so state screenshot runs leave behind never
+# accumulates.
+if [[ $PR == main ]] && flyctl status --app "$app" > /dev/null 2>&1; then
+  flyctl apps destroy "$app" --yes
+fi
+
 flyctl status --app "$app" > /dev/null 2>&1 || flyctl apps create "$app" --org "$FLY_ORG"
 if [[ $(flyctl volumes list --app "$app" --json | jq length) == 0 ]]; then
   flyctl volumes create preview_data --app "$app" --region "$REGION" --size 1 --yes

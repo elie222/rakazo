@@ -12,8 +12,8 @@ migrations and demo-account setup run once per image on each database. Data surv
 is deleted with the preview when the pull request closes, or by a daily sweep. A deleted demo
 account is recreated on the next cold boot.
 
-The main branch has its own preview at `https://rakazo-pr-main.fly.dev`, redeployed after each push
-to main and never deleted. The screenshot agent captures the same screens there as the "before" half
+The main branch has its own preview at `https://rakazo-pr-main.fly.dev`, recreated empty after each
+push to main and never deleted by the cleanup. The screenshot agent captures the same screens there as the "before" half
 of each pull request's screenshots.
 
 Idle machines incur storage charges, including the root filesystem and the data volume; compute
