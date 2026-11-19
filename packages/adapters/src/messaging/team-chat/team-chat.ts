@@ -289,7 +289,14 @@ export class TeamChat {
       }
       throw error;
     }
-    if (sent.pruned) return;
+    // Its run started long ago and history retention has since removed it; nothing is left to do.
+    if (sent.pruned) {
+      await this.settle(message.id, from, {
+        status: "ignored",
+        engagementReason: "history_pruned",
+      });
+      return;
+    }
     if (!sent.runId) throw new Error("Team chat message did not create an agent run");
     // A replayed send skipped its claim; one that committed without the link is linked now.
     await this.settle(message.id, from, link(sent.runId), { runId: null });
