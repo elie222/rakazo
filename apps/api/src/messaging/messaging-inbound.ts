@@ -13,6 +13,7 @@ import {
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
 import {
   filesNotReceivedReply,
+  inboundArrivalTime,
   MESSAGING_DM_OUTBOUND_CAP,
   messagingAttachmentClientNonce,
   messagingMessageClientNonce,
@@ -489,7 +490,7 @@ async function prepareDirectEvent(
     // first: the job queue places a job by when it was first recorded. Its arrival time is taken
     // then too, so it falls after a stop sent before it, which records itself in its own turn.
     await arrival.recordTurn;
-    arrival.receivedAt = Date.now();
+    arrival.receivedAt = await inboundArrivalTime(deps.prisma);
     const receivedAt = arrival.receivedAt;
     const job = { provider: event.provider, handle: event.handle, identityId };
     // The Space and bot it was sent to; the job drops it if the sender re-linked meanwhile.

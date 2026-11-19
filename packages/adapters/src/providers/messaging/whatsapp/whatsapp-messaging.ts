@@ -3,7 +3,7 @@ import { downloadAttachment, NetworkError } from "@chat-adapter/shared";
 import { WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
-import { uploadSizeFromEnv } from "@rakazo/core";
+import { deadlineSignal, uploadSizeFromEnv } from "@rakazo/core";
 import type { Attachment } from "chat";
 import { ConsoleLogger, convertEmojiPlaceholders } from "chat";
 import {
@@ -60,6 +60,9 @@ const WHATSAPP_MEDIA_HOSTS = ["fbcdn.net", "fbsbx.com"];
  */
 const WHATSAPP_MEDIA_TIMEOUT_MS = 10 * 60_000;
 
+/** Time the media lookup before a download may take, so a stalled one frees its download slot. */
+const WHATSAPP_MEDIA_LOOKUP_MS = 30_000;
+
 const UNTRUSTED_MEDIA_URL = "Refusing to send the access token to an untrusted media URL";
 
 /**
@@ -97,7 +100,7 @@ class WhatsAppGraph extends WhatsAppAdapter {
   /** The adapter's download, held to the upload limit, with the time a file that size needs. */
   override async downloadMedia(mediaId: string, transport?: AttachmentTransport): Promise<Buffer> {
     try {
-      const url = (await this.lookUpMedia(mediaId))?.url;
+      const url = (await this.lookUpMedia(mediaId, deadlineSignal(WHATSAPP_MEDIA_LOOKUP_MS)))?.url;
       if (typeof url !== "string" || !this.isMediaUrl(url)) {
         throw new NetworkError("whatsapp", UNTRUSTED_MEDIA_URL);
       }

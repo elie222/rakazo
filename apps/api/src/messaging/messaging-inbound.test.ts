@@ -164,6 +164,8 @@ function createDeps(
     }),
   };
   const prisma = {
+    // The database clock, read for a message's arrival time.
+    $queryRaw: vi.fn(async () => [{ now: new Date() }]),
     messagingIdentity: {
       findUnique: vi.fn(
         async ({

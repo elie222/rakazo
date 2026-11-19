@@ -20,6 +20,7 @@ import {
   contentEncryptionOf,
   decryptText,
   encryptText,
+  Prisma,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -62,10 +63,10 @@ export function inboundAttachmentMimeType(name: string, reportedType: string): s
 }
 
 /**
- * Why the store would refuse an inbound file before downloading it, as the direct path does:
- * a type the bot cannot take, or a reported size over the upload limit.
+ * Why an inbound file is refused before it is downloaded: a type the bot cannot take, or a
+ * reported size over the upload limit. The store and the backup settle job both judge by this.
  */
-function refusal(
+export function inboundAttachmentRefusal(
   attachment: { name: string; mimeType: string; size?: number },
   maxBytes: number,
 ): "unsupported type" | "too large" | undefined {
@@ -106,7 +107,18 @@ function ownerStopPrefix(identityId: string): string {
 }
 
 /**
- * Whether the owner sent "stop" on this line after `since` (epoch ms): a message that arrived
+ * When a direct message arrived, by the database's clock: the clock a stop's row is stamped with,
+ * so the two compare correctly however far an API instance's own clock has drifted.
+ */
+export async function inboundArrivalTime(prisma: PrismaClient): Promise<number> {
+  const [{ now }] = await prisma.$queryRaw<[{ now: Date }]>(
+    Prisma.sql`SELECT clock_timestamp() AS "now"`,
+  );
+  return now.getTime();
+}
+
+/**
+ * Whether the owner sent "stop" on this line after `since` (epoch ms, from `inboundArrivalTime`): a message that arrived
  * before it still joins the chat when it settles, but starts no turn. Read when the message
  * settles, so it holds wherever the stop and the message arrived.
  */
@@ -118,7 +130,6 @@ export async function stoppedSince(
   const stop = await prisma.messagingOutbound.findFirst({
     where: {
       identityId,
-      // One in the same millisecond counts: a turn it was meant to stop is the worse mistake.
       createdAt: { gte: new Date(since) },
       idempotencyKey: { startsWith: ownerStopPrefix(identityId) },
     },
@@ -243,7 +254,7 @@ async function settleMessage(deps: SettleDeps, payload: Payload): Promise<void> 
   const missing = payload.attachments.flatMap((attachment, index) => {
     const nonce = nonces[index];
     if (nonce && byNonce.has(nonce)) return [];
-    const reason = (nonce && refusal(attachment, maxBytes)) || "not received";
+    const reason = (nonce && inboundAttachmentRefusal(attachment, maxBytes)) || "not received";
     return [unavailableFileLine(attachment.name, reason)];
   });
 

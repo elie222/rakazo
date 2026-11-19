@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
-import { inboundAttachmentMimeType } from "@rakazo/adapters";
+import { inboundAttachmentMimeType, inboundAttachmentRefusal } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
   attachmentMaxCount,
   attachmentSizeLabel,
-  isAllowedAttachmentMimeType,
   isAttachmentArchiveMimeType,
   isAttachmentAudioMimeType,
   isStepScreenshotMimeType,
@@ -101,20 +100,21 @@ export async function storeInboundAttachment(
   if (replayed) return createdArtifact(replayed);
   const { attachment } = input;
   const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
-  // The backup settle job judges a file it never got by the same type.
   const mimeType = inboundAttachmentMimeType(name, attachment.mimeType);
-  if (!isAllowedAttachmentMimeType(mimeType)) {
-    throw new InboundAttachmentUnavailableError(
-      "unsupported type",
-      `Unsupported attachment type: ${mimeType}`,
-    );
-  }
   const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
   const tooLarge = new InboundAttachmentUnavailableError(
     "too large",
     `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
   );
-  if ((attachment.size ?? 0) > maxBytes) throw tooLarge;
+  // The backup settle job judges a file it never got by the same rule.
+  const refused = inboundAttachmentRefusal(attachment, maxBytes);
+  if (refused === "unsupported type") {
+    throw new InboundAttachmentUnavailableError(
+      "unsupported type",
+      `Unsupported attachment type: ${mimeType}`,
+    );
+  }
+  if (refused === "too large") throw tooLarge;
   const { downloadDeadline = Infinity, downloadTimeoutMs = 2_000, attempts = 1 } = input;
   // What the download may hold in memory: its reported size, else as much as is allowed.
   const reserved = attachment.size ?? maxBytes;
