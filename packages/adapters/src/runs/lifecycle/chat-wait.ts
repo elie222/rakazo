@@ -2,15 +2,17 @@ import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
-import { wakeRun } from "../runs/wakeups/wake-run.js";
-import { dueRoutineHandoverPrompt } from "./routine-conversation.prompt.js";
-import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
+import { dueRoutineHandoverPrompt } from "../../routines/routine-conversation.prompt.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
+import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { wakeRun } from "../wakeups/wake-run.js";
 
-/** How long a scheduled run waits for its chat's current run before handing its task to that run. */
-export const ROUTINE_CONVERSATION_WAIT_MS = 5 * 60_000;
+/** How long a run waits for its busy chat before it looks again, or a scheduled task hands over. */
+export const CHAT_WAIT_MS = 5 * 60_000;
 
-interface RoutineRun {
+const CHAT_WAITING_TRIGGERS: readonly string[] = ["routine", "bot_message"];
+
+interface ChatWaitingRun {
   id: string;
   botId: string;
   threadId: string;
@@ -24,27 +26,26 @@ interface RoutineRun {
 }
 
 /**
- * A routine that runs in its chat never starts beside another run there, so their messages never
- * mix: its claim waits for that run to end. Holds until then; after a while it hands its task to
- * that run instead, so a run that goes on for hours does not hold it back. A routine that runs
- * alongside its chat starts on time. A check-in belongs to no routine and runs in the chat.
+ * A scheduled task or a message from another bot never starts beside another run in its chat, so
+ * their messages never mix and it reads what that run did instead of doing the same work at the
+ * same time: its claim waits for that run to end. Holds until then; after a while a scheduled task
+ * hands itself to that run instead, so a run that goes on for hours does not hold it back. A
+ * routine that runs alongside its chat starts on time. A check-in belongs to no routine and runs
+ * in the chat.
  */
-export function routineClaimWaitsForConversation(
-  run: Pick<RoutineRun, "id" | "botId" | "trigger" | "startedAt" | "createdAt">,
+export function claimWaitsForChat(
+  run: Pick<ChatWaitingRun, "id" | "botId" | "trigger" | "startedAt" | "createdAt">,
   now: Date,
 ): Prisma.RunWhereInput {
-  if (run.trigger !== "routine" || run.startedAt) return {};
-  return {
-    OR: [
-      { routine: { is: { inChat: false } } },
-      { thread: { runs: { none: busyRunWhere(run, now) } } },
-    ],
-  };
+  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.startedAt) return {};
+  const chatFree: Prisma.RunWhereInput = { thread: { runs: { none: busyRunWhere(run, now) } } };
+  if (run.trigger !== "routine") return chatFree;
+  return { OR: [{ routine: { is: { inChat: false } } }, chatFree] };
 }
 
 /** Another run in the chat is under way, or queued ahead of this one and due. */
 function busyRunWhere(
-  run: Pick<RoutineRun, "id" | "botId" | "createdAt">,
+  run: Pick<ChatWaitingRun, "id" | "botId" | "createdAt">,
   now: Date,
 ): Prisma.RunWhereInput {
   return {
@@ -66,12 +67,14 @@ function busyRunWhere(
   };
 }
 
-/** After a refused claim: hold a scheduled run its chat keeps busy, or hand it over once its wait is over. */
-export async function holdRoutineRunForConversation(
-  deps: ExecutorDeps,
-  run: RoutineRun,
-): Promise<void> {
-  if (run.trigger !== "routine" || run.status !== "queued" || run.startedAt) return;
+/**
+ * After a refused claim: hold a run its chat keeps busy. A scheduled task hands itself to the
+ * working run once its wait is over. A message from another bot keeps waiting for a turn of its
+ * own, because its reply goes back to that bot.
+ */
+export async function holdRunForChat(deps: ExecutorDeps, run: ChatWaitingRun): Promise<void> {
+  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.status !== "queued" || run.startedAt)
+    return;
   // Read again: the claim saw the routine as it is now, which an edit may have changed since the
   // run was loaded.
   const current = await deps.prisma.run.findUnique({
@@ -88,8 +91,8 @@ export async function holdRoutineRunForConversation(
       select: { id: true },
     })) !== null;
   if (!(await chatBusy())) return;
-  const waitEnds = new Date(run.createdAt.getTime() + ROUTINE_CONVERSATION_WAIT_MS);
-  if (now >= waitEnds) {
+  const waitEnds = new Date(run.createdAt.getTime() + CHAT_WAIT_MS);
+  if (run.trigger === "routine" && now >= waitEnds) {
     const task = await deps.prisma.task.findUnique({
       where: { id: run.taskId },
       select: { prompt: true },
@@ -117,16 +120,16 @@ export async function holdRoutineRunForConversation(
       return;
     }
   }
-  // The run ending first starts this one sooner; see startRoutineRunsWaitingOn.
+  // The run ending first starts this one sooner; see startRunsWaitingOnChat.
   await wakeRun(deps.jobs, run.id, {
-    at: now < waitEnds ? waitEnds : new Date(now.getTime() + ROUTINE_CONVERSATION_WAIT_MS),
+    at: now < waitEnds ? waitEnds : new Date(now.getTime() + CHAT_WAIT_MS),
   });
   // A run that ended before the wake time was saved found nothing to start.
   if (!(await chatBusy())) await wakeRun(deps.jobs, run.id);
 }
 
-/** A run stopped working on its chat: scheduled runs waiting on it may start now. */
-export async function startRoutineRunsWaitingOn(
+/** A run stopped working on its chat: runs waiting on it may start now. */
+export async function startRunsWaitingOnChat(
   deps: ExecutorDeps,
   run: { id: string; botId: string; threadId: string },
 ): Promise<void> {
@@ -135,7 +138,7 @@ export async function startRoutineRunsWaitingOn(
       id: { not: run.id },
       threadId: run.threadId,
       botId: run.botId,
-      trigger: "routine",
+      trigger: { in: [...CHAT_WAITING_TRIGGERS] },
       status: "queued",
       startedAt: null,
       OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
