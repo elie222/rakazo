@@ -72,6 +72,11 @@ function fakeS3() {
         200,
         "<DeleteResult><Error><Key>k</Key><Code>SlowDown</Code><Message>Reduce your rate</Message></Error></DeleteResult>",
       );
+    if (bucket === "mixed-bucket" && req.method === "POST" && query.has("delete"))
+      return send(
+        200,
+        "<DeleteResult><Error><Key>a</Key><Code>SlowDown</Code></Error><Error><Key>b</Key><Code>AccessDenied</Code></Error></DeleteResult>",
+      );
     if (bucket === "busy-bucket")
       return send(503, "<Error><Code>SlowDown</Code><Message>Reduce your rate</Message></Error>");
     if (bucket !== "test-bucket") return send(404, "<Error><Code>NoSuchBucket</Code></Error>");
@@ -295,6 +300,14 @@ describe("S3ObjectStorage outages", () => {
     await expect(storage("", "partly-busy-bucket").delete(["k"])).rejects.toBeInstanceOf(
       ObjectStorageUnavailableError,
     );
+  });
+
+  it("keeps a deletion with a refused object an ordinary failure", async () => {
+    const failure = await storage("", "mixed-bucket")
+      .delete(["a", "b"])
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ObjectStorageUnavailableError);
   });
 
   it("leaves a request the store refuses as it was", async () => {
