@@ -253,6 +253,17 @@ const UNSUPPORTED_REASONING_EFFORT =
 const REASONING_EFFORT_CHOICES =
   /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
+/** Responses-style errors name the parameter in a `param` field after the message instead. */
+const REASONING_EFFORT_PARAM = /"param"\s*:\s*"reasoning[._]effort"/;
+const EFFORT_CHOICES = /\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
+
+function reasoningEffortChoices(message: string): string | undefined {
+  return (
+    message.match(REASONING_EFFORT_CHOICES)?.[1] ||
+    (REASONING_EFFORT_PARAM.test(message) ? message.match(EFFORT_CHOICES)?.[1] : undefined)
+  );
+}
+
 /**
  * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values
  * it accepts, with the rest mapped out so the request clamps to an accepted one. Off sends no
@@ -263,7 +274,9 @@ export function acceptedReasoningEfforts(
   model: Model<Api>,
   errorMessage: string | undefined,
 ): ThinkingLevelMap | undefined {
-  const listed = errorMessage?.match(REASONING_EFFORT_CHOICES)?.[1]?.toLowerCase().match(/\w+/g);
+  const listed = reasoningEffortChoices(errorMessage ?? "")
+    ?.toLowerCase()
+    .match(/\w+/g);
   const current = model.thinkingLevelMap ?? {};
   if (!listed) {
     // Some gateways refuse an effort without naming the accepted ones ("Unsupported reasoning
