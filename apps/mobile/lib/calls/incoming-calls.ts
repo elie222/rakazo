@@ -294,6 +294,7 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         throw new Error(autoLanguageNeedsTranscription());
       if (generation !== currentSessionGeneration())
         throw new Error(t`Something went wrong. Try again.`);
+      if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);
       const result = await respondToIncomingCall(call.incomingCall, () =>
         rpc("threads/answerCall", target, { requestContext: context }),
       );

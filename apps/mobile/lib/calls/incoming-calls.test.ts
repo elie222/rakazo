@@ -199,6 +199,27 @@ describe("mobile incoming calls", () => {
     expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
     expect(fake.startCall).not.toHaveBeenCalled();
   });
+
+  it("does not claim an automatic call that ends during the transcription check", async () => {
+    fake.autoLanguage = true;
+    const call = await ring();
+    const status = deferred<{ transcribe: boolean }>();
+    fake.rpc.mockReturnValueOnce(status.promise);
+    const answer = respondToMobileCall(call, "answer");
+    await tick();
+    expect(fake.rpc).toHaveBeenLastCalledWith("voice/status", {}, expect.anything());
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [{ action: "end", callId: "call-1", botId: bot.id, expiresAt: block().expiresAt }],
+    });
+    fake.onAppState?.("active");
+    await tick();
+    const result = expect(answer).rejects.toThrow("This call is no longer ringing.");
+    status.resolve({ transcribe: true });
+    await result;
+    expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+  });
+
   it("ends the current call when a native answer arrives during it", async () => {
     await ring();
     fake.call = { botId: "bot-2" };
