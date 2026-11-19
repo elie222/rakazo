@@ -247,6 +247,34 @@ it("does not pin Settings when clearing a legacy inherited voice", async () => {
   expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Default (Speech A)");
 });
 
+it("waits for provider names instead of labeling connected choices unavailable", async () => {
+  const names = await rpc.voice.catalog();
+  const pending = deferred<typeof names>();
+  vi.mocked(rpc.voice.catalog).mockReturnValueOnce(pending.promise);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <BotVoiceSettings bot={bot} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(
+        client.getQueryState(spaceQueries(null, "space-1").voice.credentials.queryKey())?.status,
+      ).toBe("success"),
+    );
+  });
+  expect(container.querySelector('[role="combobox"]')).toBeNull();
+  expect(container.textContent).not.toContain("Unavailable");
+  await act(async () => pending.resolve(names));
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Default (Speech A)"),
+    );
+  });
+});
+
 it("omits unavailable voice controls until a connection exists", async () => {
   credentials = [];
   await act(async () =>

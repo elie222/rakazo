@@ -94,6 +94,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     voices.error;
   const needsReconnect = Boolean(credentials.data && bot?.voiceProvider && !providers.connection);
 
+  if (catalog.isPending) return null;
   if (credentials.data && providers.options.length === 0) return null;
 
   return (

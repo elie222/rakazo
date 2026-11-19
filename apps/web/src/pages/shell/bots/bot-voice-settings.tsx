@@ -78,6 +78,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     if (speaker.state.messageId === previewId) speaker.stop();
   }
 
+  if (catalog.isPending) return null;
   if (credentials.data && providers.options.length === 0) return null;
 
   return (
