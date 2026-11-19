@@ -1,6 +1,7 @@
 import { ph, t } from "@lingui/core/macro";
 import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
 import { AI_PRIVACY_URL } from "@rakazo/contracts";
+import { pageRevisionDataDisclosure } from "@rakazo/i18n/page-review";
 import { Alert, AppState, Linking } from "react-native";
 
 export const FOREGROUND_FALLBACK_MS = 400;
@@ -20,8 +21,14 @@ export function aiDataDisclosure(use: AiDataUse): string {
 export function promptAiConsent(
   recipient: AiRecipient,
   privacyUrl = AI_PRIVACY_URL,
-  disclosure = aiDataDisclosure(recipient.use),
+  purpose?: "pageRevision",
 ): Promise<boolean> {
+  const disclosure =
+    purpose === "pageRevision" ? pageRevisionDataDisclosure() : aiDataDisclosure(recipient.use);
+  const withdrawal =
+    purpose === "pageRevision"
+      ? t`To turn this off, use Withdraw all permissions in Account → AI data sharing.`
+      : t`You can turn this off in Account → AI data sharing.`;
   return new Promise((resolve) => {
     let settled = false;
     let dialogOpen = false;
@@ -87,9 +94,7 @@ export function promptAiConsent(
       let privacyPolicyPressed = false;
       Alert.alert(
         t`Share data with ${ph({ name: recipient.name })}?`,
-        [recipient.detail, disclosure, t`You can turn this off in Account → AI data sharing.`]
-          .filter(Boolean)
-          .join("\n\n"),
+        [recipient.detail, disclosure, withdrawal].filter(Boolean).join("\n\n"),
         [
           { text: t`Not now`, style: "cancel", onPress: () => finish(false) },
           {

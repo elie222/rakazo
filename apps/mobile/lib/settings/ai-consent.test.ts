@@ -74,6 +74,19 @@ describe("mobile AI consent prompt", () => {
     native.listeners.clear();
   });
 
+  it("names the withdrawal control for a Page revision permission", async () => {
+    const pending = promptAiConsent(recipient, undefined, "pageRevision");
+    const message = native.alert.mock.calls[0]?.[1];
+    expect(message).toContain("The page and selected comment are sent to draft a revision.");
+    expect(message).toContain(
+      "To turn this off, use Withdraw all permissions in Account → AI data sharing.",
+    );
+    currentAlert()
+      .buttons.find((button) => button.text === "Not now")
+      ?.onPress?.();
+    await expect(pending).resolves.toBe(false);
+  });
+
   it.each(["en", "de", "ru", "zh-CN"] as const)(
     "translates the consent copy in %s without changing recipient detail",
     async (locale) => {

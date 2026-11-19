@@ -13,7 +13,6 @@ import {
   readBoundedJsonResponse,
   withAbort,
 } from "@rakazo/core";
-import { pageRevisionDataDisclosure } from "@rakazo/i18n/page-review";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
@@ -690,8 +689,7 @@ async function request(
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
       prompt: consentTarget.pageId
-        ? (recipient, privacyUrl) =>
-            promptAiConsent(recipient, privacyUrl, pageRevisionDataDisclosure())
+        ? (recipient, privacyUrl) => promptAiConsent(recipient, privacyUrl, "pageRevision")
         : promptAiConsent,
       allow: (input) =>
         allowPromptedAiConsent(
