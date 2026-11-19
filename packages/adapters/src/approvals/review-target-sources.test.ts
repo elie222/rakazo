@@ -108,6 +108,19 @@ describe("outsideOnlyTargets", () => {
     ).toEqual([]);
   });
 
+  it("lists a www host and an account number a structured result gave", () => {
+    const outsideText = read(
+      { vendor: { account_number: 12345678 } },
+      "Pay at https://www.pay-here.example/inv",
+    );
+    expect(
+      outsideOnlyTargets(
+        { url: "https://www.pay-here.example/inv", account_number: 12345678 },
+        { ownerWords: ["Pay the invoice"], outsideText },
+      ),
+    ).toEqual(["www.pay-here.example", "12345678"]);
+  });
+
   it("caps how many it lists", () => {
     const to = Array.from({ length: 30 }, (_, i) => `p${i}@list.example`);
     expect(

@@ -56,7 +56,7 @@ export function actionTargets(args: Record<string, unknown>): Target[] {
             .filter((token) => EMAIL.test(token))
             .map(normalize)
         : [];
-      if (site) add({ value: new URL(value).hostname.replace(/^www\./, ""), site });
+      if (site) add({ value: new URL(value).hostname, site });
       else if (emails.length) for (const email of emails) add({ value: email });
       else if (
         PARTY_KEY.test(key) &&
@@ -117,9 +117,17 @@ function containsWhole(text: string, value: string): boolean {
 /** The text in outside content (a tool result, a message), normalized for `outsideOnlyTargets`. */
 export function outsideTextOf(content: unknown): string {
   const parts: string[] = [];
+  let length = 0;
+  const keep = (text: string) => {
+    parts.push(text);
+    length += text.length + 1;
+  };
   const walk = (node: unknown, depth: number) => {
-    if (depth > MAX_ARG_DEPTH * 2) return;
-    if (typeof node === "string") parts.push(node);
+    // Only the cap's worth is ever kept, so a huge result is not read past it.
+    if (depth > MAX_ARG_DEPTH * 2 || length > MAX_OUTSIDE_TEXT_CHARS) return;
+    if (typeof node === "string") keep(node);
+    // An account number in a structured result can be a call's target too.
+    else if (typeof node === "number") keep(String(node));
     else if (Array.isArray(node)) for (const item of node) walk(item, depth + 1);
     else if (node && typeof node === "object") {
       // An image's bytes hold no names.
