@@ -205,7 +205,7 @@ let micOpen = false;
 let opening = false;
 let guardTimer: ReturnType<typeof setTimeout> | null = null;
 let transcribing: AbortController | null = null;
-let pendingTranscript = "";
+let pendingTranscript: string | { error: unknown } = "";
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
 let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
 let switching = false;
@@ -458,12 +458,20 @@ async function listen(): Promise<void> {
     endCall();
     return;
   }
-  set({ phase: "listening", heard: "", caption: "" });
+  const final = pendingTranscript;
+  pendingTranscript = "";
+  if (typeof final !== "string" && final.error instanceof AiConsentBlocked) {
+    blockForConsent(final.error);
+    return;
+  }
+  set({
+    phase: "listening",
+    heard: "",
+    caption: typeof final === "string" ? "" : errorText(final.error, t`Could not hear that.`),
+  });
   if (state.muted) return;
-  if (pendingTranscript) {
-    const text = pendingTranscript;
-    pendingTranscript = "";
-    await handleTranscript(text);
+  if (typeof final === "string" && final) {
+    await handleTranscript(final);
     return;
   }
   await openMic();
@@ -550,8 +558,15 @@ async function openMic(): Promise<void> {
   } catch (error) {
     if (!mine()) return;
     micOpen = false;
-    if (error instanceof AiConsentBlocked) blockForConsent(error);
-    else failTurn(error);
+    if (autoLanguage && botOwnsTurn()) {
+      if (!(error instanceof ExpectedTurnFailure || error instanceof AiConsentBlocked))
+        reportMobileError(error, "voice.turn");
+      pendingTranscript = { error };
+    } else if (error instanceof AiConsentBlocked) {
+      blockForConsent(error);
+    } else {
+      failTurn(error);
+    }
   }
 }
 
@@ -562,7 +577,7 @@ async function handleTranscript(raw: string): Promise<void> {
   micOpen = false;
   failures = 0;
   const text = raw.trim();
-  if (state.phase === "speaking" || guardTimer || replyStillWritten()) {
+  if (botOwnsTurn()) {
     pendingTranscript = text;
     return;
   }
@@ -768,6 +783,10 @@ function sealStream(): void {
 /** A reply is being said as it is written, and its run is still writing it. */
 function replyStillWritten(): boolean {
   return streamRunId !== null && isRunWorking(callRunStatus(thread, streamRunId));
+}
+
+function botOwnsTurn(): boolean {
+  return state?.phase === "speaking" || guardTimer !== null || replyStillWritten();
 }
 
 /** Keeps the thread current, and the microphone shut while the bot waits on a typed code. */

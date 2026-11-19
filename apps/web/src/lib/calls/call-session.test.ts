@@ -879,9 +879,9 @@ describe("call session", () => {
     expect(listen).toHaveBeenCalledOnce();
   });
 
-  it.each([false, true])(
-    "delivers a completed automatic transcript after playback and its quiet gap (during guard: %s)",
-    async (duringGuard) => {
+  it.each(["preparing", "speaking", "quiet gap"] as const)(
+    "delivers a completed automatic transcript after the reply (%s)",
+    async (stage) => {
       await answeredCall({
         botId: "call-bot",
         botName: "Ada",
@@ -891,11 +891,12 @@ describe("call session", () => {
       const turn = listen.mock.calls.at(-1)?.[0];
       const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
       listen.mockClear();
-      speech?.({ status: "speaking" });
-      if (duringGuard) speech?.({ status: "idle" });
+      speech?.({ status: stage === "preparing" ? "preparing" : "speaking" });
+      if (stage === "quiet gap") speech?.({ status: "idle" });
       turn?.onFinal("sim");
       expect(send).not.toHaveBeenCalled();
-      if (!duringGuard) speech?.({ status: "idle" });
+      if (stage === "preparing") speech?.({ status: "speaking" });
+      if (stage !== "quiet gap") speech?.({ status: "idle" });
       await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
       expect(send).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);

@@ -206,7 +206,7 @@ export function startCall(call: {
   unsubSpeech = speaker.subscribe((speech) => {
     if (!state || state.phase === "ringing") return;
     if (openingPending && speech.status === "idle") openingPending = false;
-    if (speech.status === "speaking") {
+    if (speech.status === "speaking" || (autoLanguage && speech.status === "preparing")) {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
       if (micOpen && (autoLanguage ? dictation.recordingOrStarting : dictation.recording)) {

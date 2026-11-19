@@ -1969,6 +1969,37 @@ describe("mobile call session on a timer", () => {
     expect(fake.recordings).toHaveLength(1);
   });
 
+  it.each([false, true])("defers transcription errors (consent: %s)", async (consent) => {
+    const fake = fakes();
+    const transcript = deferred<string>();
+    startCall(
+      { botId: "bot-1", botName: "Ada", autoLanguage: true, transcribe: true },
+      { ...fake.deps, transcribe: () => transcript.promise },
+    );
+    await tick();
+    fake.say("sim");
+    await tick();
+    fake.replyWith("message-1", "The tests are green.");
+    transcript.reject(
+      consent
+        ? new AiConsentBlocked("Transcription failed.")
+        : new ExpectedTurnFailure("Transcription failed."),
+    );
+    await tick();
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(fake.recordings).toHaveLength(1);
+
+    fake.speeches[0]?.resolve();
+    await tick(ECHO_GUARD_MS);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      caption: "Transcription failed.",
+      muted: consent,
+    });
+    expect(fake.recordings).toHaveLength(consent ? 1 : 2);
+    expect(fake.send).not.toHaveBeenCalled();
+  });
+
   describe.each(["ios", "android"])("%s echo guard and playback mic isolation", (os) => {
     beforeEach(() => {
       device.os = os;
