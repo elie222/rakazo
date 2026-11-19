@@ -13,6 +13,7 @@ let account = deferred<unknown>();
 vi.mock("../../lib/query/rpc", () => ({
   selectedSpaceId: () => null,
   rpc: {
+    onboarding: { firstBot: vi.fn() },
     me: vi.fn(() => {
       account = deferred();
       return account.promise;
@@ -170,5 +171,36 @@ it.each([
 
   await act(async () => settle());
   expect(router.pathname).toBe("/sign-in");
+  act(() => root.unmount());
+});
+
+it.each([
+  ["opens the first bot the server made", "chief-1", "/app/chief-1"],
+  ["opens the Space as it is when the server made none", null, "/app"],
+])("%s", async (_name, botId, path) => {
+  vi.mocked(rpc.onboarding.firstBot).mockResolvedValue({ botId });
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  let pathname = "";
+  function Location() {
+    pathname = useLocation().pathname;
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+          <Route path="/app/*" element={null} />
+        </Routes>
+        <Location />
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.resolve({ needsModel: false, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  await vi.waitFor(() => expect(pathname).toBe(path));
+  expect(rpc.onboarding.firstBot).toHaveBeenCalledOnce();
   act(() => root.unmount());
 });

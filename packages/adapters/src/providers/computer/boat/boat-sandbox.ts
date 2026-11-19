@@ -35,6 +35,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -1404,10 +1405,16 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): Promise<BoatCommandResult> {
     for (let pause = 500; ; pause = nextPoll(pause)) {
       if (signal?.aborted) throw signal.reason ?? new Error("command aborted");
-      const status = await this.client.commandStatus(
-        { sandboxId: id, processId, tailBytes: BOAT_COMMAND_TAIL_BYTES },
-        signal ? { signal } : undefined,
-      );
+      const status = await this.client
+        .commandStatus(
+          { sandboxId: id, processId, tailBytes: BOAT_COMMAND_TAIL_BYTES },
+          signal ? { signal } : undefined,
+        )
+        .catch((error: unknown) => {
+          // The machine stopped under the command, which ended with it; running it again could
+          // repeat what it already did, so the caller retries later instead.
+          throw notRunning(error) ? new SandboxUnavailableError({ cause: error }) : error;
+        });
       if (!status.running) {
         return {
           stdout: status.stdout,
@@ -1596,6 +1603,9 @@ function boatSizeError(error: unknown): unknown {
   }
   if (error.code === "type_too_small") {
     return new SandboxSizeUnavailableError("too_small", { cause: error });
+  }
+  if (error.code === "resume_failed" && /\bdoes not fit any available\b/i.test(error.message)) {
+    return new SandboxDiskTooLargeError({ cause: error });
   }
   return error;
 }

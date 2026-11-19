@@ -586,6 +586,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/oauth/complete"],
       ["mcp/oauth/disconnect"],
       ["onboarding/signupSurvey"],
+      ["onboarding/firstBot"],
       ["onboarding/start"],
       ["onboarding/promptFocus"],
       ["onboarding/choose"],

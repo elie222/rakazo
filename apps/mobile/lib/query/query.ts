@@ -238,6 +238,14 @@ export function resetRpcQueries(proc: RpcPath): Promise<void> {
   return queryClient.resetQueries({ predicate: (query) => query.queryKey.includes(proc) });
 }
 
+/**
+ * Reads one procedure again, in every Space and for every input, while its readers keep showing
+ * the answer they have until the new one arrives.
+ */
+export function refreshRpcQueries(proc: RpcPath): Promise<void> {
+  return queryClient.invalidateQueries({ predicate: (query) => query.queryKey.includes(proc) });
+}
+
 /** Forgets the reads sent to these Spaces, as when leaving their organization. */
 export function removeSpaceQueries(spaceIds: readonly string[]): void {
   const scopes = new Set(spaceIds.map((id) => `space:${id}`));

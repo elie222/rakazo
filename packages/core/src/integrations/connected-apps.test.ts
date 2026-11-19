@@ -1,6 +1,6 @@
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { expect, it } from "vitest";
-import { connectedAppMarks } from "./connected-apps";
+import { connectedAppMarks } from "./connected-apps.js";
 
 const catalog: ConnectionCatalogItem[] = [
   {
@@ -104,4 +104,12 @@ it("distinguishes code-point initials that share a UTF-16 high surrogate", () =>
     connected: true,
   }));
   expect(connectedAppMarks(items, []).map((app) => app.name)).toEqual(names.slice(0, 3));
+});
+
+it("lists only connected apps when suggestions are off", () => {
+  expect(connectedAppMarks(catalog, [], { suggest: false })).toEqual([]);
+  const withBeta = catalog.map((item) => ({ ...item, connected: item.slug === "beta" }));
+  expect(connectedAppMarks(withBeta, [], { suggest: false })).toEqual([
+    { name: "Beta", logo: null },
+  ]);
 });

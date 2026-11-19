@@ -109,6 +109,21 @@ export class SandboxDamagedError extends Error {
 }
 
 /**
+ * The stopped computer's disk outgrew every machine the provider can start it on, so it cannot
+ * start again, now or later. Recover replaces it from its last save.
+ */
+export class SandboxDiskTooLargeError extends Error {
+  readonly code = "SANDBOX_DISK_TOO_LARGE";
+  constructor(options?: { cause?: unknown }) {
+    super(
+      "This computer's files are too large for it to start. Recover the computer to start again from its last save.",
+      options,
+    );
+    this.name = "SandboxDiskTooLargeError";
+  }
+}
+
+/**
  * The provider would not start the computer at the size asked for: the operator's account does
  * not offer it, or the computer's files would not fit a smaller one. The computer is unchanged.
  */

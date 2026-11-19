@@ -106,7 +106,7 @@ export function useThreadHeader({
         color: tokens.foreground,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-        onInvite: canInvite && botId ? openInvite : undefined,
+        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)

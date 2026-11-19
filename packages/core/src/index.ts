@@ -61,6 +61,7 @@ export * from "./deployment/compose-update.js";
 export * from "./deployment/self-update.js";
 export * from "./integrations/app-connect.js";
 export * from "./integrations/cloud-agent.js";
+export * from "./integrations/connected-apps.js";
 export * from "./integrations/connection-catalog.js";
 export * from "./integrations/featured-connectors.js";
 export * from "./integrations/integration-catalog.js";
