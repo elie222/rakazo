@@ -48,12 +48,17 @@ export function truncateReviewText(value: string, max: number): string {
 /**
  * Auto passes most actions: anything that plausibly serves the owner's request or the bot's job,
  * including steps they did not spell out. It asks only about actions that clearly go beyond that.
- * A read is named outright: it changes nothing, yet a request that ends in a delete or a send made
- * the checker unsure about the read that comes first. What the read finds is acted on by a later
- * call, which is checked on its own.
  */
 export const AUTO_REVIEW_PASS =
-  "It plausibly serves what the owner asked for or the bot's job, including steps they did not spell out. A read, search or list that only looks at data and changes, sends or deletes nothing passes, even when the owner's request goes on to change things";
+  "It plausibly serves what the owner asked for or the bot's job, including steps they did not spell out";
+/**
+ * A read that serves the request is named outright: it changes nothing, yet a request that ends in
+ * a delete or a send made the checker unsure about the read that comes first. It still has to serve
+ * the request, since reads reach the checker after outside content could have chosen them. A new
+ * site's fetch is judged by its own URL rules instead.
+ */
+export const AUTO_REVIEW_READ_PASS =
+  "A read, search or list that serves the request and only looks at data, changing, sending or deleting nothing, is such a step even when the request goes on to change things";
 export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
 
@@ -125,7 +130,7 @@ export function autoReviewDecisionQuestion(
     criteria: input.savedContextWrite
       ? { pass: MEMORY_WRITE_PASS, ask: MEMORY_WRITE_ASK }
       : {
-          pass: AUTO_REVIEW_PASS,
+          pass: `${AUTO_REVIEW_PASS}. ${AUTO_REVIEW_READ_PASS}`,
           ask: input.outsideOnlyTargets?.length
             ? `${AUTO_REVIEW_ASK}. Or: ${outsideTargetAsk(DECISION_FIELDS.targets)}`
             : AUTO_REVIEW_ASK,
@@ -148,6 +153,7 @@ export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
       ? MEMORY_WRITE_REVIEW_RULES
       : [
           `Use pass when: ${AUTO_REVIEW_PASS}.`,
+          ...(input.newSite ? [] : [`${AUTO_REVIEW_READ_PASS}.`]),
           `Use ask only when: ${AUTO_REVIEW_ASK}.`,
           ...(input.outsideOnlyTargets?.length
             ? [`Also ask when: ${outsideTargetAsk(PROMPT_FIELDS.targets)}.`]
