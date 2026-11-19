@@ -62,14 +62,19 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
-/**
- * A path that escapes its workspace or does not name a directory when listing files.
- * The caller decides how to report it because the path could come from a provider.
- */
+/** A path rejected by workspace validation, including paths returned by a provider. */
 export class WorkspacePathError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "WorkspacePathError";
+  }
+}
+
+/** The provider could not open the directory requested by listFiles. */
+export class WorkspaceDirectoryError extends WorkspacePathError {
+  constructor() {
+    super("Could not list the workspace directory");
+    this.name = "WorkspaceDirectoryError";
   }
 }
 

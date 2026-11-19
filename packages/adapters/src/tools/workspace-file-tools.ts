@@ -14,8 +14,10 @@ import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
 import {
   displayBotWorkspacePath,
+  normalizeWorkspacePath,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
+  WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../computers/screens/computer-support.js";
 import { publishMessage } from "../runs/assembly/run-messages.js";
@@ -176,6 +178,8 @@ function jsonEscapedPrefix(text: string, budget: number): string {
   return text.slice(0, index);
 }
 
+const LIST_FILES_DIRECTORY_ERROR = `Cannot list that directory. ${LIST_FILES_PATH_GUIDANCE}`;
+
 export async function listFilesFromTool(
   sandbox: SandboxProvider,
   workspace: RunWorkspace,
@@ -184,19 +188,20 @@ export async function listFilesFromTool(
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const requestedPath = String(args.path ?? "");
   const ref = await computer();
+  let directory: string;
+  try {
+    directory = resolveBotWorkspacePath(computerMode, botId, requestedPath);
+    // Keep the provider's path spelling, including absolute paths and home aliases.
+    if (computerMode !== "team") normalizeWorkspacePath(directory);
+  } catch (error) {
+    if (error instanceof WorkspacePathError) return { error: LIST_FILES_DIRECTORY_ERROR };
+    throw error;
+  }
   let entries: ComputerFileEntry[];
   try {
-    const directory = resolveBotWorkspacePath(computerMode, botId, requestedPath);
     entries = await sandbox.listFiles(ref, directory, context);
   } catch (error) {
-    if (
-      error instanceof WorkspacePathError ||
-      (error instanceof Error &&
-        "code" in error &&
-        (error.code === "ENOENT" || error.code === "ENOTDIR"))
-    ) {
-      return { error: `Cannot list that directory. ${LIST_FILES_PATH_GUIDANCE}` };
-    }
+    if (error instanceof WorkspaceDirectoryError) return { error: LIST_FILES_DIRECTORY_ERROR };
     throw error;
   }
   return {

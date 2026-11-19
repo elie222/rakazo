@@ -1,11 +1,12 @@
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { normalizeWorkspacePath } from "../computers/screens/computer-support.js";
+import { WorkspacePathError } from "../computers/screens/computer-support.js";
+import { DesktopSandboxProvider } from "../providers/computer/desktop/desktop-sandbox.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
 import { listFilesFromTool, readFileFromTool } from "./workspace-file-tools.js";
@@ -47,23 +48,19 @@ describe("listFilesFromTool paths", () => {
   it.each(["dedicated", "team"] as const)(
     "guides a %s bot from a missing directory to its home or a relative directory",
     async (computerMode) => {
-      const { sandbox, workspace } = fileWorkspace("");
+      const { workspace } = fileWorkspace("");
       workspace.computerMode = computerMode;
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-list-files-"));
-      const home = computerMode === "team" ? "bots/bot-1" : "";
-      const notes = path.posix.join(home, "notes");
-      const listFiles = vi.fn<SandboxProvider["listFiles"]>(async (_computer, directory) => {
-        const relative = normalizeWorkspacePath(directory);
-        const names = await readdir(path.join(root, relative));
-        return names.map((name) => ({
-          path: path.posix.join(relative, name),
-          kind: "dir",
-          size: 0,
-        }));
-      });
-      sandbox.listFiles = listFiles;
       try {
-        await mkdir(path.join(root, notes), { recursive: true });
+        const sandbox = new DesktopSandboxProvider({ root });
+        const computer = await sandbox.provision(
+          { botId: workspace.botId, homePath: root },
+          workspace.context,
+        );
+        workspace.computer = async () => computer;
+        const home = computerMode === "team" ? `bots/${workspace.botId}` : "";
+        const notes = path.join(computer.providerRef, home, "notes");
+        await mkdir(notes, { recursive: true });
         await expect(listFilesFromTool(sandbox, workspace, { path: "missing" })).resolves.toEqual({
           error: expect.stringContaining('Omit path or use "."'),
         });
@@ -72,7 +69,7 @@ describe("listFilesFromTool paths", () => {
         ).resolves.toEqual({
           error: expect.stringContaining('"notes"'),
         });
-        const entries = [{ path: "notes", kind: "dir", size: 0 }];
+        const entries = [{ path: "notes", kind: "dir", size: expect.any(Number) }];
         await expect(listFilesFromTool(sandbox, workspace, {})).resolves.toEqual({
           path: "",
           entries,
@@ -85,20 +82,33 @@ describe("listFilesFromTool paths", () => {
           path: "notes",
           entries: [],
         });
-        expect(listFiles).toHaveBeenLastCalledWith(expect.anything(), notes, workspace.context);
+        await writeFile(path.join(notes, "file.txt"), "example");
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "notes/file.txt" }),
+        ).resolves.toEqual({
+          error: expect.stringContaining('Omit path or use "."'),
+        });
+
+        await rename(computer.providerRef, path.join(root, "moved-home"));
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "notes" }),
+        ).rejects.toMatchObject({
+          code: "ENOENT",
+        });
       } finally {
         await rm(root, { recursive: true, force: true });
       }
     },
   );
 
-  it("propagates computer failures", async () => {
+  it.each([
+    new Error("computer offline"),
+    Object.assign(new Error("entry disappeared during stat"), { code: "ENOENT", syscall: "stat" }),
+    new WorkspacePathError("Invalid entry returned by the provider"),
+  ])("propagates failures unrelated to the requested directory", async (failure) => {
     const { sandbox, workspace } = fileWorkspace("");
-    const unavailable = new Error("computer offline");
-    sandbox.listFiles = vi.fn().mockRejectedValue(unavailable);
-    await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).rejects.toBe(
-      unavailable,
-    );
+    sandbox.listFiles = vi.fn().mockRejectedValue(failure);
+    await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).rejects.toBe(failure);
   });
 });
 

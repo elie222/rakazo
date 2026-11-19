@@ -11,7 +11,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import { assertSandboxReadLimit } from "../../../computers/sandbox/sandbox-test-support.js";
-import { WorkspacePathError } from "../../../computers/screens/computer-support.js";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 import {
   DockerSandboxProvider,
   HEALTH_CHECK_TIMEOUT_MS,
@@ -53,7 +53,7 @@ describe("Docker sandbox", () => {
     const computer = { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" };
 
     await expect(provider.listFiles(computer, "missing", context)).rejects.toThrow(
-      WorkspacePathError,
+      WorkspaceDirectoryError,
     );
     await expect(provider.listFiles(computer, ".", context)).rejects.toThrow(
       "sandbox file listing failed: 502",

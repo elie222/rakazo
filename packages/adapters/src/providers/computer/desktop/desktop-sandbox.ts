@@ -38,6 +38,7 @@ import {
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
+  WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import {
@@ -364,8 +365,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const box = this.requiredBox(computer);
     const relative = normalizeWorkspacePath(directory);
-    const target = await localWorkspaceTarget(box.home, relative, true);
-    const entries = await readdir(target, { withFileTypes: true });
+    const entries = await readWorkspaceDirectory(box.home, relative);
     const listed = await Promise.all(
       entries.map(async (entry) => {
         // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
@@ -495,6 +495,25 @@ export class DesktopSandboxProvider implements SandboxProvider {
 
   private allowedRoots(home: string) {
     return [home, ...(this.opts.hostRoots ?? [])];
+  }
+}
+
+async function readWorkspaceDirectory(home: string, relative: string) {
+  try {
+    const target = await localWorkspaceTarget(home, relative, true);
+    return await readdir(target, { withFileTypes: true });
+  } catch (error) {
+    if (
+      error instanceof WorkspacePathError ||
+      (error instanceof Error &&
+        "code" in error &&
+        "path" in error &&
+        error.path !== home &&
+        (error.code === "ENOENT" || error.code === "ENOTDIR"))
+    ) {
+      throw new WorkspaceDirectoryError();
+    }
+    throw error;
   }
 }
 
