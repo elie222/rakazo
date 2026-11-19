@@ -262,8 +262,9 @@ describe("snapshot cycles and retention", () => {
     const working = createUpdaterApp(fixture.config, { run: fakeDocker().run });
     const rollback = await working.request("/rollback", { method: "POST", headers: authorized });
     expect(((await rollback.json()) as ServerUpdateRun).ok).toBe(true);
-    // Nor does the next attempt, whichever release it targets: the database may be part migrated.
-    const retried = await snapshot(fixture, "v1.0.0", "2030-01-10T00:00:00Z");
+    // Nor does the next attempt, from whichever release is now running: the database may be
+    // part migrated.
+    const retried = await snapshot(fixture, "v0.9.0", "2030-01-10T00:00:00Z");
     expect(retried.output).toContain(`${first} is the copy from before`);
     expect(await readFile(path.join(fixture.snapshots, first as string), "utf8")).toBe(
       "from before the failed update",
@@ -292,6 +293,14 @@ describe("snapshot cycles and retention", () => {
     const names = [...(await dumps(fixture))].sort((a, b) => a.length - b.length);
     expect(names).toHaveLength(2);
     expect(names[1]).toBe(names[0]?.replace(/\.dump$/, "+retry.dump"));
+  });
+
+  it("keeps the snapshot it just took when the clock was set back", async () => {
+    const fixture = await deployment("1");
+    await mkdir(fixture.snapshots, { recursive: true });
+    await writeFile(path.join(fixture.snapshots, "20270101T000000Z-v0.9.0.dump"), "later stamp");
+    await snapshot(fixture, "v1.0.0", "2026-01-04T00:00:00Z");
+    expect(await dumps(fixture)).toEqual(new Set(["20260104T000000Z-v1.0.0.dump"]));
   });
 
   it("keeps the newest cycles and leaves anything it did not name", async () => {

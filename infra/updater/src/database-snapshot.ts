@@ -12,7 +12,6 @@ export const SNAPSHOT_DIRECTORY = "backups/pre-update";
 const DATABASE_SERVICE = "postgres";
 const CONTAINER_DUMP = "/tmp/rakazo-pre-update.dump";
 const SNAPSHOT_FILE = /^\d{8}T\d{6}Z-[A-Za-z0-9_.-]+(\+retry)?\.dump$/;
-const STAMP_LENGTH = "20260101T000000Z".length;
 // An image tag cannot contain "+", so no release's first snapshot can be taken for a retry.
 const RETRY_SUFFIX = "+retry";
 // Neither name can match SNAPSHOT_FILE, so neither is ever counted or pruned as a snapshot.
@@ -68,11 +67,11 @@ interface SnapshotUpdate {
 }
 
 /**
- * The name, without `.dump`, of the first snapshot taken since this release last updated
- * successfully. Whatever an attempt since then targeted, its migrations may have run, so that
- * file stays the one clean copy until an update from this release succeeds.
+ * The name, without `.dump`, of the first snapshot taken since an update last succeeded. Whatever
+ * has been attempted or rolled back since, a failed attempt's migrations may have run, so that
+ * file stays the one clean copy until an update succeeds.
  */
-async function readCycle(directory: string, update: SnapshotUpdate): Promise<string | null> {
+async function readCycle(directory: string): Promise<string | null> {
   let cycle: string;
   try {
     cycle = (await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8")).trim();
@@ -80,12 +79,7 @@ async function readCycle(directory: string, update: SnapshotUpdate): Promise<str
     if (isMissing(error)) return null;
     throw error;
   }
-  // A marker left while another release was running describes a cycle that is over.
-  const open =
-    SNAPSHOT_FILE.test(`${cycle}.dump`) &&
-    !cycle.endsWith(RETRY_SUFFIX) &&
-    cycle.slice(STAMP_LENGTH + 1) === update.fromTag;
-  return open ? cycle : null;
+  return SNAPSHOT_FILE.test(`${cycle}.dump`) && !cycle.endsWith(RETRY_SUFFIX) ? cycle : null;
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -134,17 +128,16 @@ export async function snapshotDatabase(
     const copied = await run(copy.command, copy.args, options);
     if (!copied.ok) return copied;
     await chmod(partial, 0o600);
-    const cycle =
-      (await readCycle(directory, update)) ?? snapshotName(update.fromTag ?? "unknown", now);
+    const cycle = (await readCycle(directory)) ?? snapshotName(update.fromTag ?? "unknown", now);
     const first = path.posix.join(directory, `${cycle}.dump`);
     // Also true for a new cycle that lands on an existing name: the earlier file is never replaced.
     const retry = await exists(first);
     const file = retry ? path.posix.join(directory, `${cycle}${RETRY_SUFFIX}.dump`) : first;
     await rename(partial, file);
     await writeFile(path.posix.join(directory, CYCLE_MARKER), `${cycle}\n`, { mode: 0o600 });
-    await prune(directory, config.databaseSnapshots);
+    await prune(directory, config.databaseSnapshots, cycle);
     const output = retry
-      ? `Saved ${file}. An update from this release failed before: ${first} is the copy from before that attempt.`
+      ? `Saved ${file}. An update failed before this one: ${first} is the copy from before that attempt.`
       : `Saved ${file}`;
     return { ok: true, exitCode: 0, stdout: output, output };
   } catch (error) {
@@ -165,11 +158,13 @@ export async function endSnapshotCycle(config: UpdaterConfig): Promise<void> {
 }
 
 /** Keeps the files of the newest `keep` cycles. Only files this module named are ever removed. */
-async function prune(directory: string, keep: number) {
+async function prune(directory: string, keep: number, current: string) {
   const names = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name));
   const cycleOf = (name: string) => name.replace(/(\+retry)?\.dump$/, "");
-  // Stamps sort by time.
-  const kept = new Set([...new Set(names.map(cycleOf))].sort().slice(-keep));
+  // Stamps sort by time. The cycle just written counts as one of the kept ones wherever its
+  // stamp sorts, so a clock set back cannot make an update delete its own snapshot.
+  const older = [...new Set(names.map(cycleOf))].filter((cycle) => cycle !== current).sort();
+  const kept = new Set([current, ...older.slice(older.length - (keep - 1))]);
   for (const name of names) {
     if (!kept.has(cycleOf(name))) await rm(path.posix.join(directory, name), { force: true });
   }

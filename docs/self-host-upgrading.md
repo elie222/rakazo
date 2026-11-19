@@ -400,7 +400,7 @@ An update that fails and is tried again is snapshotted again, and by then the fa
 migrations may already have run. The first attempt's file is therefore never replaced: a later
 attempt, whichever release it targets, saves `<time>-<outgoing tag>+retry.dump` beside it, with
 the first attempt's time, and each further attempt replaces only that file. The pair is closed
-when an update succeeds, not by a rollback, and the next update then starts a new one. The
+when an update succeeds, not by a rollback or a change of release, and the next update then starts a new one. The
 setting counts these pairs, so each holds one or two files.
 
 The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
