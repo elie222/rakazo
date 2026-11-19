@@ -393,7 +393,8 @@ async function detectPurchaseOrRefuse(
   try {
     return await detectPurchase(ctx, name, args);
   } catch (error) {
-    if (error instanceof PurchaseCheckFailedError) return refusal("purchase_check_failed", error.message);
+    if (error instanceof PurchaseCheckFailedError)
+      return refusal("purchase_check_failed", error.message);
     throw error;
   }
 }

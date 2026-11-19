@@ -7,6 +7,7 @@ import type { PurchaseApproval } from "./purchase-gate.js";
 import {
   detectPurchase,
   PURCHASE_CHECK_FAILED_MESSAGE,
+  PurchaseCheckFailedError,
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "./purchase-gate.js";
@@ -275,13 +276,16 @@ describe("purchase detection for the page tools", () => {
     expect(check).not.toHaveBeenCalled();
   });
 
-
   it("refuses when the page check fails, and does not ask to pay", async () => {
     const check = vi.fn(async () => {
-      throw new Error("The page did not answer in time.");
+      throw new PurchaseCheckFailedError();
     });
     const ctx = contextWith(check as never);
-    const actions = [{ kind: "key", key: "ctrl+l" }, { kind: "type", text: "https://shop.example.test" }, { kind: "key", key: "Return" }];
+    const actions = [
+      { kind: "key", key: "ctrl+l" },
+      { kind: "type", text: "https://shop.example.test" },
+      { kind: "key", key: "Return" },
+    ];
     await expect(detectPurchase(ctx, "computer_act", { actions })).rejects.toMatchObject({
       name: "PurchaseCheckFailedError",
       message: PURCHASE_CHECK_FAILED_MESSAGE,
@@ -290,7 +294,9 @@ describe("purchase detection for the page tools", () => {
       name: "computer_act",
       args: { actions },
     } as unknown as ToolRequest;
-    expect(await prepareToolRequest(ctx, request)).toEqual({ error: PURCHASE_CHECK_FAILED_MESSAGE });
+    expect(await prepareToolRequest(ctx, request)).toEqual({
+      error: PURCHASE_CHECK_FAILED_MESSAGE,
+    });
     expect(request.purchase).toBeUndefined();
     expect(request.fleetSummary).toBeUndefined();
     // A readable payment page still asks as before.
@@ -300,7 +306,28 @@ describe("purchase detection for the page tools", () => {
       args: { actions: [{ kind: "click", x: 1, y: 2 }] },
     } as unknown as ToolRequest;
     expect(await prepareToolRequest(ok, pay)).toBeUndefined();
-    expect(pay.purchase).toMatchObject({ site: "shop.example.test", label: "Pay now", amount: "$5" });
+    expect(pay.purchase).toMatchObject({
+      site: "shop.example.test",
+      label: "Pay now",
+      amount: "$5",
+    });
+  });
+
+  it("lets unexpected purchase-check errors surface as server failures", async () => {
+    const check = vi.fn(async () => {
+      throw new TypeError("cannot read properties of undefined");
+    });
+    const ctx = contextWith(check as never);
+    const request = {
+      name: "computer_act",
+      args: { actions: [{ kind: "click", x: 1, y: 2 }] },
+    } as unknown as ToolRequest;
+    await expect(detectPurchase(ctx, "computer_act", request.args)).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    await expect(prepareToolRequest(ctx, request)).rejects.toBeInstanceOf(TypeError);
+    expect(request.purchase).toBeUndefined();
+    expect(request.fleetSummary).toBeUndefined();
   });
 
   it("skips the probe for Ctrl+L or Ctrl+T then a local preview URL and Enter", async () => {
@@ -340,6 +367,29 @@ describe("purchase detection for the page tools", () => {
     check.mockClear();
     expect(await act([{ kind: "click", x: 1, y: 2 }])).toMatchObject({ site: "shop.example.test" });
     expect(check).toHaveBeenCalledOnce();
+  });
+
+  it("still checks sequences that do not actually open the address bar or type only a local URL", async () => {
+    const check = vi.fn(async () => ({ purchase: found }));
+    const ctx = contextWith(check as never);
+    const act = (actions: unknown[]) => detectPurchase(ctx, "computer_act", { actions });
+    const local = { kind: "type", text: "http://127.0.0.1:8930" };
+    const enter = { kind: "key", key: "Return" };
+    const checked = [
+      [{ kind: "key", key: "l+ctrl" }, local, enter],
+      [{ kind: "key", key: "t+ctrl" }, local, enter],
+      [{ kind: "key", key: "ctrl+l" }, local, { kind: "key", key: "ctrl+Return" }],
+      [{ kind: "key", key: "ctrl+l" }, local, { kind: "key", key: "Return", modifiers: ["ctrl"] }],
+      [{ kind: "key", key: "ctrl+l" }, { kind: "type", text: "http://localhost:8930/\n" }, enter],
+      [{ kind: "key", key: "ctrl+l" }, { kind: "type", text: " http://127.0.0.1:8930" }, enter],
+    ];
+    for (const actions of checked) {
+      check.mockClear();
+      expect(await act(actions), JSON.stringify(actions)).toMatchObject({
+        site: "shop.example.test",
+      });
+      expect(check, JSON.stringify(actions)).toHaveBeenCalledOnce();
+    }
   });
 
   it("asks about a press after the batch opens a URL, without looking at the page first", async () => {

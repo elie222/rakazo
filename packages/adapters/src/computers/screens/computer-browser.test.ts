@@ -573,13 +573,11 @@ describe("page browser safety", () => {
     });
 
     it("retries no other failure, and a computer that cannot check still answers none", async () => {
-      const interrupted = vi
-        .fn()
-        .mockResolvedValue({
-          ok: false,
-          error: "Page browser unavailable or interrupted",
-          fallback: "computer_act",
-        });
+      const interrupted = vi.fn().mockResolvedValue({
+        ok: false,
+        error: "Page browser unavailable or interrupted",
+        fallback: "computer_act",
+      });
       await expect(
         new ComputerBrowserProvider({ liveDriver: interrupted }).purchaseCheck(
           computer,
@@ -589,13 +587,11 @@ describe("page browser safety", () => {
       ).rejects.toThrow(PURCHASE_CHECK_FAILED_MESSAGE);
       expect(interrupted).toHaveBeenCalledTimes(1);
 
-      const unavailable = vi
-        .fn()
-        .mockResolvedValue({
-          ok: false,
-          error: "unknown command: purchase_check",
-          fallback: "computer_act",
-        });
+      const unavailable = vi.fn().mockResolvedValue({
+        ok: false,
+        error: "unknown command: purchase_check",
+        fallback: "computer_act",
+      });
       expect(
         await new ComputerBrowserProvider({ liveDriver: unavailable }).purchaseCheck(
           computer,

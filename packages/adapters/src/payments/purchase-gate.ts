@@ -222,39 +222,59 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
     : undefined;
 }
 
-
 const LOCAL_PREVIEW_URL =
   /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?([/?#][\x21-\x7E]*)?$/i;
 
-function actionKeyParts(step: Record<string, unknown>): string[] {
-  return [
-    ...String(step.key ?? "").split("+"),
-    ...(Array.isArray(step.modifiers) ? step.modifiers.map(String) : []),
-  ].map((part) => part.trim().toLowerCase());
-}
-
 const ADDRESS_BAR_ENTER = /^(return|kp_enter|enter|iso_enter|linefeed)$/i;
+const CONTROL_KEY = new Set(["ctrl", "control"]);
+const OMNIBOX_LETTER = new Set(["l", "t"]);
 
-function isEnterKey(step: Record<string, unknown>): boolean {
-  return String(step.kind) === "key" && actionKeyParts(step).some((part) => ADDRESS_BAR_ENTER.test(part));
+function keyParts(value: unknown): string[] {
+  return String(value ?? "")
+    .split("+")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
 }
 
-/** Ctrl+L or Ctrl+T with no other modifiers: the address bar or a new tab. */
+function modifierParts(step: Record<string, unknown>): string[] {
+  return (Array.isArray(step.modifiers) ? step.modifiers.map(String) : [])
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Bare Enter/Return, with no modifiers: submitting the address bar. */
+function isEnterKey(step: Record<string, unknown>): boolean {
+  return (
+    String(step.kind) === "key" &&
+    modifierParts(step).length === 0 &&
+    keyParts(step.key).length === 1 &&
+    ADDRESS_BAR_ENTER.test(keyParts(step.key)[0] ?? "")
+  );
+}
+
+/**
+ * Ctrl+L or Ctrl+T with no other modifiers: the address bar or a new tab.
+ * Control must be down before the letter is pressed: in the Linux sandbox, xcapture
+ * emits the key chord in the given order, so `l+ctrl` types L without Control.
+ * `modifiers` are pressed first, so `{ key: "l", modifiers: ["ctrl"] }` is fine.
+ */
 function isOmniboxShortcut(step: Record<string, unknown>): boolean {
   if (String(step.kind) !== "key") return false;
-  const parts = actionKeyParts(step);
-  const hasCtrl = parts.includes("ctrl") || parts.includes("control");
-  const letter = parts.filter((part) => part === "l" || part === "t");
-  const extra = parts.filter(
-    (part) => part !== "ctrl" && part !== "control" && part !== "l" && part !== "t",
-  );
-  return hasCtrl && letter.length === 1 && extra.length === 0;
+  const chord = keyParts(step.key);
+  const modifiers = modifierParts(step);
+  if (modifiers.some((part) => !CONTROL_KEY.has(part))) return false;
+  const letters = chord.filter((part) => OMNIBOX_LETTER.has(part));
+  const extras = chord.filter((part) => !OMNIBOX_LETTER.has(part) && !CONTROL_KEY.has(part));
+  if (letters.length !== 1 || extras.length !== 0) return false;
+  const ctrlInChord = chord.findIndex((part) => CONTROL_KEY.has(part));
+  const letterAt = chord.findIndex((part) => OMNIBOX_LETTER.has(part));
+  if (ctrlInChord === -1) return modifiers.length > 0 && chord.length === 1;
+  return ctrlInChord < letterAt;
 }
 
 function isLocalPreviewUrl(text: string): boolean {
-  const raw = text.trim();
-  if (!raw || raw.includes("@") || raw.includes("\\") || /[^\x21-\x7E]/.test(raw)) return false;
-  return LOCAL_PREVIEW_URL.test(raw);
+  if (!text || text.includes("@") || text.includes("\\") || /[^\x21-\x7E]/.test(text)) return false;
+  return LOCAL_PREVIEW_URL.test(text);
 }
 
 /**
@@ -265,9 +285,13 @@ export function isLocalAddressBarNavigation(name: string, args: Record<string, u
   if (name !== "computer_act") return false;
   const actions = Array.isArray(args.actions) ? args.actions : [];
   if (actions.length !== 3) return false;
-  const [open, typed, submit] = actions.map((raw) =>
+  const steps = actions.map((raw) =>
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {},
   );
+  const open = steps[0];
+  const typed = steps[1];
+  const submit = steps[2];
+  if (!open || !typed || !submit) return false;
   return (
     isOmniboxShortcut(open) &&
     String(typed.kind) === "type" &&
@@ -313,12 +337,13 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
+    if (!(error instanceof PurchaseCheckFailedError)) throw error;
     getLogger().warn("purchase check failed, refusing", {
-      errorName: error instanceof Error ? error.name : typeof error,
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
     });
-    throw error instanceof PurchaseCheckFailedError
-      ? error
-      : new PurchaseCheckFailedError();
+    throw error;
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even

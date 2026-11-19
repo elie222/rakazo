@@ -18,9 +18,9 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { PURCHASE_CHECK_FAILED_MESSAGE } from "../../payments/purchase-gate.js";
 import type { FakeBrowserProviderOptions } from "../../browser/fake-browser.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
+import { PurchaseCheckFailedError } from "../../payments/purchase-gate.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 
@@ -258,7 +258,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       if (!cannotCheck(live?.error)) {
         // The check started and failed (timed out, killed, a page it could not read): refuse, do not ask.
         getLogger().warn("purchase check failed, refusing", { error: live?.error });
-        throw new Error(PURCHASE_CHECK_FAILED_MESSAGE);
+        throw new PurchaseCheckFailedError();
       }
       if (!this.purchaseCheckWarned) {
         this.purchaseCheckWarned = true;
