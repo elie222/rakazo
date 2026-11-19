@@ -109,6 +109,11 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     private readonly records: AgentHomeRecords,
     private readonly limits: HomeArchiveLimits = DEFAULT_HOME_ARCHIVE_LIMITS,
     saveLimits?: WorkspaceExportLimits,
+    /**
+     * Leave the previous revision to the sweep (which removes it once it is a day old) instead of
+     * deleting it after each save, so an off-site bucket mirror can copy every revision first.
+     */
+    private readonly keepPreviousRevision = false,
   ) {
     super(root, saveLimits);
   }
@@ -450,7 +455,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       await discard();
       throw new HomeSaveConflictError();
     }
-    if (base)
+    if (base && !this.keepPreviousRevision)
       await this.storage
         .delete([objectKey(stored.storageId, base)])
         .catch((error) => getLogger().error("previous home revision removal failed", error));
@@ -712,6 +717,7 @@ export function createAgentHomeStore(
     new PrismaAgentHomeRecords(prisma, ring),
     DEFAULT_HOME_ARCHIVE_LIMITS,
     saveLimits,
+    env.HOME_STORAGE_KEEP_PREVIOUS_REVISION === "true",
   );
 }
 

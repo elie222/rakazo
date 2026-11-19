@@ -110,7 +110,7 @@ function memoryRing() {
   return new ContentKeyRing(new LocalKeyProvider([{ id: "k1", key: randomBytes(32) }]), store);
 }
 
-async function setup(homeKeys = ["bot-1"]) {
+async function setup(homeKeys = ["bot-1"], keepPreviousRevision = false) {
   const root = await mkdtemp(path.join(tmpdir(), "rakazo-object-homes-"));
   dirs.push(root);
   const rows: ComputerRow[] = homeKeys.map((homeKey, index) => ({
@@ -125,7 +125,14 @@ async function setup(homeKeys = ["bot-1"]) {
   }));
   const storage = new MemoryObjectStorage();
   const records = new PrismaAgentHomeRecords(fakeComputers(rows), memoryRing());
-  const store = new ObjectAgentHomeStore(root, storage, records);
+  const store = new ObjectAgentHomeStore(
+    root,
+    storage,
+    records,
+    undefined,
+    undefined,
+    keepPreviousRevision,
+  );
   /** Another API or worker host: same bucket and database, its own empty cache. */
   const otherHost = async () => {
     const otherRoot = await mkdtemp(path.join(tmpdir(), "rakazo-object-homes-"));
@@ -700,6 +707,33 @@ describe("ObjectAgentHomeStore", () => {
 
     expect(await store.sweep()).toBe(2);
     expect([...storage.objects.keys()].sort()).toEqual([kept, inProgress].sort());
+  });
+
+  // A bucket mirror copies new objects up to an hour (or one long sync) late. A
+  // database restored to the mirror's last sync must find every revision it names there.
+  it("deletes the previous revision at once by default, before a late mirror could copy it", async () => {
+    const { store, storage, rows } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "one" }), context);
+    const restorePoint = `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`;
+    await store.commit("bot-1", await staged({ "a.txt": "two" }), context);
+    expect(storage.objects.has(restorePoint)).toBe(false);
+  });
+
+  it("keeps the previous revision for the sweep to remove a day later when asked to", async () => {
+    const { store, storage, rows } = await setup(["bot-1"], true);
+    await store.commit("bot-1", await staged({ "a.txt": "one" }), context);
+    const restorePoint = `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`;
+    await store.commit("bot-1", await staged({ "a.txt": "two" }), context);
+    await store.commit("bot-1", await staged({ "a.txt": "three" }), context);
+    const current = `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`;
+    expect(storage.objects.size).toBe(3);
+    expect(storage.objects.has(restorePoint)).toBe(true);
+
+    expect(await store.sweep()).toBe(0);
+    expect(storage.objects.has(restorePoint)).toBe(true);
+    expect(await store.sweep(Date.now() + 2 * 24 * 60 * 60_000)).toBe(2);
+    expect([...storage.objects.keys()]).toEqual([current]);
+    expect(await store.readFile("bot-1", "a.txt", context)).toBe("three");
   });
 
   it("removes folders from the stored copy, so another host never gets them back", async () => {
