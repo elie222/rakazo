@@ -48,6 +48,7 @@ export const BUILTIN_TOOL_NAMES = [
   "forget_secret",
   "render_plot",
   "save_page",
+  "write_draft",
   "generate_image",
   "generate_video",
   "add_mcp_server",

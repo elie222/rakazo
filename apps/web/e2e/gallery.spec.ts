@@ -16,6 +16,42 @@ test("gallery keeps a paginated call closed and its follow-up visible", async ({
   await captureScreenshot(page, testInfo, "paginated-call-marker");
 });
 
+test("a draft opens to mark the passages to change", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=drafts&theme=light");
+  const card = page.getByTestId("draft-card").first();
+  await card.getByRole("button", { name: "Open" }).click();
+  // The note panel is a popover of its own, so the draft is found by its name.
+  const dialog = page.getByRole("dialog", { name: /LinkedIn message/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Revise" })).toBeDisabled();
+  for (const [passage, note] of [
+    ["I hope this message finds you well.", "Warmer"],
+    ["quick 15-minute call next week", "Suggest Tuesday"],
+  ] as const) {
+    await dialog.getByTestId("draft-body").evaluate((body, passage) => {
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.textContent?.indexOf(passage) ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + passage.length);
+        getSelection()?.removeAllRanges();
+        getSelection()?.addRange(range);
+        body.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+        return;
+      }
+    }, passage);
+    const panel = page.getByTestId("draft-note-panel");
+    await panel.getByRole("textbox", { name: "What should change?" }).fill(note);
+    await panel.getByRole("button", { name: "Add" }).click();
+    await expect(panel).toBeHidden();
+  }
+  await expect(dialog.getByText("2 notes")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Revise" })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "draft-marked-up");
+});
+
 test("gallery shows a tool's question as plain text with its form", async ({ page }, testInfo) => {
   await page.goto("/e2e/fixtures/gallery.html?scenario=approvals&theme=light");
   const [open, declined] = await page.getByTestId("tool-question-card").all();

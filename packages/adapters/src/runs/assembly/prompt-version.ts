@@ -111,6 +111,7 @@ export function promptVersionParts() {
           disabledBuiltinTools,
           offeredFleetTools: FLEET_WRITE_TOOL_NAMES,
           followUpsOffered: true,
+          draftsOffered: !disabledBuiltinTools?.has("write_draft"),
           backgroundHelpersAllowed: true,
           userComputer,
         }),

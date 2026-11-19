@@ -26,6 +26,7 @@ export function messageRowLayout(
       block.kind === "tool_question" ||
       block.kind === "app" ||
       block.kind === "page" ||
+      block.kind === "draft" ||
       (block.kind === "ask" &&
         block.status !== "answered" &&
         Boolean(block.actions?.length) &&

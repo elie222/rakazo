@@ -50,6 +50,7 @@ import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
 import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
+import { DraftCard } from "../drafts/draft-card";
 import { AudioAttachment } from "../media/audio-attachment";
 import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
@@ -148,7 +149,8 @@ function isOwnCardBlock(block: MessageBlock): boolean {
     isSpecialMessageBlock(block) ||
     block.kind === "page" ||
     block.kind === "app" ||
-    block.kind === "tool_question"
+    block.kind === "tool_question" ||
+    block.kind === "draft"
   );
 }
 
@@ -177,6 +179,15 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
           messageId={message.id}
           target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
           canAnswer={props.canAnswer}
+        />
+      );
+    if (first.kind === "draft")
+      return (
+        <DraftCard
+          key={`draft-${index}`}
+          block={first}
+          messageId={message.id}
+          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
         />
       );
     if (first.kind === "app")

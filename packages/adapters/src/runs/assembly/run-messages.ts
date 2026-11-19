@@ -65,6 +65,15 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
       return { ...block, text: redactSecrets(block.text, secrets) };
     }
     if (block.kind === "page") return { ...block, title: redactSecrets(block.title, secrets) };
+    if (block.kind === "draft") {
+      return {
+        ...block,
+        label: redactSecrets(block.label, secrets),
+        ...(block.to === undefined ? {} : { to: redactSecrets(block.to, secrets) }),
+        ...(block.subject === undefined ? {} : { subject: redactSecrets(block.subject, secrets) }),
+        body: redactSecrets(block.body, secrets),
+      };
+    }
     if (block.kind === "steps") {
       return {
         ...block,

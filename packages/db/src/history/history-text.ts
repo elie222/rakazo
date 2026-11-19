@@ -17,6 +17,9 @@ function toolSteps(block: MessageBlock): Extract<MessageBlock, { kind: "steps" }
 
 function conversationText(block: MessageBlock): string[] {
   if (block.kind === "subagent") return [block.task, block.result ?? ""].filter(Boolean);
+  if (block.kind === "draft") {
+    return [block.subject, block.body].filter((text): text is string => typeof text === "string");
+  }
   return [
     "text",
     "channel_message",
@@ -62,7 +65,7 @@ export function historyAttachmentBlocks(
 
 /**
  * What history search matches: the message text, its tool steps' labels and notes, and the
- * names of its attachments. Mirrors the expression of messages_history_search_steps_idx.
+ * names of its attachments. Mirrors the expression of messages_history_search_drafts_idx.
  */
 export function historySearchText(blocks: Prisma.JsonValue): string {
   const steps = objectBlocks(blocks).flatMap(toolSteps);
