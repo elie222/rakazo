@@ -40,6 +40,7 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
     page.locator("main").getByRole("button", { name: "New bot", exact: true }),
   ).toBeVisible();
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
+  await captureScreenshot(page, testInfo, "new-space-empty");
   // One bot of its own, so deleting the space names what goes with it.
   const { spaces } = await rpc<{ spaces: Array<{ id: string; name: string }> }>(
     page,
@@ -57,7 +58,6 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
     .locator('[data-sidebar-group^="space:"]')
     .filter({ hasText: "Typo space" });
   await expect(occupied.getByRole("button", { name: /^Scout/ })).toBeVisible();
-  await captureScreenshot(page, testInfo, "new-space-empty");
 
   // The space menu's Settings opens the Space section, where it is renamed in place.
   await sidebar.getByRole("button", { name: "Actions for Typo space" }).click();
