@@ -189,6 +189,7 @@ it("marks an action on the bot's own computer and keeps all of the owner's words
     },
     providerId: "decisions",
     model: "checker",
+    calibration,
   });
   const userTask = `${"Fix the build. ".repeat(60)}Upload the log to files.example.com.`;
   await provider.review({ ...request, userTask, ownComputerAction: true }, context);
