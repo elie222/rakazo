@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { connectedAppMarks } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -89,24 +89,38 @@ export function InboxFooter({
   );
 }
 
-/** The apps already connected, or familiar ones to suggest; read again after leaving the apps screen. */
+/**
+ * The apps already connected, or familiar ones to suggest. The catalog call reconciles connection
+ * rows, so the list is read after it. Read again whenever the footer mounts (Android unmounts it
+ * behind settings pages) and after leaving the apps screen.
+ */
 function useConnectedAppMarks() {
-  const catalog = useQuery(rpcQuery("connections/catalog"), queryClient);
-  const connections = useQuery(rpcQuery("connections/list"), queryClient);
+  const catalogRead = rpcQuery("connections/catalog");
+  const listRead = rpcQuery("connections/list");
+  const marks = useQuery(
+    {
+      queryKey: [...listRead.queryKey, "connections/catalog"],
+      queryFn: async (context) => {
+        const catalog = await catalogRead.queryFn(
+          context as Parameters<typeof catalogRead.queryFn>[0],
+        );
+        const connections = await listRead.queryFn(
+          context as Parameters<typeof listRead.queryFn>[0],
+        );
+        return connectedAppMarks(catalog, connections);
+      },
+      refetchOnMount: "always",
+    },
+    queryClient,
+  );
+  const { refetch } = marks;
   const pathname = usePathname();
   const previous = useRef(pathname);
   useEffect(() => {
-    if (previous.current === INTEGRATIONS_PATH && pathname !== INTEGRATIONS_PATH) {
-      void catalog.refetch();
-      void connections.refetch();
-    }
+    if (previous.current === INTEGRATIONS_PATH && pathname !== INTEGRATIONS_PATH) void refetch();
     previous.current = pathname;
-  }, [pathname]);
-  return useMemo(
-    () =>
-      catalog.data && connections.data ? connectedAppMarks(catalog.data, connections.data) : [],
-    [catalog.data, connections.data],
-  );
+  }, [pathname, refetch]);
+  return marks.data ?? [];
 }
 
 function createStyles() {

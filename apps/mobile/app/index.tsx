@@ -922,7 +922,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
-      {embedded && !onShareSelect && me ? (
+      {/* Without a loaded account the footer still leads to Account, to sign out or switch server. */}
+      {embedded && !onShareSelect ? (
         <InboxFooter initial={initials} columnInsets={columnInsets} />
       ) : null}
       {organizeChat && organizeTarget ? (
