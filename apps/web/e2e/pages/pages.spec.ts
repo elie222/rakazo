@@ -496,8 +496,14 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
 
   // Turning the link off breaks it at once.
   await view.getByRole("button", { name: "Share" }).click();
-  await expect(share.getByText("The shared link stops working")).toBeVisible();
-  await share.getByRole("radio", { name: /Only you/ }).click();
+  const onlyYou = share.getByRole("radio", { name: /Only you/ });
+  await expect(
+    share
+      .locator("label")
+      .filter({ has: page.getByRole("radio", { name: /Only you/ }) })
+      .getByText("The shared link stops working"),
+  ).toBeVisible();
+  await onlyYou.click();
   await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
   await outside.reload();
   await expect(outside.getByRole("heading", { name: "This page isn't available" })).toBeVisible();
@@ -1107,7 +1113,8 @@ test("specific people review a version and lose access when removed", async ({
     await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
     await page.getByRole("button", { name: `Open ${title}` }).click({ timeout: 30_000 });
     const pageId = new URL(page.url()).searchParams.get("page")!;
-    await page.getByRole("button", { name: "Share", exact: true }).click();
+    const shareButton = page.getByRole("button", { name: "Share", exact: true });
+    await shareButton.click();
     const share = page.getByTestId("page-share");
     await share.getByRole("radio", { name: "Specific people" }).click();
     await share.getByRole("textbox", { name: "Account email" }).fill(reviewerEmail);
@@ -1132,14 +1139,16 @@ test("specific people review a version and lose access when removed", async ({
     await expect(reviewer.getByRole("button", { name: "Ask bot to revise" })).toBeVisible();
     await captureScreenshot(reviewer, testInfo, "page-review-comment");
 
-    await page.keyboard.press("Escape");
+    await shareButton.click();
+    await expect(share).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`[?&]page=${pageId}`));
     await page.getByRole("button", { name: "Review page" }).click();
     await page.getByRole("button", { name: "Comments", exact: true }).click();
     await expect(page.getByText("Add the rollout date.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Resolve", exact: true }).click();
     await expect(reviewer.getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
     await page.goBack();
-    await page.getByRole("button", { name: "Share", exact: true }).click();
+    await shareButton.click();
     await share.getByRole("button", { name: `Remove access for ${reviewerEmail}` }).click();
     await expect(reviewer.getByText("This page isn't available", { exact: true })).toBeVisible();
     await expect(reviewer.locator(`iframe[title="${title}"]`)).toHaveCount(0);
