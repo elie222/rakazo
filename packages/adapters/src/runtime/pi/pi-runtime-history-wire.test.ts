@@ -300,8 +300,16 @@ describe("history on the wire", () => {
     ["plain text", { command: "ls ext" }, { command: "ls ext" }],
     [
       "malformed Unicode",
-      { command: "echo \uD800", values: ["\uDC00", "🌿", "\\ud800"] },
-      { command: "echo \uFFFD", values: ["\uFFFD", "🌿", "\\ud800"] },
+      {
+        command: "echo \uD800",
+        values: ["\uDC00", "🌿", "\\ud800"],
+        nested: { "field\uFFFD": "valid", "field\uD800": "malformed", "🌿": "leaf" },
+      },
+      {
+        command: "echo \uFFFD",
+        values: ["\uFFFD", "🌿", "\\ud800"],
+        nested: { "field\uFFFD": "valid", "🌿": "leaf" },
+      },
     ],
   ])("sends Anthropic earlier tool steps with %s", async (_label, args, expectedInput) => {
     const history = structuredClone(toolReply);
@@ -322,7 +330,8 @@ describe("history on the wire", () => {
     ]);
     const use = messages[1]!.content.find((part) => part.type === "tool_use");
     expect(messages[1]!.content[0]).toMatchObject({ type: "text", text: "Installing it." });
-    expect(use).toMatchObject({ name: "shell", input: expectedInput });
+    expect(use?.name).toBe("shell");
+    expect(use?.input).toEqual(expectedInput);
     expect(messages[2]!.content[0]).toMatchObject({
       type: "tool_result",
       tool_use_id: use!.id,
