@@ -109,6 +109,6 @@ export function createIntegrationsStyles() {
     },
     toolsBody: { gap: 8, paddingTop: 4 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { padding: 8 },
+    addCustom: { padding: 12 },
   });
 }
