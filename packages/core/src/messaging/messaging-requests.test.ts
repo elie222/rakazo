@@ -58,9 +58,12 @@ it("names the caller's agent on each request waiting for an answer", () => {
   ).toEqual([["ac-1", "Chief"]]);
 });
 
-it("waits for the status read before listing requests", () => {
-  expect(messagingRequests({ status: undefined, channels, connections })).toEqual({
-    invites: [],
-    connectionRequests: [],
-  });
+it("still lists requests when the agent names could not be read", () => {
+  const requests = messagingRequests({ status: undefined, channels, connections });
+  expect(requests.invites.map(({ channel, agent }) => [channel.id, agent])).toEqual([
+    ["cm-1", undefined],
+  ]);
+  expect(
+    requests.connectionRequests.map(({ connection, agent }) => [connection.id, agent]),
+  ).toEqual([["ac-1", undefined]]);
 });

@@ -89,13 +89,17 @@ function ConnectionRequestText({
   agent,
 }: {
   connection: MessagingAgentConnection;
-  agent: string;
+  agent: string | undefined;
 }) {
   const owner = connection.peerOwnerLabel;
   const peer = connection.peerBotName;
-  return (
+  return agent ? (
     <Trans>
       {owner}'s {peer} wants to connect to {agent}
+    </Trans>
+  ) : (
+    <Trans>
+      {owner}'s {peer} wants to connect to your agent
     </Trans>
   );
 }
@@ -518,7 +522,7 @@ export function MessagingSettingsPanel() {
                   rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
                 )}
               >
-                <ConnectionRequestText connection={connection} agent={agent ?? t`Your agent`} />
+                <ConnectionRequestText connection={connection} agent={agent} />
               </Row>
             ))}
           </ul>

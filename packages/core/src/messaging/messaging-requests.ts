@@ -5,16 +5,15 @@ import type {
 } from "@rakazo/contracts";
 
 /**
- * The requests waiting on the caller, each with the name of the caller's agent it asks about.
- * Only the status read knows those names, so there are none until it has loaded.
+ * The requests waiting on the caller, each with the name of the caller's agent it asks about,
+ * which only the status read knows.
  */
 export function messagingRequests(input: {
   status: MessagingStatus | null | undefined;
   channels: readonly MessagingChannelMembership[];
   connections: readonly MessagingAgentConnection[];
 }) {
-  const identities = input.status?.identities;
-  if (!identities) return { invites: [], connectionRequests: [] };
+  const identities = input.status?.identities ?? [];
   const agentWith = (match: (identity: MessagingStatus["identities"][number]) => boolean) =>
     identities.find(match)?.botName;
   return {

@@ -189,8 +189,9 @@ export default function MessagingSettings() {
   ) => {
     const owner = connection.peerOwnerLabel;
     const peer = connection.peerBotName;
-    const agent = named ?? t`Your agent`;
-    return t`${owner}'s ${peer} wants to connect to ${agent}`;
+    return named
+      ? t`${owner}'s ${peer} wants to connect to ${named}`
+      : t`${owner}'s ${peer} wants to connect to your agent`;
   };
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
