@@ -86,7 +86,7 @@ describe("VoiceChatCard", () => {
     expect(Number(header.paddingVertical) * 2 + Number(title.lineHeight)).toBe(40);
   });
 
-  it("lets each transcript turn be chosen while messages are being selected", async () => {
+  it("opens with its chosen turns and lets each turn be chosen while selecting", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const turn = (id: string, role: "user" | "bot", text: string) =>
       ({
@@ -115,10 +115,8 @@ describe("VoiceChatCard", () => {
         />,
       );
     });
-    await act(async () => {
-      container.querySelector<HTMLElement>("button")?.click();
-    });
 
+    // A card holding a chosen turn mounts open, as it does when the list remounts it.
     const checkboxes = [...container.querySelectorAll<HTMLElement>('[data-role="checkbox"]')];
     expect(checkboxes.map((box) => box.dataset.checked)).toEqual(["false", "true"]);
     await act(async () => {

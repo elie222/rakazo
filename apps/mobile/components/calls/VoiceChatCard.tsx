@@ -29,7 +29,10 @@ export function VoiceChatCard({
 }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const [open, setOpen] = useState(false);
+  // The list remounts cards scrolled out of view; one holding chosen turns comes back open.
+  const [open, setOpen] = useState(() =>
+    group.messages.some((message) => selectedIds?.has(message.id)),
+  );
   const summary = voiceChatSummary(group);
   return (
     <View style={[styles.card, { backgroundColor: native.fill }]}>
