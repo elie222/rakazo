@@ -67,3 +67,13 @@ it("still lists requests when the agent names could not be read", () => {
     requests.connectionRequests.map(({ connection, agent }) => [connection.id, agent]),
   ).toEqual([["ac-1", undefined]]);
 });
+
+it("treats an agent with no name as unknown", () => {
+  const unnamed = {
+    ...status,
+    identities: status.identities.map((identity) => ({ ...identity, botName: "" })),
+  };
+  const requests = messagingRequests({ status: unnamed, channels, connections });
+  expect(requests.invites[0]?.agent).toBeUndefined();
+  expect(requests.connectionRequests[0]?.agent).toBeUndefined();
+});

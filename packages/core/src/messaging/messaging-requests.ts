@@ -15,7 +15,8 @@ export function messagingRequests(input: {
 }) {
   const identities = input.status?.identities ?? [];
   const agentWith = (match: (identity: MessagingStatus["identities"][number]) => boolean) =>
-    identities.find(match)?.botName;
+    // A deleted bot leaves its identity behind with no name.
+    identities.find(match)?.botName || undefined;
   return {
     invites: input.channels
       .filter((channel) => channel.status === "invited")
