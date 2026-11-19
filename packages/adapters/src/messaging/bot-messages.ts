@@ -78,7 +78,7 @@ const REACHABLE_BOTS_MAX = 12;
  * the tool broken. Bots without a chat cannot be delivered to, and a bot cannot message
  * itself, so neither is offered.
  */
-function unresolvedBotError(
+export function unresolvedBotError(
   candidates: readonly { id: string; name: string; thread: unknown }[],
   senderId: string,
 ): string {
@@ -90,7 +90,7 @@ function unresolvedBotError(
     .slice(0, REACHABLE_BOTS_MAX)
     .map((bot) => `${sanitizeMessagingLabel(bot.name)} (${bot.id})`);
   const hidden = reachable.length - listed.length;
-  return `no bot found with that id or name. Bots reachable from this space: ${listed.join("; ")}${
+  return `no bot found with that id or name. Bots reachable from this space (use bot_id): ${listed.join("; ")}${
     hidden > 0 ? `; and ${hidden} more` : ""
   }`;
 }

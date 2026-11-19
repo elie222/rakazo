@@ -268,7 +268,7 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({
       ok: false,
       error:
-        "no bot found with that id or name. Bots reachable from this space: Analyst (bot-target)",
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Analyst (bot-target)",
     });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
@@ -289,7 +289,7 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({
       ok: false,
       error:
-        "no bot found with that id or name. Bots reachable from this space: Analyst (bot-target)",
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Analyst (bot-target)",
     });
   });
 
@@ -341,7 +341,7 @@ describe("messaging another bot", () => {
     expect(sent).toEqual({
       ok: false,
       error:
-        "no bot found with that id or name. Bots reachable from this space: Line break (bot-weird)",
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Line break (bot-weird)",
     });
   });
 
