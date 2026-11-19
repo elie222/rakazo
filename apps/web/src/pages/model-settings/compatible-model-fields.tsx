@@ -99,7 +99,8 @@ export function CompatibleModelFields({
           aria-label={t`OpenAI-compatible server URL`}
           placeholder="http://127.0.0.1:8000/v1"
           autoComplete="off"
-          className="mt-2 h-10 text-foreground"
+          size="lg"
+          className="mt-2 text-foreground"
         />
       </label>
       <div className="mt-3 flex items-center gap-2">
@@ -128,6 +129,7 @@ export function CompatibleModelFields({
           <Trans>Protocol</Trans>
           <OptionSelect<ModelSettingsState["apiProtocol"]>
             id="model-protocol"
+            size="lg"
             className="mt-2 text-foreground"
             value={apiProtocol}
             disabled={busy}
@@ -155,6 +157,7 @@ export function CompatibleModelFields({
         </span>
         {compatibleRows.includes(modelId) ? (
           <OptionSelect
+            size="lg"
             className="mt-2 text-foreground"
             value={modelId}
             onValueChange={(value) => {
@@ -184,7 +187,8 @@ export function CompatibleModelFields({
             }}
             aria-label={t`Model id`}
             placeholder="exact-model-id"
-            className="mt-2 h-10 text-foreground"
+            size="lg"
+            className="mt-2 text-foreground"
           />
         )}
         {compatibleRows.length || hasSearchQuery ? (
