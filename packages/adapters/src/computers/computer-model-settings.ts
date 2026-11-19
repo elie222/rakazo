@@ -71,8 +71,7 @@ const LOST_PIN_MESSAGES = new Set([
   "Pinned computer mode model is unavailable",
   "Computer model checkpoint requires its pinned connection",
   "Backup model credential is no longer available",
-  // The provider no longer lists the model, or its connection was removed.
-  UNKNOWN_PROVIDER_MODEL,
+  // The model's provider connection was removed.
   PINNED_PROVIDER_NOT_CONNECTED,
 ]);
 

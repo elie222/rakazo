@@ -682,20 +682,40 @@ it.each([
     expect(f.browserAct).not.toHaveBeenCalled();
   },
 );
-it.each(["Unknown model for that provider", "Connect that model provider first"])(
-  "ends the paused turn when its saved model is gone: %s",
-  async (message) => {
-    const f = await paused();
-    f.effect.status = "approved";
-    vi.mocked(resolveConnectedRunModel).mockRejectedValueOnce(new Error(message));
-    await f.run();
-    expect(f.finalizeRun).toHaveBeenLastCalledWith(
-      expect.objectContaining({ error: PINNED_COMPUTER_MODEL_LOST_RUN_ERROR }),
-    );
-    expect(fake.stream).not.toHaveBeenCalled();
-    expect(f.browserAct).not.toHaveBeenCalled();
-  },
-);
+it("ends the paused turn when its saved model's provider is disconnected", async () => {
+  const f = await paused();
+  f.effect.status = "approved";
+  vi.mocked(resolveConnectedRunModel).mockRejectedValueOnce(
+    new Error("Connect that model provider first"),
+  );
+  await f.run();
+  expect(f.finalizeRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({ error: PINNED_COMPUTER_MODEL_LOST_RUN_ERROR }),
+  );
+  expect(fake.stream).not.toHaveBeenCalled();
+  expect(f.browserAct).not.toHaveBeenCalled();
+});
+it("retries without an error report while the saved model is not in its catalog", async () => {
+  const f = await paused();
+  f.effect.status = "approved";
+  vi.mocked(resolveConnectedRunModel).mockRejectedValueOnce(
+    new Error("Unknown model for that provider"),
+  );
+  const sink = createTestSink();
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
+  try {
+    await expect(f.run()).rejects.toMatchObject({
+      cause: { name: "PausedTurnModelUnlistedError" },
+    });
+  } finally {
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  }
+  expect(sink.events.filter((event) => event.message === "run.setup_failed")).toEqual([
+    expect.objectContaining({ level: "warn" }),
+  ]);
+  expect(fake.stream).not.toHaveBeenCalled();
+  expect(f.browserAct).not.toHaveBeenCalled();
+});
 it.each(["main-a", "computer-c"])(
   "fails closed when saved %s is unavailable even though current B is valid",
   async (id) => {
