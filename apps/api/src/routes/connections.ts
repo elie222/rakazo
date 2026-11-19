@@ -246,6 +246,7 @@ export function connectionsRoutes(ctx: RouterContext) {
           return tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
+            readOnly: tool.readOnly,
           }));
         } catch (error) {
           getLogger().error("connections.tools failed", error, {
