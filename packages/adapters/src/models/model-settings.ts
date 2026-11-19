@@ -1,5 +1,4 @@
-import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
-import { ThinkingLevelSchema } from "@rakazo/contracts";
+import type { ModelSettings } from "@rakazo/contracts";
 import type { StoredModelSecret } from "./model-secret.js";
 import { catalogKnowsModel, compatibleModelSeesImages } from "./model-vision.js";
 
@@ -20,20 +19,6 @@ export function connectionModelSettings(
   if (!catalogKnowsModel(provider, modelId)) return settings;
   const { images: _images, reasoning: _reasoning, thinkingLevel: _level, ...limits } = settings;
   return limits;
-}
-
-/**
- * The level a model runs at when its run picks none: its own, else the one its connection keeps
- * for the connection's own model.
- */
-export function modelRunThinkingLevel(
-  settings: ModelSettings,
-  credential: { defaultModel?: string | null; thinkingLevel?: string | null },
-  modelId: string,
-): ThinkingLevel | null {
-  if (settings.thinkingLevel) return settings.thinkingLevel;
-  if (credential.defaultModel !== modelId) return null;
-  return ThinkingLevelSchema.safeParse(credential.thinkingLevel).data ?? null;
 }
 
 function savedModelSettings(

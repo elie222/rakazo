@@ -14,6 +14,7 @@ import {
   modelSettingsThinkingLevels,
   modelThinkingLevels,
   newestModelsFirst,
+  savedThinkingLevel,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";
@@ -175,6 +176,23 @@ describe("modelSettingsThinkingLevels", () => {
         { defaultCapabilities: { thinkingLevels: ["off", "low", "high", "max"] } },
       ),
     ).toEqual(["off", "low", "high", "max"]);
+    expect(modelSettingsThinkingLevels({}, { thinkingLevels: ["low", "high"] })).toEqual([
+      "off",
+      "low",
+      "high",
+    ]);
+  });
+});
+
+describe("savedThinkingLevel", () => {
+  it("takes the model's own level, else its connection's for that model, ignoring unknown ones", () => {
+    const connection = { modelId: "served", thinkingLevel: "high" };
+    expect(savedThinkingLevel("max", connection, "served")).toBe("max");
+    expect(savedThinkingLevel(undefined, connection, "served")).toBe("high");
+    expect(savedThinkingLevel(undefined, connection, "other")).toBeNull();
+    expect(
+      savedThinkingLevel(undefined, { ...connection, thinkingLevel: "turbo" }, "served"),
+    ).toBeNull();
   });
 });
 

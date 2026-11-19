@@ -13,11 +13,11 @@ import {
   modelSettingsThinkingLevels,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
-import { thinkingLevelLabel } from "../../lib/models/model-catalog";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 

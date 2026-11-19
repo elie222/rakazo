@@ -15,6 +15,7 @@ import {
   modelSettingsRequest,
   modelSettingsThinkingLevels,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -34,7 +35,6 @@ import { NativeSwitch } from "../../components/native/native-switch";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
-import { thinkingLevelLabel } from "../../lib/models/thinking-level";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query/query";

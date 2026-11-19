@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { MobileMe } from "../api/mobile-types";
@@ -21,6 +22,10 @@ const catalog = [
   },
 ] as unknown as ModelCatalogEntry[];
 const credentials = [{ provider: "acme", label: "Acme" }] as unknown as ModelCredential[];
+
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
 
 describe("composerModelChip", () => {
   it("names the Space default's model without its connection", () => {

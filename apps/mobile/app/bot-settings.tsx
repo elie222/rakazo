@@ -17,6 +17,7 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
@@ -49,7 +50,6 @@ import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
-import { thinkingLevelLabel } from "../lib/models/thinking-level";
 import { native, useMobileTokens } from "../lib/native/native";
 import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
 import { createQueuedSave } from "../lib/query/queued-save";

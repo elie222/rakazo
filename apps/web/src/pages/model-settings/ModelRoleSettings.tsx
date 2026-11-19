@@ -17,6 +17,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
   DropdownMenu,
@@ -35,7 +36,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { thinkingLevelLabel } from "../../lib/models/model-catalog";
 import { spaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
 import type { ConnectableProvider, RoleModelOption } from "./role-model-picker";

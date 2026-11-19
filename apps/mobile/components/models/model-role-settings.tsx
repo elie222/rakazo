@@ -29,6 +29,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -37,7 +38,6 @@ import type { RpcArgs } from "../../lib/api/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../../lib/api/api";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { ModelPickerRequest } from "../../lib/models/model-picker-selection";
-import { thinkingLevelLabel } from "../../lib/models/thinking-level";
 import {
   native,
   useMobileTokens,

@@ -10,7 +10,7 @@ import {
   creditOfferingFromConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -57,7 +57,7 @@ import {
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "../../models/model-selection.js";
-import { connectionModelSettings, modelRunThinkingLevel } from "../../models/model-settings.js";
+import { connectionModelSettings } from "../../models/model-settings.js";
 import { codexLiveModel } from "../../runtime/pi/models/pi-codex-catalog.js";
 import { LOCAL_PROVIDER_ID } from "../../runtime/pi/models/pi-local-provider.js";
 import {
@@ -399,7 +399,11 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
         reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
-        thinkingLevel: modelRunThinkingLevel(settings, credential, modelId),
+        thinkingLevel: savedThinkingLevel(
+          settings.thinkingLevel,
+          { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+          modelId,
+        ),
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,

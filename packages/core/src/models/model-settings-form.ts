@@ -14,6 +14,7 @@ import {
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
+  ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import { clampCatalogThinkingLevel, compatibleThinkingLevels } from "./model-providers.js";
 
@@ -240,29 +241,42 @@ export function modelThinkingLevels(
 }
 
 /**
- * The levels a model's settings may pick for it to think at, "off" first: an OpenAI-compatible
- * model's endpoint's, or the ones a listed model borrows from the catalog.
+ * The levels a model's settings may pick for it to think at, "off" first: the ones a listed model
+ * borrows from the catalog, else the ones its live entry offers, else its endpoint's.
  */
 export function modelSettingsThinkingLevels(
   credential: Pick<ModelCredential, "apiProtocol">,
-  entry: Pick<ModelCatalogEntry, "defaultCapabilities"> | undefined,
+  entry: Pick<ModelCatalogEntry, "defaultCapabilities" | "thinkingLevels"> | undefined,
 ): ThinkingLevel[] {
   const levels =
-    entry?.defaultCapabilities?.thinkingLevels ?? compatibleThinkingLevels(credential.apiProtocol);
+    (entry?.defaultCapabilities
+      ? entry.defaultCapabilities.thinkingLevels
+      : entry?.thinkingLevels) ?? compatibleThinkingLevels(credential.apiProtocol);
   return ["off", ...levels.filter((level) => level !== "off")];
 }
 
 /**
- * The level a model thinks at when no chat, bot or role picks one: its own, else the one its
- * connection keeps for the connection's own model.
+ * The level a model runs at when no chat, bot or role picks one, before the runtime's default:
+ * its own, else the one its connection keeps for the connection's own model. Unknown stored
+ * levels are ignored.
  */
+export function savedThinkingLevel(
+  own: ThinkingLevel | undefined,
+  connection: { modelId?: string | null; thinkingLevel?: string | null } | undefined,
+  modelId: string | null | undefined,
+): ThinkingLevel | null {
+  if (own) return own;
+  if (!modelId || connection?.modelId !== modelId) return null;
+  return ThinkingLevelSchema.safeParse(connection.thinkingLevel).data ?? null;
+}
+
+/** The level a model thinks at when no chat, bot or role picks one. */
 export function modelDefaultThinkingLevel(
   credential: (SettingsCredential & Pick<ModelCredential, "modelId" | "thinkingLevel">) | undefined,
   modelId: string | null | undefined,
 ): ThinkingLevel {
   const own = credential && modelId ? credentialModelSettings(credential, modelId) : undefined;
-  const connection = modelId && credential?.modelId === modelId ? credential.thinkingLevel : null;
-  return own?.thinkingLevel ?? connection ?? DEFAULT_THINKING_LEVEL;
+  return savedThinkingLevel(own?.thinkingLevel, credential, modelId) ?? DEFAULT_THINKING_LEVEL;
 }
 
 /**
