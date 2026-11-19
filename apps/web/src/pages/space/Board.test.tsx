@@ -51,6 +51,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogTitle: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect: actual.OptionSelect,
+    Spinner: actual.Spinner,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
   };
 });
@@ -133,6 +134,39 @@ async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusa
     },
   };
 }
+
+it("shows loading until the first ticket list confirms the board is empty", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const firstList = deferred<{ tickets: ReturnType<typeof ticket>[] }>();
+  api.tickets.list.mockReturnValue(firstList.promise);
+  const page = await renderBoard();
+  try {
+    expect(page.container.querySelector('[role="status"][aria-label="Loading"]')).not.toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
+
+    await act(async () => firstList.resolve({ tickets: [] }));
+    await settle();
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).toContain("No tickets yet");
+  } finally {
+    await page.cleanup();
+  }
+});
+
+it("does not show loading or an empty board after the first ticket list fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockRejectedValue(new Error("Tickets unavailable"));
+  const page = await renderBoard();
+  try {
+    expect(page.container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
+  } finally {
+    await page.cleanup();
+  }
+});
 
 it("renders status columns and opens a ticket with comments", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
