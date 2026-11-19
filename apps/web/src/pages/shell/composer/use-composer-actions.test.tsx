@@ -591,17 +591,23 @@ function pendingRetry() {
   return retry.reject;
 }
 
-it("offers another chat's failed reply while a retry is still in flight", async () => {
+it("offers no retry anywhere while one is in flight, then offers another chat's", async () => {
   me = { userId: "user-1" } as Me;
   activeSnapshot = failedReply("run-1");
   act(() => root.render(<Harness />));
-  pendingRetry();
+  const reject = pendingRetry();
   act(() => void latest.retryRun?.());
   expect(latest.retryRun).toBeUndefined();
 
   activeSnapshot = failedReply("run-2");
   switchChat("bot-2");
+  expect(latest.retryRun).toBeUndefined();
+  reject(new Error("Conflict"));
+  await flush();
   expect(latest.retryRun).toBeDefined();
+  rpc.threads.retry.mockResolvedValue({ runId: "run-3" });
+  act(() => void latest.retryRun?.());
+  expect(rpc.threads.retry).toHaveBeenLastCalledWith({ botId: "bot-2", runId: "run-2" });
 });
 
 it("drops a late retry error once a newer failure is on screen", async () => {

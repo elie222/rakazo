@@ -186,7 +186,6 @@ export function useComposerActions({
       }
     },
   });
-  const retryingDisplayedRun = retrySave.pending && retrySave.input?.runId === displayedRunErrorId;
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -681,7 +680,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
-    retryRun: runRetryable && !retryingDisplayedRun && !sending ? retryRun : undefined,
+    retryRun: runRetryable && !retrySave.pending && !sending ? retryRun : undefined,
     startFocusPrompt,
   };
 }

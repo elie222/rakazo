@@ -83,9 +83,11 @@ export function useThreadRunError(
     },
   });
   const { groupId } = thread;
+  const retryingOther = retrySave.pending && retrySave.input?.runId !== run?.id;
   const retry =
     runError &&
     run &&
+    !retryingOther &&
     !normalizedRunError?.recovery &&
     canRetryRun(run, thread.userId) &&
     (botId || groupId)
