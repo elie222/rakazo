@@ -5,6 +5,7 @@ import {
 } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
 import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-select.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
@@ -22,6 +23,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "list_fleet",
   "read_file",
   "read_history",
+  READ_MEETING_TRANSCRIPT,
   "read_email",
   "search_history",
   "request_takeover",
@@ -96,6 +98,7 @@ export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
+  meetingTranscriptsAvailable?: boolean;
   graphicalToolsAllowed: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
   pageBrowserAllowed?: boolean;
@@ -201,6 +204,7 @@ export function selectBuiltinToolsForRun(options: {
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
+      (options.userComputer || options.userComputerScreen || tool.name !== "user_computer_list") &&
       (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&
@@ -211,6 +215,7 @@ export function selectBuiltinToolsForRun(options: {
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
+      (options.meetingTranscriptsAvailable || tool.name !== READ_MEETING_TRANSCRIPT) &&
       (!options.messagingChannelRun ||
         (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
           !SKILL_TOOL_NAMES.has(tool.name) &&

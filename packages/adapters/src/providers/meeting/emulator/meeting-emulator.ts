@@ -8,7 +8,7 @@ export class MeetingEmulator implements MeetingProvider {
       adapterVersion: "1",
       capabilities: {
         offline: true,
-        platforms: ["zoom", "google_meet"] as const,
+        platforms: ["zoom", "google_meet", "microsoft_teams"] as const,
       },
     };
   }

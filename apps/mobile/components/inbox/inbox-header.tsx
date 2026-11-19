@@ -62,7 +62,8 @@ export function InboxHeader({
           <Text style={styles.profileInitials}>{initials}</Text>
         </HeaderButton>
       </GlassSurface>
-      {title}
+      {/* The title gives way to the buttons when the column is narrow. */}
+      {title ? <View style={styles.headerTitle}>{title}</View> : null}
       <View style={styles.headerActions}>
         <GlassSurface style={styles.headerGroup} fallbackStyle={styles.headerFill}>
           <HeaderButton
