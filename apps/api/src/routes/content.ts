@@ -255,6 +255,11 @@ export function contentRoutes(ctx: RouterContext) {
         type ModelRow = TotalsRow & { provider: string; model: string };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
+        type RoutineRow = TotalsRow & {
+          routineId: string | null;
+          name: string | null;
+          botName: string | null;
+        };
 
         const toNum = (v: bigint | number | null | undefined) =>
           v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
@@ -284,7 +289,7 @@ export function contentRoutes(ctx: RouterContext) {
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
 
-        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] =
+        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows, routineRows] =
           await deps.prisma.$transaction(
             (tx) =>
               Promise.all([
@@ -340,6 +345,18 @@ export function contentRoutes(ctx: RouterContext) {
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter}
             GROUP BY u.provider, u.model
+            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+                // A helper's call counts toward the routine that started its parent run.
+                tx.$queryRaw<RoutineRow[]>(Prisma.sql`
+            SELECT ro.id AS "routineId", ro.name AS name, b.name AS "botName", ${totalsSelect}
+            FROM usage_records u
+            LEFT JOIN runs r ON r.id = COALESCE(u."parentRunId", u."runId") AND r."spaceId" = u."spaceId"
+            LEFT JOIN routines ro ON ro.id = r."routineId"
+            LEFT JOIN bots b ON b.id = ro."botId"
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+              ${rangeFilter} ${modelFilter} ${botFilter}
+            GROUP BY ro.id, ro.name, b.name
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
               ]),
@@ -457,6 +474,12 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: t.costUsd,
             };
           }),
+          routines: routineRows.map((row) => ({
+            id: row.routineId,
+            name: row.name,
+            botName: row.botName,
+            ...totalsOf(row),
+          })),
           overTimeUnit,
           overTime,
           bots: botRows.map((row) => ({

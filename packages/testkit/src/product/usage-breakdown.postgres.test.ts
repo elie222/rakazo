@@ -237,6 +237,89 @@ describeBreakdown("usage.breakdown", () => {
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
 
+  it("splits usage by the routine that started each run", async () => {
+    const cookie = await signup(app, `usage-breakdown-routine-${stamp}@rakazo.test`, "Routines");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Brief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Morning brief",
+      prompt: "Send the morning brief",
+      crons: ["0 8 * * *"],
+      timezone: "UTC",
+      active: false,
+      notify: false,
+    });
+    const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+    const owner = { spaceId: thread.spaceId, userId: thread.userId };
+    const task = await prisma.task.create({
+      data: { ...owner, botId: bot.id, threadId: thread.id, prompt: "p", status: "completed" },
+    });
+    const run = (routineId: string | null) =>
+      prisma.run.create({
+        data: {
+          ...owner,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          status: "completed",
+          trigger: routineId ? "routine" : "user",
+          routineId,
+        },
+      });
+    const [first, second, chat] = [await run(routine.id), await run(routine.id), await run(null)];
+    const record = (
+      runId: string | null,
+      parentRunId: string | null,
+      model: string,
+      n: number,
+    ) => ({
+      ...owner,
+      botId: bot.id,
+      runId,
+      parentRunId,
+      provider: "p",
+      model,
+      inputTokens: n,
+      outputTokens: 0,
+      totalTokens: n,
+      costUsd: n / 1000,
+    });
+    await prisma.usageRecord.createMany({
+      data: [
+        record(first.id, first.id, "m1", 100),
+        // A helper's call counts toward the routine that started its parent run.
+        record(`helper-${stamp}`, first.id, "m2", 50),
+        record(second.id, second.id, "m1", 10),
+        record(chat.id, chat.id, "m1", 7),
+        // Background work with no run belongs to no routine.
+        record(null, null, "m1", 3),
+      ],
+    });
+
+    const get = (input: Partial<UsageBreakdownInput>) =>
+      rpc<UsageBreakdown>(app, cookie, "usage/breakdown", input);
+    const rows = (usage: UsageBreakdown) =>
+      usage.routines.map((row) => [row.id, row.name, row.botName, row.runs, row.totalTokens]);
+    expect(rows(await get({ range: "30d" }))).toEqual([
+      [routine.id, "Morning brief", "Brief", 2, 160],
+      [null, null, null, 1, 10],
+    ]);
+    // The model filter narrows the split like every other figure.
+    expect(rows(await get({ range: "30d", provider: "p", model: "m2" }))).toEqual([
+      [routine.id, "Morning brief", "Brief", 1, 50],
+    ]);
+
+    // Deleting a routine keeps its usage, which is then no routine's.
+    await rpc(app, cookie, "routines/remove", { routineId: routine.id });
+    expect(rows(await get({ range: "30d" }))).toEqual([[null, null, null, 3, 170]]);
+  });
+
   it("cuts today and day buckets at the member's own midnight", async () => {
     vi.setSystemTime(new Date(`${utcDay(Date.now())}T09:59:30.000Z`));
     const offset = 14 * 60 * 60 * 1000;
