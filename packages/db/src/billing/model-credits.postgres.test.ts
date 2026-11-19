@@ -314,6 +314,27 @@ dbTests("model credits ledger", () => {
     await expireModelCredits(prisma, organizationId, nextRenewal);
     expect(await balance()).toBe(0n);
   });
+  it("gives a month that repaid a spent top-up's dispute back its own expiry when the dispute is won", async () => {
+    const topup = (disputedCents: number) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id: `${organizationId}-topup`, amountCents: 1000, disputedCents },
+        beforeRenewal,
+      );
+    await topup(0);
+    await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+    await topup(1000);
+    expect(await balance()).toBe(-10_000_000n);
+    await grant("monthly", 1000, renewal);
+    expect(await balance()).toBe(0n);
+    await topup(0);
+    expect(await balance()).toBe(10_000_000n);
+    const lots = await prisma.modelCreditLot.findMany({ where: { organizationId } });
+    expect(lots.filter((lot) => lot.availableMicros > 0n && lot.expiresAt === null)).toEqual([]);
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(0n);
+  });
   it("leaves lapsed credits out of a read without expiring them", async () => {
     await grant("topup", 2000);
     await grant("monthly", 1000, renewal);

@@ -155,7 +155,58 @@ export async function syncLotBalance(
         expiresAt: restoredExpiresAt,
       },
     });
-  else if (difference < 0n) await allocateCreditLots(tx, organizationId, -difference, undefined);
+  else if (difference < 0n)
+    await coverDisputeDebt(
+      tx,
+      organizationId,
+      await allocateCreditLots(tx, organizationId, -difference, undefined),
+    );
+}
+
+/**
+ * A dispute on spent credits leaves a debt that later grants repay. Remembering which lots repaid
+ * it lets a won dispute give the value back to them, each with its own expiry.
+ */
+async function coverDisputeDebt(tx: Tx, organizationId: string, repaid: CreditAllocation[]) {
+  const purchases = await tx.$queryRaw<
+    Array<{ id: string; allocations: unknown; owedMicros: bigint }>
+  >`
+    SELECT e.id,e.allocations,l."usedMicros"+l."expiredMicros"-l."amountMicros" AS "owedMicros"
+    FROM model_credit_entries e JOIN model_credit_lots l ON l.id=e.id
+    WHERE e."organizationId"=${organizationId} AND e.source LIKE 'purchase:%'
+      AND e."disputedMicros">0 AND l."usedMicros"+l."expiredMicros">l."amountMicros"
+    ORDER BY e."createdAt",e.id`;
+  const remaining = repaid.map((allocation) => ({ ...allocation }));
+  for (const purchase of purchases) {
+    let stored: CreditAllocation[];
+    try {
+      stored = storedCreditAllocations(purchase);
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      reportJsonColumnOnce(
+        "Dispute allocations cannot be read; later repayment is not linked",
+        error.row,
+      );
+      continue;
+    }
+    let gap = purchase.owedMicros - allocatedMicros(stored);
+    const taken: CreditAllocation[] = [];
+    for (const allocation of remaining) {
+      if (gap <= 0n) break;
+      const held = BigInt(allocation.amountMicros);
+      // biome-ignore lint/complexity/useMathMinMax: Math.min does not take bigints.
+      const used = held < gap ? held : gap;
+      if (used === 0n) continue;
+      taken.push({ lotId: allocation.lotId, amountMicros: used.toString() });
+      allocation.amountMicros = (held - used).toString();
+      gap -= used;
+    }
+    if (taken.length)
+      await tx.modelCreditEntry.update({
+        where: { id: purchase.id },
+        data: { allocations: [...stored, ...taken] },
+      });
+  }
 }
 
 /** Refunds remove expired value before charging any funds already spent. */
