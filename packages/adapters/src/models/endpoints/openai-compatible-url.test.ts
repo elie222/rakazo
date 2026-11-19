@@ -45,6 +45,7 @@ describe("openai-compatible URL policy", () => {
     "http://10.0.0.8:8000/v1",
     "http://[fd00::1]:8000/v1",
     "http://host.docker.internal:8000/v1",
+    "http://mynas.local:8080/v1",
   ];
 
   it("allows loopback, RFC1918, ULA and Docker host endpoints when private endpoints are allowed", () => {
@@ -52,7 +53,11 @@ describe("openai-compatible URL policy", () => {
     for (const raw of privateUrls) {
       expect(assertAllowedOpenAiCompatibleUrl(raw, OWNER).href).toBe(raw);
     }
-    expect(() => assertAllowedOpenAiCompatibleUrl("http://ollama.local:11434/v1", OWNER)).toThrow(
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://ollama.example.com:11434/v1", OWNER),
+    ).toThrow(/Public model endpoints are disabled/);
+    expect(() => assertAllowedOpenAiCompatibleUrl("https://mynas.local/v1", OWNER)).not.toThrow();
+    expect(() => assertAllowedOpenAiCompatibleUrl("http://local:8080/v1", OWNER)).toThrow(
       /Public model endpoints are disabled/,
     );
   });
@@ -201,6 +206,15 @@ describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
     process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
     const url = assertAllowedOpenAiCompatibleUrl("http://models.example.test/v1", OWNER);
     expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "fake-local-key")).not.toThrow();
+  });
+
+  it("treats mDNS .local hostnames like private IP endpoints without an allowlist entry", () => {
+    const url = assertAllowedOpenAiCompatibleUrl("http://mynas.local:8080/v1", OWNER);
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "local-secret")).not.toThrow();
+    const bare = assertAllowedOpenAiCompatibleUrl("http://local:8080/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(bare, "secret-key")).toThrow(
+      /must use HTTPS/,
+    );
   });
 
   it("skips the HTTPS check when no API key is set", () => {

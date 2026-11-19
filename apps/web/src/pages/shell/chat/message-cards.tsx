@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForConnection } from "@rakazo/core";
+import { appConnectedInput, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -150,8 +150,10 @@ export function AppConnectCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const readOnReturn = useRef<(() => void) | null>(null);
   const status = block.status === "connected" ? "connected" : localStatus;
   useEffect(() => () => connectionAttempt.current?.abort(), []);
+  useEventListener(window, "focus", () => readOnReturn.current?.());
 
   async function authorize() {
     connectionAttempt.current?.abort();
@@ -168,20 +170,26 @@ export function AppConnectCard({
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
       }
-      const result = await waitForConnection(
+      const result = await waitForSignIn(
         started.connectionId,
         (input) => rpc.connections.complete(input, { signal: controller.signal }),
-        { signal: controller.signal, attempts: 60 },
+        {
+          signal: controller.signal,
+          onSlow: () => setBusy(false),
+          whenBack: (read) => {
+            readOnReturn.current = read;
+            return () => {
+              if (readOnReturn.current === read) readOnReturn.current = null;
+            };
+          },
+        },
       );
-      if (result.status === "aborted") return;
       if (result.status === "connected") {
         setLocalStatus("connected");
         await rpc.onboarding
           .appConnected(appConnectedInput(botId, threadId, block, messageId))
           .catch(() => undefined);
-        return;
       }
-      setError(t`Authorization timed out. Please try again.`);
     } catch (error) {
       if (!controller.signal.aborted) {
         setError(errorText(error, t`Could not authorize this app`));

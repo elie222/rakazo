@@ -64,8 +64,9 @@ RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
-# Prisma's migration engine detects and links against OpenSSL.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl \
+# Prisma's migration engine detects and links against OpenSSL. A stdio MCP server that runs on
+# another machine is launched over ssh, which the slim base image does not ship.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl openssh-client \
   && rm -rf /var/lib/apt/lists/*
 # Managed stdio package installs need npm; the Node image bundles an older copy.
 RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force

@@ -284,6 +284,10 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.route(computer).readFile(computer, path, context, options);
   }
 
+  readStoppedFile(...args: Parameters<NonNullable<SandboxProvider["readStoppedFile"]>>) {
+    return this.route(args[0]).readStoppedFile?.(...args) ?? Promise.resolve(undefined);
+  }
+
   writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
     return this.route(computer).writeFile(computer, file, context);
   }

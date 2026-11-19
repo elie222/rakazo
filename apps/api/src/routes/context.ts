@@ -41,7 +41,6 @@ import type {
   ModelCatalogEntry,
   ModelRole,
   ModelRoleChoice,
-  ModelRoleSettings,
   ModelRoleView,
 } from "@rakazo/contracts";
 import {
@@ -68,7 +67,7 @@ import {
   ModelCreditOfferingUnavailableError,
   UnsupportedThinkingLevelError,
 } from "./model-role-errors.js";
-import { meDto } from "./shared.js";
+import { deploymentModelAccess, meDto } from "./shared.js";
 
 /**
  * Runs an authenticated procedure with row-level security scoped to the actor's
@@ -291,22 +290,26 @@ export function createRouterContext(deps: RouterDeps) {
   };
 
   // Shown where a member chose no model, so the list names what actually runs.
-  const withDeploymentDefault = async (
+  const deploymentDefault = async (
     actor: Actor,
     role: ModelRole,
-    settings: ModelRoleSettings,
-  ): Promise<ModelRoleView> => {
-    const defaults =
-      role === "main"
-        ? {
+  ): Promise<ModelRoleChoice | null> => {
+    if (role === "main") {
+      if (!deps.env.deploymentModelConfigured) return null;
+      const access = await bestEffort(
+        "read main model default funding",
+        deploymentModelAccess(deps, actor),
+      );
+      return access?.hasDeployment
+        ? deploymentModelRole(role, {
             settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            // Only a model the deployment can run stands in for the member's choice.
-            deployment: deps.env.deploymentModelConfigured
-              ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-              : null,
-          }
-        : { env: process.env, includedApproval: deps.billing?.modelCreditsEnabled === true };
-    let deploymentPrimary = deploymentModelRole(role, defaults).primary;
+            deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+          }).primary
+        : null;
+    }
+    let deploymentPrimary = deploymentModelRole(role, {
+      includedApproval: deps.billing?.modelCreditsEnabled === true,
+    }).primary;
     if (
       role === "approval" &&
       deploymentPrimary &&
@@ -327,11 +330,11 @@ export function createRouterContext(deps: RouterDeps) {
       } catch (error) {
         if (!(error instanceof SecretStoreUnavailableError)) throw error;
         await bestEffort("read approval model default", Promise.reject(error));
-        // This view is advisory; a temporary outage must not fail an already committed save.
+        // Approval availability is advisory, so a temporary outage can omit the default.
         deploymentPrimary = null;
       }
     }
-    return { ...settings, deploymentPrimary };
+    return deploymentPrimary;
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
@@ -641,7 +644,7 @@ export function createRouterContext(deps: RouterDeps) {
     agentImportServices,
     chatCatalog,
     withServingConnections,
-    withDeploymentDefault,
+    deploymentDefault,
     withImageInput,
     modelRoleCatalog,
     validateRoleChoices,

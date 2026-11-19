@@ -35,7 +35,7 @@ async function mockSignedOut(page: Page, providers: typeof both | []) {
 test("sign-in offers Google and Apple before email", async ({ page }, testInfo) => {
   await mockSignedOut(page, both);
   await page.goto("/sign-in");
-  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
   const google = page.getByRole("button", { name: "Continue with Google" });
   const apple = page.getByRole("button", { name: "Continue with Apple" });
   const emailChoice = page.getByRole("button", { name: "Continue with email" });
@@ -43,7 +43,7 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await expect(apple).toBeVisible();
   await expect(emailChoice).toBeVisible();
 
-  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign up" })).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
   const googleBox = await google.boundingBox();
   const appleBox = await apple.boundingBox();
@@ -83,7 +83,7 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await captureScreenshot(page, testInfo, "sign-in-email-dark");
   await page.emulateMedia({ colorScheme: "light" });
 
-  // Creating an account is a switch on the email form, not a second chooser.
+  // Switching to sign up from the email form stays on the form.
   await page.getByRole("link", { name: "Sign up" }).click();
   await expect(page).toHaveURL("/sign-up/email");
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
@@ -94,12 +94,13 @@ test("sign-in offers Google and Apple before email", async ({ page }, testInfo) 
   await expect(emailChoice).toBeVisible();
 
   await page.goto("/sign-up");
-  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with Apple" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sign-up-chooser");
 });
 
 for (const path of ["/sign-in", "/sign-up"]) {

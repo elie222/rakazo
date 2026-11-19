@@ -8,6 +8,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -112,9 +113,10 @@ export async function prepareSupermemoryConnection(
 export function createSupermemoryProvider(
   settings: Record<string, string>,
   credentials: Record<string, string>,
+  connectionVersion?: string,
 ): SemanticMemoryProvider {
   const { baseUrl, apiKey, trust } = parseSupermemoryConnection(settings, credentials);
-  return new SupermemoryMemoryProvider({ baseUrl, apiKey, trust });
+  return new SupermemoryMemoryProvider({ baseUrl, apiKey, trust }, connectionVersion);
 }
 
 export function decodeLegacySupermemoryCredentials(
@@ -142,9 +144,14 @@ function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: stri
 }
 
 export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
+  readonly connectionIdentity?: string;
   private readonly localHost?: LocalServiceHost;
 
-  constructor(private readonly connection: SupermemoryConnectionConfig) {
+  constructor(
+    private readonly connection: SupermemoryConnectionConfig,
+    connectionVersion?: string,
+  ) {
+    this.connectionIdentity = memoryConnectionIdentity(connectionVersion, connection.baseUrl);
     if (!isSupermemoryCloudBaseUrl(connection.baseUrl)) {
       this.localHost = new LocalServiceHost(
         connection.baseUrl,

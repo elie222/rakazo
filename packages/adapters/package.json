@@ -9,6 +9,7 @@
     "./cua-host-screen": "./src/computers/screens/cua-host-screen.ts",
     "./host-computer-server": "./src/computers/host/host-computer-server.ts",
     "./host-screen": "./src/computers/screens/host-screen.ts",
+    "./meeting-media": "./src/meetings/meeting-media-grant.ts",
     "./model-json": "./src/models/model-json.ts",
     "./wuying-screen-policy": "./src/providers/computer/wuying/wuying-screen-policy.ts",
     "./user-device-client": "./src/computers/host/user-device-client.ts"

@@ -83,6 +83,8 @@ let root: Root;
 let container: HTMLDivElement;
 let words: Array<{ text: string; final?: boolean }>;
 let toggle: () => void;
+let finish: (then: () => void) => void;
+let cancel: () => void;
 let mounted = false;
 
 function Harness() {
@@ -95,6 +97,8 @@ function Harness() {
     },
   });
   toggle = dictation.toggle;
+  finish = dictation.finish;
+  cancel = dictation.cancel;
   return (
     <button type="button" onClick={() => dictation.toggle()}>
       {dictation.status}
@@ -166,6 +170,48 @@ it("lands dictated words when the chat blurs during transcription", async () => 
   act(() => app.blur?.());
   await finishTranscription(pending, "the latest report");
   expect(words).toEqual([{ text: "the latest report", final: true }]);
+});
+
+it("runs what waits on a finished dictation after its words land", async () => {
+  const pending = deferred<string>();
+  voice.transcribeClip.mockReturnValueOnce(pending.promise);
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(voice.recordClip).toHaveBeenCalled());
+  const then = vi.fn(() => expect(words).toEqual([{ text: "send it", final: true }]));
+  await act(async () => finish(then));
+  await vi.waitFor(() => expect(voice.transcribeClip).toHaveBeenCalled());
+  expect(then).not.toHaveBeenCalled();
+  await finishTranscription(pending, "send it");
+  expect(then).toHaveBeenCalledTimes(1);
+});
+
+it("runs what waits on a dictation finished before the mic opens, and stops the setup", async () => {
+  const consent = deferred<void>();
+  vi.mocked(ensureVoiceConsent).mockReturnValueOnce(consent.promise);
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(ensureVoiceConsent).toHaveBeenCalled());
+  const then = vi.fn();
+  act(() => finish(then));
+  expect(then).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    consent.resolve();
+    await consent.promise;
+  });
+  expect(voice.recordClip).not.toHaveBeenCalled();
+});
+
+it("never runs what waits on a dictation that is cancelled", async () => {
+  const pending = deferred<string>();
+  voice.transcribeClip.mockReturnValueOnce(pending.promise);
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(voice.recordClip).toHaveBeenCalled());
+  const then = vi.fn();
+  await act(async () => finish(then));
+  await vi.waitFor(() => expect(voice.transcribeClip).toHaveBeenCalled());
+  act(() => cancel());
+  await finishTranscription(pending, "send it");
+  expect(then).not.toHaveBeenCalled();
+  expect(words).toEqual([]);
 });
 
 it("drops a transcription when the composer unmounts", async () => {

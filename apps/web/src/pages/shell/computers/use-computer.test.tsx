@@ -663,6 +663,53 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
   expect(state.computerOpen).toBe(false);
 });
 
+it("reads a running computer's screen for the bot panel without keeping it awake or waking it", async () => {
+  const rpc = {
+    computer: {
+      screenUrl: vi.fn(async () => ({ url: "https://screen.example.test/" })),
+      heartbeat: vi.fn(async () => ({ ok: true })),
+      boot: vi.fn(),
+    },
+  };
+  const bot = { id: "bot-1" } as never;
+  function Controls({ panel }: { panel: "settings" | null }) {
+    state = useComputerState({
+      rpc: rpc as never,
+      panel,
+      activeId: "bot-1",
+      activeBotId: { current: "bot-1" },
+    });
+    useComputerControls({
+      rpc: rpc as never,
+      state,
+      panel,
+      active: bot,
+      bots: [bot],
+      botsRef: { current: [bot] },
+      activeBotId: { current: "bot-1" },
+      activeGroupId: { current: undefined },
+      runStatus: undefined,
+      sandboxProvider: undefined,
+      refreshThread: vi.fn(),
+      refreshGroupThread: vi.fn(),
+      onUpgrade: vi.fn(),
+    });
+    return null;
+  }
+  await act(async () => root.render(<Controls panel={null} />));
+  await act(async () => state.commitComputer({ botId: "bot-1", state: "stopped" } as never));
+  await act(async () => root.render(<Controls panel="settings" />));
+  expect(rpc.computer.screenUrl).not.toHaveBeenCalled();
+  await act(async () => state.commitComputer({ botId: "bot-1", state: "running" } as never));
+  expect(rpc.computer.screenUrl).toHaveBeenCalledWith({ botId: "bot-1", preview: true });
+  expect(state.screenUrl).toBe("https://screen.example.test/");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+  });
+  expect(rpc.computer.heartbeat).not.toHaveBeenCalled();
+  expect(rpc.computer.boot).not.toHaveBeenCalled();
+});
+
 /** Renders the computer controls for bot-1 with a running computer this page can take. */
 async function renderTakingControl(
   takeover: () => Promise<{ leaseId: string; expiresAt: string }> = async () => ({
