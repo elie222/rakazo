@@ -1599,6 +1599,44 @@ describe("signed webhook deliveries", () => {
     expect(nonces).toEqual([signedNonce("msg_fake_1"), signedNonce("msg_fake_1")]);
   });
 
+  it("keeps the cached signing secret across Git events, with or without the bot's key", async () => {
+    for (const ownKey of ["secret-1", null]) {
+      const load = vi.fn(defaultLoad);
+      const deps = createDeps({
+        load,
+        signing: { signature: STANDARD },
+        routines: [WEBHOOK_ROUTINE],
+      });
+      const bot = await deps.prisma.bot.findUnique({ where: { id: "bot-1" } });
+      vi.mocked(deps.prisma.bot.findUnique).mockResolvedValue({
+        ...bot,
+        webhookSecretId: ownKey,
+      } as never);
+      const app = mount(deps);
+      const gitEvent = () =>
+        app.request("/api/v1/bots/bot-1/github", {
+          method: "POST",
+          headers: {
+            "x-github-event": "push",
+            "x-hub-signature-256": `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`,
+          },
+          body: raw,
+        });
+      expect((await app.request("/api/v1/bots/bot-1/webhook", standardDelivery(raw))).status).toBe(
+        200,
+      );
+      await gitEvent();
+      await gitEvent();
+      expect((await app.request("/api/v1/bots/bot-1/webhook", standardDelivery(raw))).status).toBe(
+        200,
+      );
+      const signingLoads = load.mock.calls.filter(
+        ([ciphertext]) => ciphertext === "signing-cipher",
+      );
+      expect(signingLoads, String(ownKey)).toHaveLength(1);
+    }
+  });
+
   it("never reads the signing secret for a Git event", async () => {
     const load = vi.fn(defaultLoad);
     const deps = createDeps({

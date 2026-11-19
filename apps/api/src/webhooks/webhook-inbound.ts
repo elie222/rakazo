@@ -118,9 +118,10 @@ function signingCacheKey(botId: string): string {
   return `${botId}:signing`;
 }
 
-function forgetWebhookSecrets(cache: WebhookSecretCache, botId: string) {
+/** `signing: false` keeps the signing secret's entry, for a route that never reads it. */
+function forgetWebhookSecrets(cache: WebhookSecretCache, botId: string, signing: boolean) {
   cache.delete(botId);
-  cache.delete(signingCacheKey(botId));
+  if (signing) cache.delete(signingCacheKey(botId));
 }
 
 function touchWebhookSecret(
@@ -237,21 +238,23 @@ export async function loadWebhookTarget(
     (!bot.webhookSecretId && !signingSecretId) ||
     (await accountDeactivated(deps.prisma, bot.userId))
   ) {
-    forgetWebhookSecrets(cache, botId);
+    forgetWebhookSecrets(cache, botId, options.signing);
     return null;
   }
 
   // An outage loading one credential must not block deliveries the other one accepts.
   const loaded = await Promise.allSettled([
     loadBotWebhookSecret(deps, cache, botId, bot, bot.webhookSecretId, WEBHOOK_SECRET_KIND),
-    loadBotWebhookSecret(
-      deps,
-      cache,
-      signingCacheKey(botId),
-      bot,
-      signingSecretId,
-      WEBHOOK_SIGNING_SECRET_KIND,
-    ),
+    options.signing
+      ? loadBotWebhookSecret(
+          deps,
+          cache,
+          signingCacheKey(botId),
+          bot,
+          signingSecretId,
+          WEBHOOK_SIGNING_SECRET_KIND,
+        )
+      : null,
   ]);
   for (const result of loaded) {
     if (result.status === "rejected" && !(result.reason instanceof SecretStoreUnavailableError))
@@ -275,11 +278,9 @@ export async function loadWebhookTarget(
     return true;
   };
   const ownRevoked = revoked(botId, bot.webhookSecretId, current?.webhookSecretId);
-  const signingRevoked = revoked(
-    signingCacheKey(botId),
-    bot.webhookSigningSecretId,
-    current?.webhookSigningSecretId,
-  );
+  const signingRevoked =
+    options.signing &&
+    revoked(signingCacheKey(botId), bot.webhookSigningSecretId, current?.webhookSigningSecretId);
   const [own, signing] = loaded;
   const target = {
     expected: ownRevoked ? null : (expected ?? null),
