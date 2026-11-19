@@ -5124,3 +5124,42 @@ it("does not blame the webhook on cards every run shows", async () => {
   expect(connection.pauseRunForInput).toHaveBeenCalledOnce();
   expect(askDetail(connection)).toBe("Telegram: fake");
 });
+
+describe("Auto Review of targets only outside content named", () => {
+  const reviewRequest = (index: number) =>
+    (reviewMock.mock.calls as unknown as [Record<string, unknown>][])[index]?.[0];
+
+  beforeEach(() => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits the task", model: "mock" });
+  });
+
+  // The fake connector returns its `id` argument, so the first call reads the address in.
+  const calls = [
+    { args: { id: "From: Dana <dana@hr.test>" }, executionId: "call-1" },
+    { args: { id: "dana@hr.test" }, executionId: "call-2" },
+  ];
+
+  it("tells the judge an address came only from a result the run read", async () => {
+    const f = fixture({ name: "demo_send_message", readOnly: false, autoReview: true });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(0)).not.toHaveProperty("outsideOnlyTargets");
+    expect(reviewRequest(1)).toMatchObject({ outsideOnlyTargets: ["dana@hr.test"] });
+  });
+
+  it("says nothing when the owner wrote the address", async () => {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      sourceRole: "user",
+      prompt: "Send it to dana@hr.test",
+    });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(1)).not.toHaveProperty("outsideOnlyTargets");
+  });
+});
