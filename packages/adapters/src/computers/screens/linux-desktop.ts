@@ -99,12 +99,18 @@ export function onBotScreen(
 export class LinuxDesktop {
   constructor(private readonly host: LinuxDesktopHost) {}
 
-  private async run(computer: ComputerRef, command: string, context: AdapterContext) {
+  private async run(
+    computer: ComputerRef,
+    command: string,
+    context: AdapterContext,
+    startsScreen = false,
+  ) {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
     if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
-    if (result.code === SCREEN_NOT_READY_EXIT) {
+    // Only the screen startup script sets this status; an app the desktop launched may exit with it.
+    if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
         provider: computer.kind,
@@ -129,6 +135,7 @@ export class LinuxDesktop {
       computer,
       managedDesktopCommand(key, context.screenLeaseId, env, randomUUID()),
       context,
+      true,
     );
     const match = output.match(/RAKAZO_DESKTOP=(\d+):([a-zA-Z0-9_-]+)/);
     if (!match) throw new ComputerScreenUnavailableError();

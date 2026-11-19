@@ -696,7 +696,7 @@ function gatewayCommand(port: string, host = "127.0.0.1") {
     `if ! (echo >/dev/tcp/${probeHost}/${port}) >/dev/null 2>&1; then`,
     "  echo 'screen gateway did not start' >&2",
     `  tail -c 2000 /tmp/rakazo/gateway-${port}.log >&2 || true`,
-    "  exit 1",
+    `  exit ${SCREEN_NOT_READY_EXIT}`,
     "fi",
   ].join("\n");
 }
@@ -823,7 +823,7 @@ function renderEnsureScreenCommand(
     `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
     "fi",
     `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
-    `if [ ! -S ${socket} ]; then echo 'screen viewer did not start' >&2; tail -c 2000 ${log}-x11vnc.log >&2 || true; exit 1; fi`,
+    `if [ ! -S ${socket} ]; then echo 'screen viewer did not start' >&2; tail -c 2000 ${log}-x11vnc.log >&2 || true; exit ${SCREEN_NOT_READY_EXIT}; fi`,
     // Leave an unchanged mapping in place. Replacing it on every ensure races
     // TokenFile, which reloads the directory on each handshake.
     `desired=$(printf '%s: unix_socket:%s\\n' "$desktop_view_token" ${socket})`,

@@ -164,4 +164,17 @@ describe("screen startup", () => {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
   });
+
+  it("keeps the same status from any other desktop command as a failure", async () => {
+    const desktop = new LinuxDesktop(
+      host({ code: SCREEN_NOT_READY_EXIT, stdout: "", stderr: "app exited\n" }),
+    );
+
+    const error = await desktop
+      .stopBrowsers(computer, context)
+      .catch((failure: unknown) => failure);
+
+    expect(error).not.toBeInstanceOf(ComputerScreenUnavailableError);
+    expect(error).toMatchObject({ message: "app exited\n" });
+  });
 });
