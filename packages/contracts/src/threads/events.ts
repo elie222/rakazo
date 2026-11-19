@@ -30,7 +30,6 @@ export const ProductEventType = z.enum([
   "memory.revised",
   "routine.created",
   "routine.updated",
-  "routine.deleted",
   "routine.fired",
   "skill.teaching.started",
   "skill.teaching.stopped",

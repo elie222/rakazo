@@ -113,6 +113,11 @@ describe("routine rows from the routines API", () => {
     expect(JSON.stringify(adapters.postRoutineNotice.mock.calls)).not.toContain("SECRET PROMPT");
   });
 
+  it("a save that changes nothing leaves no row", async () => {
+    await client().routines.update({ routineId: "routine-1", name: "Morning joke", active: true });
+    expect(adapters.postRoutineNotice).not.toHaveBeenCalled();
+  });
+
   it("remove leaves a deleted row with the name only", async () => {
     await expect(client().routines.remove({ routineId: "routine-1" })).resolves.toEqual({
       ok: true,

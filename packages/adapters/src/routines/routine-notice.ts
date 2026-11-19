@@ -6,6 +6,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { stableStringify } from "./routine-watch.js";
 
 export type RoutineNoticeDeps = { prisma: PrismaClient; events: ThreadEvents };
 
@@ -27,6 +28,35 @@ export function routineEditChange(
   return after.active ? "enabled" : "disabled";
 }
 
+/** The settings a person edits; a save that changes none of them leaves no row. */
+const EDITABLE_FIELDS = [
+  "name",
+  "prompt",
+  "crons",
+  "timezone",
+  "active",
+  "notify",
+  "inChat",
+  "webhookEnabled",
+  "githubEnabled",
+  "messageProvider",
+  "emailSenders",
+  "modelProvider",
+  "modelId",
+  "thinkingLevel",
+  "watch",
+] as const;
+
+/** Whether a save changed anything a person edits. */
+export function routineEdited(
+  before: Partial<Record<(typeof EDITABLE_FIELDS)[number], unknown>>,
+  after: Partial<Record<(typeof EDITABLE_FIELDS)[number], unknown>>,
+): boolean {
+  return EDITABLE_FIELDS.some(
+    (key) => stableStringify(before[key]) !== stableStringify(after[key]),
+  );
+}
+
 /** The bot's own chat, for a routine saved without one. */
 async function botThreadId(prisma: PrismaClient, botId: string): Promise<string | undefined> {
   const bot = await prisma.bot.findUnique({
@@ -39,9 +69,7 @@ async function botThreadId(prisma: PrismaClient, botId: string): Promise<string 
 /**
  * The small row a routine change leaves in its chat: a system message with one `routine_event`
  * block holding the routine's name and what happened, never the prompt or schedule. A system
- * message is not unread, and the block has no text, so the model never sees it. A deletion also
- * appends `routine.deleted` to the timeline, like the other routine events. Never throws:
- * the change is already saved, so a failure is only logged.
+ * message is not unread, and the block has no text, so the model never sees it. Never throws: the change is already saved, so a failure is only logged.
  */
 export async function postRoutineNotice(
   deps: RoutineNoticeDeps,
@@ -62,16 +90,6 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
       role: "system",
       blocks,
     });
-    // Created and updated already have their timeline events; a deletion gets its own here.
-    if (input.change === "deleted") {
-      await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId,
-        botId: input.botId,
-        type: "routine.deleted",
-        payload: { name },
-      });
-    }
     const event = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId,

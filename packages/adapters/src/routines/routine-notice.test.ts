@@ -74,21 +74,6 @@ describe("postRoutineNotice", () => {
     expect(notify).toHaveBeenCalledWith("thread-1", 7);
   });
 
-  it("appends routine.deleted for a deletion, with the name only", async () => {
-    await postRoutineNotice(deps().deps, {
-      spaceId: "s",
-      threadId: "t",
-      botId: "b",
-      change: "deleted",
-      name: "Daily",
-    });
-    expect(db.appendEventInTransaction.mock.calls.map(([, event]) => event.type)).toEqual([
-      "routine.deleted",
-      "thread.message.created",
-    ]);
-    expect(db.appendEventInTransaction.mock.calls[0]![1].payload).toEqual({ name: "Daily" });
-  });
-
   it("keeps a long name to 200 characters and never has any other field", async () => {
     await postRoutineNotice(deps().deps, {
       spaceId: "s",
