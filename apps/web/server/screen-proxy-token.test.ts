@@ -103,23 +103,27 @@ async function close(server: Server) {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
-/** The head of a response, with the path exactly as the page sends it. */
-function request(origin: string, path: string, upgrade: boolean) {
+/** The status code of a plain GET for the path. */
+function get(origin: string, path: string) {
   const { hostname, port } = new URL(origin);
   const answer = deferred<string>();
-  const client = upgrade
-    ? undefined
-    : httpRequestFn({ hostname, port, path, method: "GET" }, (response) => {
-        answer.resolve(`${response.statusCode ?? 0}`);
-        response.resume();
-      });
-  if (client) {
-    client.on("error", (error) => answer.reject(error));
-    client.end();
-    return answer.promise;
-  }
-  // Stock noVNC's socket path starts with "//", which a browser sends verbatim and the proxy
-  // collapses; a URL built from it would read the second slash as another host.
+  httpRequestFn({ hostname, port, path, method: "GET" }, (response) => {
+    answer.resolve(`${response.statusCode ?? 0}`);
+    response.resume();
+  })
+    .on("error", (error) => answer.reject(error))
+    .end();
+  return answer.promise;
+}
+
+/**
+ * The status line of a WebSocket upgrade for the path, sent verbatim: stock noVNC's socket path
+ * starts with "//", which a browser sends as is and the proxy collapses, while a URL built from it
+ * would read the second slash as another host.
+ */
+function upgrade(origin: string, path: string) {
+  const { hostname, port } = new URL(origin);
+  const answer = deferred<string>();
   const socket = connect(Number(port), hostname);
   let head = "";
   socket.on("data", (chunk: Buffer) => {
@@ -228,16 +232,15 @@ describe("screen proxy token carriage", () => {
       const { origin, screenOrigin, requests, upgrades } = await startProxy();
       const page = screenPage(origin, screenOrigin, shape, policy);
 
-      const loaded = await request(origin, `${page.pathname}${page.search}`, false);
-      expect(loaded).toBe("200");
+      expect(await get(origin, `${page.pathname}${page.search}`)).toBe("200");
 
       // A plain request on the socket path is forwarded with the token too, not only the upgrade.
       const socketPath = shape === "embed.html" ? embedSocketPath(page) : novncSocketPath(page);
-      expect(await request(origin, socketPath, false)).toBe("200");
+      expect(await get(origin, socketPath)).toBe("200");
       expect(requests.at(-1)).toBe(`/websockify?token=${viewToken}`);
 
       // websockify's TokenFile answers 404 to a socket without the token it was given.
-      expect(await request(origin, socketPath, true)).toBe("HTTP/1.1 101 Switching Protocols");
+      expect(await upgrade(origin, socketPath)).toBe("HTTP/1.1 101 Switching Protocols");
       expect(upgrades.at(-1)).toBe(`/websockify?token=${viewToken}`);
       if (policy === "control") expect(page.pathname).toContain("/novnc/session/control/");
     },
@@ -267,6 +270,6 @@ describe("screen proxy token carriage", () => {
       /\.(.)/,
       (_, first: string) => `.${first === "a" ? "b" : "a"}`,
     );
-    expect(await request(origin, socketPath, true)).not.toContain("101");
+    expect(await upgrade(origin, socketPath)).not.toContain("101");
   });
 });
