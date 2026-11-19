@@ -10,9 +10,9 @@ import {
   TRANSCRIPT_ID,
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
+import { parseMeetingUrl } from "./meeting-link.js";
 import { configuredMeetingMedia } from "./meeting-media-grant.js";
 import { configuredMeetingSpaces } from "./meeting-provider.js";
-import { parseMeetingUrl } from "./meeting-service.js";
 
 const input: MeetingJoinRequest = {
   sessionId: "meeting-session-123",
@@ -138,9 +138,55 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
     key: "/abc-defg-hij",
   });
   expect(() => parseMeetingUrl("https://meet.google.com.evil.example/abc-defg-hij")).toThrow(
-    "valid Zoom",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
-  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow("valid Zoom");
+  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+});
+
+it("sends a Teams meeting link and its passcode to the provider", async () => {
+  const meeting = parseMeetingUrl(
+    "https://teams.cloud.microsoft/meet/123456789012?p=fake%2Bpasscode&ref=invite",
+  );
+  const emulator = new RecallMeetingEmulator();
+  const provider = real(emulator);
+  expect(provider.describe().capabilities.platforms).toContain(meeting.platform);
+  await provider.join(
+    {
+      ...input,
+      platform: meeting.platform,
+      meetingUrl: meeting.url,
+      mediaUrl: "https://example.test/camera",
+    },
+    signal,
+  );
+  expect(emulator.requests[0]?.body).toMatchObject({
+    meeting_url: "https://teams.cloud.microsoft/meet/123456789012?p=fake%2Bpasscode",
+    variant: { microsoft_teams: "web_4_core" },
+  });
+});
+
+it("preserves Teams meeting context and rejects look-alike or non-meeting links", () => {
+  const path = "/l/meetup-join/19%3Ameeting_Fake%2Bthread%40thread.v2/0";
+  const context = "%7B%22Tid%22%3A%22fake-tenant%22%7D";
+  const invite = `https://teams.microsoft.com${path}?context=${context}`;
+  expect(parseMeetingUrl(`${invite}&ref=invite#ignored`)).toEqual({
+    platform: "microsoft_teams",
+    url: invite,
+    key: "19:meeting_Fake+thread@thread.v2",
+  });
+  const rawPlusInvite = `https://teams.microsoft.com/l/meetup-join/19%3Ameeting_Fake+thread%40thread.v2/0?context=${context}`;
+  expect(parseMeetingUrl(rawPlusInvite)).toMatchObject({
+    url: rawPlusInvite,
+    key: "19:meeting_Fake+thread@thread.v2",
+  });
+  expect(() => parseMeetingUrl(`https://teams.microsoft.com.example.test${path}`)).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/download")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
 });
 
 it.each([

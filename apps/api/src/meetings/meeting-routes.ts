@@ -17,15 +17,21 @@ export function meetingRoutes({ authed, deps }: RouterContext) {
           service?.list(context.actor, input.botId) ?? { enabled: false, meetings: [] },
       ),
       join: authed.meetings.join.handler(({ input, context }) =>
-        requireMeetings().join(context.actor, input.botId, input.url),
+        requireMeetings().join(context.actor, input.botId, input.url, input.shareTranscript),
       ),
       leave: authed.meetings.leave.handler(({ input, context }) =>
         requireMeetings().leave(context.actor, input.id),
       ),
       transcript: authed.meetings.transcript.handler(async ({ input, context }) => {
-        const { turns } = await requireMeetings().transcript(context.actor, input.id);
-        return { turns };
+        const { turns, artifactAvailable } = await requireMeetings().transcript(
+          context.actor,
+          input.id,
+        );
+        return { turns, artifactAvailable };
       }),
+      shareTranscript: authed.meetings.shareTranscript.handler(({ input, context }) =>
+        requireMeetings().shareTranscript(context.actor, input.id),
+      ),
       deleteTranscript: authed.meetings.deleteTranscript.handler(({ input, context }) =>
         requireMeetings().deleteTranscript(context.actor, input.id),
       ),
