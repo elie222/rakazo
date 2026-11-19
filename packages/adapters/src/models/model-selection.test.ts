@@ -283,6 +283,7 @@ describe("space catalog auth", () => {
     return {
       id: input.id,
       modelId: input.modelId,
+      thinkingLevel: null,
       updatedAt: stamp(input.iso),
       credentialId: input.credentialId,
     };
@@ -469,6 +470,7 @@ describe("space catalog auth", () => {
         {
           id: "removed-preference",
           modelId: spark,
+          thinkingLevel: null,
           updatedAt: stamp("2026-03-01T00:00:00Z"),
           credentialId: "removed",
         },
@@ -486,7 +488,7 @@ describe("space catalog auth", () => {
     expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBeUndefined();
     expect(preferenceFindMany).toHaveBeenCalledWith({
       where: { userId: scope.userId },
-      select: { credentialId: true, modelId: true, updatedAt: true },
+      select: { credentialId: true, modelId: true, thinkingLevel: true, updatedAt: true },
     });
   });
 

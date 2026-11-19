@@ -252,6 +252,7 @@ export async function modelCredentialAuthKindsForSpace(
       select: {
         credentialId: true,
         modelId: true,
+        thinkingLevel: true,
         updatedAt: true,
       },
     }),
