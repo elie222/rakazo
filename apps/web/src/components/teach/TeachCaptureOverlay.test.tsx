@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./TeachCaptureOverlay";
 
-const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const computerInput = vi.hoisted(() => vi.fn(async (_event: unknown) => ({ ok: true })));
 vi.mock("../../lib/query/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
 
 const skill = {
@@ -89,4 +89,49 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   });
   act(() => root.unmount());
   container.remove();
+});
+
+it.each([
+  { button: 1, buttons: 4 },
+  { button: 3, buttons: 8 },
+])("ignores an unsupported pointer button ($button)", async ({ button, buttons }) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
+    });
+    const overlay = container.firstElementChild as HTMLDivElement;
+    overlay.setPointerCapture = vi.fn();
+    overlay.hasPointerCapture = () => true;
+    overlay.releasePointerCapture = vi.fn();
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent("pointerdown", { button, buttons }));
+      overlay.dispatchEvent(new MouseEvent("pointermove", { button: -1, buttons }));
+      overlay.dispatchEvent(new MouseEvent("pointerup", { button }));
+    });
+    expect(computerInput).not.toHaveBeenCalled();
+    expect(overlay.setPointerCapture).not.toHaveBeenCalled();
+    expect(overlay.releasePointerCapture).not.toHaveBeenCalled();
+
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent("pointerdown", { button: 0, buttons: 1 }));
+      overlay.dispatchEvent(new MouseEvent("pointerup", { button: 0 }));
+      overlay.dispatchEvent(new MouseEvent("pointerdown", { button: 2, buttons: 2 }));
+      overlay.dispatchEvent(new MouseEvent("pointermove", { button: -1, buttons: 2 }));
+      overlay.dispatchEvent(new MouseEvent("pointerup", { button: 2 }));
+    });
+    expect(computerInput.mock.calls.map(([event]) => (event as { payload: unknown }).payload)).toMatchObject([
+      { type: "down", button: "left" },
+      { type: "up", button: "left" },
+      { type: "down", button: "right" },
+      { type: "move", button: "right" },
+      { type: "up", button: "right" },
+    ]);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
 });
