@@ -27,7 +27,7 @@ import type { VoiceProviderDefinition } from "../../../voice/voice-provider-desc
 export const OPENROUTER_VOICE_PROVIDER_ID = "openrouter";
 const API = "https://openrouter.ai/api/v1";
 const PROVIDER = "OpenRouter";
-const TTS_MODEL = "openai/gpt-4o-mini-tts-2025-12-15";
+const TTS_MODEL = "mistralai/voxtral-mini-tts-2603";
 const STT_MODEL = "openai/whisper-large-v3";
 const MAX_LISTED_MODELS = 500;
 const FORMAT_REFUSAL = /\b(?:mp3|mpeg|pcm|format)\b/i;
@@ -96,9 +96,13 @@ export class OpenRouterVoiceProvider implements VoiceProvider {
     context: AdapterContext,
     options: { model?: string } = {},
   ): Promise<VoiceInfo[]> {
-    const model = options.model || TTS_MODEL;
     const models = await fetchSpeechModels(apiKey, context.signal);
-    const voices = models.find((entry) => entry.id === model)?.voices ?? [];
+    // The default model can leave the catalog; the first model that lists voices stands in.
+    const chosen = options.model
+      ? models.find((entry) => entry.id === options.model)
+      : (models.find((entry) => entry.id === TTS_MODEL) ??
+        models.find((entry) => entry.voices.length > 0));
+    const voices = chosen?.voices ?? [];
     return voices.map((id) => ({ id, label: id }));
   }
 

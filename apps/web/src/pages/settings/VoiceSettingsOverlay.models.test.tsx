@@ -70,14 +70,6 @@ const fish = {
   transcribe: true,
 };
 
-function labelledInput(container: HTMLElement, text: string): HTMLInputElement {
-  const found = [...container.querySelectorAll("input")].find(
-    (input) => container.querySelector(`label[for="${input.id}"]`)?.textContent === text,
-  );
-  if (!found) throw new Error(`Missing field: ${text}`);
-  return found;
-}
-
 function speechModelInput(container: HTMLElement): HTMLInputElement | undefined {
   return [...container.querySelectorAll("input")].find((input) => {
     const label = container.querySelector(`label[for="${input.id}"]`);
@@ -90,7 +82,7 @@ function withQueries(ui: ReactNode, client = new QueryClient()) {
   return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
 }
 
-it("suggests the speech models a provider lists and follows the new model's voices", async () => {
+it("offers the speech models a provider lists and follows the new model's voices", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const router = {
     ...fish,
@@ -138,30 +130,31 @@ it("suggests the speech models a provider lists and follows the new model's voic
         withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
       );
     });
-    const input = await vi.waitFor(() => {
-      const found = speechModelInput(container);
-      if (!found) throw new Error("Missing speech model field");
-      return found;
-    });
-    await vi.waitFor(() =>
-      expect(
-        [...container.querySelectorAll(`datalist[id="${input.list?.id}"] option`)].map(
-          (option) => (option as HTMLOptionElement).value,
-        ),
-      ).toEqual(["mistralai/voxtral-mini-tts-2603", router.speechModel]),
+    const selects = () => [...container.querySelectorAll<HTMLElement>('[role="combobox"]')];
+    // Provider, voice and speech model, once the model list has loaded.
+    await vi.waitFor(() => expect(selects()).toHaveLength(3));
+    expect(selects()[1]?.textContent).toContain("alloy");
+    expect(speechModelInput(container)).toBeUndefined();
+
+    await act(async () => selects()[2]!.click());
+    const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(options().map((option) => option.textContent)).toEqual([
+      "Default",
+      "Mistral: Voxtral",
+      "OpenAI: GPT-4o Mini TTS",
+    ]);
+    await act(async () =>
+      options()
+        .find((option) => option.textContent === "Mistral: Voxtral")!
+        .click(),
     );
-    expect(labelledInput(container, "Voice").value).toBe("alloy");
 
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "mistralai/voxtral-mini-tts-2603");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(voice.setSpeechModel).toHaveBeenCalledWith({
+      scope: "account",
+      provider: "openrouter",
+      speechModel: "mistralai/voxtral-mini-tts-2603",
     });
-    await act(async () => {
-      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
-
-    await vi.waitFor(() => expect(labelledInput(container, "Voice").value).toBe("en_paul"));
+    await vi.waitFor(() => expect(selects()[1]?.textContent).toContain("en_paul"));
     expect(voice.setVoice).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());

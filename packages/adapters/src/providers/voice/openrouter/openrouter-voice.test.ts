@@ -62,14 +62,30 @@ describe("OpenRouterVoiceProvider", () => {
     stubFetch(() => Response.json(MODELS));
     const provider = new OpenRouterVoiceProvider();
     expect(
-      await provider.listVoices("key", context, { model: "mistralai/voxtral-mini-tts-2603" }),
-    ).toEqual([{ id: "en_paul", label: "en_paul" }]);
+      await provider.listVoices("key", context, { model: "openai/gpt-4o-mini-tts-2025-12-15" }),
+    ).toEqual([
+      { id: "alloy", label: "alloy" },
+      { id: "nova", label: "nova" },
+    ]);
     expect((await provider.listVoices("key", context)).map((voice) => voice.id)).toEqual([
-      "alloy",
-      "nova",
+      "en_paul",
     ]);
     expect(await provider.listVoices("key", context, { model: "fish/s2" })).toEqual([]);
     expect(await provider.listVoices("key", context, { model: "unknown/model" })).toEqual([]);
+  });
+
+  it("falls back to the first model with voices when the default one is gone", async () => {
+    stubFetch(() =>
+      Response.json({
+        data: [
+          { id: "fish/s2", supported_voices: [] },
+          { id: "vendor/tts", supported_voices: ["ana"] },
+        ],
+      }),
+    );
+    expect(await new OpenRouterVoiceProvider().listVoices("key", context)).toEqual([
+      { id: "ana", label: "ana" },
+    ]);
   });
 
   it("asks for MP3 and returns it as is", async () => {

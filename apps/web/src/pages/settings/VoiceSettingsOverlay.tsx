@@ -99,7 +99,7 @@ export function VoiceSettingsOverlay({
     provider: "",
     models: [],
   });
-  const speechModelSuggestions = modelList.provider === provider ? modelList.models : NO_MODELS;
+  const speechModelChoices = modelList.provider === provider ? modelList.models : NO_MODELS;
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState(
     cached?.credential?.voiceId || (cached?.credential ? (cached.voices[0]?.id ?? "") : ""),
@@ -257,7 +257,10 @@ export function VoiceSettingsOverlay({
   );
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const freeformVoice = Boolean(selected?.freeformVoice);
+  // A provider that lists its models lists each model's voices, so typing is the way out only
+  // when a model names none.
+  const typedVoice =
+    Boolean(selected?.freeformVoice) && (!selected?.speechModels || voices.length === 0);
   const listsSpeechModels = Boolean(selected?.speechModels) && Boolean(credential);
   const selectedId = selected?.id;
   useEffect(() => {
@@ -426,9 +429,9 @@ export function VoiceSettingsOverlay({
     }
   }
 
-  async function saveSpeechModel() {
+  async function saveSpeechModel(value = speechModel) {
     if (!credential || !selected?.speechModel) return;
-    const next = speechModel.trim();
+    const next = value.trim();
     if (next === credential.speechModel) return;
     if (speechModelSave.current === next) return;
     speechModelSave.current = next;
@@ -698,7 +701,7 @@ export function VoiceSettingsOverlay({
                 <FieldLabel htmlFor={voiceSelectId}>
                   <Trans>Voice</Trans>
                 </FieldLabel>
-                {freeformVoice ? (
+                {typedVoice ? (
                   <>
                     <Input
                       id={voiceSelectId}
@@ -749,35 +752,49 @@ export function VoiceSettingsOverlay({
                   <FieldLabel htmlFor={speechModelId}>
                     <Trans>Speech model</Trans>
                   </FieldLabel>
-                  <Input
-                    id={speechModelId}
-                    value={speechModel}
-                    maxLength={64}
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={busy}
-                    placeholder={t`Optional`}
-                    list={listsSpeechModels ? `${speechModelId}-list` : undefined}
-                    onChange={(event) => {
-                      edited.current.add("speechModel");
-                      setSpeechModel(event.target.value);
-                    }}
-                    onBlur={() => void saveSpeechModel()}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter") return;
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }}
-                  />
-                  {listsSpeechModels ? (
-                    <datalist id={`${speechModelId}-list`}>
-                      {speechModelSuggestions.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.label}
-                        </option>
-                      ))}
-                    </datalist>
-                  ) : null}
+                  {listsSpeechModels && speechModelChoices.length ? (
+                    <OptionSelect
+                      id={speechModelId}
+                      value={speechModel}
+                      disabled={busy}
+                      options={[
+                        { value: "", label: t`Default` },
+                        ...(speechModel &&
+                        !speechModelChoices.some((model) => model.id === speechModel)
+                          ? [{ value: speechModel, label: speechModel }]
+                          : []),
+                        ...speechModelChoices.map((model) => ({
+                          value: model.id,
+                          label: model.label,
+                        })),
+                      ]}
+                      onValueChange={(next) => {
+                        edited.current.add("speechModel");
+                        setSpeechModel(next);
+                        void saveSpeechModel(next);
+                      }}
+                    />
+                  ) : (
+                    <Input
+                      id={speechModelId}
+                      value={speechModel}
+                      maxLength={64}
+                      autoComplete="off"
+                      spellCheck={false}
+                      disabled={busy}
+                      placeholder={t`Optional`}
+                      onChange={(event) => {
+                        edited.current.add("speechModel");
+                        setSpeechModel(event.target.value);
+                      }}
+                      onBlur={() => void saveSpeechModel()}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }}
+                    />
+                  )}
                 </Field>
               ) : null}
               <Button
