@@ -55,7 +55,7 @@ function Row({
 }) {
   return (
     <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
-      <span className={wrap ? "min-w-0" : "min-w-0 truncate"}>{children}</span>
+      <span className={wrap ? "min-w-0 break-words" : "min-w-0 truncate"}>{children}</span>
       <span className="flex shrink-0 gap-2">{actions}</span>
     </li>
   );
