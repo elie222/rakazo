@@ -108,6 +108,7 @@ vi.mock("react-native", () => {
     },
     useWindowDimensions: () => dimensions,
     View: Surface,
+    ActivityIndicator: () => null,
     ScrollView: Surface,
     Text: Surface,
     Pressable: ({
@@ -222,6 +223,8 @@ const dictation = vi.hoisted(() => ({
   status: "idle",
   toggle: vi.fn(),
   cancel: vi.fn(),
+  finish: vi.fn((_then: () => void) => {}),
+  onLevel: vi.fn(() => () => {}),
   onWords: (_text: string, _final?: boolean) => {},
 }));
 vi.mock("../../lib/composer/composer-dictation", () => ({
@@ -1294,22 +1297,49 @@ describe("thread composer isolation", () => {
     return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
   }
 
-  it("keeps Send disabled while a dictation is still recording", () => {
+  it("shows how to stop or discard a dictation while it records", () => {
     dictation.status = "listening";
+    render();
+    expect(container.querySelector(labelled("Dictate"))).toBeNull();
+    press("Stop dictating");
+    expect(dictation.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a dictation once its words are in when Send is pressed while it records", () => {
+    type("Please");
+    press("Dictate");
+    dictation.status = "listening";
+    act(() => dictation.onWords("check"));
+    act(() => sendButton().click());
+    expect(props.send).not.toHaveBeenCalled();
+    const then = dictation.finish.mock.calls[0]![0];
+    act(() => {
+      dictation.status = "idle";
+      dictation.onWords("check the bank");
+      then();
+    });
+    expect(container.querySelector("input")!.value).toBe("Please check the bank");
+    expect(props.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Send disabled while a dictation is being transcribed", () => {
+    dictation.status = "transcribing";
     type("Please check");
     const send = sendButton();
     expect(send.disabled).toBe(true);
     act(() => send.click());
     expect(props.send).not.toHaveBeenCalled();
+    expect(dictation.finish).not.toHaveBeenCalled();
   });
 
-  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+  it("drops the words a discarded dictation added", () => {
+    type("Note");
+    press("Dictate");
     dictation.status = "listening";
-    render({ attachmentIds: ["file-1"] });
-    const send = sendButton();
-    expect(send.disabled).toBe(true);
-    act(() => send.click());
-    expect(props.send).not.toHaveBeenCalled();
+    act(() => dictation.onWords("call the bank"));
+    press("Cancel dictation");
+    expect(dictation.cancel).toHaveBeenCalled();
+    expect(container.querySelector("input")!.value).toBe("Note");
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {

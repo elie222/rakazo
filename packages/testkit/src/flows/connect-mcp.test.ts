@@ -132,7 +132,7 @@ describe("grading connect-mcp", () => {
   it("counts allowing the bot's own tool approval as carrying on", () => {
     const toolCard: TranscriptEntry = {
       from: "bot",
-      text: "[card] Review before mcp__tasklog__add_task → Renew passport",
+      text: "[card] Allow Tasklog add task → Renew passport?",
       at: at(2),
     };
     const allowed: TranscriptEntry = {

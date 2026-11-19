@@ -15,7 +15,7 @@ const VOICE_RESPONSE_TOO_LARGE = "Voice response is too large.";
 
 /** Header-safe speech model id. A connection override wins over the deployment default. */
 export function isSpeechModelId(value: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
+  return /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$/.test(value);
 }
 
 export async function readVoiceAudio(res: Response, signal?: AbortSignal): Promise<Uint8Array> {

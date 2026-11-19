@@ -1,12 +1,15 @@
 import type { JobPublisher, TransactionalEmail } from "@rakazo/adapter-kit";
 import { lifecycleEmailJob } from "@rakazo/adapter-kit";
-import { emailLocale, modelConnectionEmail } from "@rakazo/auth";
+import { agentImportEmail, emailLocale, modelConnectionEmail } from "@rakazo/auth";
 import type { LifecycleEmailKind } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
 
 /** How long after a plan starts the model-connection mail is due. */
 export const MODEL_CONNECTION_EMAIL_DELAY_MS = 24 * 60 * 60 * 1000;
+
+/** How long after a plan starts the agent-import mail is due: a day after the one above. */
+export const AGENT_IMPORT_EMAIL_DELAY_MS = 2 * MODEL_CONNECTION_EMAIL_DELAY_MS;
 
 /** Queues a lifecycle mail for an organization's owner; present only where account mail is on. */
 export type ScheduleLifecycleEmail = (
@@ -25,6 +28,7 @@ const TEMPLATES: Record<
   ) => Promise<TransactionalEmail>
 > = {
   "model-connection": modelConnectionEmail,
+  "agent-import": agentImportEmail,
 };
 
 /**

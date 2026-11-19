@@ -6,6 +6,7 @@ import {
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
   approvedModelCreditSeesImages,
+  assertModelProviderAllowed,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
@@ -25,6 +26,8 @@ import {
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
   modelCreditOfferings,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
@@ -172,12 +175,16 @@ export function createRouterContext(deps: RouterDeps) {
     const configured = deps.billing?.modelCreditsEnabled
       ? (modelCreditOfferings()?.offerings ?? [])
       : [];
+    // Narrowed before any offering is read, so an excluded provider's key is never decrypted.
+    const allowlist = modelProviderAllowlist();
     const fundedProviders = new Set(
       (
         await Promise.all(
-          [...new Set(configured.map((entry) => entry.provider))].map(async (provider) =>
-            (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
-          ),
+          [...new Set(configured.map((entry) => entry.provider))]
+            .filter((provider) => modelProviderAllowed(allowlist, provider))
+            .map(async (provider) =>
+              (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
+            ),
         )
       ).filter((provider): provider is string => provider !== null),
     );
@@ -212,10 +219,15 @@ export function createRouterContext(deps: RouterDeps) {
         auth,
         applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
       ),
-      ...(role === "approval" ? decisionModelCatalog() : []),
+      ...(role === "approval"
+        ? decisionModelCatalog().filter((entry) =>
+            modelProviderAllowed(modelProviderAllowlist(), entry.provider),
+          )
+        : []),
     ];
     for (const offering of approved) {
       if (
+        !modelProviderAllowed(modelProviderAllowlist(), offering.provider) ||
         !fundedProviders.has(offering.provider) ||
         merged.some(
           (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
@@ -475,6 +487,7 @@ export function createRouterContext(deps: RouterDeps) {
     if (choices.length === 0) return;
     const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
+      assertModelProviderAllowed(choice.provider);
       const entry = catalog.find(
         (entry) =>
           entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,

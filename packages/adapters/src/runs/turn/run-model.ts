@@ -40,6 +40,11 @@ import {
   retireToReconnectMarker,
   withModelCredentialLock,
 } from "../../models/model-credential-refresh.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { piRuntimeEnvironmentKey } from "../../models/model-provider-registry.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
@@ -277,6 +282,7 @@ async function resolveModelKeyMaterial(
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
@@ -312,6 +318,8 @@ async function resolveModelKeyMaterial(
   if (credential) {
     if (canonicalPiProviderId(credential.provider) !== canonicalPiProviderId(provider))
       throw new UnavailableModelForAuthError("Model connection does not match provider");
+    if (!modelProviderAllowed(modelProviderAllowlist(), credential.provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findFirst({
         where: { id: credential.secretId, userId, spaceId: null },
@@ -391,18 +399,23 @@ async function resolveModelKeyMaterial(
       const settings = connectionModelSettings(resolved.secret, provider, modelId, credential);
       // The account catalog knows what a Codex model reads; elsewhere the model's setting
       // decides wherever the bundled catalog cannot.
+      // Live-only models have no static reasoning or context card to fall back to.
+      // Keep explicit context limits; enable thinking when the account advertises efforts.
       const acceptsImages = liveCodex?.supportsImages ?? settings.images;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
       cloudflareProviderEnv({ provider, accountId, gatewayId });
       const projectId = resolved.secret.kind === "api_key" ? resolved.secret.projectId : undefined;
       const region = resolved.secret.kind === "api_key" ? resolved.secret.region : undefined;
+      const zeroDataRetention =
+        resolved.secret.kind === "api_key" ? resolved.secret.zeroDataRetention : undefined;
       return {
         apiKey: resolved.apiKey,
         accountId,
         gatewayId,
         projectId,
         region,
+        zeroDataRetention,
         baseUrl,
         apiProtocol:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
@@ -410,8 +423,8 @@ async function resolveModelKeyMaterial(
         allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
-        contextWindow: settings.contextWindow,
-        reasoning: settings.reasoning,
+        contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
+        reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
@@ -446,6 +459,9 @@ async function resolveModelKeyMaterial(
   if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+    // Credits a member chose follow the allowlist like their own connections do.
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     const material = await approvedModelCreditMaterial(
       deps.prisma,
       deps.secretStore,
@@ -472,6 +488,7 @@ export function resolvedModelRunFields(
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
     ...(resolved.projectId ? { projectId: resolved.projectId } : {}),
     ...(resolved.region ? { region: resolved.region } : {}),
+    ...(resolved.zeroDataRetention ? { zeroDataRetention: true } : {}),
     baseUrl: resolved.baseUrl,
     apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
@@ -506,6 +523,10 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
+  // Reject a restricted provider before reading its connection or probing its catalog.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  }
   if (credentialId?.startsWith(DEPLOYMENT_MODEL_CONNECTION_PREFIX)) {
     const shared = await readSharedDeploymentModel(deps.prisma);
     if (!shared || credentialId !== deploymentModelConnectionId(shared))

@@ -20,6 +20,7 @@ import {
   isToolPauseResult,
 } from "../../../approvals/approval-effect.js";
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
+import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { textContentArg } from "../../../runs/turn/tool-text.js";
@@ -453,6 +454,9 @@ function toAgentTool(
       if (tool.name === "shell" || tool.name === "user_computer_shell") {
         return {
           command: String(raw.command ?? ""),
+          ...(tool.name === "user_computer_shell" && raw.computerId !== undefined
+            ? { computerId: raw.computerId }
+            : {}),
           // The executor chooses the default: the bot's folder, or the user's home.
           ...(raw.cwd ? { cwd: String(raw.cwd) } : {}),
         };
@@ -643,20 +647,22 @@ function toAgentTool(
                     ? result
                     : boundAgentToolResult(result);
                 }
+                const lifted = liftMcpResultImages(result);
                 return {
                   content: [
                     {
                       type: "text",
                       text: serializeToolResult(
-                        result,
+                        lifted.result,
                         host.request.contextStrategy,
                         tool.name,
                         args,
                         host.request.verbatimMcpServers,
                       ),
                     },
+                    ...lifted.images,
                   ],
-                  details: result,
+                  details: lifted.result,
                 };
               }
               return {

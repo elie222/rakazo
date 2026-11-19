@@ -28,6 +28,7 @@ import {
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
+  VoiceModelInfoSchema,
   VoiceStatusSchema,
 } from "./voice.js";
 
@@ -200,6 +201,9 @@ export const modelsRpc = {
         }),
       )
       .output(z.array(VoiceInfoSchema)),
+    models: oc
+      .input(settingsScopeInput.extend({ provider: z.string().min(1) }))
+      .output(z.array(VoiceModelInfoSchema)),
     prepare: oc
       .input(
         z.object({

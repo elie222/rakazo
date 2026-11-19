@@ -43,12 +43,14 @@ To have a bot react to files changing, use a [routine](./routines.md) that watch
 
 ## Fix a computer
 
-Open the computer and choose **More computer actions**:
+On web and desktop, open the bot's computer. If the screen cannot connect, try **Retry screen**.
+If a repair is available, its button appears with the error.
 
-- **Stop computer**: shut it down now. It starts again when needed.
-- **Update computer**: save the workspace and install current software.
-- **Recover computer**: recreate a computer that is not working.
-- **Reset computer**: go back to the last saved workspace. Unsaved work on the computer is lost.
+On mobile, open the bot's profile and choose **Edit**, then **Advanced**. A repair action appears
+when the computer is in an error state.
+
+- **Recover computer** rebuilds the computer and restores the last saved workspace. Unsaved work may be lost.
+- **Reset computer** restores the last saved workspace. Unsaved work is lost.
 
 ## Use your own computer
 

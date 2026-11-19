@@ -162,11 +162,12 @@ export function columnSortLabel(
   return label;
 }
 
-/** Compare non-empty cells: numeric when both parse, else text. */
+/** Compare non-empty cells with numbers before text in ascending order. */
 export function compareCellText(a: string, b: string): number {
   const an = parseNumericText(a);
   const bn = parseNumericText(b);
-  if (an !== null && bn !== null) return an - bn;
+  if (an !== null) return bn !== null ? an - bn : -1;
+  if (bn !== null) return 1;
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 

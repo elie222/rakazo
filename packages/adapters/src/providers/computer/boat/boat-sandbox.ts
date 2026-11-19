@@ -93,7 +93,7 @@ import {
   createBoatClient,
   nextPoll,
 } from "./boat-client.js";
-import { BoatApiError, boatSdk } from "./boat-errors.js";
+import { BoatApiError, boatResumeInProgress, boatSdk } from "./boat-errors.js";
 import { readBoatStoppedFile } from "./boat-stopped-file.js";
 
 const DISPLAY_START = 20;
@@ -952,8 +952,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       );
     } catch (error) {
       // Another job's resume is already bringing it up; the caller waits for that one.
-      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming")
-        throw boatSizeError(error);
+      if (!boatResumeInProgress(error)) throw boatSizeError(error);
     }
   }
 

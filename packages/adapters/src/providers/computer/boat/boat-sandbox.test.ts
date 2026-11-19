@@ -730,35 +730,42 @@ describe("BoatSandboxProvider", () => {
     expect(error).toBeInstanceOf(SandboxUnavailableError);
   });
 
-  it("waits for a resume another job already started instead of failing", async () => {
-    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
-    const { api, provider, computer } = await boat();
-    await provider.prepare(computer, context);
-    await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
-    api.setState(computer.id, "archived");
-    resume.mockImplementationOnce(async ({ sandboxId }) => {
-      // The other resume finishes while this one is refused.
-      api.setState(sandboxId, "provisioning");
-      throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
-    });
+  it.each([
+    ["sandbox_resuming", 409, "A resume for this sandbox is already in progress."],
+    ["sandbox_resuming", 400, "A resume for this sandbox is already in progress."],
+    ["resume_failed", 409, "Agent resume already in progress"],
+  ])(
+    "waits for a resume another job already started (%s, HTTP %i)",
+    async (code, status, message) => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      await provider.prepare(computer, context);
+      await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+      resume.mockImplementationOnce(async ({ sandboxId }) => {
+        // The other resume finishes while this one is refused.
+        api.setState(sandboxId, "provisioning");
+        throw boatError(status, code, message);
+      });
 
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "test", sinks: [sink] }));
-    try {
-      expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
-    } finally {
-      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
-    }
-    expect(resume).toHaveBeenCalledOnce();
-    expect(sink.events.filter((event) => event.message === "sandbox.start")).toEqual([
-      expect.objectContaining({
-        level: "info",
-        message: "sandbox.start",
-        operation: "resume",
-        outcome: "in_progress",
-      }),
-    ]);
-  });
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+      }
+      expect(resume).toHaveBeenCalledOnce();
+      expect(sink.events.filter((event) => event.message === "sandbox.start")).toEqual([
+        expect.objectContaining({
+          level: "info",
+          message: "sandbox.start",
+          operation: "resume",
+          outcome: "in_progress",
+        }),
+      ]);
+    },
+  );
 
   it("retries a request that never reached Boat once, whatever the call", async () => {
     const run = vi.spyOn(FakeBoatApi.prototype, "command");
