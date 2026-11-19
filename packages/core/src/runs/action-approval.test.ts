@@ -28,6 +28,7 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
+  unattendedApprovalExpireAfterMs,
   watchToolRefusal,
 } from "./action-approval.js";
 
@@ -1123,5 +1124,19 @@ describe("approvalRuleEffectChoices", () => {
       "deny",
     ]);
     expect(approvalRuleEffectChoices(rule("category", "email"))).toEqual([]);
+  });
+});
+
+describe("unattendedApprovalExpireAfterMs", () => {
+  it("uses the deployment's span when it is a usable one", () => {
+    expect(unattendedApprovalExpireAfterMs("7200000")).toBe(7_200_000);
+    expect(unattendedApprovalExpireAfterMs(" 60000 ")).toBe(60_000);
+    expect(unattendedApprovalExpireAfterMs("2592000000")).toBe(2_592_000_000);
+  });
+
+  it("keeps 30 minutes for a blank, unreadable or out-of-range value", () => {
+    for (const raw of [undefined, "", "   ", "soon", "0", "-1000", "59999", "2592000001"]) {
+      expect(unattendedApprovalExpireAfterMs(raw), String(raw)).toBe(30 * 60 * 1000);
+    }
   });
 });
