@@ -81,6 +81,7 @@ x-app-environment: &app-environment # Runtime
   INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
   # Logs, errors, traces and analytics
   LOG_LEVEL:
+  GRAPHILE_LOGGER_DEBUG:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
   CHAT_HISTORY_RETENTION_DAYS:
