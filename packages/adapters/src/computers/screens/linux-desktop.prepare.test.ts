@@ -178,7 +178,8 @@ describe("provider desktop preparation", () => {
       const fakes = {
         id: "#!/bin/sh\necho 1000\n",
         sudo: '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n',
-        "apt-get": `#!/bin/sh\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" != update ]\n`,
+        // Every call waits for APT's lock; the fake records only what it was asked to do.
+        "apt-get": `#!/bin/sh\n[ "$1" = -o ] && [ "$2" = DPkg::Lock::Timeout=60 ] || exit 2\nshift 2\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" != update ]\n`,
       };
       for (const [name, script] of Object.entries(fakes)) {
         writeFileSync(path.join(bin, name), script);
