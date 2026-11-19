@@ -47,7 +47,9 @@ describe("mobile AI consent prompt", () => {
     const shown = currentAlert();
     expect(shown.title).toBe(t("Send data to {name}?", { name: recipient.name }));
     expect(shown.message).toBe(
-      t("Your messages, files and connected-app content are sent to run your bots."),
+      t(
+        "Messages, files, bot instructions, memories and connected-app content are sent to run your bots.",
+      ),
     );
     expect(shown.buttons.map((button) => button.text)).toEqual([t("Not now"), t("Allow")]);
     shown.buttons[1]?.onPress?.();

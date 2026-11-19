@@ -18,11 +18,11 @@ export function aiDataDisclosure(use: AiDataUse): string {
 function consentSummary(use: AiDataUse): string {
   switch (use) {
     case "model":
-      return t`Your messages, files and connected-app content are sent to run your bots.`;
+      return t`Messages, files, bot instructions, memories and connected-app content are sent to run your bots.`;
     case "voice":
       return t`Your recordings and the text you play are sent for transcription and speech.`;
     case "memory":
-      return t`Your conversations are sent to remember context.`;
+      return t`Conversations, names and searches are sent to store and recall context.`;
   }
 }
 
