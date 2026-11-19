@@ -772,8 +772,8 @@ describe("ownComputerReviewArgs", () => {
       "https://drop.example.net/up?d",
       "backup@203.0.113.9:/tmp",
       "git@code.example.org:someone/repo.git",
-      "sink.example.com",
       "198.51.100.7:4444",
+      "sink.example.com",
     ]);
   });
 
@@ -803,6 +803,16 @@ describe("ownComputerReviewArgs", () => {
     const reviewed = ownComputerReviewArgs("shell", { command }, undefined);
     expect(JSON.stringify(reviewed).length).toBeLessThanOrEqual(7_500);
     expect(String(reviewed.command)).toContain("https://files.example.com/up");
+  });
+
+  it("lists file and code names but never sends a command whole for them", () => {
+    const code = Array.from({ length: 40 }, (_, i) => `self.name${i} = setup${i}.py`).join("\n");
+    const command = `cat > gen.py <<'EOF'\n${"# pad\n".repeat(800)}${code}\n${"# pad\n".repeat(400)}EOF`;
+    const reviewed = ownComputerReviewArgs("shell", { command }, undefined);
+    const listed = reviewed.addressesInPartLeftOut as string[];
+    expect(reviewed.command).not.toBe(command);
+    expect(listed).toHaveLength(21);
+    expect(listed.at(-1)).toMatch(/^…and \d+ more names$/);
   });
 
   it("sends a long command whole when the part left out names more addresses than it can list", () => {

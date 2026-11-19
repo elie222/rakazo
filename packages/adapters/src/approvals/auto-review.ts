@@ -239,20 +239,25 @@ const MAX_HOST_CHARS = 253;
  */
 function addressesIn(text: string): string[] | undefined {
   const found = new Set<string>();
+  // Bare names are listed but never decide the cut: code and file names (`setup.py`,
+  // `self.name`) read as host names too, and a long heredoc holds many.
+  const names = new Set<string>();
   for (const word of text.split(WORD_SEPARATORS)) {
     // More than the list holds could hide the one that matters behind decoys.
     if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
-    if (URL_WORD.test(word) || USER_AT_HOST_WORD.test(word)) found.add(word);
-    else if (IPV4_WORD.test(word)) found.add(word);
+    if (URL_WORD.test(word) || USER_AT_HOST_WORD.test(word) || IPV4_WORD.test(word))
+      found.add(word);
     else {
       // `$(…).sink.example.net` leaves a word that starts with a dot.
       const host = word.replace(/^\.+/, "");
       if (host.includes(".") && host.length <= MAX_HOST_CHARS && sitesInText(host).size)
-        found.add(host);
+        names.add(host);
     }
   }
   if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
-  return [...found].map(shortAddress);
+  const room = MAX_LEFT_OUT_ADDRESSES - found.size;
+  const listed = [...found, ...[...names].slice(0, room)].map(shortAddress);
+  return names.size > room ? [...listed, `…and ${names.size - room} more names`] : listed;
 }
 
 /** An address cut short enough to list, always keeping where it goes: its host, after any user. */

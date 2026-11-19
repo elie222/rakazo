@@ -169,6 +169,21 @@ describe("actionTargets", () => {
     ).toEqual(["drop.example.net"]);
   });
 
+  it("reads the hosts a cut command names in the part left out", () => {
+    expect(
+      actionTargets({
+        command: "echo …",
+        addressesInPartLeftOut: [
+          "https://…@Evil.example.com…",
+          "backup@203.0.113.9:/srv",
+          "git@code.example.org:someone/repo.git",
+          "sink.example.net",
+          "…and 3 more names",
+        ],
+      }).map((target) => target.value),
+    ).toEqual(["evil.example.com", "203.0.113.9", "code.example.org", "sink.example.net"]);
+  });
+
   it("reads recipients from nested batches", () => {
     expect(
       actionTargets({
