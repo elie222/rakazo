@@ -91,7 +91,7 @@ export function ComputerDeviceSettings() {
   if (devices.length === 0 && !thisComputer && !plainHttp) return null;
 
   return (
-    <SettingsGroup title={<Trans>Paired computers</Trans>} data-testid="computer-devices">
+    <SettingsGroup title={<Trans>Your devices</Trans>} data-testid="computer-devices">
       {plainHttp ? (
         <p className="px-4 py-3 text-body-sm text-muted-foreground">
           <Trans>Plain HTTP does not pair this computer. Use HTTPS, or a loopback server.</Trans>

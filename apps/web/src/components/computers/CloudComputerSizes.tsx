@@ -62,7 +62,7 @@ function CloudComputerRow({
       control={
         canManage ? (
           <OptionSelect
-            className="w-auto min-w-32"
+            className="w-auto min-w-32 shrink-0"
             size="sm"
             aria-label={t`Size of ${name}`}
             data-testid={`computer-size-${computer.id}`}

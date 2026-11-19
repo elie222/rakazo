@@ -265,7 +265,7 @@ it("lists cloud computers above paired ones and changes a size", async () => {
   mocks.setSize.mockResolvedValue(null);
   await render();
   const text = container.textContent ?? "";
-  expect(text.indexOf("Cloud computers")).toBeLessThan(text.indexOf("Paired computers"));
+  expect(text.indexOf("Cloud computers")).toBeLessThan(text.indexOf("Your devices"));
   expect(text).toContain("Team ComputerStandard");
   expect(text).toContain("ResearcherLarge (uses 2× hours)");
 

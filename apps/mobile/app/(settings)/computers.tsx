@@ -146,7 +146,7 @@ export default function ComputersSettings() {
           <Text style={styles.secondary}>{t`No paired computers`}</Text>
         ) : null}
         {devices?.length ? (
-          <SettingsGroup label={cloudComputers.length ? t`Paired computers` : undefined}>
+          <SettingsGroup label={cloudComputers.length ? t`Your devices` : undefined}>
             {devices.map((device) => {
               const status = device.connected ? t`Connected` : t`Offline`;
               return (
