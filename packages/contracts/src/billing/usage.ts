@@ -57,6 +57,8 @@ export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
 export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
   provider: z.string(),
   model: z.string(),
+  /** Input read from the provider's cache, which `inputTokens` leaves out; null when any call lacks the figure. */
+  cachedTokens: z.number().nullable(),
 });
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 

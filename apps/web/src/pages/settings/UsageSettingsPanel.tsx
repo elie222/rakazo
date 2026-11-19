@@ -239,6 +239,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   <Trans>Input</Trans>
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cached</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
                   <Trans>Output</Trans>
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
@@ -258,6 +261,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {number(row.inputTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.cachedTokens)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {number(row.outputTokens)}
