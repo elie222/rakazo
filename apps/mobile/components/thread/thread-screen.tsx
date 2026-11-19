@@ -18,8 +18,9 @@ import {
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
-import { I18nManager, Platform, View } from "react-native";
+import { I18nManager, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
@@ -45,7 +46,7 @@ import {
   threadHeaderClearance,
   threadHeaderFloats,
 } from "../../lib/thread/scroll/thread-edges";
-import { threadKeyboardAvoidance } from "../../lib/thread/scroll/thread-keyboard-offset";
+import { useThreadKeyboardAvoidance } from "../../lib/thread/scroll/thread-keyboard-avoidance";
 import { useThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import {
   isOwnThreadMessage,
@@ -146,6 +147,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
+  const { enabled, keyboardVerticalOffset, keyboardPadding } = useThreadKeyboardAvoidance({
+    rootAvoidsKeyboard,
+    floatingHeader: threadHeaderFloats(),
+    nativeHeaderHeight,
+  });
   const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
@@ -584,21 +590,14 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   );
 
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View style={[{ flex: 1, backgroundColor: tokens.background }, keyboardPadding]}>
       <KeyboardAvoidingView
-        enabled={!rootAvoidsKeyboard}
+        enabled={enabled}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
-        {...threadKeyboardAvoidance({
-          os: Platform.OS,
-          floatingHeader: threadHeaderFloats(),
-          nativeHeaderHeight,
-        })}
-        style={{
-          flex: 1,
-          backgroundColor: tokens.background,
-        }}
+        keyboardVerticalOffset={keyboardVerticalOffset}
+        style={{ flex: 1 }}
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
         <View style={{ flex: 1 }}>
@@ -716,6 +715,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           />
         ) : null}
       </KeyboardAvoidingView>
-    </View>
+    </Animated.View>
   );
 }
