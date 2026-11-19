@@ -21,7 +21,7 @@ setting() {
   [[ -r "${ENV_FILE}" ]] || return 0
   while IFS= read -r line || [[ -n "${line}" ]]; do
     line="$(trim "${line%$'\r'}")"
-    [[ "${line}" == "$1="* || "${line}" == "$1 ="* ]] || continue
+    [[ "${line}" == *=* && "$(trim "${line%%=*}")" == "$1" ]] || continue
     value="$(trim "${line#*=}")"
     quoted="${value:0:1}"
     if [[ "${quoted}" == '"' || "${quoted}" == "'" ]] && [[ "${value:1}" == *"${quoted}"* ]]; then

@@ -99,14 +99,15 @@ for unit in rakazo-backup.service rakazo-backup.timer; do
   sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
 done
 sudo install -d -m 700 /etc/rakazo
-printf 'RAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee /etc/rakazo/backup.env >/dev/null
+printf 'RAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
 sudo chmod 600 /etc/rakazo/backup.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now rakazo-backup.timer
 sudo systemctl start rakazo-backup.service
 ```
 
-Run it from the deployment directory. The last command takes the first backup now, so a
+Run it from the deployment directory. The deployment directory is added to
+`/etc/rakazo/backup.env` without replacing settings already there. The last command takes the first backup now, so a
 misconfiguration shows at once in `journalctl -u rakazo-backup.service`. The restore steps below
 apply with your own Compose file and volume names; this stack runs Postgres 16, so the drill needs
 `pg_restore` 16 or newer.

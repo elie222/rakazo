@@ -944,7 +944,7 @@ describe("production backup deployment and archive behavior", () => {
       ["a.yml", "ops/b.yml"],
     ],
     [
-      "RAKAZO_COMPOSE_FILE=old.yml\n# RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE = 'new.yml'",
+      "RAKAZO_COMPOSE_FILE=old.yml\n# RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE \t  = 'new.yml'",
       ["new.yml"],
     ],
     [
