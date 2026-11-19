@@ -53,3 +53,8 @@ name: Pages
     visible: "Pin"
     timeout: 10000
 - takeScreenshot: 06-pages-menu
+- openLink: "rakazo:///shared-pages"
+- extendedWaitUntil:
+    visible: "No pages shared with you yet."
+    timeout: 20000
+- takeScreenshot: 07-shared-pages
