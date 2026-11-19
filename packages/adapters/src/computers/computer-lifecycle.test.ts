@@ -2343,7 +2343,7 @@ describe("Team Computer wake", () => {
     );
   });
 
-  it("uses a newly confirmed larger size from the time of reconnect", async () => {
+  it("keeps the starting rate and lifetime when reconnecting reports a different size", async () => {
     const runningSince = new Date("2024-01-01T00:00:00.000Z");
     const harness = wakeHarness(
       "running",
@@ -2354,10 +2354,11 @@ describe("Team Computer wake", () => {
 
     await boot(harness);
 
-    const startedAt = activation(harness)?.runningSince;
-    expect(startedAt).not.toEqual(runningSince);
+    expect(activation(harness)?.runningSince).toEqual(runningSince);
     expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: [expect.objectContaining({ startedAt, size: "large" })] }),
+      expect.objectContaining({
+        data: [expect.objectContaining({ startedAt: runningSince, size: "standard" })],
+      }),
     );
   });
 

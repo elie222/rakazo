@@ -589,20 +589,11 @@ export async function provisionComputer(
     }
     const activeControl = hasActiveComputerControl(existing);
     // A reconnect to a computer that stayed up continues its stretch; any start begins one.
-    const sizeChanged =
-      ref.size &&
-      existing.runningSize &&
-      existing.runningSizeSince?.getTime() === existing.runningSince?.getTime() &&
-      ref.size !== existing.runningSize;
     const continued =
-      existing.state === "running" &&
-      existing.runningSince &&
-      !ref.started &&
-      !replacement &&
-      !sizeChanged;
+      existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
-    // A sized provider may be unable to report the machine's size. Start at Standard in that
-    // case. A later confirmation of a different size starts a usage stretch at that rate.
+    // Set the rate at the start of a stretch. If the provider cannot confirm size then, use
+    // Standard for that stretch. Reconnects preserve both the rate and the active-lifetime clock.
     const usageSize =
       ref.size ?? (sandboxKindCapabilities(ref.kind).sizedUsage ? "standard" : null);
     const sizing =
