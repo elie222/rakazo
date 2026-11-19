@@ -498,4 +498,26 @@ describe("approval card arguments", () => {
         "Gmail fetch emails ×2\nQuery: verification code newer_than:30d\nMax results: 50\nVerbose: No",
     });
   });
+
+  it("keeps distinct and separated batch entries apart, in order", () => {
+    const entry = (slug: string) => ({ tool_slug: slug, arguments: { id: "1" } });
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "MULTI_EXECUTE",
+      { tools: [entry("SEND_NOTE"), entry("send_note"), entry("ARCHIVE"), entry("SEND_NOTE")] },
+      [],
+      { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail?.split("\n")).toEqual([
+      "Send note",
+      "ID: 1",
+      "Send note",
+      "ID: 1",
+      "Archive",
+      "ID: 1",
+      "Send note",
+      "ID: 1",
+    ]);
+  });
 });

@@ -303,27 +303,29 @@ function formatApprovalDetail(
     );
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
-    // An entry repeated with the same arguments is shown once, with how many times it runs.
-    const entries = new Map<
-      string,
-      { name: string; args: Record<string, unknown>; runs: number }
-    >();
+    // An entry repeated back to back with the same action and arguments is shown once, with how
+    // many times it runs; the key is the raw action, since two raw names can read the same.
+    const entries: Array<{
+      key: string;
+      name: string;
+      args: Record<string, unknown>;
+      runs: number;
+    }> = [];
     for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const action = entry[batch.action];
-      const name = typeof action === "string" && action.trim() ? readableToolName(action) : "…";
+      const raw = typeof action === "string" ? action.trim() : "";
       const entryArgs = objectArguments(entry[batch.arguments]);
-      const key = `${name}\n${JSON.stringify(entryArgs)}`;
-      const seen = entries.get(key);
-      if (seen) seen.runs++;
-      else entries.set(key, { name, args: entryArgs, runs: 1 });
+      const key = `${raw}\n${JSON.stringify(entryArgs)}`;
+      const previous = entries.at(-1);
+      if (previous?.key === key) previous.runs++;
+      else entries.push({ key, name: raw ? readableToolName(raw) : "…", args: entryArgs, runs: 1 });
     }
     // The title already names a lone action that runs once, so its arguments need no heading.
-    const [only] = entries.values();
-    const single = entries.size === 1 && only?.runs === 1;
+    const single = entries.length === 1 && entries[0]?.runs === 1;
     // Every action and its destinations first, then each action's long text.
     const later: string[] = [];
-    for (const { name, args: entryArgs, runs } of entries.values()) {
+    for (const { name, args: entryArgs, runs } of entries) {
       const { first, last } = shown(entryArgs);
       lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
       later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
