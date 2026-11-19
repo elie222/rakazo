@@ -22,6 +22,7 @@ model AiDataConsent {
 }
 
 model User {
+  meetingSessions MeetingSession[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
   id                          String                       @id
@@ -656,6 +657,7 @@ model Member {
 }
 
 model Space {
+  meetingSessions MeetingSession[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -991,6 +993,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
   spaceId           String
@@ -1999,6 +2002,8 @@ model Artifact {
   version        Int        @default(1)
   // A file a stranger emailed: its own family, never one a later upload of that name joins.
   standalone     Boolean    @default(false)
+  meetingSessionId String? @unique
+  meetingSession MeetingSession? @relation(fields: [meetingSessionId], references: [id], onDelete: Cascade)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 
@@ -2920,4 +2925,98 @@ model SpeechCost {
   @@index([spaceId, createdAt], map: "speech_costs_space")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
+}
+
+/// A bot's attendance and transcript import, scoped to the member who requested it.
+model MeetingSession {
+  id           String    @id @default(cuid())
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  platform     String
+  status       String
+  meetingUrl   String?   @db.Text
+  activeKey    String?   @unique
+  externalId   String?
+  recordingId  String?
+  transcriptId String?
+  transcript   String?   @db.Text
+  shareTranscript Boolean @default(false)
+  sharedArtifact Artifact?
+  error        String?
+  requestedAt  DateTime?
+  receivedAt   DateTime?
+  closedAt     DateTime?
+  expiresAt    DateTime
+  scheduledFor DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([spaceId, userId, botId, createdAt])
+  @@index([spaceId, createdAt])
+  @@index([userId])
+  @@unique([provider, externalId])
+  @@index([spaceId, scheduledFor])
+  @@map("meeting_sessions")
+}
+
+model MeetingCalendarConnection {
+  id                 String                  @id
+  spaceId            String
+  userId             String
+  provider           String
+  externalCalendarId String?
+  disconnecting      Boolean                 @default(false)
+  createdAt          DateTime                @default(now())
+  eventsDigest       String?
+  rules              MeetingCalendarRule[]
+  bookings           MeetingCalendarBooking[]
+
+  @@unique([spaceId, userId])
+  @@unique([provider, externalCalendarId])
+  @@map("meeting_calendar_connections")
+}
+
+model MeetingCalendarAuthorization {
+  id        String   @id
+  spaceId   String
+  userId    String
+  botId     String?
+  expiresAt DateTime
+  sessionId String?
+
+  @@unique([spaceId, userId])
+  @@map("meeting_calendar_authorizations")
+}
+
+model MeetingCalendarRule {
+  connectionId  String
+  connection    MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  scope         String
+  targetId      String
+  botId         String?
+  eventStartsAt DateTime?
+  seriesId      String?
+  shareTranscript Boolean @default(false)
+
+  @@id([connectionId, scope, targetId])
+  @@map("meeting_calendar_rules")
+}
+
+model MeetingCalendarBooking {
+  connectionId String
+  connection   MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  eventId      String
+  sessionId    String
+  startsAt     DateTime
+  linked       Boolean                   @default(false)
+  configDigest String
+  shareTranscript Boolean @default(false)
+
+  @@id([connectionId, eventId])
+  @@index([sessionId])
+  @@map("meeting_calendar_bookings")
 }
