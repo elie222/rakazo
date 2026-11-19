@@ -303,6 +303,7 @@ function formatApprovalDetail(
   const shown = (values: Record<string, unknown>) =>
     argumentLines(
       redactLeaves(values, secrets) as Record<string, unknown>,
+      secrets,
       SITE_SENDING_TOOLS.has(toolName) ? ["url", "method", "body"] : undefined,
     );
   const items = batch ? args[batch.items] : undefined;
@@ -361,6 +362,7 @@ const SHORT_ARGUMENT_LENGTH = 200;
  */
 function argumentLines(
   values: Record<string, unknown>,
+  secrets: string[],
   keys = Object.keys(values),
 ): { first: string[]; last: string[] } {
   const short: string[] = [];
@@ -370,7 +372,8 @@ function argumentLines(
     const value = values[key];
     const text = argumentText(value);
     if (!text) continue;
-    const line = `${readableArgumentName(key)}: ${text}`;
+    // A key is redacted only as shown, so values are still read by their real keys.
+    const line = `${readableArgumentName(redactSecrets(key, secrets))}: ${text}`;
     if (text.length <= SHORT_ARGUMENT_LENGTH) short.push(line);
     else (typeof value === "string" ? last : structured).push(line);
   }
@@ -413,16 +416,13 @@ function readableArgumentName(key: string): string {
     .join(" ");
 }
 
-/** Redacts every string inside a value, keys included, since JSON escaping could hide a secret from the card. */
+/** Redacts every string inside a value, since JSON escaping could hide a secret from the card. */
 function redactLeaves(value: unknown, secrets: string[]): unknown {
   if (typeof value === "string") return redactSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => redactLeaves(item, secrets));
   if (value && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        redactSecrets(key, secrets),
-        redactLeaves(item, secrets),
-      ]),
+      Object.entries(value).map(([key, item]) => [key, redactLeaves(item, secrets)]),
     );
   return value;
 }

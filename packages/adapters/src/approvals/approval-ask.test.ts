@@ -559,4 +559,15 @@ describe("approval card arguments", () => {
     expect(text).not.toContain("secret token");
     expect(text).not.toContain("secret_token");
   });
+
+  it("still shows a fetch URL when a secret matches an argument name", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "web_fetch",
+      { url: "https://example.test/page" },
+      ["url"],
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).toContain("example.test/page");
+  });
 });
