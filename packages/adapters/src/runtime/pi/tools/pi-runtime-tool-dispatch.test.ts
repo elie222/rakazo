@@ -2542,6 +2542,9 @@ describe("Pi connector tool dispatch", () => {
   it("gives an MCP tool's image to the model as an image instead of cutting it into the text", async () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 2, 0x80, 0, 0, 1, 0xe0]),
+      Buffer.alloc(9),
+      Buffer.from([0, 0, 0xea, 0x60, 0x49, 0x44, 0x41, 0x54]),
       Buffer.alloc(60_000, 7),
     ]).toString("base64");
     fakeAgentState.invoke = { name: "mcp__showcase__render_preview", args: { page: 1 } };
