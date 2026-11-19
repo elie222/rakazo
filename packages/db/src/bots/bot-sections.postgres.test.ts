@@ -5,7 +5,7 @@ import { asSystem, runAsSystem, runAsTenant } from "../database/row-security.js"
 import { BotSectionNameConflictError, IsolationError } from "../database/scope.js";
 import { provisionMessagingIdentity } from "../messaging/messaging.js";
 import { createGroupRepos } from "../spaces/groups.js";
-import { createRepos } from "./repos.js";
+import { createRepos } from "./bot-repository.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;

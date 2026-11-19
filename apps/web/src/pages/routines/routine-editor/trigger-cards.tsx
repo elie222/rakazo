@@ -154,7 +154,7 @@ export function WatchTriggerCard({
                 ),
               })
             }
-            className="h-8 w-20"
+            className="w-20"
           />
           <Trans>minutes</Trans>
         </label>

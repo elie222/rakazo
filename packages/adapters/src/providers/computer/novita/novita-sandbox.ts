@@ -5,9 +5,12 @@ import type {
   CommandStartOpts,
   RemoteDesktop,
   RemoteDesktopSdk,
-} from "../../../sandboxes/remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../sandboxes/remote-desktop-sandbox.js";
-import { isSandboxGoneError, SandboxUnsafeStopError } from "../../../sandboxes/sandbox-errors.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import {
+  isSandboxGoneError,
+  SandboxUnsafeStopError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;

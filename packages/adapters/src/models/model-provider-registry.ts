@@ -1,9 +1,11 @@
+import type { ModelUsageLookup } from "@rakazo/adapter-kit";
 import type { ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
-} from "../cli-models/claude-code/provider-id.js";
+} from "../providers/cli-model/claude-code/provider-id.js";
+import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
  * What Rakazo knows about a model provider beyond the model registry it runs on. A provider
@@ -24,6 +26,8 @@ export interface ModelProviderDefinition {
   };
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
+  /** Optional authenticated recovery of a dispatched request. */
+  usageLookup?: (apiKey: string) => ModelUsageLookup;
   /** Host credentials it can run on instead of a key, e.g. "AWS IAM". */
   hostCredentials?: {
     source: string;
@@ -54,6 +58,7 @@ export const modelProviders = {
   },
   openai: { recommendedModel: "gpt-6-luna" },
   openrouter: {
+    usageLookup: (apiKey: string) => new OpenRouterUsageLookup(apiKey),
     recommendedModel: "anthropic/claude-haiku-5.5",
     keyCheck: {
       url: "https://openrouter.ai/api/v1/key",

@@ -141,7 +141,11 @@ export function computerUsingRuns(now: Date = new Date()) {
 /** Prompt of a run created to answer messages that waited behind another turn. */
 export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";
 
-/** Routine runs and the creation intro stay isolated from thread history. */
+/**
+ * Whether a run reads its chat's whole history from this trigger alone. The creation intro reads
+ * none. A routine reads only what its owner and this bot said, as its routine allows, so this
+ * answers no: code that needs more decides from the routine itself.
+ */
 export function runReadsThreadHistory(trigger: string | null | undefined): boolean {
   return trigger !== "created" && trigger !== "routine";
 }

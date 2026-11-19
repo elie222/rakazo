@@ -323,3 +323,34 @@ it("opens a sign-in preset with its address filled in and no token to paste", as
   ]);
   expect(host.textContent).toContain("Save and sign in");
 });
+
+it("leads from an app that is also a chat app here to messaging, and says nothing for other apps", async () => {
+  api.connections.catalog.mockResolvedValue(
+    [
+      { slug: "chatty", name: "Chatty", chatApp: true },
+      { slug: "notes", name: "Notes" },
+    ].map((app) => ({
+      connectorId: "fixture",
+      logo: null,
+      connected: false,
+      noAuth: false,
+      ...app,
+    })),
+  );
+  const onOpenMessaging = vi.fn();
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenMessaging={onOpenMessaging} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(host.textContent).toContain("Notes"));
+
+  const hints = host.querySelectorAll('[data-testid="chat-app-hint"]');
+  expect([...hints].map((hint) => hint.textContent)).toEqual([
+    "Tools for your bot.Chat from Chatty",
+  ]);
+  await act(async () => hints[0]!.querySelector("button")!.click());
+  expect(onOpenMessaging).toHaveBeenCalledOnce();
+});

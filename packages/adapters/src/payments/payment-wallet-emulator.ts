@@ -19,7 +19,7 @@ import {
   readStripeChargeChallenge,
   stripeChargeAuthorization,
   stripeChargeTerms,
-} from "./mpp-stripe.js";
+} from "../providers/payment-wallet/link/mpp-stripe.js";
 
 /** Purchases above this many minor units are denied, so callers can drive both outcomes. */
 export const EMULATOR_DENY_ABOVE = 100_000;

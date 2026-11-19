@@ -19,6 +19,7 @@ export function messageHasInlineControls(blocks: readonly MessageBlock[]): boole
       block.kind === "ask" ||
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
+      block.kind === "tool_question" ||
       block.kind === "import_setup",
   );
 }
@@ -134,4 +135,35 @@ export function quotableMessageSegments(
   }
   byRole.set(role, segments);
   return segments;
+}
+
+// Markup that can hide a line's words: raw HTML, an image's alt text, a link definition, or a
+// link target on a line of its own.
+const HIDING_MARKUP = /<|!\[|\]:|\]\(\s*\n/;
+// A line whose words survive Markdown: past block markers it opens with a letter, or a number
+// that is not an ordered-list marker.
+const VISIBLE_LINE = /^[\t >#*+\-_]*(?:\p{L}|\p{N}+(?![\p{N}.)]))/mu;
+
+/**
+ * Whether the quote sheet would offer any text, as `quotableMessageSegments` decides it. Every row
+ * asks when it is drawn, so a message whose words plainly show skips the Markdown parse.
+ */
+export function hasQuotableText(
+  role: "user" | "bot" | "system",
+  blocks: readonly MessageBlock[],
+): boolean {
+  const cached = quotableSegmentsCache.get(blocks)?.get(role);
+  if (cached) return cached.length > 0;
+  let sourceLength = 0;
+  let visible = false;
+  for (const block of blocks) {
+    if (block.kind !== "text" || !block.text) continue;
+    sourceLength += block.text.length;
+    if (sourceLength > MAX_QUOTABLE_SOURCE_LENGTH) return false;
+    visible ||=
+      role === "user"
+        ? block.text.trim() !== ""
+        : !HIDING_MARKUP.test(block.text) && VISIBLE_LINE.test(block.text);
+  }
+  return visible || quotableMessageSegments(role, blocks).length > 0;
 }

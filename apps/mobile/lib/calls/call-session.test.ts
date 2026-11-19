@@ -33,7 +33,7 @@ import {
   setSpeechRecognizer,
   stop as stopDictation,
 } from "../voice/dictation";
-import { ensureVoiceConsent, setDictationAudio } from "../voice/voice";
+import { ensureVoiceConsent, setDictationAudio, speakText } from "../voice/voice";
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   ECHO_GUARD_MS,
@@ -95,6 +95,7 @@ const audio = vi.hoisted(() => ({
   permission: Promise.resolve({ granted: true }),
   prepared: Promise.resolve(),
   record: vi.fn(),
+  options: vi.fn(),
   release: vi.fn(),
   setAudioMode: vi.fn(),
   status: {} as { metering?: number },
@@ -104,6 +105,9 @@ const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
+      constructor(options: unknown) {
+        audio.options(options);
+      }
       uri = audio.uri;
       prepareToRecordAsync = () => audio.prepared;
       record = audio.record;
@@ -112,7 +116,17 @@ const expoAudioMock = vi.hoisted(() => () => ({
       getStatus = () => audio.status;
     },
   },
-  RecordingPresets: { HIGH_QUALITY: {} },
+  RecordingPresets: {
+    HIGH_QUALITY: {
+      extension: ".m4a",
+      sampleRate: 44_100,
+      numberOfChannels: 2,
+      bitRate: 128_000,
+      android: { outputFormat: "mpeg4", audioEncoder: "aac" },
+      ios: { outputFormat: "aac ", audioQuality: 127 },
+      web: { mimeType: "audio/webm", bitsPerSecond: 128_000 },
+    },
+  },
   setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
 }));
 vi.mock("expo-audio", () => expoAudioMock());
@@ -2348,6 +2362,7 @@ describe("mobile call recording without metering", () => {
     audio.permission = Promise.resolve({ granted: true });
     audio.prepared = Promise.resolve();
     audio.record.mockClear();
+    audio.options.mockClear();
     audio.release.mockClear();
     audio.setAudioMode.mockClear();
     // A healthy recorder that never reports a level: pure silence is indistinguishable.
@@ -2356,11 +2371,51 @@ describe("mobile call recording without metering", () => {
     files.base64 = async () => "c2lsZW5jZQ==";
   });
   afterEach(() => {
+    device.os = "ios";
     endCall();
     vi.useRealTimers();
     audio.status = {};
     audio.uri = null;
     files.base64 = async () => "";
+  });
+
+  it.each([
+    { os: "ios", dictating: true },
+    { os: "ios", dictating: false },
+    { os: "android", dictating: true },
+    { os: "android", dictating: false },
+    { os: "web", dictating: true },
+    { os: "web", dictating: false },
+  ])("passes speech encoding options on $os (dictating=$dictating)", async ({ os, dictating }) => {
+    device.os = os;
+    audio.status = { metering: -10 };
+    const stopped = new AbortController();
+    const clip = recordClip(new AbortController().signal, dictating ? stopped.signal : undefined);
+    await vi.advanceTimersByTimeAsync(200);
+    // Stop first, so a failed assertion leaves no recorder running.
+    audio.status = { metering: -60 };
+    stopped.abort();
+    await vi.advanceTimersByTimeAsync(2_000);
+    const result = await clip;
+    expect(audio.options).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        extension: ".m4a",
+        sampleRate: 16_000,
+        numberOfChannels: 1,
+        bitRate: 48_000,
+        isMeteringEnabled: true,
+        ...(os === "ios"
+          ? { outputFormat: "aac ", audioQuality: 127, bitRateStrategy: "constant" }
+          : os === "android"
+            ? { outputFormat: "mpeg4", audioEncoder: "aac" }
+            : { mimeType: "audio/webm", bitsPerSecond: 48_000 }),
+      }),
+    );
+    expect(result).toEqual({
+      base64: "c2lsZW5jZQ==",
+      mimeType: os === "web" ? "audio/webm" : "audio/m4a",
+    });
+    expect(audio.release).toHaveBeenCalledOnce();
   });
 
   it("switches recording on only for a dictated clip, never for a call turn", async () => {
@@ -2702,8 +2757,9 @@ describe("mobile call on a session change", () => {
       sessionGeneration: currentSessionGeneration(),
     }));
     const fake = fakes();
-    const { send: _send, endCall: _endCall, ...deps } = fake.deps;
-    startCall(
+    vi.mocked(speakText).mockResolvedValue(true);
+    const { send: _send, endCall: _endCall, speak: _speak, ...deps } = fake.deps;
+    const startedCallId = startCall(
       {
         botId: "bot-1",
         botName: "Ada",
@@ -2718,6 +2774,12 @@ describe("mobile call on a session change", () => {
     await flush();
     fake.say("hello");
     await flush();
+    fake.replyWith("reply-1", "Hello back", "run-1");
+    await flush();
+    expect(speakText).toHaveBeenCalledWith(
+      "Hello back",
+      expect.objectContaining({ callId: startedCallId }),
+    );
     endCall();
     await flush();
 

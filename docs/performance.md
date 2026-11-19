@@ -74,3 +74,28 @@ pnpm perf:web-chat check .context/performance/web-chat-local.json
 work; 100 ms for opening and switching) and exits non-zero when one is over. The nightly
 verification workflow runs both on a GitHub-hosted Ubuntu runner, writes the table to the job
 summary, and keeps the JSON report as an artifact. Desktop and mobile are not on the scorecard yet.
+
+## Mobile
+
+`pnpm perf:mobile-stack` starts a disposable Postgres and the offline local API, then seeds a paid
+account past onboarding with 100-message chats in two Spaces. It prints the URL the app should use
+and the sign-in email and password, and runs until Ctrl-C.
+
+```sh
+pnpm perf:mobile-stack
+pnpm perf:mobile-stack --delay=1000
+```
+
+`--delay=<ms>` puts a small proxy in front of the API that holds every request for that long before
+forwarding it, to see how the app behaves on a slow connection; responses, including the live
+notification stream, pass through unchanged. `--port=<n>` moves the API (default 3120; the proxy
+uses the next port).
+
+Build a Release simulator app pointed at the printed URL, then sign in with **Password**:
+
+```sh
+EXPO_PUBLIC_API_URL=<printed URL> pnpm --filter @rakazo/mobile exec expo run:ios --configuration Release
+```
+
+Simulators run on a remote Mac. The API listens on loopback only, so run the stack on that Mac, or
+forward the printed port there (`ssh -R <port>:127.0.0.1:<port> <mac>`).

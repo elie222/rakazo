@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
-import { AuditIdentifyingKeySchema } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -12,12 +11,22 @@ import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 
+/** Metadata keys that name what changed, for an event with no target label of its own. */
+const IDENTIFYING_KEYS = [
+  "connectorId",
+  "connectionId",
+  "provider",
+  "serverId",
+  "id",
+  "botId",
+  "name",
+];
+
 function detailLabels(event: AuditEvent): string[] {
   const target = [event.targetLabel, event.targetId, event.targetType].find(Boolean);
-  const labels = [
-    target,
-    ...AuditIdentifyingKeySchema.options.map((key) => event.metadata[key]),
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  const labels = [target, ...IDENTIFYING_KEYS.map((key) => event.metadata[key])].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
   return [...new Set(labels)];
 }
 

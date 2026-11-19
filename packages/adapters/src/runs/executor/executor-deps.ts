@@ -70,10 +70,16 @@ export interface ExecutorDeps {
   phoneCallCooldownMinutes?: number;
   phoneCallRingSeconds?: number;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
-  messaging?: { hasIdentity(botId: string): Promise<boolean> };
+  messaging?: {
+    hasIdentity(botId: string): Promise<boolean>;
+    /** Names of the chat apps people can connect on this deployment. */
+    chatApps?(): string[];
+  };
   /** Sends what runs say to the chat apps their turns came from; absent without one. */
   messagingDelivery?: MessagingDelivery;
-  listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+  listConnectedPlugins?: (
+    userId: string,
+  ) => Promise<{ slugs: string[]; refs?: string[]; refsFailed?: boolean }>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
   mediaGeneration?: MediaGenerationProvider;

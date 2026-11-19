@@ -63,7 +63,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
-import { combineSignals, redactConnectorPayload } from "../connectors/connector-safety.js";
+import { combineSignals, redactConnectorPayload } from "../integrations/connector-safety.js";
 import type { RemoteTransportDependencies } from "../mcp/remote-mcp.js";
 import {
   ConnectorRedirectError,

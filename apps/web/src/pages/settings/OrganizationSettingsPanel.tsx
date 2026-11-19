@@ -16,11 +16,11 @@ import { AuditLog } from "../../components/audit/AuditLog";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { OrganizationMembersSettings } from "../../components/spaces/OrganizationMembersSettings";
-import type { Organization } from "../../lib/auth/organizations";
-import { organizationsQuery, useOrganizations } from "../../lib/auth/organizations";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
+import type { Organization } from "../../lib/spaces/organizations";
+import { organizationsQuery, useOrganizations } from "../../lib/spaces/organizations";
 
 export type OrganizationPage = "main" | "members" | "log";
 

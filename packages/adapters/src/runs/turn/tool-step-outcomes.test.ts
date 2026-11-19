@@ -161,6 +161,16 @@ describe("tool step outcomes", () => {
         [],
       ),
     ).toBeUndefined();
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          name: "read_meeting_transcript",
+          result: { content: [{ type: "text", text: "Recorded speech" }] },
+        },
+        [],
+      ),
+    ).toBeUndefined();
   });
 
   it("redacts a secret learned later from calls already kept, when the reply is saved", () => {

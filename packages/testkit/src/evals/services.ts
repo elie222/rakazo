@@ -1,10 +1,16 @@
+import { readFileSync } from "node:fs";
 import type {
   AdapterContext,
   ConnectorCall,
   ConnectorEvent,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  FakeComposioClient,
+  FakeWebProvider,
+  RAKAZO_DOCS_URLS,
+} from "@rakazo/adapters";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 
 export const INBOX = [
@@ -31,6 +37,19 @@ export type ServiceCall = {
   botId?: string;
 };
 
+/** The offline web, except that the docs pages the Rakazo skill links serve this checkout's docs. */
+export function evalWeb(): FakeWebProvider {
+  const web = new FakeWebProvider();
+  const docs = new URL("../../../../docs/", import.meta.url);
+  for (const url of RAKAZO_DOCS_URLS) {
+    // The site serves its first page, getting-started, at /docs.md.
+    const slug =
+      new URL(url).pathname.replace(/^\/docs\/?/, "").replace(/\.md$/, "") || "getting-started";
+    web.pages[url] = readFileSync(new URL(`${slug}.md`, docs), "utf8");
+  }
+  return web;
+}
+
 const DIRECTORY = [
   { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
   { slug: "CRM", name: "CRM", logo: null, noAuth: false },
@@ -54,6 +73,7 @@ export class EvalServices extends ComposioConnector {
       nextCursor: i + 1 < length ? `segment-${Math.imul(i + 74, 48271) >>> 0}` : null,
     }));
   }
+  readonly web = evalWeb();
   readonly calls: ServiceCall[] = [];
   readonly notes: Array<{ recordId: string; text: string }> = [];
   readonly records = [

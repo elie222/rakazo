@@ -1,7 +1,7 @@
 import type { Routine, TaughtSkill, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { withLiveStreamingProgress } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { responseStreamingPreference } from "../../../lib/query/response-streaming";
+import { responseStreamingPreference } from "../../../lib/preferences/response-streaming";
 
 export type PinnedAround = {
   botId?: string;

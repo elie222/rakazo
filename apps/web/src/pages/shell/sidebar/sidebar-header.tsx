@@ -3,10 +3,10 @@ import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import { IconTooltip } from "../../../components/IconTooltip";
+import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge } from "../../../lib/platform/desktop";
-import type { Panel } from "../../../lib/right-panel-state";
-import { WindowChrome } from "../../WindowChrome";
 import { BotCreatePicker } from "../bots/bot-picker";
+import type { Panel } from "../right-panel-state";
 
 // A size class, since the Button sizes any svg without one to 16px.
 const ICON = "size-4.5";

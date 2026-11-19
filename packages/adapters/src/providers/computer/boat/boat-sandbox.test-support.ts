@@ -15,8 +15,11 @@ import type {
   CreateUploadUrlRequest,
   FileUrlResponse,
   FileWriteResponse,
+  GetLatestSandboxSnapshotRequest,
   GetRequest,
   GetSavedSnapshotRequest,
+  GetSnapshotFileRequest,
+  GetStopRequest,
   HostPortOperationRequest,
   HostPortResponse,
   Recover200Response,
@@ -31,7 +34,9 @@ import type {
   SavedSnapshotInfoResponse,
   SavedSnapshotSavingResponse,
   SaveSavedSnapshotRequest,
+  SnapshotLatestResponse,
   StopOperationRequest,
+  StopOperationResponse,
   UpdateRequest,
   WriteFileRequest,
 } from "@boatdev/sdk";
@@ -44,7 +49,7 @@ import {
   simpleCommand,
 } from "../../../computers/screens/linux-desktop.test-support.js";
 import { workspaceArchive } from "../../../storage/workspace-archive.test-support.js";
-import type { BoatSandboxSdk } from "./boat-sandbox.js";
+import type { BoatSandboxSdk } from "./boat-client.js";
 import {
   BOAT_COMPUTER_SNAPSHOT,
   BOAT_WRITABLE_WORKSPACE_COMMAND,
@@ -74,6 +79,7 @@ interface FakeSandbox {
   files: Map<string, FakeFile>;
   /** The disk as of Boat's last good snapshot. */
   snapshot: Map<string, FakeFile>;
+  stopRequestedAt?: Date;
   recovery: BoatRecovery;
   /** Set while Boat's storage under the sandbox is broken; whether a resume mends it. */
   damaged?: "resume_heals" | "persists";
@@ -277,6 +283,55 @@ export class FakeBoatApi implements BoatSandboxSdk {
     return response;
   }
 
+  async getStop({ sandboxId, stopId }: GetStopRequest): Promise<StopOperationResponse> {
+    const box = this.require(sandboxId);
+    const stop = box.sandbox.stop;
+    if (!stop || stop.id !== stopId) throw boatError(404, "not_found", "No stop");
+    return {
+      ok: true,
+      type: "stop.status",
+      id: sandboxId,
+      stop: { ...stop, requestedAt: box.stopRequestedAt ?? null },
+    };
+  }
+
+  async getLatestSandboxSnapshot({
+    sandboxId,
+  }: GetLatestSandboxSnapshotRequest): Promise<SnapshotLatestResponse> {
+    const { sandbox } = this.require(sandboxId);
+    const completedAt = sandbox.snapshotCompletedAt;
+    return {
+      ok: true,
+      type: "snapshot.latest",
+      snapshot: completedAt
+        ? {
+            id: sandboxId,
+            sandboxId,
+            status: "completed",
+            origin: "captured",
+            generation: null,
+            createdAt: completedAt,
+            completedAt,
+            sizeBytes: null,
+            fileCount: null,
+          }
+        : null,
+    };
+  }
+
+  async getSnapshotFileRaw({
+    snapshotId,
+    path,
+  }: GetSnapshotFileRequest): Promise<ApiResponse<Blob>> {
+    const box = this.require(snapshotId);
+    const file = path ? box.snapshot.get(path) : undefined;
+    if (!file) throw boatError(404, "not_found", "File not found");
+    const raw = new Response(Uint8Array.from(file.content), {
+      headers: { "X-Snapshot-Entry-Kind": "file" },
+    });
+    return { raw, value: () => raw.blob() };
+  }
+
   /** A save settles to `ready` by the next read. */
   async getSavedSnapshot({ name }: GetSavedSnapshotRequest): Promise<SavedSnapshotInfoResponse> {
     this.check();
@@ -366,6 +421,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
   async stop({ sandboxId, stopRequest }: StopOperationRequest): Promise<SandboxActionResponse> {
     const box = this.require(sandboxId);
     const at = new Date();
+    box.stopRequestedAt = at;
     if (box.damaged && !stopRequest?.force) {
       box.sandbox.stop = {
         id: "stop_fake",
@@ -378,6 +434,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
       return this.action(box);
     }
     box.sandbox.state = "archived";
+    box.sandbox.stoppedAt = at;
     box.sandbox.stop = {
       id: "stop_fake",
       status: "completed",

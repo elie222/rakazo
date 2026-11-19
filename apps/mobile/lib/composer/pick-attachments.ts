@@ -51,11 +51,15 @@ async function prepareImage(
   height: number | undefined,
 ) {
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
+  // HEIC and HEIF are accepted as files, but a photo still converts to JPEG; if it cannot,
+  // report it as unsupported instead of sending a format that most viewers cannot open.
+  const needsConversion = mimeType === "image/heic" || mimeType === "image/heif";
+  const unconverted = needsConversion ? null : mimeType;
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
   const needsResize = width && height && Math.max(width, height) > ATTACHMENT_IMAGE_MAX_EDGE;
-  // Unsupported photo formats (such as HEIC) need conversion even when already small.
-  if (!needsResize && mimeType) {
+  // Photo formats that viewers cannot open (such as HEIC) convert even when already small.
+  if (!needsResize && mimeType && !needsConversion) {
     return { uri, name, mimeType };
   }
   if (mimeType === "image/png") {
@@ -74,7 +78,7 @@ async function prepareImage(
     }
   }
   const manipulator = loadImageManipulator();
-  if (!manipulator) return { uri, name, mimeType };
+  if (!manipulator) return { uri, name, mimeType: unconverted };
   const format =
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
@@ -95,7 +99,7 @@ async function prepareImage(
     };
   } catch {
     // An unreadable or unsupported image should not block the whole picker.
-    return { uri, name, mimeType };
+    return { uri, name, mimeType: unconverted };
   }
 }
 

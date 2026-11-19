@@ -50,15 +50,28 @@ test(
       }),
     );
 
-    // The panel shows the computer awake from its status; the screen is read once it is open.
     await openBotPanel(page);
     const preview = page.getByTestId("computer-preview");
-    await expect(preview).toHaveAttribute("data-state", "running");
+    await expect(preview.getByRole("alert")).toContainText("temporarily busy");
+    await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
+    await captureScreenshot(page, testInfo, "computer-screen-connection-error");
+
+    await expect(preview.getByRole("alert")).toContainText("Screen not connected");
+    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
+    await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
+    await captureScreenshot(page, testInfo, "computer-screen-recover-confirm");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    failScreen = false;
+    await preview.getByRole("button", { name: "Retry screen" }).click();
+    await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
     await expect(preview.getByRole("alert")).toHaveCount(0);
+
+    await captureScreenshot(page, testInfo, "computer-screen-healthy");
+    failScreen = true;
+    await preview.hover();
     await preview.getByTestId("computer-preview-open").click();
     await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("temporarily busy");
-    await expect(page.getByRole("alert")).toContainText("Screen not connected");
     await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
 
     await page
@@ -92,19 +105,15 @@ test(
       });
     });
     await openBotPanel(page);
-    await page.getByTestId("computer-preview").getByTestId("computer-preview-open").click();
-    const alert = page
-      .getByTestId("computer-viewport")
-      .getByRole("alert")
-      .filter({ hasText: "Screen not connected" });
-    await expect(alert).toBeVisible();
-    await expect(alert.getByRole("button", { name: "Retry screen" })).toBeVisible();
+    const preview = page.getByTestId("computer-preview");
+    await expect(preview.getByRole("alert")).toContainText("Screen not connected");
+    await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
     await expect(
-      alert.getByRole("button", { name: "Recover computer", exact: true }),
+      preview.getByRole("button", { name: "Recover computer", exact: true }),
     ).toBeVisible();
     await captureScreenshot(page, testInfo, "computer-screen-url-missing");
 
-    await alert.getByRole("button", { name: "Recover computer", exact: true }).click();
+    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
     const confirmation = page.getByRole("alertdialog");
     await expect(confirmation).toContainText("Recover computer?");
     // A control change re-reads the screen in the background; the open confirmation stays.
@@ -143,16 +152,13 @@ test("a healthy running computer is not diagnosed while its screen URL loads", a
     });
   });
   await openBotPanel(page);
-  const preview = page.getByTestId("computer-preview");
-  await expect(preview).toHaveAttribute("data-state", "running");
-  await preview.getByTestId("computer-preview-open").click();
   await reading;
-  const viewport = page.getByTestId("computer-viewport");
-  await expect(viewport.getByRole("alert")).toHaveCount(0);
+  const preview = page.getByTestId("computer-preview");
+  await expect(preview.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-screen-url-loading");
-  await expect(viewport.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
-  await expect(viewport.getByRole("alert")).toHaveCount(0);
+  await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
+  await expect(preview.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-screen-url-loaded");
 });
@@ -189,7 +195,7 @@ test("a takeover failure does not diagnose a screen connection failure", async (
   );
   await openBotPanel(page);
   const preview = page.getByTestId("computer-preview");
-  await expect(preview).toHaveAttribute("data-state", "running");
+  await expect(preview.locator("iframe")).toBeVisible();
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
   await page.getByRole("button", { name: "Take control", exact: true }).click();
@@ -260,16 +266,14 @@ test("a framed screen that drops after connecting loads again by itself through 
   );
 
   await openBotPanel(page);
-  await page.getByTestId("computer-preview").getByTestId("computer-preview-open").click();
-  const viewport = page.getByTestId("computer-viewport");
-  const screen = viewport.locator('iframe[title="Bot screen"]');
-  await expect(screen).toHaveAttribute("src", /1\.drop-test\/vnc\.html/);
+  const preview = page.getByTestId("computer-preview");
+  await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.drop-test\/vnc\.html/);
   await expect.poll(() => loads).toBe(2);
   expect(probes).toBeGreaterThanOrEqual(4);
   expect(reloadedAt - dropAt).toBeGreaterThanOrEqual(2_500);
   await page.waitForTimeout(1_000);
-  await expect(viewport.getByRole("alert")).toHaveCount(0);
-  await expect(screen).toHaveCount(1);
+  await expect(preview.getByRole("alert")).toHaveCount(0);
+  await expect(preview.locator("iframe")).toHaveCount(1);
 
   // A screen that keeps coming back reconnects through every drop. The reconnected frame is
   // a new element, so find it again for each report.
@@ -281,17 +285,17 @@ test("a framed screen that drops after connecting loads again by itself through 
   await postState("disconnected");
   await expect.poll(() => loads).toBe(3);
   await page.waitForTimeout(1_000);
-  await expect(viewport.getByRole("alert")).toHaveCount(0);
-  await expect(screen).toHaveCount(1);
+  await expect(preview.getByRole("alert")).toHaveCount(0);
+  await expect(preview.locator("iframe")).toHaveCount(1);
 
   // A screen whose connections only flash up, and whose reloads stop connecting, runs out of
   // quiet reconnects and shows the error and Retry.
   await postState("disconnected");
   await expect.poll(() => loads, { timeout: 15_000 }).toBe(4);
-  await expect(
-    viewport.getByRole("alert").filter({ hasText: "Could not connect to the computer screen" }),
-  ).toBeVisible();
-  await expect(viewport.getByRole("button", { name: "Retry screen" })).toBeVisible();
+  await expect(preview.getByRole("alert")).toContainText(
+    "Could not connect to the computer screen",
+  );
+  await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
   await page.waitForTimeout(1_500);
   expect(loads).toBe(4);
 });

@@ -82,6 +82,47 @@ describePostgres("model roles (PostgreSQL)", () => {
     await close();
   });
 
+  it.each(["account", "space"] as const)(
+    "persists distinct credit and personal routes in %s settings",
+    async (targetScope) => {
+      const target = { userId, spaceId, scope: targetScope };
+      const primary = { provider: "azure", modelId: "gpt-5", creditOfferingId: "offering-example" };
+      const personal = { provider: "azure", modelId: "gpt-5", credentialId: anthropic };
+      await updateModelRole(prisma, target, "main", { primary, backups: [personal] });
+      expect(await getModelRole(prisma, target, "main")).toMatchObject({
+        primary,
+        backups: [personal],
+      });
+      await updateModelRole(prisma, target, "main", {
+        primary: {
+          provider: "azure",
+          modelId: "gpt-5",
+          creditOfferingId: "offering-example",
+          thinkingLevel: "high",
+        },
+      });
+      expect(await getModelRole(prisma, target, "main")).toMatchObject({
+        primary: { ...primary, thinkingLevel: "high" },
+        backups: [personal],
+      });
+    },
+  );
+
+  it.each(["account", "space"] as const)(
+    "clears an explicit credit choice for rollback in %s settings",
+    async (targetScope) => {
+      const target = { userId, spaceId, scope: targetScope };
+      const primary = { provider: "azure", modelId: "gpt-5", creditOfferingId: "offering-example" };
+      await updateModelRole(prisma, target, "main", { primary });
+      await updateModelRole(prisma, target, "main", {
+        primary: { provider: primary.provider, modelId: primary.modelId },
+      });
+      expect(
+        (await getModelRole(prisma, target, "main")).primary?.creditOfferingId,
+      ).toBeUndefined();
+    },
+  );
+
   it("writes the main model to the role table", async () => {
     await updateModelRole(prisma, scope, "main", {
       primary: { provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },

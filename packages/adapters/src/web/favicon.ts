@@ -1,6 +1,7 @@
 import { registrableDomain } from "@rakazo/core/egress";
 import { JSDOM } from "jsdom";
-import type { ResolveHostname } from "./network-address.js";
+import { detectImageMimeType } from "../media/image-mime-type.js";
+import type { ResolveHostname } from "../network/network-address.js";
 import { fetchSafeWebBytes } from "./web-ssrf.js";
 
 const PAGE_MAX_BYTES = 256 * 1024;
@@ -222,16 +223,8 @@ function documentBase(document: DocumentFragment, pageUrl: string): string {
   }
 }
 
-type ImageFormat = "png" | "jpeg" | "gif" | "webp" | "ico";
-
-function sniffImage(bytes: Uint8Array): ImageFormat | undefined {
-  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
-  if (bytes.length >= 8 && ascii(1, 4) === "PNG" && bytes[0] === 0x89) return "png";
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
-  if (ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a") return "gif";
-  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "webp";
-  if (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0) return "ico";
-  return undefined;
+function isIco(bytes: Uint8Array): boolean {
+  return bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0;
 }
 
 /**
@@ -239,16 +232,16 @@ function sniffImage(bytes: Uint8Array): ImageFormat | undefined {
  * cannot decode ICO. Large declared images are refused before their pixels are decoded.
  */
 export async function faviconDataUrl(bytes: Uint8Array): Promise<string | null> {
-  const format = sniffImage(bytes);
-  if (!format) return null;
+  const ico = isIco(bytes);
+  if (!ico && !detectImageMimeType(bytes)) return null;
   // sharp is a native addon; load it only when an image is processed.
   const { default: sharp } = await import("sharp");
   try {
     let image: ReturnType<typeof sharp>;
-    if (format === "ico") {
+    if (ico) {
       const entry = largestIcoImage(bytes);
       if (!entry) return null;
-      if (sniffImage(entry) === "png") {
+      if (detectImageMimeType(entry) === "image/png") {
         image = sharp(entry, { limitInputPixels: MAX_INPUT_PIXELS });
       } else {
         const bitmap = decodeIcoBitmap(entry);
@@ -292,7 +285,8 @@ function largestIcoImage(bytes: Uint8Array): Uint8Array | undefined {
     const offset = view.getUint32(entry + 12, true);
     if (size < 24 || offset > bytes.length || size > bytes.length - offset) return undefined;
     const image = bytes.subarray(offset, offset + size);
-    const dimensions = sniffImage(image) === "png" ? pngSize(image) : bmpHeader(image);
+    const dimensions =
+      detectImageMimeType(image) === "image/png" ? pngSize(image) : bmpHeader(image);
     if (!dimensions) return undefined;
     const { width, height } = dimensions;
     if (width < 1 || height < 1 || width > ICO_MAX_SIDE || height > ICO_MAX_SIDE) return undefined;

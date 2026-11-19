@@ -6,6 +6,7 @@ import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresRealtimeFanout } from "../../../notifications/realtime.js";
 import { EncryptedSecretStore } from "../../../secrets/secrets.js";
+import type { PiOAuthEnded } from "./pi-oauth-ended.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -318,6 +319,7 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
     const oauth = await import("./pi-oauth.js");
     const answered = deferred<Credential>();
     let signal: AbortSignal | undefined;
+    const ended: PiOAuthEnded[] = [];
     const logins = new oauth.PiOAuthLogins<Saved>(
       async (provider, _type, interaction) => {
         signal = interaction.signal;
@@ -339,11 +341,13 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
         });
       },
       { prisma: db.prisma, secrets },
+      (end) => ended.push(end),
     );
     return {
       system: dbModule.asSystem(db.prisma),
       oauth,
       logins,
+      ended,
       answer: () => answered.resolve(oauthCredential),
       get stopped() {
         return signal?.aborted === true;
@@ -418,14 +422,30 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
       ...actor,
       provider: "github-copilot",
       persist: saveAs("a", saved),
+      measure: { surface: "web", attempt: 2 },
     });
 
+    await expect(b.logins.pendingSignIn(started.loginId, actor)).resolves.toMatchObject({
+      mode: "device-code",
+      measure: { surface: "web", attempt: 2 },
+    });
     await b.logins.cancel(started.loginId, actor);
     expect(a.stopped).toBe(false);
     await vi.advanceTimersByTimeAsync(a.oauth.SIGN_IN_LEASE_RENEW_MS);
     await vi.waitFor(() => expect(a.stopped).toBe(true));
     a.answer();
     expect(saved).toEqual([]);
+    // The process that removed the stored sign-in reports it; the one that held it does not.
+    expect(b.ended).toEqual([
+      expect.objectContaining({
+        userId: actor.userId,
+        provider: "github-copilot",
+        mode: "device-code",
+        measure: { surface: "web", attempt: 2 },
+        reason: "cancelled",
+      }),
+    ]);
+    expect(a.ended).toEqual([]);
     await expect(b.logins.complete(started.loginId, actor)).resolves.toMatchObject({
       status: "error",
     });

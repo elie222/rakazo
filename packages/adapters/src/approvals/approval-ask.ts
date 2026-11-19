@@ -1,6 +1,6 @@
-import type { ToolBatch } from "@rakazo/adapter-kit";
+import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, draftBatchEntry, OutgoingDraft } from "@rakazo/contracts";
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
@@ -53,20 +53,44 @@ function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {
   };
 }
 
+export type ApprovalCardOptions = {
+  reviewReason?: string;
+  summary?: FleetCardSummary;
+  batch?: ToolBatch;
+  /** The approval asks every time, so the card never offers Always allow. */
+  onceOnly?: boolean;
+  outgoingDraft?: ConnectorTool["outgoingDraft"];
+  allowOutgoingDraft?: boolean;
+};
+
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: {
-    reviewReason?: string;
-    summary?: FleetCardSummary;
-    batch?: ToolBatch;
-    /** The approval asks every time, so the card never offers Always allow. */
-    onceOnly?: boolean;
-  },
+  options?: ApprovalCardOptions,
 ): MessageBlock {
   const onceOnly = toolRequiresExplicitApproval(toolName) || Boolean(options?.onceOnly);
+  const draft = options?.allowOutgoingDraft
+    ? outgoingDraftForApproval(options, args, secrets)
+    : undefined;
+  if (draft) {
+    const reviewReason = options?.reviewReason?.trim();
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: draft.source,
+      outgoingDraft: draft,
+      detail: reviewReason
+        ? truncate(redactSecrets(reviewReason, secrets), MAX_APPROVAL_DETAIL_LENGTH)
+        : undefined,
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Send" },
+        { id: "deny", label: "Discard" },
+      ],
+    };
+  }
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
     return {
@@ -397,4 +421,59 @@ function screenActionLine(value: unknown): string {
     default:
       return `${String(action.kind ?? "action")}${at}`;
   }
+}
+
+function outgoingDraftForApproval(
+  options: { outgoingDraft?: ConnectorTool["outgoingDraft"]; batch?: ToolBatch },
+  args: Record<string, unknown>,
+  secrets: string[],
+) {
+  if (options.outgoingDraft) return previewOutgoingDraft(options.outgoingDraft, args, secrets);
+  const batch = options.batch;
+  if (!batch?.outgoingDrafts) return undefined;
+  const { items, action, arguments: argumentKey } = batch;
+  for (const [operation, descriptor] of Object.entries(batch.outgoingDrafts)) {
+    const path = { items, action, arguments: argumentKey, operation };
+    const entry = draftBatchEntry(args, path);
+    if (entry) {
+      const draft = previewOutgoingDraft(descriptor, entry.args, secrets);
+      return draft && { ...draft, batch: path };
+    }
+  }
+  return undefined;
+}
+
+function previewOutgoingDraft(
+  descriptor: NonNullable<ConnectorTool["outgoingDraft"]>,
+  args: Record<string, unknown>,
+  secrets: string[],
+) {
+  const { kind, source, defaults = {}, recipientAlias } = descriptor;
+  const keys =
+    recipientAlias && !Object.hasOwn(args, descriptor.keys.to)
+      ? { ...descriptor.keys, to: recipientAlias }
+      : descriptor.keys;
+  const editable = new Set(Object.values(keys));
+  // Attachments, extra recipients, formatting and other options stay on the full approval card.
+  if (
+    Object.entries(args).some(
+      ([key, value]) =>
+        !editable.has(key) && (!Object.hasOwn(defaults, key) || value !== defaults[key]),
+    )
+  )
+    return undefined;
+  const values = {
+    kind,
+    to: args[keys.to],
+    body: kind === "email" && !Object.hasOwn(args, keys.body) ? "" : args[keys.body],
+    ...(keys.subject ? { subject: args[keys.subject] } : {}),
+  };
+  // A redacted preview must never stand in for the exact message the person reviews.
+  if (
+    Object.values(values).some(
+      (value) => typeof value === "string" && value !== redactSecrets(value, secrets),
+    )
+  )
+    return undefined;
+  return OutgoingDraft.safeParse({ source, keys, values }).data;
 }

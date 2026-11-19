@@ -141,6 +141,8 @@ const FEED_RETRY_MAX_MS = 5_000;
 // ponytail: naive fixed-threshold endpointing on the fallback path only. Swap for a VAD
 // model if rooms with steady background noise start cutting people off mid-sentence.
 const SPEECH_LEVEL_DB = -35;
+/** A level at or under this shows as silence. */
+const SILENT_LEVEL_DB = -50;
 const SILENCE_HANG_MS = 1_200;
 const METER_POLL_MS = 200;
 /** How long a starting recorder may go without a level (web reports one once it records). */
@@ -269,9 +271,9 @@ export function startCall(
   if (call.session !== undefined && call.session !== currentSessionGeneration()) return undefined;
   endCall();
   callSessionGeneration = currentSessionGeneration();
+  callId = call.answered?.callId ?? newClientId();
   deps = { ...productionDeps(call.requestContext), ...overrides };
   switchBot = call.switchBot;
-  callId = call.answered?.callId ?? newClientId();
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
@@ -878,6 +880,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
   // One owner per call: its hang-up and barge-in stop only its own speech, never
   // unrelated read-aloud that has since replaced it.
   const speechOwner = createSpeechOwner();
+  const sessionCallId = callId;
   // A late request of this call fails instead of going out with a newer session.
   const generation = callSessionGeneration;
   const callContext = async () => {
@@ -902,7 +905,8 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
       await ensureVoiceConsent(await callContext());
       return recordClip(signal);
     },
-    transcribe: async (clip, signal) => transcribeClip(clip, signal, await callContext()),
+    transcribe: async (clip, signal) =>
+      transcribeClip(clip, signal, await callContext(), sessionCallId),
     send: (botId, text, clientNonce) =>
       endOnUnauthorized(
         callContext().then(async (requestContext) => {
@@ -923,7 +927,7 @@ function productionDeps(requestContext?: ApiRequestContext): CallDeps {
         }),
       ),
     endCall: async (botId, id) => closeCall(botId, id, await callContext()),
-    speak: (botId, text) => speakReply(botId, text, speechOwner, requestContext),
+    speak: (botId, text) => speakReply(botId, text, speechOwner, sessionCallId, requestContext),
     stopSpeaking: () => stopSpeaking(speechOwner),
     audio: setCallAudio,
     cue: playCallCue,
@@ -957,6 +961,8 @@ let recordingTurn: AbortSignal | undefined;
 export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
+  /** The microphone's loudness from 0 (silence) to 1, each time it is measured. */
+  onLevel?: (level: number) => void,
 ): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
@@ -975,8 +981,20 @@ export async function recordClip(
       recordingTurn = signal;
       await setDictationAudio(true);
     }
+    const preset = RecordingPresets.HIGH_QUALITY;
+    // The low-level constructor takes flat native options, unlike useAudioRecorder.
+    const platformOptions =
+      Platform.OS === "ios" ? preset.ios : Platform.OS === "android" ? preset.android : preset.web;
+    const bitRate = 48_000;
     recorder = new AudioModule.AudioRecorder({
-      ...RecordingPresets.HIGH_QUALITY,
+      ...preset,
+      ...platformOptions,
+      // Speech clips should stay small enough to upload over a mobile connection.
+      sampleRate: 16_000,
+      numberOfChannels: 1,
+      bitRate,
+      ...(Platform.OS === "ios" ? { bitRateStrategy: "constant" } : {}),
+      ...(Platform.OS === "web" ? { bitsPerSecond: bitRate } : {}),
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
@@ -1003,6 +1021,7 @@ export async function recordClip(
         continue;
       }
       metered = true;
+      onLevel?.(Math.min(1, Math.max(0, (level - SILENT_LEVEL_DB) / -SILENT_LEVEL_DB)));
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;
@@ -1022,7 +1041,10 @@ export async function recordClip(
     const file = new File(uri);
     const base64 = await file.base64();
     deleteQuietly(uri);
-    return { base64, mimeType: "audio/m4a" };
+    return {
+      base64,
+      mimeType: Platform.OS === "web" ? (preset.web.mimeType ?? "audio/webm") : "audio/m4a",
+    };
   } finally {
     recorder?.release();
     if (recordingTurn === signal) {
@@ -1045,6 +1067,7 @@ export async function transcribeClip(
   clip: CallClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
+  currentCallId?: string,
 ): Promise<string> {
   await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
@@ -1053,7 +1076,11 @@ export async function transcribeClip(
     {
       method: "POST",
       headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-      body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
+      body: JSON.stringify({
+        audioBase64: clip.base64,
+        mimeType: clip.mimeType,
+        callId: currentCallId,
+      }),
       signal,
     },
     apiBase,
@@ -1083,9 +1110,10 @@ async function speakReply(
   botId: string,
   text: string,
   owner: SpeechOwner,
+  callId: string,
   requestContext?: ApiRequestContext,
 ): Promise<void> {
-  if (!(await speakText(text, { botId, owner, requestContext }))) {
+  if (!(await speakText(text, { botId, owner, callId, requestContext }))) {
     throw new Error(t`Add a voice provider in Voice settings.`);
   }
 }
