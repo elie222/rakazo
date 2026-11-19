@@ -2,28 +2,16 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { formatFileSize } from "@rakazo/core";
 import { Skeleton } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, FileText, Image as ImageIcon, Paperclip } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PagesList } from "../../../components/pages/PagesList";
 import { useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
+import { ArtifactMimeIcon } from "../../space/artifact-mime-icon";
 import { PanelSection } from "./bot-settings-sections";
 
 /** Recent files in the tab; more than this hands off to the Artifacts page. */
 const PREVIEW_LIMIT = 12;
-
-function fileIcon(mimeType: string) {
-  const Icon = mimeType.startsWith("image/")
-    ? ImageIcon
-    : mimeType.startsWith("text/") ||
-        mimeType === "application/pdf" ||
-        mimeType === "application/json"
-      ? FileText
-      : Paperclip;
-  return (
-    <Icon aria-hidden size={16} strokeWidth={1.8} className="shrink-0 text-muted-foreground" />
-  );
-}
 
 /**
  * The bot's library: pages it wrote (their own preview and whole list), then the files it made
@@ -85,7 +73,9 @@ export function BotLibrary({
                   to={`/app/artifacts/${item.id}`}
                   className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {fileIcon(item.mimeType)}
+                  <span className="shrink-0 text-muted-foreground">
+                    <ArtifactMimeIcon mimeType={item.mimeType} />
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-body" dir="auto">
                     {item.name}
                   </span>
