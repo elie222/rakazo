@@ -216,6 +216,10 @@ export const MAX_REVIEW_COMMAND_CHARS = 6_000;
 const COMMAND_HEAD_CHARS = 4_200;
 const COMMAND_TAIL_CHARS = 1_600;
 const MAX_LEFT_OUT_ADDRESSES = 20;
+/** Room for a cut command once serialized, under the reviewer's argument limit. */
+const MAX_REVIEWED_COMMAND_ARGS = 7_500;
+/** Below this the cut stops shrinking; what is left asks as too long to review. */
+const MIN_SHOWN_COMMAND_CHARS = 400;
 const MAX_ADDRESS_CHARS = 200;
 
 /** Shell words split here; `=` too, so `--url=https://…` yields the URL and a query keeps its host. */
@@ -223,7 +227,8 @@ const WORD_SEPARATORS = /[\s<>"'`|;&()=,]+/;
 const URL_WORD = /^[a-z][a-z0-9+.-]*:\/\//i;
 /** Mail, ssh, scp and git name a host after `@`. */
 const USER_AT_HOST_WORD = /^[^@]+@[^@]+$/;
-const IPV4_WORD = /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?/;
+/** A whole word that is an IPv4 address, with an optional port and path; `10.0.0.1.sink.example` is a host. */
+const IPV4_WORD = /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/\S*)?$/;
 const MAX_HOST_CHARS = 253;
 
 /**
@@ -238,7 +243,7 @@ function addressesIn(text: string): string[] | undefined {
     // More than the list holds could hide the one that matters behind decoys.
     if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
     if (URL_WORD.test(word) || USER_AT_HOST_WORD.test(word)) found.add(word);
-    else if (IPV4_WORD.test(word)) found.add(IPV4_WORD.exec(word)![0]);
+    else if (IPV4_WORD.test(word)) found.add(word);
     else {
       // `$(…).sink.example.net` leaves a word that starts with a dot.
       const host = word.replace(/^\.+/, "");
@@ -276,22 +281,29 @@ export function ownComputerReviewArgs(
   }
   if (toolName !== "shell" || typeof args.command !== "string") return args;
   const command = args.command;
-  if (command.length <= MAX_REVIEW_COMMAND_CHARS) return args;
-  const leftOut = command.slice(COMMAND_HEAD_CHARS, command.length - COMMAND_TAIL_CHARS);
-  // Read past both cuts, so an address split by one still shows its host.
-  const addresses = addressesIn(
-    command.slice(
-      COMMAND_HEAD_CHARS - MAX_ADDRESS_CHARS,
-      command.length - COMMAND_TAIL_CHARS + MAX_ADDRESS_CHARS,
-    ),
-  );
-  // Too many to list: the whole command goes, and one too long to review asks.
-  if (!addresses) return args;
-  return {
-    ...args,
-    command: `${command.slice(0, COMMAND_HEAD_CHARS)}\n…[${leftOut.length} characters left out]…\n${command.slice(-COMMAND_TAIL_CHARS)}`,
-    ...(addresses.length ? { addressesInPartLeftOut: addresses } : {}),
-  };
+  const fits = (value: Record<string, unknown>) =>
+    JSON.stringify(value).length <= MAX_REVIEWED_COMMAND_ARGS;
+  if (command.length <= MAX_REVIEW_COMMAND_CHARS && fits(args)) return args;
+  // Quotes and newlines grow when the arguments are serialized, so the cut shrinks until it fits.
+  for (let head = COMMAND_HEAD_CHARS, tail = COMMAND_TAIL_CHARS; ; ) {
+    // Read past both cuts, so an address split by one still shows its host.
+    const addresses = addressesIn(
+      command.slice(
+        Math.max(0, head - MAX_ADDRESS_CHARS),
+        command.length - tail + MAX_ADDRESS_CHARS,
+      ),
+    );
+    // Too many to list: the whole command goes, and one too long to review asks.
+    if (!addresses) return args;
+    const reviewed = {
+      ...args,
+      command: `${command.slice(0, head)}\n…[${command.length - head - tail} characters left out]…\n${command.slice(command.length - tail)}`,
+      ...(addresses.length ? { addressesInPartLeftOut: addresses } : {}),
+    };
+    if (fits(reviewed) || head + tail < MIN_SHOWN_COMMAND_CHARS) return reviewed;
+    head = Math.floor(head * 0.7);
+    tail = Math.floor(tail * 0.7);
+  }
 }
 
 /**
