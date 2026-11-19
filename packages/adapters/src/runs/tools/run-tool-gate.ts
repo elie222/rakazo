@@ -33,7 +33,11 @@ import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
+import {
+  buildApprovalAskBlock,
+  MAX_FETCH_URL_LENGTH,
+  readableToolName,
+} from "../../approvals/approval-ask.js";
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
@@ -775,6 +779,13 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);
   await ctx.settleRunningHelpers();
+  const askBlock = buildApprovalAskBlock(
+    applied!.effect.id,
+    name,
+    name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
+    ctx.secrets,
+    card,
+  );
   const paused = await deps.events.pauseRunForInput({
     spaceId: run.spaceId,
     threadId: run.threadId,
@@ -791,15 +802,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
         effectId: applied!.effect.id,
       });
     },
-    blocks: [
-      buildApprovalAskBlock(
-        applied!.effect.id,
-        name,
-        name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
-        ctx.secrets,
-        card,
-      ),
-    ],
+    blocks: [askBlock],
   });
   // pauseRunForInput returning false after a successful renew means the run row no
   // longer matches this worker. Exiting via pauseForApproval() would leave the run
@@ -812,7 +815,11 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,
-    body: `Review before ${name}`,
+    // A draft card's text names where it sends, not what to decide.
+    body:
+      askBlock.kind === "ask" && !askBlock.outgoingDraft
+        ? askBlock.text
+        : `Allow ${readableToolName(name)}?`,
     botId: bot.id,
     threadId: thread.id,
   });

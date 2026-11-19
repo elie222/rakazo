@@ -222,10 +222,7 @@ export function buildApprovalAskBlock(
     kind: "ask",
     approvalEffectId: effectId,
     text: truncate(
-      redactSecrets(
-        toolName === "create_space" ? `${summary}?` : `Review before ${summary}`,
-        secrets,
-      ),
+      redactSecrets(toolName === "create_space" ? `${summary}?` : `Allow ${summary}?`, secrets),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
     detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
@@ -267,18 +264,19 @@ function describeApprovalAction(
   // A batch is named by the actions it runs; "…" stands for an entry that names none.
   const batch = batchShape && batchActions(batchShape, args);
   if (batch?.actions.length) {
-    return [...batch.actions, ...(batch.complete ? [] : ["…"])].join(", ");
+    return [...batch.actions.map(readableToolName), ...(batch.complete ? [] : ["…"])].join(", ");
   }
   if (toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
-    return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
+    return name ? `Archive bot (${String(name)})` : "Archive bot";
   }
   if (toolName === "create_space") {
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
   }
   const target = webFetchSite(toolName, args) ?? pickScopeLabel(args);
-  return target ? `${toolName} → ${target}` : toolName;
+  const action = readableToolName(toolName);
+  return target ? `${action} → ${target}` : action;
 }
 
 function formatApprovalDetail(
@@ -305,15 +303,30 @@ function formatApprovalDetail(
     );
   const items = batch ? args[batch.items] : undefined;
   if (batch && Array.isArray(items)) {
-    // Every action and its destinations first, then each action's long text.
-    const later: string[] = [];
+    // An entry repeated with the same arguments is shown once, with how many times it runs.
+    const entries = new Map<
+      string,
+      { name: string; args: Record<string, unknown>; runs: number }
+    >();
     for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const action = entry[batch.action];
-      const name = (typeof action === "string" && action.trim()) || "…";
-      const { first, last } = shown(objectArguments(entry[batch.arguments]));
-      lines.push(name, ...first);
-      later.push(...last.map((line) => `${name} ${line}`));
+      const name = typeof action === "string" && action.trim() ? readableToolName(action) : "…";
+      const entryArgs = objectArguments(entry[batch.arguments]);
+      const key = `${name}\n${JSON.stringify(entryArgs)}`;
+      const seen = entries.get(key);
+      if (seen) seen.runs++;
+      else entries.set(key, { name, args: entryArgs, runs: 1 });
+    }
+    // The title already names a lone action that runs once, so its arguments need no heading.
+    const [only] = entries.values();
+    const single = entries.size === 1 && only?.runs === 1;
+    // Every action and its destinations first, then each action's long text.
+    const later: string[] = [];
+    for (const { name, args: entryArgs, runs } of entries.values()) {
+      const { first, last } = shown(entryArgs);
+      lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
+      later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
     }
     lines.push(...later);
   } else {
@@ -343,7 +356,7 @@ function argumentLines(
     const value = values[key];
     const text = argumentText(value);
     if (!text) continue;
-    const line = `${key}: ${text}`;
+    const line = `${readableArgumentName(key)}: ${text}`;
     if (text.length <= SHORT_ARGUMENT_LENGTH) short.push(line);
     else (typeof value === "string" ? last : structured).push(line);
   }
@@ -353,10 +366,37 @@ function argumentLines(
 function argumentText(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return String(value);
   if (Array.isArray(value) && value.every((item) => item === null || typeof item !== "object"))
     return value.map(String).join(", ");
   return JSON.stringify(value) ?? "";
+}
+
+/**
+ * A tool or action name as words, since the card is read by people who never see tool names:
+ * `GMAIL_FETCH_EMAILS` reads "Gmail fetch emails" and `createIssue` reads "Create issue".
+ */
+export function readableToolName(name: string): string {
+  const words = name
+    // A connected server's tools carry our `mcp__` namespace, which means nothing to the reader.
+    .replace(/^mcp__/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_.-]+/)
+    .filter(Boolean);
+  if (words.length === 0) return name;
+  const text = words.join(" ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const UPPERCASE_ARGUMENT_WORDS = new Set(["id", "ids", "url", "urls"]);
+
+/** An argument name as words: `max_results` reads "Max results". */
+function readableArgumentName(key: string): string {
+  return readableToolName(key)
+    .split(" ")
+    .map((word) => (UPPERCASE_ARGUMENT_WORDS.has(word.toLowerCase()) ? word.toUpperCase() : word))
+    .join(" ");
 }
 
 /** Redacts every string inside a value, since JSON escaping could hide a secret from the card. */
