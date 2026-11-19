@@ -48,9 +48,12 @@ export function truncateReviewText(value: string, max: number): string {
 /**
  * Auto passes most actions: anything that plausibly serves the owner's request or the bot's job,
  * including steps they did not spell out. It asks only about actions that clearly go beyond that.
+ * A read is named outright: it changes nothing, yet a request that ends in a delete or a send made
+ * the checker unsure about the read that comes first. What the read finds is acted on by a later
+ * call, which is checked on its own.
  */
 export const AUTO_REVIEW_PASS =
-  "It plausibly serves what the owner asked for or the bot's job, including steps they did not spell out";
+  "It plausibly serves what the owner asked for or the bot's job, including steps they did not spell out. A read, search or list that only looks at data and changes, sends or deletes nothing passes, even when the owner's request goes on to change things";
 export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
 
