@@ -68,6 +68,7 @@ describe("transient model errors", () => {
       "server-side processing failure",
       "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-0000-0000-000000000000 in your message.",
     ],
+    ["generation failure on the provider", new Error("Internal error during token generation")],
     [
       "per-minute token limit that links to billing",
       "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
