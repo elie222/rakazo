@@ -1774,6 +1774,22 @@ describe("BoatSandboxProvider", () => {
     expect(polledAt.length).toBeLessThanOrEqual(125);
   });
 
+  it("reports a machine that stopped under a running command as unavailable", async () => {
+    vi.spyOn(FakeBoatApi.prototype, "commandStatus").mockRejectedValue(
+      boatError(409, "machine_not_running", "Sandbox is stopped."),
+    );
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachOutdated = true;
+    api.detachedRunMs = 60_000;
+
+    await expect(
+      drain(
+        provider.execute(computer, { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 }, context),
+      ),
+    ).rejects.toBeInstanceOf(SandboxUnavailableError);
+  });
+
   it("keeps the sandbox when Boat rejects the credentials", async () => {
     const { api, provider, computer } = await boat();
     api.unauthorized();
