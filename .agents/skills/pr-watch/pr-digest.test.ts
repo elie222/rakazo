@@ -22,6 +22,8 @@ else if (args[0] === "pr" && args[1] === "view") {
   const count = readFileSync(process.env.CALLS, "utf8").trim().split("\n").length;
   const status = fixture.eventExits[count - 1];
   if (status === 0) print({ type: "com.github.pull_request.check_suite.status.changed.v1", data: { conclusion: "success" } });
+  if (status === 8) console.error("Timed out waiting for events.");
+  if (status === 1) console.error("Event Streams preview is unavailable.\nAdditional CLI details.");
   process.exit(status ?? 1);
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
@@ -550,6 +552,7 @@ describe("pr-digest", () => {
         expect(call.slice(6)).toEqual(["--timeout", "60s"]);
       }
       expect(result.stdout).not.toContain("check_suite.status.changed.v1");
+      expect(result.stderr).toBe("");
     });
 
     it("falls back to timed observations when the event stream is unavailable", () => {
@@ -560,6 +563,9 @@ describe("pr-digest", () => {
       );
       expect(result.status).toBe(10);
       expect(result.calls.trim().split("\n")).toHaveLength(1);
+      expect(result.stderr).toContain("GitHub event stream unavailable (exit 1)");
+      expect(result.stderr).toContain("Event Streams preview is unavailable");
+      expect(result.stderr.trim().split("\n")).toHaveLength(1);
     });
 
     it("wakes for an unseen finding while checks are still running", () => {

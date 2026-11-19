@@ -455,7 +455,7 @@ main() {
   [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local head state revision runs statuses workflows empty=0 baseline="" first=1 seen event_status
+    local head state revision runs statuses workflows empty=0 baseline="" first=1 seen event_status event_error
     seen=$(seen_path "$repo" "$pr")
     while :; do
       revision=$(gh pr view "$pr" --repo "$repo" --json headRefOid,state --jq '[.headRefOid, .state] | @tsv') \
@@ -492,11 +492,16 @@ main() {
       if [[ "$resource" == https://github.com/* ]]; then
         # Events only wake the next observation. The timeout catches standalone
         # comments, edits, commit statuses, and changes missed between streams.
-        gh event listen --resource "$resource" --event "$PR_EVENTS" --timeout 60s >/dev/null 2>&1
+        event_error=$(gh event listen --resource "$resource" --event "$PR_EVENTS" --timeout 60s 2>&1 >/dev/null)
         event_status=$?
         case "$event_status" in
           0|8) continue ;; # An event arrived, or the listen timed out.
-          *) resource="" ;; # Older gh, no preview access, or a stream error.
+          *)
+            event_error=${event_error%%$'\n'*}
+            printf 'pr-digest: GitHub event stream unavailable (exit %s). Checking every %ss.%s\n' \
+              "$event_status" "$POLL" "${event_error:+ $event_error}" >&2
+            resource=""
+            ;;
         esac
       fi
       sleep "$POLL"
