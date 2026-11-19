@@ -252,11 +252,10 @@ export function jobQueueLogger(outage: DatabaseOutage): Logger {
       ...(scope.workerId ? { "queue.worker_id": scope.workerId } : {}),
       ...(scope.taskIdentifier ? { "queue.task": scope.taskIdentifier } : {}),
       ...(scope.jobId ? { "queue.job_id": scope.jobId } : {}),
+      // Serialized like any logged failure, whatever the level it came at.
+      ...(failure === undefined ? {} : { error: failure }),
     };
-    const log = getLogger();
-    if (level === "error") log.error("job_queue.log", failure, bindings);
-    else if (level === "warning") log.warn("job_queue.log", bindings);
-    else log[level]("job_queue.log", bindings);
+    getLogger()[level === "warning" ? "warn" : level]("job_queue.log", bindings);
   });
 }
 

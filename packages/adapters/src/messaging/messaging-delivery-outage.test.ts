@@ -139,6 +139,22 @@ describe("chat delivery while the database is unavailable", () => {
       "queue.message": "Completed task 8 (messaging.send, 4.20ms) with success",
     });
     expect(JSON.stringify(events)).not.toContain("not for the log");
+    // The task's failure travels with its line, and a line without one keeps its text.
+    expect(events.at(-2)).toMatchObject({
+      "queue.message": "Failed task 7 (messaging.send) with error 'connect ECONNREFUSED'",
+      error: { message: "connect ECONNREFUSED 10.0.0.5:5432" },
+    });
+    logger.error("Worker exited unexpectedly");
+    expect(events.at(-1)).toMatchObject({
+      level: "error",
+      "queue.message": "Worker exited unexpectedly",
+    });
+    logger.warn("Task took long to release", { error: new Error("still held") });
+    expect(events.at(-1)).toMatchObject({
+      level: "warn",
+      "queue.message": "Task took long to release",
+      error: { message: "still held" },
+    });
     expect(consoleLog).not.toHaveBeenCalled();
   });
 });
