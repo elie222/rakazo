@@ -1,0 +1,7 @@
+{
+  "apps/api/src/threads/runs.ts": 1,
+  "apps/api/src/threads/thread-message-pages.ts": 1,
+  "apps/api/src/threads/thread-target.ts": 1,
+  "packages/adapters/src/bots/group-handoff.ts": 1,
+  "packages/adapters/src/secrets/run-secret.ts": 1
+}
