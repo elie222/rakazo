@@ -1940,6 +1940,33 @@ describe("mobile call session on a timer", () => {
     expect(getSnapshot()).toBeNull();
   });
 
+  it("delivers a finished automatic transcript after the reply and its quiet gap", async () => {
+    const fake = fakes();
+    const transcript = deferred<string>();
+    startCall(
+      { botId: "bot-1", botName: "Ada", autoLanguage: true, transcribe: true },
+      { ...fake.deps, transcribe: () => transcript.promise },
+    );
+    await tick();
+    fake.say("sim");
+    await tick();
+    fake.replyWith("message-1", "The tests are green.");
+    fake.speeches[0]?.resolve();
+    await tick(ECHO_GUARD_MS - 1);
+    transcript.resolve("sim");
+    await tick();
+    expect(fake.send).not.toHaveBeenCalled();
+    expect(fake.recordings).toHaveLength(1);
+
+    await tick(1);
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+      "bot-1",
+      "sim",
+      expect.stringMatching(/^call:/),
+    );
+    expect(fake.recordings).toHaveLength(1);
+  });
+
   describe.each(["ios", "android"])("%s echo guard and playback mic isolation", (os) => {
     beforeEach(() => {
       device.os = os;

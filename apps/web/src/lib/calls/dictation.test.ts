@@ -638,7 +638,7 @@ describe("Dictation recorder fallback", () => {
     const dictation = new Dictation();
     await dictation.listen({
       mode: "endpoint",
-      transcribe: true,
+      transcribe: auto ? undefined : true,
       autoLanguage: auto,
       endpointMs,
       onFinal,

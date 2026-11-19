@@ -23,7 +23,7 @@ import {
   registerSessionDiskCache,
 } from "../api/session";
 import { registerCallPushToken } from "../notifications/push";
-import { loadCallAutoLanguage } from "./call-language-preference";
+import { autoLanguageNeedsTranscription, loadCallAutoLanguage } from "./call-language-preference";
 import { endCall, getSnapshot, startCall, subscribe as subscribeCall } from "./call-session";
 
 type Ringing = NonNullable<ReturnType<typeof ringingCall>>;
@@ -286,6 +286,14 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         ),
       );
     else {
+      const autoLanguage = await loadCallAutoLanguage();
+      const voiceForAutomaticLanguage = autoLanguage
+        ? await rpc("voice/status", {}, { requestContext: context })
+        : undefined;
+      if (voiceForAutomaticLanguage?.transcribe === false)
+        throw new Error(autoLanguageNeedsTranscription());
+      if (generation !== currentSessionGeneration())
+        throw new Error(t`Something went wrong. Try again.`);
       const result = await respondToIncomingCall(call.incomingCall, () =>
         rpc("threads/answerCall", target, { requestContext: context }),
       );
@@ -294,10 +302,8 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
         throw new Error(t`Something went wrong. Try again.`);
-      const [voice, autoLanguage] = await Promise.all([
-        rpc("voice/status", {}, { requestContext: context }),
-        loadCallAutoLanguage().catch(() => false),
-      ]);
+      const voice =
+        voiceForAutomaticLanguage ?? (await rpc("voice/status", {}, { requestContext: context }));
       if (generation !== currentSessionGeneration())
         throw new Error(t`Something went wrong. Try again.`);
       if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);

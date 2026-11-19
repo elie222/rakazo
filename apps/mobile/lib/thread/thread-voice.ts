@@ -12,7 +12,10 @@ import { blockText } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../calls/bot-switch";
-import { loadCallAutoLanguage } from "../calls/call-language-preference";
+import {
+  autoLanguageNeedsTranscription,
+  loadCallAutoLanguage,
+} from "../calls/call-language-preference";
 import {
   getSnapshot as getCallSnapshot,
   setCallProviderTranscribe,
@@ -216,7 +219,7 @@ export function useThreadVoiceCall({
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
     try {
-      const autoLanguage = await loadCallAutoLanguage().catch(() => false);
+      const autoLanguage = await loadCallAutoLanguage();
       if (setupSession !== currentSessionGeneration()) return;
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
@@ -237,7 +240,7 @@ export function useThreadVoiceCall({
         Alert.alert(
           t`Calls need transcription`,
           autoLanguage
-            ? t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`
+            ? autoLanguageNeedsTranscription()
             : t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
           [
             { text: t`Not now`, style: "cancel" },

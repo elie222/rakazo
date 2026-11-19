@@ -21,10 +21,15 @@ const fake = vi.hoisted(() => ({
   startCall: vi.fn(),
   call: null as unknown,
   autoLanguage: false,
+  transcribe: true,
+  preferenceError: false,
 }));
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => fake.native }));
 vi.mock("expo-secure-store", () => ({
-  getItemAsync: async () => (fake.autoLanguage ? "1" : null),
+  getItemAsync: async () => {
+    if (fake.preferenceError) throw new Error("Settings unavailable");
+    return fake.autoLanguage ? "1" : null;
+  },
 }));
 vi.mock("expo-notifications", () => ({
   setNotificationCategoryAsync: async () => {},
@@ -111,13 +116,15 @@ beforeEach(() => {
   fake.lastResponse = null;
   fake.call = null;
   fake.autoLanguage = false;
+  fake.transcribe = true;
+  fake.preferenceError = false;
   vi.clearAllMocks();
   fake.native.incomingState.mockResolvedValue({ token: "", actions: [] });
   fake.rpc.mockImplementation(async (path: string) => {
     if (path === "spaces/list") return { current: { bots: [bot] }, spaces: [] };
     if (path === "threads/get") return { cursor: 1, messages: [] };
     if (path === "threads/answerCall") return { opening: "Hello" };
-    if (path === "voice/status") return { transcribe: true };
+    if (path === "voice/status") return { transcribe: fake.transcribe };
     return { ok: true };
   });
 });
@@ -172,6 +179,25 @@ describe("mobile incoming calls", () => {
       }),
     );
     expect(getIncomingCall()).toBeNull();
+  });
+
+  it("does not answer in automatic mode until a transcriber is configured", async () => {
+    fake.autoLanguage = true;
+    fake.transcribe = false;
+    const call = await ring();
+    await expect(respondToMobileCall(call, "answer")).rejects.toThrow(
+      "Connect a voice provider that transcribes",
+    );
+    expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+    expect(fake.startCall).not.toHaveBeenCalled();
+  });
+
+  it("does not start a call in a different language mode if settings cannot be read", async () => {
+    fake.preferenceError = true;
+    const call = await ring();
+    await expect(respondToMobileCall(call, "answer")).rejects.toThrow("Settings unavailable");
+    expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+    expect(fake.startCall).not.toHaveBeenCalled();
   });
   it("ends the current call when a native answer arrives during it", async () => {
     await ring();

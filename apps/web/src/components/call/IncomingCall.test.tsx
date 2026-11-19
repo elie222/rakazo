@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { Bot, VoiceStatus } from "@rakazo/contracts";
+import type { Bot } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, Suspense } from "react";
@@ -36,7 +36,6 @@ vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     threads: { answerCall: vi.fn(), endCall: vi.fn() },
     notifications: { declineIncomingCall: vi.fn() },
-    voice: { status: vi.fn() },
   },
   selectedSpaceId: () => "space-1",
 }));
@@ -238,14 +237,10 @@ it("hangs up an answer that lands after the call view is gone", async () => {
 });
 
 it.each([false, true])(
-  "claims an incoming call without waiting for transcription readiness (newer call: %s)",
+  "keeps the chosen language mode when answering (newer call: %s)",
   async (newerCall) => {
-    const status = deferred<VoiceStatus>();
-    vi.mocked(rpc.voice.status).mockReturnValueOnce(status.promise);
-    vi.mocked(rpc.threads.answerCall).mockResolvedValueOnce({
-      opening: "Ready?",
-      reason: "Review",
-    });
+    const answerResult = deferred<{ opening: string; reason: string }>();
+    vi.mocked(rpc.threads.answerCall).mockReturnValueOnce(answerResult.promise);
     vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
     callAutoLanguage.set(true);
     try {
@@ -257,15 +252,7 @@ it.each([false, true])(
       expect(rpc.threads.answerCall).toHaveBeenCalledOnce();
       expect(startCall).not.toHaveBeenCalled();
       if (newerCall) vi.mocked(getSnapshot).mockReturnValue({ botId: "other-bot" } as CallState);
-      await act(async () =>
-        status.resolve({
-          ready: true,
-          transcribe: true,
-          configured: true,
-          provider: "example",
-          voiceId: "default",
-        }),
-      );
+      await act(async () => answerResult.resolve({ opening: "Ready?", reason: "Review" }));
       if (newerCall) {
         expect(startCall).not.toHaveBeenCalled();
         expect(rpc.threads.endCall).toHaveBeenCalledWith(
@@ -277,7 +264,7 @@ it.each([false, true])(
         expect(container.querySelector('[data-testid="incoming-call"]')).toBeNull();
       } else {
         expect(startCall).toHaveBeenCalledWith(
-          expect.objectContaining({ autoLanguage: true, transcribe: true }),
+          expect.objectContaining({ autoLanguage: true, transcribe: undefined }),
         );
       }
     } finally {

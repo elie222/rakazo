@@ -54,6 +54,7 @@ import {
   speakText,
   stopSpeaking,
 } from "../voice/voice";
+import { autoLanguageNeedsTranscription } from "./call-language-preference";
 import type { CallCue } from "./call-sounds";
 import {
   playCallCue,
@@ -203,6 +204,8 @@ let micOpen = false;
 /** True from ringing until the start cue ends: nothing may open the microphone before the greeting. */
 let opening = false;
 let guardTimer: ReturnType<typeof setTimeout> | null = null;
+let transcribing: AbortController | null = null;
+let pendingTranscript = "";
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
 let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
 let switching = false;
@@ -362,6 +365,8 @@ export function endCall(): void {
   unwatch?.();
   unwatch = null;
   clearEchoGuard();
+  transcribing = null;
+  pendingTranscript = "";
   if (hangUpTimer) clearTimeout(hangUpTimer);
   hangUpTimer = null;
   hangUpAfterReply = false;
@@ -430,6 +435,7 @@ export function toggleMute(): void {
   const muted = !state.muted;
   set({ muted, heard: "" });
   if (muted) {
+    pendingTranscript = "";
     turn?.abort();
     turn = null;
     micOpen = false;
@@ -446,7 +452,7 @@ export function toggleTranscript(): void {
 
 async function listen(): Promise<void> {
   if (!state) return;
-  clearEchoGuard();
+  if (guardTimer || replyStillWritten()) return;
   // The caller said goodbye: every path back to listening hangs up instead.
   if (hangUpAfterReply) {
     endCall();
@@ -454,6 +460,12 @@ async function listen(): Promise<void> {
   }
   set({ phase: "listening", heard: "", caption: "" });
   if (state.muted) return;
+  if (pendingTranscript) {
+    const text = pendingTranscript;
+    pendingTranscript = "";
+    await handleTranscript(text);
+    return;
+  }
   await openMic();
 }
 
@@ -515,14 +527,22 @@ async function openMic(): Promise<void> {
       micOpen = false;
       set({
         caption: autoLanguage
-          ? t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`
+          ? autoLanguageNeedsTranscription()
           : t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
       });
       return;
     }
     const clip = await deps.record(controller.signal);
     if (!mine()) return;
-    const text = clip ? await deps.transcribe(clip, controller.signal) : "";
+    let text = "";
+    if (clip) {
+      transcribing = controller;
+      try {
+        text = await deps.transcribe(clip, controller.signal);
+      } finally {
+        if (transcribing === controller) transcribing = null;
+      }
+    }
     if (!mine()) return;
     micOpen = false;
     if (recognitionFailures === 1) onDevice = null;
@@ -537,11 +557,15 @@ async function openMic(): Promise<void> {
 
 /** Drops any residual echo before a completed turn reaches the bot. */
 async function handleTranscript(raw: string): Promise<void> {
-  if (!state || state.phase === "speaking" || replyStillWritten()) return;
+  if (!state) return;
   // The session stopped itself to deliver this.
   micOpen = false;
   failures = 0;
   const text = raw.trim();
+  if (state.phase === "speaking" || replyStillWritten()) {
+    pendingTranscript = text;
+    return;
+  }
   if (!text) {
     void listen();
     return;
@@ -673,6 +697,7 @@ function failTurn(error: unknown): void {
 function blockForConsent(error: AiConsentBlocked): void {
   consentBlocked = true;
   clearEchoGuard();
+  pendingTranscript = "";
   turn?.abort();
   turn = null;
   micOpen = false;
@@ -734,6 +759,7 @@ function onThread(next: MobileSnapshot): void {
   thread = next;
   if (!state) return;
   if (pendingCallSecretAsk(next)) {
+    pendingTranscript = "";
     // Also when the mic never opened (the thread loaded late): the caller still needs to know.
     if (heldForCode) set({ caption: t`Hang up, then enter the code on screen.` });
     if (!micOpen) return;
@@ -815,10 +841,12 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
     return;
   }
   spokenMemory.remember(text);
-  // A transcript cannot reliably distinguish loudspeaker echo from the caller.
-  turn?.abort();
-  turn = null;
-  micOpen = false;
+  // Only a finished clip can outlive the start of playback.
+  if (!autoLanguage || turn !== transcribing) {
+    turn?.abort();
+    turn = null;
+    micOpen = false;
+  }
   set({ phase: "speaking", heard: "" });
   void deps
     .speak(botId, text, queue)

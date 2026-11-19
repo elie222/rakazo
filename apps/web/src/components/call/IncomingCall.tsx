@@ -167,17 +167,9 @@ export function IncomingCall({
     const context = { spaceId: selectedSpaceId() };
     try {
       const autoLanguage = callAutoLanguage.get();
-      const capability =
-        autoLanguage && transcribe === undefined
-          ? rpc.voice.status(undefined, { context, signal: AbortSignal.timeout(3_000) }).then(
-              (status) => status.transcribe,
-              () => false,
-            )
-          : transcribe;
       const answered = await respondToIncomingCall(call, () =>
         rpc.threads.answerCall(target, { context }),
       );
-      const inputTranscribe = await capability;
       // The page reloads for another session: a hang-up now would carry that session's cookie.
       if (isLeavingSession()) return;
       if (mounted.current) setHandled((current) => new Set(current).add(call.callId));
@@ -191,7 +183,7 @@ export function IncomingCall({
         botName: bot.name,
         botColor: bot.color,
         botAvatarSet: bot.avatarSet,
-        transcribe: inputTranscribe,
+        transcribe,
         autoLanguage,
         answered: { callId: call.callId, opening: answered.opening },
       });

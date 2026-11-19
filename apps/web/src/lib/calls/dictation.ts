@@ -274,7 +274,7 @@ export class Dictation {
     this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
-    if (opts.autoLanguage && !opts.transcribe) {
+    if (opts.autoLanguage && opts.transcribe === false) {
       this.set({
         ...IDLE,
         error: t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`,
