@@ -1,0 +1,8 @@
+{
+  "apps/api/src/threads/thread-message-pages.ts": 1,
+  "apps/api/src/threads/thread-target.ts": 1,
+  "packages/adapters/src/secrets/run-secret.ts": 1,
+  "packages/db/src/runs/run-secrets.ts": 1,
+  "packages/db/src/threads/thread-ask.ts": 3,
+  "packages/db/src/threads/thread-takeover.ts": 2
+}
