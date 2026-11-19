@@ -73,7 +73,7 @@ function CatalogSvg({
     void fetchText(uri).then(
       (value) => {
         if (!current) return;
-        if (value && value.length > MAX_CATALOG_SVG_LENGTH) fail();
+        if (!value || value.length > MAX_CATALOG_SVG_LENGTH) fail();
         else setXml(value);
       },
       () => {
