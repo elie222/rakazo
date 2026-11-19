@@ -78,6 +78,33 @@ it("uses quote, caption, localized photo, filename, and attachment in order", ()
   expect(replyLabel(undefined, "", replyAttachment([file]), labels)).toBe("notes.txt");
   expect(replyLabel(undefined, "", { ...file, name: "" }, labels)).toBe("Anhang");
 });
+it.each(["\n", "\r\n", "\r"])("keeps reply previews to their first line for %j", (newline) => {
+  const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
+  const text = ["First line", "Second line"].join(newline);
+  const blocks: MessageBlock[] = [{ kind: "text", text }];
+  const preview = messageReplyPreview(blocks, "user");
+  const fallback = previewMessageText({ role: "user", blocks }, labels);
+  expect.soft(preview.text).toBe("First line");
+  expect.soft(replyLineText(undefined, text, "Unrelated fallback")).toBe("First line");
+  expect.soft(replyLineText(undefined, undefined, fallback)).toBe("First line");
+  expect(replyLabel(text, preview.text, undefined, labels)).toBe("First line Second line");
+});
+it("keeps the first nonblank line of a relay using mixed line endings", () => {
+  const labels = { photo: "Photo", attachment: "Attachment", message: "Message" };
+  const blocks: MessageBlock[] = [
+    {
+      kind: "channel_message",
+      provider: "test",
+      channelId: "channel",
+      fromAddress: "sender",
+      fromLabel: "Sender",
+      text: "\r\n \r  First line  \rSecond line\nThird line",
+    },
+  ];
+  expect.soft(messageReplyPreview(blocks, "user").text).toBe("First line");
+  const fallback = previewMessageText({ role: "user", blocks }, labels);
+  expect(replyLabel(undefined, fallback, undefined, labels)).toBe("First line  ");
+});
 it.each([
   { role: "user", text: "legacy" },
   { role: "bot", botId: "bot", text: "legacy" },
