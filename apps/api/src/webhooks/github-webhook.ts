@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { readBoundedBytes } from "../http/http-body.js";
 import { githubEventMetadataPrompt } from "../messaging/inbound-delivery.prompt.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
@@ -159,8 +159,11 @@ export function mountGithubWebhookRoute(
   app: Hono,
   deps: WebhookDeps,
   secretCache: WebhookSecretCache,
+  throttled: (c: Context) => boolean,
+  tooManyRequests: (c: Context) => Response,
 ) {
   app.post("/api/v1/bots/:botId/github", async (c) => {
+    if (throttled(c)) return tooManyRequests(c);
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
 
     // Reject oversized bodies before target lookup so size limits do not reveal active bots.

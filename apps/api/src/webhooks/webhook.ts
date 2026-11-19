@@ -1,7 +1,9 @@
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
+import { requestClientIp } from "../http/client-ip.js";
 import { readBoundedBody } from "../http/http-body.js";
+import { throttleKey, windowCounter } from "../http/window-counter.js";
 import { formatWebhookPrompt } from "../messaging/inbound-delivery.prompt.js";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
 import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
@@ -30,10 +32,22 @@ export {
   type WebhookTarget,
 } from "./webhook-inbound.js";
 
+const MINUTE_MS = 60_000;
+export const WEBHOOKS_PER_IP_PER_MINUTE = 120;
+
 export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
   const secretCache: WebhookSecretCache = new Map();
+  // Target lookup runs before any signature check, so one address must not drive
+  // those database reads at line rate with random bot ids. The budget is shared by
+  // every webhook route this mount registers.
+  const deliveries = windowCounter(MINUTE_MS);
+  const throttled = (c: Context) =>
+    deliveries(throttleKey(requestClientIp(c))) > WEBHOOKS_PER_IP_PER_MINUTE;
+  const tooManyRequests = (c: Context) =>
+    c.json({ error: "Too many requests" }, 429, { "retry-after": "60" });
 
   app.post("/api/v1/bots/:botId/webhook", async (c) => {
+    if (throttled(c)) return tooManyRequests(c);
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
 
     // Reject oversized bodies before target lookup so size limits do not reveal active bots.
@@ -104,5 +118,5 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     );
   });
 
-  mountGithubWebhookRoute(app, deps, secretCache);
+  mountGithubWebhookRoute(app, deps, secretCache, throttled, tooManyRequests);
 }
