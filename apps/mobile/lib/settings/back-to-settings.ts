@@ -5,8 +5,9 @@ import { Platform } from "react-native";
 import { closeSettingsSheet } from "./settings-sheet";
 
 const FROM_SETTINGS = "settings";
-// Leaving by the back button, a swipe or Cancel; opening something else keeps the page below it.
-const BACK_ACTIONS = new Set(["GO_BACK", "POP", "POP_TO_TOP"]);
+// Leaving by the back button, a swipe or Cancel. Leaving a Space dismisses everything (POP_TO_TOP)
+// to go Home, so it is not one, and opening something else keeps the page below it.
+const BACK_ACTIONS = new Set(["GO_BACK", "POP"]);
 
 /** Opens a root-stack page from settings so going back returns to settings. Android pushes it
  * over the settings page. On iOS a page over the sheet would be a second sheet, so the sheet

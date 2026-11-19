@@ -71,9 +71,12 @@ it("reopens settings when a page settings opened goes back", async () => {
   expect(page.push).toHaveBeenCalledWith("/account");
 });
 
-it("stays closed when the page is replaced, or was not opened from settings", async () => {
+it("stays closed when the page is replaced or dismissed with everything, or was not opened from settings", async () => {
   await open({ from: "settings" });
   await leave("REPLACE");
+  // Leaving a Space dismisses every page on the way Home.
+  await open({ from: "settings" });
+  await leave("POP_TO_TOP");
   await open({});
   await leave("GO_BACK");
   expect(page.push).not.toHaveBeenCalled();
