@@ -66,7 +66,8 @@ export function PageReviewComments({
         version: page.version,
       });
     },
-    stale: [read.queryKey],
+    // Match every cursor for this page, including the newest comments shown after posting.
+    stale: [targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/comments", { pageId }).queryKey],
     onSaved: (_, action) => {
       if (action.kind === "add") {
         setBody("");
