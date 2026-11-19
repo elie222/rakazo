@@ -87,6 +87,7 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   // What was answered about the bot's files when the computer was changed; sent with the save.
   const computerFiles = useRef<ComputerMoveFiles>("leave");
+  const computerQuestion = useRef(0);
   const shownBotId = useRef(botId);
   shownBotId.current = botId;
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
@@ -309,9 +310,10 @@ export default function BotSettingsScreen() {
       setComputerMode(mode);
       return;
     }
+    const question = ++computerQuestion.current;
     const files = await askComputerMoveFiles({ botId, botName: bot.name, mode });
-    // The screen may show another bot by the time the question is answered.
-    if (!files || shownBotId.current !== botId) return;
+    // By the time it is answered the screen may show another bot, or a newer question.
+    if (!files || shownBotId.current !== botId || computerQuestion.current !== question) return;
     computerFiles.current = files;
     setComputerMode(mode);
   }

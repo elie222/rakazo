@@ -621,8 +621,12 @@ export function botsRoutes(ctx: RouterContext) {
               );
               files = copied ? "copied" : undefined;
             } catch (error) {
-              // The files did not arrive, so the bot stays on the computer that has them.
-              await repos.setBotComputer(context.actor, bot.id, currentMode);
+              // The files did not arrive, so the bot stays on the computer that has them. The
+              // copy's failure is the one reported, also when moving the bot back fails too.
+              await bestEffort(
+                "move the bot back after a failed copy",
+                repos.setBotComputer(context.actor, bot.id, currentMode),
+              );
               throw error;
             }
           }
