@@ -232,6 +232,8 @@ export async function loadRunRecords(
         providerRef: true,
         displayName: true,
         status: true,
+        isDefault: true,
+        createdAt: true,
         updatedAt: true,
       },
     }),

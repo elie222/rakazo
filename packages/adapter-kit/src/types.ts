@@ -55,6 +55,8 @@ export interface ConnectedConnector {
   externalId: string;
   displayName: string;
   providerRef?: string;
+  /** The account to use for this app when a call names none. */
+  isDefault?: boolean;
 }
 
 export interface AdapterDescriptor<TCapabilities> {

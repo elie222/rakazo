@@ -1,7 +1,7 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { planLiveConnectionSync } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
+import { availableChatApps, defaultAccountIds, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -10,6 +10,8 @@ import {
   beginConnection,
   completeConnection,
   connectionContext,
+  connectionOutput,
+  connectionWithDefault,
   revokeConnection,
 } from "../integrations/connection-flows.js";
 import type { RouterContext } from "./context.js";
@@ -166,15 +168,8 @@ export function connectionsRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.connection.findMany({
           where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
         });
-        return rows.map((row) => ({
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        }));
+        const defaults = defaultAccountIds(rows);
+        return rows.map((row) => connectionOutput(row, defaults.has(row.id)));
       }),
       begin: authed.connections.begin.handler(({ context, input }) =>
         beginConnection(deps, context, input),
@@ -195,19 +190,32 @@ export function connectionsRoutes(ctx: RouterContext) {
           where: { id: existing.id },
           data: { displayName: input.displayName },
         });
-        return {
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        };
+        return connectionWithDefault(deps.prisma, row);
       }),
       revoke: authed.connections.revoke.handler(({ context, input }) =>
         revokeConnection(deps, context, input),
       ),
+      setDefault: authed.connections.setDefault.handler(async ({ context, input }) => {
+        const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        const existing = await deps.prisma.connection.findFirst({
+          where: { ...owner, id: input.connectionId, status: "connected" },
+        });
+        if (!existing) throw new IsolationError();
+        // Interactive rather than a batch: a batch cannot carry the request's database context.
+        await deps.prisma.$transaction(async (tx) => {
+          await tx.connection.updateMany({
+            where: {
+              ...owner,
+              connectorId: existing.connectorId,
+              provider: { equals: existing.provider, mode: "insensitive" },
+              isDefault: true,
+            },
+            data: { isDefault: false },
+          });
+          await tx.connection.update({ where: { id: existing.id }, data: { isDefault: true } });
+        });
+        return { ok: true as const };
+      }),
       tools: authed.connections.tools.handler(async ({ context, input }) => {
         const connector = deps.connectors.managed(input.connectorId);
         if (!connector) return [];

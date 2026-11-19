@@ -1,0 +1,1 @@
+ALTER TABLE "connections" ADD COLUMN "isDefault" BOOLEAN NOT NULL DEFAULT false;

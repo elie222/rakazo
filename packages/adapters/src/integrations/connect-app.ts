@@ -19,6 +19,7 @@ export async function connectApp(
   target: { id: string; spaceId: string; threadId: string; botId: string },
   app: unknown,
   effectId: string,
+  another = false,
 ) {
   if (typeof app !== "string" || !app.trim() || app.length > 100) {
     return { error: "Provide an app name or slug of at most 100 characters." };
@@ -47,10 +48,11 @@ export async function connectApp(
   const provider = providers.find((provider) => provider.describe().id === entry.connectorId);
   const reconnect =
     entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
-  if (entry.connected && !reconnect)
+  if (entry.connected && !reconnect && !another)
     return {
       status: "connected",
-      message: "This app is already connected and its tools are available.",
+      message:
+        "This app is already connected and its tools are available. To add another account, call connect_app again with another set.",
     };
   const block = appConnectCard({ ...entry, connected: false });
   const committed = await deps.prisma.$transaction(async (tx) => {

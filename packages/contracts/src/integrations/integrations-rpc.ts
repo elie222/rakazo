@@ -216,6 +216,8 @@ export const integrationsRpc = {
       )
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** Make a connected account the one bots use for its app unless told otherwise. */
+    setDefault: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
     tools: oc.input(z.object({ connectorId: z.string(), provider: z.string() })).output(
       z.array(

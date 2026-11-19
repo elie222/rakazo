@@ -17,6 +17,33 @@ export function catalogItemAccounts(connections: readonly Connection[], item: Ca
   );
 }
 
+type AccountRow = {
+  id: string;
+  connectorId: string;
+  provider: string;
+  status: string;
+  isDefault: boolean;
+  createdAt: Date | string;
+};
+
+/** Per app, the connected account bots use unless told otherwise: the one picked, else the oldest. */
+export function defaultAccountIds(rows: readonly AccountRow[]): Set<string> {
+  const chosen = new Map<string, AccountRow>();
+  for (const row of rows) {
+    if (row.status !== "connected") continue;
+    const key = `${row.connectorId}:${row.provider.trim().toLowerCase()}`;
+    const current = chosen.get(key);
+    if (
+      !current ||
+      (row.isDefault && !current.isDefault) ||
+      (row.isDefault === current.isDefault &&
+        new Date(row.createdAt).getTime() < new Date(current.createdAt).getTime())
+    )
+      chosen.set(key, row);
+  }
+  return new Set([...chosen.values()].map((row) => row.id));
+}
+
 export function isCatalogItemConnected(
   connections: readonly Connection[],
   item: ConnectionCatalogItem,
