@@ -23,7 +23,7 @@ import {
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v5";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v6";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
@@ -70,6 +70,9 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
             ...(request.ownerMessages?.length
               ? { ownerEarlierMessages: request.ownerMessages }
+              : {}),
+            ...(request.outsideOnlyTargets?.length
+              ? { outsideOnlyTargets: request.outsideOnlyTargets }
               : {}),
           },
           questions: { decision: autoReviewDecisionQuestion(request) },

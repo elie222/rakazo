@@ -21,7 +21,7 @@ import {
   runAsSystem,
   sealArtifact,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { createObjectStorage } from "./create-object-storage.js";
 import { LocalAgentHomeStore, newRevision } from "./home.js";
@@ -468,9 +468,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       await discard();
       throw new HomeSaveConflictError();
     }
-    await this.pruneVersions(botId, stored.storageId).catch((error) =>
-      getLogger().error("home version pruning failed", error),
-    );
+    await bestEffort("home version pruning", this.pruneVersions(botId, stored.storageId));
     return { revision };
   }
 

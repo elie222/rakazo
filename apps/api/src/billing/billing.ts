@@ -7,6 +7,7 @@ import type {
   BillingSubscriptionStatus,
   PartnerProgram,
   ProductAnalytics,
+  RealtimeFanout,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -15,27 +16,27 @@ import {
   BillingNoMonthlyCreditsError,
   BillingPaymentNotCompletedError,
 } from "@rakazo/adapter-kit";
-import { holdsBillingSubscription, sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
-import type {
-  Actor,
-  AnalyticsEvent,
-  BillingStatus,
-  ByokInterval,
-  ByokTier,
-} from "@rakazo/contracts";
+import {
+  holdsBillingSubscription,
+  sandboxAllowance,
+  sandboxDisplayedHourMicros,
+  sandboxHoursLeft,
+  sandboxKindCapabilities,
+} from "@rakazo/adapters";
+import type { Actor, BillingStatus, ByokInterval, ByokTier, ComputerSize } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
-  ByokTierSchema,
   byokTierPriceCents,
   INVITED_TRIAL_WEEKS,
-  sandboxAllowanceHours,
+  SANDBOX_SIZE_HOURLY_COST_MICROS,
   TRIAL_DAYS,
 } from "@rakazo/contracts";
-import { retry } from "@rakazo/core";
+import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
+  computerSizeSettings,
   createBillingAccount,
   creditAccount,
   expireModelCredits,
@@ -49,6 +50,7 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
+  publishOrganizationChange,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
   replaceBillingCustomer,
@@ -61,9 +63,16 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
 import { createExperiments } from "../telemetry/experiments.js";
+import {
+  byokTierOffers,
+  byokTrialAvailable,
+  planTerms,
+  subscribedByokPrice,
+  subscriptionStarted,
+} from "./byok-terms.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
-import { readComputerUsage } from "./computer-usage.js";
+import { readComputerUsage, saveComputerSize } from "./computer-usage.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
@@ -86,6 +95,7 @@ export interface BillingService {
   readonly referralsEnabled: boolean;
   status(actor: Actor): Promise<BillingStatus>;
   computerUsage(actor: Actor): ReturnType<typeof readComputerUsage>;
+  setComputerSize(actor: Actor, size: ComputerSize): Promise<void>;
   selectFunding(
     actor: Actor,
     funding: "byok" | "credits",
@@ -127,78 +137,12 @@ export interface BillingService {
   claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
-/**
- * Only the own-key plan has a trial: credits are resold at cost. An organization that has
- * subscribed before, or was given a free own-key period, has had its trial, and so has its owner
- * when any organization of theirs has.
- */
-function byokTrialAvailable(
-  account: { subscribedAt: Date | null } | null,
-  credits: { byokFreeUntil: Date | null },
-  ownerHadOne: boolean,
-) {
-  return !ownerHadOne && !account?.subscribedAt && !credits.byokFreeUntil;
-}
-
-type PlanTerms = Omit<Extract<AnalyticsEvent, { name: "checkout_opened" }>, "name">;
-
-/** The plan a subscription bills, as analytics reports it; monthly credits include own-key. */
-function planTerms(live: BillingSubscriptionSnapshot): PlanTerms | null {
-  if (live.creditAmountCents)
-    return { plan: "credits", interval: "month", amountCents: live.creditAmountCents };
-  if (live.byokPlan && live.byokPriceCents)
-    return {
-      plan: "own_key",
-      tier: live.byokTier ?? "standard",
-      interval: live.byokInterval ?? "month",
-      amountCents: live.byokPriceCents,
-    };
-  return null;
-}
-
-/** Whether this sync is the one that records a subscription starting, trial or paid. */
-function subscriptionStarted(previous: BillingAccount, live: BillingSubscriptionSnapshot) {
-  // A checkout whose first payment was still pending syncs as incomplete before it starts.
-  return (
-    hasBillingAccess(live.status) &&
-    (live.subscriptionId !== previous.subscriptionId || previous.status === "incomplete")
-  );
-}
-
-/** A subscriber keeps the own-key price they signed up at until the subscription ends. */
-function subscribedByokPrice(account: BillingAccount | null) {
-  const status = account?.status ?? null;
-  if (!account?.byokPriceCents || !(hasBillingAccess(status) || needsBillingPortal(status)))
-    return null;
-  const interval: ByokInterval = account.byokInterval === "year" ? "year" : "month";
-  const tier = ByokTierSchema.catch("standard").parse(account.byokTier ?? "standard");
-  return { cents: account.byokPriceCents, interval, tier };
-}
-
-/** The tiers on offer, in order; empty when the own-key plan is free. */
-function byokTierOffers() {
-  return ByokTierSchema.options.flatMap((tier) => {
-    const monthlyPriceCents = byokTierPriceCents(tier, "month");
-    if (monthlyPriceCents === null) return [];
-    const terms = BYOK_TIERS[tier];
-    return [
-      {
-        tier,
-        name: terms.name,
-        monthlyPriceCents,
-        annualPriceCents: byokTierPriceCents(tier, "year"),
-        computerSize: terms.computerSize,
-        computerHours: sandboxAllowanceHours(terms.computerAllowanceCents),
-      },
-    ];
-  });
-}
-
 export function createBillingService(deps: {
   prisma: PrismaClient;
   provider: BillingProvider;
   /** Prices computer time for the monthly allowance; without it none is shown. */
   sandbox?: SandboxProvider;
+  realtime?: RealtimeFanout;
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
@@ -216,6 +160,8 @@ export function createBillingService(deps: {
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
   const partnerSales = createPartnerSales({ ...deps, program: deps.partnerProgram });
+  const supportsComputerSizing = () =>
+    deps.sandbox && sandboxKindCapabilities(deps.sandbox.describe().id).sizedUsage === true;
   let cachedPrice: { value: BillingPrice; expiresAt: number } | undefined;
 
   async function price(): Promise<BillingPrice | null> {
@@ -747,6 +693,14 @@ export function createBillingService(deps: {
       return readComputerUsage(prisma, deps.sandbox, organizationId, actor.spaceId);
     },
 
+    async setComputerSize(actor, size) {
+      const { organizationId } = await managedOrganization(actor);
+      if (!modelCredits || !supportsComputerSizing())
+        throw new ClientError("NOT_FOUND", "Computer size settings are unavailable");
+      await saveComputerSize(prisma, organizationId, size);
+      await publishOrganizationChange(prisma, deps.realtime, organizationId);
+    },
+
     async status(actor) {
       if (modelCredits) {
         const { organizationId, isOwner } = await organization(actor);
@@ -754,13 +708,23 @@ export function createBillingService(deps: {
           await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
             getLogger().error("access grant failed", error),
           );
-        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
-          unexpiredCreditAccount(prisma, organizationId),
-          billingAccountForOrganization(prisma, organizationId),
-          deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
-          trialDays(organizationId),
-          organizationOwnerHadTrial(prisma, organizationId, "byok"),
-        ]);
+        const sized = supportsComputerSizing();
+        const [credits, account, computerAllowance, days, hadTrial, sizePreference] =
+          await Promise.all([
+            unexpiredCreditAccount(prisma, organizationId),
+            billingAccountForOrganization(prisma, organizationId),
+            deps.sandbox
+              ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId)
+              : null,
+            trialDays(organizationId),
+            organizationOwnerHadTrial(prisma, organizationId, "byok"),
+            sized
+              ? prisma.organization.findUnique({
+                  where: { id: organizationId },
+                  select: { computerSize: true },
+                })
+              : null,
+          ]);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
@@ -769,7 +733,11 @@ export function createBillingService(deps: {
             : null;
         const subscribed = subscribedByokPrice(account);
         const tier = subscribed?.tier ?? "standard";
-        const offers = byokTierOffers();
+        const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
+        const offers = byokTierOffers(Boolean(sized), hourMicros);
+        const sizing =
+          sizePreference &&
+          computerSizeSettings({ ...sizePreference, modelCredits: credits, billing: account });
         return {
           access: hasModelAccess(credits, account?.status ?? null),
           funding:
@@ -812,7 +780,13 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          computerHoursLeft: computerAllowance && sandboxHoursLeft(computerAllowance),
+          computerHoursLeft:
+            computerAllowance &&
+            sandboxHoursLeft(
+              computerAllowance,
+              sizing ? SANDBOX_SIZE_HOURLY_COST_MICROS[sizing.size] : hourMicros,
+            ),
+          ...(sizing && { computerSizeSettings: sizing }),
           computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
           referral: await referrals.status(organizationId, isOwner),
         };

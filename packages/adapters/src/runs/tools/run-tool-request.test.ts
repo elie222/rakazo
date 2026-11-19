@@ -613,3 +613,41 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     });
   });
 });
+
+describe("the user's computer after a routine or webhook joined the run", () => {
+  function userComputerCall(claimed: boolean) {
+    const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
+      claimed ? { id: "steering-1" } : null,
+    );
+    const ctx = {
+      deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
+      run: { trigger: "user" },
+      bot: {},
+      runId: "run-1",
+      source: { messagingChannelRun: false, userComputerOwner: "user-1" },
+    };
+    const request = {
+      name: "user_computer_shell",
+      args: {},
+      executionId: JSON.stringify(["pi-tool", "main", "call-1"]),
+    } as ToolRequest;
+    return { ctx, request, findFirst };
+  }
+
+  it("refuses once the run has read a handed-over routine or webhook task", async () => {
+    const { ctx, request, findFirst } = userComputerCall(true);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: "The user's computer is not available in this run.",
+    });
+    expect(findFirst.mock.calls.at(-1)?.[0].where).toEqual({
+      runId: "run-1",
+      claimedAt: { not: null },
+      originTrigger: { in: ["routine", "webhook"] },
+    });
+  });
+
+  it("stays available in the owner's own run", async () => {
+    const { ctx, request } = userComputerCall(false);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+  });
+});

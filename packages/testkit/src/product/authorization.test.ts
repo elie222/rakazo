@@ -532,6 +532,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["aiConsent/revoke"],
       ["billing/status"],
       ["billing/computerUsage"],
+      ["billing/setComputerSize", { size: "standard" }],
       ["billing/refresh"],
       ["billing/selectFunding"],
       ["billing/purchaseCredits"],

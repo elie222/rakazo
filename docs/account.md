@@ -65,6 +65,11 @@ Both plans come in monthly or yearly, and include monthly hours on your bots' co
 **Settings → Billing** shows your plan, when it renews and the computer hours left. Choose
 **Manage** to change it. See [pricing](https://rakazo.com/pricing) for current plans.
 
+Computers start at Standard size. On plans that offer larger sizes, the account owner can change
+**Computer size** in Billing. The choice applies across the organization as computers next start.
+Large uses twice the allowance per hour, and Extra large uses four times as much. Hours left
+reflect the selected size. The breakdown reports usage in Standard hours.
+
 **Invite friends** in the account menu gives you a link. You get a free month for each friend who
 starts a trial.
 

@@ -479,6 +479,7 @@ model Organization {
   logo         String?
   createdAt    DateTime
   metadata     String?
+  computerSize String @default("standard")
   members      Member[]
   invitations  Invitation[]
   spaces       Space[]
@@ -1890,6 +1891,9 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The size used for billing and the stretch it applies to.
+  runningSize             String?
+  runningSizeSince        DateTime?
   /// The home's disk as the computer last reported it; null where it was never measured.
   diskUsedBytes           BigInt?
   diskFreeBytes           BigInt?
@@ -1962,6 +1966,8 @@ model ComputerRun {
   userId     String?
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   kind       String
+  /// Null for older runs or providers that do not bill by size.
+  size       String?
   /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
   providerRef String?
   startedAt  DateTime

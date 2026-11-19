@@ -75,6 +75,12 @@ describe("provider desktop preparation", () => {
     expect(result.calls[3]).toContain("xvfb");
   });
 
+  it("waits for another preparation of the same computer before checking its tools", () => {
+    const lock = PREPARE_LINUX_DESKTOP.indexOf("flock 9");
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(PREPARE_LINUX_DESKTOP.indexOf('missing=""'));
+  });
+
   it("stops if dependencies cannot be repaired without removing packages", () => {
     const result = prepareDesktop({ repairExitCode: 100 });
     expect(result.status).toBe(100);

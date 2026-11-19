@@ -1,6 +1,7 @@
 import type {
   BillingCancellationReason,
   ByokTier,
+  ComputerSize,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   HistoryToolStep,
@@ -128,6 +129,8 @@ export interface ComputerRef {
   fresh?: boolean;
   /** True when this call started a stopped computer. Providers that cannot tell leave it unset. */
   started?: boolean;
+  /** Size the provider confirmed for this running machine. */
+  size?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
@@ -300,6 +303,8 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
+  /** The provider confirms machine size for size-based allowance accounting. */
+  sizedUsage?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -1723,6 +1728,12 @@ export interface AutoReviewRequest {
    * result or anyone else's message. Redacted and capped by the caller.
    */
   ownerMessages?: string[];
+  /**
+   * Recipients, sites, payees or accounts in `args` that outside content read during the run holds
+   * and the owner's own words do not, worked out by the server. Taken from `args`, so already
+   * redacted.
+   */
+  outsideOnlyTargets?: string[];
 }
 
 export interface AutoReviewResult {
