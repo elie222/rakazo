@@ -19,20 +19,20 @@ import type {
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
-import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
+import {
+  isToolEffectIdempotencyKey,
+  toolEffectIdempotencyKey,
+} from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type {
   ApprovalPausedToolResult,
   ApprovedEffectReplayQueue,
-  TerminatingToolResult,
 } from "../../approvals/approval-effect.js";
 import {
   approvalPausedToolResult,
   approvedEffectOccurrence,
-  OWNER_SETTINGS_REFUSAL_REPLY,
-  terminatingToolResult,
 } from "../../approvals/approval-effect.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
@@ -53,7 +53,6 @@ import type { ScreenTurn } from "../turn/screen-turn.js";
 import { providerToolCallId, runToolCallIds } from "../turn/tool-call-ids.js";
 import type { LoopGuardStreak } from "../turn/tool-loop.js";
 import type { ToolRefusal } from "../turn/tool-refusal.js";
-import { refusal } from "../turn/tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "../turn/turn-checkpoint.js";
 import type { ReplySnapshot } from "./reply-snapshot.js";
 import { restoreReply, snapshotReply } from "./reply-snapshot.js";
@@ -210,14 +209,10 @@ export interface RunState {
   overLimitActionCalls: number;
   /**
    * Whether outside content has entered the run. A run someone else started begins tainted,
-   * and so does a later attempt, including one with restored untrusted tool results.
+   * and so does a later attempt, including one with restored untrusted tool results. It only
+   * informs the approval model (see planActionGate's reviewOnly), never refuses a call.
    */
   tainted: boolean;
-  /**
-   * The taint refusal for owner settings was returned in this attempt. A model that calls
-   * again gets the turn ended instead of the same error a second time.
-   */
-  ownerSettingsRefused: boolean;
   /**
    * The instructions this attempt's model works from: the attempt-start snapshot its prompt
    * was built with, restored from the turn checkpoint on resume, and advanced only after a
@@ -262,6 +257,7 @@ export interface RunComputerContext {
 
 export interface RunSource {
   ownerStartedRun: boolean;
+  meetingChat: boolean;
   messagingChannelRun: boolean;
   channelId: string | undefined;
   historySearchBeforeSeq: number;
@@ -424,22 +420,6 @@ export async function neverAsks(ctx: RunContext) {
   return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
 }
 
-/**
- * Refuse an owner-settings change in a run that read outside content. The first refusal
- * explains the block; a repeat ends the turn, because a model that ignored the explanation
- * would otherwise retry the same call without a bound.
- */
-export function refuseOwnerSettingsChange(
-  ctx: RunContext,
-  error: string,
-): { error: string } | TerminatingToolResult {
-  if (ctx.state.ownerSettingsRefused) {
-    return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
-  }
-  ctx.state.ownerSettingsRefused = true;
-  return refusal("outside_content_blocks_owner_settings", error);
-}
-
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
   if (state.tainted) return true;
@@ -474,6 +454,26 @@ export function nextMutatingEffectOccurrence(
   const effects = ctx.state.effects;
   const fingerprint = toolEffectIdempotencyKey(ctx.runId, toolName, args);
   const approved = approvedKey ? approvedEffectOccurrence(approvedKey, fingerprint) : undefined;
+  // An edited approval keeps its original identity so a saved pre-edit call can recover after
+  // execution. Reserve that occurrence when there was no saved turn to reserve it for us.
+  if (
+    approved === undefined &&
+    approvedKey &&
+    isToolEffectIdempotencyKey(approvedKey, ctx.runId, toolName)
+  ) {
+    const prefix = `${ctx.runId}:${toolName}:`;
+    const [digest] = approvedKey.slice(prefix.length).split(":");
+    const originalFingerprint = prefix + digest;
+    const originalOccurrence = approvedEffectOccurrence(approvedKey, originalFingerprint) ?? 0;
+    if ((effects.counts.get(originalFingerprint) ?? 0) <= originalOccurrence) {
+      effects.occurrences.push({
+        executionId,
+        fingerprint: originalFingerprint,
+        occurrence: originalOccurrence,
+      });
+      effects.counts.set(originalFingerprint, originalOccurrence + 1);
+    }
+  }
   const previous = effects.restoredPending;
   if (previous?.executionId === executionId) {
     effects.restoredPending = undefined;

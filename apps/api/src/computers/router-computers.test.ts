@@ -47,7 +47,9 @@ describe("computer screen url", () => {
   const callScreenUrl = async (
     connectScreen: () => Promise<unknown>,
     updateMany = vi.fn().mockResolvedValue({ count: 1 }),
+    input: { preview?: boolean } = {},
   ) => {
+    const enqueue = vi.fn().mockResolvedValue(undefined);
     const endRun = vi.fn().mockResolvedValue(1);
     const prisma = {
       bot: {
@@ -65,7 +67,7 @@ describe("computer screen url", () => {
     const deps = {
       prisma,
       sandbox: { connectScreen },
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      jobs: { enqueue },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -81,12 +83,22 @@ describe("computer screen url", () => {
       new Request("http://127.0.0.1/rpc/computer/screenUrl", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { botId: "bot-1" } }),
+        body: JSON.stringify({ json: { botId: "bot-1", ...input } }),
       }),
       { prefix: "/rpc", context: { actor } },
     );
-    return { response, updateMany, endRun };
+    return { response, updateMany, endRun, enqueue };
   };
+
+  it("pushes back the computer's sleep for a full-window read but not for a preview", async () => {
+    const connectScreen = async () => ({ url: "https://screen.example/vnc.html" });
+    const opened = await callScreenUrl(connectScreen);
+    expect(opened.response.status).toBe(200);
+    expect(opened.enqueue).toHaveBeenCalledOnce();
+    const preview = await callScreenUrl(connectScreen, undefined, { preview: true });
+    expect(preview.response.status).toBe(200);
+    expect(preview.enqueue).not.toHaveBeenCalled();
+  });
 
   it("issues lifecycle-bound capabilities for managed-provider screens too", async () => {
     const { response } = await callScreenUrl(async () => ({

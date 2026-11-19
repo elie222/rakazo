@@ -139,7 +139,9 @@ if (args[0] === "inspect") {
     }
     if (process.env.INTERRUPT_STARTUP) process.kill(process.ppid, process.env.INTERRUPT_STARTUP);
   }
-} else if (!args.includes("pg_isready")) {
+} else if (args.includes("pg_isready")) {
+  if (process.env.FAIL_POSTGRES_WAIT === "1") process.exit(1);
+} else {
   process.exit(92);
 }
 `,
@@ -576,6 +578,33 @@ describe("development restore failures", () => {
     write(path.join(f.checkout, "data/home.txt"), "current home");
     return f;
   }
+
+  it("reports a Postgres health timeout without importing or replacing data", () => {
+    const f = restoreFixture();
+    const clock = path.join(f.root, "clock.sh");
+    write(clock, "sleep() { SECONDS=$((SECONDS + 60)); }\n");
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+      BASH_ENV: clock,
+      FAIL_POSTGRES_WAIT: "1",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Timed out waiting for Postgres after 60 seconds.");
+    expect(result.stderr).toContain("docker compose --env-file");
+    expect(result.stderr).toContain("logs postgres");
+    const commands = f.commands();
+    const composeCommands = commands.filter((args) => args[0] === "compose");
+    expect(composeCommands.map((args) => args.slice(args.indexOf("-f") + 2))).toEqual([
+      ["stop", "api", "worker", "supervisor"],
+      ["up", "-d", "postgres"],
+      expect.arrayContaining(["exec", "-T", "postgres"]),
+      expect.arrayContaining(["exec", "-T", "postgres"]),
+      ["stop", "api", "worker", "supervisor"],
+    ]);
+    expect(commands.filter((args) => args[0] === "pg_isready")).toHaveLength(2);
+    expect(f.serviceStates()).toEqual(stoppedWriters);
+    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
+  });
 
   it.each([false, true])(
     "restores files and starts services only after SQL succeeds: %s",

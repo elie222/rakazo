@@ -61,7 +61,7 @@ export function AccountMenu({
             <Button
               variant="ghost"
               size="icon"
-              className="fixed top-4 right-6 text-muted-foreground"
+              className="app-no-drag fixed top-4 right-6 text-muted-foreground"
             />
           }
         >

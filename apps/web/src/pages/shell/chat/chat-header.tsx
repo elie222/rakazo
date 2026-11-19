@@ -1,13 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
+import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { Gift, Menu, Phone } from "lucide-react";
-import { useState } from "react";
+import { Gift, Menu, Phone, Video } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
+
+const MeetingsDialog = lazy(() => import("../meetings/meetings-dialog"));
 
 /** The floating header over the transcript: navigation, the chat's name, call and invite. */
 export function ChatHeader({
@@ -16,6 +20,7 @@ export function ChatHeader({
   activeGroup,
   activeSnapshot,
   phoneCallsEnabled,
+  meetingsEnabled,
   voiceReady,
   inCall,
   panelOpen,
@@ -28,6 +33,7 @@ export function ChatHeader({
   activeGroup: Group | undefined;
   activeSnapshot: ThreadSnapshot | null;
   phoneCallsEnabled: boolean;
+  meetingsEnabled?: boolean;
   /** False while the voice status loads or no voice is connected; the button then opens voice settings. */
   voiceReady: boolean;
   inCall: boolean;
@@ -97,6 +103,9 @@ export function ChatHeader({
             </Button>
           </IconTooltip>
         ) : null}
+        {meetingsEnabled && !inGroup && active ? (
+          <MeetingsControl key={active.id} botId={active.id} />
+        ) : null}
         {referral && !inGroup && active ? (
           <IconTooltip label={t`Invite a friend`}>
             <Button
@@ -115,5 +124,46 @@ export function ChatHeader({
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
       ) : null}
     </div>
+  );
+}
+
+function MeetingsControl({ botId }: { botId: string }) {
+  const { t } = useLingui();
+  const { botId: routeBotId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const returningToCalendar =
+    routeBotId === botId && searchParams.get(MEETING_CALENDAR_RETURN_PARAM) === "1";
+  const [view, setView] = useState<"closed" | "meetings" | "calendar">(
+    returningToCalendar ? "calendar" : "closed",
+  );
+  useEffect(() => {
+    if (!returningToCalendar) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete(MEETING_CALENDAR_RETURN_PARAM);
+    setSearchParams(next, { replace: true });
+  }, [returningToCalendar, searchParams, setSearchParams]);
+  return (
+    <>
+      <IconTooltip label={t`Meetings`}>
+        <Button
+          variant="floating"
+          size="icon-lg"
+          aria-label={t`Meetings`}
+          onClick={() => setView("meetings")}
+          className="app-no-drag"
+        >
+          <Video strokeWidth={1.6} className="size-[17px]" />
+        </Button>
+      </IconTooltip>
+      {view !== "closed" ? (
+        <Suspense>
+          <MeetingsDialog
+            botId={botId}
+            showCalendar={view === "calendar"}
+            onClose={() => setView("closed")}
+          />
+        </Suspense>
+      ) : null}
+    </>
   );
 }
