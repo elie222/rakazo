@@ -10,6 +10,10 @@ const MAX_DEPTH = 8;
  * string argument that is exactly `{{today}}`, `{{today+2d}}` or `{{today-7d}}` is sent as that
  * calendar day (YYYY-MM-DD) in the routine's timezone, worked out again at every check. Anything
  * else, including text that only contains such a marker, is sent as saved.
+ *
+ * A check passes its own time, so the day asked about is the day the reading is recorded against,
+ * and the routine's timezone (UTC when absent). Saving a watch resolves the arguments too, so one
+ * that must be a date passes validation.
  */
 export function resolveWatchArgs(
   args: Record<string, unknown>,

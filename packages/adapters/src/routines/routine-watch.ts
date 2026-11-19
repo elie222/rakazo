@@ -90,7 +90,6 @@ export type RoutineWatchTarget = {
   spaceId: string;
   userId: string;
   botId: string;
-  /** Where a relative day in a tool watch's arguments is counted from; UTC when absent. */
   timezone?: string | null;
   watch: unknown;
   watchState: unknown;
@@ -724,7 +723,6 @@ async function readTool(
   }
   // Discovery waits on every provider; the tool call gets its own full budget.
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
-  // The check's own time, so the day asked about is the day the reading is recorded against.
   const args = resolveWatchArgs(watch.args ?? {}, now, routine.timezone);
   const call = { tool: toolName, args, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
@@ -1022,7 +1020,6 @@ export async function validateRoutineWatch(
   const routine = { ...target, id: "validate", watch, watchState: null };
   const ctx = deps.prisma ? await toolContext(deps.prisma, routine) : context(routine);
   const name = watch.tool ?? "";
-  // Checked with the dates a check would send, so an argument that must be a date passes.
   const args = resolveWatchArgs(watch.args ?? {}, new Date());
   const tool =
     (await deps.connector.discoverTools(ctx)).find((tool) => tool.name === name) ??
