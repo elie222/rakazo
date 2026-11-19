@@ -131,3 +131,20 @@ test("deleting the last bot in a space stays in the app after first use", {
   await sidebar.getByRole("button", { name: /^Archived/ }).click();
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
 });
+
+test("deleting every bot leaves an empty space instead of a new Chief", async ({ page }) => {
+  await signup(page, `spaces-cleared-${Date.now()}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+  const [chief] = await rpc<Array<{ id: string }>>(page, "bots/list", {});
+  expect(chief).toBeTruthy();
+  await rpc(page, "bots/remove", { botId: chief!.id });
+  await page.goto("/app");
+  await expect(
+    page.locator("main").getByRole("button", { name: "New bot", exact: true }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/\/onboarding/);
+  // A stale onboarding URL lands in the same empty space.
+  await page.goto("/onboarding");
+  await page.waitForURL(/\/app/);
+  expect(await rpc<unknown[]>(page, "bots/list", {})).toEqual([]);
+});

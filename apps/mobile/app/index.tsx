@@ -33,6 +33,7 @@ import { InboxFooter } from "../components/inbox/inbox-footer";
 import { InboxHeader } from "../components/inbox/inbox-header";
 import {
   InboxListFooter,
+  InboxNewBot,
   SWIPE_ROWS,
   useInboxRenderItem,
 } from "../components/inbox/inbox-render-item";
@@ -190,6 +191,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     badgeLoad,
     inboxRequestId,
     inboxLoaded,
+    creatingFirstBot,
     loadBots,
     refreshBots,
   } = useInbox(spaceActionRef);
@@ -824,12 +826,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         onRetry={() => void refreshBots()}
         onSignIn={() => void signInAgain()}
       />
-    ) : activityView ? undefined : (
-      <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
+    ) : activityView || !me || onShareSelect || creatingFirstBot ? undefined : (
+      <InboxNewBot onPress={() => newBot()} />
     );
   const listFooter = activityView ? undefined : (
     <InboxListFooter
-      createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
+      onNewBot={
+        !onShareSelect && !showLoadFailure && !creatingFirstBot && inboxNeedsCreateHint(listData)
+          ? () => newBot()
+          : undefined
+      }
       archivedCount={onShareSelect ? 0 : archivedCount}
     />
   );

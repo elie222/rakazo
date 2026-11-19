@@ -389,6 +389,7 @@ async function memberSpaceNavigation(
     externalConversations,
     contentBots,
     contentGroups,
+    deletedBots,
     guestSpaces,
   ] = await Promise.all([
     repos.listBots(actor),
@@ -410,6 +411,11 @@ async function memberSpaceNavigation(
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
+    // A Space whose bots were all deleted was used, so it is not sent back to onboarding.
+    deps.prisma.botDeletion.groupBy({
+      by: ["spaceId"],
+      where: { spaceId: { in: spaceIds } },
+    }),
     // Spaces someone from outside their organization belongs to, marked so nobody shares
     // there unaware.
     deps.prisma.spaceMember.findMany({
@@ -423,6 +429,7 @@ async function memberSpaceNavigation(
   const spacesWithContent = new Set([
     ...contentBots.map((row) => row.spaceId),
     ...contentGroups.map((row) => row.spaceId),
+    ...deletedBots.map((row) => row.spaceId),
   ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
