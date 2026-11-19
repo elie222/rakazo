@@ -13,6 +13,7 @@ import {
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
@@ -625,11 +626,14 @@ export async function sleepComputerIfIdle(
         error,
       });
     } else if (
-      error instanceof WorkspaceTooLargeError &&
+      (error instanceof WorkspaceTooLargeError || error instanceof WorkspaceSaveFailedError) &&
       (await providerKeepsHome(deps.sandbox, ref).catch(() => false))
     ) {
       // The provider's disk is the source of truth and survives the stop; this save is only a
-      // backup, and the next start prefers the newer disk over the older backup.
+      // backup, and the next start prefers the newer disk over the older backup. Retrying a save
+      // the disk itself failed would fail the same way every idle window. A disk that fails reads
+      // can fail the provider's own save on stop too, so it stops like a damaged computer.
+      damaged = error instanceof WorkspaceSaveFailedError && error.reason === "disk_error";
       getLogger().warn("computer.checkpoint_skipped", {
         "computer.id": computerId,
         provider: computer.kind,
@@ -974,11 +978,13 @@ export function sleepDeferReason(error: unknown): string | undefined {
           ? error.limit === "bytes"
             ? "too_large"
             : "too_many_files"
-          : error instanceof HomeSaveConflictError
-            ? "saved_elsewhere"
-            : error instanceof BrowserStillRunningError
-              ? "browser_running"
-              : undefined;
+          : error instanceof WorkspaceSaveFailedError
+            ? error.reason
+            : error instanceof HomeSaveConflictError
+              ? "saved_elsewhere"
+              : error instanceof BrowserStillRunningError
+                ? "browser_running"
+                : undefined;
 }
 
 /**

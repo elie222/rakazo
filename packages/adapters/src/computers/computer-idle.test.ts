@@ -10,6 +10,7 @@ import {
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -734,6 +735,52 @@ describe("sandbox idle", () => {
     expect(sink.events).toContainEqual(
       expect.objectContaining({ message: "computer.checkpoint_skipped", reason: "too_large" }),
     );
+  });
+
+  it.each(["disk_full", "disk_error", "timed_out"] as const)(
+    "stops a computer whose disk failed its save (%s) when its provider keeps its disk",
+    async (reason) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const harness = idleHarness({
+        exportError: new WorkspaceSaveFailedError(reason),
+        persistentHome: true,
+      });
+
+      await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+      expect(harness.sandbox.stop).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        reason === "disk_error" ? { discardUnsaved: true } : undefined,
+      );
+      expect(harness.computer.state).toBe("suspended");
+      expect(harness.computer.homeRevision).toBe("rev-before");
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ level: "warn", message: "computer.checkpoint_skipped", reason }),
+      );
+      expect(sink.events.some((event) => event.level === "error")).toBe(false);
+    },
+  );
+
+  it("keeps a computer whose disk failed its save running, with a warning", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ exportError: new WorkspaceSaveFailedError("disk_error") });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "disk_error",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
   it("checks again later without an error when another save moved the home first", async () => {
