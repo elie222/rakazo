@@ -265,8 +265,84 @@ describe("messaging another bot", () => {
       bot_id: "bot-missing",
       message: "hello",
     });
-    expect(sent).toEqual({ ok: false, error: "no bot found with that id or name" });
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Analyst (bot-target)",
+    });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("names the bots a failed lookup could have used, never the sender or one without a chat", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-sender", name: "Researcher", thread: { id: "thread-sender" } },
+        { id: "bot-target", name: "Analyst", thread: { id: "thread-target" } },
+        { id: "bot-quiet", name: "Drafthelper", thread: null },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "analys",
+      message: "hello",
+    });
+
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Analyst (bot-target)",
+    });
+  });
+
+  it("says when no other bot can be messaged, instead of listing nothing", async () => {
+    const harness = deps({
+      bots: [{ id: "bot-sender", name: "Researcher", thread: { id: "thread-sender" } }],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-missing",
+      message: "hi",
+    });
+
+    expect(sent).toEqual({
+      ok: false,
+      error: "no bot found with that id or name. No other bot in this space has a chat to message",
+    });
+  });
+
+  it("bounds the list so a large Space cannot flood one tool result", async () => {
+    const harness = deps({
+      bots: Array.from({ length: 20 }, (_, index) => ({
+        id: `bot-${index}`,
+        name: `Bot number ${index}`,
+        thread: { id: `thread-${index}` },
+      })),
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-missing",
+      message: "hi",
+    });
+
+    expect(sent.ok).toBe(false);
+    const error = sent.ok ? "" : sent.error;
+    expect(error).toContain("Bot number 0 (bot-0)");
+    expect(error).toContain("Bot number 11 (bot-11)");
+    expect(error).not.toContain("Bot number 12 (bot-12)");
+    expect(error).toContain("and 8 more");
+  });
+
+  it("keeps a bot name on one clean line in the error", async () => {
+    const harness = deps({
+      bots: [{ id: "bot-weird", name: "Line\nbreak", thread: { id: "thread-weird" } }],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-missing",
+      message: "hi",
+    });
+
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Line break (bot-weird)",
+    });
   });
 
   it("looks for the target only among active bots of the run's own Space", async () => {
