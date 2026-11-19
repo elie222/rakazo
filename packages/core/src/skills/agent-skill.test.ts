@@ -624,6 +624,28 @@ describe("skill prompt helpers", () => {
     expect(expandSkillReferencesInPrompt(twice, skills)).toBe(twice);
   });
 
+  it("preserves indentation and spacing outside routine skill seams", () => {
+    const skills = [
+      {
+        name: "Daily report",
+        description: "Daily report",
+        source: "user" as const,
+        readOnly: false,
+        content: "Report instructions.",
+      },
+    ];
+    const body = 'Use this  YAML:\r\n\r\ntarget:\r\n  settings:\r\n    status: "ready  to go"\r\n';
+    const expanded = expandSkillReferencesInPrompt(
+      `Run  @Daily report @Daily report then ${body}`,
+      skills,
+    );
+    expect(expanded).toBe(`Use skill: Daily report\n\nReport instructions.\n\nRun then ${body}`);
+    expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+    expect(expandSkillReferencesInPrompt("  @Daily report keep this\n    nested", skills)).toBe(
+      "Use skill: Daily report\n\nReport instructions.\n\n  keep this\n    nested",
+    );
+  });
+
   it("builds catalog instructions for auto-use", () => {
     const line = formatSkillsCatalogInstruction([
       {

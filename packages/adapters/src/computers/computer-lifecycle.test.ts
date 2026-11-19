@@ -1459,6 +1459,10 @@ describe("computer provisioning", () => {
           kind: next.kind,
           restorePending: false,
           runningSince: expect.any(Date),
+          ...(next.kind === "boat" && {
+            runningSize: "standard",
+            runningSizeSince: expect.any(Date),
+          }),
         };
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(await sandbox.readFile(ref, "notes/keep.txt", context)).toEqual(saved);
@@ -2322,6 +2326,40 @@ describe("Team Computer wake", () => {
       where: { computerId: "computer-1", startedAt: runningSince, endedAt: null },
       data: { lastSeenAt: expect.any(Date) },
     });
+  });
+
+  it("bills a new run at Standard when a sized provider cannot confirm its size", async () => {
+    const harness = wakeHarness("stopped", undefined, { kind: "boat" }, { kind: "boat" });
+
+    await boot(harness);
+
+    const startedAt = activation(harness)?.runningSince;
+    expect(activation(harness)).toMatchObject({
+      runningSize: "standard",
+      runningSizeSince: startedAt,
+    });
+    expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ startedAt, size: "standard" })] }),
+    );
+  });
+
+  it("keeps the starting rate and lifetime when reconnecting reports a different size", async () => {
+    const runningSince = new Date("2024-01-01T00:00:00.000Z");
+    const harness = wakeHarness(
+      "running",
+      undefined,
+      { kind: "boat", size: "large" },
+      { kind: "boat", runningSince, runningSize: "standard", runningSizeSince: runningSince },
+    );
+
+    await boot(harness);
+
+    expect(activation(harness)?.runningSince).toEqual(runningSince);
+    expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ startedAt: runningSince, size: "standard" })],
+      }),
+    );
   });
 
   it("ends a run the provider stopped on its own when reconnecting has to start it again", async () => {

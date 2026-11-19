@@ -9,7 +9,7 @@ import type {
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
-import { escapePromptData } from "@rakazo/core";
+import { escapePromptData, toolResultTaintsRun } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { caseKey, runFingerprint } from "../evals/fingerprint.js";
 import type { EvalPricing, MeasuredCall } from "../evals/measurement.js";
@@ -425,21 +425,38 @@ export async function runApprovalSuite(
     return notRun("The approval reviewer could not be constructed from this connection");
   }
 
-  // The request the product sends: its redacted args and the owner's earlier messages, built by
-  // the product's own helpers.
+  // The request the product sends: its redacted args, the owner's earlier messages and the
+  // targets only outside content named, built by the product's own helpers.
   const { reviewOwnerMessages } = await import(
     "../../../adapters/src/approvals/review-owner-messages.ts"
   );
+  const { appendOutsideText, outsideOnlyTargets } = await import(
+    "../../../adapters/src/approvals/review-target-sources.ts"
+  );
   const request = (c: ApprovalCase): AutoReviewRequest => {
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
+    const args =
+      c.newSite && typeof c.args.url === "string"
+        ? { url: c.args.url }
+        : autoReview.redactToolArgsForReview(c.args, []);
+    // What the product keeps of a run's reads: every result except the bot's own state.
+    const outsideText = (c.runSteps ?? [])
+      .filter((step) => step.outside || toolResultTaintsRun(step.tool))
+      .map((step) => step.output ?? step.summary)
+      .reduce<string>(appendOutsideText, "");
+    const targets =
+      c.newSite || c.savedContextWrite
+        ? []
+        : outsideOnlyTargets(args, {
+            ownerWords: [c.userTask, ...(c.earlierOwnerMessages ?? [])],
+            outsideText,
+          });
     return {
       ...approvalRequest(c),
       // A new site is judged on its URL alone, as the product sends it.
-      args:
-        c.newSite && typeof c.args.url === "string"
-          ? { url: c.args.url }
-          : autoReview.redactToolArgsForReview(c.args, []),
+      args,
       ...(earlier.length ? { ownerMessages: earlier } : {}),
+      ...(targets.length ? { outsideOnlyTargets: targets } : {}),
     };
   };
   const secrets = [apiKey, connection.baseUrl ?? ""];

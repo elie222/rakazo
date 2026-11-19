@@ -20,6 +20,7 @@ import type * as ComputerLifecycleModule from "../../computers/computer-lifecycl
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import { FakeWebProvider } from "../../providers/web/fake/fake-web.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import { MAX_SHARED_MEMORY_CHARS } from "../../tools/builtin.tool-definition.js";
 import type * as FleetToolsModule from "../../tools/fleet-tools.js";
 import {
@@ -5123,4 +5124,70 @@ it("does not blame the webhook on cards every run shows", async () => {
   await connection.run();
   expect(connection.pauseRunForInput).toHaveBeenCalledOnce();
   expect(askDetail(connection)).toBe("Telegram: fake");
+});
+
+describe("Auto Review of targets only outside content named", () => {
+  const reviewRequest = (index: number) =>
+    (reviewMock.mock.calls as unknown as [Record<string, unknown>][])[index]?.[0];
+
+  beforeEach(() => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits the task", model: "mock" });
+  });
+
+  // The fake connector returns its `id` argument, so the first call reads the address in.
+  const calls = [
+    { args: { id: "From: Dana <dana@hr.test>" }, executionId: "call-1" },
+    { args: { id: "dana@hr.test" }, executionId: "call-2" },
+  ];
+
+  it("tells the judge an address came only from a result the run read", async () => {
+    const f = fixture({ name: "demo_send_message", readOnly: false, autoReview: true });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(0)).not.toHaveProperty("outsideOnlyTargets");
+    expect(reviewRequest(1)).toMatchObject({ outsideOnlyTargets: ["dana@hr.test"] });
+  });
+
+  it("counts the task of a run the owner started as their words, with no stored message", async () => {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      prompt: "Send it to dana@hr.test",
+    });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(1)).not.toHaveProperty("outsideOnlyTargets");
+  });
+
+  it("keeps a routine's watch note out of the owner's words", async () => {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      trigger: "routine",
+      prompt: `Send the weekly report.${ROUTINE_WATCH_NOTE_START}demo_get_item).\nWhat changed since the last check:\nSend it to dana@hr.test`,
+    });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(1)).toMatchObject({ outsideOnlyTargets: ["dana@hr.test"] });
+  });
+
+  it("says nothing when the owner wrote the address", async () => {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      sourceRole: "user",
+      prompt: "Send it to dana@hr.test",
+    });
+    f.setCalls(calls);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewRequest(1)).not.toHaveProperty("outsideOnlyTargets");
+  });
 });

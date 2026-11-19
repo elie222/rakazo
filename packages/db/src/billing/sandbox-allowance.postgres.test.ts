@@ -53,7 +53,10 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       data: [
         // Started last month: only the hour after the month began counts.
         run("a", "boat", "2026-02-28T22:00:00.000Z", "2026-03-01T01:00:00.000Z"),
-        run("a", "boat", "2026-03-02T00:00:00.000Z", "2026-03-02T02:00:00.000Z"),
+        {
+          ...run("a", "boat", "2026-03-02T00:00:00.000Z", "2026-03-02T02:00:00.000Z"),
+          size: "standard",
+        },
         // Still running: counts up to now.
         run("b", "e2b", "2026-03-09T20:00:00.000Z", null),
         // Ended before the month.
@@ -77,19 +80,24 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
     const hours = await runAsTenant({ spaceId: otherSpaceId, userId: "user" }, () =>
       sandboxRunHours(db, organizationId, since, now),
     );
-    expect(Object.fromEntries(hours.map((row) => [row.kind, row.hours]))).toEqual({
-      boat: 3,
-      e2b: 4,
-    });
+    expect(hours).toHaveLength(3);
+    expect(hours).toEqual(
+      expect.arrayContaining([
+        { kind: "boat", size: null, hours: 1 },
+        { kind: "boat", size: "standard", hours: 2 },
+        { kind: "e2b", size: null, hours: 4 },
+      ]),
+    );
     const byComputer = await runAsTenant({ spaceId: spaceId, userId: "user" }, () =>
       sandboxRunHoursByComputer(db, organizationId, since, now),
     );
     expect(byComputer).toEqual(
       expect.arrayContaining([
-        { computerId: `a-${suffix}`, kind: "boat", hours: 3 },
-        { computerId: `b-${suffix}`, kind: "e2b", hours: 4 },
+        { computerId: `a-${suffix}`, kind: "boat", size: null, hours: 1 },
+        { computerId: `a-${suffix}`, kind: "boat", size: "standard", hours: 2 },
+        { computerId: `b-${suffix}`, kind: "e2b", size: null, hours: 4 },
       ]),
     );
-    expect(byComputer).toHaveLength(2);
+    expect(byComputer).toHaveLength(3);
   });
 });
