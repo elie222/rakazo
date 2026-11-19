@@ -49,13 +49,13 @@ import {
   vaultImportOrigin,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, displayName } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   botProfileLabelsChanged,
   commitBotUpdate,
   expireComputerExecutionLeases,
   IsolationError,
   isRecordNotFound,
-  Prisma,
   recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
@@ -85,8 +85,7 @@ import { resumeRoutinesAfterRestore } from "../routines/routine-resume.js";
 import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
 import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import { loadMessagePage } from "../threads/thread-message-pages.js";
-import { WEBHOOK_SIGNING_SECRET_KIND } from "../webhooks/webhook-inbound.js";
-import { webhookSigningKey } from "../webhooks/webhook-signature.js";
+import { saveWebhookSigningSecret } from "../webhooks/webhook-signing-secret.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
@@ -334,34 +333,6 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
     });
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (run) await wakeRun(deps.jobs, run.id);
-}
-
-/**
- * Points the bot at a new signing secret, or none, and deletes the one it replaces. The previous
- * id is read under the bot's row lock, so a concurrent set or clear never leaves a secret behind.
- */
-async function replaceWebhookSigningSecret(
-  tx: Prisma.TransactionClient,
-  actor: Actor,
-  botId: string,
-  data: {
-    webhookSigningSecretId: string | null;
-    webhookSignature: Prisma.InputJsonValue | typeof Prisma.DbNull;
-  },
-) {
-  const [locked] = await tx.$queryRaw<Array<{ webhookSigningSecretId: string | null }>>`
-    SELECT "webhookSigningSecretId" FROM "bots" WHERE id = ${botId} FOR UPDATE`;
-  if (!locked) throw new ORPCError("NOT_FOUND");
-  await tx.bot.update({ where: { id: botId }, data });
-  if (!locked.webhookSigningSecretId) return;
-  await tx.secret.deleteMany({
-    where: {
-      id: locked.webhookSigningSecretId,
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      kind: WEBHOOK_SIGNING_SECRET_KIND,
-    },
-  });
 }
 
 export function botsRoutes(ctx: RouterContext) {
@@ -757,32 +728,16 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         // Webhook runs act as the bot's creator, so only the creator decides who may start them.
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
-        if (!webhookSigningKey(input.signature.scheme, input.secret)) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "This signing secret doesn't match the chosen signature format",
-          });
-        }
-        const stored = await deps.secrets.put(input.secret, {
-          operationId: "bots.setWebhookSignature",
-          traceId: "bots.setWebhookSignature",
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-          signal: context.signal ?? new AbortController().signal,
-        });
-        await deps.prisma.$transaction(async (tx) => {
-          await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: context.actor.userId,
-              spaceId: context.actor.spaceId,
-              kind: WEBHOOK_SIGNING_SECRET_KIND,
-              ciphertext: stored.ciphertext,
-            },
-          });
-          await replaceWebhookSigningSecret(tx, context.actor, bot.id, {
-            webhookSigningSecretId: stored.id,
-            webhookSignature: input.signature,
-          });
+        await saveWebhookSigningSecret({ prisma: deps.prisma, secretStore: deps.secrets }, bot, {
+          signature: input.signature,
+          secret: input.secret,
+          context: {
+            operationId: "bots.setWebhookSignature",
+            traceId: "bots.setWebhookSignature",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
         });
         return { webhookSignature: input.signature };
       }),
@@ -790,12 +745,8 @@ export function botsRoutes(ctx: RouterContext) {
         async ({ context, input }) => {
           const bot = await repos.getBot(context.actor, input.botId);
           if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
-          await deps.prisma.$transaction(async (tx) => {
-            await replaceWebhookSigningSecret(tx, context.actor, bot.id, {
-              webhookSigningSecretId: null,
-              webhookSignature: Prisma.DbNull,
-            });
-          });
+          const store = { prisma: deps.prisma, secretStore: deps.secrets };
+          await saveWebhookSigningSecret(store, bot, null);
           return { ok: true as const };
         },
       ),
