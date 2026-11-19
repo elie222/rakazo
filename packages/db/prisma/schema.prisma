@@ -659,6 +659,7 @@ model Member {
 
 model Space {
   meetingSessions MeetingSession[]
+  meetingAllowanceUses MeetingAllowanceUse[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -2969,6 +2970,17 @@ model MeetingSession {
   @@unique([provider, externalId])
   @@index([spaceId, scheduledFor])
   @@map("meeting_sessions")
+}
+
+/// Meetings a deleted bot already used, so deleting it does not give the Space its allowance back.
+model MeetingAllowanceUse {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  countedAt DateTime
+
+  @@index([spaceId, countedAt])
+  @@map("meeting_allowance_uses")
 }
 
 model MeetingCalendarConnection {
