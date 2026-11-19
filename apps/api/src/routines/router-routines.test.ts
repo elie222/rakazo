@@ -225,9 +225,11 @@ describe("routines.list", () => {
   });
 
   it("never shows an account's email address as its name", async () => {
-    const { routines } = await list([row("theirs", "user-2")], { "user-2": "user-2@example.test" });
-    expect(routines[0]?.runsAs).toEqual({ name: "Member", isViewer: false });
-    expect(JSON.stringify(routines)).not.toContain("example.test");
+    for (const name of ["user-2@example.test", "Dana <USER-2@example.test>"]) {
+      const { routines } = await list([row("theirs", "user-2")], { "user-2": name });
+      expect(routines[0]?.runsAs).toEqual({ name: "Member", isViewer: false });
+      expect(JSON.stringify(routines).toLowerCase()).not.toContain("example.test");
+    }
   });
 
   it("answers a new routine with who it runs as", async () => {

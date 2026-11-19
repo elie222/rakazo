@@ -154,11 +154,11 @@ export async function routineViews(
       member: { select: { user: { select: { name: true, email: true } } } },
     },
   });
-  // An account whose name is its email address would show that address to the whole Space.
+  // A name that holds its account's email address would show that address to the whole Space.
   const names = new Map(
     owners.map(({ userId, member: { user } }) => [
       userId,
-      user.name.trim().toLowerCase() === user.email.toLowerCase() ? "" : user.name,
+      user.name.toLowerCase().includes(user.email.toLowerCase()) ? "" : user.name,
     ]),
   );
   return rows.map((row) => {
