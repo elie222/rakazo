@@ -72,7 +72,7 @@ function Review({ pageId }: { pageId: string }) {
           reviewAnchorOccurrence: revision?.anchor.sectionOccurrence,
         }),
     },
-    { enabled: source !== undefined && !showComments },
+    { enabled: source !== undefined },
   );
   usePageReviewSignals();
   const publish = useSave({
@@ -92,6 +92,11 @@ function Review({ pageId }: { pageId: string }) {
     setRevision(undefined);
     setShowComments(false);
   };
+  const backToComments = () => {
+    publish.reset();
+    setDraftId(undefined);
+    setShowComments(true);
+  };
   useScreenHeader({
     title: draftId ? t`Draft revision` : showComments ? t`Comments` : page?.title,
     action: !page
@@ -102,10 +107,8 @@ function Review({ pageId }: { pageId: string }) {
         ? draft.isError
           ? {
               label: t`Back to comments`,
-              onPress: () => {
-                setDraftId(undefined);
-                setShowComments(true);
-              },
+              onPress: backToComments,
+              disabled: publish.pending,
             }
           : {
               label: t`Publish revision`,
@@ -136,62 +139,67 @@ function Review({ pageId }: { pageId: string }) {
       </View>
     );
   }
-  if (showComments)
-    return (
-      <PageReviewComments
-        page={page}
-        sections={sections}
-        onRevision={(version, anchor) => {
-          setRevision({ version, anchor });
-          setShowComments(false);
-        }}
-        onLatest={backToLatest}
-        onDraft={(id) => {
-          setDraftId(id);
-          setShowComments(false);
-        }}
-      />
-    );
-  const problem = publish.error ?? document.error;
+  const publishError = draftId && publish.input === draftId ? publish.error : null;
+  const problem = publishError ?? document.error;
   return (
     <View style={[styles.screen, { backgroundColor: tokens.background }]}>
-      {draftId ? (
-        <SettingsGroup>
-          <SettingsRow
-            title={t`Back to comments`}
-            disabled={publish.pending}
-            onPress={() => {
-              setDraftId(undefined);
-              setShowComments(true);
-            }}
+      <View
+        style={showComments ? [StyleSheet.absoluteFill, styles.hiddenViewer] : styles.screen}
+        pointerEvents={showComments ? "none" : "auto"}
+        accessibilityElementsHidden={showComments}
+        importantForAccessibility={showComments ? "no-hide-descendants" : "auto"}
+      >
+        {draftId ? (
+          <SettingsGroup>
+            <SettingsRow
+              title={t`Back to comments`}
+              disabled={publish.pending}
+              onPress={backToComments}
+            />
+          </SettingsGroup>
+        ) : null}
+        {problem ? (
+          <Text accessibilityRole="alert" style={[styles.banner, { color: tokens.destructive }]}>
+            {errorText(problem)}
+          </Text>
+        ) : null}
+        {page.version !== page.currentVersion && !draftId ? (
+          <Text
+            style={[styles.banner, { color: tokens.mutedForeground }]}
+          >{t`Revision ${ph({ version: page.version })}`}</Text>
+        ) : null}
+        {document.data && source !== undefined ? (
+          <SandboxedHtmlPreview
+            html={document.data}
+            background={tokens.background}
+            onMessage={
+              draftId
+                ? undefined
+                : (raw) => {
+                    const sections = pageReviewSections(pageMessage(raw));
+                    if (sections) setAnchors({ version: page.version, sections });
+                  }
+            }
           />
-        </SettingsGroup>
-      ) : null}
-      {problem ? (
-        <Text accessibilityRole="alert" style={[styles.banner, { color: tokens.destructive }]}>
-          {errorText(problem)}
-        </Text>
-      ) : null}
-      {page.version !== page.currentVersion && !draftId ? (
-        <Text
-          style={[styles.banner, { color: tokens.mutedForeground }]}
-        >{t`Revision ${ph({ version: page.version })}`}</Text>
-      ) : null}
-      {document.data && source !== undefined ? (
-        <SandboxedHtmlPreview
-          html={document.data}
-          background={tokens.background}
-          onMessage={
-            draftId
-              ? undefined
-              : (raw) => {
-                  const sections = pageReviewSections(pageMessage(raw));
-                  if (sections) setAnchors({ version: page.version, sections });
-                }
-          }
+        ) : !document.isError ? (
+          <ActivityIndicator color={tokens.mutedForeground} />
+        ) : null}
+      </View>
+      {showComments ? (
+        <PageReviewComments
+          page={page}
+          sections={sections}
+          onRevision={(version, anchor) => {
+            setRevision({ version, anchor });
+            setShowComments(false);
+          }}
+          onLatest={backToLatest}
+          onDraft={(id) => {
+            publish.reset();
+            setDraftId(id);
+            setShowComments(false);
+          }}
         />
-      ) : !document.isError ? (
-        <ActivityIndicator color={tokens.mutedForeground} />
       ) : null}
     </View>
   );
@@ -199,6 +207,7 @@ function Review({ pageId }: { pageId: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  hiddenViewer: { opacity: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   banner: { padding: 12, textAlign: "center" },
 });

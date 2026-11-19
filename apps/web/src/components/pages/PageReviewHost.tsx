@@ -160,7 +160,9 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
           />
         ) : null
       }
-      renameError={publish.error ? errorText(publish.error) : null}
+      renameError={
+        draftId && publish.input === draftId && publish.error ? errorText(publish.error) : null
+      }
     />
   );
 }

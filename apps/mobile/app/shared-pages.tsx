@@ -5,6 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { errorText } from "../lib/api/user-error";
 import { useMobileTokens } from "../lib/native/native";
+import { useScreenHeader } from "../lib/navigation/screen-header";
 import { usePageReviewSignals } from "../lib/pages/page-review-reads";
 import { targetRpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
@@ -17,6 +18,7 @@ export default function SharedPagesScreen() {
   const [cursor, setCursor] = useState<string>();
   const list = useScreenQuery(targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/list", { cursor }));
   usePageReviewSignals();
+  useScreenHeader({ title: t`Pages shared with you` });
   const items = list.isError ? [] : (list.data?.items ?? []);
   const next = list.isError ? null : list.data?.nextCursor;
   return (

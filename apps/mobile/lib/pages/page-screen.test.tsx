@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { flush } from "@rakazo/core/test-async";
+import type { PageSectionAnchor } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -17,6 +18,9 @@ const host = vi.hoisted(() => ({
   runtimeFails: false,
   theme: "light",
   readError: null as unknown,
+  headerAction: undefined as { label: string; onPress: () => void } | undefined,
+  reviewSections: [] as PageSectionAnchor[],
+  documentReady: undefined as Promise<void> | undefined,
   page: {
     id: "page-1",
     title: "Plan",
@@ -34,7 +38,7 @@ vi.mock("react-native", () => ({
     if (props.onTouchStart) host.touch = props as typeof host.touch;
     return createElement("div", {}, children);
   },
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFill: {} },
 }));
 vi.mock("expo-clipboard", () => ({
   setStringAsync: async (text: string) => {
@@ -85,8 +89,59 @@ vi.mock("../../components/media/sandboxed-html-preview", () => ({
     return null;
   },
 }));
-vi.mock("../api/api", () => ({ currentApiBase: () => "https://app.example", rpc: vi.fn() }));
-vi.mock("../api/session", () => ({ registerSessionDiskCache: () => undefined }));
+vi.mock("../api/api", () => ({
+  currentApiBase: () => "https://app.example",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://app.example",
+    sessionGeneration: 0,
+    headers: {},
+  }),
+  rpc: vi.fn(async (proc: string, input: { requestId?: string }) => {
+    if (proc === "pageReviews/get")
+      return {
+        id: "page-1",
+        title: "Plan",
+        code: "review",
+        version: 1,
+        currentVersion: 1,
+        owner: true,
+        canRequestRevision: true,
+      };
+    if (proc === "pageReviews/draft") return { code: input.requestId };
+    if (proc === "pageReviews/publish") throw new Error("Draft could not publish");
+    throw new Error(`unexpected ${proc}`);
+  }),
+}));
+vi.mock("../api/session", () => ({
+  currentSessionGeneration: () => 0,
+  registerSessionDiskCache: () => undefined,
+}));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("../navigation/screen-header", () => ({
+  useScreenHeader: ({ action }: { action: typeof host.headerAction }) => {
+    host.headerAction = action;
+  },
+}));
+vi.mock("./page-review-reads", () => ({ usePageReviewSignals: () => {} }));
+vi.mock("../../components/settings/settings-group", () => ({
+  SettingsGroup: ({ children }: { children: ReactNode }) => children,
+  SettingsRow: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, title),
+}));
+vi.mock("./page-review-comments", () => ({
+  PageReviewComments: ({
+    sections,
+    onDraft,
+  }: {
+    sections: PageSectionAnchor[];
+    onDraft: (requestId: string) => void;
+  }) => {
+    host.reviewSections = sections;
+    return ["first draft", "second draft"].map((draft) =>
+      createElement("button", { type: "button", key: draft, onClick: () => onDraft(draft) }, draft),
+    );
+  },
+}));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
 vi.mock("../native/native", () => ({
   useMobileTokens: () => ({}),
@@ -100,11 +155,14 @@ vi.mock("./pages", async (original) => ({
   },
   pageDocument: async (...args: unknown[]) => {
     if (host.runtimeFails) throw new Error("Page runtime returned 503");
+    if (host.documentReady) await host.documentReady;
     return `<p>page</p>${JSON.stringify(args[4] ?? {})}`;
   },
 }));
 
 const { default: PageScreen } = await import("../../app/page");
+const { default: PageReviewScreen } = await import("../../app/page-review");
+const { queryClient } = await import("../query/query");
 const { takePageReply } = await import("./pages");
 
 /** A finger at `x`,`y` on the screen, as React Native reports a touch. */
@@ -323,4 +381,63 @@ it("closes and shares the page with the native icon buttons", async () => {
     { pathname: "/page-share", params: { pageId: "page-1" } },
   ]);
   await act(async () => root.unmount());
+});
+
+it("discovers the Page headings even when Comments opens before the viewer loads", async () => {
+  const documentReady = deferred<void>();
+  host.documentReady = documentReady.promise;
+  host.message = undefined;
+  queryClient.clear();
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(PageReviewScreen)));
+    await act(flush);
+    expect(host.headerAction?.label).toBe("Comments");
+    await act(async () => host.headerAction!.onPress());
+    const anchor = { section: "Timeline", sectionOccurrence: 0 };
+    await act(async () => {
+      documentReady.resolve();
+      await flush();
+    });
+    await act(flush);
+    expect(host.message).toBeTypeOf("function");
+    await act(async () =>
+      host.message?.(
+        JSON.stringify({ type: "rakazo-page:sections", sections: ["Timeline"], anchors: [anchor] }),
+        () => undefined,
+      ),
+    );
+    expect(host.reviewSections).toEqual([anchor]);
+  } finally {
+    host.documentReady = undefined;
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps a publish error scoped to the draft whose save failed", async () => {
+  queryClient.clear();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const press = async (title: string) => {
+    const button = [...container.querySelectorAll("button")].find(
+      (row) => row.textContent === title,
+    );
+    await act(async () => button!.click());
+    await act(flush);
+  };
+  try {
+    await act(async () => root.render(createElement(PageReviewScreen)));
+    await act(flush);
+    await act(async () => host.headerAction!.onPress());
+    await press("first draft");
+    expect(host.headerAction?.label).toBe("Publish revision");
+    await act(async () => host.headerAction!.onPress());
+    await act(flush);
+    expect(container.textContent).toContain("Draft could not publish");
+    await press("Back to comments");
+    await press("second draft");
+    expect(container.textContent).not.toContain("Draft could not publish");
+  } finally {
+    await act(async () => root.unmount());
+  }
 });
