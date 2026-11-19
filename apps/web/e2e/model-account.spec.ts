@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Me } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers/helpers";
 
 async function completeAccountOnboarding(page: Page, automatic = true) {
   await completeOnboarding(page);

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot } from "./helpers";
+import { captureScreenshot } from "./helpers/helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

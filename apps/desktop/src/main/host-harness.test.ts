@@ -37,7 +37,7 @@ vi.mock("electron", () => ({
   net: { fetch: vi.fn() },
 }));
 vi.mock("./i18n.js", () => ({ t: (text: string) => text }));
-vi.mock("./ipc.js", () => ({ handleIpc: vi.fn() }));
+vi.mock("./ipc/ipc.js", () => ({ handleIpc: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();

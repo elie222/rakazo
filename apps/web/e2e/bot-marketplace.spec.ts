@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers/helpers";
 
 const ADMIN_EMAIL = "admin@rakazo.test";
 

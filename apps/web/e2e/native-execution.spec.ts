@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot } from "./helpers";
+import { captureScreenshot } from "./helpers/helpers";
 
 test("native permission submission waits for delivery and expiry never shows approval", async ({
   page,
