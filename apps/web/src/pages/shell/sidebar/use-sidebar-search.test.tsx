@@ -100,3 +100,36 @@ it("cancels the running search when the box is cleared or the sidebar unmounts",
   await act(async () => root.render(null));
   expect(requests[1]!.signal.aborted).toBe(true);
 });
+
+it("hides settled results immediately while typing and does not revive them upon returning", async () => {
+  await search("invoice");
+  await act(async () => requests[0]!.resolve([hit("Invoice")]));
+  expect(latest.searchHits).toEqual([hit("Invoice")]);
+
+  await act(async () => latest.setQuery("calendar"));
+  expect(requests).toHaveLength(1);
+  expect(latest.searchHits).toEqual([]);
+  expect(latest.searchLoading).toBe(true);
+
+  await act(async () => latest.setQuery("invoice"));
+  expect(latest.searchHits).toEqual([]);
+  expect(latest.searchLoading).toBe(true);
+  await act(async () => vi.advanceTimersByTime(200));
+  await act(async () => requests[1]!.resolve([hit("Updated invoice")]));
+  expect(latest.searchHits).toEqual([hit("Updated invoice")]);
+  expect(latest.searchLoading).toBe(false);
+});
+
+it("hides an old error during debounce and preserves results on whitespace-only edits", async () => {
+  await search("invoice");
+  await act(async () => requests[0]!.reject(new Error("unavailable")));
+  expect(latest.searchError).not.toBeNull();
+
+  await act(async () => latest.setQuery("calendar"));
+  expect(latest.searchError).toBeNull();
+  await act(async () => vi.advanceTimersByTime(200));
+  await act(async () => requests[1]!.resolve([hit("Calendar")]));
+  await act(async () => latest.setQuery(" calendar "));
+  expect(latest.searchHits).toEqual([hit("Calendar")]);
+  expect(latest.searchLoading).toBe(false);
+});
